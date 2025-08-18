@@ -1,0 +1,15 @@
+[package]
+name = "perro_rust"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name       = "scripts"
+crate-type = ["cdylib"]
+
+
+[dependencies]
+perro_core = { path = "../perro_core" }
+uuid = { version = "1.4", features = ["serde", "v4"] }
+serde = { version = "1.0", features = ["derive","rc"] }
+serde_json = "1.0"

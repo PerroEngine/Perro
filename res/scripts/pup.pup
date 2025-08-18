@@ -1,0 +1,14 @@
+extends Sprite2D
+
+let bob: string = "hello"
+let bar: int = 12
+@export let foo: float
+
+fn init() {
+}
+
+fn update(delta: float) {
+        self.transform.position.x += 2 * delta
+
+}
+

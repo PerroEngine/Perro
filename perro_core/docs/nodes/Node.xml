@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<class name="Node" inherits="Object">
+  <description>
+    The base scene node. Can have children, a parent, and metadata.
+  </description>
+
+  <methods>
+    <!-- Child management -->
+    <method name="add_child" returns="void">
+      <param name="child" type="Node" />
+      <example language="pup">
+        <![CDATA[
+        let child_node = new Node("child")
+        self.add_child(child_node)
+        ]]>
+      </example>
+    </method>
+
+    <method name="remove_child" returns="void">
+      <param name="child" type="Node" />
+      <example language="pup">
+        <![CDATA[
+        self.remove_child(child_node)
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_child" returns="Node">
+      <param name="index" type="usize" />
+      <example language="pup">
+        <![CDATA[
+        let first_child = self.get_child(0)
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_children" returns="Array<Node>">
+      <example language="pup">
+        <![CDATA[
+        let all_children = self.get_children()
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_parent" returns="Node">
+      <example language="pup">
+        <![CDATA[
+        let parent_node = self.get_parent()
+        ]]>
+      </example>
+    </method>
+
+    <method name="set_parent" returns="void">
+      <param name="parent" type="Node" />
+      <example language="pup">
+        <![CDATA[
+        self.set_parent(some_node)
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_node" returns="Node">
+      <param name="name" type="String" />
+      <example language="pup">
+        <![CDATA[
+        let node = self.get_node("player")
+        ]]>
+      </example>
+    </method>
+
+    <!-- Script management -->
+    <method name="set_script" returns="void">
+      <param name="script_path" type="String" />
+      <example language="pup">
+        <![CDATA[
+        self.set_script("res://scripts/my_script.pup")
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_script" returns="String">
+      <example language="pup">
+        <![CDATA[
+        let script_path = self.get_script()
+        ]]>
+      </example>
+    </method>
+
+    <method name="remove_script" returns="void">
+      <example language="pup">
+        <![CDATA[
+        self.remove_script()
+        ]]>
+      </example>
+    </method>
+
+    <!-- Metadata management -->
+    <method name="set_metadata" returns="void">
+      <param name="key" type="String" />
+      <param name="value" type="Variant" />
+      <example language="pup">
+        <![CDATA[
+        self.set_metadata("health", 100)
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_metadata" returns="Variant">
+      <param name="key" type="String" />
+      <example language="pup">
+        <![CDATA[
+        let health = self.get_metadata("health")
+        ]]>
+      </example>
+    </method>
+
+    <method name="get_all_metadata" returns="Dictionary<String, Variant>">
+      <example language="pup">
+        <![CDATA[
+        let all_data = self.get_all_metadata()
+        ]]>
+      </example>
+    </method>
+  </methods>
+</class>

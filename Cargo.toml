@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "perro_core",
+    "perro_rust",
+    "perro_game",
+]

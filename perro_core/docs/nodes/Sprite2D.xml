@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<class name="Sprite2D" inherits="Node2D">
+  <description>
+    Sprite2D is a node that displays a 2D texture. It inherits all transform properties from Node2D and adds image rendering capabilities.
+  </description>
+
+  <properties>
+    <property name="texture" type="Texture" />
+    <property name="flip_x" type="bool" />
+    <property name="flip_y" type="bool" />
+    <property name="modulate" type="Color" />
+  </properties>
+
+  <methods>
+    <method name="set_texture" returns="void">
+      <param name="texture" type="Texture" />
+      <examples>
+        <example language="pup">self.set_texture(my_texture)</example>
+      </examples>
+    </method>
+
+    <method name="get_texture" returns="Texture">
+      <examples>
+        <example language="pup">let tex = self.get_texture()</example>
+      </examples>
+    </method>
+  </methods>
+</class>
