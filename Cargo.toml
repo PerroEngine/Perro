@@ -4,3 +4,9 @@ members = [
     "perro_rust",
     "perro_game",
 ]
+
+[profile.hotreload]
+inherits = "dev"
+opt-level = 0
+incremental = true
+debug = true

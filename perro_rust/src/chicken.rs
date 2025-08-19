@@ -8,29 +8,24 @@ use uuid::Uuid;
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, Sprite2D };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn pup_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(PupScript {
+pub extern "C" fn chicken_create_script() -> *mut dyn Script {
+    Box::into_raw(Box::new(ChickenScript {
         node_id: Uuid::nil(),
     foo: 0.0f32,
-    bob: "hello".to_string(),
-    bar: 12,
     })) as *mut dyn Script
 }
 
-pub struct PupScript {
+pub struct ChickenScript {
     node_id: Uuid,
     pub foo: f32,
-    pub bob: String,
-    pub bar: i32,
 }
 
-impl Script for PupScript {
+impl Script for ChickenScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let self_node = api.get_node_mut::<Sprite2D>(&self.node_id).unwrap();
-        self_node.transform.position.x = 5f32;
+        let bob = "Hello".to_string();
     }
 
     fn set_node_id(&mut self, id: Uuid) {
@@ -49,14 +44,11 @@ impl Script for PupScript {
         self as &mut dyn Any
     }
     fn apply_exports(&mut self, hashmap: &std::collections::HashMap<String, serde_json::Value>) {
-        self.foo = hashmap.get("foo").and_then(|v| v.as_f64()).map(|v| v as f32).unwrap_or(0.0);
     }
 
     fn get_var(&self, name: &str) -> Option<Var> {
         match name {
             "foo" => Some(Var::F32(self.foo)),
-            "bob" => Some(Var::String(self.bob.clone())),
-            "bar" => Some(Var::I32(self.bar)),
             _ => None,
         }
     }
@@ -64,8 +56,6 @@ impl Script for PupScript {
     fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
         match (name, val) {
             ("foo", Var::F32(v)) => { self.foo = v; Some(()) },
-            ("bob", Var::String(v)) => { self.bob = v; Some(()) },
-            ("bar", Var::I32(v)) => { self.bar = v; Some(()) },
             _ => None,
         }
     }

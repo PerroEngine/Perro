@@ -6,6 +6,7 @@ use std::time::Instant;
 pub enum BuildProfile {
     Dev,
     Release,
+    Check, // new: just validate
 }
 
 pub struct Compiler {
@@ -20,7 +21,19 @@ impl Compiler {
         }
     }
 
-    /// Run `cargo build` on the perro_rust crate and report how long it took.
+    fn best_linker() -> &'static str {
+        if cfg!(target_os = "linux") {
+            "rust-lld"
+        } else if cfg!(target_os = "windows") {
+            "rust-lld" // same as lld-link
+        } else if cfg!(target_os = "macos") {
+            "rust-lld" // Mach-O backend (experimental)
+        } else {
+            "cc"
+        }
+    }
+
+    /// Run `cargo build` (or check) on the perro_rust crate and report how long it took.
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
         // ------------------------------------------------------------
         // 1. Determine the flag file: <crate>/should_compile
@@ -36,7 +49,7 @@ impl Compiler {
         // ------------------------------------------------------------
         let should_compile = match fs::read_to_string(&flag_path) {
             Ok(contents) => contents.trim().eq_ignore_ascii_case("true"),
-            Err(_) => true, // treat unreadable/missing file as "true"
+            Err(_) => true,
         };
 
         if !should_compile {
@@ -45,25 +58,42 @@ impl Compiler {
         }
 
         // ------------------------------------------------------------
-        // 3. Run cargo build
+        // 3. Run cargo build/check
         // ------------------------------------------------------------
         println!("Starting compilation of perro_rust crate…");
         let start = Instant::now();
 
+        let num_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+
         let mut cmd = Command::new("cargo");
-        cmd.arg("build")
-            .arg("--manifest-path")
+
+        match profile {
+            BuildProfile::Check => {
+                cmd.arg("check");
+            }
+            _ => {
+                cmd.arg("build");
+            }
+        }
+
+        cmd.arg("--manifest-path")
             .arg(&self.crate_manifest_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .arg("-j")
+            .arg(num_cpus.to_string())
+            .env("RUSTFLAGS", format!("-C linker={}", Self::best_linker()))
+            .stdout(Stdio::inherit()) // stream output live
+            .stderr(Stdio::inherit());
 
         if matches!(profile, BuildProfile::Release) {
             cmd.arg("--release");
+        } else if matches!(profile, BuildProfile::Dev) {
+            cmd.arg("--profile").arg("hotreload");
         }
 
-        let output = cmd
-            .spawn()
-            .and_then(|child| child.wait_with_output())
+        let status = cmd
+            .status()
             .map_err(|e| format!("Failed to spawn cargo build: {e}"))?;
 
         let elapsed = start.elapsed();
@@ -71,15 +101,12 @@ impl Compiler {
         // ------------------------------------------------------------
         // 4. Handle result, update flag file
         // ------------------------------------------------------------
-        if output.status.success() {
-            println!("Compilation successful! ({:.2?})", elapsed);
-            // best-effort write; ignore errors on purpose
+        if status.success() {
+            println!("✅ Compilation successful! ({:.2?})", elapsed);
             let _ = fs::write(&flag_path, "false\n");
             Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("Compilation failed after {:.2?}:\n{}", elapsed, stderr);
-            Err(stderr.to_string())
+            Err(format!("❌ Compilation failed after {:.2?}", elapsed))
         }
     }
 }

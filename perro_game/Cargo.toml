@@ -10,3 +10,13 @@ env_logger = {version = "0.11.5"}
 log = { version = "0.4.22"}
 pollster = {version ="0.4.0"}
 uuid = { version = "1.4", features = ["serde", "v4"] }
+
+[profile.hotreload]
+inherits = "dev"
+opt-level = 0
+incremental = true
+codegen-units = 64
+lto = false
+debug = false
+strip = "debuginfo"
+overflow-checks = false

@@ -1,14 +1,14 @@
 {
-  "root_id": "d95f3cb1-fece-4c69-8368-2eb08a02f643",
+  "root_id": "12362933-15af-4222-91e3-4ea27996d840",
   "nodes": {
-    "d95f3cb1-fece-4c69-8368-2eb08a02f643": {
+    "12362933-15af-4222-91e3-4ea27996d840": {
       "type": "Node",
       "name": "GameRoot"
     },
     "bc07384e-e1cb-4c4b-899d-58e23e475f5f": {
       "type": "Node",
       "name": "SceneRoot",
-      "parent": "d95f3cb1-fece-4c69-8368-2eb08a02f643"
+      "parent": "12362933-15af-4222-91e3-4ea27996d840"
     },
     "61bcc144-573f-49db-88a7-8faca16519d0": {
       "type": "UI",

@@ -7,6 +7,9 @@ edition = "2024"
 name       = "scripts"
 crate-type = ["cdylib"]
 
+[profile.dev]
+incremental = true
+
 
 [dependencies]
 perro_core = { path = "../perro_core" }

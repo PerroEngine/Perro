@@ -7,6 +7,6 @@ fn init() {
 }
 
 fn update(delta: float) {
-    self.transform.position.x = 2.2
+    let bob = "Hello"
 }
 

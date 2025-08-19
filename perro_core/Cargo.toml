@@ -36,3 +36,10 @@ eyre    = "0.6"
 [[bin]]
 name = "perro_core"
 path = "src/main.rs"
+
+
+[profile.hotreload]
+inherits = "dev"
+opt-level = 0
+incremental = true
+debug = true

@@ -150,7 +150,7 @@ pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
     let mut root_ids = Vec::new();
     for fur_element in fur_elements {
         if fur_element.tag_name == "UI" {
-            println!("bro <----------------------------------");
+          
             for child in &fur_element.children {
                 if let FurNode::Element(child_element) = child {
                     root_ids.push(child_element.id.clone());

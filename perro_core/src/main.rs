@@ -56,9 +56,16 @@ fn bmain() {
 }
 
 fn main() {
-    let result = transpile("res://scripts/pup.pup");
-    match result {
-        Ok(_) => println!("✅ Transpile succeeded"),
-        Err(e) => println!("❌ Transpile failed: {}", e),
+    let scripts = [
+        "res://scripts/pup.pup",
+        "res://scripts/bob.pup",
+        "res://scripts/chicken.pup",
+    ];
+
+    for script in scripts {
+        match transpile(script) {
+            Ok(_) => println!("✅ Transpile succeeded: {}", script),
+            Err(e) => println!("❌ Transpile failed for {}: {}", script, e),
+        }
     }
 }

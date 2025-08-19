@@ -11,7 +11,7 @@ use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::
 pub extern "C" fn bob_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(BobScript {
         node_id: Uuid::nil(),
-        foo: 0.0f32,
+    foo: 0.0f32,
     })) as *mut dyn Script
 }
 
@@ -25,9 +25,8 @@ impl Script for BobScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let delta = api.get_delta();
         let self_node = api.get_node_mut::<Sprite2D>(&self.node_id).unwrap();
-        self_node.transform.position.x = self.foo * delta;
+        self_node.transform.position.x = 2.2f32;
     }
 
     fn set_node_id(&mut self, id: Uuid) {

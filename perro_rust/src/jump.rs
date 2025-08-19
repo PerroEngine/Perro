@@ -18,7 +18,7 @@ impl Script for JumpScript {
         let d = api.get_delta();
 
         let sprite = api.get_node_mut::<Sprite2D>(&self.node_id).unwrap(); 
-        sprite.transform.position.x += 1.0 * d;
+        sprite.transform.position.x += 2.0 * d * 1.0;
         
         self.bob(api);
     }

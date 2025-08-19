@@ -259,16 +259,14 @@ impl Scene {
 
   pub fn create_node(&mut self, mut node: SceneNode) -> anyhow::Result<()> {
     let id = *node.get_id();
-    println!("{}", id);
-    println!("create_node: {:?}", node.get_script_path());
 
        if let SceneNode::UI(ref mut ui_node) = node {
         if let Some(fur_path) = &ui_node.fur_path {
-            println!("Parsing .fur file: {}", fur_path);
+        
 
             match parse_fur_file(fur_path) {
                 Ok(ast) => {
-                    println!("Parsed UI AST: {:#?}", ast);
+                  
 
                     // Extract FurElements from FurNodes at root level
                     let fur_elements: Vec<FurElement> = ast.into_iter()
@@ -284,23 +282,7 @@ impl Scene {
                     // Build UI elements and insert directly into ui_node.elements
                     build_ui_elements_from_fur(ui_node, &fur_elements);
 
-                    println!("UI Elements after build:");
-for (id, element) in &ui_node.elements {
-    println!("ID: {}", id);
-    match element {
-        UIElement::Panel(panel) => {
-            println!("  Panel name: {}", panel.get_name());
-            println!("  Background color: {:?}", panel.style.background_color);
-            println!("  Margin: {:?}", panel.margin);
-            println!("  Padding: {:?}", panel.padding);
-            println!("  Corner radius: {:?}", panel.style.corner_radius);
-            println!("  Position: {:?}", panel.transform.position);
-            println!("  Children: {:?}", panel.get_children());
-        }
-        // add other UIElement variants here as needed
-    }
-}
-
+    
                 }
                 Err(err) => {
                     println!("Error parsing .fur file: {}", err);
