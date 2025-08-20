@@ -1,0 +1,4 @@
+[project]
+name = "Perro Editor"
+main_scene = "res://editor.scn"
+

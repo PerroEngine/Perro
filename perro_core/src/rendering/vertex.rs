@@ -1,3 +1,5 @@
+#![allow(unused)]#![allow(dead_code)]
+
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {

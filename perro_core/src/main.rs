@@ -57,15 +57,13 @@ fn bmain() {
 
 fn main() {
     let scripts = [
-        "res://scripts/pup.pup",
-        "res://scripts/bob.pup",
-        "res://scripts/chicken.pup",
+        "editor://scripts/editor.pup",
     ];
 
-    for script in scripts {
-        match transpile(script) {
-            Ok(_) => println!("✅ Transpile succeeded: {}", script),
-            Err(e) => println!("❌ Transpile failed for {}: {}", script, e),
-        }
+    if let Err(e) = transpile(&scripts) {
+        eprintln!("❌ Build failed: {}", e);
+        return;
     }
+
+    println!("🚀 All scripts transpiled and compiled successfully!");
 }

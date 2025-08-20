@@ -1,0 +1,1 @@
+{"rustc":1842507548689473721,"features":"[]","declared_features":"[]","target":17597256607631347025,"profile":80415591739391029,"path":7495248783658649253,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"hotreload\\.fingerprint\\range-alloc-3c4a2cf148f9aabf\\dep-lib-range_alloc","checksum":false}}],"rustflags":["-C","linker=rust-lld"],"config":2069994364910194474,"compile_kind":0}

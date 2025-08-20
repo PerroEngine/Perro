@@ -1,0 +1,10 @@
+extends Node
+
+fn init() {
+
+}
+
+fn update(delta: float) {
+    let x = 2
+    let b = "Editor"
+}

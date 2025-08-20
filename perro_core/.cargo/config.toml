@@ -6,3 +6,6 @@ linker = "rust-lld"
 
 [target.x86_64-apple-darwin]        # macOS
 linker = "rust-lld"
+
+[build]
+RUSTFLAGS="-Awarnings"

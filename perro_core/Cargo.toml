@@ -30,6 +30,8 @@ anyhow      = "1"
 
 eyre    = "0.6"
 
+toml = "0.8"
+
 
 
 
@@ -38,8 +40,3 @@ name = "perro_core"
 path = "src/main.rs"
 
 
-[profile.hotreload]
-inherits = "dev"
-opt-level = 0
-incremental = true
-debug = true

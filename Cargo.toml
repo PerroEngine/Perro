@@ -1,12 +1,7 @@
 [workspace]
 members = [
     "perro_core",
-    "perro_rust",
-    "perro_game",
+    "perro_game", 
+    "perro_editor",
 ]
 
-[profile.hotreload]
-inherits = "dev"
-opt-level = 0
-incremental = true
-debug = true

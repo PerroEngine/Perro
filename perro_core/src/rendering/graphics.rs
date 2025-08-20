@@ -1,3 +1,4 @@
+#![allow(unused)]#![allow(dead_code)]
 use std::{borrow::Cow, collections::HashMap, fmt, path::PathBuf, sync::Arc};
 
 use bytemuck::cast_slice;
@@ -610,7 +611,7 @@ impl Graphics {
 pub fn draw_rect(
     &mut self,
     pass: &mut RenderPass<'_>,
-    mut transform: Transform2D,
+    transform: Transform2D,
     size: Vector2,
     pivot: Vector2,
     color: crate::Color,

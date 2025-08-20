@@ -1,4 +1,4 @@
-use crate::{api::{self, ScriptApi}, ast::{FurElement, FurNode}, nodes::scene_node::SceneNode, parse_fur::{build_ui_elements_from_fur, parse_fur_file}, resolve_res_path, scene_node::BaseNode, script::{CreateFn, Script, UpdateOp, Var}, scripting, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui, Graphics, Sprite2D, Vector2};
+use crate::{api::{self, ScriptApi}, ast::{FurElement, FurNode}, get_project_root, nodes::scene_node::SceneNode, parse_fur::{build_ui_elements_from_fur, parse_fur_file}, resolve_res_path, scene_node::BaseNode, script::{CreateFn, Script, UpdateOp, Var}, scripting, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui, Graphics, Sprite2D, Vector2};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -38,17 +38,21 @@ pub struct Scene {
 }
 
 fn default_perro_rust_path() -> std::path::PathBuf {
-    // figure out which flavour we just built (debug / release)
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
 
-    // base directory for *this* binary; ascend one level to workspace root
-    let mut path = std::env::current_exe().unwrap();
-    path.pop(); // executable file
-    path.pop(); // debug|release
-    // now we're at …/target
+    let project_root = get_project_root();
+    // Which profile are we using?
+    let profile = if cfg!(debug_assertions) { "hotreload" } else { "release" };
+
+    // Start from the project root
+    let mut path = project_root;
+
+    // Go into the transpiled crate target dir
+    path.push(".perro");
+    path.push("rust_scripts");
+    path.push("target");
     path.push(profile);
 
-    // library file name, OS-specific
+    // OS-specific library name
     let filename = if cfg!(target_os = "windows") {
         "scripts.dll"
     } else if cfg!(target_os = "macos") {

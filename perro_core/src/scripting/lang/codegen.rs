@@ -1,8 +1,8 @@
 // scripting/lang/codegen/rust.rs
+#![allow(unused)]#![allow(dead_code)]
+use std::{fs, path::{Path, PathBuf}};
 
-use std::{fs, path::Path};
-
-use crate::lang::ast::*;
+use crate::{get_project_root, lang::ast::*};
 
 impl Script {
 
@@ -85,6 +85,7 @@ impl Script {
 
         // Headers
     out.push_str("#![allow(improper_ctypes_definitions)]\n\n");
+    out.push_str("#![allow(unused)]\n\n");
     out.push_str("use std::any::Any;\n\n");
     out.push_str("use std::collections::HashMap;\n");
     out.push_str("use serde_json::Value;\n");
@@ -295,7 +296,7 @@ out.push_str("}\n");
             out.push_str("}\n");
         }
 
-        if let Err(e) = write_to_crate(&out, struct_name) {
+        if let Err(e) = write_to_crate( &out, struct_name) {
             eprintln!("Warning: Failed to write to crate: {}", e);
         }
 
@@ -698,28 +699,34 @@ impl Op {
     }
 }
 
+
+
 fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
-    let base_path = Path::new("perro_rust/src");
+    // 1. Find the project root
+    let project_root = get_project_root();
+
+    // 2. Build the base path for the transpiled crate
+    let base_path = project_root.join(".perro/rust_scripts/src");
     let file_path = base_path.join(format!("{}.rs", struct_name.to_lowercase()));
 
-    // Create directory if needed
-    fs::create_dir_all(base_path).map_err(|e| format!("Failed to create dir: {}", e))?;
+    // 3. Ensure dirs exist
+    fs::create_dir_all(&base_path).map_err(|e| format!("Failed to create dir: {}", e))?;
 
-    // Write the .rs file
+    // 4. Write the transpiled file
     fs::write(&file_path, contents).map_err(|e| format!("Failed to write file: {}", e))?;
 
-    // Update lib.rs
+    // 5. Update lib.rs
     let lib_rs_path = base_path.join("lib.rs");
     let mod_line = format!("pub mod {};", struct_name.to_lowercase());
 
     let current_content = fs::read_to_string(&lib_rs_path).unwrap_or_default();
-
     if !current_content.contains(&mod_line) {
         fs::write(&lib_rs_path, format!("{}\n{}", current_content, mod_line))
             .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
     }
 
-    let should_compile_path = Path::new("perro_rust/should_compile");
+    // 6. Mark that we should recompile
+    let should_compile_path = project_root.join(".perro/rust_scripts/should_compile");
     fs::write(should_compile_path, "true")
         .map_err(|e| format!("Failed to write should_compile: {}", e))?;
 

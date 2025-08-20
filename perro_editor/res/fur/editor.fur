@@ -1,0 +1,12 @@
+[UI]
+
+        [Panel style="bg=ruby-5 rounding=md scl=0.5 sz=500 border=12 border-c=ocean-4"]
+                [Panel style="bg=purple-5 rounding=sm sz=250 border=12 border-c=ruby-4"]
+                                                [Panel style="bg=red-8 rounding=sm scl=0.5 sz=250 border=25 border-c=blue-9 tx=-200"]
+        [/Panel]
+                                [Panel style="bg=blue-8 rounding=sm scl=0.5 sz=250 border=25 border-c=blue-9 tx=200"]
+        [/Panel]
+        [/Panel]
+        [/Panel]
+        
+[/UI]
