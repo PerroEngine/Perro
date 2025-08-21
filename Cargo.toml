@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "perro_core",
-    "perro_game", 
-    "perro_editor",
+    "perro_runtime", 
 ]
 

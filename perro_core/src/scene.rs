@@ -10,14 +10,6 @@ use libloading::{Library, Symbol};
 use anyhow::Result;
 
 
-fn transpiled_path(original_path: &str) -> String {
-    let name = original_path
-        .rsplit('/')
-        .next()
-        .unwrap_or("unknown.pup")
-        .trim_end_matches(".pup");
-    format!("res://transpiled/{}.rs", name)
-}
 
 
 #[derive(Serialize, Deserialize)]

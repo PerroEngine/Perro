@@ -22,7 +22,7 @@ impl Project {
         let root = root.as_ref().to_path_buf();
 
         // Try game.toml first, then settings.toml
-        let settings_path = root.join("settings.toml");
+        let settings_path = root.join("project.toml");
 
         let contents = std::fs::read_to_string(&settings_path)
             .unwrap_or_else(|_| panic!("Failed to read {:?}", settings_path));

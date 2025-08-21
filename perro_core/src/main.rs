@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 #[cfg(not(target_arch = "wasm32"))]
 use perro_core::App;
-use perro_core::{graphics::Graphics, lang::transpiler::transpile, scene::Scene, scene_node::SceneNode, Node, Node2D, Sprite2D, Vector2};
+use perro_core::{graphics::Graphics, lang::transpiler::transpile, scene::Scene, scene_node::SceneNode, set_project_root, Node, Node2D, Sprite2D, Vector2};
 
 use winit::event_loop::{ControlFlow, EventLoop};
 
@@ -57,8 +57,10 @@ fn bmain() {
 
 fn main() {
     let scripts = [
-        "editor://scripts/editor.pup",
+        "res://scripts/editor.pup",
     ];
+
+    set_project_root(r"c:\Users\super\OneDrive\Documents\Perro\perro\perro_editor".into());
 
     if let Err(e) = transpile(&scripts) {
         eprintln!("❌ Build failed: {}", e);

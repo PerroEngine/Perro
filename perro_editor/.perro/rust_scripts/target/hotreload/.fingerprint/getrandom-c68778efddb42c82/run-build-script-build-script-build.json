@@ -1,0 +1,1 @@
+{"rustc":3062648155896360161,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[3331586631144870129,"build_script_build",false,14079617668340593247]],"local":[{"RerunIfChanged":{"output":"hotreload\\build\\getrandom-c68778efddb42c82\\output","paths":["build.rs"]}}],"rustflags":["-C","linker=rust-lld"],"config":0,"compile_kind":0}

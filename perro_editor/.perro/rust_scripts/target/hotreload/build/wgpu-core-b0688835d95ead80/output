@@ -1,0 +1,10 @@
+cargo:rustc-check-cfg=cfg(send_sync)
+cargo:rustc-cfg=send_sync
+cargo:rustc-check-cfg=cfg(webgl)
+cargo:rustc-check-cfg=cfg(dx12)
+cargo:rustc-cfg=dx12
+cargo:rustc-check-cfg=cfg(gles)
+cargo:rustc-cfg=gles
+cargo:rustc-check-cfg=cfg(metal)
+cargo:rustc-check-cfg=cfg(vulkan)
+cargo:rustc-cfg=vulkan

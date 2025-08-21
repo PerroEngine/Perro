@@ -1,0 +1,14 @@
+cargo:rustc-check-cfg=cfg(native)
+cargo:rustc-cfg=native
+cargo:rustc-check-cfg=cfg(webgl)
+cargo:rustc-check-cfg=cfg(webgpu)
+cargo:rustc-check-cfg=cfg(Emscripten)
+cargo:rustc-check-cfg=cfg(wgpu_core)
+cargo:rustc-cfg=wgpu_core
+cargo:rustc-check-cfg=cfg(send_sync)
+cargo:rustc-cfg=send_sync
+cargo:rustc-check-cfg=cfg(dx12)
+cargo:rustc-cfg=dx12
+cargo:rustc-check-cfg=cfg(metal)
+cargo:rustc-check-cfg=cfg(naga)
+cargo:rustc-check-cfg=cfg(static_dxc)

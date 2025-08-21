@@ -1471,19 +1471,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "perro_editor"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "log",
- "perro_core",
- "pollster",
- "uuid",
- "winit",
-]
-
-[[package]]
-name = "perro_game"
+name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
  "env_logger",
