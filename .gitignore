@@ -1,6 +1,1 @@
 /target
-
-
-# Ignore build artifacts inside any project’s .perro folder
-**/.perro/target/
-**/.perro/target/**

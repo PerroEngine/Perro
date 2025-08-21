@@ -25,7 +25,9 @@ impl Script for EditorScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let x = 2f32;
+        let x = 25f32;
+        let y = 1f32;
+        let z = 12f32;
         let b = "Editor".to_string();
     }
 

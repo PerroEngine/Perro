@@ -5,6 +5,8 @@ fn init() {
 }
 
 fn update(delta: float) {
-    let x = 2
+    let x = 25
+    let y = 1
+    let z = 12
     let b = "Editor"
 }

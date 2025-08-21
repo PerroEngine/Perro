@@ -1,0 +1,2 @@
+# Ignore Perro build artifacts
+.perro/rust_scripts/target/
