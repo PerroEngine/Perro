@@ -64,10 +64,15 @@ impl Scene {
         let mut nodes = IndexMap::new();
         nodes.insert(root_id, root);
 
-        let perro_rust_lib = if is_game_scene {
+       let perro_rust_lib = if is_game_scene {
             let lib_path = default_perro_rust_path();
-            println!("Loading scripts from {}", lib_path.display());
-            Some(unsafe { Library::new(&lib_path)? })
+            if lib_path.exists() {
+                println!("Loading scripts from {}", lib_path.display());
+                Some(unsafe { Library::new(&lib_path)? })
+            } else {
+                println!("No script DLL found at {}, skipping", lib_path.display());
+                None
+            }
         } else {
             None
         };

@@ -6,7 +6,7 @@ edition = "2024"
 [lib]
 name = "perro_core"
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive","rc"] }
@@ -33,4 +33,5 @@ eyre    = "0.6"
 
 toml = "0.8"
 
+dunce = "1.0.5"
 

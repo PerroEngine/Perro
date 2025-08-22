@@ -55,12 +55,27 @@ fn bmain() {
     println!("Scene created and saved to res://scene.scn");
 }
 
+fn get_editor_root() -> std::path::PathBuf {
+    // Start from the current crate's manifest dir (perro_core)
+    let mut dir = std::env::var("CARGO_MANIFEST_DIR")
+        .map(std::path::PathBuf::from)
+        .expect("CARGO_MANIFEST_DIR not set");
+
+    // Go up to workspace root
+    dir.pop();
+
+    // Append perro_editor
+    dir.push("perro_editor");
+
+    dir
+}
+
 fn main() {
     let scripts = [
         "res://scripts/editor.pup",
     ];
 
-    set_project_root(r"c:\Users\super\OneDrive\Documents\Perro\perro\perro_editor".into());
+    set_project_root(r"C:\Users\super\game".into());
 
     if let Err(e) = transpile(&scripts) {
         eprintln!("❌ Build failed: {}", e);

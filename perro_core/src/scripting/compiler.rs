@@ -15,25 +15,38 @@ pub struct Compiler {
 }
 
 impl Compiler {
-        pub fn new(project_root: &Path) -> Self {
-            Self {
-                crate_manifest_path: project_root.join(".perro/rust_scripts/Cargo.toml"),
-            }
-        }
-    
+     pub fn new(project_root: &Path) -> Self {
+        let manifest = project_root
+            .join(".perro")
+            .join("rust_scripts")
+            .join("Cargo.toml");
 
-    /// Pick the fastest available linker for the platform
-    fn best_linker() -> &'static str {
-        if cfg!(target_os = "linux") {
-            "rust-lld"
-        } else if cfg!(target_os = "windows") {
-            "rust-lld" // lld-link
-        } else if cfg!(target_os = "macos") {
-            "rust-lld" // Mach-O backend (experimental but faster than ld64)
-        } else {
-            "cc"
+        // Canonicalize to normalize separators and resolve symlinks
+        let manifest = dunce::canonicalize(&manifest)
+            .unwrap_or(manifest); // fall back if canonicalize fails
+
+        Self {
+            crate_manifest_path: manifest,
         }
     }
+
+    /// Pick the fastest available linker for the platform
+fn best_linker() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "rust-lld"
+    } else if cfg!(target_os = "windows") {
+        // Detect GNU vs MSVC
+        match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+            Ok("gnu") => "gcc",       // MinGW toolchain
+            Ok("msvc") => "lld-link", // MSVC toolchain
+            _ => "cc",
+        }
+    } else if cfg!(target_os = "macos") {
+        "clang" // safer than rust-lld Mach-O
+    } else {
+        "cc"
+    }
+}
 
     /// Path to the `should_compile` flag file
     fn flag_path(&self) -> PathBuf {
@@ -107,6 +120,10 @@ impl Compiler {
         }
 
         println!("Starting compilation of perro_rust crate…");
+        println!("Looking for manifest at: {}", self.crate_manifest_path.display());
+println!("Exists? {}", self.crate_manifest_path.exists());
+
+
         let start = Instant::now();
 
         let status = self
