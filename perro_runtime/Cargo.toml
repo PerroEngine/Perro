@@ -16,3 +16,6 @@ toml = "0.8"
 [[bin]]
 name = "perro_runtime"
 path = "src/main.rs"
+
+[target.'cfg(windows)']
+rustflags = ["-C", "link-args=/SUBSYSTEM:WINDOWS"]

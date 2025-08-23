@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::env;
 use std::path::PathBuf;
 use perro_core::globals::set_project_root;

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "perro_core",
+    "perro_manager",
     "perro_runtime", 
 ]
 
