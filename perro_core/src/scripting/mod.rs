@@ -1,4 +1,9 @@
-pub mod script;
+
 pub mod compiler;
-pub mod api;
 pub mod lang;
+
+pub mod registry;
+pub mod api;
+pub mod script;
+
+pub use registry::{ScriptProvider, DllScriptProvider};

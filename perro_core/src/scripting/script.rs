@@ -1,39 +1,30 @@
 #![allow(improper_ctypes_definitions)]
-use std::{any::Any, collections::HashMap};
+use std::{any::Any, collections::HashMap, cell::RefCell, rc::Rc};
 use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr};
 
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::api::ScriptApi;
-
+/// A dynamic variable type for script fields/exports
 #[derive(Clone, Debug)]
 pub enum Var {
-  F32(f32),
-  I32(i32),
-  Bool(bool),
-  String(String),
+    F32(f32),
+    I32(i32),
+    Bool(bool),
+    String(String),
 }
 
+/// Update operations for script variables
 pub enum UpdateOp {
-    Set,     // =
-    Add,     // +=
-    Sub,     // -=
-    Mul,     // *=
-    Div,     // /=
-    Rem,     // %=
-    And,     // &=
-    Or,      // |=
-    Xor,     // ^=
-    Shl,     // <<=
-    Shr,     // >>=
+    Set, Add, Sub, Mul, Div, Rem,
+    And, Or, Xor, Shl, Shr,
 }
 
+/// Trait implemented by all user scripts (dyn‑safe)
 pub trait Script {
-    fn init(&mut self, api: &mut ScriptApi);
+    fn init(&mut self, api: &mut crate::api::ScriptApi);
+    fn update(&mut self, api: &mut crate::api::ScriptApi);
 
-    fn update(&mut self, api: &mut ScriptApi);
-    
     fn set_node_id(&mut self, id: Uuid);
     fn get_node_id(&self) -> Uuid;
 
@@ -44,14 +35,27 @@ pub trait Script {
 
     fn get_var(&self, name: &str) -> Option<Var>;
     fn set_var(&mut self, name: &str, val: Var) -> Option<()>;
-
-
 }
 
-pub type CreateFn = unsafe extern "C" fn() -> *mut dyn Script;
+/// Function pointer type for script constructors
+pub type CreateFn = extern "C" fn() -> *mut dyn Script;
 
+/// Trait object for scene access (dyn‑safe)
+pub trait SceneAccess {
+    fn get_node_mut_any(&mut self, id: &Uuid) -> Option<&mut dyn Any>;
+    fn update_script_var(
+        &mut self,
+        node_id: &Uuid,
+        name: &str,
+        op: UpdateOp,
+        val: Var,
+    ) -> Option<()>;
+    fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn Script>>>>;
+}
 
-
+//
+// Operator implementations for Var
+//
 
 impl Add for Var {
     type Output = Self;
@@ -59,11 +63,8 @@ impl Add for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a + b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a + b),
-            (Var::String(mut a), Var::String(b)) => {
-                a.push_str(&b);
-                Var::String(a)
-            }
-            _ => panic!("Add operation not supported for these Var types"),
+            (Var::String(mut a), Var::String(b)) => { a.push_str(&b); Var::String(a) }
+            _ => panic!("Add not supported"),
         }
     }
 }
@@ -74,7 +75,7 @@ impl Sub for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a - b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a - b),
-            _ => panic!("Sub operation not supported for these Var types"),
+            _ => panic!("Sub not supported"),
         }
     }
 }
@@ -85,7 +86,7 @@ impl Mul for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a * b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a * b),
-            _ => panic!("Mul operation not supported for these Var types"),
+            _ => panic!("Mul not supported"),
         }
     }
 }
@@ -96,7 +97,7 @@ impl Div for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a / b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a / b),
-            _ => panic!("Div operation not supported for these Var types"),
+            _ => panic!("Div not supported"),
         }
     }
 }
@@ -106,7 +107,7 @@ impl Rem for Var {
     fn rem(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a % b),
-            _ => panic!("Rem operation not supported for these Var types"),
+            _ => panic!("Rem not supported"),
         }
     }
 }
@@ -117,7 +118,7 @@ impl BitAnd for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a & b),
             (Var::Bool(a), Var::Bool(b)) => Var::Bool(a & b),
-            _ => panic!("BitAnd operation not supported for these Var types"),
+            _ => panic!("BitAnd not supported"),
         }
     }
 }
@@ -128,7 +129,7 @@ impl BitOr for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a | b),
             (Var::Bool(a), Var::Bool(b)) => Var::Bool(a | b),
-            _ => panic!("BitOr operation not supported for these Var types"),
+            _ => panic!("BitOr not supported"),
         }
     }
 }
@@ -139,7 +140,7 @@ impl BitXor for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a ^ b),
             (Var::Bool(a), Var::Bool(b)) => Var::Bool(a ^ b),
-            _ => panic!("BitXor operation not supported for these Var types"),
+            _ => panic!("BitXor not supported"),
         }
     }
 }
@@ -149,7 +150,7 @@ impl Shl for Var {
     fn shl(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a << b),
-            _ => panic!("Shl operation not supported for these Var types"),
+            _ => panic!("Shl not supported"),
         }
     }
 }
@@ -159,7 +160,7 @@ impl Shr for Var {
     fn shr(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a >> b),
-            _ => panic!("Shr operation not supported for these Var types"),
+            _ => panic!("Shr not supported"),
         }
     }
 }

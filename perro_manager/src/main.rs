@@ -177,10 +177,10 @@ fn missing_components_with_session(version: &str, info: &VersionInfo, session_in
     let web_artifacts = artifacts_dir.join(&info.artifacts.web);
 
     if !component_exists(&platform_artifacts, session_installed) {
-        missing.push((format!("{} Artifacts", platform_name.to_uppercase()), platform_artifacts));
+        missing.push((format!("{} Build Target", platform_name.to_uppercase()), platform_artifacts));
     }
     if !component_exists(&web_artifacts, session_installed) {
-        missing.push(("Web Artifacts".to_string(), web_artifacts));
+        missing.push(("Web Target".to_string(), web_artifacts));
     }
 
     missing

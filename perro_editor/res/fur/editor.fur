@@ -1,16 +1,38 @@
 [UI]
 
-    [Panel style="bg=gray-6 rounding=md scl=0.5 sz=500 border=12 border-c=gray-7"]
-        [Panel style="bg=orange-6 rounding=sm sz=400 border=12 border-c=orange-7"]
-            [Panel style="bg=gray-5 rounding=sm sz=300 border=12 border-c=gray-6"]
-                [Panel style="bg=orange-5 rounding=sm sz=200 border=12 border-c=orange-6"]
-                    [Panel style="bg=gray-4 rounding=sm sz=150 border=12 border-c=gray-5"]
-                        [Panel style="bg=orange-4 rounding=sm sz=100 border=12 border-c=orange-5"]
-                        [/Panel]
-                    [/Panel]
+    [Panel style="bg=slate-6 rounding=sm sz=500 border=14 border-c=slate-7"]
+
+        [Panel style="bg=emerald-4 rounding=full sz=320 border=12 border-c=emerald-5 tx=-200 ty=150"]
+            [Panel style="bg=amber-4 rounding=lg sz=140 border=10 border-c=amber-5 tx=250 ty=-120"]
+                [Panel style="bg=ruby-4 rounding=sm sz=90 border=8 border-c=ruby-5 tx=-60 ty=80"]
                 [/Panel]
             [/Panel]
         [/Panel]
+
+        [Panel style="bg=amber-5 rounding=md sz=280 border=12 border-c=amber-6 tx=300 ty=100"]
+            [Panel style="bg=emerald-5 rounding=lg sz=130 border=10 border-c=emerald-6 tx=-160 ty=180"]
+                [Panel style="bg=slate-3 rounding=full sz=70 border=8 border-c=slate-4 tx=30 ty=-30"]
+                [/Panel]
+            [/Panel]
+        [/Panel]
+
+        [Panel style="bg=ruby-5 rounding=lg sz=200 border=12 border-c=ruby-6 tx=-350 ty=-250"]
+            [Panel style="bg=amber-3 rounding=sm sz=100 border=8 border-c=amber-4 tx=80 ty=80"]
+            [/Panel]
+            [Panel style="bg=emerald-3 rounding=md sz=60 border=6 border-c=emerald-4 tx=-40 ty=120"]
+            [/Panel]
+        [/Panel]
+
+        [Panel style="bg=slate-4 rounding=sm sz=300 border=10 border-c=slate-5 tx=500 ty=-100"]
+            [Panel style="bg=ruby-3 rounding=full sz=80 border=6 border-c=ruby-4 tx=20 ty=20"]
+            [/Panel]
+            [Panel style="bg=amber-2 rounding=lg sz=50 border=4 border-c=amber-3 tx=-30 ty=-30"]
+            [/Panel]
+        [/Panel]
+
+        [Panel style="bg=emerald-6 rounding=md sz=180 border=12 border-c=emerald-7 tx=-500 ty=250"]
+        [/Panel]
+
     [/Panel]
 
 [/UI]

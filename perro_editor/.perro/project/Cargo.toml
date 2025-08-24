@@ -1,0 +1,25 @@
+[workspace]
+
+[package]
+name = "perro_editor"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+perro_core = { path = "../../../perro_core" }
+scripts = { path = "../scripts" }
+
+winit = { version = "0.30.8" }
+uuid = { version = "1.4", features = ["serde", "v4"] }
+serde = { version = "1.0", features = ["derive","rc"] }
+serde_json = "1.0"
+anyhow = "1.0"
+env_logger = {version = "0.11.5"}
+
+[[bin]]
+name = "perro_editor"
+path = "src/main.rs"
+
+[target.'cfg(windows)']
+rustflags = ["-C", "link-args=/SUBSYSTEM:WINDOWS"]

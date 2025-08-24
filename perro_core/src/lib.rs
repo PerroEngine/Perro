@@ -14,3 +14,8 @@ pub use scripting::*;
 pub use globals::*;
 pub use project::*;
 
+use crate::app::App;
+use crate::registry::DllScriptProvider;
+
+pub type RuntimeApp = App<DllScriptProvider>;
+

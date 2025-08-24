@@ -379,10 +379,13 @@ let aspect_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         },
     );
 
-    let virtual_width = VIRTUAL_WIDTH;
-    let virtual_height = VIRTUAL_HEIGHT;
-    let camera_data = [virtual_width, virtual_height, 0.0, 0.0];
-    queue.write_buffer(&aspect_buffer, 0, bytemuck::cast_slice(&camera_data));
+let virtual_width = VIRTUAL_WIDTH;
+let virtual_height = VIRTUAL_HEIGHT;
+let window_width = surface_config.width as f32;
+let window_height = surface_config.height as f32;
+
+let camera_data = [virtual_width, virtual_height, window_width, window_height];
+queue.write_buffer(&aspect_buffer, 0, bytemuck::cast_slice(&camera_data));
 
     // 10) Finalize Graphics
     let gfx = Graphics {
@@ -489,15 +492,21 @@ impl Graphics {
         &self.window   
     }
 
-  pub fn resize(&mut self, size: PhysicalSize<u32>) {
+pub fn resize(&mut self, size: PhysicalSize<u32>) {
     self.surface_config.width = size.width.max(1);
     self.surface_config.height = size.height.max(1);
     self.surface.configure(&self.device, &self.surface_config);
 
-    // Always send virtual width/height, no aspect scaling
+    // Virtual resolution (locked)
     let virtual_width = VIRTUAL_WIDTH;
     let virtual_height = VIRTUAL_HEIGHT;
-    let camera_data = [virtual_width, virtual_height, 0.0, 0.0];
+
+    // Actual window resolution
+    let window_width = self.surface_config.width as f32;
+    let window_height = self.surface_config.height as f32;
+
+    // Send both to GPU
+    let camera_data = [virtual_width, virtual_height, window_width, window_height];
     self.queue
         .write_buffer(&self.aspect_buffer, 0, bytemuck::cast_slice(&camera_data));
 }

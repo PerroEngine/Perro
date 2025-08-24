@@ -22,13 +22,12 @@ pub struct EditorScript {
 
 impl Script for EditorScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+        println!("init");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let x = 25f32;
-        let y = 1f32;
-        let z = 12f32;
-        let b = "Editor".to_string();
+        let y = "sooper dawg".to_string();
+        println!("{}", y);
     }
 
     fn set_node_id(&mut self, id: Uuid) {

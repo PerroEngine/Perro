@@ -1,13 +1,12 @@
 [workspace]
 
 [package]
-name = "rust_scripts"
+name = "scripts"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name       = "scripts"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 perro_core = { path = "../../../perro_core" }

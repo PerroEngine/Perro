@@ -702,31 +702,71 @@ impl Op {
 
 
 fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
-    // 1. Find the project root
     let project_root = get_project_root();
-
-    // 2. Build the base path for the transpiled crate
-    let base_path = project_root.join(".perro/rust_scripts/src");
+    let base_path = project_root.join(".perro/scripts/src");
     let file_path = base_path.join(format!("{}.rs", struct_name.to_lowercase()));
 
-    // 3. Ensure dirs exist
     fs::create_dir_all(&base_path).map_err(|e| format!("Failed to create dir: {}", e))?;
-
-    // 4. Write the transpiled file
     fs::write(&file_path, contents).map_err(|e| format!("Failed to write file: {}", e))?;
 
-    // 5. Update lib.rs
     let lib_rs_path = base_path.join("lib.rs");
-    let mod_line = format!("pub mod {};", struct_name.to_lowercase());
+    let mut current_content = fs::read_to_string(&lib_rs_path).unwrap_or_default();
 
-    let current_content = fs::read_to_string(&lib_rs_path).unwrap_or_default();
-    if !current_content.contains(&mod_line) {
-        fs::write(&lib_rs_path, format!("{}\n{}", current_content, mod_line))
-            .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
+    // Ensure header exists
+    if !current_content.contains("get_script_registry") {
+        current_content = String::from(
+            "use perro_core::script::{CreateFn, Script};\n\
+             use std::collections::HashMap;\n\n\
+             // __PERRO_MODULES__\n\
+             // __PERRO_IMPORTS__\n\n\
+             pub fn get_script_registry() -> HashMap<String, CreateFn> {\n\
+                 let mut map: HashMap<String, CreateFn> = HashMap::new();\n\
+                 // __PERRO_REGISTRY__\n\
+                 map\n\
+             }\n",
+        );
     }
 
-    // 6. Mark that we should recompile
-    let should_compile_path = project_root.join(".perro/rust_scripts/should_compile");
+    // Add module
+    let mod_line = format!("pub mod {};", struct_name.to_lowercase());
+    if !current_content.contains(&mod_line) {
+        current_content = current_content.replace(
+            "// __PERRO_MODULES__",
+            &format!("{}\n// __PERRO_MODULES__", mod_line),
+        );
+    }
+
+    // Add import
+    let import_line = format!(
+        "use {}::{}_create_script;",
+        struct_name.to_lowercase(),
+        struct_name.to_lowercase()
+    );
+    if !current_content.contains(&import_line) {
+        current_content = current_content.replace(
+            "// __PERRO_IMPORTS__",
+            &format!("{}\n// __PERRO_IMPORTS__", import_line),
+        );
+    }
+
+    // Add registry entry (with cast to fn pointer)
+    let registry_line = format!(
+        "    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n",
+        struct_name.to_lowercase(),
+        struct_name.to_lowercase()
+    );
+    if !current_content.contains(&registry_line) {
+        current_content = current_content.replace(
+            "// __PERRO_REGISTRY__",
+            &format!("{}    // __PERRO_REGISTRY__", registry_line),
+        );
+    }
+
+    fs::write(&lib_rs_path, current_content)
+        .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
+
+    // Mark that we should recompile
+    let should_compile_path = project_root.join(".perro/scripts/should_compile");
     fs::write(should_compile_path, "true")
         .map_err(|e| format!("Failed to write should_compile: {}", e))?;
 

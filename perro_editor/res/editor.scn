@@ -11,6 +11,7 @@
       "fur_path": "res://fur/editor.fur",
       "node": {
         "type": "Node",
+       "script_path":"res://scripts/editor.pup",
         "name": "ui node",
         "parent": "bc07384e-e1cb-4c4b-899d-58e23e475f5f"
       }

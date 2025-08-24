@@ -1,14 +1,16 @@
-#![cfg_attr(windows, windows_subsystem = "windows")]
-
 use std::env;
 use std::path::PathBuf;
 use perro_core::globals::set_project_root;
+use perro_core::registry::DllScriptProvider;
 use perro_core::scene::Scene;
-use perro_core::{App, Project, scene_node::{SceneNode, BaseNode}, Node, graphics::Graphics};
+#[cfg(not(target_arch = "wasm32"))]
+use perro_core::ScriptProvider;
+use perro_core::{Project, graphics::Graphics};
+use perro_core::rendering::app::App;
 use winit::event_loop::EventLoop;
 
 #[cfg(target_arch = "wasm32")]
-fn run_app(event_loop: EventLoop<Graphics>, app: App) {
+fn run_app<P: ScriptProvider>(event_loop: EventLoop<Graphics>, app: App<P>) {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Error).expect("Couldn't initialize logger");
 
@@ -19,7 +21,7 @@ fn run_app(event_loop: EventLoop<Graphics>, app: App) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_app(event_loop: EventLoop<Graphics>, mut app: App) {
+fn run_app<P: ScriptProvider>(event_loop: EventLoop<Graphics>, mut app: App<P>) {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     let _ = event_loop.run_app(&mut app);
 }
@@ -28,7 +30,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     // 1. Determine project root
-   let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
+    let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
         PathBuf::from(&args[i + 1])
     } else if args.contains(&"--editor".to_string()) {
         // Dev-only: hardcoded editor project path (relative to workspace root)
@@ -49,23 +51,14 @@ fn main() {
 
     // 2. Load project manifest
     let project = Project::load(&project_root);
-
-    // 3. Set project root so res:// resolves correctly
     set_project_root(project_root);
 
-    // 4. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 5. Create root scene
-    let root_node = SceneNode::Node(Node::new("Root", None));
-    let mut game_scene = Scene::new(root_node, true).unwrap();
+    // Dynamic mode: loads DLL automatically
+    let game_scene = Scene::<DllScriptProvider>::from_project(&project)
+        .expect("Failed to build game scene");
 
-    // 6. Load main scene from manifest
-    let loaded_scene = Scene::load(project.main_scene()).unwrap();
-    let game_root = *game_scene.get_root().get_id();
-    game_scene.graft(loaded_scene, game_root).unwrap();
-
-    // 7. Run app
     let app = App::new(&event_loop, project.name().to_string(), Some(game_scene));
     run_app(event_loop, app);
 }

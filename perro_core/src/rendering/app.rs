@@ -1,5 +1,3 @@
-// src/app.rs
-
 use std::process;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
@@ -17,7 +15,7 @@ use winit::{
 
 use crate::{
     rendering::{create_graphics, Graphics},
-    scene::Scene,
+    scene::Scene, ScriptProvider,
 };
 
 enum State {
@@ -25,18 +23,19 @@ enum State {
     Ready(Graphics),
 }
 
-pub struct App {
+/// Generic App that works with any ScriptProvider
+pub struct App<P: ScriptProvider> {
     state: State,
     window_title: String,
-    game_scene: Option<Scene>,
+    game_scene: Option<Scene<P>>,
     last_frame: std::time::Instant,
 }
 
-impl App {
+impl<P: ScriptProvider> App<P> {
     pub fn new(
         event_loop: &EventLoop<Graphics>,
         window_title: String,
-        game_scene: Option<Scene>,
+        game_scene: Option<Scene<P>>,
     ) -> Self {
         Self {
             state: State::Init(Some(event_loop.create_proxy())),
@@ -91,102 +90,95 @@ impl App {
     }
 }
 
-impl ApplicationHandler<Graphics> for App {
-fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-    if let State::Init(proxy_opt) = &mut self.state {
-        if let Some(proxy) = proxy_opt.take() {
-            // --- Detect monitor size ---
-            #[cfg(not(target_arch = "wasm32"))]
-            let default_size = {
-                use winit::dpi::PhysicalSize;
-                let primary_monitor = event_loop.primary_monitor().unwrap();
-                let monitor_size = primary_monitor.size();
+impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if let State::Init(proxy_opt) = &mut self.state {
+            if let Some(proxy) = proxy_opt.take() {
+                // --- Detect monitor size ---
+                #[cfg(not(target_arch = "wasm32"))]
+                let default_size = {
+                    use winit::dpi::PhysicalSize;
+                    let primary_monitor = event_loop.primary_monitor().unwrap();
+                    let monitor_size = primary_monitor.size();
 
-                // List of "nice" resolutions
-                let candidates = [
-                    PhysicalSize::new(640, 360),
-                    PhysicalSize::new(1280, 720),
-                    PhysicalSize::new(1600, 900),
-                    PhysicalSize::new(1920, 1080),
-                    PhysicalSize::new(2560, 1440),
-                ];
+                    // List of "nice" resolutions
+                    let candidates = [
+                        PhysicalSize::new(640, 360),
+                        PhysicalSize::new(1280, 720),
+                        PhysicalSize::new(1600, 900),
+                        PhysicalSize::new(1920, 1080),
+                        PhysicalSize::new(2560, 1440),
+                    ];
 
-                // Target: about half the monitor's width/height
-                let target_width = (monitor_size.width as f32 * 0.75) as u32;
-                let target_height = (monitor_size.height as f32 * 0.75) as u32;
+                    // Target: about 75% of monitor size
+                    let target_width = (monitor_size.width as f32 * 0.75) as u32;
+                    let target_height = (monitor_size.height as f32 * 0.75) as u32;
 
-                // Pick the candidate closest to target size
-                *candidates
-                    .iter()
-                    .min_by_key(|size| {
-                        let dw = size.width as i32 - target_width as i32;
-                        let dh = size.height as i32 - target_height as i32;
-                        (dw * dw + dh * dh) as u32 // squared distance
-                    })
-                    .unwrap()
-            };
+                    *candidates
+                        .iter()
+                        .min_by_key(|size| {
+                            let dw = size.width as i32 - target_width as i32;
+                            let dh = size.height as i32 - target_height as i32;
+                            (dw * dw + dh * dh) as u32
+                        })
+                        .unwrap()
+                };
 
-            // --- Build window attributes ---
-            let mut attrs = Window::default_attributes()
-                .with_title(&self.window_title);
+                // --- Build window attributes ---
+                let mut attrs = Window::default_attributes()
+                    .with_title(&self.window_title);
 
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                attrs = attrs.with_inner_size(default_size);
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    attrs = attrs.with_inner_size(default_size);
+                }
+
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use winit::platform::web::WindowAttributesExtWebSys;
+                    attrs = attrs.with_append(true);
+                }
+
+                // --- Create window ---
+                #[cfg(target_arch = "wasm32")]
+                let window = Rc::new(
+                    event_loop
+                        .create_window(attrs)
+                        .expect("create window"),
+                );
+
+                #[cfg(not(target_arch = "wasm32"))]
+                let window = Arc::new(
+                    event_loop
+                        .create_window(attrs)
+                        .expect("create window"),
+                );
+
+                // --- Create graphics ---
+                #[cfg(target_arch = "wasm32")]
+                wasm_bindgen_futures::spawn_local(create_graphics(window, proxy));
+
+                #[cfg(not(target_arch = "wasm32"))]
+                pollster::block_on(create_graphics(window, proxy));
             }
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                use winit::platform::web::WindowAttributesExtWebSys;
-                attrs = attrs.with_append(true);
-            }
-
-            // --- Create window ---
-            #[cfg(target_arch = "wasm32")]
-            let window = Rc::new(
-                event_loop
-                    .create_window(attrs)
-                    .expect("create window"),
-            );
-
-            #[cfg(not(target_arch = "wasm32"))]
-            let window = Arc::new(
-                event_loop
-                    .create_window(attrs)
-                    .expect("create window"),
-            );
-
-            // --- Create graphics ---
-            #[cfg(target_arch = "wasm32")]
-            wasm_bindgen_futures::spawn_local(create_graphics(window, proxy));
-
-            #[cfg(not(target_arch = "wasm32"))]
-            pollster::block_on(create_graphics(window, proxy));
         }
     }
-}
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         _window_id: WindowId,
         event: WindowEvent,
     ) {
         match event {
             WindowEvent::Resized(size) => self.resized(size),
-
             WindowEvent::RedrawRequested => self.process_frame(),
-
-            WindowEvent::CloseRequested => {
-                process::exit(0);
-            }
-
+            WindowEvent::CloseRequested => process::exit(0),
             _ => {}
         }
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, graphics: Graphics) {
-        // Graphics created → go to Ready
         self.state = State::Ready(graphics);
     }
 }

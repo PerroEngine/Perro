@@ -14,7 +14,7 @@ struct RectUniform {
     _pad: vec2<f32>,
 };
 
-// u_camera.x = virtual width, u_camera.y = virtual height
+// u_camera = vec4(virtual_w, virtual_h, window_w, window_h)
 @group(1) @binding(0)
 var<uniform> u_camera: vec4<f32>;
 
@@ -28,14 +28,27 @@ fn vs_main(
 ) -> VertexOut {
     var out: VertexOut;
 
+    // Apply pivot + transform
     let pivot_offset = (u_rect.pivot - vec2<f32>(0.5, 0.5)) * u_rect.size;
     let scaled = (position * u_rect.size) - pivot_offset;
     let world_pos = u_rect.transform * vec4(scaled, 0.0, 1.0);
 
-    // Convert virtual pixels → NDC
-    // u_camera.x = virtual width, u_camera.y = virtual height
-    let ndc_x = (world_pos.x / u_camera.x) * 2.0;
-    let ndc_y = (world_pos.y / u_camera.y) * 2.0;
+    // Aspect ratio correction
+    let virtual_aspect = u_camera.x / u_camera.y;
+    let window_aspect  = u_camera.z / u_camera.w;
+
+    var scale: vec2<f32>;
+    if (window_aspect > virtual_aspect) {
+        // Window is wider → fit height, pillarbox
+        scale = vec2<f32>(virtual_aspect / window_aspect, 1.0);
+    } else {
+        // Window is taller → fit width, letterbox
+        scale = vec2<f32>(1.0, window_aspect / virtual_aspect);
+    }
+
+    // Convert to NDC with aspect correction
+    let ndc_x = ((world_pos.x / u_camera.x) * 2.0) * scale.x;
+    let ndc_y = ((world_pos.y / u_camera.y) * 2.0) * scale.y;
 
     out.pos = vec4(ndc_x, ndc_y, world_pos.z, world_pos.w);
     out.local_pos = position;
@@ -64,21 +77,25 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let q_outer = abs(p) - (half_size - radius);
     let dist_outer = length(max(q_outer, vec2<f32>(0.0))) - min(radius.x, radius.y);
 
-    // Discard outside outer shape
     if (dist_outer > 0.0) {
         discard;
     }
 
     if (u_rect.is_border == 1u) {
-        // Inner rounded rect for border
-        let inner_half_size = half_size - vec2<f32>(u_rect.border_thickness / u_rect.size.x,
-                                                    u_rect.border_thickness / u_rect.size.y);
-        let inner_radius = max(radius - vec2<f32>(u_rect.border_thickness / u_rect.size.x,
-                                                  u_rect.border_thickness / u_rect.size.y), vec2<f32>(0.0));
+        let inner_half_size = half_size - vec2<f32>(
+            u_rect.border_thickness / u_rect.size.x,
+            u_rect.border_thickness / u_rect.size.y
+        );
+        let inner_radius = max(
+            radius - vec2<f32>(
+                u_rect.border_thickness / u_rect.size.x,
+                u_rect.border_thickness / u_rect.size.y
+            ),
+            vec2<f32>(0.0)
+        );
         let q_inner = abs(p) - (inner_half_size - inner_radius);
         let dist_inner = length(max(q_inner, vec2<f32>(0.0))) - min(inner_radius.x, inner_radius.y);
 
-        // Discard inside inner shape
         if (dist_inner < 0.0) {
             discard;
         }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::{
-    compiler::{BuildProfile, Compiler}, get_project_root, lang::pup::parser::PupParser, resolve_res_path
+    compiler::{BuildProfile, CompileTarget, Compiler}, get_project_root, lang::pup::parser::PupParser, resolve_res_path
 };
 
 /// Transpile one or more scripts, then compile once at the end.
@@ -50,7 +50,7 @@ pub fn transpile(paths: &[&str]) -> Result<(), String> {
     }
 
     // 🔑 Compile once after all transpiles
-    let compiler = Compiler::new(&project_root);
+    let compiler = Compiler::new(&project_root, CompileTarget::Scripts);
     compiler.compile(BuildProfile::Dev)?;
 
     Ok(())
