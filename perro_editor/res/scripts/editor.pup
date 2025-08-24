@@ -6,4 +6,5 @@ fn init() {
 
 fn update(delta: float) {
     let y = "sooper dawg"
+    let bob = 5
 }

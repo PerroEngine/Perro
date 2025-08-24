@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
+
 use std::env;
 use std::fs::File;
 use std::io::Write;
