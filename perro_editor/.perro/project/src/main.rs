@@ -1,12 +1,17 @@
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
 
+// ✅ Embed res.zip built by build.rs
+static RES_ZIP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/res.zip"));
+
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use perro_core::globals::set_project_root;
+
+use perro_core::asset_io::{set_project_root, get_project_root, ProjectRoot};
+use perro_core::manifest::Project;
 use perro_core::scene::Scene;
-use perro_core::{Project, graphics::Graphics};
+use perro_core::graphics::Graphics;
 use perro_core::rendering::app::App;
 use winit::event_loop::EventLoop;
 
@@ -37,7 +42,6 @@ fn main() {
             let log_path = folder.join("errors.log");
             let file = File::create(&log_path).expect("Failed to create error log file");
 
-            // Redirect panic messages to the file
             let mut file = std::sync::Mutex::new(file);
             std::panic::set_hook(Box::new(move |info| {
                 let _ = writeln!(file.lock().unwrap(), "PANIC: {}", info);
@@ -47,21 +51,44 @@ fn main() {
         }
     }
 
-    let args: Vec<String> = env::args().collect();
+    // 1. Set project root
+    #[cfg(not(debug_assertions))]
+    {
+        // ✅ Release mode: use embedded res.zip
+        set_project_root(ProjectRoot::Pak { data: RES_ZIP, name: "unknown".into() });
+    }
 
-    // 1. Determine project root
-    let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
+    #[cfg(debug_assertions)]
+    {
+        // ✅ Dev mode: use disk
+        let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
+        set_project_root(ProjectRoot::Disk { root: project_root.clone(), name: "unknown".into() });
+    }
 
-    println!("Running project at {:?}", project_root);
+    // 2. Load project manifest (works in both disk + pak)
+    #[cfg(not(debug_assertions))]
+    let project = Project::load(None::<PathBuf>).expect("Failed to load project.toml");
 
-    // 2. Load project manifest
-    let project = Project::load(&project_root);
-    set_project_root(project_root);
+    #[cfg(debug_assertions)]
+    let project = {
+        let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
+        Project::load(Some(&project_root)).expect("Failed to load project.toml")
+    };
 
-    // 3. Create event loop
+    // 3. Update project root with real name
+    match get_project_root() {
+        ProjectRoot::Disk { root, .. } => {
+            set_project_root(ProjectRoot::Disk { root, name: project.name().into() });
+        }
+        ProjectRoot::Pak { data, .. } => {
+            set_project_root(ProjectRoot::Pak { data, name: project.name().into() });
+        }
+    }
+
+    // 4. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 4. Build runtime scene with StaticScriptProvider
+    // 5. Build runtime scene
     let provider = StaticScriptProvider::new();
     let game_scene = match Scene::from_project_with_provider(&project, provider) {
         Ok(scene) => scene,
@@ -71,7 +98,7 @@ fn main() {
         }
     };
 
-    // 5. Run app
+    // 6. Run app
     let app = App::new(&event_loop, project.name().to_string(), Some(game_scene));
     run_app(event_loop, app);
 }

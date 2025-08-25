@@ -7,7 +7,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{resolve_res_path, ui_elements::ui_panel::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
+use crate::{asset_io::{load_asset, resolve_path}, ui_elements::ui_panel::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
 
 #[cfg(target_arch = "wasm32")]
 pub type Rc<T> = std::rc::Rc<T>;
@@ -43,24 +43,25 @@ impl TextureManager {
         }
     }
 
-    pub fn get_or_load_texture_sync(
-        &mut self,
-        path: &str,
-        device: &Device,
-        queue: &Queue,
-    ) -> &ImageTexture {
-        let actual_path = resolve_res_path(path);
-        let key = actual_path.to_string_lossy().to_string();
-        if !self.textures.contains_key(&key) {
-            let img_bytes =
-                std::fs::read(&actual_path).expect("Failed to read image file");
-            let img = image::load_from_memory(&img_bytes)
-                .expect("Failed to decode image");
-            let img_texture = ImageTexture::from_image(&img, device, queue);
-            self.textures.insert(key.clone(), img_texture);
-        }
-        self.textures.get(&key).unwrap()
+   pub fn get_or_load_texture_sync(
+    &mut self,
+    path: &str,
+    device: &Device,
+    queue: &Queue,
+) -> &ImageTexture {
+    // Use the original path string as the cache key (res://... or user://...)
+    let key = path.to_string();
+
+    if !self.textures.contains_key(&key) {
+        // ✅ Use load_asset instead of std::fs::read
+        let img_bytes = load_asset(path).expect("Failed to read image file");
+        let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
+        let img_texture = ImageTexture::from_image(&img, device, queue);
+        self.textures.insert(key.clone(), img_texture);
     }
+
+    self.textures.get(&key).unwrap()
+}
 }
 
 #[derive(Debug)]

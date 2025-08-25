@@ -1,9 +1,9 @@
 use std::env;
-use perro_core::globals::set_project_root;
+use std::path::PathBuf;
+
+use perro_core::asset_io::{set_project_root, ProjectRoot};
 use perro_core::compiler::{Compiler, BuildProfile, CompileTarget};
 use perro_core::lang::transpiler::transpile;
-
-
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -15,9 +15,12 @@ fn main() {
         CompileTarget::Scripts
     };
 
-    // Set project root (adjust path as needed)
-    let project_root = r"C:\Users\super\perro\perro_editor";
-    set_project_root(project_root.into());
+    // Set project root (Disk mode, name = "unknown")
+    let project_root = PathBuf::from(r"C:\Users\super\perro\perro_editor");
+    set_project_root(ProjectRoot::Disk {
+        root: project_root.clone(),
+        name: "unknown".into(),
+    });
 
     match target {
         CompileTarget::Scripts => {
@@ -37,7 +40,7 @@ fn main() {
         CompileTarget::Project => {
             println!("🛠️ Building project crate…");
 
-            let compiler = Compiler::new(project_root.as_ref(), CompileTarget::Project);
+            let compiler = Compiler::new(&project_root, CompileTarget::Project);
             if let Err(e) = compiler.compile(BuildProfile::Release) {
                 eprintln!("❌ Project build failed: {}", e);
                 return;

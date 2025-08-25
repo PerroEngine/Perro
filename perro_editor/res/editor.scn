@@ -5,7 +5,6 @@
       "type": "Node",
       "name": "SceneRoot"
     },
-
 "61bcc144-573f-49db-88a7-8faca16519d0": {
       "type": "UI",
       "fur_path": "res://fur/editor.fur",

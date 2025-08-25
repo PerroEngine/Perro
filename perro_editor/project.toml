@@ -1,4 +1,4 @@
 [project]
-name = "Perro Editor"
+name = "Perro Editor 2.0"
 main_scene = "res://editor.scn"
 

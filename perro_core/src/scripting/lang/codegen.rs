@@ -2,7 +2,8 @@
 #![allow(unused)]#![allow(dead_code)]
 use std::{fs, path::{Path, PathBuf}};
 
-use crate::{get_project_root, lang::ast::*};
+use crate::{asset_io::{get_project_root, ProjectRoot}, lang::ast::*};
+
 
 impl Script {
 
@@ -702,7 +703,14 @@ impl Op {
 
 
 fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
-    let project_root = get_project_root();
+    // ✅ Extract disk root
+    let project_root = match get_project_root() {
+        ProjectRoot::Disk { root, .. } => root,
+        ProjectRoot::Pak { .. } => {
+            return Err("write_to_crate is not supported to a .pak".into());
+        }
+    };
+
     let base_path = project_root.join(".perro/scripts/src");
     let file_path = base_path.join(format!("{}.rs", struct_name.to_lowercase()));
 
@@ -749,7 +757,7 @@ fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
         );
     }
 
-    // Add registry entry (with cast to fn pointer)
+    // Add registry entry
     let registry_line = format!(
         "    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n",
         struct_name.to_lowercase(),

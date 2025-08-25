@@ -2,10 +2,8 @@ use perro_core::script::{CreateFn, Script};
 use std::collections::HashMap;
 
 pub mod editor;
-pub mod chicken;
 // __PERRO_MODULES__
 use editor::editor_create_script;
-use chicken::chicken_create_script;
 // __PERRO_IMPORTS__
 
 pub fn get_script_registry() -> HashMap<String, CreateFn> {

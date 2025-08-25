@@ -1,28 +1,24 @@
 use crate::{
-    api::ScriptApi,
-    ast::{FurElement, FurNode},
-    get_project_root,
-    nodes::scene_node::SceneNode,
-    parse_fur::{build_ui_elements_from_fur, parse_fur_file},
-    resolve_res_path,
-    scene_node::BaseNode,
-    script::{CreateFn, SceneAccess, Script, UpdateOp, Var},
-    ui_element::{BaseElement, UIElement},
-    ui_renderer::render_ui,
-    Graphics, Node, Project, ScriptProvider, Sprite2D, Vector2,
+    api::ScriptApi, asset_io::{get_project_root, ProjectRoot}, ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, parse_fur::{build_ui_elements_from_fur, parse_fur_file}, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui, Graphics, Node, ScriptProvider, Sprite2D, Vector2
 };
+use crate::asset_io::{load_asset, save_asset}; // ✅ use asset_io
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    fs::{create_dir_all, File},
-    io::{self, BufReader},
+    fs::create_dir_all,
+    io,
     path::PathBuf,
     rc::Rc,
 };
 use uuid::Uuid;
 use wgpu::RenderPass;
+
+//
+// ---------------- SceneData ----------------
+//
 
 /// Pure serializable scene data (no runtime state)
 #[derive(Serialize, Deserialize)]
@@ -37,27 +33,26 @@ impl SceneData {
         let root_id = *root.get_id();
         let mut nodes = IndexMap::new();
         nodes.insert(root_id, root);
-
         Self { root_id, nodes }
     }
 
+    /// Save scene data to disk (res:// or user://)
     pub fn save(&self, res_path: &str) -> io::Result<()> {
-        let path = resolve_res_path(res_path);
-        if let Some(dir) = path.parent() {
-            create_dir_all(dir)?;
-        }
-        let file = File::create(&path)?;
-        serde_json::to_writer_pretty(file, &self)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        let data = serde_json::to_vec_pretty(&self)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        save_asset(res_path, &data)
     }
 
+    /// Load scene data from disk or pak
     pub fn load(res_path: &str) -> io::Result<Self> {
-        let path = resolve_res_path(res_path);
-        let file = File::open(&path)?;
-        let reader = BufReader::new(file);
-        let mut data: SceneData = serde_json::from_reader(reader)
+        let bytes = load_asset(res_path)?;
+        let mut data: SceneData = serde_json::from_slice(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        Self::fix_relationships(&mut data);
+        Ok(data)
+    }
 
+    fn fix_relationships(data: &mut SceneData) {
         // Fix IDs and parent/child relationships
         for (&key, node) in data.nodes.iter_mut() {
             node.set_id(key);
@@ -75,33 +70,12 @@ impl SceneData {
                 parent.add_child(child_id);
             }
         }
-
-        Ok(data)
     }
 }
 
-/// Returns the default path to the compiled Rust script library
-pub fn default_perro_rust_path() -> PathBuf {
-    let project_root = get_project_root();
-    let profile = if cfg!(debug_assertions) { "hotreload" } else { "release" };
-
-    let mut path = project_root;
-    path.push(".perro");
-    path.push("scripts");
-    path.push("target");
-    path.push(profile);
-
-    let filename = if cfg!(target_os = "windows") {
-        "scripts.dll"
-    } else if cfg!(target_os = "macos") {
-        "libscripts.dylib"
-    } else {
-        "libscripts.so"
-    };
-
-    path.push(filename);
-    path
-}
+//
+// ---------------- Scene ----------------
+//
 
 /// Runtime scene, parameterized by a script provider
 pub struct Scene<P: ScriptProvider> {
@@ -130,18 +104,18 @@ impl<P: ScriptProvider> Scene<P> {
         }
     }
 
-    /// Load a runtime scene from disk
+    /// Load a runtime scene from disk or pak
     pub fn load(res_path: &str, provider: P) -> io::Result<Self> {
         let data = SceneData::load(res_path)?;
         Ok(Scene::from_data(data, provider))
     }
 
     /// Build a runtime scene from a project manifest with a given provider
-    /// (works for static providers like `StaticScriptProvider`)
     pub fn from_project_with_provider(project: &Project, provider: P) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
         let mut game_scene = Scene::new(root_node, provider);
 
+        // main_scene is a res:// path from project.toml
         let loaded_data = SceneData::load(project.main_scene())?;
         let game_root = *game_scene.get_root().get_id();
         game_scene.graft_data(loaded_data, game_root)?;
@@ -151,17 +125,15 @@ impl<P: ScriptProvider> Scene<P> {
 
     /// Graft a data scene into this runtime scene
     pub fn graft_data(&mut self, other: SceneData, parent_id: Uuid) -> anyhow::Result<()> {
-    for (id, mut node) in other.nodes {
-        if id == other.root_id {
-            node.set_parent(Some(parent_id));
-            self.data.nodes.get_mut(&parent_id).unwrap().add_child(id);
+        for (id, mut node) in other.nodes {
+            if id == other.root_id {
+                node.set_parent(Some(parent_id));
+                self.data.nodes.get_mut(&parent_id).unwrap().add_child(id);
+            }
+            self.create_node(node)?;
         }
-
-        // Instead of raw insert, use create_node so scripts/UI are initialized
-        self.create_node(node)?;
+        Ok(())
     }
-    Ok(())
-}
 
     fn ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
         self.provider.load_ctor(short)
@@ -330,7 +302,10 @@ impl<P: ScriptProvider> Scene<P> {
     }
 }
 
-/// Implement SceneAccess for Scene<P>
+//
+// ---------------- SceneAccess impl ----------------
+//
+
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
     fn get_node_mut_any(&mut self, id: &Uuid) -> Option<&mut dyn std::any::Any> {
         self.data.nodes.get_mut(id).map(|node| node.as_any_mut())
@@ -352,17 +327,49 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
 }
 
 //
-// Specialization for DllScriptProvider (dynamic mode)
+// ---------------- Specialization for DllScriptProvider ----------------
 //
+
 use libloading::Library;
 use crate::registry::DllScriptProvider;
 
+pub fn default_perro_rust_path() -> io::Result<PathBuf> {
+    match get_project_root() {
+        ProjectRoot::Disk { root, .. } => {
+            // In dev/editor mode, we use hotreload profile
+            let profile = "hotreload";
+
+            let mut path = root;
+            path.push(".perro");
+            path.push("scripts");
+            path.push("target");
+            path.push(profile);
+
+            let filename = if cfg!(target_os = "windows") {
+                "scripts.dll"
+            } else if cfg!(target_os = "macos") {
+                "libscripts.dylib"
+            } else {
+                "libscripts.so"
+            };
+
+            path.push(filename);
+            Ok(path)
+        }
+        ProjectRoot::Pak { .. } => Err(io::Error::new(
+            io::ErrorKind::Other,
+            "default_perro_rust_path is not available in release/export mode",
+        )),
+    }
+}
+
+
 impl Scene<DllScriptProvider> {
-    /// Build a runtime scene from a project manifest, loading the DLL automatically
-    pub fn from_project(project: &Project) -> anyhow::Result<Self> {
+  pub fn from_project(project: &Project) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
 
-        let lib_path = default_perro_rust_path();
+        // ✅ unwrap the Result<PathBuf>
+        let lib_path = default_perro_rust_path()?;
         println!("Loading script library from {:?}", lib_path);
 
         let lib = unsafe { Library::new(&lib_path) }

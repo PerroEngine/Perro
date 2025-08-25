@@ -3,22 +3,23 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use crate::{
-    ast::{FurElement, FurNode},
-    parser::FurParser,
-    resolve_res_path,
-    ui_element::{BaseElement, EdgeInsets, UIElement},
-    ui_elements::ui_panel::{CornerRadius, UIPanel},
-    ui_node::Ui, Transform2D,
+    asset_io::load_asset, ast::{FurElement, FurNode}, parser::FurParser, ui_element::{BaseElement, EdgeInsets, UIElement}, ui_elements::ui_panel::{CornerRadius, UIPanel}, ui_node::Ui, Transform2D
 };
 
 /// Parses a `.fur` file into a `Vec<FurNode>` AST
 pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
-    let resolved_path = resolve_res_path(path);
-    let code = std::fs::read_to_string(&resolved_path)
-        .map_err(|e| format!("Failed to read .fur file: {}", e))?;
+    let bytes = load_asset(path)
+        .map_err(|e| format!("Failed to read .fur file {}: {}", path, e))?;
 
-    let mut parser = FurParser::new(&code)?;
-    let ast = parser.parse()?;
+    let code = String::from_utf8(bytes)
+        .map_err(|e| format!("Invalid UTF-8 in .fur file {}: {}", path, e))?;
+
+    let mut parser = FurParser::new(&code)
+        .map_err(|e| format!("Failed to init FurParser: {}", e))?;
+
+    let ast = parser.parse()
+        .map_err(|e| format!("Failed to parse .fur file {}: {}", path, e))?;
+
     Ok(ast)
 }
 
