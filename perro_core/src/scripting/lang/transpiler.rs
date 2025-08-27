@@ -15,7 +15,7 @@ pub fn transpile(paths: &[&str]) -> Result<(), String> {
     // ✅ Extract a real PathBuf from ProjectRoot
     let project_root_path = match get_project_root() {
         ProjectRoot::Disk { root, .. } => root,
-        ProjectRoot::Pak { .. } => {
+        ProjectRoot::Brk { .. } => {
             return Err("Transpilation is not supported in release/pak mode".into());
         }
     };
@@ -60,7 +60,7 @@ pub fn transpile(paths: &[&str]) -> Result<(), String> {
 
                 println!("✅ Transpile succeeded: {}", path);
             }
-            ResolvedPath::Pak(_) => {
+            ResolvedPath::Brk(_) => {
                 return Err("Transpilation is only supported in dev/disk mode".into());
             }
         }

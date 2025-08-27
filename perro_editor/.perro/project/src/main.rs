@@ -1,14 +1,14 @@
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
 
-// ✅ Embed res.zip built by build.rs
-static RES_ZIP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/res.zip"));
+// ✅ Embed assets.brk built by compiler/packer
+static ASSETS_BRK: &[u8] = include_bytes!("../../../assets.brk");
 
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use perro_core::asset_io::{set_project_root, get_project_root, ProjectRoot};
+use perro_core::asset_io::{set_project_root, set_key, get_project_root, ProjectRoot};
 use perro_core::manifest::Project;
 use perro_core::scene::Scene;
 use perro_core::graphics::Graphics;
@@ -17,6 +17,9 @@ use winit::event_loop::EventLoop;
 
 mod registry;
 use registry::StaticScriptProvider;
+
+mod key;
+use key::get_aes_key;
 
 #[cfg(target_arch = "wasm32")]
 fn run_app(event_loop: EventLoop<Graphics>, app: App<StaticScriptProvider>) {
@@ -51,11 +54,13 @@ fn main() {
         }
     }
 
+    
+
     // 1. Set project root
     #[cfg(not(debug_assertions))]
-    {
-        // ✅ Release mode: use embedded res.zip
-        set_project_root(ProjectRoot::Pak { data: RES_ZIP, name: "unknown".into() });
+    {   
+        set_key(get_aes_key());
+        set_project_root(ProjectRoot::Brk { data: ASSETS_BRK, name: "unknown".into() });
     }
 
     #[cfg(debug_assertions)]
@@ -80,8 +85,8 @@ fn main() {
         ProjectRoot::Disk { root, .. } => {
             set_project_root(ProjectRoot::Disk { root, name: project.name().into() });
         }
-        ProjectRoot::Pak { data, .. } => {
-            set_project_root(ProjectRoot::Pak { data, name: project.name().into() });
+        ProjectRoot::Brk { data, .. } => {
+            set_project_root(ProjectRoot::Brk { data, name: project.name().into() });
         }
     }
 

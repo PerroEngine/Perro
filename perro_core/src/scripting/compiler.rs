@@ -1,7 +1,13 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::Instant;
+
+use rand::RngCore;
+use rand::seq::SliceRandom;
+
+use crate::brk::build_brk;
 
 pub enum BuildProfile {
     Dev,
@@ -9,14 +15,12 @@ pub enum BuildProfile {
     Check, // just validate
 }
 
-/// Which crate are we compiling?
 pub enum CompileTarget {
     Scripts, // .perro/scripts
     Project, // .perro/project
 }
 
 pub struct Compiler {
-    /// Path to the Cargo.toml of the target crate
     pub crate_manifest_path: PathBuf,
     target: CompileTarget,
 }
@@ -24,17 +28,10 @@ pub struct Compiler {
 impl Compiler {
     pub fn new(project_root: &Path, target: CompileTarget) -> Self {
         let manifest = match target {
-            CompileTarget::Scripts => project_root
-                .join(".perro")
-                .join("scripts")
-                .join("Cargo.toml"),
-            CompileTarget::Project => project_root
-                .join(".perro")
-                .join("project")
-                .join("Cargo.toml"),
+            CompileTarget::Scripts => project_root.join(".perro/scripts/Cargo.toml"),
+            CompileTarget::Project => project_root.join(".perro/project/Cargo.toml"),
         };
 
-        // Canonicalize to normalize separators and resolve symlinks
         let manifest = dunce::canonicalize(&manifest).unwrap_or(manifest);
 
         Self {
@@ -43,40 +40,20 @@ impl Compiler {
         }
     }
 
-    /// Pick the fastest available linker for the platform
     fn best_linker() -> &'static str {
         if cfg!(target_os = "linux") {
             "rust-lld"
         } else if cfg!(target_os = "windows") {
             match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
-                Ok("gnu") => "gcc",       // MinGW toolchain
-                Ok("msvc") => "lld-link", // MSVC toolchain
+                Ok("gnu") => "gcc",
+                Ok("msvc") => "lld-link",
                 _ => "cc",
             }
         } else if cfg!(target_os = "macos") {
-            "clang" // safer than rust-lld Mach-O
+            "clang"
         } else {
             "cc"
         }
-    }
-
-    /// Path to the `should_compile` flag file
-    fn flag_path(&self) -> PathBuf {
-        self.crate_manifest_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("should_compile")
-    }
-
-    fn should_compile(&self) -> bool {
-        match fs::read_to_string(self.flag_path()) {
-            Ok(contents) => contents.trim().eq_ignore_ascii_case("true"),
-            Err(_) => true, // default to true if missing
-        }
-    }
-
-    fn set_should_compile(&self, value: bool) {
-        let _ = fs::write(self.flag_path(), if value { "true\n" } else { "false\n" });
     }
 
     fn build_command(&self, profile: BuildProfile) -> Command {
@@ -99,14 +76,11 @@ impl Compiler {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
 
-        // 🔑 Force profile based on target
         match self.target {
             CompileTarget::Scripts => {
-                // Always hotreload profile for scripts
                 cmd.arg("--profile").arg("hotreload");
             }
             CompileTarget::Project => {
-                // Always release for project
                 cmd.arg("--release");
             }
         }
@@ -114,47 +88,43 @@ impl Compiler {
         cmd
     }
 
-    pub fn spawn(&self, profile: BuildProfile) -> Result<Child, String> {
-        // Only skip if target is Scripts
-        if matches!(self.target, CompileTarget::Scripts) && !self.should_compile() {
-            println!("Nothing to rebuild (should_compile == false)");
-            return Err("No rebuild needed".into());
-        }
-
-        println!("🚀 Spawning compiler for {:?}", self.target_name());
-        self.build_command(profile)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn cargo: {e}"))
-    }
-
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
-        // Only skip if target is Scripts
-        if matches!(self.target, CompileTarget::Scripts) && !self.should_compile() {
-            println!("Nothing to rebuild (should_compile == false)");
-            return Ok(());
+        if matches!(self.target, CompileTarget::Project) {
+            // 🔑 Generate AES key
+            let mut key = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut key);
+
+            println!("🔑 Compile-time AES key: {:02X?}", key);
+
+            // Write obfuscated key.rs
+            self.write_key_file(&key).map_err(|e| e.to_string())?;
+
+            // Run packer with the real key
+            let project_root = self.crate_manifest_path
+                .parent()  // .perro/project
+                .unwrap()
+                .parent()  // .perro
+                .unwrap()
+                .parent()  // actual project root
+                .unwrap();
+
+            let res_dir = project_root.join("res");
+            let output = project_root.join("assets.brk");
+
+            build_brk(&output, &res_dir, project_root, &key)
+                .map_err(|e| e.to_string())?;
         }
 
-        println!("Starting compilation of {:?} crate…", self.target_name());
-        println!("Looking for manifest at: {}", self.crate_manifest_path.display());
-        println!("Exists? {}", self.crate_manifest_path.exists());
-
+        println!("🚀 Compiling {:?}", self.target_name());
         let start = Instant::now();
-
         let status = self
             .build_command(profile)
             .status()
             .map_err(|e| format!("Failed to run cargo: {e}"))?;
-
         let elapsed = start.elapsed();
 
         if status.success() {
             println!("✅ Compilation successful! (total {:.2?})", elapsed);
-
-            // Only reset should_compile for scripts
-            if matches!(self.target, CompileTarget::Scripts) {
-                self.set_should_compile(false);
-            }
-
             Ok(())
         } else {
             Err(format!("❌ Compilation failed after {:.2?}", elapsed))
@@ -166,5 +136,107 @@ impl Compiler {
             CompileTarget::Scripts => "scripts",
             CompileTarget::Project => "project",
         }
+    }
+
+    fn write_key_file(&self, key: &[u8; 32]) -> std::io::Result<()> {
+        // Split into 4 parts of 8 bytes
+        let mut parts: Vec<[u8; 8]> = Vec::new();
+        for chunk in key.chunks(8) {
+            let mut part = [0u8; 8];
+            part.copy_from_slice(chunk);
+            parts.push(part);
+        }
+
+        // Generate 8 random constants
+        let consts: Vec<u32> = (0..8).map(|_| rand::random::<u32>()).collect();
+
+        // Random operations
+        let ops = ["^", "+", "-", ">>", "<<"];
+
+        // Build mask expressions (runtime code) and mask values (compile-time)
+        let mut mask_exprs: Vec<String> = Vec::new();
+        let mut mask_values: Vec<u8> = Vec::new();
+
+        for _ in 0..4 {
+            let c1 = rand::random::<usize>() % 8;
+            let c2 = rand::random::<usize>() % 8;
+            let op = ops.choose(&mut rand::thread_rng()).unwrap();
+
+            let expr = match *op {
+                "^" => {
+                    mask_values.push((consts[c1] as u8) ^ (consts[c2] as u8));
+                    format!("((CONST{} as u8) ^ (CONST{} as u8))", c1 + 1, c2 + 1)
+                }
+                "+" => {
+                    mask_values.push((consts[c1] as u8).wrapping_add(consts[c2] as u8));
+                    format!("((CONST{} as u8).wrapping_add(CONST{} as u8))", c1 + 1, c2 + 1)
+                }
+                "-" => {
+                    mask_values.push((consts[c1] as u8).wrapping_sub(consts[c2] as u8));
+                    format!("((CONST{} as u8).wrapping_sub(CONST{} as u8))", c1 + 1, c2 + 1)
+                }
+                ">>" => {
+                    mask_values.push(((consts[c1] >> 8) as u8) ^ (consts[c2] as u8));
+                    format!("((CONST{} >> 8) as u8) ^ (CONST{} as u8)", c1 + 1, c2 + 1)
+                }
+                "<<" => {
+                    mask_values.push(((consts[c1] << 3) as u8) ^ (consts[c2] as u8));
+                    format!("(((CONST{} << 3) as u8) ^ (CONST{} as u8))", c1 + 1, c2 + 1)
+                }
+                _ => unreachable!(),
+            };
+
+            mask_exprs.push(expr);
+        }
+
+        // Path to key.rs
+        let key_path = self
+            .crate_manifest_path
+            .parent()
+            .unwrap()
+            .join("src")
+            .join("key.rs");
+
+        let mut f = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&key_path)?;
+
+        writeln!(f, "// Auto-generated by Perro compiler")?;
+
+        // Write masked parts
+        for (i, part) in parts.iter().enumerate() {
+            write!(f, "const PART{}: [u8; 8] = [", i + 1)?;
+            for (j, b) in part.iter().enumerate() {
+                if j > 0 {
+                    write!(f, ", ")?;
+                }
+                // Apply mask at compile time
+                let masked = b ^ mask_values[i];
+                write!(f, "0x{:02X}", masked)?;
+            }
+            writeln!(f, "];")?;
+        }
+
+        // Write constants
+        for (i, c) in consts.iter().enumerate() {
+            writeln!(f, "const CONST{}: u32 = 0x{:08X};", i + 1, c)?;
+        }
+
+        // Write get_aes_key with inlined mask reconstruction
+        writeln!(f, "pub fn get_aes_key() -> [u8; 32] {{")?;
+        writeln!(f, "    let mut key = [0u8; 32];")?;
+        writeln!(f, "    for i in 0..8 {{")?;
+        writeln!(f, "        key[i]      = PART1[i] ^ ({});", mask_exprs[0])?;
+        writeln!(f, "        key[i + 8]  = PART2[i] ^ ({});", mask_exprs[1])?;
+        writeln!(f, "        key[i + 16] = PART3[i] ^ ({});", mask_exprs[2])?;
+        writeln!(f, "        key[i + 24] = PART4[i] ^ ({});", mask_exprs[3])?;
+        writeln!(f, "    }}")?;
+        writeln!(f, "    key")?;
+        writeln!(f, "}}")?;
+
+        println!("🔑 Generated AES key at {}", key_path.display());
+        Ok(())
     }
 }

@@ -706,7 +706,7 @@ fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     // ✅ Extract disk root
     let project_root = match get_project_root() {
         ProjectRoot::Disk { root, .. } => root,
-        ProjectRoot::Pak { .. } => {
+        ProjectRoot::Brk { .. } => {
             return Err("write_to_crate is not supported to a .pak".into());
         }
     };

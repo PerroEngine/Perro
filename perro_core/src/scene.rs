@@ -356,7 +356,7 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
             path.push(filename);
             Ok(path)
         }
-        ProjectRoot::Pak { .. } => Err(io::Error::new(
+        ProjectRoot::Brk { .. } => Err(io::Error::new(
             io::ErrorKind::Other,
             "default_perro_rust_path is not available in release/export mode",
         )),

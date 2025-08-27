@@ -1,23 +1,47 @@
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Write, Read, Seek};
 use std::path::PathBuf;
 use std::sync::RwLock;
-use once_cell::sync::Lazy;
-use zip::ZipArchive;
 
-/// Where the project root lives
+use once_cell::sync::Lazy;
+
+use crate::brk::archive::BrkFile;
+use crate::brk::{BrkArchive};
+
+/// Trait alias for Read + Seek
+pub trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
 #[derive(Clone)]
 pub enum ProjectRoot {
     Disk { root: PathBuf, name: String },
-    Pak { data: &'static [u8], name: String },
+    Brk { data: &'static [u8], name: String },
 }
 
-/// Global project root
 static PROJECT_ROOT: Lazy<RwLock<Option<ProjectRoot>>> =
     Lazy::new(|| RwLock::new(None));
 
+static PROJECT_KEY: Lazy<RwLock<Option<[u8; 32]>>> =
+    Lazy::new(|| RwLock::new(None));
+
+/// Cached BRK archive (parsed once at startup)
+static BRK_ARCHIVE: Lazy<RwLock<Option<BrkArchive>>> =
+    Lazy::new(|| RwLock::new(None));
+
+/// Set the project root
 pub fn set_project_root(root: ProjectRoot) {
-    *PROJECT_ROOT.write().unwrap() = Some(root);
+    *PROJECT_ROOT.write().unwrap() = Some(root.clone());
+
+    if let ProjectRoot::Brk { data, .. } = root {
+        let archive = BrkArchive::open_from_bytes(data)
+            .expect("Failed to open BRK archive");
+        *BRK_ARCHIVE.write().unwrap() = Some(archive);
+    }
+}
+
+/// Set the decryption key
+pub fn set_key(key: [u8; 32]) {
+    *PROJECT_KEY.write().unwrap() = Some(key);
 }
 
 pub fn get_project_root() -> ProjectRoot {
@@ -28,14 +52,12 @@ pub fn get_project_root() -> ProjectRoot {
         .expect("Project root not set")
 }
 
-/// A resolved path can either be a real filesystem path or a virtual path inside a pak
 #[derive(Debug, Clone)]
 pub enum ResolvedPath {
     Disk(PathBuf),
-    Pak(String),
+    Brk(String),
 }
 
-/// Resolve a `res://` or `user://` path into either a disk path or a pak-relative path
 pub fn resolve_path(path: &str) -> ResolvedPath {
     match get_project_root() {
         ProjectRoot::Disk { root, name } => {
@@ -50,59 +72,60 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 pb.push(stripped);
                 ResolvedPath::Disk(pb)
             } else {
-                // ✅ Default: resolve relative to project root
                 let mut pb = root.clone();
                 pb.push(path);
                 ResolvedPath::Disk(pb)
             }
         }
-        ProjectRoot::Pak { data: _, name } => {
+        ProjectRoot::Brk { data: _, name } => {
             if let Some(stripped) = path.strip_prefix("user://") {
                 let base = dirs::data_local_dir()
                     .unwrap_or_else(|| std::env::temp_dir())
                     .join(&name);
                 ResolvedPath::Disk(base.join(stripped))
             } else if let Some(stripped) = path.strip_prefix("res://") {
-                ResolvedPath::Pak(format!("res/{}", stripped))
+                ResolvedPath::Brk(format!("res/{}", stripped))
             } else {
-                // ✅ Default: treat as root-level file in pak
-                ResolvedPath::Pak(path.to_string())
+                ResolvedPath::Brk(path.to_string())
             }
         }
     }
 }
 
-/// Load an asset into memory
+/// Load an asset fully into memory (for small files)
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => fs::read(pb),
-        ResolvedPath::Pak(virtual_path) => {
-            if let ProjectRoot::Pak { data, .. } = get_project_root() {
-                let cursor = std::io::Cursor::new(data);
-                let mut archive = ZipArchive::new(cursor)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                for i in 0..archive.len() {
-    let file = archive.by_index(i).unwrap();
-    eprintln!("[pak] contains: {}", file.name());
-}
-                let mut file = archive
-                    .by_name(&virtual_path)
-                    .map_err(|e| io::Error::new(io::ErrorKind::NotFound, e))?;
-
-                let mut buf = Vec::new();
-                file.read_to_end(&mut buf)?;
-                Ok(buf)
+        ResolvedPath::Brk(virtual_path) => {
+            let key = PROJECT_KEY.read().unwrap();
+            if let Some(archive) = BRK_ARCHIVE.write().unwrap().as_mut() {
+                archive.read_file(&virtual_path, key.as_ref())
             } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Tried to load from pak, but project root is not pak",
-                ))
+                Err(io::Error::new(io::ErrorKind::Other, "BRK archive not loaded"))
             }
         }
     }
 }
 
-/// Save an asset (only works for disk + user://)
+/// Open an asset for streaming (for large files like audio/video)
+pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
+    match resolve_path(path) {
+        ResolvedPath::Disk(pb) => {
+            let file = File::open(pb)?;
+            Ok(Box::new(file))
+        }
+        ResolvedPath::Brk(virtual_path) => {
+            if let Some(archive) = BRK_ARCHIVE.read().unwrap().as_ref() {
+                let file: BrkFile = archive.stream_file(&virtual_path)?;
+                Ok(Box::new(file))
+            } else {
+                Err(io::Error::new(io::ErrorKind::Other, "BRK archive not loaded"))
+            }
+        }
+    }
+}
+
+/// Save an asset (only works on disk, not BRK)
 pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => {
@@ -112,9 +135,9 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
-        ResolvedPath::Pak(_) => Err(io::Error::new(
+        ResolvedPath::Brk(_) => Err(io::Error::new(
             io::ErrorKind::Other,
-            "Cannot save into a pak archive (read-only)",
+            "Cannot save into a brk archive (read-only)",
         )),
     }
 }

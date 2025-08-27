@@ -5,6 +5,7 @@ pub mod scene;
 pub mod rendering;
 pub mod scripting;
 pub mod project;
+pub mod brk;
 
 
 pub use nodes::*;
