@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, default};
+
+use serde::{Deserialize, Serialize};
 
 use crate::{Color, Transform2D, Vector2};
 
@@ -33,7 +35,7 @@ pub struct FurStyle {
     pub anchor: FurAnchor
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FurAnchor {
     TopLeft,
     Top,

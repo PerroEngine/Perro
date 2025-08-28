@@ -4,13 +4,13 @@ use indexmap::IndexMap;
 
 use crate::{
     asset_io::load_asset,
-    ast::{FurAnchor, FurElement, FurNode},
+    ast::{FurAnchor, FurElement, FurNode, FurStyle},
     graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
     parser::FurParser,
-    ui_element::{BaseElement, EdgeInsets, UIElement},
+    ui_element::{BaseElement, BaseUIElement, EdgeInsets, UIElement},
     ui_elements::ui_panel::{CornerRadius, UIPanel},
     ui_node::Ui,
-    Transform2D,
+    Transform2D, Vector2,
 };
 
 /// Parses a `.fur` file into a `Vec<FurNode>` AST
@@ -31,156 +31,55 @@ pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     Ok(ast)
 }
 
+fn apply_base_style(base: &mut BaseUIElement, style: &FurStyle) {
+    base.size.x = style.size.x as f32;
+    base.size.y = style.size.y as f32;
+
+    base.margin = EdgeInsets {
+        left: style.margin.left.unwrap_or(0.0),
+        right: style.margin.right.unwrap_or(0.0),
+        top: style.margin.top.unwrap_or(0.0),
+        bottom: style.margin.bottom.unwrap_or(0.0),
+    };
+
+    base.padding = EdgeInsets {
+        left: style.padding.left.unwrap_or(0.0),
+        right: style.padding.right.unwrap_or(0.0),
+        top: style.padding.top.unwrap_or(0.0),
+        bottom: style.padding.bottom.unwrap_or(0.0),
+    };
+
+    base.anchor = style.anchor;
+    base.modulate = style.modulate.clone();
+
+    base.transform.position.x = style.translation.x.unwrap_or(0.0) as f32;
+    base.transform.position.y = style.translation.y.unwrap_or(0.0) as f32;
+    base.transform.scale.x = style.transform.scale.x as f32;
+    base.transform.scale.y = style.transform.scale.y as f32;
+    base.transform.rotation = style.transform.rotation as f32;
+}
+
 /// Converts a single FurElement into a UIElement (without children)
 fn convert_fur_element_to_ui_element(fur_element: &FurElement) -> Option<UIElement> {
     match fur_element.tag_name.as_str() {
         "UI" => None,
         "Panel" => {
             let mut panel = UIPanel::default();
-
-            // Set name/id
             panel.set_name(&fur_element.id);
 
-            // Convert style from FurStyle to UIPanel's UIStyle
-            if let Some(bg_color) = &fur_element.style.background_color {
-                panel.style.background_color = Some(bg_color.clone());
-            }
+            // ✅ one call for all shared fields
+            apply_base_style(&mut panel.base, &fur_element.style);
 
-            if let Some(mod_color) = &fur_element.style.modulate {
-                panel.style.modulate = Some(mod_color.clone());
-            }
-
-            // Corner radius conversion
-            panel.style.corner_radius = CornerRadius {
-                top_left: fur_element
-                    .style
-                    .corner_radius
-                    .top_left
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                top_right: fur_element
-                    .style
-                    .corner_radius
-                    .top_right
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                bottom_left: fur_element
-                    .style
-                    .corner_radius
-                    .bottom_left
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                bottom_right: fur_element
-                    .style
-                    .corner_radius
-                    .bottom_right
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
+            // panel-specific props
+            panel.props.background_color = fur_element.style.background_color.clone();
+            panel.props.corner_radius = CornerRadius {
+                top_left: fur_element.style.corner_radius.top_left.unwrap_or(0.0),
+                top_right: fur_element.style.corner_radius.top_right.unwrap_or(0.0),
+                bottom_left: fur_element.style.corner_radius.bottom_left.unwrap_or(0.0),
+                bottom_right: fur_element.style.corner_radius.bottom_right.unwrap_or(0.0),
             };
-
-            // Margin conversion
-            panel.margin = EdgeInsets {
-                left: fur_element
-                    .style
-                    .margin
-                    .left
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                right: fur_element
-                    .style
-                    .margin
-                    .right
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                top: fur_element
-                    .style
-                    .margin
-                    .top
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                bottom: fur_element
-                    .style
-                    .margin
-                    .bottom
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-            };
-
-            // Padding conversion
-            panel.padding = EdgeInsets {
-                left: fur_element
-                    .style
-                    .padding
-                    .left
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                right: fur_element
-                    .style
-                    .padding
-                    .right
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                top: fur_element
-                    .style
-                    .padding
-                    .top
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-                bottom: fur_element
-                    .style
-                    .padding
-                    .bottom
-                    .map(|v| v as f32)
-                    .unwrap_or(0.0),
-            };
-
-            // Size
-            panel.size.x = fur_element.style.size.x as f32;
-            panel.size.y = fur_element.style.size.y as f32;
-
-            // Border
-            panel.style.border_thickness = fur_element
-                .style
-                .border
-                .map(|v| v as f32)
-                .unwrap_or(0.0);
-            if let Some(bd_color) = &fur_element.style.border_color {
-                panel.style.border_color = Some(bd_color.clone());
-            }
-
-            // --- Anchor + Translation ---
-            let tx = fur_element.style.translation.x.unwrap_or(0.0) as f32;
-            let ty = fur_element.style.translation.y.unwrap_or(0.0) as f32;
-
-            let (anchor_x, anchor_y) = match fur_element.style.anchor {
-                FurAnchor::TopLeft => (
-                    -VIRTUAL_WIDTH / 2.0 + panel.size.x * 0.5,
-                    VIRTUAL_HEIGHT / 2.0 - panel.size.y * 0.5,
-                ),
-                FurAnchor::Top => (0.0, VIRTUAL_HEIGHT / 2.0 - panel.size.y * 0.5),
-                FurAnchor::TopRight => (
-                    VIRTUAL_WIDTH / 2.0 - panel.size.x * 0.5,
-                    VIRTUAL_HEIGHT / 2.0 - panel.size.y * 0.5,
-                ),
-                FurAnchor::Left => (-VIRTUAL_WIDTH / 2.0 + panel.size.x * 0.5, 0.0),
-                FurAnchor::Center => (0.0, 0.0),
-                FurAnchor::Right => (VIRTUAL_WIDTH / 2.0 - panel.size.x * 0.5, 0.0),
-                FurAnchor::BottomLeft => (
-                    -VIRTUAL_WIDTH / 2.0 + panel.size.x * 0.5,
-                    -VIRTUAL_HEIGHT / 2.0 + panel.size.y * 0.5,
-                ),
-                FurAnchor::Bottom => (0.0, -VIRTUAL_HEIGHT / 2.0 + panel.size.y * 0.5),
-                FurAnchor::BottomRight => (
-                    VIRTUAL_WIDTH / 2.0 - panel.size.x * 0.5,
-                    -VIRTUAL_HEIGHT / 2.0 + panel.size.y * 0.5,
-                ),
-            };
-
-            panel.transform.position.x = anchor_x + tx;
-            panel.transform.position.y = anchor_y + ty;
-
-            panel.transform.scale.x = fur_element.style.transform.scale.x as f32;
-            panel.transform.scale.y = fur_element.style.transform.scale.y as f32;
+            panel.props.border_color = fur_element.style.border_color.clone();
+            panel.props.border_thickness = fur_element.style.border.unwrap_or(0.0);
 
             Some(UIElement::Panel(panel))
         }
@@ -271,28 +170,94 @@ pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
     }
 }
 
-/// Update transforms recursively (anchor already applied in element conversion)
 pub fn update_global_transforms(
     elements: &mut IndexMap<String, UIElement>,
     current_id: &str,
     parent_global: &Transform2D,
 ) {
-    if let Some(element) = elements.get_mut(current_id) {
-        let local = element.get_transform().clone();
+    // First, figure out parent size without holding a mutable borrow
+    let parent_size = {
+        let parent_id = elements
+            .get(current_id)
+            .and_then(|el| el.get_parent().cloned());
 
+        if let Some(parent_id) = parent_id {
+            if let Some(parent) = elements.get(&parent_id) {
+                *parent.get_size()
+            } else {
+                Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
+            }
+        } else {
+            Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
+        }
+    };
+
+    // Now borrow mutably
+    if let Some(element) = elements.get_mut(current_id) {
+        let mut local = element.get_transform().clone();
+
+        let child_size = *element.get_size();
+        let pivot = *element.get_pivot();
+
+let (anchor_x, anchor_y) = match element.get_anchor() {
+    // Corners
+    FurAnchor::TopLeft => (
+        -parent_size.x * 0.5 + child_size.x * pivot.x,
+        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
+    ),
+    FurAnchor::TopRight => (
+        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
+        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
+    ),
+    FurAnchor::BottomLeft => (
+        -parent_size.x * 0.5 + child_size.x * pivot.x,
+        -parent_size.y * 0.5 + child_size.y * pivot.y,
+    ),
+    FurAnchor::BottomRight => (
+        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
+        -parent_size.y * 0.5 + child_size.y * pivot.y,
+    ),
+
+    // Edges
+    FurAnchor::Top => (
+        0.0,
+        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
+    ),
+    FurAnchor::Bottom => (
+        0.0,
+        -parent_size.y * 0.5 + child_size.y * pivot.y,
+    ),
+    FurAnchor::Left => (
+        -parent_size.x * 0.5 + child_size.x * pivot.x,
+        0.0,
+    ),
+    FurAnchor::Right => (
+        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
+        0.0,
+    ),
+
+    // Center
+    FurAnchor::Center => (
+        0.0,
+        0.0,
+    ),
+};
+
+        // Apply anchor offset + user translation
+        local.position.x = anchor_x + local.position.x;
+        local.position.y = anchor_y + local.position.y;
+
+        // --- Combine with parent transform ---
         let mut global = Transform2D::default();
 
-        // Combine scales
         global.scale.x = parent_global.scale.x * local.scale.x;
         global.scale.y = parent_global.scale.y * local.scale.y;
 
-        // Combine positions
         global.position.x =
             parent_global.position.x + (local.position.x * parent_global.scale.x);
         global.position.y =
             parent_global.position.y + (local.position.y * parent_global.scale.y);
 
-        // Combine rotation
         global.rotation = parent_global.rotation + local.rotation;
 
         element.set_global_transform(global.clone());

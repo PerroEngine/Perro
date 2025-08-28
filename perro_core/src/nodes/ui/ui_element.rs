@@ -2,12 +2,7 @@ use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    ast::FurStyle,
-    ui_elements::ui_panel::*,
-    Transform2D,
-    Vector2,
-};
+use crate::{ast::FurAnchor, ui_elements::ui_panel::UIPanel, Color, Transform2D, Vector2};
 
 /// Insets for margin/padding
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -39,6 +34,10 @@ pub struct BaseUIElement {
 
     #[serde(default)]
     pub padding: EdgeInsets,
+
+    // 🔹 Shared props
+    pub anchor: FurAnchor,
+    pub modulate: Option<Color>,
 }
 
 impl Default for BaseUIElement {
@@ -54,6 +53,8 @@ impl Default for BaseUIElement {
             pivot: Vector2::new(0.5, 0.5),
             margin: EdgeInsets::default(),
             padding: EdgeInsets::default(),
+            anchor: FurAnchor::Center,
+            modulate: None,
         }
     }
 }
@@ -88,6 +89,14 @@ pub trait BaseElement {
     // Pivot
     fn get_pivot(&self) -> &Vector2;
     fn set_pivot(&mut self, pivot: Vector2);
+
+    // Anchor
+    fn get_anchor(&self) -> &FurAnchor;
+    fn set_anchor(&mut self, anchor: FurAnchor);
+
+    // Modulate
+    fn get_modulate(&self) -> Option<&crate::Color>;
+    fn set_modulate(&mut self, color: Option<crate::Color>);
 }
 
 /// Macro to implement BaseElement for a UI type
@@ -96,63 +105,73 @@ macro_rules! impl_ui_element {
     ($ty:ty) => {
         impl crate::ui_element::BaseElement for $ty {
             fn get_name(&self) -> &str {
-                self.name.as_deref().unwrap_or("")
+                self.base.name.as_deref().unwrap_or("")
             }
             fn set_name(&mut self, name: &str) {
-                self.name = Some(name.to_string());
+                self.base.name = Some(name.to_string());
             }
 
             fn get_visible(&self) -> bool {
-                self.visible
+                self.base.visible
             }
             fn set_visible(&mut self, visible: bool) {
-                self.visible = visible;
+                self.base.visible = visible;
             }
 
             fn get_parent(&self) -> Option<&String> {
-                self.parent.as_ref()
+                self.base.parent.as_ref()
             }
             fn set_parent(&mut self, parent: Option<String>) {
-                self.parent = parent;
+                self.base.parent = parent;
             }
 
             fn get_children(&self) -> &[String] {
-                &self.children
+                &self.base.children
             }
             fn set_children(&mut self, children: Vec<String>) {
-                self.children = children;
+                self.base.children = children;
             }
 
-            // Local transform
             fn get_transform(&self) -> &crate::Transform2D {
-                &self.transform
+                &self.base.transform
             }
             fn get_transform_mut(&mut self) -> &mut crate::Transform2D {
-                &mut self.transform
+                &mut self.base.transform
             }
 
-            // Global transform
             fn get_global_transform(&self) -> &crate::Transform2D {
-                &self.global_transform
+                &self.base.global_transform
             }
             fn set_global_transform(&mut self, transform: crate::Transform2D) {
-                self.global_transform = transform;
+                self.base.global_transform = transform;
             }
 
-            // Size
             fn get_size(&self) -> &crate::Vector2 {
-                &self.size
+                &self.base.size
             }
             fn set_size(&mut self, size: crate::Vector2) {
-                self.size = size;
+                self.base.size = size;
             }
 
-            // Pivot
             fn get_pivot(&self) -> &crate::Vector2 {
-                &self.pivot
+                &self.base.pivot
             }
             fn set_pivot(&mut self, pivot: crate::Vector2) {
-                self.pivot = pivot;
+                self.base.pivot = pivot;
+            }
+
+            fn get_anchor(&self) -> &crate::ast::FurAnchor {
+                &self.base.anchor
+            }
+            fn set_anchor(&mut self, anchor: crate::ast::FurAnchor) {
+                self.base.anchor = anchor;
+            }
+
+            fn get_modulate(&self) -> Option<&crate::Color> {
+                self.base.modulate.as_ref()
+            }
+            fn set_modulate(&mut self, color: Option<crate::Color>) {
+                self.base.modulate = color;
             }
         }
     };

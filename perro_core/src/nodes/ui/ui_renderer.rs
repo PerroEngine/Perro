@@ -24,15 +24,15 @@ pub fn render_ui(ui_node: &Ui, gfx: &mut Graphics, pass: &mut RenderPass<'_>) {
     }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics, pass: &mut RenderPass<'_>) {
-    // Extract style info
+    // Extract props info
     let background_color = panel
-        .style
+        .props
         .background_color
         .clone()
         .unwrap_or(Color::new(0, 0, 0, 0));
-    let corner_radius = panel.style.corner_radius.clone();
-    let border_color = panel.style.border_color.clone();
-    let border_thickness = panel.style.border_thickness;
+    let corner_radius = panel.props.corner_radius;
+    let border_color = panel.props.border_color.clone();
+    let border_thickness = panel.props.border_thickness;
 
     // Step 1: Draw background rectangle
     gfx.draw_rect(
