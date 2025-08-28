@@ -1,7 +1,6 @@
 use crate::{
-    api::ScriptApi, asset_io::{get_project_root, ProjectRoot}, ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui, Graphics, Node, ScriptProvider, Sprite2D, Vector2
+    api::ScriptApi, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, ScriptProvider, Sprite2D, Vector2
 };
-use crate::asset_io::{load_asset, save_asset}; // ✅ use asset_io
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -141,6 +140,14 @@ impl<P: ScriptProvider> Scene<P> {
 
     pub fn tick(&mut self, gfx: &mut Graphics, pass: &mut RenderPass<'_>, delta: f32) {
         self.process(delta);
+
+        // ✅ update UI layout before rendering
+        for (_, node) in &mut self.data.nodes {
+            if let SceneNode::UI(ui_node) = node {
+                update_ui_layout(ui_node);
+            }
+        }
+
         self.render(gfx, pass);
     }
 
@@ -336,7 +343,6 @@ use crate::registry::DllScriptProvider;
 pub fn default_perro_rust_path() -> io::Result<PathBuf> {
     match get_project_root() {
         ProjectRoot::Disk { root, .. } => {
-            // In dev/editor mode, we use hotreload profile
             let profile = "hotreload";
 
             let mut path = root;
@@ -363,12 +369,10 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
     }
 }
 
-
 impl Scene<DllScriptProvider> {
-  pub fn from_project(project: &Project) -> anyhow::Result<Self> {
+    pub fn from_project(project: &Project) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
 
-        // ✅ unwrap the Result<PathBuf>
         let lib_path = default_perro_rust_path()?;
         println!("Loading script library from {:?}", lib_path);
 

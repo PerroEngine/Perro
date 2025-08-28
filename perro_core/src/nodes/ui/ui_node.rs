@@ -24,6 +24,8 @@ pub struct Ui {
 
     #[serde(skip)]
     pub elements: IndexMap<String, UIElement>,
+    #[serde(skip)]
+    pub root_ids: Vec<String>,
 
     #[serde(default = "default_visible", skip_serializing_if = "is_default_visible")]
     pub visible: bool,
@@ -42,6 +44,7 @@ impl Ui {
       fur_path: None,
       props: HashMap::new(),
       elements: IndexMap::new(),
+      root_ids: Vec::new(),
       }
     }
     pub fn get_visible(&self) -> bool {

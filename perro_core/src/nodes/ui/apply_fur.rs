@@ -148,123 +148,13 @@ pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
         }
     }
 
-    // Step 2: Find children of <UI> tags in the AST
-    let mut root_ids = Vec::new();
-    for fur_element in fur_elements {
-        if fur_element.tag_name == "UI" {
-            for child in &fur_element.children {
-                if let FurNode::Element(child_element) = child {
-                    root_ids.push(child_element.id.clone());
-                }
-            }
-        }
-    }
+    // Step 2: Collect root IDs (elements with no parent)
+    ui.root_ids.clear();
 
-    // Step 3: Update global transforms starting from each <UI> child
-    for root_id in root_ids {
-        update_global_transforms(
-            &mut ui.elements,
-            &root_id,
-            &Transform2D::default(), // identity transform
-        );
-    }
-}
-
-pub fn update_global_transforms(
-    elements: &mut IndexMap<String, UIElement>,
-    current_id: &str,
-    parent_global: &Transform2D,
-) {
-    // First, figure out parent size without holding a mutable borrow
-    let parent_size = {
-        let parent_id = elements
-            .get(current_id)
-            .and_then(|el| el.get_parent().cloned());
-
-        if let Some(parent_id) = parent_id {
-            if let Some(parent) = elements.get(&parent_id) {
-                *parent.get_size()
-            } else {
-                Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
-            }
-        } else {
-            Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
-        }
-    };
-
-    // Now borrow mutably
-    if let Some(element) = elements.get_mut(current_id) {
-        let mut local = element.get_transform().clone();
-
-        let child_size = *element.get_size();
-        let pivot = *element.get_pivot();
-
-let (anchor_x, anchor_y) = match element.get_anchor() {
-    // Corners
-    FurAnchor::TopLeft => (
-        -parent_size.x * 0.5 + child_size.x * pivot.x,
-        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-    ),
-    FurAnchor::TopRight => (
-        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-    ),
-    FurAnchor::BottomLeft => (
-        -parent_size.x * 0.5 + child_size.x * pivot.x,
-        -parent_size.y * 0.5 + child_size.y * pivot.y,
-    ),
-    FurAnchor::BottomRight => (
-        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-        -parent_size.y * 0.5 + child_size.y * pivot.y,
-    ),
-
-    // Edges
-    FurAnchor::Top => (
-        0.0,
-        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-    ),
-    FurAnchor::Bottom => (
-        0.0,
-        -parent_size.y * 0.5 + child_size.y * pivot.y,
-    ),
-    FurAnchor::Left => (
-        -parent_size.x * 0.5 + child_size.x * pivot.x,
-        0.0,
-    ),
-    FurAnchor::Right => (
-        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-        0.0,
-    ),
-
-    // Center
-    FurAnchor::Center => (
-        0.0,
-        0.0,
-    ),
-};
-
-        // Apply anchor offset + user translation
-        local.position.x = anchor_x + local.position.x;
-        local.position.y = anchor_y + local.position.y;
-
-        // --- Combine with parent transform ---
-        let mut global = Transform2D::default();
-
-        global.scale.x = parent_global.scale.x * local.scale.x;
-        global.scale.y = parent_global.scale.y * local.scale.y;
-
-        global.position.x =
-            parent_global.position.x + (local.position.x * parent_global.scale.x);
-        global.position.y =
-            parent_global.position.y + (local.position.y * parent_global.scale.y);
-
-        global.rotation = parent_global.rotation + local.rotation;
-
-        element.set_global_transform(global.clone());
-
-        // Recurse into children
-        for child_id in element.get_children().to_vec() {
-            update_global_transforms(elements, &child_id, &global);
+    for (id, element) in &ui.elements {
+        if element.get_parent().is_none() {
+            ui.root_ids.push(id.clone());
         }
     }
 }
+
