@@ -30,6 +30,21 @@ pub struct FurStyle {
     pub transform: Transform2D,
     pub border: Option<f32>,
     pub border_color: Option<Color>,
+    pub anchor: FurAnchor
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FurAnchor {
+    TopLeft,
+    Top,
+    TopRight,
+    Left,
+    #[default]
+    Center,
+    Right,
+    BottomLeft,
+    Bottom,
+    BottomRight,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -24,8 +24,8 @@ pub struct TextureManager {
 }
 
 
-const VIRTUAL_WIDTH: f32 = 1920.0;
-const VIRTUAL_HEIGHT: f32 = 1080.0;
+pub const VIRTUAL_WIDTH: f32 = 1920.0;
+pub const VIRTUAL_HEIGHT: f32 = 1080.0;
 
 impl fmt::Debug for TextureManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

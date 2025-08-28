@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    ast::{FurElement, FurNode, FurStyle},
+    ast::{FurAnchor, FurElement, FurNode, FurStyle},
     lexer::{Lexer, Token},
     Color,
 };
@@ -339,6 +339,26 @@ fn parse_style_string(input: &str) -> Result<FurStyle, String> {
 
             "border-color" | "border-c" => {
                 style.border_color = Some(parse_color_with_opacity(value)?);
+            }
+
+            "anchor" => {
+                style.anchor = match value {
+                    "c" => FurAnchor::Center,
+                    "t" => FurAnchor::Top,
+                    "b" => FurAnchor::Bottom,
+                    "l" => FurAnchor::Left,
+                    "r" => FurAnchor::Right,
+                    "tl" => FurAnchor::TopLeft,
+                    "tr" => FurAnchor::TopRight,
+                    "bl" => FurAnchor::BottomLeft,
+                    "br" => FurAnchor::BottomRight,
+                    _ => {
+                        return Err(format!(
+                            "Invalid anchor value '{}'. Expected one of: c, t, b, l, r, tl, tr, bl, br",
+                            value
+                        ));
+                    }
+                };
             }
 
             _ => {

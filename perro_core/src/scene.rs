@@ -1,5 +1,5 @@
 use crate::{
-    api::ScriptApi, asset_io::{get_project_root, ProjectRoot}, ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, parse_fur::{build_ui_elements_from_fur, parse_fur_file}, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui, Graphics, Node, ScriptProvider, Sprite2D, Vector2
+    api::ScriptApi, asset_io::{get_project_root, ProjectRoot}, ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui, Graphics, Node, ScriptProvider, Sprite2D, Vector2
 };
 use crate::asset_io::{load_asset, save_asset}; // ✅ use asset_io
 

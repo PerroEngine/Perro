@@ -3,7 +3,14 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use crate::{
-    asset_io::load_asset, ast::{FurElement, FurNode}, parser::FurParser, ui_element::{BaseElement, EdgeInsets, UIElement}, ui_elements::ui_panel::{CornerRadius, UIPanel}, ui_node::Ui, Transform2D
+    asset_io::load_asset,
+    ast::{FurAnchor, FurElement, FurNode},
+    graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
+    parser::FurParser,
+    ui_element::{BaseElement, EdgeInsets, UIElement},
+    ui_elements::ui_panel::{CornerRadius, UIPanel},
+    ui_node::Ui,
+    Transform2D,
 };
 
 /// Parses a `.fur` file into a `Vec<FurNode>` AST
@@ -17,7 +24,8 @@ pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     let mut parser = FurParser::new(&code)
         .map_err(|e| format!("Failed to init FurParser: {}", e))?;
 
-    let ast = parser.parse()
+    let ast = parser
+        .parse()
         .map_err(|e| format!("Failed to parse .fur file {}: {}", path, e))?;
 
     Ok(ast)
@@ -26,9 +34,7 @@ pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
 /// Converts a single FurElement into a UIElement (without children)
 fn convert_fur_element_to_ui_element(fur_element: &FurElement) -> Option<UIElement> {
     match fur_element.tag_name.as_str() {
-        "UI" => {
-            None
-        }
+        "UI" => None,
         "Panel" => {
             let mut panel = UIPanel::default();
 
@@ -40,49 +46,141 @@ fn convert_fur_element_to_ui_element(fur_element: &FurElement) -> Option<UIEleme
                 panel.style.background_color = Some(bg_color.clone());
             }
 
-              if let Some(mod_color) = &fur_element.style.modulate {
+            if let Some(mod_color) = &fur_element.style.modulate {
                 panel.style.modulate = Some(mod_color.clone());
             }
 
             // Corner radius conversion
             panel.style.corner_radius = CornerRadius {
-                top_left: fur_element.style.corner_radius.top_left.map(|v| v as f32).unwrap_or(0.0),
-                top_right: fur_element.style.corner_radius.top_right.map(|v| v as f32).unwrap_or(0.0),
-                bottom_left: fur_element.style.corner_radius.bottom_left.map(|v| v as f32).unwrap_or(0.0),
-                bottom_right: fur_element.style.corner_radius.bottom_right.map(|v| v as f32).unwrap_or(0.0),
+                top_left: fur_element
+                    .style
+                    .corner_radius
+                    .top_left
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                top_right: fur_element
+                    .style
+                    .corner_radius
+                    .top_right
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                bottom_left: fur_element
+                    .style
+                    .corner_radius
+                    .bottom_left
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                bottom_right: fur_element
+                    .style
+                    .corner_radius
+                    .bottom_right
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
             };
 
             // Margin conversion
             panel.margin = EdgeInsets {
-                left: fur_element.style.margin.left.map(|v| v as f32).unwrap_or(0.0),
-                right: fur_element.style.margin.right.map(|v| v as f32).unwrap_or(0.0),
-                top: fur_element.style.margin.top.map(|v| v as f32).unwrap_or(0.0),
-                bottom: fur_element.style.margin.bottom.map(|v| v as f32).unwrap_or(0.0),
+                left: fur_element
+                    .style
+                    .margin
+                    .left
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                right: fur_element
+                    .style
+                    .margin
+                    .right
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                top: fur_element
+                    .style
+                    .margin
+                    .top
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                bottom: fur_element
+                    .style
+                    .margin
+                    .bottom
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
             };
 
             // Padding conversion
             panel.padding = EdgeInsets {
-                left: fur_element.style.padding.left.map(|v| v as f32).unwrap_or(0.0),
-                right: fur_element.style.padding.right.map(|v| v as f32).unwrap_or(0.0),
-                top: fur_element.style.padding.top.map(|v| v as f32).unwrap_or(0.0),
-                bottom: fur_element.style.padding.bottom.map(|v| v as f32).unwrap_or(0.0),
+                left: fur_element
+                    .style
+                    .padding
+                    .left
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                right: fur_element
+                    .style
+                    .padding
+                    .right
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                top: fur_element
+                    .style
+                    .padding
+                    .top
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
+                bottom: fur_element
+                    .style
+                    .padding
+                    .bottom
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0),
             };
 
-            // Translation conversion
-            panel.transform.position.x = fur_element.style.translation.x.map(|v| v as f32).unwrap_or(0.0);
-            panel.transform.position.y = fur_element.style.translation.y.map(|v| v as f32).unwrap_or(0.0);
-
-            panel.transform.scale.x = fur_element.style.transform.scale.x as f32;
-            panel.transform.scale.y = fur_element.style.transform.scale.y as f32;
-
-            //size
+            // Size
             panel.size.x = fur_element.style.size.x as f32;
             panel.size.y = fur_element.style.size.y as f32;
 
-            panel.style.border_thickness = fur_element.style.border.map(|v| v as f32).unwrap_or(0.0);
+            // Border
+            panel.style.border_thickness = fur_element
+                .style
+                .border
+                .map(|v| v as f32)
+                .unwrap_or(0.0);
             if let Some(bd_color) = &fur_element.style.border_color {
-                    panel.style.border_color = Some(bd_color.clone());
-                }
+                panel.style.border_color = Some(bd_color.clone());
+            }
+
+            // --- Anchor + Translation ---
+            let tx = fur_element.style.translation.x.unwrap_or(0.0) as f32;
+            let ty = fur_element.style.translation.y.unwrap_or(0.0) as f32;
+
+            let (anchor_x, anchor_y) = match fur_element.style.anchor {
+                FurAnchor::TopLeft => (
+                    -VIRTUAL_WIDTH / 2.0 + panel.size.x * 0.5,
+                    VIRTUAL_HEIGHT / 2.0 - panel.size.y * 0.5,
+                ),
+                FurAnchor::Top => (0.0, VIRTUAL_HEIGHT / 2.0 - panel.size.y * 0.5),
+                FurAnchor::TopRight => (
+                    VIRTUAL_WIDTH / 2.0 - panel.size.x * 0.5,
+                    VIRTUAL_HEIGHT / 2.0 - panel.size.y * 0.5,
+                ),
+                FurAnchor::Left => (-VIRTUAL_WIDTH / 2.0 + panel.size.x * 0.5, 0.0),
+                FurAnchor::Center => (0.0, 0.0),
+                FurAnchor::Right => (VIRTUAL_WIDTH / 2.0 - panel.size.x * 0.5, 0.0),
+                FurAnchor::BottomLeft => (
+                    -VIRTUAL_WIDTH / 2.0 + panel.size.x * 0.5,
+                    -VIRTUAL_HEIGHT / 2.0 + panel.size.y * 0.5,
+                ),
+                FurAnchor::Bottom => (0.0, -VIRTUAL_HEIGHT / 2.0 + panel.size.y * 0.5),
+                FurAnchor::BottomRight => (
+                    VIRTUAL_WIDTH / 2.0 - panel.size.x * 0.5,
+                    -VIRTUAL_HEIGHT / 2.0 + panel.size.y * 0.5,
+                ),
+            };
+
+            panel.transform.position.x = anchor_x + tx;
+            panel.transform.position.y = anchor_y + ty;
+
+            panel.transform.scale.x = fur_element.style.transform.scale.x as f32;
+            panel.transform.scale.y = fur_element.style.transform.scale.y as f32;
 
             Some(UIElement::Panel(panel))
         }
@@ -107,7 +205,10 @@ fn convert_fur_element_to_ui_elements(
         let mut results = Vec::new();
         for child_node in &fur_element.children {
             if let FurNode::Element(child_element) = child_node {
-                results.extend(convert_fur_element_to_ui_elements(child_element, parent_id.clone()));
+                results.extend(convert_fur_element_to_ui_elements(
+                    child_element,
+                    parent_id.clone(),
+                ));
             }
         }
         return results;
@@ -123,7 +224,10 @@ fn convert_fur_element_to_ui_elements(
     for child_node in &fur_element.children {
         if let FurNode::Element(child_element) = child_node {
             children_ids.push(child_element.id.clone());
-            results.extend(convert_fur_element_to_ui_elements(child_element, Some(id.clone())));
+            results.extend(convert_fur_element_to_ui_elements(
+                child_element,
+                Some(id.clone()),
+            ));
         }
     }
 
@@ -134,8 +238,6 @@ fn convert_fur_element_to_ui_elements(
 
     results
 }
-
-
 
 /// Entry point to build UI elements in `Ui` from the root FurElements AST slice
 pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
@@ -151,7 +253,6 @@ pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
     let mut root_ids = Vec::new();
     for fur_element in fur_elements {
         if fur_element.tag_name == "UI" {
-          
             for child in &fur_element.children {
                 if let FurNode::Element(child_element) = child {
                     root_ids.push(child_element.id.clone());
@@ -170,13 +271,14 @@ pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
     }
 }
 
+/// Update transforms recursively (anchor already applied in element conversion)
 pub fn update_global_transforms(
     elements: &mut IndexMap<String, UIElement>,
     current_id: &str,
     parent_global: &Transform2D,
 ) {
     if let Some(element) = elements.get_mut(current_id) {
-        let local = element.get_transform();
+        let local = element.get_transform().clone();
 
         let mut global = Transform2D::default();
 
@@ -195,6 +297,7 @@ pub fn update_global_transforms(
 
         element.set_global_transform(global.clone());
 
+        // Recurse into children
         for child_id in element.get_children().to_vec() {
             update_global_transforms(elements, &child_id, &global);
         }

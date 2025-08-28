@@ -1,10 +1,15 @@
 use enum_dispatch::enum_dispatch;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{ui_elements::ui_panel::*, Transform2D, Vector2};
+use crate::{
+    ast::FurStyle,
+    ui_elements::ui_panel::*,
+    Transform2D,
+    Vector2,
+};
 
-
+/// Insets for margin/padding
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct EdgeInsets {
     pub left: f32,
@@ -13,11 +18,7 @@ pub struct EdgeInsets {
     pub bottom: f32,
 }
 
-
-
-
-
-
+/// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaseUIElement {
     pub name: Option<String>,
@@ -28,11 +29,9 @@ pub struct BaseUIElement {
     pub visible: bool,
 
     pub transform: Transform2D,
-
     pub global_transform: Transform2D,
 
     pub size: Vector2,
-    
     pub pivot: Vector2,
 
     #[serde(default)]
@@ -40,7 +39,6 @@ pub struct BaseUIElement {
 
     #[serde(default)]
     pub padding: EdgeInsets,
-
 }
 
 impl Default for BaseUIElement {
@@ -53,15 +51,14 @@ impl Default for BaseUIElement {
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
             size: Vector2::new(32.0, 32.0),
-            pivot: Vector2::new(0.5,0.5),
+            pivot: Vector2::new(0.5, 0.5),
             margin: EdgeInsets::default(),
             padding: EdgeInsets::default(),
         }
     }
 }
 
-
-
+/// Trait implemented by all UI elements
 #[enum_dispatch]
 pub trait BaseElement {
     fn get_name(&self) -> &str;
@@ -93,11 +90,11 @@ pub trait BaseElement {
     fn set_pivot(&mut self, pivot: Vector2);
 }
 
-
+/// Macro to implement BaseElement for a UI type
 #[macro_export]
 macro_rules! impl_ui_element {
     ($ty:ty) => {
-        impl crate::ui::ui_element::BaseElement for $ty {
+        impl crate::ui_element::BaseElement for $ty {
             fn get_name(&self) -> &str {
                 self.name.as_deref().unwrap_or("")
             }
@@ -161,7 +158,7 @@ macro_rules! impl_ui_element {
     };
 }
 
-
+/// Enum of all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[enum_dispatch(BaseElement)]
 pub enum UIElement {
