@@ -1,6 +1,6 @@
 # Ignore Perro build artifacts
 target/
 
-toolchains/
-runtimes/
-core/
+/.perro/project/src/key.rs
+
+/assets.brk
