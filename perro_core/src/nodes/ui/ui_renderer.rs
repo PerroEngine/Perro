@@ -1,82 +1,89 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use wgpu::RenderPass;
 
-use crate::{ast::FurAnchor, graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, ui_element::{BaseElement, UIElement}, ui_elements::ui_panel::UIPanel, ui_node::Ui, Color, Graphics, Transform2D, Vector2};
-
+use crate::{
+    ast::FurAnchor, 
+    graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, 
+    ui_element::{BaseElement, UIElement}, 
+    ui_elements::ui_panel::UIPanel, 
+    ui_node::Ui, 
+    Color, Graphics, Transform2D, Vector2
+};
 
 pub fn update_global_transforms(
-    elements: &mut IndexMap<String, UIElement>,
-    current_id: &str,
+    elements: &mut IndexMap<Uuid, UIElement>,
+    current_id: &Uuid,
     parent_global: &Transform2D,
 ) {
-    // First, figure out parent size without holding a mutable borrow
-    let parent_size = {
+    
+    // First, figure out parent size and z without holding a mutable borrow
+    let (parent_size, parent_z) = {
         let parent_id = elements
             .get(current_id)
-            .and_then(|el| el.get_parent().cloned());
+            .and_then(|el| el.get_parent());
 
         if let Some(parent_id) = parent_id {
             if let Some(parent) = elements.get(&parent_id) {
-                *parent.get_size()
+                (*parent.get_size(), parent.get_z_index())
             } else {
-                Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
+                (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
             }
         } else {
-            Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
+            (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
         }
     };
 
     // Now borrow mutably
     if let Some(element) = elements.get_mut(current_id) {
+        
         let mut local = element.get_transform().clone();
+        let local_z = element.get_z_index();
 
         let child_size = *element.get_size();
         let pivot = *element.get_pivot();
 
-let (anchor_x, anchor_y) = match element.get_anchor() {
-    // Corners
-    FurAnchor::TopLeft => (
-        -parent_size.x * 0.5 + child_size.x * pivot.x,
-        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-    ),
-    FurAnchor::TopRight => (
-        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-    ),
-    FurAnchor::BottomLeft => (
-        -parent_size.x * 0.5 + child_size.x * pivot.x,
-        -parent_size.y * 0.5 + child_size.y * pivot.y,
-    ),
-    FurAnchor::BottomRight => (
-        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-        -parent_size.y * 0.5 + child_size.y * pivot.y,
-    ),
+        let (anchor_x, anchor_y) = match element.get_anchor() {
+            // Corners
+            FurAnchor::TopLeft => (
+                -parent_size.x * 0.5 + child_size.x * pivot.x,
+                parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
+            ),
+            FurAnchor::TopRight => (
+                parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
+                parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
+            ),
+            FurAnchor::BottomLeft => (
+                -parent_size.x * 0.5 + child_size.x * pivot.x,
+                -parent_size.y * 0.5 + child_size.y * pivot.y,
+            ),
+            FurAnchor::BottomRight => (
+                parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
+                -parent_size.y * 0.5 + child_size.y * pivot.y,
+            ),
 
-    // Edges
-    FurAnchor::Top => (
-        0.0,
-        parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-    ),
-    FurAnchor::Bottom => (
-        0.0,
-        -parent_size.y * 0.5 + child_size.y * pivot.y,
-    ),
-    FurAnchor::Left => (
-        -parent_size.x * 0.5 + child_size.x * pivot.x,
-        0.0,
-    ),
-    FurAnchor::Right => (
-        parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-        0.0,
-    ),
+            // Edges
+            FurAnchor::Top => (
+                0.0,
+                parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
+            ),
+            FurAnchor::Bottom => (
+                0.0,
+                -parent_size.y * 0.5 + child_size.y * pivot.y,
+            ),
+            FurAnchor::Left => (
+                -parent_size.x * 0.5 + child_size.x * pivot.x,
+                0.0,
+            ),
+            FurAnchor::Right => (
+                parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
+                0.0,
+            ),
 
-    // Center
-    FurAnchor::Center => (
-        0.0,
-        0.0,
-    ),
-};
+            // Center
+            FurAnchor::Center => (0.0, 0.0),
+        };
 
         // Apply anchor offset + user translation
         local.position.x = anchor_x + local.position.x;
@@ -97,61 +104,70 @@ let (anchor_x, anchor_y) = match element.get_anchor() {
 
         element.set_global_transform(global.clone());
 
-        // Recurse into children
+        // Set inherited z-index: local z + parent z
+        let global_z = local_z + parent_z + 1;
+        element.set_z_index(global_z);
+
+        println!("Updating {:?} -> {:?}", current_id, element.get_global_transform().position);
+
+        // Recurse into children (pass the current element's global z as parent_z)
         for child_id in element.get_children().to_vec() {
             update_global_transforms(elements, &child_id, &global);
         }
     }
 }
+
 pub fn update_ui_layout(ui_node: &mut Ui) {
     for root_id in &ui_node.root_ids {
-        update_global_transforms(&mut ui_node.elements, root_id.as_str(), &Transform2D::default());
+        update_global_transforms(&mut ui_node.elements, root_id, &Transform2D::default());
     }
 }
 
-pub fn render_ui(ui_node: &Ui, gfx: &mut Graphics, pass: &mut RenderPass<'_>) {
+pub fn render_ui(ui_node: &mut Ui, gfx: &mut Graphics) {
+    update_ui_layout(ui_node); // now works
     for (_, element) in &ui_node.elements {
         if !element.get_visible() {
             continue;
         }
         match element {
-            UIElement::Panel(panel) => render_panel(panel, gfx, pass),
+            UIElement::Panel(panel) => render_panel(panel, gfx),
         }
     }
 }
 
-fn render_panel(panel: &UIPanel, gfx: &mut Graphics, pass: &mut RenderPass<'_>) {
-    // Extract props info
-    let background_color = panel
-        .props
-        .background_color
-        .clone()
-        .unwrap_or(Color::new(0, 0, 0, 0));
+fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
+    let background_color = panel.props.background_color.clone().unwrap_or(Color::new(0, 0, 0, 0));
     let corner_radius = panel.props.corner_radius;
     let border_color = panel.props.border_color.clone();
     let border_thickness = panel.props.border_thickness;
+    let z_index = panel.base.z_index;
+    let bg_id = panel.id;
+    let border_id = Uuid::new_v5(&bg_id, b"border");
 
-    // Step 1: Draw background rectangle
     gfx.draw_rect(
-        pass,
-        panel.global_transform.clone(),
-        panel.size.clone(),
-        panel.pivot,
+        bg_id,
+        panel.base.global_transform.clone(),
+        panel.base.size,
+        panel.base.pivot,
         background_color,
         Some(corner_radius),
+        0.0,
+        false,
+        z_index, // Pass z-index
     );
 
-    // Step 2: Optional border (only if thickness > 0 and color is set)
     if border_thickness > 0.0 {
         if let Some(border_color) = border_color {
-            gfx.draw_border(
-                pass,
-                panel.global_transform.clone(),
-                panel.size.clone(),
-                panel.pivot,
+            gfx.draw_rect(
+                border_id,
+                panel.base.global_transform.clone(),
+                panel.base.size,
+                panel.base.pivot,
                 border_color,
-                border_thickness,
                 Some(corner_radius),
+                border_thickness,
+                true,
+                z_index + 1, // Border slightly above background
             );
         }
     }

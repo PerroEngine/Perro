@@ -16,10 +16,10 @@ pub struct EdgeInsets {
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaseUIElement {
-    pub name: Option<String>,
-
-    pub parent: Option<String>,
-    pub children: Vec<String>,
+    pub id: Uuid,
+    pub name: String,                // Always has a value, defaults to UUID string
+    pub parent: Option<Uuid>,
+    pub children: Vec<Uuid>,
 
     pub visible: bool,
 
@@ -35,15 +35,20 @@ pub struct BaseUIElement {
     #[serde(default)]
     pub padding: EdgeInsets,
 
-    // 🔹 Shared props
+    // Shared props
     pub anchor: FurAnchor,
     pub modulate: Option<Color>,
+    
+    // Z-index for rendering order
+    pub z_index: i32,
 }
 
 impl Default for BaseUIElement {
     fn default() -> Self {
+        let id = Uuid::new_v4();
         Self {
-            name: Some(Uuid::new_v4().to_string()),
+            id,
+            name: id.to_string(),    
             parent: None,
             children: Vec::new(),
             visible: true,
@@ -55,6 +60,7 @@ impl Default for BaseUIElement {
             padding: EdgeInsets::default(),
             anchor: FurAnchor::Center,
             modulate: None,
+            z_index: 0,
         }
     }
 }
@@ -62,17 +68,20 @@ impl Default for BaseUIElement {
 /// Trait implemented by all UI elements
 #[enum_dispatch]
 pub trait BaseElement {
+    fn get_id(&self) -> Uuid;
+    fn set_id(&mut self, id: Uuid);
+    
     fn get_name(&self) -> &str;
     fn set_name(&mut self, name: &str);
-
+    
     fn get_visible(&self) -> bool;
     fn set_visible(&mut self, visible: bool);
 
-    fn get_parent(&self) -> Option<&String>;
-    fn set_parent(&mut self, parent: Option<String>);
+    fn get_parent(&self) -> Option<Uuid>;
+    fn set_parent(&mut self, parent: Option<Uuid>);
 
-    fn get_children(&self) -> &[String];
-    fn set_children(&mut self, children: Vec<String>);
+    fn get_children(&self) -> &[Uuid];
+    fn set_children(&mut self, children: Vec<Uuid>);
 
     // Local transform
     fn get_transform(&self) -> &Transform2D;
@@ -97,6 +106,10 @@ pub trait BaseElement {
     // Modulate
     fn get_modulate(&self) -> Option<&crate::Color>;
     fn set_modulate(&mut self, color: Option<crate::Color>);
+
+    // Z-index
+    fn get_z_index(&self) -> i32;
+    fn set_z_index(&mut self, z_index: i32);
 }
 
 /// Macro to implement BaseElement for a UI type
@@ -104,11 +117,19 @@ pub trait BaseElement {
 macro_rules! impl_ui_element {
     ($ty:ty) => {
         impl crate::ui_element::BaseElement for $ty {
+            fn get_id(&self) -> uuid::Uuid {
+                self.base.id
+            }
+
+            fn set_id(&mut self, id: uuid::Uuid) {
+                self.base.id = id;
+            }
+
             fn get_name(&self) -> &str {
-                self.base.name.as_deref().unwrap_or("")
+                &self.base.name
             }
             fn set_name(&mut self, name: &str) {
-                self.base.name = Some(name.to_string());
+                self.base.name = name.to_string();
             }
 
             fn get_visible(&self) -> bool {
@@ -118,17 +139,17 @@ macro_rules! impl_ui_element {
                 self.base.visible = visible;
             }
 
-            fn get_parent(&self) -> Option<&String> {
-                self.base.parent.as_ref()
+            fn get_parent(&self) -> Option<uuid::Uuid> {
+                self.base.parent
             }
-            fn set_parent(&mut self, parent: Option<String>) {
+            fn set_parent(&mut self, parent: Option<uuid::Uuid>) {
                 self.base.parent = parent;
             }
 
-            fn get_children(&self) -> &[String] {
+            fn get_children(&self) -> &[uuid::Uuid] {
                 &self.base.children
             }
-            fn set_children(&mut self, children: Vec<String>) {
+            fn set_children(&mut self, children: Vec<uuid::Uuid>) {
                 self.base.children = children;
             }
 
@@ -172,6 +193,13 @@ macro_rules! impl_ui_element {
             }
             fn set_modulate(&mut self, color: Option<crate::Color>) {
                 self.base.modulate = color;
+            }
+
+            fn get_z_index(&self) -> i32 {
+                self.base.z_index
+            }
+            fn set_z_index(&mut self, z_index: i32) {
+                self.base.z_index = z_index;
             }
         }
     };

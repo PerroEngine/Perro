@@ -3,6 +3,7 @@ use std::{collections::HashMap, ops::{Deref, DerefMut}};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{impl_scene_node, script::Var, ui_element::UIElement, Node};
 
@@ -23,9 +24,9 @@ pub struct Ui {
     pub props: HashMap<String, Var>,
 
     #[serde(skip)]
-    pub elements: IndexMap<String, UIElement>,
+    pub elements: IndexMap<Uuid, UIElement>,
     #[serde(skip)]
-    pub root_ids: Vec<String>,
+    pub root_ids: Vec<Uuid>,
 
     #[serde(default = "default_visible", skip_serializing_if = "is_default_visible")]
     pub visible: bool,

@@ -21,11 +21,12 @@ pub type SharedWindow = std::sync::Arc<Window>;
 
 pub struct TextureManager {
     textures: HashMap<String, ImageTexture>,
+    bind_groups: HashMap<String, wgpu::BindGroup>, // Cache bind groups too
 }
-
 
 pub const VIRTUAL_WIDTH: f32 = 1920.0;
 pub const VIRTUAL_HEIGHT: f32 = 1080.0;
+const MAX_INSTANCES: usize = 10000;
 
 impl fmt::Debug for TextureManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -35,33 +36,101 @@ impl fmt::Debug for TextureManager {
     }
 }
 
-
 impl TextureManager {
     pub fn new() -> Self {
         Self {
             textures: HashMap::new(),
+            bind_groups: HashMap::new(),
         }
     }
 
-   pub fn get_or_load_texture_sync(
-    &mut self,
-    path: &str,
-    device: &Device,
-    queue: &Queue,
-) -> &ImageTexture {
-    // Use the original path string as the cache key (res://... or user://...)
-    let key = path.to_string();
-
-    if !self.textures.contains_key(&key) {
-        // ✅ Use load_asset instead of std::fs::read
-        let img_bytes = load_asset(path).expect("Failed to read image file");
-        let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
-        let img_texture = ImageTexture::from_image(&img, device, queue);
-        self.textures.insert(key.clone(), img_texture);
+    pub fn get_or_load_texture_sync(
+        &mut self,
+        path: &str,
+        device: &Device,
+        queue: &Queue,
+    ) -> &ImageTexture {
+        let key = path.to_string();
+        if !self.textures.contains_key(&key) {
+            let img_bytes = load_asset(path).expect("Failed to read image file");
+            let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
+            let img_texture = ImageTexture::from_image(&img, device, queue);
+            self.textures.insert(key.clone(), img_texture);
+        }
+        self.textures.get(&key).unwrap()
     }
 
-    self.textures.get(&key).unwrap()
+    pub fn get_or_create_bind_group(
+        &mut self,
+        path: &str,
+        device: &Device,
+        queue: &Queue,
+        layout: &BindGroupLayout,
+    ) -> &wgpu::BindGroup {
+        let key = path.to_string();
+        if !self.bind_groups.contains_key(&key) {
+            let tex = self.get_or_load_texture_sync(path, device, queue);
+            let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(&tex.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&tex.view),
+                    },
+                ],
+                label: Some("Texture Instance BG"),
+            });
+            self.bind_groups.insert(key.clone(), bind_group);
+        }
+        self.bind_groups.get(&key).unwrap()
+    }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct RectInstance {
+    transform_0: [f32; 4],
+    transform_1: [f32; 4],
+    transform_2: [f32; 4],
+    transform_3: [f32; 4],
+    color: [f32; 4],
+    size: [f32; 2],
+    pivot: [f32; 2],
+    corner_radius_0: [f32; 4],
+    corner_radius_1: [f32; 4],
+    corner_radius_2: [f32; 4],
+    corner_radius_3: [f32; 4],
+    border_thickness: f32,
+    is_border: u32,
+    z_index: i32,
+    _pad: f32,  
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct TextureInstance {
+    transform_0: [f32; 4],
+    transform_1: [f32; 4],
+    transform_2: [f32; 4],
+    transform_3: [f32; 4],
+    pivot: [f32; 2],
+    z_index: i32,
+    _pad: f32,
+}
+
+#[derive(Clone, Debug)]
+struct CachedRect {
+    instance: RectInstance,
+}
+
+#[derive(Clone, Debug)]
+struct CachedTexture {
+    instance: TextureInstance,
+    texture_path: String,
 }
 
 #[derive(Debug)]
@@ -76,44 +145,35 @@ pub struct Graphics {
 
     texture_manager: TextureManager,
 
-    /// Big uniform buffer for all sprite transforms
-    transform_buffer: wgpu::Buffer,
-    uniform_bind_group_layout: BindGroupLayout,
-    uniform_bind_group: wgpu::BindGroup,
-    min_offset: u32,
-    next_offset: u32,
+    // Camera uniform
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group_layout: BindGroupLayout,
+    camera_bind_group: wgpu::BindGroup,
 
-    texture_bind_group_layout: BindGroupLayout,
-    pipeline_layout: PipelineLayout,
-    render_pipeline: RenderPipeline,
-
+    // Vertex buffer (shared quad)
     vertex_buffer: wgpu::Buffer,
 
-    // ▼—— NEW FIELDS FOR SOLID‐COLOR QUADS ——▼
-    color_bg: wgpu::BindGroup,
-    color_pipeline: RenderPipeline,
-    aspect_buffer: wgpu::Buffer,
-    rect_uniform_buffer: wgpu::Buffer,
-    rect_bgl: BindGroupLayout,
-    rect_bg: wgpu::BindGroup,
-    rect_uniform_size: u64,
-    next_rect_offset: u32,
-    // ▲———————————————————————————————▲
-}
+    // Retained mode caches
+    cached_rects: HashMap<String, CachedRect>,
+    cached_textures: HashMap<String, CachedTexture>,
 
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct RectUniform {
-    transform: [[f32; 4]; 4],
-    color: [f32; 4],
-    size: [f32; 2],
-    pivot: [f32; 2],
-    corner_radius: [[f32; 4]; 4],
-    border_thickness: f32,
-    is_border: u32,
-    _pad: [f32; 2],
-}
+    // Instance buffers
+    rect_instance_buffer: wgpu::Buffer,
+    texture_instance_buffer: wgpu::Buffer,
 
+    // Instanced pipelines
+    rect_instanced_pipeline: RenderPipeline,
+    texture_instanced_pipeline: RenderPipeline,
+    texture_bind_group_layout: BindGroupLayout,
+
+    // Optimization flags
+    instances_need_rebuild: bool,
+
+    // Pre-built instance data (cached)
+    rect_instances: Vec<RectInstance>,
+    texture_groups: Vec<(String, Vec<TextureInstance>)>,
+    texture_group_offsets: Vec<(usize, usize)>, // (start_offset, count) for each group
+}
 
 pub async fn create_graphics(
     window: SharedWindow,
@@ -147,50 +207,47 @@ pub async fn create_graphics(
     // 2) Surface config
     let size = window.inner_size();
     let (w, h) = (size.width.max(1), size.height.max(1));
-    let surface_config = surface
-        .get_default_config(&adapter, w, h)
-        .unwrap();
+    let surface_config = surface.get_default_config(&adapter, w, h).unwrap();
     #[cfg(not(target_arch = "wasm32"))]
     surface.configure(&device, &surface_config);
 
-    // 3) Dynamic‐offset UBO for transforms (textured quads)
-    const MAX_SPRITES: u32 = 1024;
-    let min_offset = device.limits().min_uniform_buffer_offset_alignment as u32;
-    let big_ubo_size = (min_offset as u64) * (MAX_SPRITES as u64);
-    let transform_buffer = device.create_buffer(&BufferDescriptor {
-        label: Some("Big Transform UBO"),
-        size: big_ubo_size,
+    // 3) Camera uniform buffer
+    let camera_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Camera UBO"),
+        size: 16, // vec4<f32> = 16 bytes
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    let uniform_bind_group_layout =
+
+    let camera_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Dynamic-UBO BGL"),
+            label: Some("Camera BGL"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: BufferSize::new(64),
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(16),
                 },
                 count: None,
             }],
         });
-    let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("Dynamic-UBO BG"),
-        layout: &uniform_bind_group_layout,
+
+    let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("Camera BG"),
+        layout: &camera_bind_group_layout,
         entries: &[BindGroupEntry {
             binding: 0,
             resource: BindingResource::Buffer(BufferBinding {
-                buffer: &transform_buffer,
+                buffer: &camera_buffer,
                 offset: 0,
-                size: BufferSize::new(64),
+                size: BufferSize::new(16),
             }),
         }],
     });
 
-    // 4) Textured‐quad pipeline
+    // 4) Texture bind group layout
     let texture_bind_group_layout =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture BGL"),
@@ -198,9 +255,7 @@ pub async fn create_graphics(
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(
-                        wgpu::SamplerBindingType::Filtering,
-                    ),
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
@@ -209,125 +264,120 @@ pub async fn create_graphics(
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: true,
-                        },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
             ],
         });
-    let pipeline_layout = device.create_pipeline_layout(
-        &wgpu::PipelineLayoutDescriptor {
-            label: Some("Texture Pipeline Layout"),
-            bind_group_layouts: &[
-                &texture_bind_group_layout,
-                &uniform_bind_group_layout,
-            ],
-            push_constant_ranges: &[],
-        },
-    );
-    let render_pipeline =
-        create_pipeline(&device, &pipeline_layout, surface_config.format);
 
-    // 5) Dynamic UBO for solid-color quads
-    const MAX_RECTS: u32 = 1024;
-    let min_offset_rect = device.limits().min_uniform_buffer_offset_alignment as u64;
-    let rect_uniform_size = ((std::mem::size_of::<RectUniform>() as u64 + min_offset_rect - 1)
-        / min_offset_rect)
-        * min_offset_rect;
-
-    let rect_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Rect Dynamic UBO"),
-        size: rect_uniform_size * MAX_RECTS as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    // 5) Instance buffers
+    let rect_instance_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Rect Instance Buffer"),
+        size: (std::mem::size_of::<RectInstance>() * MAX_INSTANCES) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
 
-    let rect_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Rect Dynamic BGL"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: true,
-                min_binding_size: BufferSize::new(std::mem::size_of::<RectUniform>() as u64),
-            },
-            count: None,
-        }],
+    let texture_instance_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Texture Instance Buffer"),
+        size: (std::mem::size_of::<TextureInstance>() * MAX_INSTANCES) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
 
-    let rect_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Rect Dynamic BG"),
-        layout: &rect_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &rect_uniform_buffer,
-                offset: 0,
-                size: BufferSize::new(std::mem::size_of::<RectUniform>() as u64),
-            }),
-        }],
-    });
-
-    // 6) Global aspect ratio uniform
-    let aspect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-    label: Some("Camera UBO"),
-    size: 16, // vec4<f32> = 16 bytes
-    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    mapped_at_creation: false,
-});
-
-    let aspect_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-    label: Some("Aspect Ratio BGL"),
-    entries: &[wgpu::BindGroupLayoutEntry {
-        binding: 0,
-        visibility: wgpu::ShaderStages::VERTEX,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: BufferSize::new(16), // vec4<f32> = 16 bytes
-        },
-        count: None,
-    }],
-});
-
-let aspect_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-    label: Some("Aspect Ratio BG"),
-    layout: &aspect_bgl,
-    entries: &[wgpu::BindGroupEntry {
-        binding: 0,
-        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-            buffer: &aspect_buffer,
-            offset: 0,
-            size: BufferSize::new(16), // ✅ vec4<f32> = 16 bytes
-        }),
-    }],
-});
-
-    // 7) Color quad pipeline
-    let shader_color = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("Color Shader"),
-        source: ShaderSource::Wgsl(Cow::Borrowed(
-            include_str!("shaders/color_quad.wgsl"),
-        )),
-    });
-    let pipeline_layout_color = device.create_pipeline_layout(
-        &PipelineLayoutDescriptor {
-            label: Some("Color Pipeline Layout"),
-            bind_group_layouts: &[&rect_bgl, &aspect_bgl],
-            push_constant_ranges: &[],
-        },
+    // 6) Instanced pipelines
+    let rect_instanced_pipeline = create_rect_instanced_pipeline(
+        &device,
+        &camera_bind_group_layout,
+        surface_config.format,
     );
-    let color_pipeline = device.create_render_pipeline(
-        &RenderPipelineDescriptor {
-            label: Some("Color Quad Pipeline"),
-            layout: Some(&pipeline_layout_color),
-            vertex: VertexState {
-                module: &shader_color,
-                entry_point: Some("vs_main"),
-                buffers: &[VertexBufferLayout {
+
+    let texture_instanced_pipeline = create_texture_instanced_pipeline(
+        &device,
+        &texture_bind_group_layout,
+        &camera_bind_group_layout,
+        surface_config.format,
+    );
+
+    // 7) Quad vertex buffer
+    let vertices: &[Vertex] = &[
+        Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
+        Vertex { position: [0.5, -0.5], uv: [1.0, 1.0] },
+        Vertex { position: [0.5, 0.5], uv: [1.0, 0.0] },
+        Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
+        Vertex { position: [0.5, 0.5], uv: [1.0, 0.0] },
+        Vertex { position: [-0.5, 0.5], uv: [0.0, 0.0] },
+    ];
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(vertices),
+        usage: BufferUsages::VERTEX,
+    });
+
+    // 8) Initialize camera data
+    let virtual_width = VIRTUAL_WIDTH;
+    let virtual_height = VIRTUAL_HEIGHT;
+    let window_width = surface_config.width as f32;
+    let window_height = surface_config.height as f32;
+    let camera_data = [virtual_width, virtual_height, window_width, window_height];
+    queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
+
+    // 9) Finalize Graphics
+    let gfx = Graphics {
+        window: window.clone(),
+        instance,
+        surface,
+        surface_config,
+        adapter,
+        device,
+        queue,
+        texture_manager: TextureManager::new(),
+        camera_buffer,
+        camera_bind_group_layout,
+        camera_bind_group,
+        vertex_buffer,
+        cached_rects: HashMap::new(),
+        cached_textures: HashMap::new(),
+        rect_instance_buffer,
+        texture_instance_buffer,
+        rect_instanced_pipeline,
+        texture_instanced_pipeline,
+        texture_bind_group_layout,
+        instances_need_rebuild: false,
+        rect_instances: Vec::new(),
+        texture_groups: Vec::new(),
+        texture_group_offsets: Vec::new(),
+    };
+
+    let _ = proxy.send_event(gfx);
+}
+
+fn create_rect_instanced_pipeline(
+    device: &Device,
+    camera_bgl: &BindGroupLayout,
+    format: TextureFormat,
+) -> RenderPipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("Rect Instanced Shader"),
+        source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect_instanced.wgsl"))),
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("Rect Instanced Pipeline Layout"),
+        bind_group_layouts: &[camera_bgl],
+        push_constant_ranges: &[],
+    });
+
+    device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("Rect Instanced Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                // Vertex buffer (position + uv)
+                VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as _,
                     step_mode: VertexStepMode::Vertex,
                     attributes: &[
@@ -342,139 +392,112 @@ let aspect_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                             format: VertexFormat::Float32x2,
                         },
                     ],
-                }],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(FragmentState {
-                module: &shader_color,
-                entry_point: Some("fs_main"),
-                targets: &[Some(ColorTargetState {
-                    format: surface_config.format,
-                    blend: Some(BlendState::REPLACE),
-                    write_mask: ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview: None,
-            cache: None,
-        },
-    );
-
-    // 8) Quad vertex buffer
-    let vertices: &[Vertex] = &[
-        Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
-        Vertex { position: [ 0.5, -0.5], uv: [1.0, 1.0] },
-        Vertex { position: [ 0.5,  0.5], uv: [1.0, 0.0] },
-        Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
-        Vertex { position: [ 0.5,  0.5], uv: [1.0, 0.0] },
-        Vertex { position: [-0.5,  0.5], uv: [0.0, 0.0] },
-    ];
-    let vertex_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(vertices),
-            usage: BufferUsages::VERTEX,
-        },
-    );
-
-let virtual_width = VIRTUAL_WIDTH;
-let virtual_height = VIRTUAL_HEIGHT;
-let window_width = surface_config.width as f32;
-let window_height = surface_config.height as f32;
-
-let camera_data = [virtual_width, virtual_height, window_width, window_height];
-queue.write_buffer(&aspect_buffer, 0, bytemuck::cast_slice(&camera_data));
-
-    // 10) Finalize Graphics
-    let gfx = Graphics {
-        window: window.clone(),
-        instance,
-        surface,
-        surface_config,
-        adapter,
-        device,
-        queue,
-        texture_manager: TextureManager::new(),
-        transform_buffer,
-        uniform_bind_group_layout,
-        uniform_bind_group,
-        min_offset,
-        next_offset: 0,
-        texture_bind_group_layout,
-        pipeline_layout,
-        render_pipeline,
-        rect_uniform_buffer,
-        rect_bgl,
-        rect_bg,
-        rect_uniform_size,
-        next_rect_offset: 0,
-        color_bg: aspect_bg, // store aspect bind group here
-        color_pipeline,
-        aspect_buffer,
-        vertex_buffer,
-    };
-    
-    let _ = proxy.send_event(gfx);
-}
-fn create_pipeline(
-    device: &Device,
-    pipeline_layout: &PipelineLayout,
-    swap_chain_format: TextureFormat,
-) -> RenderPipeline {
-    let vertex_buffer_layout = VertexBufferLayout {
-        array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-        step_mode: VertexStepMode::Vertex,
-        attributes: &[
-            VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: VertexFormat::Float32x2,
-            },
-            VertexAttribute {
-                offset: std::mem::size_of::<[f32; 2]>()
-                    as wgpu::BufferAddress,
-                shader_location: 1,
-                format: VertexFormat::Float32x2,
-            },
-        ],
-    };
-
-    let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("Texture Shader"),
-        source: ShaderSource::Wgsl(Cow::Borrowed(
-            include_str!("shaders/texture_shader.wgsl"),
-        )),
-    });
-
-    device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("Textured Quad Pipeline"),
-        layout: Some(pipeline_layout),
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[vertex_buffer_layout],
+                },
+                // Instance buffer
+                VertexBufferLayout {
+                    array_stride: std::mem::size_of::<RectInstance>() as _,
+                    step_mode: VertexStepMode::Instance,
+                    attributes: &[
+                        VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 16, shader_location: 3, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 32, shader_location: 4, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 48, shader_location: 5, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 64, shader_location: 6, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 80, shader_location: 7, format: VertexFormat::Float32x2 },
+                        VertexAttribute { offset: 88, shader_location: 8, format: VertexFormat::Float32x2 },
+                        VertexAttribute { offset: 96, shader_location: 9, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 112, shader_location: 10, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 128, shader_location: 11, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 144, shader_location: 12, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 160, shader_location: 13, format: VertexFormat::Float32 },
+                        VertexAttribute { offset: 164, shader_location: 14, format: VertexFormat::Uint32 },
+                        VertexAttribute { offset: 168, shader_location: 15, format: VertexFormat::Sint32 },
+                    ],
+                },
+            ],
             compilation_options: Default::default(),
         },
         fragment: Some(FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
             targets: &[Some(ColorTargetState {
-                format: swap_chain_format,
-                blend: Some(BlendState {
-                    color: BlendComponent {
-                        src_factor: BlendFactor::SrcAlpha,
-                        dst_factor: BlendFactor::OneMinusSrcAlpha,
-                        operation: BlendOperation::Add,
-                    },
-                    alpha: BlendComponent {
-                        src_factor: BlendFactor::One,
-                        dst_factor: BlendFactor::OneMinusSrcAlpha,
-                        operation: BlendOperation::Add,
-                    },
-                }),
+                format,
+                blend: Some(BlendState::ALPHA_BLENDING),
+                write_mask: ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        multiview: None,
+        cache: None,
+    })
+}
+
+fn create_texture_instanced_pipeline(
+    device: &Device,
+    texture_bgl: &BindGroupLayout,
+    camera_bgl: &BindGroupLayout,
+    format: TextureFormat,
+) -> RenderPipeline {
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("Sprite Instanced Shader"),
+        source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/sprite_instanced.wgsl"))),
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("Sprite Instanced Pipeline Layout"),
+        bind_group_layouts: &[texture_bgl, camera_bgl],
+        push_constant_ranges: &[],
+    });
+
+    device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("Sprite Instanced Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                // Vertex buffer
+                VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as _,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[
+                        VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: VertexFormat::Float32x2,
+                        },
+                        VertexAttribute {
+                            offset: std::mem::size_of::<[f32; 2]>() as _,
+                            shader_location: 1,
+                            format: VertexFormat::Float32x2,
+                        },
+                    ],
+                },
+                // Instance buffer
+                VertexBufferLayout {
+                    array_stride: std::mem::size_of::<TextureInstance>() as _,
+                    step_mode: VertexStepMode::Instance,
+                    attributes: &[
+                        VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 16, shader_location: 3, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 32, shader_location: 4, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 48, shader_location: 5, format: VertexFormat::Float32x4 },
+                        VertexAttribute { offset: 64, shader_location: 6, format: VertexFormat::Float32x2 },
+                        VertexAttribute { offset: 72, shader_location: 7, format: VertexFormat::Sint32 },
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(ColorTargetState {
+                format,
+                blend: Some(BlendState::ALPHA_BLENDING),
                 write_mask: ColorWrites::ALL,
             })],
             compilation_options: Default::default(),
@@ -488,273 +511,245 @@ fn create_pipeline(
 }
 
 impl Graphics {
-
     pub fn window(&self) -> &winit::window::Window {
-        &self.window   
+        &self.window
     }
 
-pub fn resize(&mut self, size: PhysicalSize<u32>) {
-    self.surface_config.width = size.width.max(1);
-    self.surface_config.height = size.height.max(1);
-    self.surface.configure(&self.device, &self.surface_config);
+    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.surface_config.width = size.width.max(1);
+        self.surface_config.height = size.height.max(1);
+        self.surface.configure(&self.device, &self.surface_config);
 
-    // Virtual resolution (locked)
-    let virtual_width = VIRTUAL_WIDTH;
-    let virtual_height = VIRTUAL_HEIGHT;
+        let virtual_width = VIRTUAL_WIDTH;
+        let virtual_height = VIRTUAL_HEIGHT;
+        let window_width = self.surface_config.width as f32;
+        let window_height = self.surface_config.height as f32;
 
-    // Actual window resolution
-    let window_width = self.surface_config.width as f32;
-    let window_height = self.surface_config.height as f32;
+        let camera_data = [virtual_width, virtual_height, window_width, window_height];
+        self.queue
+            .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
+    }
 
-    // Send both to GPU
-    let camera_data = [virtual_width, virtual_height, window_width, window_height];
-    self.queue
-        .write_buffer(&self.aspect_buffer, 0, bytemuck::cast_slice(&camera_data));
-}
+    pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {
+        let uuid_str = uuid.to_string();
+        self.cached_rects.remove(&uuid_str);
+        self.cached_textures.remove(&uuid_str);
+        self.instances_need_rebuild = true; // Mark as dirty
+    }
 
-    pub fn begin_frame(
+    pub fn draw_rect(
         &mut self,
-    ) -> (wgpu::SurfaceTexture, wgpu::TextureView, wgpu::CommandEncoder) {
+        uuid: uuid::Uuid,
+        transform: Transform2D,
+        size: Vector2,
+        pivot: Vector2,
+        color: crate::Color,
+        corner_radius: Option<CornerRadius>,
+        border_thickness: f32,
+        is_border: bool,
+        z_index: i32,
+    ) {
+        fn srgb_to_linear(c: f32) -> f32 {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        }
 
-        self.next_offset = 0;
+        let color_lin = [
+            srgb_to_linear(color.r as f32 / 255.0),
+            srgb_to_linear(color.g as f32 / 255.0),
+            srgb_to_linear(color.b as f32 / 255.0),
+            color.a as f32 / 255.0,
+        ];
 
-        let frame = self
-            .surface
-            .get_current_texture()
-            .expect("Failed to get next frame");
-        let view = frame
-            .texture
-            .create_view(&TextureViewDescriptor::default());
-        let encoder = self.device.create_command_encoder(
-            &CommandEncoderDescriptor {
-                label: Some("Main Encoder"),
+        let half_w = size.x * 0.5;
+        let half_h = size.y * 0.5;
+        let scale_factor = 3.0;
+        let cr = corner_radius.unwrap_or_default();
+        let clamp_norm = |val: f32| -> f32 { (val * scale_factor).clamp(0.0, 0.5) };
+
+        let cr_data = [
+            [clamp_norm(cr.top_left / half_w), clamp_norm(cr.top_left / half_h), 0.0, 0.0],
+            [clamp_norm(cr.top_right / half_w), clamp_norm(cr.top_right / half_h), 0.0, 0.0],
+            [clamp_norm(cr.bottom_right / half_w), clamp_norm(cr.bottom_right / half_h), 0.0, 0.0],
+            [clamp_norm(cr.bottom_left / half_w), clamp_norm(cr.bottom_left / half_h), 0.0, 0.0],
+        ];
+
+        let transform_array = transform.to_mat4().to_cols_array();
+        let instance = RectInstance {
+            transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
+            transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
+            transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
+            transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+            color: color_lin,
+            size: [size.x, size.y],
+            pivot: [pivot.x, pivot.y],
+            corner_radius_0: cr_data[0],
+            corner_radius_1: cr_data[1],
+            corner_radius_2: cr_data[2],
+            corner_radius_3: cr_data[3],
+            border_thickness,
+            is_border: if is_border { 1 } else { 0 },
+            z_index,
+            _pad: 0.0,
+        };
+
+        self.cached_rects.insert(uuid.to_string(), CachedRect { instance });
+        self.instances_need_rebuild = true; // Mark as dirty
+    }
+
+    pub fn draw_texture(
+        &mut self,
+        uuid: uuid::Uuid,
+        texture_path: &str,
+        transform: Transform2D,
+        pivot: Vector2,
+        z_index: i32,
+    ) {
+        let transform_array = transform.to_mat4().to_cols_array();
+        let instance = TextureInstance {
+            transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
+            transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
+            transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
+            transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+            pivot: [pivot.x, pivot.y],
+            z_index,
+            _pad: 0.0,
+        };
+
+        self.cached_textures.insert(
+            uuid.to_string(),
+            CachedTexture {
+                instance,
+                texture_path: texture_path.to_string(),
             },
         );
+        self.instances_need_rebuild = true; // Mark as dirty
+    }
+
+    fn rebuild_instances(&mut self) {
+        // Rebuild rect instances
+        self.rect_instances.clear();
+        self.rect_instances.extend(
+            self.cached_rects
+                .values()
+                .map(|cached| cached.instance)
+        );
+        self.rect_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+
+        // Upload rect instances to GPU once
+        if !self.rect_instances.is_empty() {
+            self.queue.write_buffer(
+                &self.rect_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.rect_instances),
+            );
+        }
+
+        // Rebuild texture groups and upload all at once
+        self.texture_groups.clear();
+        self.texture_group_offsets.clear();
+        
+        let mut all_texture_instances = Vec::new();
+        let mut texture_map: HashMap<String, Vec<TextureInstance>> = HashMap::new();
+        
+        for cached in self.cached_textures.values() {
+            texture_map
+                .entry(cached.texture_path.clone())
+                .or_default()
+                .push(cached.instance);
+        }
+
+        // Sort texture groups by minimum z-index
+        let mut sorted_groups: Vec<_> = texture_map.into_iter().collect();
+        sorted_groups.sort_by(|a, b| {
+            let min_z_a = a.1.iter().map(|c| c.z_index).min().unwrap_or(0);
+            let min_z_b = b.1.iter().map(|c| c.z_index).min().unwrap_or(0);
+            min_z_a.cmp(&min_z_b)
+        });
+
+        // Build one big buffer with all texture instances
+        for (path, mut instances) in sorted_groups {
+            instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+            
+            let start_offset = all_texture_instances.len();
+            let count = instances.len();
+            
+            all_texture_instances.extend(instances.clone());
+            self.texture_groups.push((path, instances));
+            self.texture_group_offsets.push((start_offset, count));
+        }
+
+        // Upload ALL texture instances to GPU once
+        if !all_texture_instances.is_empty() {
+            self.queue.write_buffer(
+                &self.texture_instance_buffer,
+                0,
+                bytemuck::cast_slice(&all_texture_instances),
+            );
+        }
+    }
+
+    pub fn draw_instances(&mut self, rpass: &mut RenderPass<'_>) {
+        // Only rebuild if something changed
+        if self.instances_need_rebuild {
+            self.rebuild_instances();
+            self.instances_need_rebuild = false;
+        }
+
+        // Fast path - just issue draw commands, no CPU work
+        if !self.rect_instances.is_empty() {
+            rpass.set_pipeline(&self.rect_instanced_pipeline);
+            rpass.set_bind_group(0, &self.camera_bind_group, &[]);
+            rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(1, self.rect_instance_buffer.slice(..));
+            rpass.draw(0..6, 0..self.rect_instances.len() as u32);
+        }
+
+        // Draw texture groups - no uploads, just draw commands
+        for (i, (texture_path, _)) in self.texture_groups.iter().enumerate() {
+            let (start_offset, count) = self.texture_group_offsets[i];
+            
+            if count > 0 {
+                // Get cached bind group (no creation)
+                let tex_bg = self.texture_manager.get_or_create_bind_group(
+                    texture_path,
+                    &self.device,
+                    &self.queue,
+                    &self.texture_bind_group_layout,
+                );
+
+                // Draw this texture group using buffer slice
+                rpass.set_pipeline(&self.texture_instanced_pipeline);
+                rpass.set_bind_group(0, tex_bg, &[]);
+                rpass.set_bind_group(1, &self.camera_bind_group, &[]);
+                rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                
+                let start_byte = start_offset * std::mem::size_of::<TextureInstance>();
+                let size_bytes = count * std::mem::size_of::<TextureInstance>();
+                let buffer_slice = self.texture_instance_buffer.slice(
+                    start_byte as u64..(start_byte + size_bytes) as u64
+                );
+                
+                rpass.set_vertex_buffer(1, buffer_slice);
+                rpass.draw(0..6, 0..count as u32);
+            }
+        }
+    }
+
+    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView, wgpu::CommandEncoder) {
+        let frame = self.surface.get_current_texture().expect("Failed to get next frame");
+        let view = frame.texture.create_view(&TextureViewDescriptor::default());
+        let encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("Main Encoder"),
+        });
         (frame, view, encoder)
     }
 
-    pub fn end_frame(
-        &mut self,
-        frame: wgpu::SurfaceTexture,
-        encoder: wgpu::CommandEncoder,
-    ) {
+    pub fn end_frame(&mut self, frame: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
         self.queue.submit(Some(encoder.finish()));
         frame.present();
     }
-
-    pub fn draw_triangle(&mut self) {
-        let (frame, view, mut enc) = self.begin_frame();
-        {
-            let mut rpass = enc.begin_render_pass(&RenderPassDescriptor {
-                label: Some("Triangle Pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::GREEN),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            rpass.set_pipeline(&self.render_pipeline);
-            rpass.draw(0..3, 0..1);
-        }
-        self.end_frame(frame, enc);
-    }
-
-    
-
-    pub fn draw_image_in_pass<'a>(
-        &mut self,
-        rpass: &mut wgpu::RenderPass<'a>,
-        texture_path: &str,
-        transform: Transform2D,
-        pivot: Vector2
-    ) {
-        // texture bind group
-        let tex = self.texture_manager.get_or_load_texture_sync(
-            texture_path,
-            &self.device,
-            &self.queue,
-        );
-        let tex_bg = self.device.create_bind_group(&BindGroupDescriptor {
-            layout: &self.texture_bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Sampler(&tex.sampler),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&tex.view),
-                },
-            ],
-            label: Some("Sprite Texture BG"),
-        });
-
-    const MAT_SIZE: u64 = 64;
-
-    // ---- wrap if the next write would exceed the buffer ---------------
-    if self.next_offset as u64 + MAT_SIZE > self.transform_buffer.size() {
-        self.next_offset = 0;                    // ring-buffer wrap
-    }
-    let offset = self.next_offset as u64;
-    self.next_offset += self.min_offset;         // advance by 256 B chunk
-    // -------------------------------------------------------------------
-
-    // write transform
-    let mat: [f32; 16] = transform.to_mat4().to_cols_array();
-    self.queue
-        .write_buffer(&self.transform_buffer, offset, bytemuck::cast_slice(&mat));
-
-    // bind + draw
-    rpass.set_pipeline(&self.render_pipeline);
-    rpass.set_bind_group(0, &tex_bg, &[]);
-    rpass.set_bind_group(1, &self.uniform_bind_group, &[offset as u32]);
-    rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-    rpass.draw(0..6, 0..1);
-    }
-
-pub fn draw_rect(
-    &mut self,
-    pass: &mut RenderPass<'_>,
-    transform: Transform2D,
-    size: Vector2,
-    pivot: Vector2,
-    color: crate::Color,
-    corner_radius: Option<CornerRadius>,
-) {
-    // --- 1) Wrap dynamic offset if needed ---
-    if self.next_rect_offset as u64 + self.rect_uniform_size > self.rect_uniform_buffer.size() {
-        self.next_rect_offset = 0;
-    }
-    let offset = self.next_rect_offset as u64;
-    self.next_rect_offset += self.rect_uniform_size as u32;
-
-    // --- 2) Convert sRGB to linear ---
-    fn srgb_to_linear(c: f32) -> f32 {
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    }
-
-    let color_lin = [
-        srgb_to_linear(color.r as f32 / 255.0),
-        srgb_to_linear(color.g as f32 / 255.0),
-        srgb_to_linear(color.b as f32 / 255.0),
-        color.a as f32 / 255.0,
-    ];
-
-
-
-    // --- 4) Size in virtual pixels ---
-    let size_data = [size.x, size.y];
-
-    // --- 5) Corner radius normalization ---
-    let half_w = size.x * 0.5;
-    let half_h = size.y * 0.5;
-    let scale_factor = 3.0;
-    let cr = corner_radius.unwrap_or_default();
-    let clamp_norm = |val: f32| -> f32 { (val * scale_factor).clamp(0.0, 0.5) };
-
-    let cr_data = [
-        [clamp_norm(cr.top_left / half_w), clamp_norm(cr.top_left / half_h), 0.0, 0.0],
-        [clamp_norm(cr.top_right / half_w), clamp_norm(cr.top_right / half_h), 0.0, 0.0],
-        [clamp_norm(cr.bottom_right / half_w), clamp_norm(cr.bottom_right / half_h), 0.0, 0.0],
-        [clamp_norm(cr.bottom_left / half_w), clamp_norm(cr.bottom_left / half_h), 0.0, 0.0],
-    ];
-
-    // --- 6) Build the uniform struct ---
-    let rect_uniform = RectUniform {
-    transform: transform.to_mat4().to_cols_array_2d(),
-    color: color_lin,
-    size: size_data,
-    pivot: [pivot.x, pivot.y],
-    corner_radius: cr_data,
-    border_thickness: 0.0, // ✅ no border
-    is_border: 0,          // ✅ tell shader this is a fill
-    _pad: [0.0; 2],
-};
-    // --- 7) Upload to GPU ---
-    self.queue
-        .write_buffer(&self.rect_uniform_buffer, offset, cast_slice(&[rect_uniform]));
-
-    // --- 8) Draw ---
-    pass.set_pipeline(&self.color_pipeline);
-    pass.set_bind_group(0, &self.rect_bg, &[offset as u32]);
-    pass.set_bind_group(1, &self.color_bg, &[]);
-    pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-    pass.draw(0..6, 0..1);
-}
-
-pub fn draw_border(
-    &mut self,
-    pass: &mut RenderPass<'_>,
-    transform: Transform2D,
-    size: Vector2,
-    pivot: Vector2,
-    color: crate::Color,
-    thickness: f32,
-    corner_radius: Option<CornerRadius>,
-) {
-    if self.next_rect_offset as u64 + self.rect_uniform_size > self.rect_uniform_buffer.size() {
-        self.next_rect_offset = 0;
-    }
-    let offset = self.next_rect_offset as u64;
-    self.next_rect_offset += self.rect_uniform_size as u32;
-
-    fn srgb_to_linear(c: f32) -> f32 {
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    }
-
-    let color_lin = [
-        srgb_to_linear(color.r as f32 / 255.0),
-        srgb_to_linear(color.g as f32 / 255.0),
-        srgb_to_linear(color.b as f32 / 255.0),
-        color.a as f32 / 255.0,
-    ];
-
-    let size_data = [size.x, size.y];
-    let half_w = size.x * 0.5;
-    let half_h = size.y * 0.5;
-    let scale_factor = 3.0;
-    let cr = corner_radius.unwrap_or_default();
-    let clamp_norm = |val: f32| -> f32 { (val * scale_factor).clamp(0.0, 0.5) };
-
-    let cr_data = [
-        [clamp_norm(cr.top_left / half_w), clamp_norm(cr.top_left / half_h), 0.0, 0.0],
-        [clamp_norm(cr.top_right / half_w), clamp_norm(cr.top_right / half_h), 0.0, 0.0],
-        [clamp_norm(cr.bottom_right / half_w), clamp_norm(cr.bottom_right / half_h), 0.0, 0.0],
-        [clamp_norm(cr.bottom_left / half_w), clamp_norm(cr.bottom_left / half_h), 0.0, 0.0],
-    ];
-
-    let rect_uniform = RectUniform {
-        transform: transform.to_mat4().to_cols_array_2d(),
-        color: color_lin,
-        size: size_data,
-        pivot: [pivot.x, pivot.y],
-        corner_radius: cr_data,
-        border_thickness: thickness,
-        is_border: 1,
-        _pad: [0.0; 2],
-    };
-
-    self.queue
-        .write_buffer(&self.rect_uniform_buffer, offset, cast_slice(&[rect_uniform]));
-
-    pass.set_pipeline(&self.color_pipeline);
-    pass.set_bind_group(0, &self.rect_bg, &[offset as u32]);
-    pass.set_bind_group(1, &self.color_bg, &[]);
-    pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-    pass.draw(0..6, 0..1);
-}
 }

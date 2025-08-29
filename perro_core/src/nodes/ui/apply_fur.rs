@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-
 use indexmap::IndexMap;
+use uuid::Uuid;
 
 use crate::{
     asset_io::load_asset,
     ast::{FurAnchor, FurElement, FurNode, FurStyle},
-    graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
     parser::FurParser,
     ui_element::{BaseElement, BaseUIElement, EdgeInsets, UIElement},
     ui_elements::ui_panel::{CornerRadius, UIPanel},
@@ -49,6 +47,8 @@ fn apply_base_style(base: &mut BaseUIElement, style: &FurStyle) {
         bottom: style.padding.bottom.unwrap_or(0.0),
     };
 
+    base.z_index = style.z_index;
+
     base.anchor = style.anchor;
     base.modulate = style.modulate.clone();
 
@@ -65,12 +65,14 @@ fn convert_fur_element_to_ui_element(fur_element: &FurElement) -> Option<UIEleme
         "UI" => None,
         "Panel" => {
             let mut panel = UIPanel::default();
+
+            // FUR id is really a name
             panel.set_name(&fur_element.id);
 
-            // ✅ one call for all shared fields
+            // Apply all shared fields
             apply_base_style(&mut panel.base, &fur_element.style);
 
-            // panel-specific props
+            // Panel-specific props
             panel.props.background_color = fur_element.style.background_color.clone();
             panel.props.corner_radius = CornerRadius {
                 top_left: fur_element.style.corner_radius.top_left.unwrap_or(0.0),
@@ -89,14 +91,12 @@ fn convert_fur_element_to_ui_element(fur_element: &FurElement) -> Option<UIEleme
     }
 }
 
-/// Recursively converts a FurElement and all its descendants into flat list of (id, UIElement),
-/// assigning parent and children links.
+/// Recursively converts a FurElement and all its descendants into flat list of (Uuid, UIElement),
+/// generating fresh UUIDs for each element and setting up parent/child relationships.
 fn convert_fur_element_to_ui_elements(
     fur_element: &FurElement,
-    parent_id: Option<String>,
-) -> Vec<(String, UIElement)> {
-    let id = fur_element.id.clone();
-
+    parent_uuid: Option<Uuid>,
+) -> Vec<(Uuid, UIElement)> {
     // Try convert current element, skip if None (e.g. "UI" tag)
     let maybe_ui_element = convert_fur_element_to_ui_element(fur_element);
     if maybe_ui_element.is_none() {
@@ -106,55 +106,74 @@ fn convert_fur_element_to_ui_elements(
             if let FurNode::Element(child_element) = child_node {
                 results.extend(convert_fur_element_to_ui_elements(
                     child_element,
-                    parent_id.clone(),
+                    parent_uuid,
                 ));
             }
         }
         return results;
     }
 
+    // Generate a fresh UUID for this element
+    let current_uuid = Uuid::new_v4();
+
     // Safe unwrap since we handled None above
     let mut ui_element = maybe_ui_element.unwrap();
 
-    // Collect children IDs and recurse
-    let mut children_ids = Vec::new();
+    // Store the UUID in the element’s BaseUIElement
+    ui_element.set_id(current_uuid);
+
+    // Process children first to get their UUIDs
+    let mut children_uuids = Vec::new();
     let mut results = Vec::new();
 
     for child_node in &fur_element.children {
         if let FurNode::Element(child_element) = child_node {
-            children_ids.push(child_element.id.clone());
-            results.extend(convert_fur_element_to_ui_elements(
+            let child_elements = convert_fur_element_to_ui_elements(
                 child_element,
-                Some(id.clone()),
-            ));
+                Some(current_uuid),
+            );
+
+            // The first element in the results is the direct child
+            if let Some((child_uuid, _)) = child_elements.first() {
+                children_uuids.push(*child_uuid);
+            }
+
+            results.extend(child_elements);
         }
     }
 
-    ui_element.set_parent(parent_id.clone());
-    ui_element.set_children(children_ids);
+    // Set up parent/child relationships
+    ui_element.set_parent(parent_uuid);
+    ui_element.set_children(children_uuids);
 
-    results.insert(0, (id, ui_element));
+    // Insert this element at the beginning
+    results.insert(0, (current_uuid, ui_element));
 
     results
 }
 
 /// Entry point to build UI elements in `Ui` from the root FurElements AST slice
 pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
-    // Step 1: Build all elements
+    // Clear existing elements
+    ui.elements.clear();
+    ui.root_ids.clear();
+
+    // Build all elements with fresh UUIDs
     for fur_element in fur_elements {
         let elements = convert_fur_element_to_ui_elements(fur_element, None);
-        for (id, ui_element) in elements {
-            ui.elements.insert(id, ui_element);
+        for (uuid, ui_element) in elements {
+            
+            ui.elements.insert(uuid, ui_element);
+            
         }
     }
 
-    // Step 2: Collect root IDs (elements with no parent)
-    ui.root_ids.clear();
+    
 
-    for (id, element) in &ui.elements {
+    // Collect root UUIDs (elements with no parent)
+    for (uuid, element) in &ui.elements {
         if element.get_parent().is_none() {
-            ui.root_ids.push(id.clone());
+            ui.root_ids.push(*uuid);
         }
     }
 }
-

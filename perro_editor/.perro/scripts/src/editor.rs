@@ -25,8 +25,6 @@ impl Script for EditorScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let y = "sooper dawg".to_string();
-        let bob = 5f32;
     }
 
     fn set_node_id(&mut self, id: Uuid) {

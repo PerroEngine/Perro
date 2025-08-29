@@ -46,42 +46,43 @@ impl<P: ScriptProvider> App<P> {
     }
 
     fn process_frame(&mut self) {
-        if let State::Ready(gfx) = &mut self.state {
-            // compute delta-time
-            let now = std::time::Instant::now();
-            let dt = (now - self.last_frame).as_secs_f32();
-            self.last_frame = now;
+    if let State::Ready(gfx) = &mut self.state {
+        // compute delta-time
+        let now = std::time::Instant::now();
+        let dt = (now - self.last_frame).as_secs_f32();
+        self.last_frame = now;
 
-            // begin frame
-            let (frame, view, mut encoder) = gfx.begin_frame();
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Main Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+        // begin frame
+        let (frame, view, mut encoder) = gfx.begin_frame();
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Main Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
 
-            // update & draw
-            if let Some(scene) = self.game_scene.as_mut() {
-                scene.tick(gfx, &mut rpass, dt);
-            }
-
-            // submit
-            drop(rpass);
-            gfx.end_frame(frame, encoder);
-
-            // schedule next frame
-            gfx.window().request_redraw();
+        // update & draw (this queues up instances)
+        if let Some(scene) = self.game_scene.as_mut() {
+            scene.tick(gfx, dt);
         }
+
+        gfx.draw_instances(&mut rpass);
+        // submit
+        drop(rpass);
+        gfx.end_frame(frame, encoder);
+
+        // schedule next frame
+        gfx.window().request_redraw();
     }
+}
 
     fn resized(&mut self, size: PhysicalSize<u32>) {
         if let State::Ready(gfx) = &mut self.state {

@@ -32,7 +32,8 @@ pub struct FurStyle {
     pub transform: Transform2D,
     pub border: Option<f32>,
     pub border_color: Option<Color>,
-    pub anchor: FurAnchor
+    pub anchor: FurAnchor,
+    pub z_index: i32
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

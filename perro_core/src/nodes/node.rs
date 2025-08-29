@@ -30,6 +30,9 @@ pub struct Node {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, Value>>,
+
+    #[serde(skip)]
+    pub dirty: bool,
 }
 
 impl Node {
@@ -43,6 +46,8 @@ impl Node {
             parent,
             children: Vec::new(),
             metadata: None,
+
+            dirty: false
         }
     }
 

@@ -1,5 +1,10 @@
 use crate::{
-    api::ScriptApi, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, ScriptProvider, Sprite2D, Vector2
+    api::ScriptApi, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, 
+    asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, 
+    ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, 
+    scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, 
+    ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, 
+    Graphics, Node, ScriptProvider, Sprite2D, Vector2
 };
 
 use indexmap::IndexMap;
@@ -7,13 +12,11 @@ use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    fs::create_dir_all,
     io,
     path::PathBuf,
-    rc::Rc,
+    rc::Rc, time::{Duration, Instant},
 };
 use uuid::Uuid;
-use wgpu::RenderPass;
 
 //
 // ---------------- SceneData ----------------
@@ -138,22 +141,36 @@ impl<P: ScriptProvider> Scene<P> {
         self.provider.load_ctor(short)
     }
 
-    pub fn tick(&mut self, gfx: &mut Graphics, pass: &mut RenderPass<'_>, delta: f32) {
+    pub fn tick(&mut self, gfx: &mut Graphics, delta: f32) {
         self.process(delta);
 
-        // ✅ update UI layout before rendering
-        for (_, node) in &mut self.data.nodes {
-            if let SceneNode::UI(ui_node) = node {
-                update_ui_layout(ui_node);
-            }
-        }
+        // Only print FPS occasionally to reduce overhead
+        static mut LAST_PRINT: Option<Instant> = None;
 
-        self.render(gfx, pass);
+    let now = Instant::now();
+    unsafe {
+        match LAST_PRINT {
+            Some(t) if now.duration_since(t) >= Duration::from_millis(500) => {
+                println!("fps: {:.0}", 1.0 / delta);
+                LAST_PRINT = Some(now);
+            }
+            None => {
+                println!("fps: {:.0}", 1.0 / delta);
+                LAST_PRINT = Some(now);
+            }
+            _ => {}
+        }
+    }
+
+        // Render only dirty nodes
+        self.render(gfx);
     }
 
     pub fn process(&mut self, delta: f32) {
-        let ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
-        for id in ids {
+        // Collect script IDs to avoid borrow checker issues
+        let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
+        
+        for id in script_ids {
             let mut api = ScriptApi::new(delta, self);
             api.call_update(id);
         }
@@ -212,16 +229,14 @@ impl<P: ScriptProvider> Scene<P> {
                 .file_stem()
                 .unwrap()
                 .to_string_lossy();
-            println!("  wants script `{short}`");
 
             let ctor = self.ctor(&short)?;
-            println!("  constructor loaded at {:p}", ctor as *const ());
-
             let handle = Scene::instantiate_script(ctor, id, self);
             self.scripts.insert(id, handle);
-            println!("  script instance stored");
         }
 
+        // Mark new nodes as dirty so they get rendered
+        node.mark_dirty();
         self.data.nodes.insert(id, node);
         Ok(())
     }
@@ -266,46 +281,101 @@ impl<P: ScriptProvider> Scene<P> {
             .and_then(|node| node.as_any().downcast_ref::<T>())
     }
 
-    pub fn get_node_mut<T: 'static>(&mut self, id: &Uuid) -> Option<&mut T> {
+    pub fn get_node_mut<T: BaseNode + 'static>(&mut self, id: &Uuid) -> Option<&mut T> {
         self.data
             .nodes
             .get_mut(id)
-            .and_then(|node| node.as_any_mut().downcast_mut::<T>())
+            .and_then(|node| {
+                let typed = node.as_any_mut().downcast_mut::<T>()?;
+                typed.mark_dirty();
+                Some(typed)
+            })
     }
 
-    pub fn traverse<F>(&self, start: Uuid, visit: &mut F)
-    where
-        F: FnMut(&SceneNode),
-    {
-        if let Some(node) = self.data.nodes.get(&start) {
-            visit(node);
-            for &child in node.get_children() {
-                self.traverse(child, visit);
+    // Remove node and stop rendering
+    pub fn remove_node(&mut self, node_id: Uuid, gfx: &mut Graphics) {
+        // Stop rendering this node and all its children
+        self.stop_rendering_recursive(node_id, gfx);
+        
+        // Remove from scene
+        self.data.nodes.remove(&node_id);
+        
+        // Remove scripts
+        self.scripts.remove(&node_id);
+    }
+    
+    fn stop_rendering_recursive(&self, node_id: Uuid, gfx: &mut Graphics) {
+        if let Some(node) = self.data.nodes.get(&node_id) {
+            // Stop rendering this node
+            gfx.stop_rendering(node_id);
+            
+            // If it's a UI node, stop rendering all its elements
+            if let SceneNode::UI(ui_node) = node {
+                for element in &ui_node.elements {
+                    gfx.stop_rendering(*element.0);
+                }
+            }
+            
+            // Recursively stop rendering children
+            for &child_id in node.get_children() {
+                self.stop_rendering_recursive(child_id, gfx);
             }
         }
     }
 
-    pub fn render(&self, gfx: &mut Graphics, pass: &mut RenderPass<'_>) {
-        if !self.data.nodes.contains_key(&self.data.root_id) {
+    // Get dirty nodes for rendering
+    fn get_dirty_nodes(&self) -> Vec<Uuid> {
+        self.data.nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                if node.is_dirty() {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    // Simplified render function - only processes dirty nodes
+    pub fn render(&mut self, gfx: &mut Graphics) {
+        let dirty_nodes = self.get_dirty_nodes();
+        
+        // Early return if nothing to update
+        if dirty_nodes.is_empty() {
             return;
         }
 
-        self.traverse(self.data.root_id, &mut |node| match node {
-            SceneNode::Sprite2D(sprite) if sprite.visible => {
-                if let Some(tex) = &sprite.texture_path {
-                    gfx.draw_image_in_pass(
-                        pass,
-                        tex,
-                        sprite.transform.clone(),
-                        Vector2::new(0.5, 0.5),
-                    );
+       
+        
+        self.traverse_and_render(dirty_nodes, gfx);
+    }
+    
+    fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
+        for node_id in dirty_nodes {
+            if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                match node {
+                    SceneNode::Sprite2D(sprite) => {
+                            if let Some(tex) = &sprite.texture_path {
+                                // gfx.draw_texture(
+                                //     node_id,
+                                //     tex,
+                                //     sprite.transform.clone(),
+                                //     Vector2::new(0.5, 0.5),
+                                // );
+                            }
+                    }
+                    SceneNode::UI(ui_node) => {
+                        // UI renderer handles layout + rendering internally
+                        render_ui(ui_node, gfx);
+                    }
+                    _ => {}
                 }
+                
+                // Mark as clean after processing
+                node.set_dirty(false);
             }
-            SceneNode::UI(ui_node) => {
-                render_ui(ui_node, gfx, pass);
-            }
-            _ => {}
-        });
+        }
     }
 }
 
@@ -315,7 +385,10 @@ impl<P: ScriptProvider> Scene<P> {
 
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
     fn get_node_mut_any(&mut self, id: &Uuid) -> Option<&mut dyn std::any::Any> {
-        self.data.nodes.get_mut(id).map(|node| node.as_any_mut())
+        self.data.nodes.get_mut(id).map(|node| {
+            node.mark_dirty(); // Auto-mark dirty on script access
+            node.as_any_mut()
+        })
     }
 
     fn update_script_var(
