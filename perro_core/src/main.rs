@@ -16,7 +16,7 @@ fn main() {
     };
 
     // Set project root (Disk mode, name = "unknown")
-    let project_root = PathBuf::from(r"d:\Rust\perro\perro_editor");
+    let project_root = PathBuf::from(r"c:\Users\super\perro\perro_editor");
     set_project_root(ProjectRoot::Disk {
         root: project_root.clone(),
         name: "unknown".into(),

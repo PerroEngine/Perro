@@ -1,3 +1,4 @@
+use core::f32;
 use std::process;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
@@ -23,8 +24,7 @@ enum State {
     Ready(Graphics),
 }
 
-// Pre-computed constants
-const RENDER_PASS_LABEL: &'static str = "Main Pass";
+const RENDER_PASS_LABEL: &str = "Main Pass";
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLACK;
 const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
     PhysicalSize::new(640, 360),
@@ -39,13 +39,21 @@ pub struct App<P: ScriptProvider> {
     state: State,
     window_title: String,
     game_scene: Option<Scene<P>>,
-    last_frame: std::time::Instant,
-    last_render: std::time::Instant,
-    fps_timer: f32,
-    fps_accumulator: f32,
+    last_update: std::time::Instant,
+
+    // FPS/UPS tracking
     fps_frames: u32,
-    max_fps: f32,
+    ups_frames: u32,
+    fps_measurement_start: std::time::Instant,
+
+    // Frame pacing
+    target_fps: f32,
     cached_operations: wgpu::Operations<wgpu::Color>,
+    first_frame: bool,
+    frame_debt: f64,
+    total_frames_rendered: u64,
+    start_time: std::time::Instant,
+    skip_counter: u32,
 }
 
 impl<P: ScriptProvider> App<P> {
@@ -53,6 +61,7 @@ impl<P: ScriptProvider> App<P> {
         event_loop: &EventLoop<Graphics>,
         window_title: String,
         game_scene: Option<Scene<P>>,
+        target_fps: f32
     ) -> Self {
         let cached_operations = wgpu::Operations {
             load: wgpu::LoadOp::Clear(CLEAR_COLOR),
@@ -65,13 +74,19 @@ impl<P: ScriptProvider> App<P> {
             state: State::Init(Some(event_loop.create_proxy())),
             window_title,
             game_scene,
-            last_frame: now,
-            last_render: now,
-            fps_timer: 0.0,
-            fps_accumulator: 0.0,
+            last_update: now,
+
             fps_frames: 0,
-            max_fps: 144.0,
+            ups_frames: 0,
+            fps_measurement_start: now,
+
+            target_fps,
             cached_operations,
+            first_frame: true,
+            frame_debt: 0.0,
+            total_frames_rendered: 0,
+            start_time: now,
+            skip_counter: 0,
         }
     }
 
@@ -79,36 +94,50 @@ impl<P: ScriptProvider> App<P> {
     fn process_game(&mut self) {
         if let State::Ready(gfx) = &mut self.state {
             let now = std::time::Instant::now();
-            let dt = (now - self.last_frame).as_secs_f32();
-            self.last_frame = now;
+            let dt = (now - self.last_update).as_secs_f32();
+            self.last_update = now;
 
-            // --- Rolling average FPS ---
-            self.fps_timer += dt;
-            self.fps_accumulator += dt;
-            self.fps_frames += 1;
-
-            if self.fps_timer >= 2.0 {
-                let avg_dt = self.fps_accumulator / self.fps_frames as f32;
-                println!("average lps: {:.1}", 1.0 / avg_dt);
-
-                self.fps_timer = 0.0;
-                self.fps_accumulator = 0.0;
-                self.fps_frames = 0;
-            }
-
-            // --- Scene process and internal script updates always runs at full speed ---
+            // --- Scene update (UPS) ---
             if let Some(scene) = self.game_scene.as_mut() {
-                scene.process(gfx, dt);
+                scene.update(dt);
+                self.ups_frames += 1;
             }
 
-            // --- Render capped ---
-            let min_frame_time = 1.0 / self.max_fps;
-            let since_last_render = (now - self.last_render).as_secs_f32();
-            if since_last_render >= min_frame_time {
-                self.last_render = now;
+            // --- Frame debt system ---
+            let elapsed_time = (now - self.start_time).as_secs_f64();
+            let target_frames = elapsed_time * self.target_fps as f64;
+            self.frame_debt = target_frames - self.total_frames_rendered as f64;
+
+            let should_render = self.first_frame || self.frame_debt > -1.0;
+
+            if should_render {
+                self.first_frame = false;
+                self.total_frames_rendered += 1;
+                self.fps_frames += 1;
+
+                // --- FPS + UPS measurement (once per second) ---
+                let measurement_duration = (now - self.fps_measurement_start).as_secs_f32();
+                if measurement_duration >= 1.0 {
+                    let fps = self.fps_frames as f32 / measurement_duration;
+                    let ups = self.ups_frames as f32 / measurement_duration;
+
+                    println!(
+                        "fps: {:.1}, ups: {:.1} (debt: {:.2}, skipped: {})",
+                        fps, ups, self.frame_debt, self.skip_counter
+                    );
+
+                    self.fps_frames = 0;
+                    self.ups_frames = 0;
+                    self.fps_measurement_start = now;
+                    self.skip_counter = 0;
+                }
+
+                // --- Render scene ---
+                if let Some(scene) = self.game_scene.as_mut() {
+                    scene.render(gfx);
+                }
 
                 let (frame, view, mut encoder) = gfx.begin_frame();
-
                 let color_attachment = wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -124,11 +153,14 @@ impl<P: ScriptProvider> App<P> {
                 });
 
                 gfx.draw_instances(&mut rpass);
-
                 drop(rpass);
                 gfx.end_frame(frame, encoder);
+            } else {
+                // Skip frame
+                self.skip_counter += 1;
             }
 
+            // Always keep the loop alive
             gfx.window().request_redraw();
         }
     }
@@ -164,7 +196,8 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 };
 
                 let mut attrs = Window::default_attributes()
-                    .with_title(&self.window_title);
+                    .with_title(&self.window_title)
+                    .with_visible(false);
 
                 #[cfg(not(target_arch = "wasm32"))]
                 {
@@ -215,7 +248,30 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, graphics: Graphics) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut graphics: Graphics) {
+        // --- One-shot first clear ---
+        {
+            let (frame, view, mut encoder) = graphics.begin_frame();
+            let color_attachment = wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: self.cached_operations,
+            };
+            {
+                let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("First Clear Pass"),
+                    color_attachments: &[Some(color_attachment)],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+            }
+            graphics.end_frame(frame, encoder);
+
+            graphics.window().set_visible(true);
+            graphics.window().request_redraw();
+        }
+
         self.state = State::Ready(graphics);
     }
 }

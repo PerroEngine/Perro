@@ -2,3 +2,6 @@
 name = "Perro Editor 2.0"
 main_scene = "res://editor.scn"
 
+[performance]
+target_fps = 120
+xps = 60

@@ -72,6 +72,6 @@ fn main() {
         .expect("Failed to build game scene");
 
     // 7. Run app
-    let app = App::new(&event_loop, project.name().to_string(), Some(game_scene));
+    let app = App::new(&event_loop, project.name().to_string(), Some(game_scene), project.target_fps());
     run_app(event_loop, app);
 }

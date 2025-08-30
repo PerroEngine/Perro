@@ -142,19 +142,13 @@ impl<P: ScriptProvider> Scene<P> {
         self.provider.load_ctor(short)
     }
 
-    pub fn process(&mut self, gfx: &mut Graphics, delta: f32) -> bool {
-        self.update(delta);
-
-
-   
-        // Render only if dirty
+    pub fn render(&mut self, gfx: &mut Graphics) {
         let dirty_nodes = self.get_dirty_nodes();
-        if dirty_nodes.is_empty() {
-            return false;
-        }
+            if dirty_nodes.is_empty() {
+                return;
+            }
 
-        self.traverse_and_render(dirty_nodes, gfx);
-        true
+            self.traverse_and_render(dirty_nodes, gfx);
     }
 
     pub fn update(&mut self, delta: f32) {

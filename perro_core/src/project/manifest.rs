@@ -7,6 +7,8 @@ use crate::asset_io::load_asset;
 #[derive(Deserialize)]
 struct ProjectSettings {
     project: ProjectSection,
+    #[serde(default)]
+    performance: PerformanceSection,
 }
 
 #[derive(Deserialize)]
@@ -14,6 +16,18 @@ struct ProjectSection {
     name: String,
     main_scene: String,
 }
+
+#[derive(Deserialize, Default)]
+struct PerformanceSection {
+    #[serde(default = "default_target_fps")]
+    target_fps: f32,
+
+    #[serde(default = "default_xps")]
+    xps: f32,
+}
+
+fn default_target_fps() -> f32 { 144.0 }
+fn default_xps() -> f32 { 60.0 }
 
 pub struct Project {
     root: Option<PathBuf>, // only meaningful in Disk mode
@@ -49,5 +63,14 @@ impl Project {
     /// Only valid in dev/editor mode
     pub fn root(&self) -> Option<&Path> {
         self.root.as_deref()
+    }
+
+    /// Performance getters
+    pub fn target_fps(&self) -> f32 {
+        self.settings.performance.target_fps
+    }
+
+    pub fn xps(&self) -> f32 {
+        self.settings.performance.xps
     }
 }
