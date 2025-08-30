@@ -1,5 +1,5 @@
 #![allow(unused)]#![allow(dead_code)]
-use std::{borrow::Cow, collections::HashMap, fmt, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt, ops::Range, sync::Arc};
 
 use bytemuck::cast_slice;
 use wgpu::{
@@ -100,14 +100,13 @@ struct RectInstance {
     color: [f32; 4],
     size: [f32; 2],
     pivot: [f32; 2],
-    corner_radius_0: [f32; 4],
-    corner_radius_1: [f32; 4],
-    corner_radius_2: [f32; 4],
-    corner_radius_3: [f32; 4],
+    // Packed corner radius: xy components of all 4 corners
+    corner_radius_xy: [f32; 4], // [top_left.xy, top_right.xy]
+    corner_radius_zw: [f32; 4], // [bottom_right.xy, bottom_left.xy]
     border_thickness: f32,
     is_border: u32,
     z_index: i32,
-    _pad: f32,  
+    _pad: f32,
 }
 
 #[repr(C)]
@@ -153,9 +152,9 @@ pub struct Graphics {
     // Vertex buffer (shared quad)
     vertex_buffer: wgpu::Buffer,
 
-    // Retained mode caches
-    cached_rects: HashMap<String, CachedRect>,
-    cached_textures: HashMap<String, CachedTexture>,
+    // Retained mode caches - using UUID directly (no string conversion!)
+    cached_rects: HashMap<uuid::Uuid, CachedRect>,
+    cached_textures: HashMap<uuid::Uuid, CachedTexture>,
 
     // Instance buffers
     rect_instance_buffer: wgpu::Buffer,
@@ -173,6 +172,14 @@ pub struct Graphics {
     rect_instances: Vec<RectInstance>,
     texture_groups: Vec<(String, Vec<TextureInstance>)>,
     texture_group_offsets: Vec<(usize, usize)>, // (start_offset, count) for each group
+    
+    // Pre-allocated temporary vectors to avoid per-frame allocations
+    temp_texture_map: HashMap<String, Vec<TextureInstance>>,
+    temp_sorted_groups: Vec<(String, Vec<TextureInstance>)>,
+    temp_all_texture_instances: Vec<TextureInstance>,
+    
+    // Pre-computed buffer ranges to avoid recalculation
+    texture_buffer_ranges: Vec<Range<u64>>,
 }
 
 pub async fn create_graphics(
@@ -207,7 +214,8 @@ pub async fn create_graphics(
     // 2) Surface config
     let size = window.inner_size();
     let (w, h) = (size.width.max(1), size.height.max(1));
-    let surface_config = surface.get_default_config(&adapter, w, h).unwrap();
+    let mut surface_config = surface.get_default_config(&adapter, w, h).unwrap();
+    surface_config.present_mode = wgpu::PresentMode::Immediate;
     #[cfg(not(target_arch = "wasm32"))]
     surface.configure(&device, &surface_config);
 
@@ -315,12 +323,28 @@ pub async fn create_graphics(
         usage: BufferUsages::VERTEX,
     });
 
-    // 8) Initialize camera data
+    // 8) Initialize camera data with pre-computed scaling
     let virtual_width = VIRTUAL_WIDTH;
     let virtual_height = VIRTUAL_HEIGHT;
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
-    let camera_data = [virtual_width, virtual_height, window_width, window_height];
+    
+    // Pre-compute aspect scaling on CPU
+    let virtual_aspect = virtual_width / virtual_height;
+    let window_aspect = window_width / window_height;
+    
+    let (scale_x, scale_y) = if window_aspect > virtual_aspect {
+        (virtual_aspect / window_aspect, 1.0)
+    } else {
+        (1.0, window_aspect / virtual_aspect)
+    };
+    
+    let camera_data = [
+        virtual_width,
+        virtual_height,
+        scale_x * 2.0 / virtual_width,  // Pre-computed NDC scaling
+        scale_y * 2.0 / virtual_height,
+    ];
     queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
 
     // 9) Finalize Graphics
@@ -348,6 +372,11 @@ pub async fn create_graphics(
         rect_instances: Vec::new(),
         texture_groups: Vec::new(),
         texture_group_offsets: Vec::new(),
+        // Pre-allocate temporary vectors
+        temp_texture_map: HashMap::new(),
+        temp_sorted_groups: Vec::new(),
+        temp_all_texture_instances: Vec::new(),
+        texture_buffer_ranges: Vec::new(),
     };
 
     let _ = proxy.send_event(gfx);
@@ -393,7 +422,7 @@ fn create_rect_instanced_pipeline(
                         },
                     ],
                 },
-                // Instance buffer
+                // Instance buffer - updated for packed corner radius
                 VertexBufferLayout {
                     array_stride: std::mem::size_of::<RectInstance>() as _,
                     step_mode: VertexStepMode::Instance,
@@ -405,13 +434,12 @@ fn create_rect_instanced_pipeline(
                         VertexAttribute { offset: 64, shader_location: 6, format: VertexFormat::Float32x4 },
                         VertexAttribute { offset: 80, shader_location: 7, format: VertexFormat::Float32x2 },
                         VertexAttribute { offset: 88, shader_location: 8, format: VertexFormat::Float32x2 },
+                        // Packed corner radius (2 vec4s instead of 4)
                         VertexAttribute { offset: 96, shader_location: 9, format: VertexFormat::Float32x4 },
                         VertexAttribute { offset: 112, shader_location: 10, format: VertexFormat::Float32x4 },
-                        VertexAttribute { offset: 128, shader_location: 11, format: VertexFormat::Float32x4 },
-                        VertexAttribute { offset: 144, shader_location: 12, format: VertexFormat::Float32x4 },
-                        VertexAttribute { offset: 160, shader_location: 13, format: VertexFormat::Float32 },
-                        VertexAttribute { offset: 164, shader_location: 14, format: VertexFormat::Uint32 },
-                        VertexAttribute { offset: 168, shader_location: 15, format: VertexFormat::Sint32 },
+                        VertexAttribute { offset: 128, shader_location: 11, format: VertexFormat::Float32 },
+                        VertexAttribute { offset: 132, shader_location: 12, format: VertexFormat::Uint32 },
+                        VertexAttribute { offset: 136, shader_location: 13, format: VertexFormat::Sint32 },
                     ],
                 },
             ],
@@ -524,16 +552,31 @@ impl Graphics {
         let virtual_height = VIRTUAL_HEIGHT;
         let window_width = self.surface_config.width as f32;
         let window_height = self.surface_config.height as f32;
+        
+        // Pre-compute aspect scaling on CPU
+        let virtual_aspect = virtual_width / virtual_height;
+        let window_aspect = window_width / window_height;
+        
+        let (scale_x, scale_y) = if window_aspect > virtual_aspect {
+            (virtual_aspect / window_aspect, 1.0)
+        } else {
+            (1.0, window_aspect / virtual_aspect)
+        };
 
-        let camera_data = [virtual_width, virtual_height, window_width, window_height];
+        let camera_data = [
+            virtual_width,
+            virtual_height,
+            scale_x * 2.0 / virtual_width,  // Pre-computed NDC scaling
+            scale_y * 2.0 / virtual_height,
+        ];
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
     }
 
     pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {
-        let uuid_str = uuid.to_string();
-        self.cached_rects.remove(&uuid_str);
-        self.cached_textures.remove(&uuid_str);
+        // Direct UUID usage - no string allocation!
+        self.cached_rects.remove(&uuid);
+        self.cached_textures.remove(&uuid);
         self.instances_need_rebuild = true; // Mark as dirty
     }
 
@@ -570,11 +613,18 @@ impl Graphics {
         let cr = corner_radius.unwrap_or_default();
         let clamp_norm = |val: f32| -> f32 { (val * scale_factor).clamp(0.0, 0.5) };
 
-        let cr_data = [
-            [clamp_norm(cr.top_left / half_w), clamp_norm(cr.top_left / half_h), 0.0, 0.0],
-            [clamp_norm(cr.top_right / half_w), clamp_norm(cr.top_right / half_h), 0.0, 0.0],
-            [clamp_norm(cr.bottom_right / half_w), clamp_norm(cr.bottom_right / half_h), 0.0, 0.0],
-            [clamp_norm(cr.bottom_left / half_w), clamp_norm(cr.bottom_left / half_h), 0.0, 0.0],
+        // Pack corner radius into 2 vec4s instead of 4
+        let corner_radius_xy = [
+            clamp_norm(cr.top_left / half_w),     // top_left.x
+            clamp_norm(cr.top_left / half_h),     // top_left.y
+            clamp_norm(cr.top_right / half_w),    // top_right.x
+            clamp_norm(cr.top_right / half_h),    // top_right.y
+        ];
+        let corner_radius_zw = [
+            clamp_norm(cr.bottom_right / half_w), // bottom_right.x
+            clamp_norm(cr.bottom_right / half_h), // bottom_right.y
+            clamp_norm(cr.bottom_left / half_w),  // bottom_left.x
+            clamp_norm(cr.bottom_left / half_h),  // bottom_left.y
         ];
 
         let transform_array = transform.to_mat4().to_cols_array();
@@ -586,17 +636,16 @@ impl Graphics {
             color: color_lin,
             size: [size.x, size.y],
             pivot: [pivot.x, pivot.y],
-            corner_radius_0: cr_data[0],
-            corner_radius_1: cr_data[1],
-            corner_radius_2: cr_data[2],
-            corner_radius_3: cr_data[3],
+            corner_radius_xy,
+            corner_radius_zw,
             border_thickness,
             is_border: if is_border { 1 } else { 0 },
             z_index,
             _pad: 0.0,
         };
 
-        self.cached_rects.insert(uuid.to_string(), CachedRect { instance });
+        // Direct UUID usage - no string allocation!
+        self.cached_rects.insert(uuid, CachedRect { instance });
         self.instances_need_rebuild = true; // Mark as dirty
     }
 
@@ -619,8 +668,9 @@ impl Graphics {
             _pad: 0.0,
         };
 
+        // Direct UUID usage - no string allocation!
         self.cached_textures.insert(
-            uuid.to_string(),
+            uuid,
             CachedTexture {
                 instance,
                 texture_path: texture_path.to_string(),
@@ -630,7 +680,7 @@ impl Graphics {
     }
 
     fn rebuild_instances(&mut self) {
-        // Rebuild rect instances
+        // Rebuild rect instances - reuse vector
         self.rect_instances.clear();
         self.rect_instances.extend(
             self.cached_rects
@@ -648,46 +698,55 @@ impl Graphics {
             );
         }
 
-        // Rebuild texture groups and upload all at once
+        // Rebuild texture groups using pre-allocated vectors
         self.texture_groups.clear();
         self.texture_group_offsets.clear();
+        self.texture_buffer_ranges.clear();
         
-        let mut all_texture_instances = Vec::new();
-        let mut texture_map: HashMap<String, Vec<TextureInstance>> = HashMap::new();
+        // Reuse pre-allocated vectors
+        self.temp_all_texture_instances.clear();
+        self.temp_texture_map.clear();
         
         for cached in self.cached_textures.values() {
-            texture_map
+            self.temp_texture_map
                 .entry(cached.texture_path.clone())
                 .or_default()
                 .push(cached.instance);
         }
 
-        // Sort texture groups by minimum z-index
-        let mut sorted_groups: Vec<_> = texture_map.into_iter().collect();
-        sorted_groups.sort_by(|a, b| {
+        // Sort texture groups by minimum z-index - reuse vector
+        self.temp_sorted_groups.clear();
+        self.temp_sorted_groups.extend(self.temp_texture_map.drain());
+        self.temp_sorted_groups.sort_by(|a, b| {
             let min_z_a = a.1.iter().map(|c| c.z_index).min().unwrap_or(0);
             let min_z_b = b.1.iter().map(|c| c.z_index).min().unwrap_or(0);
             min_z_a.cmp(&min_z_b)
         });
 
         // Build one big buffer with all texture instances
-        for (path, mut instances) in sorted_groups {
+        for (path, mut instances) in self.temp_sorted_groups.drain(..) {
             instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
             
-            let start_offset = all_texture_instances.len();
+            let start_offset = self.temp_all_texture_instances.len();
             let count = instances.len();
             
-            all_texture_instances.extend(instances.clone());
+            // Pre-compute buffer ranges
+            let start_byte = start_offset * std::mem::size_of::<TextureInstance>();
+            let size_bytes = count * std::mem::size_of::<TextureInstance>();
+            let range = (start_byte as u64)..((start_byte + size_bytes) as u64);
+            
+            self.temp_all_texture_instances.extend(instances.clone());
             self.texture_groups.push((path, instances));
             self.texture_group_offsets.push((start_offset, count));
+            self.texture_buffer_ranges.push(range);
         }
 
         // Upload ALL texture instances to GPU once
-        if !all_texture_instances.is_empty() {
+        if !self.temp_all_texture_instances.is_empty() {
             self.queue.write_buffer(
                 &self.texture_instance_buffer,
                 0,
-                bytemuck::cast_slice(&all_texture_instances),
+                bytemuck::cast_slice(&self.temp_all_texture_instances),
             );
         }
     }
@@ -708,9 +767,9 @@ impl Graphics {
             rpass.draw(0..6, 0..self.rect_instances.len() as u32);
         }
 
-        // Draw texture groups - no uploads, just draw commands
+        // Draw texture groups - using pre-computed ranges
         for (i, (texture_path, _)) in self.texture_groups.iter().enumerate() {
-            let (start_offset, count) = self.texture_group_offsets[i];
+            let (_, count) = self.texture_group_offsets[i];
             
             if count > 0 {
                 // Get cached bind group (no creation)
@@ -721,16 +780,15 @@ impl Graphics {
                     &self.texture_bind_group_layout,
                 );
 
-                // Draw this texture group using buffer slice
+                // Draw this texture group using pre-computed buffer slice
                 rpass.set_pipeline(&self.texture_instanced_pipeline);
                 rpass.set_bind_group(0, tex_bg, &[]);
                 rpass.set_bind_group(1, &self.camera_bind_group, &[]);
                 rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 
-                let start_byte = start_offset * std::mem::size_of::<TextureInstance>();
-                let size_bytes = count * std::mem::size_of::<TextureInstance>();
+                // Use pre-computed range - no calculation needed!
                 let buffer_slice = self.texture_instance_buffer.slice(
-                    start_byte as u64..(start_byte + size_bytes) as u64
+                    self.texture_buffer_ranges[i].clone()
                 );
                 
                 rpass.set_vertex_buffer(1, buffer_slice);

@@ -9,6 +9,7 @@ use crate::{
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use wgpu::RenderPass;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -141,32 +142,22 @@ impl<P: ScriptProvider> Scene<P> {
         self.provider.load_ctor(short)
     }
 
-    pub fn tick(&mut self, gfx: &mut Graphics, delta: f32) {
-        self.process(delta);
+    pub fn process(&mut self, gfx: &mut Graphics, delta: f32) -> bool {
+        self.update(delta);
 
-        // Only print FPS occasionally to reduce overhead
-        static mut LAST_PRINT: Option<Instant> = None;
 
-    let now = Instant::now();
-    unsafe {
-        match LAST_PRINT {
-            Some(t) if now.duration_since(t) >= Duration::from_millis(500) => {
-                println!("fps: {:.0}", 1.0 / delta);
-                LAST_PRINT = Some(now);
-            }
-            None => {
-                println!("fps: {:.0}", 1.0 / delta);
-                LAST_PRINT = Some(now);
-            }
-            _ => {}
+   
+        // Render only if dirty
+        let dirty_nodes = self.get_dirty_nodes();
+        if dirty_nodes.is_empty() {
+            return false;
         }
+
+        self.traverse_and_render(dirty_nodes, gfx);
+        true
     }
 
-        // Render only dirty nodes
-        self.render(gfx);
-    }
-
-    pub fn process(&mut self, delta: f32) {
+    pub fn update(&mut self, delta: f32) {
         // Collect script IDs to avoid borrow checker issues
         let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
         
@@ -337,19 +328,6 @@ impl<P: ScriptProvider> Scene<P> {
             .collect()
     }
 
-    // Simplified render function - only processes dirty nodes
-    pub fn render(&mut self, gfx: &mut Graphics) {
-        let dirty_nodes = self.get_dirty_nodes();
-        
-        // Early return if nothing to update
-        if dirty_nodes.is_empty() {
-            return;
-        }
-
-       
-        
-        self.traverse_and_render(dirty_nodes, gfx);
-    }
     
     fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
         for node_id in dirty_nodes {

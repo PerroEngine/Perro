@@ -1,6 +1,6 @@
 struct Camera {
     virtual_size: vec2<f32>,
-    window_size: vec2<f32>,
+    ndc_scale: vec2<f32>,  // Pre-computed scaling factors
 }
 
 @group(0) @binding(0)
@@ -22,6 +22,7 @@ struct InstanceInput {
     @location(4) transform_2: vec4<f32>,
     @location(5) transform_3: vec4<f32>,
     @location(6) pivot: vec2<f32>,
+    @location(7) z_index: i32,
 }
 
 struct VertexOutput {
@@ -40,17 +41,14 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 
     let world_pos = transform * vec4<f32>(vertex.position, 0.0, 1.0);
     
-    let aspect_x = camera.virtual_size.x / camera.window_size.x;
-    let aspect_y = camera.virtual_size.y / camera.window_size.y;
-    let scale = min(aspect_x, aspect_y);
+    // Use pre-computed NDC scaling (no runtime calculation!)
+    let ndc_pos = world_pos.xy * camera.ndc_scale;
     
-    let ndc_pos = vec2<f32>(
-        world_pos.x * 2.0 / camera.virtual_size.x,
-        world_pos.y * 2.0 / camera.virtual_size.y
-    ) * scale;
+    // Convert z_index to depth
+    let depth = f32(instance.z_index) * 0.001;
 
     var out: VertexOutput;
-    out.clip_position = vec4<f32>(ndc_pos, 0.0, 1.0);
+    out.clip_position = vec4<f32>(ndc_pos, depth, 1.0);
     out.uv = vertex.uv;
     return out;
 }
