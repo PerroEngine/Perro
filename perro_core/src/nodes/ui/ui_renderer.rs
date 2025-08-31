@@ -12,14 +12,11 @@ use crate::{
     Color, Graphics, Transform2D, Vector2
 };
 
-
-
 pub fn update_global_transforms(
     elements: &mut IndexMap<Uuid, UIElement>,
     current_id: &Uuid,
     parent_global: &Transform2D,
 ) {
-    
     // First, figure out parent size and z without holding a mutable borrow
     let (parent_size, parent_z) = {
         let parent_id = elements
@@ -29,7 +26,6 @@ pub fn update_global_transforms(
         if let Some(parent_id) = parent_id {
             if let Some(parent) = elements.get(&parent_id) {
                 (*parent.get_size(), parent.get_z_index())
-
             } else {
                 (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
             }
@@ -40,120 +36,98 @@ pub fn update_global_transforms(
 
     // Now borrow mutably
     if let Some(element) = elements.get_mut(current_id) {
+        let parent_size_for_percentages = parent_size;
 
-     let parent_size_for_percentages = parent_size;
+        let style_map = element.get_style_map().clone(); // clone to break the borrow
+        for (key, pct) in style_map.iter() {
+            let fraction = *pct / 100.0;
 
-let style_map = element.get_style_map().clone(); // clone to break the borrow
-for (key, pct) in style_map.iter() {
-    let fraction = *pct / 100.0;
+            match key.as_str() {
+                // Size
+                "size.x" => element.set_size(Vector2::new(parent_size_for_percentages.x * fraction, element.get_size().y)),
+                "size.y" => element.set_size(Vector2::new(element.get_size().x, parent_size_for_percentages.y * fraction)),
 
-    match key.as_str() {
-        // Size
-        "size.x" => element.set_size(Vector2::new(parent_size_for_percentages.x * fraction, element.get_size().y)),
-        "size.y" => element.set_size(Vector2::new(element.get_size().x, parent_size_for_percentages.y * fraction)),
+                // Translation (position)
+                "transform.position.x" => element.get_transform_mut().position.x = parent_size_for_percentages.x * fraction,
+                "transform.position.y" => element.get_transform_mut().position.y = parent_size_for_percentages.y * fraction,
 
-        // Translation (position)
-        "transform.position.x" => element.get_transform_mut().position.x = parent_size_for_percentages.x * fraction,
-        "transform.position.y" => element.get_transform_mut().position.y = parent_size_for_percentages.y * fraction,
+                // Scale (relative to parent scale, not size)
+                "transform.scale.x" => {
+                    let parent_scale_x = parent_global.scale.x;
+                    element.get_transform_mut().scale.x = 1.0 * fraction * parent_scale_x;
+                },
+                "transform.scale.y" => {
+                    let parent_scale_y = parent_global.scale.y;
+                    element.get_transform_mut().scale.y = 1.0 * fraction * parent_scale_y;
+                },
 
-        // Scale
-        "transform.scale.x" => element.get_transform_mut().scale.x = parent_size_for_percentages.x * fraction,
-        "transform.scale.y" => element.get_transform_mut().scale.y = parent_size_for_percentages.y * fraction,
+                // Margins
+                "margin.left" => element.get_margin_mut().left = parent_size_for_percentages.x * fraction,
+                "margin.right" => element.get_margin_mut().right = parent_size_for_percentages.x * fraction,
+                "margin.top" => element.get_margin_mut().top = parent_size_for_percentages.y * fraction,
+                "margin.bottom" => element.get_margin_mut().bottom = parent_size_for_percentages.y * fraction,
 
-        // Margins
-        "margin.left" => element.get_margin_mut().left = parent_size_for_percentages.x * fraction,
-        "margin.right" => element.get_margin_mut().right = parent_size_for_percentages.x * fraction,
-        "margin.top" => element.get_margin_mut().top = parent_size_for_percentages.y * fraction,
-        "margin.bottom" => element.get_margin_mut().bottom = parent_size_for_percentages.y * fraction,
+                // Padding
+                "padding.left" => element.get_padding_mut().left = parent_size_for_percentages.x * fraction,
+                "padding.right" => element.get_padding_mut().right = parent_size_for_percentages.x * fraction,
+                "padding.top" => element.get_padding_mut().top = parent_size_for_percentages.y * fraction,
+                "padding.bottom" => element.get_padding_mut().bottom = parent_size_for_percentages.y * fraction,
 
-        // Padding
-        "padding.left" => element.get_padding_mut().left = parent_size_for_percentages.x * fraction,
-        "padding.right" => element.get_padding_mut().right = parent_size_for_percentages.x * fraction,
-        "padding.top" => element.get_padding_mut().top = parent_size_for_percentages.y * fraction,
-        "padding.bottom" => element.get_padding_mut().bottom = parent_size_for_percentages.y * fraction,
+                _ => {}
+            }
+        }
 
-        _ => {}
-    }
-}
-        
+        // Local transform
         let mut local = element.get_transform().clone();
         let local_z = element.get_z_index();
-
         let child_size = *element.get_size();
         let pivot = *element.get_pivot();
 
+        // Compute anchor offset
         let (anchor_x, anchor_y) = match element.get_anchor() {
             // Corners
-            FurAnchor::TopLeft => (
-                -parent_size.x * 0.5 + child_size.x * pivot.x,
-                parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-            ),
-            FurAnchor::TopRight => (
-                parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-                parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-            ),
-            FurAnchor::BottomLeft => (
-                -parent_size.x * 0.5 + child_size.x * pivot.x,
-                -parent_size.y * 0.5 + child_size.y * pivot.y,
-            ),
-            FurAnchor::BottomRight => (
-                parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-                -parent_size.y * 0.5 + child_size.y * pivot.y,
-            ),
+            FurAnchor::TopLeft => (-parent_size.x * 0.5 + child_size.x * pivot.x, parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y)),
+            FurAnchor::TopRight => (parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x), parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y)),
+            FurAnchor::BottomLeft => (-parent_size.x * 0.5 + child_size.x * pivot.x, -parent_size.y * 0.5 + child_size.y * pivot.y),
+            FurAnchor::BottomRight => (parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x), -parent_size.y * 0.5 + child_size.y * pivot.y),
 
             // Edges
-            FurAnchor::Top => (
-                0.0,
-                parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y),
-            ),
-            FurAnchor::Bottom => (
-                0.0,
-                -parent_size.y * 0.5 + child_size.y * pivot.y,
-            ),
-            FurAnchor::Left => (
-                -parent_size.x * 0.5 + child_size.x * pivot.x,
-                0.0,
-            ),
-            FurAnchor::Right => (
-                parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x),
-                0.0,
-            ),
+            FurAnchor::Top => (0.0, parent_size.y * 0.5 - child_size.y * (1.0 - pivot.y)),
+            FurAnchor::Bottom => (0.0, -parent_size.y * 0.5 + child_size.y * pivot.y),
+            FurAnchor::Left => (-parent_size.x * 0.5 + child_size.x * pivot.x, 0.0),
+            FurAnchor::Right => (parent_size.x * 0.5 - child_size.x * (1.0 - pivot.x), 0.0),
 
             // Center
             FurAnchor::Center => (0.0, 0.0),
         };
 
         // Apply anchor offset + user translation
-        local.position.x = anchor_x + local.position.x;
-        local.position.y = anchor_y + local.position.y;
+        local.position.x += anchor_x;
+        local.position.y += anchor_y;
 
         // --- Combine with parent transform ---
         let mut global = Transform2D::default();
-
         global.scale.x = parent_global.scale.x * local.scale.x;
         global.scale.y = parent_global.scale.y * local.scale.y;
-
-        global.position.x =
-            parent_global.position.x + (local.position.x * parent_global.scale.x);
-        global.position.y =
-            parent_global.position.y + (local.position.y * parent_global.scale.y);
-
+        global.position.x = parent_global.position.x + (local.position.x * parent_global.scale.x);
+        global.position.y = parent_global.position.y + (local.position.y * parent_global.scale.y);
         global.rotation = parent_global.rotation + local.rotation;
 
         element.set_global_transform(global.clone());
 
         // Set inherited z-index: local z + parent z
-        let global_z = local_z + parent_z + 1;
+        let global_z = local_z + parent_z + 2;
         element.set_z_index(global_z);
 
         println!("Updating {:?} -> {:?}", current_id, element.get_global_transform().position);
 
-        // Recurse into children (pass the current element's global z as parent_z)
+        // Recurse into children (pass the current element's global transform)
         for child_id in element.get_children().to_vec() {
             update_global_transforms(elements, &child_id, &global);
         }
     }
 }
+
 
 pub fn update_ui_layout(ui_node: &mut Ui) {
     for root_id in &ui_node.root_ids {

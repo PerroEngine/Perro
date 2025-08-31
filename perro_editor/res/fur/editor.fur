@@ -1,9 +1,8 @@
 [UI]
 
-    [Panel style="bg=green-5 rounding=sm w=75% h=300 border=14 border-c=green-8 anchor=c"]
-     [Panel style="bg=blue-5 rounding=sm w=30% h=300 border=14 border-c=blue-8 anchor=l"]
-  [/Panel]  [Panel style="bg=blue-5 rounding=sm w=30% h=300 border=14 border-c=blue-8 anchor=r"]
-  [/Panel]
+  [Panel style="bg=red-5 rounding=md sz=300 border=8 border-c=red-8 anchor=t"]
+    [Panel style="bg=red-4 rounding=sm sz=100% scl=70% border=4 border-c=red-7 anchor=c"]
+    [/Panel]
   [/Panel]
 
 
