@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -41,6 +43,8 @@ pub struct BaseUIElement {
     
     // Z-index for rendering order
     pub z_index: i32,
+
+    pub style_map: HashMap<String, f32>,
 }
 
 impl Default for BaseUIElement {
@@ -48,7 +52,7 @@ impl Default for BaseUIElement {
         let id = Uuid::new_v4();
         Self {
             id,
-            name: id.to_string(),    
+            name: id.to_string(),
             parent: None,
             children: Vec::new(),
             visible: true,
@@ -61,6 +65,7 @@ impl Default for BaseUIElement {
             anchor: FurAnchor::Center,
             modulate: None,
             z_index: 0,
+            style_map: HashMap::new(),
         }
     }
 }
@@ -110,6 +115,18 @@ pub trait BaseElement {
     // Z-index
     fn get_z_index(&self) -> i32;
     fn set_z_index(&mut self, z_index: i32);
+
+    // Margin
+    fn get_margin(&self) -> &EdgeInsets;
+    fn get_margin_mut(&mut self) -> &mut EdgeInsets;
+
+    // Padding
+    fn get_padding(&self) -> &EdgeInsets;
+    fn get_padding_mut(&mut self) -> &mut EdgeInsets;
+
+    // Style map
+    fn get_style_map(&self) -> &HashMap<String, f32>;
+    fn get_style_map_mut(&mut self) -> &mut HashMap<String, f32>;
 }
 
 /// Macro to implement BaseElement for a UI type
@@ -117,90 +134,50 @@ pub trait BaseElement {
 macro_rules! impl_ui_element {
     ($ty:ty) => {
         impl crate::ui_element::BaseElement for $ty {
-            fn get_id(&self) -> uuid::Uuid {
-                self.base.id
-            }
+            fn get_id(&self) -> uuid::Uuid { self.base.id }
+            fn set_id(&mut self, id: uuid::Uuid) { self.base.id = id; }
 
-            fn set_id(&mut self, id: uuid::Uuid) {
-                self.base.id = id;
-            }
+            fn get_name(&self) -> &str { &self.base.name }
+            fn set_name(&mut self, name: &str) { self.base.name = name.to_string(); }
 
-            fn get_name(&self) -> &str {
-                &self.base.name
-            }
-            fn set_name(&mut self, name: &str) {
-                self.base.name = name.to_string();
-            }
+            fn get_visible(&self) -> bool { self.base.visible }
+            fn set_visible(&mut self, visible: bool) { self.base.visible = visible; }
 
-            fn get_visible(&self) -> bool {
-                self.base.visible
-            }
-            fn set_visible(&mut self, visible: bool) {
-                self.base.visible = visible;
-            }
+            fn get_parent(&self) -> Option<uuid::Uuid> { self.base.parent }
+            fn set_parent(&mut self, parent: Option<uuid::Uuid>) { self.base.parent = parent; }
 
-            fn get_parent(&self) -> Option<uuid::Uuid> {
-                self.base.parent
-            }
-            fn set_parent(&mut self, parent: Option<uuid::Uuid>) {
-                self.base.parent = parent;
-            }
+            fn get_children(&self) -> &[uuid::Uuid] { &self.base.children }
+            fn set_children(&mut self, children: Vec<uuid::Uuid>) { self.base.children = children; }
 
-            fn get_children(&self) -> &[uuid::Uuid] {
-                &self.base.children
-            }
-            fn set_children(&mut self, children: Vec<uuid::Uuid>) {
-                self.base.children = children;
-            }
+            fn get_transform(&self) -> &crate::Transform2D { &self.base.transform }
+            fn get_transform_mut(&mut self) -> &mut crate::Transform2D { &mut self.base.transform }
 
-            fn get_transform(&self) -> &crate::Transform2D {
-                &self.base.transform
-            }
-            fn get_transform_mut(&mut self) -> &mut crate::Transform2D {
-                &mut self.base.transform
-            }
+            fn get_global_transform(&self) -> &crate::Transform2D { &self.base.global_transform }
+            fn set_global_transform(&mut self, transform: crate::Transform2D) { self.base.global_transform = transform; }
 
-            fn get_global_transform(&self) -> &crate::Transform2D {
-                &self.base.global_transform
-            }
-            fn set_global_transform(&mut self, transform: crate::Transform2D) {
-                self.base.global_transform = transform;
-            }
+            fn get_size(&self) -> &crate::Vector2 { &self.base.size }
+            fn set_size(&mut self, size: crate::Vector2) { self.base.size = size; }
 
-            fn get_size(&self) -> &crate::Vector2 {
-                &self.base.size
-            }
-            fn set_size(&mut self, size: crate::Vector2) {
-                self.base.size = size;
-            }
+            fn get_pivot(&self) -> &crate::Vector2 { &self.base.pivot }
+            fn set_pivot(&mut self, pivot: crate::Vector2) { self.base.pivot = pivot; }
 
-            fn get_pivot(&self) -> &crate::Vector2 {
-                &self.base.pivot
-            }
-            fn set_pivot(&mut self, pivot: crate::Vector2) {
-                self.base.pivot = pivot;
-            }
+            fn get_anchor(&self) -> &crate::ast::FurAnchor { &self.base.anchor }
+            fn set_anchor(&mut self, anchor: crate::ast::FurAnchor) { self.base.anchor = anchor; }
 
-            fn get_anchor(&self) -> &crate::ast::FurAnchor {
-                &self.base.anchor
-            }
-            fn set_anchor(&mut self, anchor: crate::ast::FurAnchor) {
-                self.base.anchor = anchor;
-            }
+            fn get_modulate(&self) -> Option<&crate::Color> { self.base.modulate.as_ref() }
+            fn set_modulate(&mut self, color: Option<crate::Color>) { self.base.modulate = color; }
 
-            fn get_modulate(&self) -> Option<&crate::Color> {
-                self.base.modulate.as_ref()
-            }
-            fn set_modulate(&mut self, color: Option<crate::Color>) {
-                self.base.modulate = color;
-            }
+            fn get_z_index(&self) -> i32 { self.base.z_index }
+            fn set_z_index(&mut self, z_index: i32) { self.base.z_index = z_index; }
 
-            fn get_z_index(&self) -> i32 {
-                self.base.z_index
-            }
-            fn set_z_index(&mut self, z_index: i32) {
-                self.base.z_index = z_index;
-            }
+            fn get_margin(&self) -> &crate::ui_element::EdgeInsets { &self.base.margin }
+            fn get_margin_mut(&mut self) -> &mut crate::ui_element::EdgeInsets { &mut self.base.margin }
+
+            fn get_padding(&self) -> &crate::ui_element::EdgeInsets { &self.base.padding }
+            fn get_padding_mut(&mut self) -> &mut crate::ui_element::EdgeInsets { &mut self.base.padding }
+
+            fn get_style_map(&self) -> &std::collections::HashMap<String, f32> { &self.base.style_map }
+            fn get_style_map_mut(&mut self) -> &mut std::collections::HashMap<String, f32> { &mut self.base.style_map }
         }
     };
 }

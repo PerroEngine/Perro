@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, default};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    ast::{FurAnchor, FurElement, FurNode, FurStyle},
-    lexer::{Lexer, Token},
-    Color,
-};
+use crate::ast::{FurAnchor, FurElement, FurNode, FurStyle, ValueOrPercent};
+use crate::{Color, Transform2D, Vector2};
+
+// =================== PARSER ===================
+
+use crate::lexer::{Lexer, Token};
 
 pub struct FurParser {
     lexer: Lexer,
@@ -31,10 +33,7 @@ impl FurParser {
         if self.current_token == expected {
             self.next_token()
         } else {
-            Err(format!(
-                "Expected {:?}, found {:?}",
-                expected, self.current_token
-            ))
+            Err(format!("Expected {:?}, found {:?}", expected, self.current_token))
         }
     }
 
@@ -74,20 +73,12 @@ impl FurParser {
                 self.next_token()?;
                 name
             }
-            _ => {
-                return Err(format!(
-                    "Expected tag name, found {:?}",
-                    self.current_token
-                ))
-            }
+            _ => return Err(format!("Expected tag name, found {:?}", self.current_token)),
         };
 
         if is_closing {
             self.expect(Token::RBracket)?;
-            return Err(format!(
-                "Unexpected closing tag without matching opening: {}",
-                tag_name
-            ));
+            return Err(format!("Unexpected closing tag without matching opening: {}", tag_name));
         }
 
         let mut attributes = HashMap::new();
@@ -106,10 +97,7 @@ impl FurParser {
                 }
                 self.next_token()?;
             } else {
-                return Err(format!(
-                    "Expected string literal for attribute value, found {:?}",
-                    self.current_token
-                ));
+                return Err(format!("Expected string literal for attribute value, found {:?}", self.current_token));
             }
         }
 
@@ -130,7 +118,7 @@ impl FurParser {
                     let saved_pos = self.lexer.pos;
                     let saved_token = self.current_token.clone();
 
-                    self.next_token()?; // consume '['
+                    self.next_token()?;
 
                     if self.current_token == Token::Slash {
                         self.next_token()?;
@@ -142,7 +130,7 @@ impl FurParser {
                             }
                         }
                     }
-                    // rollback if not closing tag
+
                     self.lexer.pos = saved_pos;
                     self.current_token = saved_token;
                 }
@@ -151,10 +139,7 @@ impl FurParser {
             }
         }
 
-        let id = attributes
-            .get("id")
-            .cloned()
-            .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
+        let id = attributes.get("id").cloned().unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
 
         Ok(FurNode::Element(FurElement {
             tag_name,
@@ -167,11 +152,12 @@ impl FurParser {
     }
 }
 
-/// Parses style string like "bg=blue-500 mt=10 p=5 tx=2"
+// =================== STYLE PARSING ===================
+
 fn parse_style_string(input: &str) -> Result<FurStyle, String> {
     let mut style = FurStyle::default();
 
-    // Define shorthand size map
+    // Map the keywords to numeric values
     let size_map: HashMap<&str, f32> = [
         ("xs", 4.0),
         ("sm", 8.0),
@@ -181,165 +167,121 @@ fn parse_style_string(input: &str) -> Result<FurStyle, String> {
         ("2xl", 32.0),
         ("3xl", 48.0),
         ("4xl", 64.0),
-        ("full", 9999.9), // effectively "max"
+        ("full", 9999.9),
     ]
     .iter()
     .cloned()
     .collect();
 
-    // Helper to parse int or lookup shorthand size
-    let parse_size = |val: &str| -> Option<f32> {
-        if let Ok(num) = val.parse::<f32>() {
-            Some(num)
+    let parse_value = |val: &str| -> Option<ValueOrPercent> {
+        if let Some(percent_str) = val.strip_suffix('%') {
+            percent_str.parse::<f32>().ok().map(ValueOrPercent::Percent)
+        } else if let Ok(num) = val.parse::<f32>() {
+            Some(ValueOrPercent::Abs(num))
+        } else if let Some(num) = size_map.get(val) {
+            Some(ValueOrPercent::Abs(*num))
         } else {
-            size_map.get(val).copied()
+            None
         }
     };
 
-    for token in input.split_whitespace() {
-        let (key, value) = token
-            .split_once('=')
-            .ok_or_else(|| format!("Invalid style token '{}', expected key=value", token))?;
+    fn parse_abs_value(val: &str, size_map: &HashMap<&str, f32>) -> f32 {
+        if let Ok(num) = val.parse::<f32>() {
+            num
+        } else if let Some(v) = size_map.get(val) {
+            *v
+        } else {
+            0.0
+        }
+    }
 
+    for token in input.split_whitespace() {
+        let (key, value) = token.split_once('=').ok_or_else(|| format!("Invalid style token '{}', expected key=value", token))?;
         match key {
-            "bg" => {
-                style.background_color = Some(parse_color_with_opacity(value)?);
-            }
-            "mod" => {
-                style.modulate = Some(parse_color_with_opacity(value)?);
-            }
+            "bg" => style.background_color = Some(parse_color_with_opacity(value)?),
+            "mod" => style.modulate = Some(parse_color_with_opacity(value)?),
 
             "m" => {
-                if let Some(v) = parse_size(value) {
+                if let Some(v) = parse_value(value) {
                     style.margin.top = Some(v);
                     style.margin.right = Some(v);
                     style.margin.bottom = Some(v);
                     style.margin.left = Some(v);
                 }
             }
-            "mt" => style.margin.top = parse_size(value),
-            "mr" => style.margin.right = parse_size(value),
-            "mb" => style.margin.bottom = parse_size(value),
-            "ml" => style.margin.left = parse_size(value),
+            "mt" => style.margin.top = parse_value(value),
+            "mr" => style.margin.right = parse_value(value),
+            "mb" => style.margin.bottom = parse_value(value),
+            "ml" => style.margin.left = parse_value(value),
 
             "p" => {
-                if let Some(v) = parse_size(value) {
+                if let Some(v) = parse_value(value) {
                     style.padding.top = Some(v);
                     style.padding.right = Some(v);
                     style.padding.bottom = Some(v);
                     style.padding.left = Some(v);
                 }
             }
-            "pt" => style.padding.top = parse_size(value),
-            "pr" => style.padding.right = parse_size(value),
-            "pb" => style.padding.bottom = parse_size(value),
-            "pl" => style.padding.left = parse_size(value),
+            "pt" => style.padding.top = parse_value(value),
+            "pr" => style.padding.right = parse_value(value),
+            "pb" => style.padding.bottom = parse_value(value),
+            "pl" => style.padding.left = parse_value(value),
 
-            "tx" => style.translation.x = parse_size(value),
-            "ty" => style.translation.y = parse_size(value),
-
+            "tx" => style.translation.x = parse_value(value),
+            "ty" => style.translation.y = parse_value(value),
 
             "sz" => {
-                    if let Some(v) = parse_size(value) {
-                        style.size.x = v as f32;
-                        style.size.y = v as f32;
-                    }
+                if let Some(v) = parse_value(value) {
+                    style.size.x = Some(v);
+                    style.size.y = Some(v);
                 }
+            }
+            "w" | "sz-x" => style.size.x = parse_value(value),
+            "h" | "sz-y" => style.size.y = parse_value(value),
 
-            "w" | "sz-x" => {
-                    if let Some(v) = parse_size(value) {
-                        style.size.x = v as f32;
-                    }
-                }
-
-            "h" | "sz-y" => {
-                    if let Some(v) = parse_size(value) {
-                        style.size.y = v as f32;
-                    }
-                }
-
-            
             "scl" => {
-                if let Some(v) = parse_size(value) {
-                    let f = v as f32;
-                    style.transform.scale.x = f;
-                    style.transform.scale.y = f;
+                if let Some(v) = parse_value(value) {
+                    style.transform.scale.x = Some(v);
+                    style.transform.scale.y = Some(v);
                 }
             }
-            "scl-x" => {
-                if let Some(v) = parse_size(value) {
-                    style.transform.scale.x = v as f32;
-                }
-            }
-            "scl-y" => {
-                if let Some(v) = parse_size(value) {
-                    style.transform.scale.y = v as f32;
-                }
-            }
-            // border-radius shorthand using rounding keys as example
+            "scl-x" => style.transform.scale.x = parse_value(value),
+            "scl-y" => style.transform.scale.y = parse_value(value),
+
             "rounding" => {
-                if let Some(v) = parse_size(value) {
-
-                    style.corner_radius.top_left = Some(v);
-                    style.corner_radius.top_right = Some(v);
-                    style.corner_radius.bottom_left = Some(v);
-                    style.corner_radius.bottom_right = Some(v);
-                }
-            }
+                let v = parse_abs_value(value, &size_map);
+                style.corner_radius.top_left = v;
+                style.corner_radius.top_right = v;
+                style.corner_radius.bottom_left = v;
+                style.corner_radius.bottom_right = v;
+            },
             "rounding-t" => {
-                if let Some(v) = parse_size(value) {
-   
-                    style.corner_radius.top_left = Some(v);
-                    style.corner_radius.top_right = Some(v);
-                }
-            }
+                let v = parse_abs_value(value, &size_map);
+                style.corner_radius.top_left = v;
+                style.corner_radius.top_right = v;
+            },
             "rounding-b" => {
-                if let Some(v) = parse_size(value) {
-
-                    style.corner_radius.bottom_left = Some(v);
-                    style.corner_radius.bottom_right = Some(v);
-                }
-            }
+                let v = parse_abs_value(value, &size_map);
+                style.corner_radius.bottom_left = v;
+                style.corner_radius.bottom_right = v;
+            },
             "rounding-l" => {
-                if let Some(v) = parse_size(value) {
-
-                    style.corner_radius.top_left = Some(v);
-                    style.corner_radius.bottom_left = Some(v);
-                }
-            }
+                let v = parse_abs_value(value, &size_map);
+                style.corner_radius.top_left = v;
+                style.corner_radius.bottom_left = v;
+            },
             "rounding-r" => {
-                if let Some(v) = parse_size(value) {
-    
+                let v = parse_abs_value(value, &size_map);
+                style.corner_radius.top_right = v;
+                style.corner_radius.bottom_right = v;
+            },
+            "rounding-tl" => style.corner_radius.top_left = parse_abs_value(value, &size_map),
+            "rounding-tr" => style.corner_radius.top_right = parse_abs_value(value, &size_map),
+            "rounding-bl" => style.corner_radius.bottom_left = parse_abs_value(value, &size_map),
+            "rounding-br" => style.corner_radius.bottom_right = parse_abs_value(value, &size_map),
+            "border" => style.border = parse_abs_value(value, &size_map),
 
-                    style.corner_radius.top_right = Some(v);
-                    style.corner_radius.bottom_right = Some(v);
-                }
-            }
-            "rounding-tl" => {
-                let size = parse_size(value);
-                style.corner_radius.top_left = size;
-            }
-            "rounding-tr" => {
-                let size = parse_size(value);
-                style.corner_radius.top_right = size;
-            }
-            "rounding-bl" => {
-                let size = parse_size(value);
-                style.corner_radius.bottom_left = size;
-            }
-            "rounding-br" => {
-                let size = parse_size(value);
-                style.corner_radius.bottom_right = size;
-            }
-
-            "border" => {
-                 let size = parse_size(value);
-                style.border = size;
-            }
-
-            "border-color" | "border-c" => {
-                style.border_color = Some(parse_color_with_opacity(value)?);
-            }
+            "border-color" | "border-c" => style.border_color = Some(parse_color_with_opacity(value)?),
 
             "anchor" => {
                 style.anchor = match value {
@@ -352,48 +294,31 @@ fn parse_style_string(input: &str) -> Result<FurStyle, String> {
                     "tr" => FurAnchor::TopRight,
                     "bl" => FurAnchor::BottomLeft,
                     "br" => FurAnchor::BottomRight,
-                    _ => {
-                        return Err(format!(
-                            "Invalid anchor value '{}'. Expected one of: c, t, b, l, r, tl, tr, bl, br",
-                            value
-                        ));
-                    }
+                    _ => return Err(format!("Invalid anchor value '{}'", value)),
                 };
             }
 
-            _ => {
-                // Unknown key, ignore or log
-            }
+            _ => {}
         }
     }
 
     Ok(style)
 }
 
-
 fn parse_color_with_opacity(value: &str) -> Result<Color, String> {
     let mut parts = value.splitn(2, '/');
     let base = parts.next().unwrap();
     let opacity_part = parts.next();
 
-    // Parse base color
     let mut color = if base.starts_with('#') {
         Color::from_hex(base).map_err(|e| format!("Invalid hex color '{}': {}", base, e))?
     } else {
         Color::from_preset(base).ok_or_else(|| format!("Unknown preset color '{}'", base))?
     };
 
-    // Parse opacity if present
     if let Some(opacity_str) = opacity_part {
-        let opacity_percent = opacity_str.parse::<u8>().map_err(|_| {
-            format!("Invalid opacity value '{}', must be 0-100", opacity_str)
-        })?;
-
-        if opacity_percent > 100 {
-            return Err(format!("Opacity '{}' out of range 0-100", opacity_percent));
-        }
-
-        // Convert percent (0-100) to alpha (0-255)
+        let opacity_percent = opacity_str.parse::<u8>().map_err(|_| format!("Invalid opacity value '{}', must be 0-100", opacity_str))?;
+        if opacity_percent > 100 { return Err(format!("Opacity '{}' out of range 0-100", opacity_percent)); }
         let alpha = (opacity_percent as f32 / 100.0 * 255.0).round() as u8;
         color.a = alpha;
     }

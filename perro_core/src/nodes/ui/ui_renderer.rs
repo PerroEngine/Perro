@@ -6,11 +6,13 @@ use wgpu::RenderPass;
 use crate::{
     ast::FurAnchor, 
     graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, 
-    ui_element::{BaseElement, UIElement}, 
+    ui_element::{BaseElement, BaseUIElement, UIElement}, 
     ui_elements::ui_panel::UIPanel, 
     ui_node::Ui, 
     Color, Graphics, Transform2D, Vector2
 };
+
+
 
 pub fn update_global_transforms(
     elements: &mut IndexMap<Uuid, UIElement>,
@@ -27,6 +29,7 @@ pub fn update_global_transforms(
         if let Some(parent_id) = parent_id {
             if let Some(parent) = elements.get(&parent_id) {
                 (*parent.get_size(), parent.get_z_index())
+
             } else {
                 (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
             }
@@ -37,6 +40,41 @@ pub fn update_global_transforms(
 
     // Now borrow mutably
     if let Some(element) = elements.get_mut(current_id) {
+
+     let parent_size_for_percentages = parent_size;
+
+let style_map = element.get_style_map().clone(); // clone to break the borrow
+for (key, pct) in style_map.iter() {
+    let fraction = *pct / 100.0;
+
+    match key.as_str() {
+        // Size
+        "size.x" => element.set_size(Vector2::new(parent_size_for_percentages.x * fraction, element.get_size().y)),
+        "size.y" => element.set_size(Vector2::new(element.get_size().x, parent_size_for_percentages.y * fraction)),
+
+        // Translation (position)
+        "transform.position.x" => element.get_transform_mut().position.x = parent_size_for_percentages.x * fraction,
+        "transform.position.y" => element.get_transform_mut().position.y = parent_size_for_percentages.y * fraction,
+
+        // Scale
+        "transform.scale.x" => element.get_transform_mut().scale.x = parent_size_for_percentages.x * fraction,
+        "transform.scale.y" => element.get_transform_mut().scale.y = parent_size_for_percentages.y * fraction,
+
+        // Margins
+        "margin.left" => element.get_margin_mut().left = parent_size_for_percentages.x * fraction,
+        "margin.right" => element.get_margin_mut().right = parent_size_for_percentages.x * fraction,
+        "margin.top" => element.get_margin_mut().top = parent_size_for_percentages.y * fraction,
+        "margin.bottom" => element.get_margin_mut().bottom = parent_size_for_percentages.y * fraction,
+
+        // Padding
+        "padding.left" => element.get_padding_mut().left = parent_size_for_percentages.x * fraction,
+        "padding.right" => element.get_padding_mut().right = parent_size_for_percentages.x * fraction,
+        "padding.top" => element.get_padding_mut().top = parent_size_for_percentages.y * fraction,
+        "padding.bottom" => element.get_padding_mut().bottom = parent_size_for_percentages.y * fraction,
+
+        _ => {}
+    }
+}
         
         let mut local = element.get_transform().clone();
         let local_z = element.get_z_index();
