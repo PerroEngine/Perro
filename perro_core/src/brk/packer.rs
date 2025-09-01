@@ -1,49 +1,6 @@
 //! 🐾 BaRK Format (Binary Resource pacK)
-//!
-//! This module builds `.brk` archives for Perro.
-//!
-//! A `.brk` file is a **Binary Resource pacK** — a simple, efficient, and secure
-//! container format for bundling game assets.
-//!
-//! ## Layout
-//!
-//! ```text
-//! +-------------------+
-//! | Header            |  (magic, version, file count, index offset)
-//! +-------------------+
-//! | File Data Blobs   |  (raw file contents | project.toml, scenes, and fur files are encrypted)
-//! +-------------------+
-//! | File Index        |  (path, offset, size, flags, nonce, tag)
-//! +-------------------+
-//! ```
-//!
-//! ## Header
-//! - Magic: `BRK1`
-//! - Version: `u32` (currently 1)
-//! - File Count: `u32`
-//! - Index Offset: `u64`
-//!
-//! ## Index Entries
-//! - Path length (`u16`) + UTF‑8 path string
-//! - Offset (`u64`)
-//! - Size (`u64`)
-//! - Flags (`u32`) — e.g. `2 = encrypted`
-//! - Nonce (`[u8; 12]`) — AES‑GCM nonce if encrypted
-//! - Tag (`[u8; 16]`) — AES‑GCM authentication tag if encrypted
-//!
-//! ## Encryption
-//! - Uses **AES‑256‑GCM** for integrity + confidentiality.
-//! - By default, only critical files are encrypted:
-//!   - `project.toml` (always)
-//!   - `.scn` (scenes)
-//!   - `.fur` (UI layouts)
-//!   - `.toml` (configs)
-//! - Other assets (textures, audio, video) are left unencrypted for performance/streaming.
-//!
-//! ## Why "BaRK"?
-//! Because Perro is a dog 🐕, and dogs bark — so your assets are packed into a **BaRK**.
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Write, Seek, SeekFrom};
 use std::path::Path;
 use walkdir::WalkDir;
@@ -51,6 +8,7 @@ use walkdir::WalkDir;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
 use rand::RngCore;
+use serde_json::Value;
 
 /// File types to skip entirely
 const SKIP_EXTENSIONS: &[&str] = &["pup", "rs", "cs", "ts"];
@@ -84,7 +42,33 @@ fn write_header(file: &mut File, header: &BrkHeader) -> io::Result<()> {
     Ok(())
 }
 
-/// Build a `.brk` archive from a resource directory + project root
+/// Minify JSON (.scn) file in memory
+fn minify_json(path: &Path) -> io::Result<Vec<u8>> {
+    let data = fs::read_to_string(path)?;
+    let json: Value = serde_json::from_str(&data)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let minified = serde_json::to_vec(&json)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    Ok(minified)
+}
+
+/// Minify FUR file in memory
+fn minify_fur(path: &Path) -> io::Result<Vec<u8>> {
+    let data = fs::read_to_string(path)?;
+    let mut output = String::with_capacity(data.len());
+
+    for line in data.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+            continue;
+        }
+        output.push_str(line);
+        output.push(' '); // single space to separate tokens
+    }
+    Ok(output.trim().as_bytes().to_vec())
+}
+
+/// Build a `.brk` archive
 pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 32]) -> io::Result<()> {
     let mut file = File::create(output)?;
 
@@ -100,22 +84,22 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
     let mut entries = Vec::new();
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
 
-    // 1. Explicitly add project.toml (always encrypted)
+    // 1. Explicitly add project.toml (always encrypted, no minification)
     let project_toml = project_root.join("project.toml");
     if project_toml.exists() {
-        let mut data = std::fs::read(&project_toml)?;
+        let mut data = fs::read(&project_toml)?;
         let mut nonce = [0u8; 12];
         let mut tag = [0u8; 16];
         let mut flags = 0;
 
         rand::thread_rng().fill_bytes(&mut nonce);
         let nonce_obj = Nonce::from_slice(&nonce);
-        let encrypted = cipher.encrypt(nonce_obj, data.as_ref())
+        let encrypted = cipher.encrypt(nonce_obj, &*data)
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
         let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
         data = ciphertext.to_vec();
         tag.copy_from_slice(gcm_tag);
-        flags |= 2; // mark as encrypted
+        flags |= 2;
 
         let offset = file.seek(SeekFrom::Current(0))?;
         file.write_all(&data)?;
@@ -145,7 +129,18 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
             }
 
             let rel = path.strip_prefix(res_dir).unwrap().to_string_lossy().to_string();
-            let mut data = std::fs::read(path)?;
+
+            // Minify .scn and .fur in memory
+            let mut data = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                match ext {
+                    "scn" => minify_json(path)?,
+                    "fur" => minify_fur(path)?,
+                    _ => fs::read(path)?,
+                }
+            } else {
+                fs::read(path)?
+            };
+
             let mut flags = 0;
             let mut nonce = [0u8; 12];
             let mut tag = [0u8; 16];
@@ -155,7 +150,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
                 if ENCRYPT_EXTENSIONS.contains(&ext) {
                     rand::thread_rng().fill_bytes(&mut nonce);
                     let nonce_obj = Nonce::from_slice(&nonce);
-                    let encrypted = cipher.encrypt(nonce_obj, data.as_ref())
+                    let encrypted = cipher.encrypt(nonce_obj, &*data)
                         .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
                     let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
                     data = ciphertext.to_vec();

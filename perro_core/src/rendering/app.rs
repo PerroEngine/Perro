@@ -108,6 +108,9 @@ impl<P: ScriptProvider> App<P> {
             let target_frames = elapsed_time * self.target_fps as f64;
             self.frame_debt = target_frames - self.total_frames_rendered as f64;
 
+            // Cap frame debt to prevent excessive catch-up
+            self.frame_debt = self.frame_debt.min(self.target_fps as f64 * 0.025); // Max 0.025 seconds of debt
+
             let should_render = self.first_frame || self.frame_debt > -1.0;
 
             if should_render {

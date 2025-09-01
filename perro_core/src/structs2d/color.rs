@@ -39,6 +39,8 @@ let colors: HashMap<&str, Color> = vec![
     // BLACK & WHITE
     ("black", Color::new(0, 0, 0, 255)),
     ("white", Color::new(255, 255, 255, 255)),
+    ("transparent", Color::new(255, 255, 255, 0)),
+    ("trans", Color::new(255, 255, 255, 0)),
 
     // SLATE
     ("slate-1", Color::new(248, 250, 252, 255)),

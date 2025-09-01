@@ -579,75 +579,83 @@ impl Graphics {
         self.cached_textures.remove(&uuid);
         self.instances_need_rebuild = true; // Mark as dirty
     }
-
-    pub fn draw_rect(
-        &mut self,
-        uuid: uuid::Uuid,
-        transform: Transform2D,
-        size: Vector2,
-        pivot: Vector2,
-        color: crate::Color,
-        corner_radius: Option<CornerRadius>,
-        border_thickness: f32,
-        is_border: bool,
-        z_index: i32,
-    ) {
-        fn srgb_to_linear(c: f32) -> f32 {
-            if c <= 0.04045 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).powf(2.4)
-            }
-        }
-
-        let color_lin = [
-            srgb_to_linear(color.r as f32 / 255.0),
-            srgb_to_linear(color.g as f32 / 255.0),
-            srgb_to_linear(color.b as f32 / 255.0),
-            color.a as f32 / 255.0,
-        ];
-
-        let half_w = size.x * 0.5;
-        let half_h = size.y * 0.5;
-        let scale_factor = 3.0;
-        let cr = corner_radius.unwrap_or_default();
-        let clamp_norm = |val: f32| -> f32 { (val * scale_factor).clamp(0.0, 0.5) };
-
-        // Pack corner radius into 2 vec4s instead of 4
-        let corner_radius_xy = [
-            clamp_norm(cr.top_left / half_w),     // top_left.x
-            clamp_norm(cr.top_left / half_h),     // top_left.y
-            clamp_norm(cr.top_right / half_w),    // top_right.x
-            clamp_norm(cr.top_right / half_h),    // top_right.y
-        ];
-        let corner_radius_zw = [
-            clamp_norm(cr.bottom_right / half_w), // bottom_right.x
-            clamp_norm(cr.bottom_right / half_h), // bottom_right.y
-            clamp_norm(cr.bottom_left / half_w),  // bottom_left.x
-            clamp_norm(cr.bottom_left / half_h),  // bottom_left.y
-        ];
-
-        let transform_array = transform.to_mat4().to_cols_array();
-        let instance = RectInstance {
-            transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
-            transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
-            transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
-            transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
-            color: color_lin,
-            size: [size.x, size.y],
-            pivot: [pivot.x, pivot.y],
-            corner_radius_xy,
-            corner_radius_zw,
-            border_thickness,
-            is_border: if is_border { 1 } else { 0 },
-            z_index,
-            _pad: 0.0,
-        };
-
-        // Direct UUID usage - no string allocation!
-        self.cached_rects.insert(uuid, CachedRect { instance });
-        self.instances_need_rebuild = true; // Mark as dirty
+    
+pub fn draw_rect(
+    &mut self,
+    uuid: uuid::Uuid,
+    transform: Transform2D,
+    size: Vector2,
+    pivot: Vector2,
+    color: crate::Color,
+    corner_radius: Option<CornerRadius>,
+    border_thickness: f32,
+    is_border: bool,
+    z_index: i32,
+) {
+    fn srgb_to_linear(c: f32) -> f32 {
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
     }
+
+    let color_lin = [
+        srgb_to_linear(color.r as f32 / 255.0),
+        srgb_to_linear(color.g as f32 / 255.0),
+        srgb_to_linear(color.b as f32 / 255.0),
+        color.a as f32 / 255.0,
+    ];
+
+   let cr = corner_radius.unwrap_or_default();
+
+    let sx = transform.scale.x.abs();
+    let sy = transform.scale.y.abs();
+
+    let scaled_size_x = size.x * sx;
+    let scaled_size_y = size.y * sy;
+
+    // ✅ Calculate max possible radius (half of the smaller dimension)
+    let max_radius = (scaled_size_x.min(scaled_size_y)) * 0.5;
+    
+    // ✅ Convert each corner's 0-1 value to actual pixels
+    let corner_radius_xy = [
+        cr.top_left * max_radius,      // e.g., 0.5 * 25px = 12.5px
+        cr.top_left * max_radius,      // same for both x and y (circular)
+        cr.top_right * max_radius,     // e.g., 0.7 * 25px = 17.5px
+        cr.top_right * max_radius,
+    ];
+    let corner_radius_zw = [
+        cr.bottom_right * max_radius,  // each corner can be different
+        cr.bottom_right * max_radius,
+        cr.bottom_left * max_radius,
+        cr.bottom_left * max_radius,
+    ];
+
+    // Border thickness in actual pixels
+    let pixel_border_thickness = border_thickness;
+
+    let mut xf_no_scale = transform.clone();
+    xf_no_scale.scale = Vector2::new(1.0, 1.0);
+
+    let transform_array = xf_no_scale.to_mat4().to_cols_array();
+
+    let instance = RectInstance {
+        transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
+        transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
+        transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
+        transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+        color: color_lin,
+        size: [scaled_size_x, scaled_size_y],
+        pivot: [pivot.x, pivot.y],
+        corner_radius_xy,
+        corner_radius_zw,
+        border_thickness: pixel_border_thickness,
+        is_border: if is_border { 1 } else { 0 },
+        z_index,
+        _pad: 0.0,
+    };
+
+    self.cached_rects.insert(uuid, CachedRect { instance });
+    self.instances_need_rebuild = true;
+}
+
 
     pub fn draw_texture(
         &mut self,

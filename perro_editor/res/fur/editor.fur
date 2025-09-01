@@ -1,8 +1,7 @@
 [UI]
+  // Row 1
 
-  [Panel style="bg=red-5 rounding=md sz=300 border=8 border-c=red-8 anchor=t"]
-    [Panel style="bg=red-4 rounding=sm sz=100% scl=70% border=4 border-c=red-7 anchor=c"]
-    [/Panel]
+      [Panel style="bg=yellow-6 rounding=full h=half w=third border=24 border-c=yellow-8 anchor=c"]
   [/Panel]
 
 
