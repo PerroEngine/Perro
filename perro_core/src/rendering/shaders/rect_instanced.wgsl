@@ -1,4 +1,4 @@
-// Fixed WGSL shader using proper SDF technique for rounded rectangles
+// Fixed WGSL shader with proper pivot handling
 
 struct Camera {
     virtual_size: vec2<f32>,
@@ -49,24 +49,34 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
         instance.transform_3
     );
 
-    // pivot offset in pixels
-    let pivot_offset = (instance.pivot - vec2<f32>(0.5, 0.5)) * instance.size;
+    // Convert pivot from (0,1) range to (-0.5, 0.5) range for proper centering
+    let pivot_centered = instance.pivot - vec2<f32>(0.5, 0.5);
+    
+    // Calculate pivot offset in pixels (this moves the rectangle relative to its transform origin)
+    let pivot_offset = pivot_centered * instance.size;
 
-    // local position in pixels relative to center
-    let local_scaled = (vertex.position * instance.size) - pivot_offset;
+    // Calculate the vertex position in local space (before pivot adjustment)
+    let local_vertex_pos = vertex.position * instance.size;
+    
+    // Apply pivot offset to move the rectangle's origin point
+    let adjusted_local_pos = local_vertex_pos + pivot_offset;
 
-    // world_pos from full transform
-    let world_pos4 = transform * vec4<f32>(local_scaled, 0.0, 1.0);
+    // Transform to world space
+    let world_pos4 = transform * vec4<f32>(adjusted_local_pos, 0.0, 1.0);
 
-    // convert to NDC using precomputed ndc_scale
+    // Convert to NDC using precomputed ndc_scale
     let ndc_pos = world_pos4.xy * camera.ndc_scale;
 
-    // depth from z_index
+    // Depth from z_index
     let depth = f32(instance.z_index) * 0.001;
+
+    // For the fragment shader, we need the position relative to the rectangle's center
+    // This should NOT include the pivot offset since SDF calculations expect center-relative coords
+    let fragment_local_pos = vertex.position * instance.size;
 
     var out: VertexOutput;
     out.pos = vec4<f32>(ndc_pos, depth, 1.0);
-    out.local_pos = local_scaled; // in pixels relative to rect center
+    out.local_pos = fragment_local_pos; // Center-relative position for SDF calculations
     out.color = instance.color;
     out.size = instance.size;
     out.corner_radius_xy = instance.corner_radius_xy;

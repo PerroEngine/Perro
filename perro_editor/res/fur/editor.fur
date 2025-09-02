@@ -1,11 +1,3 @@
 [UI]
-[Box mode=h sz=50%]
-  [Panel bg=yellow-6 rounding-t=full rounding-b=lg sz=50% border=24 border-c=yellow-8 anchor=c]
-
-  [/Panel]
-
-    [Panel bg=yellow-6 rounding-t=full rounding-b=lg sz=50% border=24 border-c=yellow-8 anchor=c]
-
-  [/Panel]
-  [/Box]
+  [Panel bg=red-8 w=13% h=55% border=20 border-c=red-9 rounding-r=3xl rounding-l=lg pv=t anchor=t/]
 [/UI]

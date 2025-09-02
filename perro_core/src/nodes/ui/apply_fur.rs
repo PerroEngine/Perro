@@ -9,7 +9,7 @@ use crate::{
         ui_container::{BoxContainer, GridContainer},
         ui_panel::{CornerRadius, UIPanel},
     },
-    ui_node::Ui, Color,
+    ui_node::Ui, Color, Vector2,
 };
 
 /// Parses a `.fur` file into a `Vec<FurNode>` AST
@@ -69,12 +69,30 @@ fn apply_base_attributes(base: &mut BaseUIElement, attributes: &HashMap<String, 
         let is_percent = value.ends_with('%');
         let clean_val = value.trim_end_matches('%').trim();
 
-        let parsed_val = clean_val.parse::<f32>().unwrap_or_else(|e| {
-            eprintln!("Failed to parse attribute '{}': '{}': {}", key, clean_val, e);
-            0.0
-        });
+        let parsed_val = clean_val.parse::<f32>().unwrap_or(0.0);
 
         match key.as_str() {
+            "pv" => {
+                base.pivot = match clean_val {
+                    "tl" => Vector2::new(0.0, 0.0),
+                    "t"  => Vector2::new(0.5, 0.0),
+                    "tr" => Vector2::new(1.0, 0.0),
+                    "l"  => Vector2::new(0.0, 0.5),
+                    "c"  => Vector2::new(0.5, 0.5),
+                    "r"  => Vector2::new(1.0, 0.5),
+                    "bl" => Vector2::new(0.0, 1.0),
+                    "b"  => Vector2::new(0.5, 1.0),
+                    "br" => Vector2::new(1.0, 1.0),
+                    _ => Vector2::new(0.5, 0.5), // default center
+                };
+            },
+            "pv-x" => {
+                base.pivot.x = parsed_val; // override x only
+            },
+            "pv-y" => {
+                base.pivot.y = parsed_val; // override y only
+            },
+
             // Translation / Position
             "tx" => {
                 if is_percent { base.style_map.insert("transform.position.x".into(), parsed_val); }
