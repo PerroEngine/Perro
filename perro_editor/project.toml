@@ -1,5 +1,5 @@
 [project]
-name = "Perro Editor 2.0"
+name = "Perro Editor"
 main_scene = "res://editor.scn"
 
 [performance]

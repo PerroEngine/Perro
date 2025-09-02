@@ -235,8 +235,6 @@ impl Compiler {
         writeln!(f, "    }}")?;
         writeln!(f, "    key")?;
         writeln!(f, "}}")?;
-
-        println!("🔑 Generated AES key at {}", key_path.display());
         Ok(())
     }
 }

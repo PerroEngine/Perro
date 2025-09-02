@@ -1,136 +1,252 @@
 use std::collections::HashMap;
-use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::{
     asset_io::load_asset,
-    ast::{FurAnchor, FurElement, FurNode, FurStyle, ValueOrPercent},
-    parser::FurParser,
-    ui_element::{BaseElement, BaseUIElement, EdgeInsets, UIElement},
-    ui_elements::ui_panel::{CornerRadius, UIPanel},
-    ui_node::Ui,
-    Transform2D, Vector2,
+    ast::{FurAnchor, FurElement, FurNode},
+    ui_element::{BaseElement, BaseUIElement, UIElement},
+    ui_elements::{
+        ui_container::{BoxContainer, GridContainer},
+        ui_panel::{CornerRadius, UIPanel},
+    },
+    ui_node::Ui, Color,
 };
 
 /// Parses a `.fur` file into a `Vec<FurNode>` AST
 pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     let bytes = load_asset(path)
         .map_err(|e| format!("Failed to read .fur file {}: {}", path, e))?;
-
     let code = String::from_utf8(bytes)
         .map_err(|e| format!("Invalid UTF-8 in .fur file {}: {}", path, e))?;
-
-    let mut parser = FurParser::new(&code)
+    let mut parser = crate::parser::FurParser::new(&code)
         .map_err(|e| format!("Failed to init FurParser: {}", e))?;
-
+    
     let ast = parser
         .parse()
         .map_err(|e| format!("Failed to parse .fur file {}: {}", path, e))?;
 
+
     Ok(ast)
 }
 
-/// Apply FurStyle to BaseUIElement, handling ValueOrPercent
-fn apply_base_style(base: &mut BaseUIElement, style: &FurStyle) {
+
+/// Parse color string with optional opacity (e.g., "#FF0000/50" or "red/80")
+pub fn parse_color_with_opacity(value: &str) -> Result<Color, String> {
+    let mut parts = value.splitn(2, '/');
+    let base = parts.next().unwrap();
+    let opacity_part = parts.next();
+
+    let mut color = if base.starts_with('#') {
+        Color::from_hex(base).map_err(|e| format!("Invalid hex color '{}': {}", base, e))?
+    } else {
+        Color::from_preset(base).ok_or_else(|| format!("Unknown preset color '{}'", base))?
+    };
+
+    if let Some(opacity_str) = opacity_part {
+        let opacity_percent = opacity_str.parse::<u8>()
+            .map_err(|_| format!("Invalid opacity '{}'", opacity_str))?;
+        if opacity_percent > 100 {
+            return Err(format!("Opacity '{}' out of range 0-100", opacity_percent));
+        }
+        color.a = (opacity_percent as f32 / 100.0 * 255.0).round() as u8;
+    }
+
+    Ok(color)
+}
+
+/// Apply generic FurElement attributes to BaseUIElement
+fn apply_base_attributes(base: &mut BaseUIElement, attributes: &HashMap<String, String>) {
     base.style_map.clear();
 
-    // --- Size ---
-    if let Some(ValueOrPercent::Abs(val)) = style.size.x { base.size.x = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.size.x { base.style_map.insert("size.x".into(), pct); }
+    // Set defaults
+    base.size.x = 32.0;
+    base.size.y = 32.0;
+    base.transform.scale.x = 1.0;
+    base.transform.scale.y = 1.0;
 
-    if let Some(ValueOrPercent::Abs(val)) = style.size.y { base.size.y = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.size.y { base.style_map.insert("size.y".into(), pct); }
+    for (key, value) in attributes {
+        let value = value.trim();
+        let is_percent = value.ends_with('%');
+        let clean_val = value.trim_end_matches('%').trim();
 
-    // --- Translation (position) ---
-    if let Some(ValueOrPercent::Abs(val)) = style.translation.x { base.transform.position.x = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.translation.x { base.style_map.insert("transform.position.x".into(), pct); }
+        let parsed_val = clean_val.parse::<f32>().unwrap_or_else(|e| {
+            eprintln!("Failed to parse attribute '{}': '{}': {}", key, clean_val, e);
+            0.0
+        });
 
-    if let Some(ValueOrPercent::Abs(val)) = style.translation.y { base.transform.position.y = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.translation.y { base.style_map.insert("transform.position.y".into(), pct); }
+        match key.as_str() {
+            // Translation / Position
+            "tx" => {
+                if is_percent { base.style_map.insert("transform.position.x".into(), parsed_val); }
+                else { base.transform.position.x = parsed_val; }
+            }
+            "ty" => {
+                if is_percent { base.style_map.insert("transform.position.y".into(), parsed_val); }
+                else { base.transform.position.y = parsed_val; }
+            }
 
-    // --- Scale ---
-    if let Some(ValueOrPercent::Abs(val)) = style.transform.scale.x { base.transform.scale.x = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.transform.scale.x { base.style_map.insert("transform.scale.x".into(), pct); }
+            // Scale
+            "scl-x" => {
+                if is_percent { base.style_map.insert("transform.scale.x".into(), parsed_val); }
+                else { base.transform.scale.x = parsed_val; }
+            }
+            "scl-y" => {
+                if is_percent { base.style_map.insert("transform.scale.y".into(), parsed_val); }
+                else { base.transform.scale.y = parsed_val; }
+            }
+            "scl" => {
+                if is_percent {
+                    base.style_map.insert("transform.scale.x".into(), parsed_val);
+                    base.style_map.insert("transform.scale.y".into(), parsed_val);
+                } else {
+                    base.transform.scale.x = parsed_val;
+                    base.transform.scale.y = parsed_val;
+                }
+            }
 
-    if let Some(ValueOrPercent::Abs(val)) = style.transform.scale.y { base.transform.scale.y = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.transform.scale.y { base.style_map.insert("transform.scale.y".into(), pct); }
+            // Size
+            "w" | "sz-x" => {
+                if is_percent { base.style_map.insert("size.x".into(), parsed_val); }
+                else { base.size.x = parsed_val; }
+            }
+            "h" | "sz-y" => {
+                if is_percent { base.style_map.insert("size.y".into(), parsed_val); }
+                else { base.size.y = parsed_val; }
+            }
+            "sz" => {
+                if is_percent {
+                    base.style_map.insert("size.x".into(), parsed_val);
+                    base.style_map.insert("size.y".into(), parsed_val);
+                } else {
+                    base.size.x = parsed_val;
+                    base.size.y = parsed_val;
+                }
+            }
 
-    // --- Rotation ---
-    if let Some(ValueOrPercent::Abs(val)) = style.transform.rotation { base.transform.rotation = val; }
-    if let Some(ValueOrPercent::Percent(pct)) = style.transform.rotation { base.style_map.insert("transform.rotation".into(), pct); }
 
-    // --- Margins ---
-    base.margin.left = style.margin.left.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("margin.left".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
+            // Rotation
+            "rot" => {
+                if is_percent { base.style_map.insert("transform.rotation".into(), parsed_val); }
+                else { base.transform.rotation = parsed_val; }
+            }
 
-    base.margin.right = style.margin.right.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("margin.right".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
+            // Padding
+            "pl" => base.padding.left = parsed_val,
+            "pr" => base.padding.right = parsed_val,
+            "pt" => base.padding.top = parsed_val,
+            "pb" => base.padding.bottom = parsed_val,
 
-    base.margin.top = style.margin.top.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("margin.top".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
+            // Z-index
+            "z" => base.z_index = parsed_val as i32,
 
-    base.margin.bottom = style.margin.bottom.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("margin.bottom".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
+            // Anchor
+            "anchor" => base.anchor = match clean_val {
+                "tl" => FurAnchor::TopLeft,
+                "t" => FurAnchor::Top,
+                "tr" => FurAnchor::TopRight,
+                "l" => FurAnchor::Left,
+                "c" => FurAnchor::Center,
+                "r" => FurAnchor::Right,
+                "bl" => FurAnchor::BottomLeft,
+                "b" => FurAnchor::Bottom,
+                "br" => FurAnchor::BottomRight,
+                _ => FurAnchor::Center,
+            },
 
-    // --- Padding ---
-    base.padding.left = style.padding.left.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("padding.left".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
-
-    base.padding.right = style.padding.right.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("padding.right".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
-
-    base.padding.top = style.padding.top.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("padding.top".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
-
-    base.padding.bottom = style.padding.bottom.map(|v| match v {
-        ValueOrPercent::Abs(val) => val,
-        ValueOrPercent::Percent(pct) => { base.style_map.insert("padding.bottom".into(), pct); 0.0 }
-    }).unwrap_or(0.0);
-
-    // --- Z-index & anchor ---
-    base.z_index = style.z_index;
-    base.anchor = style.anchor;
-
+            _ => {}
+        }
+    }
 }
+
+
 
 /// Converts a single FurElement into a UIElement (without children)
 fn convert_fur_element_to_ui_element(fur_element: &FurElement) -> Option<UIElement> {
     match fur_element.tag_name.as_str() {
         "UI" => None,
+
         "Panel" => {
             let mut panel = UIPanel::default();
             panel.set_name(&fur_element.id);
+            apply_base_attributes(&mut panel.base, &fur_element.attributes);
 
-            // Apply all shared fields (handles ValueOrPercent)
-            apply_base_style(&mut panel.base, &fur_element.style);
+            // Panel-specific attributes
+            if let Some(bg) = fur_element.attributes.get("bg") {
+                if let Ok(color) = parse_color_with_opacity(bg) {
+                    panel.props.background_color = Some(color);
+                }
+            }
 
-            // Panel-specific props
-            panel.props.background_color = fur_element.style.background_color.clone();
-            panel.props.corner_radius = CornerRadius {
-                top_left: fur_element.style.corner_radius.top_left,
-                top_right: fur_element.style.corner_radius.top_right,
-                bottom_left: fur_element.style.corner_radius.bottom_left,
-                bottom_right: fur_element.style.corner_radius.bottom_right,
-            };
-            panel.props.border_color = fur_element.style.border_color.clone();
-            panel.props.border_thickness = fur_element.style.border;
+            if let Some(border_c) = fur_element.attributes.get("border-c") {
+                if let Ok(color) = parse_color_with_opacity(border_c) {
+                    panel.props.border_color = Some(color);
+                }
+            }
+
+            if let Some(border) = fur_element.attributes.get("border") {
+                panel.props.border_thickness = border.parse::<f32>().unwrap_or(0.0);
+            }
+
+             // --- Corner radius handling ---
+            let mut corner = CornerRadius::default();
+
+            // Apply general "rounding" to all corners first
+            if let Some(rounding) = fur_element.attributes.get("rounding") {
+                let r = rounding.parse::<f32>().unwrap_or(0.0);
+                corner.top_left = r;
+                corner.top_right = r;
+                corner.bottom_left = r;
+                corner.bottom_right = r;
+            }
+
+            // Override individual corners if present
+            if let Some(val) = fur_element.attributes.get("rounding-tl") { corner.top_left = val.parse::<f32>().unwrap_or(corner.top_left); }
+            if let Some(val) = fur_element.attributes.get("rounding-tr") { corner.top_right = val.parse::<f32>().unwrap_or(corner.top_right); }
+            if let Some(val) = fur_element.attributes.get("rounding-bl") { corner.bottom_left = val.parse::<f32>().unwrap_or(corner.bottom_left); }
+            if let Some(val) = fur_element.attributes.get("rounding-br") { corner.bottom_right = val.parse::<f32>().unwrap_or(corner.bottom_right); }
+
+            // Shorthand for sides
+            if let Some(val) = fur_element.attributes.get("rounding-t") {
+                let r = val.parse::<f32>().unwrap_or(0.0);
+                corner.top_left = r;
+                corner.top_right = r;
+            }
+            if let Some(val) = fur_element.attributes.get("rounding-b") {
+                let r = val.parse::<f32>().unwrap_or(0.0);
+                corner.bottom_left = r;
+                corner.bottom_right = r;
+            }
+            if let Some(val) = fur_element.attributes.get("rounding-l") {
+                let r = val.parse::<f32>().unwrap_or(0.0);
+                corner.top_left = r;
+                corner.bottom_left = r;
+            }
+            if let Some(val) = fur_element.attributes.get("rounding-r") {
+                let r = val.parse::<f32>().unwrap_or(0.0);
+                corner.top_right = r;
+                corner.bottom_right = r;
+            }
+
+            // Finally assign to panel
+            panel.props.corner_radius = corner;
 
             Some(UIElement::Panel(panel))
         }
+
+        "Box" => {
+            let mut container = BoxContainer::default();
+            container.set_name(&fur_element.id);
+            apply_base_attributes(&mut container.base, &fur_element.attributes);
+            Some(UIElement::BoxContainer(container))
+        }
+
+        "Grid" => {
+            let mut grid = GridContainer::default();
+            grid.set_name(&fur_element.id);
+            apply_base_attributes(&mut grid.base, &fur_element.attributes);
+            Some(UIElement::GridContainer(grid))
+        }
+
         _ => unimplemented!("Element type {} not supported yet", fur_element.tag_name),
     }
 }
@@ -143,7 +259,6 @@ fn convert_fur_element_to_ui_elements(
     let maybe_ui_element = convert_fur_element_to_ui_element(fur_element);
 
     if maybe_ui_element.is_none() {
-        // Skip root "UI" node, just recurse into children
         let mut results = Vec::new();
         for child_node in &fur_element.children {
             if let FurNode::Element(child_element) = child_node {
@@ -163,7 +278,7 @@ fn convert_fur_element_to_ui_elements(
     for child_node in &fur_element.children {
         if let FurNode::Element(child_element) = child_node {
             let child_elements = convert_fur_element_to_ui_elements(child_element, Some(current_uuid));
-            if let Some((child_uuid, _)) = child_elements.first() {
+            for (child_uuid, _) in &child_elements {
                 children_uuids.push(*child_uuid);
             }
             results.extend(child_elements);

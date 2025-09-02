@@ -45,16 +45,4 @@ impl Default for UIPanel {
     }
 }
 
-impl Deref for UIPanel {
-    type Target = BaseUIElement;
-    fn deref(&self) -> &Self::Target {
-        &self.base
-    }
-}
-impl DerefMut for UIPanel {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.base
-    }
-}
-
 impl_ui_element!(UIPanel);

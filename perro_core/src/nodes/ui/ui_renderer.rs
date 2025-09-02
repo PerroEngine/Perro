@@ -61,12 +61,6 @@ pub fn update_global_transforms(
                     element.get_transform_mut().scale.y = 1.0 * fraction * parent_scale_y;
                 },
 
-                // Margins
-                "margin.left" => element.get_margin_mut().left = parent_size_for_percentages.x * fraction,
-                "margin.right" => element.get_margin_mut().right = parent_size_for_percentages.x * fraction,
-                "margin.top" => element.get_margin_mut().top = parent_size_for_percentages.y * fraction,
-                "margin.bottom" => element.get_margin_mut().bottom = parent_size_for_percentages.y * fraction,
-
                 // Padding
                 "padding.left" => element.get_padding_mut().left = parent_size_for_percentages.x * fraction,
                 "padding.right" => element.get_padding_mut().right = parent_size_for_percentages.x * fraction,
@@ -143,6 +137,8 @@ pub fn render_ui(ui_node: &mut Ui, gfx: &mut Graphics) {
         }
         match element {
             UIElement::Panel(panel) => render_panel(panel, gfx),
+            UIElement::BoxContainer(_) => { /* no-op */ },
+            UIElement::GridContainer(_) => { /* no-op */ },
         }
     }
 }

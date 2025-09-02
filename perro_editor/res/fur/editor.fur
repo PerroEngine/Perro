@@ -1,8 +1,11 @@
 [UI]
-  // Row 1
+[Box mode=h sz=50%]
+  [Panel bg=yellow-6 rounding-t=full rounding-b=lg sz=50% border=24 border-c=yellow-8 anchor=c]
 
-      [Panel style="bg=yellow-6 rounding=full h=half w=third border=24 border-c=yellow-8 anchor=c"]
   [/Panel]
 
+    [Panel bg=yellow-6 rounding-t=full rounding-b=lg sz=50% border=24 border-c=yellow-8 anchor=c]
 
+  [/Panel]
+  [/Box]
 [/UI]

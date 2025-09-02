@@ -4,7 +4,7 @@ use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{ast::FurAnchor, ui_elements::ui_panel::UIPanel, Color, Transform2D, Vector2};
+use crate::{ast::FurAnchor, ui_elements::{ui_container::{BoxContainer, GridContainer}, ui_panel::UIPanel}, Color, Transform2D, Vector2};
 
 /// Insets for margin/padding
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -19,7 +19,7 @@ pub struct EdgeInsets {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaseUIElement {
     pub id: Uuid,
-    pub name: String,                // Always has a value, defaults to UUID string
+    pub name: String,             
     pub parent: Option<Uuid>,
     pub children: Vec<Uuid>,
 
@@ -30,9 +30,6 @@ pub struct BaseUIElement {
 
     pub size: Vector2,
     pub pivot: Vector2,
-
-    #[serde(default)]
-    pub margin: EdgeInsets,
 
     #[serde(default)]
     pub padding: EdgeInsets,
@@ -60,7 +57,6 @@ impl Default for BaseUIElement {
             global_transform: Transform2D::default(),
             size: Vector2::new(32.0, 32.0),
             pivot: Vector2::new(0.5, 0.5),
-            margin: EdgeInsets::default(),
             padding: EdgeInsets::default(),
             anchor: FurAnchor::Center,
             modulate: None,
@@ -116,10 +112,6 @@ pub trait BaseElement {
     fn get_z_index(&self) -> i32;
     fn set_z_index(&mut self, z_index: i32);
 
-    // Margin
-    fn get_margin(&self) -> &EdgeInsets;
-    fn get_margin_mut(&mut self) -> &mut EdgeInsets;
-
     // Padding
     fn get_padding(&self) -> &EdgeInsets;
     fn get_padding_mut(&mut self) -> &mut EdgeInsets;
@@ -170,14 +162,24 @@ macro_rules! impl_ui_element {
             fn get_z_index(&self) -> i32 { self.base.z_index }
             fn set_z_index(&mut self, z_index: i32) { self.base.z_index = z_index; }
 
-            fn get_margin(&self) -> &crate::ui_element::EdgeInsets { &self.base.margin }
-            fn get_margin_mut(&mut self) -> &mut crate::ui_element::EdgeInsets { &mut self.base.margin }
-
             fn get_padding(&self) -> &crate::ui_element::EdgeInsets { &self.base.padding }
             fn get_padding_mut(&mut self) -> &mut crate::ui_element::EdgeInsets { &mut self.base.padding }
 
             fn get_style_map(&self) -> &std::collections::HashMap<String, f32> { &self.base.style_map }
             fn get_style_map_mut(&mut self) -> &mut std::collections::HashMap<String, f32> { &mut self.base.style_map }
+        }
+         // Deref implementation
+        impl std::ops::Deref for $ty {
+            type Target = crate::ui_element::BaseUIElement;
+            fn deref(&self) -> &Self::Target {
+                &self.base
+            }
+        }
+
+        impl std::ops::DerefMut for $ty {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.base
+            }
         }
     };
 }
@@ -187,4 +189,8 @@ macro_rules! impl_ui_element {
 #[enum_dispatch(BaseElement)]
 pub enum UIElement {
     Panel(UIPanel),
+    BoxContainer(BoxContainer),
+    GridContainer(GridContainer),
+    
 }
+
