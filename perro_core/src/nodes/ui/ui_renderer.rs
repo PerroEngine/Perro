@@ -80,74 +80,62 @@ pub fn update_global_transforms(
         // - pivot (0.5, 0) means the transform position is at the bottom-center of the element
         // - pivot (0.5, 1) means the transform position is at the top-center of the element
         // - We need to calculate where to put the transform position so the element appears in the right place
+let (anchor_x, anchor_y) = match element.get_anchor() {
+    // Corners
+    FurAnchor::TopLeft => {
+        let target_x = -parent_size.x * 0.5; // Left edge
+        let target_y = parent_size.y * 0.5;  // Top edge
+        let offset_x = target_x + child_size.x * pivot.x;
+        let offset_y = target_y - child_size.y * (1.0 - pivot.y); // pivot.y=1.0 means top
+        (offset_x, offset_y)
+    },
+    FurAnchor::TopRight => {
+        let target_x = parent_size.x * 0.5;  // Right edge
+        let target_y = parent_size.y * 0.5;  // Top edge
+        let offset_x = target_x - child_size.x * (1.0 - pivot.x);
+        let offset_y = target_y - child_size.y * (1.0 - pivot.y);
+        (offset_x, offset_y)
+    },
+    FurAnchor::BottomLeft => {
+        let target_x = -parent_size.x * 0.5; // Left edge
+        let target_y = -parent_size.y * 0.5; // Bottom edge
+        let offset_x = target_x + child_size.x * pivot.x;
+        let offset_y = target_y + child_size.y * pivot.y; // pivot.y=0.0 means bottom
+        (offset_x, offset_y)
+    },
+    FurAnchor::BottomRight => {
+        let target_x = parent_size.x * 0.5;  // Right edge
+        let target_y = -parent_size.y * 0.5; // Bottom edge
+        let offset_x = target_x - child_size.x * (1.0 - pivot.x);
+        let offset_y = target_y + child_size.y * pivot.y;
+        (offset_x, offset_y)
+    },
 
-     let (anchor_x, anchor_y) = match element.get_anchor() {
-            // Corners
-            FurAnchor::TopLeft => {
-                // We want the element positioned so its bounds touch the top-left corner of parent
-                let target_x = -parent_size.x * 0.5; // Left edge of parent
-                let target_y = parent_size.y * 0.5;  // Top edge of parent
-                // Adjust so the element's actual bounds (not pivot) align with this target
-                let offset_x = target_x + child_size.x * pivot.x;
-                let offset_y = target_y - child_size.y * (1.0 - pivot.y);
-                (offset_x, offset_y)
-            },
-            FurAnchor::TopRight => {
-                let target_x = parent_size.x * 0.5;  // Right edge of parent
-                let target_y = parent_size.y * 0.5;  // Top edge of parent
-                let offset_x = target_x - child_size.x * (1.0 - pivot.x);
-                let offset_y = target_y - child_size.y * (1.0 - pivot.y);
-                (offset_x, offset_y)
-            },
-            FurAnchor::BottomLeft => {
-                let target_x = -parent_size.x * 0.5; // Left edge of parent
-                let target_y = -parent_size.y * 0.5; // Bottom edge of parent
-                let offset_x = target_x + child_size.x * pivot.x;
-                let offset_y = target_y + child_size.y * pivot.y;
-                (offset_x, offset_y)
-            },
-            FurAnchor::BottomRight => {
-                let target_x = parent_size.x * 0.5;  // Right edge of parent
-                let target_y = -parent_size.y * 0.5; // Bottom edge of parent
-                let offset_x = target_x - child_size.x * (1.0 - pivot.x);
-                let offset_y = target_y + child_size.y * pivot.y;
-                (offset_x, offset_y)
-            },
+    // Edges
+    FurAnchor::Top => {
+        let target_y = parent_size.y * 0.5;  // Top edge
+        let offset_y = target_y - child_size.y * (1.0 - pivot.y);
+        (0.0, offset_y)
+    },
+    FurAnchor::Bottom => {
+        let target_y = -parent_size.y * 0.5; // Bottom edge
+        let offset_y = target_y + child_size.y * pivot.y;
+        (0.0, offset_y)
+    },
+    FurAnchor::Left => {
+        let target_x = -parent_size.x * 0.5; // Left edge
+        let offset_x = target_x + child_size.x * pivot.x;
+        (offset_x, 0.0)
+    },
+    FurAnchor::Right => {
+        let target_x = parent_size.x * 0.5;  // Right edge
+        let offset_x = target_x - child_size.x * (1.0 - pivot.x);
+        (offset_x, 0.0)
+    },
 
-            // Edges
-            FurAnchor::Top => {
-                // Top anchor = +540 (top of screen)
-                let parent_top = parent_size.y * 0.5;  
-                // Element's top edge is at: transform_y + child_size.y * (1.0 - pivot.y)
-                // We want: transform_y + child_size.y * (1.0 - pivot.y) = parent_top
-                // So: transform_y = parent_top - child_size.y * (1.0 - pivot.y)
-                let offset_y = parent_top - child_size.y * (1.0 - pivot.y);
-                (0.0, offset_y)
-            },
-            FurAnchor::Bottom => {
-                // Bottom anchor = -540 (bottom of screen)  
-                let parent_bottom = -parent_size.y * 0.5;
-                // Element's bottom edge is at: transform_y - child_size.y * pivot.y
-                // We want: transform_y - child_size.y * pivot.y = parent_bottom
-                // So: transform_y = parent_bottom + child_size.y * pivot.y
-                let offset_y = parent_bottom + child_size.y * pivot.y;
-                (0.0, offset_y)
-            },
-            FurAnchor::Left => {
-                let target_x = -parent_size.x * 0.5; // Left edge of parent
-                let offset_x = target_x + child_size.x * pivot.x;
-                (offset_x, 0.0)
-            },
-            FurAnchor::Right => {
-                let target_x = parent_size.x * 0.5; // Right edge of parent
-                let offset_x = target_x - child_size.x * (1.0 - pivot.x);
-                (offset_x, 0.0)
-            },
-
-            // Center - no anchor offset needed, just center the element
-            FurAnchor::Center => (0.0, 0.0),
-        };
-
+    // Center - no offset needed
+    FurAnchor::Center => (0.0, 0.0),
+};
         // Apply anchor offset + user translation
         local.position.x += anchor_x;
         local.position.y += anchor_y;

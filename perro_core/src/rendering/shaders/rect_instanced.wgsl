@@ -49,8 +49,11 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
         instance.transform_3
     );
 
-    // Convert pivot from (0,1) range to (-0.5, 0.5) range for proper centering
-    let pivot_centered = instance.pivot - vec2<f32>(0.5, 0.5);
+    // Convert pivot to match coordinate system where (0,0) is bottom-left
+    // Your pivot system: (0.0, 0.0) = bottom-left, (1.0, 1.0) = top-right
+    // Shader expects: (-0.5, -0.5) = bottom-left, (0.5, 0.5) = top-right
+    let pivot_flipped = vec2<f32>(1.0 - instance.pivot.x, 1.0 - instance.pivot.y);
+    let pivot_centered = pivot_flipped - vec2<f32>(0.5, 0.5);
     
     // Calculate pivot offset in pixels (this moves the rectangle relative to its transform origin)
     let pivot_offset = pivot_centered * instance.size;

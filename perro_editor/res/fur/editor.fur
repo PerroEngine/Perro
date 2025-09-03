@@ -1,3 +1,4 @@
 [UI]
-  [Panel bg=red-8 w=13% h=55% border=20 border-c=red-9 rounding-r=3xl rounding-l=lg pv=t anchor=t/]
+      [Panel bg=blue-4_0 sz=100 border=25 border-c=blue-8 rounding=xl pv=c anchor=c shadow=sm/]
+
 [/UI]
