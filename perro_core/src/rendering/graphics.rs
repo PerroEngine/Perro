@@ -7,7 +7,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{asset_io::{load_asset, resolve_path}, ui_elements::ui_panel::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
+use crate::{asset_io::{load_asset, resolve_path}, ui_elements::ui_container::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
 
 #[cfg(target_arch = "wasm32")]
 pub type Rc<T> = std::rc::Rc<T>;

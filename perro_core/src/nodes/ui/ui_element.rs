@@ -4,16 +4,7 @@ use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{ast::FurAnchor, ui_elements::{ui_container::{BoxContainer, GridContainer}, ui_panel::UIPanel}, Color, Transform2D, Vector2};
-
-/// Insets for margin/padding
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct EdgeInsets {
-    pub left: f32,
-    pub right: f32,
-    pub top: f32,
-    pub bottom: f32,
-}
+use crate::{ast::FurAnchor, ui_elements::ui_container::{BoxContainer, GridLayout, Layout, UIPanel}, Color, Transform2D, Vector2};
 
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -31,8 +22,6 @@ pub struct BaseUIElement {
     pub size: Vector2,
     pub pivot: Vector2,
 
-    #[serde(default)]
-    pub padding: EdgeInsets,
 
     // Shared props
     pub anchor: FurAnchor,
@@ -57,7 +46,7 @@ impl Default for BaseUIElement {
             global_transform: Transform2D::default(),
             size: Vector2::new(32.0, 32.0),
             pivot: Vector2::new(0.5, 0.5),
-            padding: EdgeInsets::default(),
+  
             anchor: FurAnchor::Center,
             modulate: None,
             z_index: 0,
@@ -112,10 +101,6 @@ pub trait BaseElement {
     fn get_z_index(&self) -> i32;
     fn set_z_index(&mut self, z_index: i32);
 
-    // Padding
-    fn get_padding(&self) -> &EdgeInsets;
-    fn get_padding_mut(&mut self) -> &mut EdgeInsets;
-
     // Style map
     fn get_style_map(&self) -> &HashMap<String, f32>;
     fn get_style_map_mut(&mut self) -> &mut HashMap<String, f32>;
@@ -162,8 +147,6 @@ macro_rules! impl_ui_element {
             fn get_z_index(&self) -> i32 { self.base.z_index }
             fn set_z_index(&mut self, z_index: i32) { self.base.z_index = z_index; }
 
-            fn get_padding(&self) -> &crate::ui_element::EdgeInsets { &self.base.padding }
-            fn get_padding_mut(&mut self) -> &mut crate::ui_element::EdgeInsets { &mut self.base.padding }
 
             fn get_style_map(&self) -> &std::collections::HashMap<String, f32> { &self.base.style_map }
             fn get_style_map_mut(&mut self) -> &mut std::collections::HashMap<String, f32> { &mut self.base.style_map }
@@ -188,9 +171,10 @@ macro_rules! impl_ui_element {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[enum_dispatch(BaseElement)]
 pub enum UIElement {
-    Panel(UIPanel),
     BoxContainer(BoxContainer),
-    GridContainer(GridContainer),
+    Panel(UIPanel),
+    Layout(Layout),
+    GridLayout(GridLayout),
     
 }
 
