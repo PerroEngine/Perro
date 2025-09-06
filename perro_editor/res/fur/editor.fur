@@ -1,14 +1,17 @@
 [UI]
-[Box anchor=t h=15%]
-    [Layout mode=h cols=2 gap=10.5 align=c]
-        [Panel bg=red-5 sz=125/]
-        [Panel bg=green-5 sz=125/]
-        [Panel bg=blue-5 sz=125/]
-        [Panel bg=yellow-5 sz=125/]
-                [Panel bg=yellow-5 sz=125/]
-                        [Panel bg=yellow-5 sz=125/]
-                                [Panel bg=yellow-5 sz=125/]
-                                        [Panel bg=yellow-5 sz=125/]
-    [/Layout]
-    [/Box]
+
+[VLayout anchor=tl]
+      [Panel h=50% w=20% bg=cinder-8/]   ; darker panel for top-left
+      [Panel h=50% w=20% bg=cinder-7/]   ; slightly lighter for contrast
+[/VLayout]
+
+[HLayout anchor=b]
+      [Panel h=20% w=30% bg=cinder-6/]   ; main base color
+      [Panel h=20% w=30% bg=#FF8C42/]    ; orange accent (kept as hex)
+[/HLayout]
+
+[VLayout anchor=tr]
+      [Panel h=100% w=20% bg=cinder-8/]  ; darker panel for right side
+[/VLayout]
+
 [/UI]

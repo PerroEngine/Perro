@@ -22,7 +22,6 @@ impl_ui_element!(BoxContainer);
 pub struct Container {
     pub mode: ContainerMode,             // Horizontal, Vertical, Grid
     pub gap: Vector2,                    // spacing between children
-    pub align: Alignment,            // start, center, end
     pub distribution: DistributionMode,  // pack or even spacing
 }
 
@@ -31,7 +30,6 @@ impl Default for Container {
         Self {
             mode: ContainerMode::Horizontal,
             gap: Vector2::new(0.0, 0.0),
-            align: Alignment::Center,
             distribution: DistributionMode::Pack,
         }
     }
@@ -39,8 +37,7 @@ impl Default for Container {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ContainerMode { Horizontal, Vertical, Grid }
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum Alignment { Start, Center, End }
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum DistributionMode { Pack, Even }
 

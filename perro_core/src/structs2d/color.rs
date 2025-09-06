@@ -98,6 +98,22 @@ pub fn from_preset(name: &str) -> Option<Self> {
         ("stone-9", Color::new(30, 27, 26, 255)),
         ("stone-10", Color::new(21, 18, 17, 255)),
 
+
+
+    ("cinder-1", Color::new(33, 50, 59, 255)),
+    ("cinder-2", Color::new(31, 44, 51, 255)),
+    ("cinder-3", Color::new(30, 42, 51, 255)),
+    ("cinder-4", Color::new(26, 40, 51, 255)),
+    ("cinder-5", Color::new(28, 34, 38, 255)),
+    ("cinder-6", Color::new(25, 33, 38, 255)),
+    ("cinder-7", Color::new(23, 34, 41, 255)),
+    ("cinder-8", Color::new(28, 31, 33, 255)),
+    ("cinder-9", Color::new(26, 30, 33, 255)),
+    ("cinder-10", Color::new(13, 21, 26, 255)),
+
+
+
+
         // RED FAMILY
         ("red-1", Color::new(217, 187, 187, 255)),
         ("red-2", Color::new(217, 167, 167, 255)),

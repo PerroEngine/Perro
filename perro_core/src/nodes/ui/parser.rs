@@ -67,8 +67,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn is_ident_start(c: char) -> bool { c.is_alphabetic() || c == '_' || c == '-' || c.is_numeric() }
-    fn is_ident_char(c: char) -> bool { c.is_alphanumeric() || c == '_' || c == '-' || c == '%' || c == '.' || c == ',' }
+    fn is_ident_start(c: char) -> bool { c.is_alphabetic() || c == '_' || c == '-' || c == '#' || c.is_numeric() }
+    fn is_ident_char(c: char) -> bool { c.is_alphanumeric() || c == '_' || c == '-' || c == '%' || c == '.' || c == ',' || c == '#' }
 
     fn skip_whitespace_and_comments(&mut self) -> Result<(), String> {
         loop {
