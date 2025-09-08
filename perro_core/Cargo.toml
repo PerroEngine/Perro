@@ -41,3 +41,7 @@ dirs = "5.0"
 walkdir = "2.5"
 aes-gcm = "0.10"
 memmap2 = "0.9"
+
+ab_glyph = "0.2"
+guillotiere = "0.6"
+rusttype = "0.9"

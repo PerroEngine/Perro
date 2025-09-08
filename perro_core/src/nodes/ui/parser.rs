@@ -107,18 +107,21 @@ impl<'a> Lexer<'a> {
 pub struct FurParser<'a> {
     lexer: Lexer<'a>,
     current_token: Token<'a>,
+    element_stack: Vec<String>, // track open elements
 }
 
 impl<'a> FurParser<'a> {
     pub fn new(input: &'a str) -> Result<Self, String> {
         let mut lexer = Lexer::new(input);
         let first_token = lexer.next_token()?;
-        Ok(Self { lexer, current_token: first_token })
+        Ok(Self { lexer, current_token: first_token, element_stack: Vec::new() })
     }
 
     fn next_token(&mut self) -> Result<(), String> { self.current_token = self.lexer.next_token()?; Ok(()) }
+
     fn expect(&mut self, expected: Token<'a>) -> Result<(), String> {
-        if self.current_token == expected { self.next_token() } else { Err(format!("Expected {:?}, found {:?}", expected, self.current_token)) }
+        if self.current_token == expected { self.next_token() } 
+        else { Err(format!("Expected {:?}, found {:?}", expected, self.current_token)) }
     }
 
     pub fn parse(&mut self) -> Result<Vec<FurNode>, String> {
@@ -128,9 +131,20 @@ impl<'a> FurParser<'a> {
     }
 
     fn parse_node(&mut self) -> Result<FurNode, String> {
+        let in_text_element = self.element_stack.last().map(|s| s == "Text").unwrap_or(false);
+
         match &self.current_token {
             Token::LBracket => self.parse_element(),
-            Token::Text(txt) => { let t = *txt; self.next_token()?; Ok(FurNode::Text(t.to_string())) },
+            Token::Text(txt) => { 
+                let t = *txt; 
+                self.next_token()?; 
+                Ok(FurNode::Text(t.to_string())) 
+            },
+            Token::Identifier(txt) if in_text_element => { 
+                let t = *txt; 
+                self.next_token()?; 
+                Ok(FurNode::Text(t.to_string())) 
+            },
             other => Err(format!("Unexpected token when parsing node: {:?}", other)),
         }
     }
@@ -149,13 +163,13 @@ impl<'a> FurParser<'a> {
             return Err(format!("Unexpected closing tag without matching opening: {}", tag_name));
         }
 
-        let mut attributes = HashMap::new();
+        self.element_stack.push(tag_name.to_string()); // push open element
 
+        let mut attributes = HashMap::new();
         while let Token::Identifier(attr_name) = &self.current_token {
             let key = *attr_name;
             self.next_token()?;
             self.expect(Token::Equals)?;
-
             match &self.current_token {
                 Token::StringLiteral(val) | Token::Identifier(val) => {
                     let resolved_val = resolve_value(val, key.starts_with("rounding"));
@@ -193,6 +207,8 @@ impl<'a> FurParser<'a> {
                 children.push(self.parse_node()?);
             }
         }
+
+        self.element_stack.pop(); // done with this element
 
         let id = attributes.get("id").cloned().unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
 

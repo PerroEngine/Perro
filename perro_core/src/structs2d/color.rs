@@ -9,6 +9,17 @@ pub struct Color {
     pub a: u8,
 }
 
+impl Default for Color {
+    fn default() -> Self {
+        Self {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+        }
+    }
+}
+
 impl Color {
     pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
@@ -100,16 +111,18 @@ pub fn from_preset(name: &str) -> Option<Self> {
 
 
 
-    ("cinder-1", Color::new(33, 50, 59, 255)),
-    ("cinder-2", Color::new(31, 44, 51, 255)),
-    ("cinder-3", Color::new(30, 42, 51, 255)),
-    ("cinder-4", Color::new(26, 40, 51, 255)),
-    ("cinder-5", Color::new(28, 34, 38, 255)),
-    ("cinder-6", Color::new(25, 33, 38, 255)),
-    ("cinder-7", Color::new(23, 34, 41, 255)),
-    ("cinder-8", Color::new(28, 31, 33, 255)),
-    ("cinder-9", Color::new(26, 30, 33, 255)),
-    ("cinder-10", Color::new(13, 21, 26, 255)),
+
+    ("cinder-1", Color::new(44, 70, 84, 255)),
+    ("cinder-2", Color::new(41, 64, 76, 255)),
+    ("cinder-3", Color::new(37, 58, 69, 255)),
+    ("cinder-4", Color::new(34, 51, 62, 255)),
+    ("cinder-5", Color::new(31, 45, 54, 255)),
+    ("cinder-6", Color::new(28, 42, 50, 255)),
+    ("cinder-7", Color::new(25, 38, 47, 255)),
+    ("cinder-8", Color::new(21, 35, 43, 255)),
+    ("cinder-9", Color::new(18, 31, 39, 255)),
+    ("cinder-10", Color::new(15, 28, 36, 255)),
+
 
 
 

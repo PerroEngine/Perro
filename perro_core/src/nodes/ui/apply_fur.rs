@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Instant};
 use uuid::Uuid;
 
 use crate::{
-    asset_io::load_asset, ast::{FurAnchor, FurElement, FurNode}, ui_element::{BaseElement, BaseUIElement, UIElement}, ui_elements::ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel}, ui_node::Ui, Color, Vector2
+    asset_io::load_asset, ast::{FurAnchor, FurElement, FurNode}, ui_element::{BaseElement, BaseUIElement, UIElement}, ui_elements::{ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel}, ui_text::UIText}, ui_node::Ui, Color, Vector2
 };
 
 // =================== FILE PARSING ===================
@@ -407,6 +407,30 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
 
             Some(UIElement::GridLayout(grid))
+        }
+
+        "Text" => {
+            let mut text = UIText::default();
+            text.set_name(&fur.id);
+            apply_base_attributes(&mut text.base, &fur.attributes);
+
+            let mut content = String::new();
+            for child in &fur.children {
+                if let FurNode::Text(s) = child {
+                    content.push_str(&s);
+                }
+            }
+
+
+            text.props.content = content;
+
+            if let Some(val) = fur.attributes.get("fsz").or(fur.attributes.get("font-size")) {
+                if let Ok(parsed) = val.parse::<f32>() { 
+                    text.props.font_size = parsed
+                }
+            }
+
+            Some(UIElement::Text(text))
         }
 
         _ => {

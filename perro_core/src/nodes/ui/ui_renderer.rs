@@ -5,7 +5,7 @@ use wgpu::RenderPass;
 use std::collections::HashMap;
 
 use crate::{
-    ast::FurAnchor, graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, ui_element::{BaseElement, UIElement}, ui_elements::ui_container::{ContainerMode, UIPanel}, ui_node::Ui, Color, Graphics, Transform2D, Vector2
+    ast::FurAnchor, font::{Font, FontAtlas, Style, Weight}, graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, ui_element::{BaseElement, UIElement}, ui_elements::{ui_container::{ContainerMode, UIPanel}, ui_text::UIText}, ui_node::Ui, Color, Graphics, Transform2D, Vector2
 };
 
 /// Helper function to find the first non-layout ancestor for percentage calculations
@@ -670,6 +670,7 @@ pub fn render_ui(ui_node: &mut Ui, gfx: &mut Graphics) {
             UIElement::Panel(panel) => render_panel(panel, gfx),
             UIElement::GridLayout(_) => { /* no-op */ },
             UIElement::Layout(_) => {},
+            UIElement::Text(text) => render_text(text, gfx)
         }
     }
 }
@@ -710,4 +711,32 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
             );
         }
     }
+}
+
+
+fn render_text(text: &UIText, gfx: &mut Graphics) {
+    let content = text.props.content.clone();
+    let color = text.props.color.clone();
+    let font_size = text.props.font_size;
+    let z_index = text.base.z_index;
+    let text_id = text.id;
+    println!("{}", content);
+
+    let font = Font::from_name("NotoSans", Weight::Regular, Style::Normal)
+    .expect("Failed to load font");
+
+let font_atlas = FontAtlas::new(font, 48.0); // 48.0 is the atlas generation size
+
+gfx.initialize_font_atlas(font_atlas);
+
+    gfx.draw_text(
+        text_id,
+        &content,
+        font_size,
+        text.base.global_transform.clone(),
+        
+        text.base.pivot,
+        color,
+        z_index,
+    );
 }

@@ -1,13 +1,17 @@
 [UI]
 
+[Text fsz=12]
+Hellollllllllllllllllllllllll
+[/Text]
+
+
 [VLayout anchor=tl]
       [Panel h=50% w=20% bg=cinder-8/]   ; darker panel for top-left
-      [Panel h=50% w=20% bg=cinder-7/]   ; slightly lighter for contrast
+      [Panel h=50% w=20% bg=cinder-9/]   ; slightly lighter for contrast
 [/VLayout]
 
 [HLayout anchor=b]
-      [Panel h=20% w=30% bg=cinder-6/]   ; main base color
-      [Panel h=20% w=30% bg=#FF8C42/]    ; orange accent (kept as hex)
+      [Panel h=20% w=60% bg=cinder-6/]   ;
 [/HLayout]
 
 [VLayout anchor=tr]

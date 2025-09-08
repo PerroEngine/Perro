@@ -7,7 +7,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{asset_io::{load_asset, resolve_path}, ui_elements::ui_container::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
+use crate::{asset_io::{load_asset, resolve_path}, font::{Font, FontAtlas}, ui_elements::ui_container::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
 
 #[cfg(target_arch = "wasm32")]
 pub type Rc<T> = std::rc::Rc<T>;
@@ -132,6 +132,29 @@ struct CachedTexture {
     texture_path: String,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct FontInstance {
+    transform_0: [f32; 4],
+    transform_1: [f32; 4],
+    transform_2: [f32; 4],
+    transform_3: [f32; 4],
+    color: [f32; 4],
+    uv_offset: [f32; 2],
+    uv_size: [f32; 2],
+    z_index: i32,
+    _pad: [f32; 3],
+}
+
+#[derive(Debug)]
+pub struct TextRenderer<'a> {
+    pub atlas: &'a FontAtlas,
+    pub font_instance_buffer: wgpu::Buffer,
+    pub text_instances: Vec<FontInstance>,
+    pub text_instanced_pipeline: RenderPipeline,
+    pub font_bind_group_layout: BindGroupLayout,
+}
+
 #[derive(Debug)]
 pub struct Graphics {
     window: Rc<Window>,
@@ -164,6 +187,18 @@ pub struct Graphics {
     rect_instanced_pipeline: RenderPipeline,
     texture_instanced_pipeline: RenderPipeline,
     texture_bind_group_layout: BindGroupLayout,
+
+    // Font rendering components
+    font_atlas: Option<FontAtlas>,
+    font_bind_group: Option<wgpu::BindGroup>,
+    font_bind_group_layout: BindGroupLayout,
+    font_instanced_pipeline: RenderPipeline,
+    font_instance_buffer: wgpu::Buffer,
+
+    // Text instance cache
+    cached_text: HashMap<uuid::Uuid, Vec<FontInstance>>,
+    text_instances_need_rebuild: bool,
+    all_text_instances: Vec<FontInstance>,
 
     // Optimization flags
     instances_need_rebuild: bool,
@@ -279,6 +314,29 @@ pub async fn create_graphics(
             ],
         });
 
+    // 4.5) Font bind group layout
+    let font_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Font BGL"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+
     // 5) Instance buffers
     let rect_instance_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("Rect Instance Buffer"),
@@ -294,6 +352,14 @@ pub async fn create_graphics(
         mapped_at_creation: false,
     });
 
+    // 5.5) Font instance buffer
+    let font_instance_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Font Instance Buffer"),
+        size: (std::mem::size_of::<FontInstance>() * MAX_INSTANCES) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     // 6) Instanced pipelines
     let rect_instanced_pipeline = create_rect_instanced_pipeline(
         &device,
@@ -304,6 +370,14 @@ pub async fn create_graphics(
     let texture_instanced_pipeline = create_texture_instanced_pipeline(
         &device,
         &texture_bind_group_layout,
+        &camera_bind_group_layout,
+        surface_config.format,
+    );
+
+    // 6.5) Font instanced pipeline
+    let font_instanced_pipeline = create_font_pipeline(
+        &device,
+        &font_bind_group_layout,
         &camera_bind_group_layout,
         surface_config.format,
     );
@@ -368,6 +442,17 @@ pub async fn create_graphics(
         rect_instanced_pipeline,
         texture_instanced_pipeline,
         texture_bind_group_layout,
+        
+        // Font system fields
+        font_atlas: None,
+        font_bind_group: None,
+        font_bind_group_layout,
+        font_instanced_pipeline,
+        font_instance_buffer,
+        cached_text: HashMap::new(),
+        text_instances_need_rebuild: false,
+        all_text_instances: Vec::new(),
+        
         instances_need_rebuild: false,
         rect_instances: Vec::new(),
         texture_groups: Vec::new(),
@@ -538,6 +623,75 @@ fn create_texture_instanced_pipeline(
     })
 }
 
+pub fn create_font_pipeline(
+    device: &wgpu::Device,
+    font_texture_bind_group_layout: &BindGroupLayout,
+    camera_bgl: &BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Font Instanced Shader"),
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/font_instanced.wgsl"))),
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Font Pipeline Layout"),
+        bind_group_layouts: &[font_texture_bind_group_layout, camera_bgl],
+        push_constant_ranges: &[],
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Font Instanced Pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                // Quad vertex buffer
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as _,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute { offset: 8, shader_location: 1, format: wgpu::VertexFormat::Float32x2 },
+                    ],
+                },
+                // Instance buffer
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<FontInstance>() as _,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { offset: 0, shader_location: 2, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { offset: 16, shader_location: 3, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { offset: 32, shader_location: 4, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { offset: 48, shader_location: 5, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { offset: 64, shader_location: 6, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { offset: 80, shader_location: 7, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute { offset: 88, shader_location: 8, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute { offset: 96, shader_location: 9, format: wgpu::VertexFormat::Sint32 },
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        multiview: None,
+        cache: None,
+    })
+}
+
 impl Graphics {
     pub fn window(&self) -> &winit::window::Window {
         &self.window
@@ -573,89 +727,162 @@ impl Graphics {
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
     }
 
+    // Initialize font atlas (call this once with your font)
+    pub fn initialize_font_atlas(&mut self, font_atlas: FontAtlas) {
+        // Create texture from font atlas bitmap
+        let atlas_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Font Atlas"),
+            size: wgpu::Extent3d {
+                width: font_atlas.width,
+                height: font_atlas.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm, // Single channel for SDF
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        // Upload atlas bitmap data
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &font_atlas.bitmap, // Assuming this is Vec<u8>
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(font_atlas.width),
+                rows_per_image: Some(font_atlas.height),
+            },
+            wgpu::Extent3d {
+                width: font_atlas.width,
+                height: font_atlas.height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let atlas_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Font Atlas Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // Create bind group
+        let font_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Font Bind Group"),
+            layout: &self.font_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
+                },
+            ],
+        });
+
+        self.font_atlas = Some(font_atlas);
+        self.font_bind_group = Some(font_bind_group);
+    }
+
     pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {
         // Direct UUID usage - no string allocation!
         self.cached_rects.remove(&uuid);
         self.cached_textures.remove(&uuid);
+        self.cached_text.remove(&uuid);
+        
         self.instances_need_rebuild = true; // Mark as dirty
+        self.text_instances_need_rebuild = true;
     }
     
-pub fn draw_rect(
-    &mut self,
-    uuid: uuid::Uuid,
-    transform: Transform2D,
-    size: Vector2,
-    pivot: Vector2,
-    color: crate::Color,
-    corner_radius: Option<CornerRadius>,
-    border_thickness: f32,
-    is_border: bool,
-    z_index: i32,
-) {
-    fn srgb_to_linear(c: f32) -> f32 {
-        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    pub fn draw_rect(
+        &mut self,
+        uuid: uuid::Uuid,
+        transform: Transform2D,
+        size: Vector2,
+        pivot: Vector2,
+        color: crate::Color,
+        corner_radius: Option<CornerRadius>,
+        border_thickness: f32,
+        is_border: bool,
+        z_index: i32,
+    ) {
+        fn srgb_to_linear(c: f32) -> f32 {
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        }
+
+        let color_lin = [
+            srgb_to_linear(color.r as f32 / 255.0),
+            srgb_to_linear(color.g as f32 / 255.0),
+            srgb_to_linear(color.b as f32 / 255.0),
+            color.a as f32 / 255.0,
+        ];
+
+       let cr = corner_radius.unwrap_or_default();
+
+        let sx = transform.scale.x.abs();
+        let sy = transform.scale.y.abs();
+
+        let scaled_size_x = size.x * sx;
+        let scaled_size_y = size.y * sy;
+
+        // ✅ Calculate max possible radius (half of the smaller dimension)
+        let max_radius = (scaled_size_x.min(scaled_size_y)) * 0.5;
+        
+        // ✅ Convert each corner's 0-1 value to actual pixels
+        let corner_radius_xy = [
+            cr.top_left * max_radius,      // e.g., 0.5 * 25px = 12.5px
+            cr.top_left * max_radius,      // same for both x and y (circular)
+            cr.top_right * max_radius,     // e.g., 0.7 * 25px = 17.5px
+            cr.top_right * max_radius,
+        ];
+        let corner_radius_zw = [
+            cr.bottom_right * max_radius,  // each corner can be different
+            cr.bottom_right * max_radius,
+            cr.bottom_left * max_radius,
+            cr.bottom_left * max_radius,
+        ];
+
+        // Border thickness in actual pixels
+        let pixel_border_thickness = border_thickness;
+
+        let mut xf_no_scale = transform.clone();
+        xf_no_scale.scale = Vector2::new(1.0, 1.0);
+
+        let transform_array = xf_no_scale.to_mat4().to_cols_array();
+
+        let instance = RectInstance {
+            transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
+            transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
+            transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
+            transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+            color: color_lin,
+            size: [scaled_size_x, scaled_size_y],
+            pivot: [pivot.x, pivot.y],
+            corner_radius_xy,
+            corner_radius_zw,
+            border_thickness: pixel_border_thickness,
+            is_border: if is_border { 1 } else { 0 },
+            z_index,
+            _pad: 0.0,
+        };
+
+        self.cached_rects.insert(uuid, CachedRect { instance });
+        self.instances_need_rebuild = true;
     }
-
-    let color_lin = [
-        srgb_to_linear(color.r as f32 / 255.0),
-        srgb_to_linear(color.g as f32 / 255.0),
-        srgb_to_linear(color.b as f32 / 255.0),
-        color.a as f32 / 255.0,
-    ];
-
-   let cr = corner_radius.unwrap_or_default();
-
-    let sx = transform.scale.x.abs();
-    let sy = transform.scale.y.abs();
-
-    let scaled_size_x = size.x * sx;
-    let scaled_size_y = size.y * sy;
-
-    // ✅ Calculate max possible radius (half of the smaller dimension)
-    let max_radius = (scaled_size_x.min(scaled_size_y)) * 0.5;
-    
-    // ✅ Convert each corner's 0-1 value to actual pixels
-    let corner_radius_xy = [
-        cr.top_left * max_radius,      // e.g., 0.5 * 25px = 12.5px
-        cr.top_left * max_radius,      // same for both x and y (circular)
-        cr.top_right * max_radius,     // e.g., 0.7 * 25px = 17.5px
-        cr.top_right * max_radius,
-    ];
-    let corner_radius_zw = [
-        cr.bottom_right * max_radius,  // each corner can be different
-        cr.bottom_right * max_radius,
-        cr.bottom_left * max_radius,
-        cr.bottom_left * max_radius,
-    ];
-
-    // Border thickness in actual pixels
-    let pixel_border_thickness = border_thickness;
-
-    let mut xf_no_scale = transform.clone();
-    xf_no_scale.scale = Vector2::new(1.0, 1.0);
-
-    let transform_array = xf_no_scale.to_mat4().to_cols_array();
-
-    let instance = RectInstance {
-        transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
-        transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
-        transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
-        transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
-        color: color_lin,
-        size: [scaled_size_x, scaled_size_y],
-        pivot: [pivot.x, pivot.y],
-        corner_radius_xy,
-        corner_radius_zw,
-        border_thickness: pixel_border_thickness,
-        is_border: if is_border { 1 } else { 0 },
-        z_index,
-        _pad: 0.0,
-    };
-
-    self.cached_rects.insert(uuid, CachedRect { instance });
-    self.instances_need_rebuild = true;
-}
-
 
     pub fn draw_texture(
         &mut self,
@@ -686,6 +913,83 @@ pub fn draw_rect(
         );
         self.instances_need_rebuild = true; // Mark as dirty
     }
+
+    // Fixed draw_text method
+  // Simplified draw_text method - closer to your original
+pub fn draw_text(
+    &mut self,
+    uuid: uuid::Uuid,
+    text: &str,
+    font_size: f32,
+    transform: Transform2D,
+    pivot: Vector2,
+    color: crate::Color,
+    z_index: i32,
+) {
+    if let Some(ref font_atlas) = self.font_atlas {
+        let mut cursor_x = 0.0;
+        let mut cursor_y = 0.0;
+        let mut instances = Vec::new();
+
+        // Convert color to linear space
+        fn srgb_to_linear(c: f32) -> f32 {
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        }
+
+        let color_lin = [
+            srgb_to_linear(color.r as f32 / 255.0),
+            srgb_to_linear(color.g as f32 / 255.0),
+            srgb_to_linear(color.b as f32 / 255.0),
+            color.a as f32 / 255.0,
+        ];
+
+        for ch in text.chars() {
+            if let Some(glyph) = font_atlas.glyphs.get(&ch) {
+                // Calculate glyph position and size - keep it simple like your original
+                let glyph_x = transform.position.x + cursor_x + (glyph.x_offset as f32 * font_size);
+                let glyph_y = transform.position.y + cursor_y + (glyph.y_offset as f32 * font_size);
+                let glyph_w = glyph.width as f32 * font_size;
+                let glyph_h = glyph.height as f32 * font_size;
+
+                // Create transform matrix for this glyph
+                let glyph_transform = Transform2D {
+                    position: Vector2::new(glyph_x, glyph_y),
+                    rotation: transform.rotation,
+                    scale: Vector2::new(glyph_w, glyph_h),
+                };
+
+                let transform_array = glyph_transform.to_mat4().to_cols_array();
+
+                let instance = FontInstance {
+                    transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
+                    transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
+                    transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
+                    transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+                    color: color_lin,
+                    uv_offset: [
+                        glyph.x as f32 / font_atlas.width as f32,
+                        glyph.y as f32 / font_atlas.height as f32,
+                    ],
+                    uv_size: [
+                        glyph.width as f32 / font_atlas.width as f32,
+                        glyph.height as f32 / font_atlas.height as f32,
+                    ],
+                    z_index,
+                    _pad: [0.0; 3],
+                };
+
+                instances.push(instance);
+                cursor_x += glyph.advance * font_size;
+            }
+        }
+
+        println!("Generated {} font instances for text: '{}'", instances.len(), text);
+        self.cached_text.insert(uuid, instances);
+        self.text_instances_need_rebuild = true;
+    } else {
+        println!("No font atlas available!");
+    }
+}
 
     fn rebuild_instances(&mut self) {
         // Rebuild rect instances - reuse vector
@@ -759,11 +1063,36 @@ pub fn draw_rect(
         }
     }
 
+    fn rebuild_text_instances(&mut self) {
+        self.all_text_instances.clear();
+        
+        // Collect all text instances and sort by z-index
+        for instances in self.cached_text.values() {
+            self.all_text_instances.extend(instances.iter().cloned());
+        }
+        
+        self.all_text_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+
+        // Upload to GPU
+        if !self.all_text_instances.is_empty() {
+            self.queue.write_buffer(
+                &self.font_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.all_text_instances),
+            );
+        }
+    }
+
     pub fn draw_instances(&mut self, rpass: &mut RenderPass<'_>) {
         // Only rebuild if something changed
         if self.instances_need_rebuild {
             self.rebuild_instances();
             self.instances_need_rebuild = false;
+        }
+        
+        if self.text_instances_need_rebuild {
+            self.rebuild_text_instances();
+            self.text_instances_need_rebuild = false;
         }
 
         // Fast path - just issue draw commands, no CPU work
@@ -802,6 +1131,16 @@ pub fn draw_rect(
                 rpass.set_vertex_buffer(1, buffer_slice);
                 rpass.draw(0..6, 0..count as u32);
             }
+        }
+
+        // Draw text
+        if !self.all_text_instances.is_empty() && self.font_bind_group.is_some() {
+            rpass.set_pipeline(&self.font_instanced_pipeline);
+            rpass.set_bind_group(0, self.font_bind_group.as_ref().unwrap(), &[]);
+            rpass.set_bind_group(1, &self.camera_bind_group, &[]);
+            rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(1, self.font_instance_buffer.slice(..));
+            rpass.draw(0..6, 0..self.all_text_instances.len() as u32);
         }
     }
 

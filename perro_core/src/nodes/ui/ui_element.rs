@@ -4,7 +4,7 @@ use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{ast::FurAnchor, ui_elements::ui_container::{BoxContainer, GridLayout, Layout, UIPanel}, Color, Transform2D, Vector2};
+use crate::{ast::FurAnchor, ui_elements::{ui_container::{BoxContainer, GridLayout, Layout, UIPanel}, ui_text::UIText}, Color, Transform2D, Vector2};
 
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -175,6 +175,8 @@ pub enum UIElement {
     Panel(UIPanel),
     Layout(Layout),
     GridLayout(GridLayout),
+
+    Text(UIText)
     
 }
 
