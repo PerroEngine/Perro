@@ -1,7 +1,7 @@
 [UI]
 
-[Text fsz=12]
-Hellollllllllllllllllllllllll
+[Text fsz=5 anchor=l tx=100]
+HEllO           World
 [/Text]
 
 

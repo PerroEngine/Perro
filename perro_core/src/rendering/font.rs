@@ -74,7 +74,6 @@ pub struct FontAtlas {
     pub descent: f32,
 }
 
-// Updated FontAtlas::new method with proper coordinate handling
 impl FontAtlas {
     pub fn new(font: Font, atlas_size: f32) -> Self {
         use ab_glyph::{FontRef, PxScale, ScaleFont, Font as AbFont, Glyph as AbGlyph};
@@ -135,24 +134,23 @@ impl FontAtlas {
                 width,
                 height,
                 x_offset: bounds.min.x.floor() as i32,
-                // Fix Y offset - ab_glyph uses different coordinate system
-                y_offset: -bounds.max.y.ceil() as i32, // Flip Y and use max for top
-                advance: h_metrics / atlas_size, // Normalize advance
+                y_offset: bounds.min.y.floor() as i32,
+                advance: h_metrics,
             });
             
             x += width + padding;
             row_height = row_height.max(height);
         }
         
-        // Create atlas bitmap with proper rasterization
+        // Create atlas bitmap with SDF generation
         let mut bitmap = vec![0u8; (atlas_width * atlas_height) as usize];
         
         for (ch, outlined_glyph, bounds) in positioned_glyphs {
             if let Some(glyph_info) = glyphs.get(&ch) {
-                // Create a temporary bitmap for this glyph
+                // Simple rasterization (not true SDF, but works for basic text)
+                // For true SDF, you'd want to use a library like msdfgen
                 let mut glyph_bitmap = vec![0f32; (glyph_info.width * glyph_info.height) as usize];
                 
-                // Rasterize the glyph
                 outlined_glyph.draw(|gx, gy, coverage| {
                     let idx = (gy * glyph_info.width + gx) as usize;
                     if idx < glyph_bitmap.len() {
@@ -176,25 +174,33 @@ impl FontAtlas {
             }
         }
         
-        // Debug: Save atlas to file to verify it's working
-        #[cfg(debug_assertions)]
-        {
-            if let Err(e) = std::fs::write("debug_atlas.raw", &bitmap) {
-                println!("Failed to write debug atlas: {}", e);
-            } else {
-                println!("Font atlas saved to debug_atlas.raw (512x512, single channel)");
-                println!("Generated {} glyphs", glyphs.len());
-            }
-        }
+        let v_metrics = scaled_font.height() + scaled_font.descent();
         
         FontAtlas {
             width: atlas_width,
             height: atlas_height,
             bitmap,
             glyphs,
-            line_height: 1.0, // Normalized to 1.0 since we normalize advance
-            ascent: scaled_font.ascent() / atlas_size,
-            descent: scaled_font.descent() / atlas_size,
+            line_height: scaled_font.height(),
+            ascent: scaled_font.ascent(),
+            descent: scaled_font.descent(),
         }
+    }
+    
+    pub fn get_glyph(&self, ch: char) -> Option<&Glyph> {
+        self.glyphs.get(&ch)
+    }
+    
+    pub fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
+        let scale = font_size / self.line_height;
+        let mut width = 0.0;
+        
+        for ch in text.chars() {
+            if let Some(glyph) = self.get_glyph(ch) {
+                width += glyph.advance * scale;
+            }
+        }
+        
+        (width, self.line_height * scale)
     }
 }

@@ -119,11 +119,6 @@ impl<'a> FurParser<'a> {
 
     fn next_token(&mut self) -> Result<(), String> { self.current_token = self.lexer.next_token()?; Ok(()) }
 
-    fn expect(&mut self, expected: Token<'a>) -> Result<(), String> {
-        if self.current_token == expected { self.next_token() } 
-        else { Err(format!("Expected {:?}, found {:?}", expected, self.current_token)) }
-    }
-
     pub fn parse(&mut self) -> Result<Vec<FurNode>, String> {
         let mut nodes = Vec::new();
         while self.current_token != Token::Eof { nodes.push(self.parse_node()?); }
@@ -133,15 +128,26 @@ impl<'a> FurParser<'a> {
     fn parse_node(&mut self) -> Result<FurNode, String> {
         let in_text_element = self.element_stack.last().map(|s| s == "Text").unwrap_or(false);
 
+        // Inside a Text element, preserve internal spaces, trim leading/trailing
+        if in_text_element {
+            let mut text_content = String::new();
+            while matches!(self.current_token, Token::Text(_) | Token::Identifier(_)) {
+                match &self.current_token {
+                    Token::Text(txt) | Token::Identifier(txt) => {
+                        text_content.push_str(txt);
+                        text_content.push(' '); // preserve spaces inside
+                    },
+                    _ => {}
+                }
+                self.next_token()?;
+            }
+            return Ok(FurNode::Text(text_content.trim().to_string()));
+        }
+
         match &self.current_token {
             Token::LBracket => self.parse_element(),
             Token::Text(txt) => { 
-                let t = *txt; 
-                self.next_token()?; 
-                Ok(FurNode::Text(t.to_string())) 
-            },
-            Token::Identifier(txt) if in_text_element => { 
-                let t = *txt; 
+                let t = txt.trim(); 
                 self.next_token()?; 
                 Ok(FurNode::Text(t.to_string())) 
             },
@@ -150,7 +156,11 @@ impl<'a> FurParser<'a> {
     }
 
     fn parse_element(&mut self) -> Result<FurNode, String> {
-        self.expect(Token::LBracket)?;
+        if self.current_token != Token::LBracket {
+            return Err(format!("Expected LBracket, found {:?}", self.current_token));
+        }
+        self.next_token()?; // consume [
+
         let is_closing = if self.current_token == Token::Slash { self.next_token()?; true } else { false };
 
         let tag_name = match &self.current_token {
@@ -159,17 +169,23 @@ impl<'a> FurParser<'a> {
         };
 
         if is_closing {
-            self.expect(Token::RBracket)?;
+            if self.current_token != Token::RBracket {
+                return Err(format!("Expected RBracket after closing tag, found {:?}", self.current_token));
+            }
+            self.next_token()?;
             return Err(format!("Unexpected closing tag without matching opening: {}", tag_name));
         }
 
-        self.element_stack.push(tag_name.to_string()); // push open element
+        self.element_stack.push(tag_name.to_string());
 
         let mut attributes = HashMap::new();
         while let Token::Identifier(attr_name) = &self.current_token {
             let key = *attr_name;
             self.next_token()?;
-            self.expect(Token::Equals)?;
+            if self.current_token != Token::Equals {
+                return Err(format!("Expected '=', found {:?}", self.current_token));
+            }
+            self.next_token()?;
             match &self.current_token {
                 Token::StringLiteral(val) | Token::Identifier(val) => {
                     let resolved_val = resolve_value(val, key.starts_with("rounding"));
@@ -181,13 +197,20 @@ impl<'a> FurParser<'a> {
         }
 
         let self_closing = if self.current_token == Token::Slash {
-            self.next_token()?; self.expect(Token::RBracket)?; true
-        } else { self.expect(Token::RBracket)?; false };
+            self.next_token()?;
+            if self.current_token != Token::RBracket { return Err(format!("Expected RBracket after self-closing '/', found {:?}", self.current_token)); }
+            self.next_token()?;
+            true
+        } else {
+            if self.current_token != Token::RBracket { return Err(format!("Expected RBracket, found {:?}", self.current_token)); }
+            self.next_token()?;
+            false
+        };
 
         let mut children = Vec::new();
         if !self_closing {
             loop {
-                if let Token::LBracket = self.current_token {
+                if self.current_token == Token::LBracket {
                     let saved_pos = self.lexer.pos;
                     let saved_token = self.current_token.clone();
                     self.next_token()?;
@@ -196,7 +219,10 @@ impl<'a> FurParser<'a> {
                         if let Token::Identifier(close_name) = &self.current_token {
                             if *close_name == tag_name {
                                 self.next_token()?;
-                                self.expect(Token::RBracket)?;
+                                if self.current_token != Token::RBracket {
+                                    return Err(format!("Expected RBracket after closing tag, found {:?}", self.current_token));
+                                }
+                                self.next_token()?;
                                 break;
                             }
                         }
@@ -208,7 +234,7 @@ impl<'a> FurParser<'a> {
             }
         }
 
-        self.element_stack.pop(); // done with this element
+        self.element_stack.pop();
 
         let id = attributes.get("id").cloned().unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
 

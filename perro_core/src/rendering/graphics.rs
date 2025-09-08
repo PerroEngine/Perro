@@ -914,8 +914,6 @@ impl Graphics {
         self.instances_need_rebuild = true; // Mark as dirty
     }
 
-    // Fixed draw_text method
-  // Simplified draw_text method - closer to your original
 pub fn draw_text(
     &mut self,
     uuid: uuid::Uuid,
@@ -944,17 +942,35 @@ pub fn draw_text(
         ];
 
         for ch in text.chars() {
+            // Handle newline
+            if ch == '\n' {
+                cursor_x = 0.0;
+                cursor_y += font_atlas.line_height * font_size;
+                continue;
+            }
+
+            // Handle space: just advance cursor, no quad
+            if ch == ' ' {
+                let space_advance = font_atlas
+                    .glyphs
+                    .get(&' ')
+                    .map(|g| g.advance)
+                    .unwrap_or(font_atlas.line_height * 0.33); // fallback width
+                cursor_x += space_advance * font_size;
+                continue;
+            }
+
+            // Handle normal glyphs
             if let Some(glyph) = font_atlas.glyphs.get(&ch) {
-                // Calculate glyph position and size - keep it simple like your original
-                let glyph_x = transform.position.x + cursor_x + (glyph.x_offset as f32 * font_size);
-                let glyph_y = transform.position.y + cursor_y + (glyph.y_offset as f32 * font_size);
+                let char_x = transform.position.x + cursor_x + glyph.x_offset as f32 * font_size;
+                let char_y = transform.position.y + cursor_y + font_atlas.ascent * font_size - glyph.height as f32 * font_size;
+
                 let glyph_w = glyph.width as f32 * font_size;
                 let glyph_h = glyph.height as f32 * font_size;
 
-                // Create transform matrix for this glyph
                 let glyph_transform = Transform2D {
-                    position: Vector2::new(glyph_x, glyph_y),
-                    rotation: transform.rotation,
+                    position: Vector2::new(char_x, char_y),
+                    rotation: 0.0,
                     scale: Vector2::new(glyph_w, glyph_h),
                 };
 
@@ -979,17 +995,19 @@ pub fn draw_text(
                 };
 
                 instances.push(instance);
+
+                // Advance cursor by glyph advance
                 cursor_x += glyph.advance * font_size;
             }
         }
 
-        println!("Generated {} font instances for text: '{}'", instances.len(), text);
         self.cached_text.insert(uuid, instances);
         self.text_instances_need_rebuild = true;
     } else {
         println!("No font atlas available!");
     }
 }
+
 
     fn rebuild_instances(&mut self) {
         // Rebuild rect instances - reuse vector
