@@ -725,7 +725,7 @@ fn render_text(text: &UIText, gfx: &mut Graphics) {
     let font = Font::from_name("NotoSans", Weight::Regular, Style::Normal)
     .expect("Failed to load font");
 
-let font_atlas = FontAtlas::new(font, 48.0); // 48.0 is the atlas generation size
+let font_atlas = FontAtlas::new(font, 64.0); // 48.0 is the atlas generation size
 
 gfx.initialize_font_atlas(font_atlas);
 
