@@ -920,20 +920,20 @@ pub fn draw_text(
     text: &str,
     font_size: f32,
     transform: Transform2D,
-    pivot: Vector2,
+    _pivot: Vector2,
     color: crate::Color,
     z_index: i32,
 ) {
-    if let Some(ref font_atlas) = self.font_atlas {
-        let mut cursor_x = 0.0;
-        let mut cursor_y = 0.0;
-        let mut instances = Vec::new();
+    if let Some(ref atlas) = self.font_atlas {
+        let mut cursor_x = transform.position.x;
+        let baseline_y = transform.position.y;
+        let mut instances = Vec::with_capacity(text.len());
 
-        // Convert color to linear space
+        let scale = font_size / atlas.design_size;
+
         fn srgb_to_linear(c: f32) -> f32 {
             if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
         }
-
         let color_lin = [
             srgb_to_linear(color.r as f32 / 255.0),
             srgb_to_linear(color.g as f32 / 255.0),
@@ -942,72 +942,52 @@ pub fn draw_text(
         ];
 
         for ch in text.chars() {
-            // Handle newline
-            if ch == '\n' {
-                cursor_x = 0.0;
-                cursor_y += font_atlas.line_height * font_size;
-                continue;
-            }
+            if let Some(g) = atlas.get_glyph(ch) {
+                let m = &g.metrics;
 
-            // Handle space: just advance cursor, no quad
-            if ch == ' ' {
-                let space_advance = font_atlas
-                    .glyphs
-                    .get(&' ')
-                    .map(|g| g.advance)
-                    .unwrap_or(font_atlas.line_height * 0.33); // fallback width
-                cursor_x += space_advance * font_size;
-                continue;
-            }
+                let gw = m.width as f32 * scale;
+                let gh = m.height as f32 * scale;
 
-            // Handle normal glyphs
-            if let Some(glyph) = font_atlas.glyphs.get(&ch) {
-                let char_x = transform.position.x + cursor_x + glyph.x_offset as f32 * font_size;
-                let char_y = transform.position.y + cursor_y + font_atlas.ascent * font_size - glyph.height as f32 * font_size;
+                if gw > 0.0 && gh > 0.0 {
+                    // Place using ascent as baseline reference
+                    let gx = cursor_x + g.bearing_x * scale;
+                    let gy = baseline_y + atlas.ascent * scale
+                        - (m.ymin as f32 + m.height as f32) * scale;
 
-                let glyph_w = glyph.width as f32 * font_size;
-                let glyph_h = glyph.height as f32 * font_size;
+                    // Center (since quad verts are [-0.5..+0.5])
+                    let cx = gx + gw * 0.5;
+                    let cy = gy + gh * 0.5;
 
-                let glyph_transform = Transform2D {
-                    position: Vector2::new(char_x, char_y),
-                    rotation: 0.0,
-                    scale: Vector2::new(glyph_w, glyph_h),
-                };
+                    let glyph_transform = Transform2D {
+                        position: Vector2::new(cx, cy),
+                        rotation: 0.0,
+                        scale: Vector2::new(gw, gh),
+                    };
 
-                let transform_array = glyph_transform.to_mat4().to_cols_array();
+                    let tfm = glyph_transform.to_mat4().to_cols_array();
+                    let instance = FontInstance {
+                        transform_0: [tfm[0], tfm[1], tfm[2], tfm[3]],
+                        transform_1: [tfm[4], tfm[5], tfm[6], tfm[7]],
+                        transform_2: [tfm[8], tfm[9], tfm[10], tfm[11]],
+                        transform_3: [tfm[12], tfm[13], tfm[14], tfm[15]],
+                        color: color_lin,
+                        uv_offset: [g.u0, g.v0],
+                        uv_size: [g.u1 - g.u0, g.v1 - g.v0],
+                        z_index,
+                        _pad: [0.0; 3],
+                    };
+                    instances.push(instance);
+                }
 
-                let instance = FontInstance {
-                    transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
-                    transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
-                    transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
-                    transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
-                    color: color_lin,
-                    uv_offset: [
-                        glyph.x as f32 / font_atlas.width as f32,
-                        glyph.y as f32 / font_atlas.height as f32,
-                    ],
-                    uv_size: [
-                        glyph.width as f32 / font_atlas.width as f32,
-                        glyph.height as f32 / font_atlas.height as f32,
-                    ],
-                    z_index,
-                    _pad: [0.0; 3],
-                };
-
-                instances.push(instance);
-
-                // Advance cursor by glyph advance
-                cursor_x += glyph.advance * font_size;
+                // advance pen strictly by advance_width
+                cursor_x += m.advance_width * scale;
             }
         }
 
         self.cached_text.insert(uuid, instances);
         self.text_instances_need_rebuild = true;
-    } else {
-        println!("No font atlas available!");
     }
 }
-
 
     fn rebuild_instances(&mut self) {
         // Rebuild rect instances - reuse vector

@@ -5,4 +5,5 @@ fn init() {
 }
 
 fn update(delta: float) {
+    let x = 5 + delta
 }

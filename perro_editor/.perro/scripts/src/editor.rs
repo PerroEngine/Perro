@@ -25,6 +25,8 @@ impl Script for EditorScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+        let delta = api.get_delta();
+        let x = 5f32 + delta;
     }
 
     fn set_node_id(&mut self, id: Uuid) {

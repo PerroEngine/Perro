@@ -44,4 +44,4 @@ memmap2 = "0.9"
 
 ab_glyph = "0.2"
 guillotiere = "0.6"
-rusttype = "0.9"
+fontdue = "0.8"

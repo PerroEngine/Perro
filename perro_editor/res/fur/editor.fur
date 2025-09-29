@@ -1,40 +1,40 @@
 [UI]
 
-[Text fsz=5 anchor=l tx=100]
-HEllO           World
-[/Text]
+      [Text fsz=175 anchor=l tx=100]
+      Hello Perro
+      [/Text]
 
-[Panel w=100% h=4% anchor=tl bg=cinder-3/]
+      [Panel w=100% h=3% anchor=tl bg=cinder-3/]
 
-[VLayout anchor=tl ty=-4%]
-      [Panel h=50% w=19% bg=cinder-8/]
-      [Panel h=50% w=19% bg=cinder-10/]
-[/VLayout]
+      [VLayout anchor=tl ty=-3%]
+            [Panel h=50% w=19% bg=cinder-8/]
+            [Panel h=50% w=19% bg=cinder-10/]
+      [/VLayout]
 
-[VLayout anchor=b]
-      [Panel h=3% w=62% bg=cinder-4]
-            [HLayout anchor=l gap=75 ty=-10]
-                  [Text fsz=0.75]
-                  Item
-                  [/Text]
+      [VLayout anchor=b]
+            [Panel h=3% w=62% bg=cinder-4]
+                  [HLayout anchor=l gap=75 ty=-10]
+                        [Text fsz=0.7]
+                        Item
+                        [/Text]
 
-                    [Text fsz=0.75]
-                  Item
-                  [/Text]
+                        [Text fsz=0.7]
+                        Item
+                        [/Text]
 
-                         [Text fsz=0.75]
-                  Item
-                  [/Text]
-            [/HLayout]
-      [/Panel] 
+                              [Text fsz=0.7]
+                        Item
+                        [/Text]
+                  [/HLayout]
+            [/Panel] 
 
-      [Panel h=17% w=62% bg=cinder-6]
-      [Panel w=98% h=88% bg=cinder-8/]
-      [/Panel]   ;
-[/VLayout]
+            [Panel h=17% w=62% bg=cinder-6]
+            [Panel w=98% h=88% bg=cinder-8/]
+            [/Panel]   ;
+      [/VLayout]
 
-[VLayout anchor=tr ty=-4%]
-      [Panel h=100% w=19% bg=cinder-8/]  ; darker panel for right side
-[/VLayout]
+      [VLayout anchor=tr ty=-3%]
+            [Panel h=100% w=19% bg=cinder-8/]  ; darker panel for right side
+      [/VLayout]
 
 [/UI]

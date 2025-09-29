@@ -125,8 +125,8 @@ impl<P: ScriptProvider> App<P> {
                     let ups = self.ups_frames as f32 / measurement_duration;
 
                     println!(
-                        "fps: {:.1}, ups: {:.1} (debt: {:.2}, skipped: {})",
-                        fps, ups, self.frame_debt, self.skip_counter
+                        "fps: {:.1}, ups: {:.1}",
+                        fps, ups
                     );
 
                     self.fps_frames = 0;
