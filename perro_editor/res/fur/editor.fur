@@ -13,7 +13,7 @@
 
       [VLayout anchor=b]
             [Panel h=3% w=62% bg=cinder-4]
-                  [HLayout anchor=l gap=75 ty=-10]
+                  [HLayout anchor=l gap=75 ty=-35]
                         [Text fsz=24]
                         Item b
                         [/Text]

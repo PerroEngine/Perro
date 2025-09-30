@@ -22,7 +22,7 @@ zip = "0.6"
 walkdir = "2.5"
 
 [[bin]]
-name = "perro_editor"
+name = "Perro-Editor"
 path = "src/main.rs"
 
 [target.'cfg(windows)']

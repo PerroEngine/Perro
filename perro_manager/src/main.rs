@@ -25,16 +25,8 @@ struct VersionInfo {
     runtime: String,
     toolchain: String,
     linker: String,
-    artifacts: PlatformArtifacts,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-struct PlatformArtifacts {
-    windows: String,
-    macos: String,
-    linux: String,
-    web: String,
-}
 
 #[derive(Debug, Clone)]
 struct VersionFix {
@@ -78,8 +70,11 @@ impl ManagerManifest {
 }
 
 fn perro_dir() -> PathBuf {
-    dirs::data_local_dir().unwrap().join("Perro")
+    dirs::data_local_dir()
+        .unwrap_or_else(|| std::env::current_dir().expect("No current dir"))
+        .join("Perro")
 }
+
 
 fn versions_dir() -> PathBuf {
     perro_dir().join("versions")
@@ -123,18 +118,8 @@ fn version_installed(version: &str, info: &VersionInfo) -> bool {
     let toolchain = perro_dir().join("toolchains").join(&info.toolchain);
     let linker = perro_dir().join("linkers").join(&info.linker);
     
-    // Check platform-specific artifacts
-    let artifacts_dir = version_dir.join("artifacts");
-    let platform_artifacts = match current_platform() {
-        "windows" => artifacts_dir.join(&info.artifacts.windows),
-        "macos" => artifacts_dir.join(&info.artifacts.macos),
-        "linux" => artifacts_dir.join(&info.artifacts.linux),
-        _ => artifacts_dir.join(&info.artifacts.windows), // fallback
-    };
-    let web_artifacts = artifacts_dir.join(&info.artifacts.web);
 
-    editor.exists() && runtime.exists() && toolchain.exists() && linker.exists() 
-        && platform_artifacts.exists() && web_artifacts.exists()
+    editor.exists() && runtime.exists() && toolchain.exists() && linker.exists()
 }
 
 /// Check if a component exists, accounting for session installs
@@ -163,24 +148,6 @@ fn missing_components_with_session(version: &str, info: &VersionInfo, session_in
     }
     if !component_exists(&linker, session_installed) {
         missing.push(("Linker".to_string(), linker));
-    }
-
-    // Check platform-specific artifacts
-    let artifacts_dir = version_dir.join("artifacts");
-    let platform_name = current_platform();
-    let platform_artifacts = match platform_name {
-        "windows" => artifacts_dir.join(&info.artifacts.windows),
-        "macos" => artifacts_dir.join(&info.artifacts.macos),
-        "linux" => artifacts_dir.join(&info.artifacts.linux),
-        _ => artifacts_dir.join(&info.artifacts.windows), // fallback
-    };
-    let web_artifacts = artifacts_dir.join(&info.artifacts.web);
-
-    if !component_exists(&platform_artifacts, session_installed) {
-        missing.push((format!("{} Build Target", platform_name.to_uppercase()), platform_artifacts));
-    }
-    if !component_exists(&web_artifacts, session_installed) {
-        missing.push(("Web Target".to_string(), web_artifacts));
     }
 
     missing
@@ -401,21 +368,12 @@ impl PerroApp {
         let artifacts_dir = version_dir.join("artifacts");
         fs::create_dir_all(&artifacts_dir).unwrap();
 
-        let platform_artifacts = match current_platform() {
-            "windows" => artifacts_dir.join(&info.artifacts.windows),
-            "macos" => artifacts_dir.join(&info.artifacts.macos),
-            "linux" => artifacts_dir.join(&info.artifacts.linux),
-            _ => artifacts_dir.join(&info.artifacts.windows), // fallback
-        };
-        let web_artifacts = artifacts_dir.join(&info.artifacts.web);
-
+     
         let files = vec![
             editor_path, 
             runtime_path, 
             toolchain_path, 
             linker_path,
-            platform_artifacts,
-            web_artifacts,
         ];
 
         for f in files {
@@ -440,12 +398,12 @@ impl PerroApp {
         }
     }
 
-    fn launch_runtime(&self, version: &str, info: &VersionInfo) {
-        let runtime_path = versions_dir().join(version).join(&info.runtime);
-        if runtime_path.exists() {
-            let _ = Command::new(runtime_path).spawn();
+    fn launch_editor(&self, version: &str, info: &VersionInfo) {
+        let editor_path = versions_dir().join(version).join(&info.editor);
+        if editor_path.exists() {
+            let _ = Command::new(editor_path).spawn();
         } else {
-            eprintln!("Runtime not found: {:?}", runtime_path);
+            eprintln!("Editor not found: {:?}", editor_path);
         }
     }
 
@@ -602,7 +560,7 @@ impl eframe::App for PerroApp {
                                 let selected_version = self.selected_version.clone();
                                 if let Some(info) = self.manifest.versions.get(&selected_version) {
                                     self.create_dummy_files(&selected_version, info);
-                                    self.launch_runtime(&selected_version, info);
+                                    self.launch_editor(&selected_version, info);
                                 }
                                 self.finished = true;
                                 std::process::exit(0);
@@ -644,7 +602,7 @@ impl eframe::App for PerroApp {
                             }
                             if let Some(highest) = latest_installed_version() {
                                 if let Some(info) = self.manifest.versions.get(&highest) {
-                                    self.launch_runtime(&highest, info);
+                                    self.launch_editor(&highest, info);
                                 }
                             }
                             self.finished = true;
@@ -713,7 +671,7 @@ impl eframe::App for PerroApp {
                                 let latest_version = latest.clone();
                                 if let Some(info) = self.manifest.versions.get(&latest_version) {
                                     self.create_dummy_files(&latest_version, info);
-                                    self.launch_runtime(&latest_version, info);
+                                    self.launch_editor(&latest_version, info);
                                 }
                                 self.finished = true;
                                 std::process::exit(0);
@@ -724,7 +682,7 @@ impl eframe::App for PerroApp {
                     LauncherAction::Launch(version) => {
                         let v = version.clone();
                         if let Some(info) = self.manifest.versions.get(&v) {
-                            self.launch_runtime(&v, info);
+                            self.launch_editor(&v, info);
                         }
                         std::process::exit(0);
                     }
@@ -740,7 +698,7 @@ impl eframe::App for PerroApp {
         if should_launch_current {
             if let Some(current_version) = current_version_for_launch {
                 if let Some(info) = self.manifest.versions.get(&current_version) {
-                    self.launch_runtime(&current_version, info);
+                    self.launch_editor(&current_version, info);
                 }
                 std::process::exit(0);
             }
@@ -755,40 +713,22 @@ fn main() -> Result<()> {
       "latest": "5.1",
       "versions": {
         "4.1": {
-          "editor": "PerroEditor.exe",
+          "editor": "Perro-Editor.exe",
           "runtime": "runtime-4.1.exe",
           "toolchain": "rust-1.81.0-x86_64-pc-windows-gnu",
-          "linker": "msys2-2024.08",
-          "artifacts": {
-            "windows": "perro-4.1-windows-x64.zip",
-            "macos": "perro-4.1-macos-arm64.zip",
-            "linux": "perro-4.1-linux-x64.zip",
-            "web": "perro-4.1-web.zip"
-          }
+          "linker": "msys2-2024.08"
         },
-                "5.1": {
-          "editor": "PerroEditor.exe",
+        "5.1": {
+          "editor": "Perro-Editor.exe",
           "runtime": "runtime-5.1.exe",
           "toolchain": "rust-1.83.0-x86_64-pc-windows-gnu",
-          "linker": "msys2-2024.08",
-          "artifacts": {
-            "windows": "perro-5.1-windows-x64.zip",
-            "macos": "perro-5.1-macos-arm64.zip",
-            "linux": "perro-5.1-linux-x64.zip",
-            "web": "perro-5.1-web.zip"
-          }
+          "linker": "msys2-2024.08"
         },
         "5.0": {
-          "editor": "PerroEditor.exe",
+          "editor": "Perro-Editor.exe",
           "runtime": "runtime-5.0.exe",
           "toolchain": "rust-1.83.0-x86_64-pc-windows-gnu",
-          "linker": "msys2-2025.05",
-          "artifacts": {
-            "windows": "perro-5.0-windows-x64.zip",
-            "macos": "perro-5.0-macos-arm64.zip",
-            "linux": "perro-5.0-linux-x64.zip",
-            "web": "perro-5.0-web.zip"
-          }
+          "linker": "msys2-2025.05"
         }
       }
     }
@@ -797,12 +737,14 @@ fn main() -> Result<()> {
     let manifest: Manifest = serde_json::from_str(manifest_json)?;
 
     let options = eframe::NativeOptions::default();
-    eframe::run_native(
+    if let Err(e) = eframe::run_native(
         "Perro Manager 🐕",
         options,
         Box::new(|_cc| Box::new(PerroApp::new(manifest))),
-    )
-    .unwrap();
+    ) {
+        eprintln!("Failed to run native app: {:?}", e);
+        std::process::exit(1);
+    }
 
     Ok(())
 }

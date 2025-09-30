@@ -14,3 +14,7 @@ egui = "0.27"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59.0", features = ["Win32_System_Console"] }
+
+[[bin]]
+name = "Perro"
+path = "src/main.rs"

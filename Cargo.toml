@@ -2,5 +2,7 @@
 members = [
     "perro_core",
     "perro_manager",
-    "perro_runtime", 
+    "perro_runtime",
 ]
+
+resolver = "3"

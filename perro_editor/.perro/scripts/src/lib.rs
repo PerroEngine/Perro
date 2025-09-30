@@ -9,7 +9,5 @@ use editor::editor_create_script;
 pub fn get_script_registry() -> HashMap<String, CreateFn> {
 let mut map: HashMap<String, CreateFn> = HashMap::new();
     map.insert("editor".to_string(), editor_create_script as CreateFn);
-        map.insert("editor".to_string(), editor_create_script as CreateFn);
-    // __PERRO_REGISTRY__
 map
 }
