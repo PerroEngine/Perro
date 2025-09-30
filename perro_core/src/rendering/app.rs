@@ -35,9 +35,43 @@ const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
 ];
 const MONITOR_SCALE_FACTOR: f32 = 0.75;
 
+#[cfg(not(target_arch = "wasm32"))]
+fn load_icon(path: &str) -> Option<winit::window::Icon> {
+    use winit::window::Icon;
+    use crate::asset_io::load_asset;
+    use image::imageops::FilterType;
+
+    println!("🔎 Loading icon from {path}");
+
+    match load_asset(path) {
+        Ok(bytes) => match image::load_from_memory(&bytes) {
+            Ok(img) => {
+                println!("✅ Successfully decoded {path} as icon");
+
+                // Pick a good OS‑friendly size (Windows likes 32x32)
+                let target_size = 32;
+                let resized = img.resize_exact(target_size, target_size, FilterType::Lanczos3);
+
+                let rgba = resized.into_rgba8();
+                let (width, height) = rgba.dimensions();
+                Some(Icon::from_rgba(rgba.into_raw(), width, height).ok()?)
+            }
+            Err(err) => {
+                eprintln!("❌ Failed to decode image {path}: {err}");
+                None
+            }
+        },
+        Err(err) => {
+            eprintln!("❌ Failed to load asset {path}: {err}");
+            None
+        }
+    }
+}
+
 pub struct App<P: ScriptProvider> {
     state: State,
     window_title: String,
+    window_icon_path: Option<String>, // 👈 optional string for icon path
     game_scene: Option<Scene<P>>,
     last_update: std::time::Instant,
 
@@ -60,8 +94,9 @@ impl<P: ScriptProvider> App<P> {
     pub fn new(
         event_loop: &EventLoop<Graphics>,
         window_title: String,
+        icon_path: Option<String>,
         game_scene: Option<Scene<P>>,
-        target_fps: f32
+        target_fps: f32,
     ) -> Self {
         let cached_operations = wgpu::Operations {
             load: wgpu::LoadOp::Clear(CLEAR_COLOR),
@@ -73,6 +108,7 @@ impl<P: ScriptProvider> App<P> {
         Self {
             state: State::Init(Some(event_loop.create_proxy())),
             window_title,
+            window_icon_path: icon_path,
             game_scene,
             last_update: now,
 
@@ -109,7 +145,7 @@ impl<P: ScriptProvider> App<P> {
             self.frame_debt = target_frames - self.total_frames_rendered as f64;
 
             // Cap frame debt to prevent excessive catch-up
-            self.frame_debt = self.frame_debt.min(self.target_fps as f64 * 0.025); // Max 0.025 seconds of debt
+            self.frame_debt = self.frame_debt.min(self.target_fps as f64 * 0.025);
 
             let should_render = self.first_frame || self.frame_debt > -1.0;
 
@@ -119,15 +155,13 @@ impl<P: ScriptProvider> App<P> {
                 self.fps_frames += 1;
 
                 // --- FPS + UPS measurement (once per second) ---
-                let measurement_duration = (now - self.fps_measurement_start).as_secs_f32();
+                let measurement_duration =
+                    (now - self.fps_measurement_start).as_secs_f32();
                 if measurement_duration >= 1.0 {
                     let fps = self.fps_frames as f32 / measurement_duration;
                     let ups = self.ups_frames as f32 / measurement_duration;
 
-                    println!(
-                        "fps: {:.1}, ups: {:.1}",
-                        fps, ups
-                    );
+                    println!("fps: {:.1}, ups: {:.1}", fps, ups);
 
                     self.fps_frames = 0;
                     self.ups_frames = 0;
@@ -147,23 +181,22 @@ impl<P: ScriptProvider> App<P> {
                     ops: self.cached_operations,
                 };
 
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some(RENDER_PASS_LABEL),
-                    color_attachments: &[Some(color_attachment)],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+                let mut rpass =
+                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some(RENDER_PASS_LABEL),
+                        color_attachments: &[Some(color_attachment)],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                    });
 
                 gfx.draw_instances(&mut rpass);
                 drop(rpass);
                 gfx.end_frame(frame, encoder);
             } else {
-                // Skip frame
                 self.skip_counter += 1;
             }
 
-            // Always keep the loop alive
             gfx.window().request_redraw();
         }
     }
@@ -182,11 +215,14 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
             if let Some(proxy) = proxy_opt.take() {
                 #[cfg(not(target_arch = "wasm32"))]
                 let default_size = {
-                    let primary_monitor = event_loop.primary_monitor().unwrap();
+                    let primary_monitor =
+                        event_loop.primary_monitor().unwrap();
                     let monitor_size = primary_monitor.size();
 
-                    let target_width = (monitor_size.width as f32 * MONITOR_SCALE_FACTOR) as u32;
-                    let target_height = (monitor_size.height as f32 * MONITOR_SCALE_FACTOR) as u32;
+                    let target_width =
+                        (monitor_size.width as f32 * MONITOR_SCALE_FACTOR) as u32;
+                    let target_height =
+                        (monitor_size.height as f32 * MONITOR_SCALE_FACTOR) as u32;
 
                     *WINDOW_CANDIDATES
                         .iter()
@@ -204,7 +240,16 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
 
                 #[cfg(not(target_arch = "wasm32"))]
                 {
+                    // apply default size
                     attrs = attrs.with_inner_size(default_size);
+
+                    // 👇 apply icon if provided
+                    if let Some(icon_path) = &self.window_icon_path {
+                        println!("Loading window icon from path: {}", icon_path);
+                        if let Some(icon) = load_icon(icon_path) {
+                            attrs = attrs.with_window_icon(Some(icon));
+                        }
+                    }
                 }
 
                 #[cfg(target_arch = "wasm32")]
@@ -215,16 +260,12 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
 
                 #[cfg(target_arch = "wasm32")]
                 let window = Rc::new(
-                    event_loop
-                        .create_window(attrs)
-                        .expect("create window"),
+                    event_loop.create_window(attrs).expect("create window"),
                 );
 
                 #[cfg(not(target_arch = "wasm32"))]
                 let window = Arc::new(
-                    event_loop
-                        .create_window(attrs)
-                        .expect("create window"),
+                    event_loop.create_window(attrs).expect("create window"),
                 );
 
                 #[cfg(target_arch = "wasm32")]
@@ -252,7 +293,6 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut graphics: Graphics) {
-        // --- One-shot first clear ---
         {
             let (frame, view, mut encoder) = graphics.begin_frame();
             let color_attachment = wgpu::RenderPassColorAttachment {

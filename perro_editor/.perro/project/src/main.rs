@@ -104,7 +104,7 @@ fn main() {
     };
 
     // 6. Run app
-    let app = App::new(&event_loop, project.name().to_string(), Some(game_scene), project.target_fps());
+    let app = App::new(&event_loop, project.name().to_string(), project.icon_path(), Some(game_scene), project.target_fps());
     
     run_app(event_loop, app);
 }

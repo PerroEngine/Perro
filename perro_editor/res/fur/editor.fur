@@ -1,7 +1,7 @@
 [UI]
 
-      [Text fsz=175 anchor=l tx=100]
-      Hello Perro
+      [Text fsz=150 anchor=bl]
+      Hello         Perro😀
       [/Text]
 
       [Panel w=100% h=3% anchor=tl bg=cinder-3/]
@@ -14,23 +14,23 @@
       [VLayout anchor=b]
             [Panel h=3% w=62% bg=cinder-4]
                   [HLayout anchor=l gap=75 ty=-10]
-                        [Text fsz=0.7]
-                        Item
+                        [Text fsz=24]
+                        Item b
                         [/Text]
 
-                        [Text fsz=0.7]
-                        Item
+                        [Text fsz=24]
+                        Item b
                         [/Text]
 
-                              [Text fsz=0.7]
-                        Item
+                              [Text fsz=24]
+                        Item b
                         [/Text]
                   [/HLayout]
             [/Panel] 
 
             [Panel h=17% w=62% bg=cinder-6]
             [Panel w=98% h=88% bg=cinder-8/]
-            [/Panel]   ;
+            [/Panel]
       [/VLayout]
 
       [VLayout anchor=tr ty=-3%]

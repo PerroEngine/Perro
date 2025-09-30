@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use uuid::Uuid;
+
 use crate::ast::{FurElement, FurNode};
 
-// =================== LEXER ===================
+// =================== TOKENS ===================
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token<'a> {
@@ -16,32 +17,54 @@ pub enum Token<'a> {
     Eof,
 }
 
+// =================== LEXER ===================
+
 pub struct Lexer<'a> {
-    input: &'a str,
-    pos: usize,
+    pub input: &'a str,
+    pub pos: usize,
     len: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { input, pos: 0, len: input.len() }
+        Self {
+            input,
+            pos: 0,
+            len: input.len(),
+        }
     }
 
     pub fn next_token(&mut self) -> Result<Token<'a>, String> {
         self.skip_whitespace_and_comments()?;
-        if self.pos >= self.len { return Ok(Token::Eof); }
+        if self.pos >= self.len {
+            return Ok(Token::Eof);
+        }
 
         let c = self.peek_char().unwrap();
         match c {
-            '[' => { self.advance(); Ok(Token::LBracket) }
-            ']' => { self.advance(); Ok(Token::RBracket) }
-            '/' => { self.advance(); Ok(Token::Slash) }
-            '=' => { self.advance(); Ok(Token::Equals) }
+            '[' => {
+                self.advance();
+                Ok(Token::LBracket)
+            }
+            ']' => {
+                self.advance();
+                Ok(Token::RBracket)
+            }
+            '/' => {
+                self.advance();
+                Ok(Token::Slash)
+            }
+            '=' => {
+                self.advance();
+                Ok(Token::Equals)
+            }
             '"' => {
                 self.advance();
                 let start = self.pos;
                 while let Some(ch) = self.peek_char() {
-                    if ch == '"' { break; }
+                    if ch == '"' {
+                        break;
+                    }
                     self.advance();
                 }
                 let s = &self.input[start..self.pos];
@@ -51,7 +74,9 @@ impl<'a> Lexer<'a> {
             c if Self::is_ident_start(c) => {
                 let start = self.pos;
                 while let Some(ch) = self.peek_char() {
-                    if !Self::is_ident_char(ch) { break; }
+                    if !Self::is_ident_char(ch) {
+                        break;
+                    }
                     self.advance();
                 }
                 Ok(Token::Identifier(&self.input[start..self.pos]))
@@ -59,7 +84,9 @@ impl<'a> Lexer<'a> {
             _ => {
                 let start = self.pos;
                 while let Some(ch) = self.peek_char() {
-                    if ch == '[' || ch == ']' { break; }
+                    if ch == '[' || ch == ']' {
+                        break;
+                    }
                     self.advance();
                 }
                 Ok(Token::Text(&self.input[start..self.pos]))
@@ -67,23 +94,53 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn is_ident_start(c: char) -> bool { c.is_alphabetic() || c == '_' || c == '-' || c == '#' || c.is_numeric() }
-    fn is_ident_char(c: char) -> bool { c.is_alphanumeric() || c == '_' || c == '-' || c == '%' || c == '.' || c == ',' || c == '#' }
+    fn is_ident_start(c: char) -> bool {
+        c.is_alphabetic() || c == '_' || c == '-' || c == '#' || c.is_numeric()
+    }
+    
+    fn is_ident_char(c: char) -> bool {
+        c.is_alphanumeric()
+            || c == '_'
+            || c == '-'
+            || c == '%'
+            || c == '.'
+            || c == ','
+            || c == '#'
+    }
 
     fn skip_whitespace_and_comments(&mut self) -> Result<(), String> {
         loop {
-            while let Some(c) = self.peek_char() { if c.is_whitespace() { self.advance(); } else { break; } }
+            while let Some(c) = self.peek_char() {
+                if c.is_whitespace() {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
 
+            // Single-line comments //
             if self.peek_char() == Some('/') && self.peek_next_char() == Some('/') {
-                self.advance(); self.advance();
-                while let Some(c) = self.peek_char() { if c == '\n' { break; } self.advance(); }
+                self.advance();
+                self.advance();
+                while let Some(c) = self.peek_char() {
+                    if c == '\n' {
+                        break;
+                    }
+                    self.advance();
+                }
                 continue;
             }
 
+            // Multi-line comments /* */
             if self.peek_char() == Some('/') && self.peek_next_char() == Some('*') {
-                self.advance(); self.advance();
+                self.advance();
+                self.advance();
                 while let Some(c) = self.peek_char() {
-                    if c == '*' && self.peek_next_char() == Some('/') { self.advance(); self.advance(); break; }
+                    if c == '*' && self.peek_next_char() == Some('/') {
+                        self.advance();
+                        self.advance();
+                        break;
+                    }
                     self.advance();
                 }
                 continue;
@@ -94,11 +151,29 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    fn peek_char(&self) -> Option<char> { self.input[self.pos..].chars().next() }
-    fn peek_next_char(&self) -> Option<char> { let mut iter = self.input[self.pos..].chars(); iter.next(); iter.next() }
-    fn advance(&mut self) { if let Some(c) = self.peek_char() { self.pos += c.len_utf8(); } }
+    pub fn peek_char(&self) -> Option<char> {
+        self.input[self.pos..].chars().next()
+    }
+    
+    fn peek_next_char(&self) -> Option<char> {
+        let mut iter = self.input[self.pos..].chars();
+        iter.next();
+        iter.next()
+    }
+    
+    pub fn advance(&mut self) {
+        if let Some(c) = self.peek_char() {
+            self.pos += c.len_utf8();
+        }
+    }
+    
     fn expect_char(&mut self, expected: char) -> Result<(), String> {
-        if self.peek_char() == Some(expected) { self.advance(); Ok(()) } else { Err(format!("Expected '{}'", expected)) }
+        if self.peek_char() == Some(expected) {
+            self.advance();
+            Ok(())
+        } else {
+            Err(format!("Expected '{}'", expected))
+        }
     }
 }
 
@@ -107,145 +182,289 @@ impl<'a> Lexer<'a> {
 pub struct FurParser<'a> {
     lexer: Lexer<'a>,
     current_token: Token<'a>,
-    element_stack: Vec<String>, // track open elements
+    element_stack: Vec<String>,
 }
 
 impl<'a> FurParser<'a> {
     pub fn new(input: &'a str) -> Result<Self, String> {
         let mut lexer = Lexer::new(input);
         let first_token = lexer.next_token()?;
-        Ok(Self { lexer, current_token: first_token, element_stack: Vec::new() })
+        Ok(Self {
+            lexer,
+            current_token: first_token,
+            element_stack: Vec::new(),
+        })
     }
 
-    fn next_token(&mut self) -> Result<(), String> { self.current_token = self.lexer.next_token()?; Ok(()) }
+    fn next_token(&mut self) -> Result<(), String> {
+        self.current_token = self.lexer.next_token()?;
+        Ok(())
+    }
 
     pub fn parse(&mut self) -> Result<Vec<FurNode>, String> {
         let mut nodes = Vec::new();
-        while self.current_token != Token::Eof { nodes.push(self.parse_node()?); }
+        while self.current_token != Token::Eof {
+            nodes.push(self.parse_node()?);
+        }
         Ok(nodes)
     }
 
     fn parse_node(&mut self) -> Result<FurNode, String> {
-        let in_text_element = self.element_stack.last().map(|s| s == "Text").unwrap_or(false);
-
-        // Inside a Text element, preserve internal spaces, trim leading/trailing
-        if in_text_element {
-            let mut text_content = String::new();
-            while matches!(self.current_token, Token::Text(_) | Token::Identifier(_)) {
-                match &self.current_token {
-                    Token::Text(txt) | Token::Identifier(txt) => {
-                        text_content.push_str(txt);
-                        text_content.push(' '); // preserve spaces inside
-                    },
-                    _ => {}
-                }
-                self.next_token()?;
-            }
-            return Ok(FurNode::Text(text_content.trim().to_string()));
-        }
-
         match &self.current_token {
             Token::LBracket => self.parse_element(),
-            Token::Text(txt) => { 
-                let t = txt.trim(); 
-                self.next_token()?; 
-                Ok(FurNode::Text(t.to_string())) 
-            },
-            other => Err(format!("Unexpected token when parsing node: {:?}", other)),
+            Token::Text(txt) => {
+                let t = txt.to_string();
+                self.next_token()?;
+                Ok(FurNode::Text(t))
+            }
+            other => Err(format!(
+                "Unexpected token when parsing node: {:?}",
+                other
+            )),
         }
     }
 
-    fn parse_element(&mut self) -> Result<FurNode, String> {
-        if self.current_token != Token::LBracket {
-            return Err(format!("Expected LBracket, found {:?}", self.current_token));
+   fn parse_element(&mut self) -> Result<FurNode, String> {
+    if self.current_token != Token::LBracket {
+        return Err(format!("Expected LBracket, found {:?}", self.current_token));
+    }
+    self.next_token()?; // consume '['
+
+    let is_closing = if self.current_token == Token::Slash {
+        self.next_token()?;
+        true
+    } else {
+        false
+    };
+
+    let tag_name = match &self.current_token {
+        Token::Identifier(name) => {
+            let n = *name;
+            self.next_token()?;
+            n
         }
-        self.next_token()?; // consume [
+        _ => return Err(format!("Expected tag name, found {:?}", self.current_token)),
+    };
 
-        let is_closing = if self.current_token == Token::Slash { self.next_token()?; true } else { false };
-
-        let tag_name = match &self.current_token {
-            Token::Identifier(name) => { let n = *name; self.next_token()?; n },
-            _ => return Err(format!("Expected tag name, found {:?}", self.current_token)),
-        };
-
-        if is_closing {
-            if self.current_token != Token::RBracket {
-                return Err(format!("Expected RBracket after closing tag, found {:?}", self.current_token));
-            }
-            self.next_token()?;
-            return Err(format!("Unexpected closing tag without matching opening: {}", tag_name));
+    if is_closing {
+        if self.current_token != Token::RBracket {
+            return Err(format!(
+                "Expected RBracket after closing tag, found {:?}",
+                self.current_token
+            ));
         }
+        self.next_token()?;
+        return Err(format!(
+            "Unexpected closing tag without matching opening: {}",
+            tag_name
+        ));
+    }
 
-        self.element_stack.push(tag_name.to_string());
+    self.element_stack.push(tag_name.to_string());
 
-        let mut attributes = HashMap::new();
-        while let Token::Identifier(attr_name) = &self.current_token {
-            let key = *attr_name;
-            self.next_token()?;
-            if self.current_token != Token::Equals {
-                return Err(format!("Expected '=', found {:?}", self.current_token));
+    // ---- collect attributes
+    let mut attributes = HashMap::new();
+    while let Token::Identifier(attr_name) = &self.current_token {
+        let key = *attr_name;
+        self.next_token()?;
+        if self.current_token != Token::Equals {
+            return Err(format!("Expected '=', found {:?}", self.current_token));
+        }
+        self.next_token()?;
+        match &self.current_token {
+            Token::StringLiteral(val) | Token::Identifier(val) => {
+                let resolved_val = resolve_value(val, key.starts_with("rounding"));
+                attributes.insert(key.to_string(), resolved_val);
+                self.next_token()?;
             }
-            self.next_token()?;
-            match &self.current_token {
-                Token::StringLiteral(val) | Token::Identifier(val) => {
-                    let resolved_val = resolve_value(val, key.starts_with("rounding"));
-                    attributes.insert(key.to_string(), resolved_val);
+            other => {
+                return Err(format!(
+                    "Expected string literal or identifier for attribute value, found {:?}",
+                    other
+                ))
+            }
+        }
+    }
+
+    // ---- self-closing?
+    let self_closing = if self.current_token == Token::Slash {
+        self.next_token()?;
+        if self.current_token != Token::RBracket {
+            return Err(format!(
+                "Expected RBracket after self-closing '/', found {:?}",
+                self.current_token
+            ));
+        }
+        self.next_token()?;
+        true
+    } else {
+        if self.current_token != Token::RBracket {
+            return Err(format!(
+                "Expected RBracket, found {:?}", self.current_token
+            ));
+        }
+        // DON'T consume ']' yet for Text elements!
+        if tag_name != "Text" {
+            self.next_token()?; // consume ']'
+        }
+        false
+    };
+
+    // ---- RAW TEXT HANDLING - COMPLETELY BYPASS TOKENIZATION
+    if tag_name == "Text" && !self_closing {
+        // NOW consume the ']' manually in the lexer
+        self.lexer.advance(); // consume ']'
+        
+        let content = self.extract_raw_text_content(tag_name)?;
+        
+        self.element_stack.pop();
+        
+        return Ok(FurNode::Element(FurElement {
+            tag_name: "Text".into(),
+            id: attributes.get("id").cloned()
+                .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4())),
+            attributes,
+            children: vec![FurNode::Text(content)],
+            self_closing: false,
+        }));
+    }
+
+    // ---- normal children (for non-Text elements)
+    let mut children = Vec::new();
+    if !self_closing {
+        loop {
+            if self.current_token == Token::LBracket {
+                let saved_pos = self.lexer.pos;
+                let saved_token = self.current_token.clone();
+                self.next_token()?;
+                if self.current_token == Token::Slash {
                     self.next_token()?;
-                }
-                other => return Err(format!("Expected string literal or identifier for attribute value, found {:?}", other)),
-            }
-        }
-
-        let self_closing = if self.current_token == Token::Slash {
-            self.next_token()?;
-            if self.current_token != Token::RBracket { return Err(format!("Expected RBracket after self-closing '/', found {:?}", self.current_token)); }
-            self.next_token()?;
-            true
-        } else {
-            if self.current_token != Token::RBracket { return Err(format!("Expected RBracket, found {:?}", self.current_token)); }
-            self.next_token()?;
-            false
-        };
-
-        let mut children = Vec::new();
-        if !self_closing {
-            loop {
-                if self.current_token == Token::LBracket {
-                    let saved_pos = self.lexer.pos;
-                    let saved_token = self.current_token.clone();
-                    self.next_token()?;
-                    if self.current_token == Token::Slash {
-                        self.next_token()?;
-                        if let Token::Identifier(close_name) = &self.current_token {
-                            if *close_name == tag_name {
-                                self.next_token()?;
-                                if self.current_token != Token::RBracket {
-                                    return Err(format!("Expected RBracket after closing tag, found {:?}", self.current_token));
-                                }
-                                self.next_token()?;
-                                break;
+                    if let Token::Identifier(close_name) = &self.current_token {
+                        if *close_name == tag_name {
+                            self.next_token()?;
+                            if self.current_token != Token::RBracket {
+                                return Err(format!(
+                                    "Expected RBracket after closing tag, found {:?}",
+                                    self.current_token
+                                ));
                             }
+                            self.next_token()?;
+                            break;
                         }
                     }
-                    self.lexer.pos = saved_pos;
-                    self.current_token = saved_token;
                 }
-                children.push(self.parse_node()?);
+                self.lexer.pos = saved_pos;
+                self.current_token = saved_token;
             }
+            children.push(self.parse_node()?);
         }
-
-        self.element_stack.pop();
-
-        let id = attributes.get("id").cloned().unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
-
-        Ok(FurNode::Element(FurElement {
-            tag_name: tag_name.to_string(),
-            id,
-            attributes,
-            children,
-            self_closing,
-        }))
     }
+
+    self.element_stack.pop();
+
+    let id = attributes.get("id").cloned()
+        .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
+
+    Ok(FurNode::Element(FurElement {
+        tag_name: tag_name.to_string(),
+        id,
+        attributes,
+        children,
+        self_closing,
+    }))
+}
+
+    // NEW METHOD: Extract text content without any tokenization
+    fn extract_raw_text_content(&mut self, tag_name: &str) -> Result<String, String> {
+        let content_start = self.lexer.pos;
+        let closing_tag = format!("[/{}]", tag_name);
+        
+        // Find the closing tag position in the remaining input
+        let remaining_input = &self.lexer.input[content_start..];
+        
+        if let Some(closing_pos) = remaining_input.find(&closing_tag) {
+            // Extract the EXACT raw content - no processing yet
+            let raw_content = &remaining_input[..closing_pos];
+            
+            // DEBUG: Let's see what we're actually extracting
+            println!("DEBUG: Raw content between tags: {:?}", raw_content);
+            
+            // Process the content to remove structural whitespace
+            let processed_content = process_text_content(raw_content);
+            
+            println!("DEBUG: Processed content: {:?}", processed_content);
+            
+            // Update lexer position past the closing tag
+            self.lexer.pos = content_start + closing_pos + closing_tag.len();
+            
+            // Update current token
+            self.current_token = if self.lexer.pos >= self.lexer.len {
+                Token::Eof
+            } else {
+                self.lexer.next_token()?
+            };
+            
+            Ok(processed_content)
+        } else {
+            Err(format!("Missing closing tag [/{}]", tag_name))
+        }
+    }
+}
+
+// =================== TEXT PROCESSING ===================
+
+fn process_text_content(raw_content: &str) -> String {
+    // If it's just whitespace, return empty
+    if raw_content.trim().is_empty() {
+        return String::new();
+    }
+    
+    // Split into lines
+    let lines: Vec<&str> = raw_content.split('\n').collect();
+    
+    // Find first and last non-empty lines
+    let first_content = lines.iter()
+        .position(|line| !line.trim().is_empty())
+        .unwrap_or(0);
+    
+    let last_content = lines.iter()
+        .rposition(|line| !line.trim().is_empty())
+        .map(|i| i + 1)
+        .unwrap_or(lines.len());
+    
+    if first_content >= last_content {
+        return String::new();
+    }
+    
+    // Get the content lines
+    let content_lines = &lines[first_content..last_content];
+    
+    // If only one line, just trim and return
+    if content_lines.len() == 1 {
+        return content_lines[0].trim().to_string();
+    }
+    
+    // For multi-line, find common indentation
+    let min_indent = content_lines.iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    
+    // Remove common indentation
+    let processed_lines: Vec<String> = content_lines.iter()
+        .map(|line| {
+            if line.trim().is_empty() {
+                String::new()
+            } else if line.len() >= min_indent {
+                line[min_indent..].to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    
+    processed_lines.join("\n")
 }
 
 // =================== VALUE RESOLUTION ===================
@@ -254,17 +473,42 @@ use once_cell::sync::Lazy;
 
 static ROUNDING_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     [
-        ("none", "0.0"), ("xs", "0.12"), ("sm", "0.15"), ("md", "0.22"), ("lg", "0.35"),
-        ("xl", "0.5"), ("2xl", "0.6"), ("3xl", "0.75"), ("4xl", "0.85"), ("full", "1.0")
-    ].iter().cloned().collect()
+        ("none", "0.0"),
+        ("xs", "0.12"),
+        ("sm", "0.15"),
+        ("md", "0.22"),
+        ("lg", "0.35"),
+        ("xl", "0.5"),
+        ("2xl", "0.6"),
+        ("3xl", "0.75"),
+        ("4xl", "0.85"),
+        ("full", "1.0"),
+    ]
+    .iter()
+    .cloned()
+    .collect()
 });
 
 static GENERAL_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     [
-        ("none", "0"), ("xs", "4"), ("sm", "8"), ("md", "16"), ("lg", "24"),
-        ("xl", "32"), ("2xl", "48"), ("3xl", "64"), ("4xl", "96"),
-        ("full", "100%"), ("half", "50%"), ("third", "33.333%"), ("quart", "25%"), ("3q", "75%")
-    ].iter().cloned().collect()
+        ("none", "0"),
+        ("xs", "4"),
+        ("sm", "8"),
+        ("md", "16"),
+        ("lg", "24"),
+        ("xl", "32"),
+        ("2xl", "48"),
+        ("3xl", "64"),
+        ("4xl", "96"),
+        ("full", "100%"),
+        ("half", "50%"),
+        ("third", "33.333%"),
+        ("quart", "25%"),
+        ("3q", "75%"),
+    ]
+    .iter()
+    .cloned()
+    .collect()
 });
 
 pub fn resolve_value(val: &str, is_rounding: bool) -> String {

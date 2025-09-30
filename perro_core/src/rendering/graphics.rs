@@ -7,7 +7,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{asset_io::{load_asset, resolve_path}, font::{Font, FontAtlas}, ui_elements::ui_container::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
+use crate::{asset_io::{load_asset}, font::{Font, FontAtlas}, ui_elements::ui_container::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
 
 #[cfg(target_arch = "wasm32")]
 pub type Rc<T> = std::rc::Rc<T>;
@@ -932,8 +932,13 @@ pub fn draw_text(
         let scale = font_size / atlas.design_size;
 
         fn srgb_to_linear(c: f32) -> f32 {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
         }
+
         let color_lin = [
             srgb_to_linear(color.r as f32 / 255.0),
             srgb_to_linear(color.g as f32 / 255.0),
@@ -949,12 +954,11 @@ pub fn draw_text(
                 let gh = m.height as f32 * scale;
 
                 if gw > 0.0 && gh > 0.0 {
-                    // Place using ascent as baseline reference
+                    // ✅ Base alignment: bearing_x and bearing_y already normalized Y-up
                     let gx = cursor_x + g.bearing_x * scale;
-                    let gy = baseline_y + atlas.ascent * scale
-                        - (m.ymin as f32 + m.height as f32) * scale;
+                    let gy = baseline_y - g.bearing_y * scale + atlas.ascent * scale;
 
-                    // Center (since quad verts are [-0.5..+0.5])
+                    // Center the quad verts
                     let cx = gx + gw * 0.5;
                     let cy = gy + gh * 0.5;
 
@@ -979,8 +983,8 @@ pub fn draw_text(
                     instances.push(instance);
                 }
 
-                // advance pen strictly by advance_width
-                cursor_x += m.advance_width * scale;
+                // Advance pen
+                cursor_x += m.advance_width as f32 * scale;
             }
         }
 
@@ -988,6 +992,8 @@ pub fn draw_text(
         self.text_instances_need_rebuild = true;
     }
 }
+
+
 
     fn rebuild_instances(&mut self) {
         // Rebuild rect instances - reuse vector
