@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use perro_core::asset_io::{set_project_root, ProjectRoot};
 use perro_core::manifest::Project;
@@ -7,7 +9,7 @@ use perro_core::registry::DllScriptProvider;
 use perro_core::scene::Scene;
 #[cfg(not(target_arch = "wasm32"))]
 use perro_core::ScriptProvider;
-use perro_core::{graphics::Graphics};
+use perro_core::graphics::Graphics;
 use perro_core::rendering::app::App;
 use winit::event_loop::EventLoop;
 
@@ -39,10 +41,9 @@ fn main() {
         let exe_dir = env::current_exe().unwrap();
         exe_dir.parent().unwrap().parent().unwrap().parent().unwrap().join("perro_editor")
     } else {
-            // Dev mode: default to editor project
-            let exe_dir = env::current_exe().unwrap();
-            exe_dir.parent().unwrap().parent().unwrap().parent().unwrap().join("perro_editor")
-        
+        // Dev mode: default to editor project
+        let exe_dir = env::current_exe().unwrap();
+        exe_dir.parent().unwrap().parent().unwrap().parent().unwrap().join("perro_editor")
     };
 
     println!("Running project at {:?}", project_root);
@@ -53,8 +54,6 @@ fn main() {
         name: "unknown".into(),
     });
 
-
-
     // 3. Load project manifest (works in both disk + pak)
     let project = Project::load(Some(&project_root)).expect("Failed to load project.toml");
 
@@ -64,14 +63,24 @@ fn main() {
         name: project.name().into(),
     });
 
-    // 5. Create event loop
+    // 5. Wrap project in Rc<RefCell<>> for shared mutable access
+    let project_rc = Rc::new(RefCell::new(project));
+
+    // 6. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 6. Build runtime scene
-    let game_scene = Scene::<DllScriptProvider>::from_project(&project)
+    // 7. Build runtime scene (now takes Rc<RefCell<Project>>)
+    let game_scene = Scene::<DllScriptProvider>::from_project(project_rc.clone())
         .expect("Failed to build game scene");
 
-    // 7. Run app
-    let app = App::new(&event_loop, project.name().to_string(), project.icon_path(),Some(game_scene), project.target_fps());
+    // 8. Run app (borrow project immutably for config values)
+    let app = App::new(
+        &event_loop,
+        project_rc.borrow().name().to_string(),
+        project_rc.borrow().icon_path(),
+        Some(game_scene),
+        project_rc.borrow().target_fps()
+    );
+    
     run_app(event_loop, app);
 }

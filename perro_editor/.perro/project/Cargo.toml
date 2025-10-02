@@ -4,6 +4,7 @@
 name = "perro_editor"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 
 [dependencies]
@@ -18,11 +19,14 @@ anyhow = "1.0"
 env_logger = {version = "0.11.5"}
 
 [build-dependencies]
-zip = "0.6"
-walkdir = "2.5"
+toml = "0.8"
+embed-resource = "2.4"
+image = "0.24"
+ico = "0.3"
+chrono = "0.4"
 
 [[bin]]
-name = "Perro-Editor"
+name = "Perro"
 path = "src/main.rs"
 
 [target.'cfg(windows)']

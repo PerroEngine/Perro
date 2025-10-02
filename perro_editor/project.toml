@@ -2,7 +2,11 @@
 name = "Perro Editor"
 main_scene = "res://editor.scn"
 icon_path = "res://perro-logo.png"
+version="0.1.0"
 
 [performance]
 target_fps = 120
 xps = 60
+
+[root]
+script = "res://scripts/bob.pup"

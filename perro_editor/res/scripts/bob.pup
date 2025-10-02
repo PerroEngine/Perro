@@ -1,0 +1,8 @@
+extends Node
+
+fn init() {
+    print("HELLO I AM THE ROOT SCRIPT AHHHHHH!!!!!!!!!!!!!!!!!!!!!!!!!!")
+}
+
+fn update(delta: float) {
+}

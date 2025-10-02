@@ -4,7 +4,8 @@ use crate::{
     ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, 
     scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, 
     ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, 
-    Graphics, Node, ScriptProvider, Sprite2D, Vector2
+    Graphics, Node, ScriptProvider, Sprite2D, Vector2,
+    app_command::AppCommand, // NEW import
 };
 
 use indexmap::IndexMap;
@@ -15,7 +16,9 @@ use std::{
     collections::HashMap,
     io,
     path::PathBuf,
-    rc::Rc, time::{Duration, Instant},
+    rc::Rc, 
+    time::{Duration, Instant},
+    sync::mpsc::Sender, // NEW import
 };
 use uuid::Uuid;
 
@@ -81,50 +84,92 @@ impl SceneData {
 //
 
 /// Runtime scene, parameterized by a script provider
+/// Now holds a reference to the project via Rc<RefCell<Project>>
 pub struct Scene<P: ScriptProvider> {
     data: SceneData,
-    scripts: HashMap<Uuid, Rc<RefCell<Box<dyn Script>>>>,
-    provider: P,
+    pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn Script>>>>,
+    pub provider: P,
+    pub project: Rc<RefCell<Project>>,
+    pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
 }
 
 impl<P: ScriptProvider> Scene<P> {
     /// Create a runtime scene from a root node
-    pub fn new(root: SceneNode, provider: P) -> Self {
+    pub fn new(root: SceneNode, provider: P, project: Rc<RefCell<Project>>) -> Self {
         let data = SceneData::new(root);
         Self {
             data,
             scripts: HashMap::new(),
             provider,
+            project,
+            app_command_tx: None, // NEW field
         }
     }
 
     /// Create a runtime scene from serialized data
-    pub fn from_data(data: SceneData, provider: P) -> Self {
+    pub fn from_data(data: SceneData, provider: P, project: Rc<RefCell<Project>>) -> Self {
         Self {
             data,
             scripts: HashMap::new(),
             provider,
+            project,
+            app_command_tx: None, // NEW field
         }
     }
 
     /// Load a runtime scene from disk or pak
-    pub fn load(res_path: &str, provider: P) -> io::Result<Self> {
+    pub fn load(res_path: &str, provider: P, project: Rc<RefCell<Project>>) -> io::Result<Self> {
         let data = SceneData::load(res_path)?;
-        Ok(Scene::from_data(data, provider))
+        Ok(Scene::from_data(data, provider, project))
     }
 
-    /// Build a runtime scene from a project manifest with a given provider
-    pub fn from_project_with_provider(project: &Project, provider: P) -> anyhow::Result<Self> {
-        let root_node = SceneNode::Node(Node::new("Root", None));
-        let mut game_scene = Scene::new(root_node, provider);
+    /// Build a runtime scene from a project with a given provider
+    /// Used for StaticScriptProvider (export builds) and also DLL provider (via delegation)
+   pub fn from_project_with_provider(
+    project: Rc<RefCell<Project>>,
+    provider: P,
+) -> anyhow::Result<Self> {
+    let root_node = SceneNode::Node(Node::new("Root", None));
+    let mut game_scene = Scene::new(root_node, provider, project.clone());
 
-        // main_scene is a res:// path from project.toml
-        let loaded_data = SceneData::load(project.main_scene())?;
-        let game_root = *game_scene.get_root().get_id();
-        game_scene.graft_data(loaded_data, game_root)?;
+    println!("Building scene from project manifest...");
 
-        Ok(game_scene)
+    // ✅ root script first
+    let root_script_opt: Option<String> = {
+        let proj_ref = game_scene.project.borrow();
+        proj_ref.root_script().map(|s| s.to_string())
+    };
+
+    println!("Root script path: {:?}", root_script_opt);
+
+    if let Some(root_script_path) = root_script_opt {
+        let short = std::path::Path::new(&root_script_path)
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if let Ok(ctor) = game_scene.provider.load_ctor(&short) {
+            let root_id = *game_scene.get_root().get_id();
+            let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
+            game_scene.scripts.insert(root_id, handle);
+        }
     }
+
+    println!("About to graft main scene...");
+
+    // ✅ main scene second
+    let main_scene_path: String = {
+        let proj_ref = game_scene.project.borrow();
+        proj_ref.main_scene().to_string()
+    };
+
+    let loaded_data = SceneData::load(&main_scene_path)?;
+    let game_root = *game_scene.get_root().get_id();
+    game_scene.graft_data(loaded_data, game_root)?;
+
+    Ok(game_scene)
+}
+
 
     /// Graft a data scene into this runtime scene
     pub fn graft_data(&mut self, other: SceneData, parent_id: Uuid) -> anyhow::Result<()> {
@@ -144,11 +189,11 @@ impl<P: ScriptProvider> Scene<P> {
 
     pub fn render(&mut self, gfx: &mut Graphics) {
         let dirty_nodes = self.get_dirty_nodes();
-            if dirty_nodes.is_empty() {
-                return;
-            }
+        if dirty_nodes.is_empty() {
+            return;
+        }
 
-            self.traverse_and_render(dirty_nodes, gfx);
+        self.traverse_and_render(dirty_nodes, gfx);
     }
 
     pub fn update(&mut self, delta: f32) {
@@ -156,12 +201,15 @@ impl<P: ScriptProvider> Scene<P> {
         let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
         
         for id in script_ids {
-            let mut api = ScriptApi::new(delta, self);
+            // Borrow project first, before borrowing self
+            let project_ref = self.project.clone();
+            let mut project_borrow = project_ref.borrow_mut();
+            let mut api = ScriptApi::new(delta, self, &mut *project_borrow);
             api.call_update(id);
         }
     }
 
-    pub fn instantiate_script(
+   pub fn instantiate_script(
         ctor: CreateFn,
         node_id: Uuid,
         scene: &mut Scene<P>,
@@ -173,7 +221,10 @@ impl<P: ScriptProvider> Scene<P> {
         let handle: Rc<RefCell<Box<dyn Script>>> = Rc::new(RefCell::new(boxed));
 
         {
-            let mut api = ScriptApi::new(0.0, scene);
+            // Clone the Rc before borrowing scene
+            let project_ref = scene.project.clone();
+            let mut project_borrow = project_ref.borrow_mut();
+            let mut api = ScriptApi::new(0.0, scene, &mut *project_borrow);
             handle.borrow_mut().init(&mut api);
         }
 
@@ -328,14 +379,14 @@ impl<P: ScriptProvider> Scene<P> {
             if let Some(node) = self.data.nodes.get_mut(&node_id) {
                 match node {
                     SceneNode::Sprite2D(sprite) => {
-                            if let Some(tex) = &sprite.texture_path {
-                                // gfx.draw_texture(
-                                //     node_id,
-                                //     tex,
-                                //     sprite.transform.clone(),
-                                //     Vector2::new(0.5, 0.5),
-                                // );
-                            }
+                        if let Some(tex) = &sprite.texture_path {
+                            // gfx.draw_texture(
+                            //     node_id,
+                            //     tex,
+                            //     sprite.transform.clone(),
+                            //     Vector2::new(0.5, 0.5),
+                            // );
+                        }
                     }
                     SceneNode::UI(ui_node) => {
                         // UI renderer handles layout + rendering internally
@@ -376,6 +427,11 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn Script>>>> {
         self.scripts.get(&id).cloned()
     }
+
+    // NEW method implementation
+    fn get_command_sender(&self) -> Option<&Sender<AppCommand>> {
+        self.app_command_tx.as_ref()
+    }
 }
 
 //
@@ -415,19 +471,35 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
 }
 
 impl Scene<DllScriptProvider> {
-    pub fn from_project(project: &Project) -> anyhow::Result<Self> {
+    pub fn from_project(project: Rc<RefCell<Project>>) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
 
+        // Load DLL
         let lib_path = default_perro_rust_path()?;
         println!("Loading script library from {:?}", lib_path);
-
-        let lib = unsafe { Library::new(&lib_path) }
-            .map_err(|e| anyhow::anyhow!("Failed to load script library {:?}: {}", lib_path, e))?;
-
+        let lib = unsafe { Library::new(&lib_path)? };
         let provider = DllScriptProvider::new(Some(lib));
-        let mut game_scene = Scene::new(root_node, provider);
+        let mut game_scene = Scene::new(root_node, provider, project);
 
-        let loaded_data = SceneData::load(project.main_scene())?;
+        println!("Building scene from project manifest...");
+        // Optional preload/root script
+        let root_script_opt = game_scene.project.borrow().root_script().map(|s| s.to_string());
+        if let Some(root_script_path) = root_script_opt {
+            let short = std::path::Path::new(&root_script_path)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if let Ok(ctor) = game_scene.provider.load_ctor(&short) {
+                let root_id = *game_scene.get_root().get_id();
+                let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
+                game_scene.scripts.insert(root_id, handle);
+            }
+        }
+         println!("About to graft main scene...");
+        // Graft in normal main scene
+        let main_scene_path = game_scene.project.borrow().main_scene().to_string();
+        let loaded_data = SceneData::load(&main_scene_path)?;
         let game_root = *game_scene.get_root().get_id();
         game_scene.graft_data(loaded_data, game_root)?;
 

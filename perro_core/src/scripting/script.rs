@@ -1,9 +1,12 @@
 #![allow(improper_ctypes_definitions)]
 use std::{any::Any, collections::HashMap, cell::RefCell, rc::Rc};
 use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr};
+use std::sync::mpsc::{Sender, Receiver, channel};
 
 use serde_json::Value;
 use uuid::Uuid;
+
+use crate::app_command::AppCommand;
 
 /// A dynamic variable type for script fields/exports
 #[derive(Clone, Debug)]
@@ -51,6 +54,7 @@ pub trait SceneAccess {
         val: Var,
     ) -> Option<()>;
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn Script>>>>;
+    fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
 }
 
 //

@@ -4,3 +4,5 @@ target/
 /.perro/project/src/key.rs
 
 /assets.brk
+
+build.log

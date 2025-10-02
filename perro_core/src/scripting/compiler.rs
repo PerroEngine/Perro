@@ -56,37 +56,43 @@ impl Compiler {
         }
     }
 
-    fn build_command(&self, profile: BuildProfile) -> Command {
-        let mut cmd = Command::new("cargo");
+   fn build_command(&self, profile: BuildProfile) -> Command {
+    let mut cmd = Command::new("cargo");
 
-        match profile {
-            BuildProfile::Check => cmd.arg("check"),
-            _ => cmd.arg("build"),
-        };
+    match profile {
+        BuildProfile::Check => cmd.arg("check"),
+        _ => cmd.arg("build"),
+    };
 
-        let num_cpus = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
-        cmd.arg("--manifest-path")
-            .arg(&self.crate_manifest_path)
-            .arg("-j")
-            .arg(num_cpus.to_string())
-            .env("RUSTFLAGS", format!("-C linker={}", Self::best_linker()))
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+    cmd.arg("--manifest-path")
+        .arg(&self.crate_manifest_path)
+        .arg("-j")
+        .arg(num_cpus.to_string())
+        .env("RUSTFLAGS", format!("-C linker={}", Self::best_linker()))
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
 
-        match self.target {
-            CompileTarget::Scripts => {
-                cmd.arg("--profile").arg("hotreload");
-            }
-            CompileTarget::Project => {
-                cmd.arg("--release");
-            }
+    match self.target {
+        CompileTarget::Scripts => {
+            cmd.arg("--profile").arg("hotreload");
         }
-
-        cmd
+        CompileTarget::Project => {
+            cmd.arg("--release");
+            // Force build script to always run by setting env var that changes each time
+            cmd.env("PERRO_BUILD_TIMESTAMP", std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string());
+        }
     }
+
+    cmd
+}
 
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
         if matches!(self.target, CompileTarget::Project) {

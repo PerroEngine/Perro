@@ -12,6 +12,8 @@ pollster = {version ="0.4.0"}
 uuid = { version = "1.4", features = ["serde", "v4"] }
 
 toml = "0.8"
+libloading = "0.8"
+
 
 [[bin]]
 name = "perro_runtime"

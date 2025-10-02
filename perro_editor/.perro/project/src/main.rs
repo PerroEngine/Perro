@@ -1,6 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
 
-// ✅ Embed assets.brk built by compiler/packer
+// ✅ Embed assets.brk built by compiler/packer in release/export
 static ASSETS_BRK: &[u8] = include_bytes!("../../../assets.brk");
 
 use std::env;
@@ -54,48 +54,63 @@ fn main() {
         }
     }
 
-    
-
-    // 1. Set project root
+    // 1. Set project root depending on build mode
     #[cfg(not(debug_assertions))]
-    {   
+    {
         set_key(get_aes_key());
-        set_project_root(ProjectRoot::Brk { data: ASSETS_BRK, name: "unknown".into() });
+        set_project_root(ProjectRoot::Brk {
+            data: ASSETS_BRK,
+            name: "unknown".into(),
+        });
     }
 
     #[cfg(debug_assertions)]
     {
         // ✅ Dev mode: use disk
         let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
-        set_project_root(ProjectRoot::Disk { root: project_root.clone(), name: "unknown".into() });
+        set_project_root(ProjectRoot::Disk {
+            root: project_root.clone(),
+            name: "unknown".into(),
+        });
     }
 
-    // 2. Load project manifest (works in both disk + pak)
+    // 2. Load project manifest (works in both disk + packed brk)
     #[cfg(not(debug_assertions))]
-    let project = Project::load(None::<PathBuf>).expect("Failed to load project.toml");
+    let project =
+        Project::load(None::<PathBuf>).expect("Failed to load project.toml from embedded data");
 
     #[cfg(debug_assertions)]
     let project = {
         let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
-        Project::load(Some(&project_root)).expect("Failed to load project.toml")
+        Project::load(Some(&project_root)).expect("Failed to load project.toml from disk")
     };
 
     // 3. Update project root with real name
     match get_project_root() {
         ProjectRoot::Disk { root, .. } => {
-            set_project_root(ProjectRoot::Disk { root, name: project.name().into() });
+            set_project_root(ProjectRoot::Disk {
+                root,
+                name: project.name().into(),
+            });
         }
         ProjectRoot::Brk { data, .. } => {
-            set_project_root(ProjectRoot::Brk { data, name: project.name().into() });
+            set_project_root(ProjectRoot::Brk {
+                data,
+                name: project.name().into(),
+            });
         }
     }
 
     // 4. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 5. Build runtime scene
-    let provider = StaticScriptProvider::new();
-    let game_scene = match Scene::from_project_with_provider(&project, provider) {
+    // 5. Build runtime scene using StaticScriptProvider
+   let provider = StaticScriptProvider::new();
+
+    // ✅ wrap project in Rc<RefCell>
+    let project_rc = std::rc::Rc::new(std::cell::RefCell::new(project));
+
+    let game_scene = match Scene::from_project_with_provider(project_rc.clone(), provider) {
         Ok(scene) => scene,
         Err(e) => {
             log_error(&format!("Failed to build game scene: {e}"));
@@ -103,9 +118,15 @@ fn main() {
         }
     };
 
-    // 6. Run app
-    let app = App::new(&event_loop, project.name().to_string(), project.icon_path(), Some(game_scene), project.target_fps());
-    
+    // later, when building App
+    let app = App::new(
+        &event_loop,
+        project_rc.borrow().name().to_string(),
+        project_rc.borrow().icon_path(),
+        Some(game_scene),
+        project_rc.borrow().target_fps(),
+    );
+
     run_app(event_loop, app);
 }
 

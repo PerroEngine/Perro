@@ -3167,6 +3167,7 @@ name = "perro_runtime"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "libloading 0.8.8",
  "log",
  "perro_core",
  "pollster",

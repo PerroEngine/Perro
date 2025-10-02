@@ -1,5 +1,6 @@
 use core::f32;
 use std::process;
+use std::sync::mpsc::Receiver; // NEW import
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
 #[cfg(not(target_arch = "wasm32"))]
@@ -17,6 +18,7 @@ use winit::{
 use crate::{
     rendering::{create_graphics, Graphics},
     scene::Scene, ScriptProvider,
+    app_command::AppCommand, // NEW import
 };
 
 enum State {
@@ -71,7 +73,7 @@ fn load_icon(path: &str) -> Option<winit::window::Icon> {
 pub struct App<P: ScriptProvider> {
     state: State,
     window_title: String,
-    window_icon_path: Option<String>, // 👈 optional string for icon path
+    window_icon_path: Option<String>,
     game_scene: Option<Scene<P>>,
     last_update: std::time::Instant,
 
@@ -88,6 +90,9 @@ pub struct App<P: ScriptProvider> {
     total_frames_rendered: u64,
     start_time: std::time::Instant,
     skip_counter: u32,
+
+    // NEW: Command receiver
+    command_rx: Receiver<AppCommand>,
 }
 
 impl<P: ScriptProvider> App<P> {
@@ -95,7 +100,7 @@ impl<P: ScriptProvider> App<P> {
         event_loop: &EventLoop<Graphics>,
         window_title: String,
         icon_path: Option<String>,
-        game_scene: Option<Scene<P>>,
+        mut game_scene: Option<Scene<P>>, // Changed to mut
         target_fps: f32,
     ) -> Self {
         let cached_operations = wgpu::Operations {
@@ -104,6 +109,15 @@ impl<P: ScriptProvider> App<P> {
         };
 
         let now = std::time::Instant::now();
+
+        // NEW: Create command channel
+        use crate::app_command::create_command_channel;
+        let (tx, rx) = create_command_channel();
+
+        // NEW: Give the scene the sender
+        if let Some(scene) = &mut game_scene {
+            scene.app_command_tx = Some(tx);
+        }
 
         Self {
             state: State::Init(Some(event_loop.create_proxy())),
@@ -123,12 +137,33 @@ impl<P: ScriptProvider> App<P> {
             total_frames_rendered: 0,
             start_time: now,
             skip_counter: 0,
+
+            command_rx: rx, // NEW field
         }
     }
 
     #[inline(always)]
     fn process_game(&mut self) {
         if let State::Ready(gfx) = &mut self.state {
+            // NEW: Poll for app commands from scripts
+            while let Ok(cmd) = self.command_rx.try_recv() {
+                match cmd {
+                    AppCommand::SetWindowTitle(title) => {
+                        println!("Setting window title to: {}", title);
+                        gfx.window().set_title(&title);
+                        self.window_title = title;
+                    }
+                    AppCommand::SetTargetFPS(fps) => {
+                        println!("Setting target FPS to: {}", fps);
+                        self.target_fps = fps;
+                    }
+                    AppCommand::Quit => {
+                        println!("Quit command received from script");
+                        std::process::exit(0);
+                    }
+                }
+            }
+
             let now = std::time::Instant::now();
             let dt = (now - self.last_update).as_secs_f32();
             self.last_update = now;
@@ -243,7 +278,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                     // apply default size
                     attrs = attrs.with_inner_size(default_size);
 
-                    // 👇 apply icon if provided
+                    // apply icon if provided
                     if let Some(icon_path) = &self.window_icon_path {
                         println!("Loading window icon from path: {}", icon_path);
                         if let Some(icon) = load_icon(icon_path) {

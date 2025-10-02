@@ -1,15 +1,52 @@
 use uuid::Uuid;
-use crate::script::{Script, SceneAccess, UpdateOp, Var};
+use std::sync::mpsc::Sender;
+use crate::{
+    manifest::Project, 
+    script::{SceneAccess, Script, UpdateOp, Var},
+    app_command::AppCommand, // NEW import
+};
 
-/// The only thing your scripts ever see:
 pub struct ScriptApi<'a> {
     delta: f32,
     scene: &'a mut dyn SceneAccess,
+    project: &'a mut Project,
 }
 
 impl<'a> ScriptApi<'a> {
-    pub fn new(delta: f32, scene: &'a mut dyn SceneAccess) -> Self {
-        ScriptApi { delta, scene }
+    pub fn new(delta: f32, scene: &'a mut dyn SceneAccess, project: &'a mut Project) -> Self {
+        ScriptApi { delta, scene, project }
+    }
+
+    pub fn project(&mut self) -> &mut Project {
+        self.project
+    }
+
+    pub fn set_window_title(&mut self, title: String) {
+        // Always update project config
+        self.project.set_name(title.clone());
+
+        // Also send command if there’s a runtime app listening
+        if let Some(tx) = self.scene.get_command_sender() {
+            let _ = tx.send(AppCommand::SetWindowTitle(title));
+        }
+    }
+
+    pub fn set_target_fps(&mut self, fps: f32) {
+        // Always update project config
+        self.project.set_target_fps(fps);
+
+        // Also send command
+        if let Some(tx) = self.scene.get_command_sender() {
+            let _ = tx.send(AppCommand::SetTargetFPS(fps));
+        }
+    }
+
+    pub fn quit(&self) {
+        if let Some(tx) = self.scene.get_command_sender() {
+            let _ = tx.send(AppCommand::Quit);
+        } else {
+            std::process::exit(0);
+        }
     }
 
     pub fn call_update(&mut self, id: Uuid) {

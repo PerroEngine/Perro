@@ -27,7 +27,7 @@ fn main() {
             println!("📜 Running transpiler + compiling scripts…");
 
             // Example: list of script entrypoints
-            let scripts = ["res://scripts/editor.pup"];
+            let scripts = ["res://scripts/poop.pup"];
 
             if let Err(e) = transpile(&scripts) {
                 eprintln!("❌ Transpile failed: {}", e);
