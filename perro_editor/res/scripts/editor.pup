@@ -1,11 +1,11 @@
 extends Node
 
-let b: int
+let b: float
 
 fn init() {
 
 }
 
 fn update(delta: float) {
-    let x = 5 + delta
+    b += delta
 }

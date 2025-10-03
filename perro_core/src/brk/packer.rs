@@ -11,7 +11,7 @@ use rand::RngCore;
 use serde_json::Value;
 
 /// File types to skip entirely
-const SKIP_EXTENSIONS: &[&str] = &["pup", "rs", "cs", "ts"];
+const SKIP_EXTENSIONS: &[&str] = &["pup", "rs", "cs", "ts", "go"];
 /// File types to encrypt
 const ENCRYPT_EXTENSIONS: &[&str] = &["scn", "fur", "toml"];
 

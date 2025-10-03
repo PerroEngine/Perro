@@ -4,6 +4,18 @@ use std::{fs, path::{Path, PathBuf}};
 
 use crate::{asset_io::{get_project_root, ProjectRoot}, lang::ast::*};
 
+fn to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
 
 impl Script {
 
@@ -84,6 +96,8 @@ impl Script {
     pub fn to_rust(&self, struct_name: &str) -> String {
         let mut out = String::new();
 
+        let pascal_struct_name = to_pascal_case(struct_name);
+
         // Headers
     out.push_str("#![allow(improper_ctypes_definitions)]\n\n");
     out.push_str("#![allow(unused)]\n\n");
@@ -91,8 +105,7 @@ impl Script {
     out.push_str("use std::collections::HashMap;\n");
     out.push_str("use serde_json::Value;\n");
     out.push_str("use uuid::Uuid;\n");
-    out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, ");
-    out.push_str(&format!("{} }};\n\n", self.node_type));
+    out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };\n\n");
 
 
     let export_fields: Vec<(&str, String, String)> = self.exports.iter()
@@ -119,7 +132,7 @@ impl Script {
         "pub extern \"C\" fn {}_create_script() -> *mut dyn Script {{\n",
         struct_name.to_lowercase()
     ));
-    out.push_str(&format!("    Box::into_raw(Box::new({}_script {{\n", struct_name));
+    out.push_str(&format!("    Box::into_raw(Box::new({}Script {{\n", pascal_struct_name));
     out.push_str("        node_id: Uuid::nil(),\n");
 
     // Use collected data for creator
@@ -138,22 +151,22 @@ impl Script {
     out.push_str("}\n\n");
 
     // Struct definition
-    out.push_str(&format!("pub struct {}_script {{\n", struct_name));
+    out.push_str(&format!("pub struct {}Script {{\n", pascal_struct_name));
     out.push_str("    node_id: Uuid,\n");
 
     // Use collected data for struct fields
     for (name, rust_type, _default_val) in &export_fields {
-        out.push_str(&format!("    pub {}: {},\n", name, rust_type));
+        out.push_str(&format!("    {}: {},\n", name, rust_type));
     }
 
     for (name, rust_type, _default_val) in &variable_fields {
-    out.push_str(&format!("    pub {}: {},\n", name, rust_type));
+    out.push_str(&format!("    {}: {},\n", name, rust_type));
     }
 
         out.push_str("}\n\n");
 
         // Script impl
-        out.push_str(&format!("impl Script for {}_script {{\n", struct_name));
+        out.push_str(&format!("impl Script for {}Script {{\n", pascal_struct_name));
 
         // Trait methods (init, update)
         for func in &self.functions {
@@ -290,7 +303,7 @@ out.push_str("}\n");
         // Helper methods
         let helpers: Vec<_> = self.functions.iter().filter(|f| !f.is_trait_method).collect();
         if !helpers.is_empty() {
-            out.push_str(&format!("impl {}Script {{\n", struct_name));
+            out.push_str(&format!("impl {}Script {{\n", pascal_struct_name));
             for func in helpers {
                 out.push_str(&func.to_rust_helper(&self.node_type, &self));
             }
@@ -717,14 +730,13 @@ pub fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     
     // ✅ If this is a raw Rust file (ends with _rs), rewrite the create_script function name
     let final_contents = if lower_name.ends_with("_rs") {
-        // Extract base name without _rs suffix
-        let base_name = lower_name.strip_suffix("_rs").unwrap();
-        
-        // Replace {base_name}_create_script with {base_name}_rs_create_script
-        let old_fn = format!("{}_create_script", base_name);
-        let new_fn = format!("{}_create_script", lower_name);
-        
-        contents.replace(&old_fn, &new_fn)
+        // Use regex or string matching to find the actual function name
+        if let Some(actual_fn_name) = extract_create_script_fn_name(contents) {
+            let expected_fn_name = format!("{}_create_script", lower_name);
+            contents.replace(&actual_fn_name, &expected_fn_name)
+        } else {
+            contents.to_string()
+        }
     } else {
         contents.to_string()
     };
@@ -793,4 +805,24 @@ pub fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to write should_compile: {}", e))?;
 
     Ok(())
+}
+
+
+fn extract_create_script_fn_name(contents: &str) -> Option<String> {
+    // Look for pattern: pub extern "C" fn SOMETHING_create_script()
+    for line in contents.lines() {
+        if line.contains("pub extern \"C\" fn") && line.contains("_create_script") {
+            // Extract function name between "fn " and "("
+            if let Some(start) = line.find("fn ") {
+                let after_fn = &line[start + 3..];
+                if let Some(end) = after_fn.find('(') {
+                    let fn_name = after_fn[..end].trim();
+                    if fn_name.ends_with("_create_script") {
+                        return Some(fn_name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }

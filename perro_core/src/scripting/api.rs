@@ -1,9 +1,7 @@
 use uuid::Uuid;
 use std::sync::mpsc::Sender;
 use crate::{
-    manifest::Project, 
-    script::{SceneAccess, Script, UpdateOp, Var},
-    app_command::AppCommand, // NEW import
+    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, manifest::Project, script::{SceneAccess, Script, UpdateOp, Var} // NEW import
 };
 
 pub struct ScriptApi<'a> {
@@ -58,6 +56,24 @@ impl<'a> ScriptApi<'a> {
 
     pub fn get_delta(&self) -> f32 {
         self.delta
+    }
+
+    pub fn load_asset(&mut self, path: &str) -> Option<Vec<u8>> {
+        // Use the load_asset function from asset_io
+        crate::asset_io::load_asset(path).ok()
+    }
+
+    pub fn resolve_path(&self, path: &str) -> Option<String> {
+        match crate::asset_io::resolve_path(path) {
+            ResolvedPath::Disk(pathbuf) => {
+                // Convert PathBuf to String
+                pathbuf.to_str().map(|s| s.to_string())
+            }
+            ResolvedPath::Brk(virtual_path) => {
+
+                virtual_path.into()
+            }
+        }
     }
 
     pub fn get_node_mut<T: 'static>(&mut self, id: &Uuid) -> Option<&mut T> {

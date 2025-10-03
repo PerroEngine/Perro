@@ -9,4 +9,4 @@ target_fps = 120
 xps = 60
 
 [root]
-script = "res://scripts/bob.rs"
+script = "res://scripts/root.rs"

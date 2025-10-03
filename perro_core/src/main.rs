@@ -22,45 +22,39 @@ fn main() {
         name: "unknown".into(),
     });
 
-    let scripts = ["res://scripts/poop.pup", "res://scripts/editor.pup", "res://scripts/bob.pup", "res://scripts/bob.rs"];
+   match target {
+    CompileTarget::Scripts => {
+        println!("📜 Transpiling scripts…");
 
-
-    match target {
-        CompileTarget::Scripts => {
-            println!("📜 Running transpiler + compiling scripts…");
-
-
-            if let Err(e) = transpile(&scripts) {
-                eprintln!("❌ Transpile failed: {}", e);
-                return;
-            }
-
-            // Compile once after all transpiles
-            let compiler = Compiler::new(&project_root, CompileTarget::Scripts);
-            if let Err(e) = compiler.compile(BuildProfile::Dev) {
-                eprintln!("❌ Script compile failed: {}", e);
-                return;
-            }
-
-
-            println!("✅ Scripts transpiled + compiled successfully!");
+        if let Err(e) = transpile() {
+            eprintln!("❌ Transpile failed: {}", e);
+            return;
         }
 
-        CompileTarget::Project => {
-            println!("📜 Running transpiler + compiling project…");
-
-            if let Err(e) = transpile(&scripts) {
-                eprintln!("❌ Transpile failed: {}", e);
-                return;
-            }
-
-            let compiler = Compiler::new(&project_root, CompileTarget::Project);
-            if let Err(e) = compiler.compile(BuildProfile::Release) {
-                eprintln!("❌ Project build failed: {}", e);
-                return;
-            }
-
-            println!("✅ Project built successfully!");
+        let compiler = Compiler::new(&project_root, CompileTarget::Scripts);
+        if let Err(e) = compiler.compile(BuildProfile::Dev) {
+            eprintln!("❌ Script compile failed: {}", e);
+            return;
         }
+
+        println!("✅ Scripts ready!");
     }
+
+    CompileTarget::Project => {
+        println!("📜 Building project…");
+
+        if let Err(e) = transpile() {
+            eprintln!("❌ Transpile failed: {}", e);
+            return;
+        }
+
+        let compiler = Compiler::new(&project_root, CompileTarget::Project);
+        if let Err(e) = compiler.compile(BuildProfile::Release) {
+            eprintln!("❌ Project build failed: {}", e);
+            return;
+        }
+
+        println!("✅ Project built!");
+    }
+}
 }

@@ -7,28 +7,28 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::Value;
 use uuid::Uuid;
-use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, Node };
+use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
 
 #[unsafe(no_mangle)]
 pub extern "C" fn editor_pup_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(editor_pup_script {
+    Box::into_raw(Box::new(EditorPupScript {
         node_id: Uuid::nil(),
-    b: 0i32,
+    b: 0.0f32,
     })) as *mut dyn Script
 }
 
-pub struct editor_pup_script {
+pub struct EditorPupScript {
     node_id: Uuid,
-    pub b: i32,
+    b: f32,
 }
 
-impl Script for editor_pup_script {
+impl Script for EditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         let delta = api.get_delta();
-        let x = 5f32 + delta;
+        self.b = self.b + delta;
     }
 
     fn set_node_id(&mut self, id: Uuid) {
@@ -51,14 +51,14 @@ impl Script for editor_pup_script {
 
     fn get_var(&self, name: &str) -> Option<Var> {
         match name {
-            "b" => Some(Var::I32(self.b)),
+            "b" => Some(Var::F32(self.b)),
             _ => None,
         }
     }
 
     fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
         match (name, val) {
-            ("b", Var::I32(v)) => { self.b = v; Some(()) },
+            ("b", Var::F32(v)) => { self.b = v; Some(()) },
             _ => None,
         }
     }

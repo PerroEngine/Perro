@@ -1,8 +1,0 @@
-extends Node
-
-fn init() {
-    let b = 2
-}
-
-fn update(delta: float) {
-}
