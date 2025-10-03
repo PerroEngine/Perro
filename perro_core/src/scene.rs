@@ -1,11 +1,5 @@
 use crate::{
-    api::ScriptApi, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, 
-    asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, 
-    ast::{FurElement, FurNode}, manifest::Project, nodes::scene_node::SceneNode, 
-    scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, 
-    ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, 
-    Graphics, Node, ScriptProvider, Sprite2D, Vector2,
-    app_command::AppCommand, // NEW import
+    api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, ScriptProvider, Sprite2D, Vector2 // NEW import
 };
 
 use indexmap::IndexMap;
@@ -143,15 +137,12 @@ impl<P: ScriptProvider> Scene<P> {
     println!("Root script path: {:?}", root_script_opt);
 
     if let Some(root_script_path) = root_script_opt {
-        let short = std::path::Path::new(&root_script_path)
-            .file_stem()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        if let Ok(ctor) = game_scene.provider.load_ctor(&short) {
-            let root_id = *game_scene.get_root().get_id();
-            let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
-            game_scene.scripts.insert(root_id, handle);
+        if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
+            if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
+                let root_id = *game_scene.get_root().get_id();
+                let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
+                game_scene.scripts.insert(root_id, handle);
+            }
         }
     }
 
@@ -260,13 +251,11 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         // Handle script attachment
-        if let Some(pup_path) = node.get_script_path().cloned() {
-            let short = std::path::Path::new(&pup_path)
-                .file_stem()
-                .unwrap()
-                .to_string_lossy();
+        if let Some(script_path) = node.get_script_path().cloned() {
+            let identifier = script_path_to_identifier(&script_path)
+                .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
 
-            let ctor = self.ctor(&short)?;
+            let ctor = self.ctor(&identifier)?;
             let handle = Scene::instantiate_script(ctor, id, self);
             self.scripts.insert(id, handle);
         }
@@ -485,15 +474,12 @@ impl Scene<DllScriptProvider> {
         // Optional preload/root script
         let root_script_opt = game_scene.project.borrow().root_script().map(|s| s.to_string());
         if let Some(root_script_path) = root_script_opt {
-            let short = std::path::Path::new(&root_script_path)
-                .file_stem()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            if let Ok(ctor) = game_scene.provider.load_ctor(&short) {
-                let root_id = *game_scene.get_root().get_id();
-                let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
-                game_scene.scripts.insert(root_id, handle);
+        if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
+                if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
+                    let root_id = *game_scene.get_root().get_id();
+                    let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
+                    game_scene.scripts.insert(root_id, handle);
+                }
             }
         }
          println!("About to graft main scene...");

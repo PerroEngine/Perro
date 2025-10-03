@@ -1,5 +1,7 @@
 extends Node
 
+let b: int
+
 fn init() {
 
 }

@@ -1,7 +1,7 @@
 extends Node
 
 fn init() {
-    print("HELLO I AM THE ROOT SCRIPT AHHHHHH!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    let b = 2
 }
 
 fn update(delta: float) {

@@ -1,7 +1,7 @@
 [workspace]
 
 [package]
-name = "perro_editor"
+name = "Perro_Engine"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
@@ -25,8 +25,10 @@ image = "0.24"
 ico = "0.3"
 chrono = "0.4"
 
+resvg = "0.44"
+
 [[bin]]
-name = "Perro"
+name = "Perro_Engine"
 path = "src/main.rs"
 
 [target.'cfg(windows)']

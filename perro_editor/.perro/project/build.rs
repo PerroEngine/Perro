@@ -37,7 +37,7 @@ fn main() {
         .unwrap_or("0.1.0");
 
     let icon_path = project
-        .get("icon_path")
+        .get("icon")
         .and_then(|v| v.as_str())
         .unwrap_or("res://icon.png");
 
@@ -118,7 +118,7 @@ BEGIN
     END
 END
 "#,
-    build_number,     // symbolic identifier with build number appended
+    build_number,  
     icon_str,
     major, minor, patch, build_number,
     major, minor, patch, build_number,
@@ -225,6 +225,44 @@ fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path)
         .expect("Failed to write ICO file");
     log(log_path, &format!("✔ ICO saved: {}", ico_path.display()));
 }
+
+fn rename_binary(project_name: &str, log_path: &Path) {
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let target_dir = PathBuf::from(&out_dir)
+        .ancestors()
+        .nth(3) // OUT_DIR is deep inside target/{profile}/build/<hash>/out
+        .unwrap()
+        .to_path_buf();
+
+    let profile = std::env::var("PROFILE").unwrap();
+    let bin_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    
+    // Path to the original binary
+    let src_bin = target_dir
+        .join(&profile)
+        .join(if cfg!(windows) {
+            format!("{}.exe", bin_name)
+        } else {
+            bin_name.clone()
+        });
+
+    // New name from project.toml
+    let renamed_bin = target_dir
+        .join(&profile)
+        .join(if cfg!(windows) {
+            format!("{}.exe", project_name)
+        } else {
+            project_name.to_string()
+        });
+
+    if src_bin.exists() {
+        std::fs::copy(&src_bin, &renamed_bin).expect("Failed to rename binary");
+        log(log_path, &format!("✔ Renamed binary to {}", renamed_bin.display()));
+    } else {
+        log(log_path, &format!("⚠ Could not find binary at {}", src_bin.display()));
+    }
+}
+
 
 fn resolve_res_path(project_root: PathBuf, res_path: &str) -> PathBuf {
     if let Some(stripped) = res_path.strip_prefix("res://") {

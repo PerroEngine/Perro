@@ -20,7 +20,7 @@ struct ProjectSection {
     version: String,               // NEW: semantic version e.g. "0.3.1"
     main_scene: String,
     #[serde(default)]
-    icon_path: Option<String>,
+    icon: Option<String>,
 }
 
 /// `[performance]` section
@@ -75,8 +75,8 @@ impl Project {
         &self.settings.project.main_scene 
     }
     
-    pub fn icon_path(&self) -> Option<String> { 
-        self.settings.project.icon_path.clone() 
+    pub fn icon(&self) -> Option<String> { 
+        self.settings.project.icon.clone() 
     }
     
     pub fn root(&self) -> Option<&Path> { 
@@ -109,8 +109,8 @@ impl Project {
         self.settings.project.main_scene = path;
     }
     
-    pub fn set_icon_path(&mut self, path: Option<String>) {
-        self.settings.project.icon_path = path;
+    pub fn set_icon(&mut self, path: Option<String>) {
+        self.settings.project.icon = path;
     }
     
     pub fn set_target_fps(&mut self, fps: f32) {

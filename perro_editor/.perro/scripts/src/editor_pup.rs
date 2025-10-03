@@ -10,23 +10,25 @@ use uuid::Uuid;
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, Node };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn bob_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(BobScript {
+pub extern "C" fn editor_pup_create_script() -> *mut dyn Script {
+    Box::into_raw(Box::new(editor_pup_script {
         node_id: Uuid::nil(),
+    b: 0i32,
     })) as *mut dyn Script
 }
 
-pub struct BobScript {
+pub struct editor_pup_script {
     node_id: Uuid,
+    pub b: i32,
 }
 
-impl Script for BobScript {
+impl Script for editor_pup_script {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.set_window_title("Bob'".to_string());
-        println!("BobScript initialized! Project name is: {}", api.project().name());
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+        let delta = api.get_delta();
+        let x = 5f32 + delta;
     }
 
     fn set_node_id(&mut self, id: Uuid) {
@@ -49,12 +51,14 @@ impl Script for BobScript {
 
     fn get_var(&self, name: &str) -> Option<Var> {
         match name {
+            "b" => Some(Var::I32(self.b)),
             _ => None,
         }
     }
 
     fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
         match (name, val) {
+            ("b", Var::I32(v)) => { self.b = v; Some(()) },
             _ => None,
         }
     }

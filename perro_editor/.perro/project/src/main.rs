@@ -122,7 +122,7 @@ fn main() {
     let app = App::new(
         &event_loop,
         project_rc.borrow().name().to_string(),
-        project_rc.borrow().icon_path(),
+        project_rc.borrow().icon(),
         Some(game_scene),
         project_rc.borrow().target_fps(),
     );

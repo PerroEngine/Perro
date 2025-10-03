@@ -10,23 +10,22 @@ use uuid::Uuid;
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, Node };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn poop_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(PoopScript {
+pub extern "C" fn bob_pup_create_script() -> *mut dyn Script {
+    Box::into_raw(Box::new(bob_pup_script {
         node_id: Uuid::nil(),
     })) as *mut dyn Script
 }
 
-pub struct PoopScript {
+pub struct bob_pup_script {
     node_id: Uuid,
 }
 
-impl Script for PoopScript {
+impl Script for bob_pup_script {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+        let b = 2f32;
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let delta = api.get_delta();
-        let x = 5f32 + delta;
     }
 
     fn set_node_id(&mut self, id: Uuid) {

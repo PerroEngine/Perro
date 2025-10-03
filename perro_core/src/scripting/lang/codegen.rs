@@ -119,7 +119,7 @@ impl Script {
         "pub extern \"C\" fn {}_create_script() -> *mut dyn Script {{\n",
         struct_name.to_lowercase()
     ));
-    out.push_str(&format!("    Box::into_raw(Box::new({}Script {{\n", struct_name));
+    out.push_str(&format!("    Box::into_raw(Box::new({}_script {{\n", struct_name));
     out.push_str("        node_id: Uuid::nil(),\n");
 
     // Use collected data for creator
@@ -138,7 +138,7 @@ impl Script {
     out.push_str("}\n\n");
 
     // Struct definition
-    out.push_str(&format!("pub struct {}Script {{\n", struct_name));
+    out.push_str(&format!("pub struct {}_script {{\n", struct_name));
     out.push_str("    node_id: Uuid,\n");
 
     // Use collected data for struct fields
@@ -153,7 +153,7 @@ impl Script {
         out.push_str("}\n\n");
 
         // Script impl
-        out.push_str(&format!("impl Script for {}Script {{\n", struct_name));
+        out.push_str(&format!("impl Script for {}_script {{\n", struct_name));
 
         // Trait methods (init, update)
         for func in &self.functions {
@@ -700,9 +700,7 @@ impl Op {
     }
 }
 
-
-
-fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
+pub fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     // ✅ Extract disk root
     let project_root = match get_project_root() {
         ProjectRoot::Disk { root, .. } => root,
@@ -712,10 +710,26 @@ fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     };
 
     let base_path = project_root.join(".perro/scripts/src");
-    let file_path = base_path.join(format!("{}.rs", struct_name.to_lowercase()));
+    let lower_name = struct_name.to_lowercase(); // Create binding once
+    let file_path = base_path.join(format!("{}.rs", lower_name));
 
     fs::create_dir_all(&base_path).map_err(|e| format!("Failed to create dir: {}", e))?;
-    fs::write(&file_path, contents).map_err(|e| format!("Failed to write file: {}", e))?;
+    
+    // ✅ If this is a raw Rust file (ends with _rs), rewrite the create_script function name
+    let final_contents = if lower_name.ends_with("_rs") {
+        // Extract base name without _rs suffix
+        let base_name = lower_name.strip_suffix("_rs").unwrap();
+        
+        // Replace {base_name}_create_script with {base_name}_rs_create_script
+        let old_fn = format!("{}_create_script", base_name);
+        let new_fn = format!("{}_create_script", lower_name);
+        
+        contents.replace(&old_fn, &new_fn)
+    } else {
+        contents.to_string()
+    };
+    
+    fs::write(&file_path, final_contents).map_err(|e| format!("Failed to write file: {}", e))?;
 
     let lib_rs_path = base_path.join("lib.rs");
     let mut current_content = fs::read_to_string(&lib_rs_path).unwrap_or_default();
@@ -736,7 +750,7 @@ fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     }
 
     // Add module
-    let mod_line = format!("pub mod {};", struct_name.to_lowercase());
+    let mod_line = format!("pub mod {};", lower_name);
     if !current_content.contains(&mod_line) {
         current_content = current_content.replace(
             "// __PERRO_MODULES__",
@@ -747,8 +761,8 @@ fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     // Add import
     let import_line = format!(
         "use {}::{}_create_script;",
-        struct_name.to_lowercase(),
-        struct_name.to_lowercase()
+        lower_name,
+        lower_name
     );
     if !current_content.contains(&import_line) {
         current_content = current_content.replace(
@@ -760,8 +774,8 @@ fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
     // Add registry entry
     let registry_line = format!(
         "    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n",
-        struct_name.to_lowercase(),
-        struct_name.to_lowercase()
+        lower_name,
+        lower_name
     );
     if !current_content.contains(&registry_line) {
         current_content = current_content.replace(
