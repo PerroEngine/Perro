@@ -114,7 +114,7 @@ all Pup scripts are **transpiled → Rust → optimized → machine code** and *
 
 That means:
 
-- 🚫 **No loose scripts or DLLs** — Pup code is compiled away.
+- 🚫 **No loose scripts or DLLs** — Script code is compiled away.
 - 🔒 **Secure by default** — the shipped executable contains no copy of your logic in source form.
 - ⚡ **Real performance uplift** — release builds run **10–25% faster** than dev builds:
   - Scripts are **inlined** into the engine core
@@ -122,16 +122,13 @@ That means:
   - No dynamic DLL lookup overhead
 - 🐾 **One-binary output** — ship a single executable. No interpreters, no add-ons, no runtime baggage.
 
-This system is not just unusual — it’s **genuinely rare** in modern game engines.  
-Most engines ship your game logic as DLLs, loose scripts, or bytecode for a VM.  
-**Perro erases the boundary between “engine” and “scripts”: they become one.**  
 It’s the best of both worlds: **dynamic hot reload in dev,** and **blazing-fast, secure static builds in release.**
 
 ---
 
 ### 🔍 Example: Static Script Registry
 
-During compilation, Perro auto-generates a central registry that integrates scripts into the engine core:
+During project compilation, Perro auto-generates a central registry that integrates scripts into the engine core:
 
 ```rust
 use perro_core::script::{CreateFn, Script};
@@ -157,14 +154,12 @@ pub fn get_script_registry() -> HashMap<String, CreateFn> {
 }
 ```
 
-The result: your gameplay logic is **compiled into the engine binary itself**, not loaded from an external library.
+The result: gameplay logic is **compiled into the engine binary itself**, not loaded from an external library.
 
 ---
 
-## 🔧 How It Works
+## 🔧 How Scripts Work
 
-Here’s what makes Perro’s build pipeline so unique:  
-it actually works **two different ways** depending on whether you’re iterating or shipping.
 
 ```mermaid
 flowchart TD
@@ -190,18 +185,10 @@ flowchart TD
 
 ### 🔄 Dev vs ⚡ Release at a Glance
 
-| Mode        | Output         | Loading Style        | Benefits                       |
-| ----------- | -------------- | -------------------- | ------------------------------ |
-| **Dev**     | DLL per script | Dynamic (hot reload) | Instant iteration (1–3s)       |
-| **Release** | Single exe     | Static (inlined)     | +10–25% perf, secure, portable |
-
-Perro’s system is **both pragmatic and ingenious**:
-
-- While you’re iterating, you can tweak scripts in seconds.
-- Once you’re done? Your scripts literally **disappear into optimized machine code**.
-
-This design achieves something very few engines manage:  
-⚡ **seamless workflow without tradeoffs**.
+| Mode        | Output           | Loading Style        | Benefits                       |
+| ----------- | ---------------- | -------------------- | ------------------------------ |
+| **Dev**     | Scripts in a DLL | Dynamic (hot reload) | Instant iteration (1–3s)       |
+| **Release** | Single exe       | Static (inlined)     | +10–25% perf, secure, portable |
 
 ---
 
@@ -265,4 +252,4 @@ See [LICENSE](LICENSE) for details.
 
 ## 🐾 Why "Perro"?
 
-Because every good game dev needs a loyal engine companion, and in Spanish, **Perro** means **Dog** 🐕
+It's the game engine that just makes sense.
