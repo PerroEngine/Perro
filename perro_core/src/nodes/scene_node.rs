@@ -57,79 +57,43 @@ pub trait BaseNode: Any + Debug + Send + Serialize + for<'de> Deserialize<'de> {
 }
 
 /// Macro to implement `BaseNode` for any concrete type with the expected fields.
+/// Also implements a `From` conversion into `SceneNode`.
 #[macro_export]
 macro_rules! impl_scene_node {
-    ($ty:ty) => {
+    ($ty:ty, $variant:ident) => {
         impl crate::nodes::scene_node::BaseNode for $ty {
             // --- Read-only getters ---
-            fn get_id(&self) -> &uuid::Uuid {
-                &self.id
-            }
-
-            fn set_id(&mut self, id: uuid::Uuid) {
-                self.id = id;
-            }
-
-            fn get_name(&self) -> &str {
-                &self.name
-            }
-
-            fn get_parent(&self) -> Option<uuid::Uuid> {
-                self.parent
-            }
-
-            fn get_children(&self) -> &Vec<uuid::Uuid> {
-                &self.children
-            }
-
-            fn get_type(&self) -> &str {
-                &self.ty
-            }
-
-            fn get_script_path(&self) -> Option<&String> {
-                self.script_path.as_ref()
-            }
+            fn get_id(&self) -> &uuid::Uuid { &self.id }
+            fn set_id(&mut self, id: uuid::Uuid) { self.id = id; }
+            fn get_name(&self) -> &str { &self.name }
+            fn get_parent(&self) -> Option<uuid::Uuid> { self.parent }
+            fn get_children(&self) -> &Vec<uuid::Uuid> { &self.children }
+            fn get_type(&self) -> &str { &self.ty }
+            fn get_script_path(&self) -> Option<&String> { self.script_path.as_ref() }
 
             // --- Mutation ---
-            fn set_parent(&mut self, p: Option<uuid::Uuid>) {
-                self.parent = p;
-            }
-
-            fn add_child(&mut self, c: uuid::Uuid) {
-                self.children.push(c);
-            }
-
-            fn remove_child(&mut self, c: &uuid::Uuid) {
-                self.children.retain(|x| x != c);
-            }
-
-            fn set_script_path(&mut self, path: &str) {
-                self.script_path = Some(path.to_string());
-            }
-
-            fn is_dirty(&self) -> bool {
-                self.dirty
-            }
-
-            fn set_dirty(&mut self, dirty: bool) {
-                self.dirty = dirty;
-            }
-
-            fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
-                &mut self.children
-            }
+            fn set_parent(&mut self, p: Option<uuid::Uuid>) { self.parent = p; }
+            fn add_child(&mut self, c: uuid::Uuid) { self.children.push(c); }
+            fn remove_child(&mut self, c: &uuid::Uuid) { self.children.retain(|x| x != c); }
+            fn set_script_path(&mut self, path: &str) { self.script_path = Some(path.to_string()); }
+            fn is_dirty(&self) -> bool { self.dirty }
+            fn set_dirty(&mut self, dirty: bool) { self.dirty = dirty; }
+            fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> { &mut self.children }
 
             // --- Downcasting helpers ---
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
+            fn as_any(&self) -> &dyn std::any::Any { self }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        }
 
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-                self
+        // --- Helper to wrap into SceneNode ---
+        impl $ty {
+            pub fn to_scene_node(self) -> crate::nodes::scene_node::SceneNode {
+                crate::nodes::scene_node::SceneNode::$variant(self)
             }
         }
     };
 }
+
 
 /// The enum that holds any of your node types.
 /// `enum_dispatch` auto-generates:
@@ -143,3 +107,9 @@ pub enum SceneNode {
     Sprite2D(Sprite2D),
     UI(Ui),
 }
+
+
+impl_scene_node!(Node, Node);
+impl_scene_node!(Node2D, Node2D);
+impl_scene_node!(Sprite2D, Sprite2D);
+impl_scene_node!(Ui, UI);

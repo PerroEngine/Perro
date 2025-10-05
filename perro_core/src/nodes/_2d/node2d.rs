@@ -3,8 +3,6 @@ use crate::Transform2D;
 use crate::{nodes::node::Node};
 use std::ops::{Deref, DerefMut};
 
-use crate::{impl_scene_node};
-
 
 fn default_visible() -> bool { true }
 fn is_default_visible(v: &bool) -> bool { *v == default_visible() }
@@ -58,4 +56,3 @@ impl DerefMut for Node2D {
   }
 }
 
-impl_scene_node!(Node2D);

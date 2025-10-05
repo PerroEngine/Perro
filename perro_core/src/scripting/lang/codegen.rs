@@ -321,7 +321,6 @@ out.push_str("}\n");
 impl Function {
     fn to_rust_trait_method(&self, node_type: &str, script: &Script) -> String {
         let mut out = format!("    fn {}(", self.name);
-        // Add api parameter
         out.push_str("&mut self, api: &mut ScriptApi<'_>) {\n");
 
         let needs_delta = self.body.iter().any(|stmt| stmt.contains_delta());
@@ -331,16 +330,39 @@ impl Function {
             out.push_str("        let delta = api.get_delta();\n");
         }
 
+        let mut cloned_nodes = Vec::new();
+
         if needs_self {
             out.push_str(&format!(
-                "        let self_node = api.get_node_mut::<{}>(&self.node_id).unwrap();\n",
+                "        let mut self_node = api.get_node_clone::<{}>(&self.node_id);\n",
                 node_type
             ));
+            cloned_nodes.push("self_node".to_string());
         }
 
-        // Generate body
+        // Generate body - when you add GetNode support to your AST,
+        // you'd collect node variables here as you generate each statement
         for stmt in &self.body {
+            // TODO: When you add Stmt::GetNode, do something like:
+            // if let Stmt::GetNode { var_name, node_type, node_id_expr } = stmt {
+            //     let id_expr = node_id_expr.to_rust(needs_self, script, None);
+            //     out.push_str(&format!(
+            //         "        let mut {} = api.get_node_clone::<{}>(&{});\n",
+            //         var_name, node_type, id_expr
+            //     ));
+            //     cloned_nodes.push(var_name.clone());  // <- Collect it here!
+            // }
+            
             out.push_str(&stmt.to_rust(needs_self, script));
+        }
+
+        // Merge all cloned nodes back at the end
+        if !cloned_nodes.is_empty() {
+            let merge_args = cloned_nodes.iter()
+                .map(|n| format!("{}.to_scene_node()", n))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!("\n        api.merge_nodes(vec![{}]);\n", merge_args));
         }
 
         out.push_str("    }\n\n");
@@ -350,7 +372,6 @@ impl Function {
     fn to_rust_helper(&self, node_type: &str, script: &Script) -> String {
         let mut out = format!("    fn {}(&mut self, api: &mut ScriptApi<'_>) {{\n", self.name);
 
-        // Check if we need self_node
         let needs_delta = self.body.iter().any(|stmt| stmt.contains_delta());
         let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
 
@@ -358,21 +379,34 @@ impl Function {
             out.push_str("        let delta = api.get_delta();\n");
         }
 
+        let mut cloned_nodes = Vec::new();
+
         if needs_self {
             out.push_str(&format!(
-                "        let self_node = api.get_node_mut::<{}>(&self.node_id).unwrap();\n",
+                "        let mut self_node = api.get_node_clone::<{}>(&self.node_id);\n",
                 node_type
             ));
+            cloned_nodes.push("self_node".to_string());
         }
 
-        // Generate body
+        // Generate body - collect nodes as you go
         for stmt in &self.body {
             out.push_str(&stmt.to_rust(needs_self, script));
+        }
+
+        // Merge all cloned nodes back at the end
+        if !cloned_nodes.is_empty() {
+            let merge_args = cloned_nodes.iter()
+                .map(|n| format!("{}.to_scene_node()", n))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!("\n        api.merge_nodes(vec![{}]);\n", merge_args));
         }
 
         out.push_str("    }\n\n");
         out
     }
+
 }
 
 impl Stmt {

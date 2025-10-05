@@ -396,12 +396,28 @@ impl<P: ScriptProvider> Scene<P> {
 //
 
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
-    fn get_node_mut_any(&mut self, id: &Uuid) -> Option<&mut dyn std::any::Any> {
+    fn get_node_any(&mut self, id: &Uuid) -> Option<&mut dyn std::any::Any> {
         self.data.nodes.get_mut(id).map(|node| {
-            node.mark_dirty(); // Auto-mark dirty on script access
             node.as_any_mut()
         })
     }
+
+    fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
+        for mut node in nodes {
+    
+            let id = *node.get_id();
+            node.mark_dirty();
+        
+            if let Some(existing_node) = self.data.nodes.get_mut(&id) {
+                // Replace the inner data completely
+                *existing_node = node;
+            } else {
+                // Insert new node if it doesn't exist
+                self.data.nodes.insert(id, node);
+            }
+        }
+    }
+
 
     fn update_script_var(
         &mut self,

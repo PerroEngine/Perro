@@ -1,7 +1,7 @@
 use uuid::Uuid;
 use std::sync::mpsc::Sender;
 use crate::{
-    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, manifest::Project, script::{SceneAccess, Script, UpdateOp, Var} // NEW import
+    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, manifest::Project, scene_node::{BaseNode, SceneNode}, script::{SceneAccess, Script, UpdateOp, Var} // NEW import
 };
 
 pub struct ScriptApi<'a> {
@@ -55,7 +55,7 @@ impl<'a> ScriptApi<'a> {
     }
 
     pub fn get_delta(&self) -> f32 {
-        self.delta
+        self.delta.clone()
     }
 
     pub fn load_asset(&mut self, path: &str) -> Option<Vec<u8>> {
@@ -76,14 +76,24 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn get_node_mut<T: 'static>(&mut self, id: &Uuid) -> Option<&mut T> {
-        self.scene.get_node_mut_any(id)?.downcast_mut::<T>()
+    pub fn get_node_clone<T: BaseNode + Clone + 'static>(&mut self, id: &Uuid) -> T {
+        self.scene.get_node_any(id)
+        .unwrap()
+        .downcast_ref::<T>()
+        .unwrap()
+        .clone()
     }
+
+    pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
+        self.scene.merge_nodes(nodes);
+    }
+
+
 
     pub fn update_script_var(
         &mut self,
         node_id: &Uuid,
-        name: &str,
+        name: &str, 
         op: UpdateOp,
         val: Var,
     ) -> Option<()> {

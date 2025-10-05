@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use serde::{Serialize, Deserialize};
 use wgpu::naga::Handle;
-use crate::{impl_scene_node, nodes::_2d::node2d::Node2D};
+use crate::{nodes::_2d::node2d::Node2D};
 
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -41,4 +41,3 @@ impl DerefMut for Sprite2D {
 }
 
 
-impl_scene_node!(Sprite2D);

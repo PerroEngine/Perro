@@ -73,4 +73,3 @@ impl DerefMut for Ui {
   }
 }
 
-impl_scene_node!(Ui);

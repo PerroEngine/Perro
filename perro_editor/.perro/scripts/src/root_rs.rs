@@ -7,7 +7,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::Value;
 use uuid::Uuid;
-use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, Node };
+use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
 
 #[unsafe(no_mangle)]
 pub extern "C" fn root_rs_create_script() -> *mut dyn Script {
@@ -133,7 +133,21 @@ fn init(&mut self, api: &mut ScriptApi<'_>) {
 }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+        let delta = api.get_delta();
+        let mut a = api.get_node_clone::<Node2D>(&Uuid::new_v4());
+        let x = delta * 10.0;
+        let mut b = api.get_node_clone::<Node2D>(&Uuid::new_v4());
+
+        a.transform.position.x += 1.0;
+        b.transform.position.x += 1.0;
+
+        api.merge_nodes(vec![
+            a.to_scene_node(),
+            b.to_scene_node(),
+        ]);
     }
+
+
 
     fn set_node_id(&mut self, id: Uuid) {
         self.node_id = id;

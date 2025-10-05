@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 use std::collections::HashMap;
-use crate::impl_scene_node;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Node {
@@ -58,5 +57,3 @@ impl Node {
         serde_json::to_value(self).unwrap()
     }
 }
-
-impl_scene_node!(Node);

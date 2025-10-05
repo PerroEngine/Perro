@@ -7,6 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::app_command::AppCommand;
+use crate::scene_node::SceneNode;
 
 /// A dynamic variable type for script fields/exports
 #[derive(Clone, Debug)]
@@ -45,7 +46,8 @@ pub type CreateFn = extern "C" fn() -> *mut dyn Script;
 
 /// Trait object for scene access (dyn‑safe)
 pub trait SceneAccess {
-    fn get_node_mut_any(&mut self, id: &Uuid) -> Option<&mut dyn Any>;
+    fn get_node_any(&mut self, id: &Uuid) -> Option<&mut dyn Any>;
+    fn merge_nodes(&mut self, nodes: Vec<SceneNode>);
     fn update_script_var(
         &mut self,
         node_id: &Uuid,
