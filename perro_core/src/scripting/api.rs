@@ -1,7 +1,7 @@
 use uuid::Uuid;
-use std::sync::mpsc::Sender;
+use std::{any::TypeId, sync::mpsc::Sender};
 use crate::{
-    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, manifest::Project, scene_node::{BaseNode, SceneNode}, script::{SceneAccess, Script, UpdateOp, Var} // NEW import
+    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, manifest::Project, scene_node::{BaseNode, IntoInner, SceneNode}, script::{SceneAccess, Script, UpdateOp, Var}, ui_node::Ui, Node, Node2D, Sprite2D // NEW import
 };
 
 pub struct ScriptApi<'a> {
@@ -76,13 +76,19 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn get_node_clone<T: BaseNode + Clone + 'static>(&mut self, id: &Uuid) -> T {
-        self.scene.get_node_any(id)
-        .unwrap()
-        .downcast_ref::<T>()
-        .unwrap()
-        .clone()
+    pub fn get_node_clone<T: Clone>(&mut self, id: &Uuid) -> T
+    where
+        SceneNode: IntoInner<T>,
+    {
+        let node_enum = self.scene.get_scene_node(id)
+            .unwrap_or_else(|| panic!("Node {} not found in scene", id))
+            .clone();
+
+        node_enum.into_inner()
     }
+
+
+
 
     pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         self.scene.merge_nodes(nodes);

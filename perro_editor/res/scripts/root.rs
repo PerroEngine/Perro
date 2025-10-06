@@ -13,15 +13,20 @@ use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::
 pub extern "C" fn root_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(BRootScript {
         node_id: Uuid::nil(),
+        x: 0.0,
     })) as *mut dyn Script
 }
 
 pub struct BRootScript {
     node_id: Uuid,
+    x: f32,
 }
 
 impl Script for BRootScript {
 fn init(&mut self, api: &mut ScriptApi<'_>) {
+
+    println!("{}", self.node_id);
+    
     if cfg!(debug_assertions) {
         api.set_window_title("Rootcript [DEBUG]".to_string());
     } else {
@@ -134,18 +139,19 @@ fn init(&mut self, api: &mut ScriptApi<'_>) {
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         let delta = api.get_delta();
-        let mut a = api.get_node_clone::<Node2D>(&Uuid::new_v4());
-        let x = delta * 10.0;
-        let mut b = api.get_node_clone::<Node2D>(&Uuid::new_v4());
+        let mut self_node = api.get_node_clone::<Node>(&self.node_id);
 
-        a.transform.position.x += 1.0;
-        b.transform.position.x += 1.0;
+        self.x += delta;
+
+        println!("X: {:.4} seconds", self.x);
+
+        self_node.name = format!("Root Node - {:.2} FPS", 1.0 / delta);
 
         api.merge_nodes(vec![
-            a.to_scene_node(),
-            b.to_scene_node(),
+            self_node.to_scene_node(),
         ]);
     }
+
 
 
 

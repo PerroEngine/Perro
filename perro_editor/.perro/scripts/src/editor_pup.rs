@@ -24,10 +24,6 @@ pub struct EditorPupScript {
 
 impl Script for EditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        let mut self_node = api.get_node_clone::<Node>(&self.node_id);
-        self_node.name = "bob".to_string();
-
-        api.merge_nodes(vec![self_node.to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {

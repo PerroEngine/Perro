@@ -46,7 +46,7 @@ pub type CreateFn = extern "C" fn() -> *mut dyn Script;
 
 /// Trait object for scene access (dyn‑safe)
 pub trait SceneAccess {
-    fn get_node_any(&mut self, id: &Uuid) -> Option<&mut dyn Any>;
+    fn get_scene_node(&mut self, id: &Uuid) -> Option<&mut SceneNode>;
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>);
     fn update_script_var(
         &mut self,

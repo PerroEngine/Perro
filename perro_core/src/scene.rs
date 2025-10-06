@@ -6,13 +6,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use wgpu::RenderPass;
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    io,
-    path::PathBuf,
-    rc::Rc, 
-    time::{Duration, Instant},
-    sync::mpsc::Sender, // NEW import
+    any::Any, cell::RefCell, collections::HashMap, io, path::PathBuf, rc::Rc, sync::mpsc::Sender, time::{Duration, Instant} // NEW import
 };
 use uuid::Uuid;
 
@@ -312,7 +306,6 @@ impl<P: ScriptProvider> Scene<P> {
             .get_mut(id)
             .and_then(|node| {
                 let typed = node.as_any_mut().downcast_mut::<T>()?;
-                typed.mark_dirty();
                 Some(typed)
             })
     }
@@ -396,11 +389,10 @@ impl<P: ScriptProvider> Scene<P> {
 //
 
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
-    fn get_node_any(&mut self, id: &Uuid) -> Option<&mut dyn std::any::Any> {
-        self.data.nodes.get_mut(id).map(|node| {
-            node.as_any_mut()
-        })
+    fn get_scene_node(&mut self, id: &Uuid) -> Option<&mut SceneNode> {
+        self.data.nodes.get_mut(id)
     }
+
 
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         for mut node in nodes {
@@ -478,19 +470,26 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
 impl Scene<DllScriptProvider> {
     pub fn from_project(project: Rc<RefCell<Project>>) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
-
+        
         // Load DLL
         let lib_path = default_perro_rust_path()?;
         println!("Loading script library from {:?}", lib_path);
         let lib = unsafe { Library::new(&lib_path)? };
         let provider = DllScriptProvider::new(Some(lib));
         let mut game_scene = Scene::new(root_node, provider, project);
-
+        
+        println!("About to graft main scene...");
+        // Graft in normal main scene FIRST
+        let main_scene_path = game_scene.project.borrow().main_scene().to_string();
+        let loaded_data = SceneData::load(&main_scene_path)?;
+        let game_root = *game_scene.get_root().get_id();
+        game_scene.graft_data(loaded_data, game_root)?;
+        
         println!("Building scene from project manifest...");
-        // Optional preload/root script
+        // NOW instantiate root script after scene exists
         let root_script_opt = game_scene.project.borrow().root_script().map(|s| s.to_string());
         if let Some(root_script_path) = root_script_opt {
-        if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
+            if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
                 if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
                     let root_id = *game_scene.get_root().get_id();
                     let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
@@ -498,13 +497,7 @@ impl Scene<DllScriptProvider> {
                 }
             }
         }
-         println!("About to graft main scene...");
-        // Graft in normal main scene
-        let main_scene_path = game_scene.project.borrow().main_scene().to_string();
-        let loaded_data = SceneData::load(&main_scene_path)?;
-        let game_root = *game_scene.get_root().get_id();
-        game_scene.graft_data(loaded_data, game_root)?;
-
+        
         Ok(game_scene)
     }
 }
