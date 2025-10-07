@@ -2,7 +2,7 @@
 name = "Perro Engine"
 main_scene = "res://editor.scn"
 icon = "res://perro-logo.png"
-version="0.1.0"
+version="0.2.0"
 
 [performance]
 target_fps = 120
