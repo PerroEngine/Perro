@@ -93,7 +93,7 @@ impl Script {
             .map(|f| f.return_type.clone())
     }
 
-    pub fn to_rust(&self, struct_name: &str) -> String {
+    pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
         let mut out = String::new();
 
         let pascal_struct_name = to_pascal_case(struct_name);
@@ -310,7 +310,7 @@ out.push_str("}\n");
             out.push_str("}\n");
         }
 
-        if let Err(e) = write_to_crate( &out, struct_name) {
+        if let Err(e) = write_to_crate(&project_path, &out, struct_name) {
             eprintln!("Warning: Failed to write to crate: {}", e);
         }
 
@@ -747,16 +747,9 @@ impl Op {
     }
 }
 
-pub fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
-    // ✅ Extract disk root
-    let project_root = match get_project_root() {
-        ProjectRoot::Disk { root, .. } => root,
-        ProjectRoot::Brk { .. } => {
-            return Err("write_to_crate is not supported to a .pak".into());
-        }
-    };
+pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) -> Result<(), String> {
 
-    let base_path = project_root.join(".perro/scripts/src");
+    let base_path = project_path.join(".perro/scripts/src");
     let lower_name = struct_name.to_lowercase(); // Create binding once
     let file_path = base_path.join(format!("{}.rs", lower_name));
 
@@ -834,7 +827,7 @@ pub fn write_to_crate(contents: &str, struct_name: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
 
     // Mark that we should recompile
-    let should_compile_path = project_root.join(".perro/scripts/should_compile");
+    let should_compile_path = project_path.join(".perro/scripts/should_compile");
     fs::write(should_compile_path, "true")
         .map_err(|e| format!("Failed to write should_compile: {}", e))?;
 

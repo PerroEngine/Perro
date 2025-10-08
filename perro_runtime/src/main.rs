@@ -32,6 +32,7 @@ fn run_app<P: ScriptProvider>(event_loop: EventLoop<Graphics>, mut app: App<P>) 
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let mut key: Option<String> = None;
 
     // 1. Determine project root path (disk or exe dir)
     let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
@@ -65,6 +66,18 @@ fn main() {
 
     // 5. Wrap project in Rc<RefCell<>> for shared mutable access
     let project_rc = Rc::new(RefCell::new(project));
+
+            // Start from index 1 to skip executable path
+    for arg in args.iter().skip(1) {
+        if arg.starts_with("--") {
+            // Strip the `--` prefix
+            let clean_key = arg.trim_start_matches("--").to_string();
+            key = Some(clean_key);
+        } else if let Some(k) = key.take() {
+            // Treat next arg as the value for previous key
+            project_rc.borrow_mut().set_runtime_param(&k, arg);
+        }
+    }
 
     // 6. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();

@@ -19,5 +19,19 @@ libloading = "0.8"
 name = "perro_runtime"
 path = "src/main.rs"
 
+[profile.release]
+opt-level = 3            # max speed
+lto = "fat"              # full link-time optimization
+codegen-units = 1        # full cross-crate optimization
+panic = "abort"          # remove unwinding overhead
+debug = false            # no debug info
+strip = "symbols"        # strip symbols from final binary
+
+# Per-crate tweaks (only opt-level, debug, overflow-checks allowed here)
+[profile.release.package."*"]
+opt-level = 3
+debug = false
+overflow-checks = false
+
 [target.'cfg(windows)']
 rustflags = ["-C", "link-args=/SUBSYSTEM:WINDOWS"]

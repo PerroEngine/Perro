@@ -19,19 +19,19 @@ fn main() {
     let project_root = PathBuf::from(r"D:\Rust\perro\perro_editor");
     set_project_root(ProjectRoot::Disk {
         root: project_root.clone(),
-        name: "unknown".into(),
+        name: "Perro Engine".into(),
     });
 
    match target {
     CompileTarget::Scripts => {
         println!("📜 Transpiling scripts…");
 
-        if let Err(e) = transpile() {
+        if let Err(e) = transpile(&project_root) {
             eprintln!("❌ Transpile failed: {}", e);
             return;
         }
 
-        let compiler = Compiler::new(&project_root, CompileTarget::Scripts);
+        let compiler = Compiler::new(&project_root, CompileTarget::Scripts, true);
         if let Err(e) = compiler.compile(BuildProfile::Dev) {
             eprintln!("❌ Script compile failed: {}", e);
             return;
@@ -43,12 +43,12 @@ fn main() {
     CompileTarget::Project => {
         println!("📜 Building project…");
 
-        if let Err(e) = transpile() {
+        if let Err(e) = transpile(&project_root) {
             eprintln!("❌ Transpile failed: {}", e);
             return;
         }
 
-        let compiler = Compiler::new(&project_root, CompileTarget::Project);
+        let compiler = Compiler::new(&project_root, CompileTarget::Project, true);
         if let Err(e) = compiler.compile(BuildProfile::Release) {
             eprintln!("❌ Project build failed: {}", e);
             return;

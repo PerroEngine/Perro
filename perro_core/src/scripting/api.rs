@@ -1,7 +1,7 @@
 use uuid::Uuid;
-use std::{any::TypeId, sync::mpsc::Sender};
+use std::{any::TypeId, path::Path, sync::mpsc::Sender};
 use crate::{
-    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, manifest::Project, scene_node::{BaseNode, IntoInner, SceneNode}, script::{SceneAccess, Script, UpdateOp, Var}, ui_node::Ui, Node, Node2D, Sprite2D // NEW import
+    app_command::AppCommand, asset_io::{load_asset, resolve_path, ResolvedPath}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::transpiler::transpile, manifest::Project, scene_node::{BaseNode, IntoInner, SceneNode}, script::{SceneAccess, Script, UpdateOp, Var}, ui_node::Ui, Node, Node2D, Sprite2D // NEW import
 };
 
 pub struct ScriptApi<'a> {
@@ -17,6 +17,45 @@ impl<'a> ScriptApi<'a> {
 
     pub fn project(&mut self) -> &mut Project {
         self.project
+    }
+
+    pub fn compile_scripts(&mut self) -> Result<(), String> {
+        self.run_compile(BuildProfile::Dev, CompileTarget::Scripts)
+    }
+
+    /// Compile the full project (Release build)
+    pub fn compile_project(&mut self) -> Result<(), String> {
+        self.run_compile(BuildProfile::Release, CompileTarget::Project)
+    }
+
+    /// Internal shared logic
+    fn run_compile(
+        &mut self,
+        profile: BuildProfile,
+        target: CompileTarget,
+    ) -> Result<(), String> {
+
+        // 🔹 Get runtime project path
+        let project_path_str = self
+            .project
+            .get_runtime_param("project_path")
+            .ok_or("Missing runtime param: project_path")?;
+
+        eprintln!("📁 Project path: {}", project_path_str);
+
+        let project_path = Path::new(project_path_str);
+
+        // 🧩 Transpile step
+        transpile(project_path)
+            .map_err(|e| format!("Transpile failed: {}", e))?;
+
+        // 🧱 Compile step
+        let compiler = Compiler::new(project_path, target, false);
+        compiler
+            .compile(profile)
+            .map_err(|e| format!("Compile failed: {}", e))?;
+
+        Ok(())
     }
 
     pub fn set_window_title(&mut self, title: String) {

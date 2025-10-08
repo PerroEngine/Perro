@@ -54,6 +54,11 @@ fn main() {
         }
     }
 
+    let args: Vec<String> = env::args().collect();
+    let mut key: Option<String> = None;
+
+
+
     // 1. Set project root depending on build mode
     #[cfg(not(debug_assertions))]
     {
@@ -68,6 +73,7 @@ fn main() {
     {
         // ✅ Dev mode: use disk
         let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
+
         set_project_root(ProjectRoot::Disk {
             root: project_root.clone(),
             name: "unknown".into(),
@@ -109,6 +115,18 @@ fn main() {
 
     // ✅ wrap project in Rc<RefCell>
     let project_rc = std::rc::Rc::new(std::cell::RefCell::new(project));
+
+        // Start from index 1 to skip executable path
+    for arg in args.iter().skip(1) {
+        if arg.starts_with("--") {
+            // Strip the `--` prefix
+            let clean_key = arg.trim_start_matches("--").to_string();
+            key = Some(clean_key);
+        } else if let Some(k) = key.take() {
+            // Treat next arg as the value for previous key
+            project_rc.borrow_mut().set_runtime_param(&k, arg);
+        }
+    }
 
     let game_scene = match Scene::from_project_with_provider(project_rc.clone(), provider) {
         Ok(scene) => scene,

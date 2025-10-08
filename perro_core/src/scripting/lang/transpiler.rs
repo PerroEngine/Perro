@@ -24,45 +24,37 @@ pub fn script_path_to_identifier(path: &str) -> Result<String, String> {
 }
 
 /// Discover all script files in res/ directory, returns res:// paths
-fn discover_scripts(project_root: &Path) -> Result<Vec<String>, String> {
+fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
     let res_dir = project_root.join("res");
-    
     if !res_dir.exists() {
         return Err(format!("res/ directory not found at {:?}", res_dir));
     }
-    
+
     let mut scripts = Vec::new();
-    
+
     for entry in WalkDir::new(&res_dir)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        
-        // Skip if not a file
-        if !path.is_file() {
-            continue;
-        }
-        
-        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            // Exact match only
-            if ext == "pup" || ext == "rs" {
-                // Convert to res:// path
-                if let Ok(relative) = path.strip_prefix(&res_dir) {
-                    let res_path = format!("res://{}", relative.display());
-                    scripts.push(res_path);
+
+        if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if ext == "pup" || ext == "rs" {
+                    scripts.push(path.to_path_buf()); // ✅ full absolute disk path
                 }
             }
         }
     }
-    
+
     if scripts.is_empty() {
         println!("⚠️  No scripts found in res/");
     }
-    
+
     Ok(scripts)
 }
+
 
 /// Clean up orphaned script files
 fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Result<(), String> {
@@ -140,74 +132,60 @@ fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Result<(
     Ok(())
 }
 
-/// Transpile all scripts found in res/ directory
-pub fn transpile() -> Result<(), String> {
+pub fn transpile(project_root: &Path) -> Result<(), String> {
     let total_start = Instant::now();
-    
-    let project_root = match get_project_root() {
-        ProjectRoot::Disk { root, .. } => root,
-        ProjectRoot::Brk { .. } => {
-            return Err("Transpilation is not supported in release/pak mode".into());
-        }
-    };
 
-    // Discover all scripts as res:// paths
-    let script_paths = discover_scripts(&project_root)?;
-    
+    let script_paths = discover_scripts(project_root)?;
     if script_paths.is_empty() {
         return Ok(());
     }
-    
-    println!("📜 Found {} script(s)", script_paths.len());
-    
-    // Clean up orphans
-    clean_orphaned_scripts(&project_root, &script_paths)?;
 
-    // Transpile all discovered scripts
+    println!("📜 Found {} script(s)", script_paths.len());
+
+    // Build active script names for cleanup
+    let script_res_paths: Vec<String> = script_paths
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    clean_orphaned_scripts(project_root, &script_res_paths)?;
+
     for path in &script_paths {
         let script_start = Instant::now();
-        
-        let resolved = resolve_path(path);
-        
-        match resolved {
-            ResolvedPath::Disk(script_path) => {
-                let identifier = script_path_to_identifier(path)?;
-                
-                let extension = script_path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .ok_or_else(|| "Failed to extract file extension".to_string())?;
+        let identifier = script_path_to_identifier(&path.to_string_lossy())?;
 
-                let code_bytes = load_asset(path)
-                    .map_err(|e| format!("Failed to read {}: {}", path, e))?;
-                let code = String::from_utf8(code_bytes)
-                    .map_err(|e| format!("Invalid UTF-8 in {}: {}", path, e))?;
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .ok_or_else(|| "Failed to extract file extension".to_string())?;
 
-                match extension {
-                    "pup" => {
-                        let script = PupParser::new(&code).parse_script()?;
-                        script.to_rust(&identifier);
-                        let elapsed = script_start.elapsed();
-                        println!("  ✅ Transpiled: {} -> {} ({:.2?})", path, identifier, elapsed);
-                    }
-                    "rs" => {
-                        write_to_crate(&code, &identifier)?;
-                        let elapsed = script_start.elapsed();
-                        println!("  ✅ Copied: {} -> {} ({:.2?})", path, identifier, elapsed);
-                    }
-                    _ => {
-                        return Err(format!("Unsupported file extension: {}", extension));
-                    }
-                }
+        let code = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+        match extension {
+            "pup" => {
+                let script = PupParser::new(&code).parse_script()?;
+                script.to_rust(&identifier, project_root);
+                println!(
+                    "  ✅ Transpiled: {} -> {} ({:.2?})",
+                    path.display(),
+                    identifier,
+                    script_start.elapsed()
+                );
             }
-            ResolvedPath::Brk(_) => {
-                return Err("Transpilation is only supported in dev/disk mode".into());
+            "rs" => {
+                write_to_crate(project_root, &code, &identifier)?;
+                println!(
+                    "  ✅ Copied: {} -> {} ({:.2?})",
+                    path.display(),
+                    identifier,
+                    script_start.elapsed()
+                );
             }
+            _ => return Err(format!("Unsupported file extension: {}", extension)),
         }
     }
 
-    let total_elapsed = total_start.elapsed();
-    println!("✅ Total transpilation time: {:.2?}", total_elapsed);
-
+    println!("✅ Total transpilation time: {:.2?}", total_start.elapsed());
     Ok(())
 }

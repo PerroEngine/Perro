@@ -7,8 +7,10 @@ use std::time::Instant;
 use rand::RngCore;
 use rand::seq::SliceRandom;
 
+use crate::asset_io::{resolve_path, ResolvedPath};
 use crate::brk::build_brk;
 
+#[derive(Debug, Clone)]
 pub enum BuildProfile {
     Dev,
     Release,
@@ -20,13 +22,52 @@ pub enum CompileTarget {
     Project, // .perro/project
 }
 
+#[derive(Debug, Clone)]
+pub enum Platform {
+    Windows,
+    MacOS,
+    Linux,
+}
+
+impl Platform {
+    pub fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Platform::Windows
+        } else if cfg!(target_os = "macos") {
+            Platform::MacOS
+        } else {
+            Platform::Linux
+        }
+    }
+
+    pub fn toolchain_name(&self, version: &str) -> String {
+        match self {
+            Platform::Windows => format!("rust-{}-x86_64-pc-windows-gnu", version),
+            Platform::MacOS => format!("rust-{}-x86_64-apple-darwin", version),
+            Platform::Linux => format!("rust-{}-x86_64-unknown-linux-gnu", version),
+        }
+    }
+
+    pub fn cargo_exe(&self) -> &'static str {
+        match self {
+            Platform::Windows => "cargo.exe",
+            Platform::MacOS | Platform::Linux => "cargo",
+        }
+    }
+}
+
 pub struct Compiler {
     pub crate_manifest_path: PathBuf,
     target: CompileTarget,
+    toolchain_root: Option<PathBuf>,
+    platform: Platform,
+    toolchain_version: Option<String>,
+    project_root: PathBuf,
+    from_source: bool,
 }
 
 impl Compiler {
-    pub fn new(project_root: &Path, target: CompileTarget) -> Self {
+    pub fn new(project_root: &Path, target: CompileTarget, from_source: bool) -> Self {
         let manifest = match target {
             CompileTarget::Scripts => project_root.join(".perro/scripts/Cargo.toml"),
             CompileTarget::Project => project_root.join(".perro/project/Cargo.toml"),
@@ -34,97 +75,161 @@ impl Compiler {
 
         let manifest = dunce::canonicalize(&manifest).unwrap_or(manifest);
 
-        Self {
+        let mut compiler = Self {
             crate_manifest_path: manifest,
             target,
-        }
+            toolchain_root: None,
+            platform: Platform::current(),
+            toolchain_version: None,
+            project_root: project_root.to_path_buf(),
+            from_source
+        };
+
+        compiler.load_toolchain_config();
+        compiler
     }
 
-    fn best_linker() -> &'static str {
-        if cfg!(target_os = "linux") {
-            "rust-lld"
-        } else if cfg!(target_os = "windows") {
-            match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
-                Ok("gnu") => "gcc",
-                Ok("msvc") => "lld-link",
-                _ => "cc",
+    pub fn with_toolchain_root<P: AsRef<Path>>(mut self, toolchain_root: P) -> Self {
+        self.toolchain_root = Some(toolchain_root.as_ref().to_path_buf());
+        self
+    }
+
+    fn load_toolchain_config(&mut self) {
+        if let Ok(project) = crate::manifest::Project::load(Some(&self.project_root)) {
+            if let Some(toolchain_version) = project.get_meta("toolchain") {
+                eprintln!("📋 Found toolchain version in project metadata: {}", toolchain_version);
+                self.toolchain_version = Some(toolchain_version.to_string());
+                
+                if self.toolchain_root.is_none() {
+                    match resolve_path("user://toolchains") {
+                        ResolvedPath::Disk(path_buf) => {
+                            self.toolchain_root = Some(path_buf);
+                        }
+                        ResolvedPath::Brk(_) => {
+                            eprintln!("⚠️  user://toolchains resolved to BRK path, falling back to project-relative");
+                            let toolchain_root = self.project_root.join(".perro").join("toolchains");
+                            self.toolchain_root = Some(toolchain_root);
+                        }
+                    }
+                }
             }
-        } else if cfg!(target_os = "macos") {
-            "clang"
+        }
+    }
+
+    fn get_toolchain_dir(&self) -> Option<PathBuf> {
+        let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
+        let toolchain_name = self.platform.toolchain_name(version);
+        let toolchain_path_str = format!("user://toolchains/{}", toolchain_name);
+        
+        match resolve_path(&toolchain_path_str) {
+            ResolvedPath::Disk(path_buf) => Some(path_buf),
+            ResolvedPath::Brk(_) => None,
+        }
+    }
+
+    fn get_cargo_path(&self) -> Option<PathBuf> {
+        self.get_toolchain_dir().map(|toolchain_dir| {
+            toolchain_dir
+                .join("cargo")
+                .join("bin")
+                .join(self.platform.cargo_exe())
+        })
+    }
+
+    fn build_command(&self, profile: BuildProfile) -> Result<Command, String> {
+        let mut cmd = if self.from_source {
+            eprintln!("🔧 Using system cargo (debug mode)");
+            Command::new("cargo")
         } else {
-            "cc"
+            // Try to use toolchain cargo, fallback to system
+            if let Some(cargo_path) = self.get_cargo_path() {
+                if cargo_path.exists() {
+                    eprintln!("✅ Using toolchain cargo: {}", cargo_path.display());
+                    Command::new(cargo_path)
+                } else {
+                    eprintln!("⚠️  Toolchain cargo not found, using system cargo");
+                    Command::new("cargo")
+                }
+            } else {
+                eprintln!("🔧 Using system cargo (no custom toolchain)");
+                Command::new("cargo")
+            }
+        };
+
+        match profile {
+            BuildProfile::Check => cmd.arg("check"),
+            _ => cmd.arg("build"),
+        };
+
+        let num_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+
+        cmd.arg("--manifest-path")
+            .arg(&self.crate_manifest_path)
+            .arg("-j")
+            .arg(num_cpus.to_string())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        match self.target {
+            CompileTarget::Scripts => {
+                cmd.arg("--profile").arg("hotreload");
+            }
+            CompileTarget::Project => {
+                match profile {
+                    BuildProfile::Dev => cmd.arg("--profile").arg("dev"),
+                    BuildProfile::Release => cmd.arg("--release"),
+                    BuildProfile::Check => &mut cmd,
+                };
+                
+                cmd.env("PERRO_BUILD_TIMESTAMP", std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .to_string());
+            }
         }
+
+        Ok(cmd)
     }
-
-   fn build_command(&self, profile: BuildProfile) -> Command {
-    let mut cmd = Command::new("cargo");
-
-    match profile {
-        BuildProfile::Check => cmd.arg("check"),
-        _ => cmd.arg("build"),
-    };
-
-    let num_cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
-
-    cmd.arg("--manifest-path")
-        .arg(&self.crate_manifest_path)
-        .arg("-j")
-        .arg(num_cpus.to_string())
-        .env("RUSTFLAGS", format!("-C linker={}", Self::best_linker()))
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-
-    match self.target {
-        CompileTarget::Scripts => {
-            cmd.arg("--profile").arg("hotreload");
-        }
-        CompileTarget::Project => {
-            cmd.arg("--release");
-            // Force build script to always run by setting env var that changes each time
-            cmd.env("PERRO_BUILD_TIMESTAMP", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .to_string());
-        }
-    }
-
-    cmd
-}
 
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
         if matches!(self.target, CompileTarget::Project) {
-            // 🔑 Generate AES key
             let mut key = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
 
             println!("🔑 Compile-time AES key: {:02X?}", key);
 
-            // Write obfuscated key.rs
             self.write_key_file(&key).map_err(|e| e.to_string())?;
 
-            // Run packer with the real key
-            let project_root = self.crate_manifest_path
-                .parent()  // .perro/project
-                .unwrap()
-                .parent()  // .perro
-                .unwrap()
-                .parent()  // actual project root
-                .unwrap();
+            let res_dir = self.project_root.join("res");
+            let output = self.project_root.join("assets.brk");
 
-            let res_dir = project_root.join("res");
-            let output = project_root.join("assets.brk");
-
-            build_brk(&output, &res_dir, project_root, &key)
+            build_brk(&output, &res_dir, &self.project_root, &key)
                 .map_err(|e| e.to_string())?;
         }
 
-        println!("🚀 Compiling {:?}", self.target_name());
+        let toolchain_info = if self.from_source {
+            "system (local development)".to_string()
+        } else {
+            let version = self.toolchain_version.as_deref().unwrap_or("1.83.0");
+            let toolchain_name = self.platform.toolchain_name(version);
+            
+            self.get_toolchain_dir()
+                .map(|p| format!("{} ({})", toolchain_name, p.display()))
+                .unwrap_or_else(|| "system (fallback)".to_string())
+        };
+
+        println!("🚀 Compiling {:?} [{:?}] with toolchain: {}", 
+            self.target_name(), 
+            profile,
+            toolchain_info
+        );
+        
         let start = Instant::now();
-        let status = self
-            .build_command(profile)
+        let mut cmd = self.build_command(profile)?;
+        let status = cmd
             .status()
             .map_err(|e| format!("Failed to run cargo: {e}"))?;
         let elapsed = start.elapsed();
@@ -230,7 +335,7 @@ impl Compiler {
             writeln!(f, "const CONST{}: u32 = 0x{:08X};", i + 1, c)?;
         }
 
-        // Write get_aes_key with inlined mask reconstruction
+        // Write get_aes key with inlined mask reconstruction
         writeln!(f, "pub fn get_aes_key() -> [u8; 32] {{")?;
         writeln!(f, "    let mut key = [0u8; 32];")?;
         writeln!(f, "    for i in 0..8 {{")?;
