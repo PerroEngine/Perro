@@ -12,157 +12,20 @@ use perro_core::{
     nodes::*,
 };
 use std::path::{Path, PathBuf};
-use std::time::Duration;
-use std::process::Command;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn root_rs_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(BRootScript {
+    Box::into_raw(Box::new(RootScript {
         node_id: Uuid::nil(),
-        toolchain_ver: "".into(),
     })) as *mut dyn Script
 }
 
-pub struct BRootScript {
+pub struct RootScript {
     node_id: Uuid,
-    toolchain_ver: String,
 }
 
-const MANIFEST_CACHE_HOURS: u64 = 6;
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-struct Manifest {
-    latest: String,
-    versions: Vec<String>,
-}
-
-
-impl BRootScript {
-    // ------------------- Toolchain management -------------------
-
-    fn toolchain_exists(&self, api: &ScriptApi, toolchain: &str) -> bool {
-        let toolchain_path_str = format!("user://toolchains/{}", toolchain);
-        if let Some(toolchain_path) = api.resolve_path(&toolchain_path_str) {
-            let base = Path::new(&toolchain_path);
-            let cargo = base.join("cargo").join("bin").join("cargo.exe");
-            let rustc = base.join("rustc").join("bin").join("rustc.exe");
-            cargo.exists() && rustc.exists()
-        } else {
-            false
-        }
-    }
-
-    fn get_rust_url(&self, toolchain: &str) -> String {
-        format!("https://static.rust-lang.org/dist/{}.tar.gz", toolchain)
-    }
-
-    fn download_file_real(&self, url: &str, dest_path: &Path) -> Result<(), String> {
-        eprintln!("📥 Downloading: {}", url);
-        if let Some(parent) = dest_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir: {}", e))?;
-        }
-
-        let curl_result = Command::new("curl")
-            .args(&[
-                "-L",
-                "-f",
-                "--retry",
-                "3",
-                "--connect-timeout",
-                "30",
-                "-o",
-                dest_path.to_str().unwrap(),
-                url,
-            ])
-            .output();
-
-        match curl_result {
-            Ok(output) if output.status.success() => {
-                eprintln!("✅ Downloaded with curl to {}", dest_path.display());
-                return Ok(());
-            }
-            Ok(output) => {
-                eprintln!("⚠️ curl failed: {}", String::from_utf8_lossy(&output.stderr));
-            }
-            Err(_) => eprintln!("⚠️ curl not available, trying wget..."),
-        }
-
-        let wget_result = Command::new("wget")
-            .args(&[
-                "--tries=3",
-                "--timeout=30",
-                "-O",
-                dest_path.to_str().unwrap(),
-                url,
-            ])
-            .output();
-
-        match wget_result {
-            Ok(output) if output.status.success() => {
-                eprintln!("✅ Downloaded with wget to {}", dest_path.display());
-                Ok(())
-            }
-            Ok(output) => Err(format!(
-                "wget failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            )),
-            Err(_) => Err("Neither curl nor wget available".to_string()),
-        }
-    }
-
-    fn install_rust_toolchain(&self, api: &ScriptApi, toolchain: &str) -> Result<(), String> {
-        let toolchain_path_str = format!("user://toolchains/{}", toolchain);
-        let toolchain_path = api
-            .resolve_path(&toolchain_path_str)
-            .ok_or("Failed to resolve toolchain dir")?;
-        let toolchain_dir = Path::new(&toolchain_path);
-
-        if self.toolchain_exists(api, toolchain) {
-            eprintln!("✅ Toolchain already installed: {}", toolchain);
-            return Ok(());
-        }
-
-        eprintln!("📦 Installing Rust toolchain: {}", toolchain);
-        std::fs::create_dir_all(toolchain_dir)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
-
-        let url = self.get_rust_url(toolchain);
-        let tar_path = toolchain_dir.join("rust.tar.gz");
-
-        self.download_file_real(&url, &tar_path)?;
-
-        eprintln!("📦 Extracting toolchain...");
-        let output = Command::new("tar")
-            .args(&[
-                "-xzf",
-                tar_path.to_str().unwrap(),
-                "-C",
-                toolchain_dir.to_str().unwrap(),
-                "--strip-components=1",
-            ])
-            .output()
-            .map_err(|e| format!("Failed to run tar: {}", e))?;
-
-        if !output.status.success() {
-            return Err(format!(
-                "tar extraction failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        std::fs::remove_file(&tar_path).ok();
-
-        if !self.toolchain_exists(api, toolchain) {
-            return Err("Toolchain install verification failed".into());
-        }
-
-        eprintln!("✅ Rust toolchain installed successfully");
-        Ok(())
-    }
-
-    // ------------------- Version management -------------------
-
+impl RootScript {
+    /// Find executable in directory
     fn find_exe_in_dir(&self, dir: &Path) -> Option<PathBuf> {
         std::fs::read_dir(dir)
             .ok()?
@@ -171,114 +34,60 @@ impl BRootScript {
             .find(|p| p.extension().map_or(false, |e| e == "exe"))
     }
 
-    fn component_exists(&self, api: &ScriptApi, version: &str, component: &str) -> bool {
-        let comp_path = format!("user://versions/{}/{}/", version, component);
-        if let Some(abs) = api.resolve_path(&comp_path) {
-            self.find_exe_in_dir(Path::new(&abs)).is_some()
+    /// Check if an editor exists for a version
+    fn version_exists(&self, api: &ScriptApi, version: &str) -> bool {
+        let path_str = format!("user://versions/{}/editor/", version);
+        if let Some(resolved) = api.resolve_path(&path_str) {
+            self.find_exe_in_dir(Path::new(&resolved)).is_some()
         } else {
             false
         }
     }
 
-    fn is_manifest_cache_valid(&self, api: &ScriptApi) -> bool {
-        if let Some(path) = api.resolve_path("user://manifest.json") {
-            if let Ok(md) = std::fs::metadata(&path) {
-                if let Ok(modified) = md.modified() {
-                    if let Ok(elapsed) = modified.elapsed() {
-                        return elapsed < Duration::from_secs(MANIFEST_CACHE_HOURS * 3600);
+    /// Find the highest available local version
+    fn find_highest_local_version(&self, api: &ScriptApi, current: &str) -> Option<String> {
+        let versions_path_str = "user://versions/";
+        let versions_dir = api.resolve_path(versions_path_str)?;
+        let versions_path = Path::new(&versions_dir);
+        
+        let entries = std::fs::read_dir(versions_path).ok()?;
+        
+        let mut available_versions: Vec<String> = entries
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                if entry.file_type().ok()?.is_dir() {
+                    let version = entry.file_name().to_string_lossy().to_string();
+                    if self.version_exists(api, &version) {
+                        Some(version)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-            }
-        }
-        false
-    }
+            })
+            .collect();
 
-    fn save_manifest_cache(&self, api: &ScriptApi, manifest: &Manifest) {
-        if let Some(path) = api.resolve_path("user://manifest.json") {
-            if let Ok(json) = serde_json::to_string_pretty(manifest) {
-                std::fs::write(path, json).ok();
-            }
-        }
-    }
-
-    fn load_cached_manifest(&self, api: &ScriptApi) -> Option<Manifest> {
-        api.resolve_path("user://manifest.json")
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|text| serde_json::from_str(&text).ok())
-    }
-
-    fn fetch_manifest(&self, api: &ScriptApi) -> Result<Manifest, String> {
-        if self.is_manifest_cache_valid(api) {
-            if let Some(m) = self.load_cached_manifest(api) {
-                eprintln!("📋 Cached manifest used");
-                return Ok(m);
-            }
+        if available_versions.is_empty() {
+            return None;
         }
 
-        eprintln!("📡 Fetching latest version manifest from CDN");
-
-        let url = "https://cdn.perroengine.com/manifest.json";
-        let tmp_path = std::env::temp_dir().join("perro_manifest.json");
-
-        if let Err(e) = self.download_file_real(url, &tmp_path) {
-            eprintln!("⚠️ Failed to download manifest via network: {}", e);
-            if let Some(m) = self.load_cached_manifest(api) {
-                eprintln!("📋 Using fallback cached manifest");
-                return Ok(m);
-            }
-            return Err("Failed to fetch manifest and no cache exists".into());
+        // Sort descending (highest first)
+        available_versions.sort_by(|a, b| natord::compare(b, a));
+        
+        let highest = &available_versions[0];
+        
+        // Only return if higher than current
+        if natord::compare(highest, current).is_gt() {
+            Some(highest.clone())
+        } else {
+            None
         }
-
-        let manifest_text =
-            std::fs::read_to_string(&tmp_path).map_err(|e| format!("Read manifest: {}", e))?;
-
-        let m: Manifest =
-            serde_json::from_str(&manifest_text).map_err(|e| format!("Parse manifest: {}", e))?;
-
-        self.save_manifest_cache(api, &m);
-        eprintln!("✅ Manifest fetched: latest = {}", m.latest);
-        Ok(m)
     }
 
-   fn download_and_install_engine_version(
-    &self,
-    api: &ScriptApi,
-    version: &str,
-) -> Result<(), String> {
-    eprintln!("🚀 Installing engine version {} (editor only)...", version);
-
-    let editor_dir_str = format!("user://versions/{}/editor/", version);
-    let editor_dir_resolved = api
-        .resolve_path(&editor_dir_str)
-        .ok_or("Failed to resolve editor dir")?;
-
-    let editor_path = Path::new(&editor_dir_resolved);
-    std::fs::create_dir_all(editor_path)
-        .map_err(|e| format!("Failed to create editor dir: {}", e))?;
-
-    // 🔹 Updated file name and CDN URL
-    let editor_exe = editor_path.join("Perro_Engine.exe");
-
-    if !editor_exe.exists() {
-        let url = format!(
-            "https://cdn.perroengine.com/versions/{}/Perro_Engine.exe",
-            version
-        );
-
-        eprintln!("📥 Downloading new engine: {}", url);
-        eprintln!("📦 Destination: {}", editor_exe.display());
-
-        self.download_file_real(&url, &editor_exe)?;
-    }
-
-    eprintln!("✅ Engine version {} installed successfully", version);
-    Ok(())
-}
-
-    // ------------------- Launch management -------------------
-
+    /// Launch a version and exit current process
     fn launch_version(&self, version_path: &Path) -> Result<(), String> {
-        eprintln!("🚀 Launching {} and exiting current process", version_path.display());
+        eprintln!("🚀 Launching {} and exiting", version_path.display());
 
         let parent_dir = version_path
             .parent()
@@ -295,43 +104,7 @@ impl BRootScript {
         std::process::exit(0);
     }
 
-    fn launch_best_version(&self, api: &ScriptApi) -> Result<(), String> {
-        let versions_path_str = "user://versions/";
-        if let Some(versions_dir) = api.resolve_path(versions_path_str) {
-            let versions_path = Path::new(&versions_dir);
-            if let Ok(entries) = std::fs::read_dir(versions_path) {
-                let mut available_versions: Vec<String> = entries
-                    .filter_map(|entry| {
-                        let entry = entry.ok()?;
-                        if entry.file_type().ok()?.is_dir() {
-                            let version = entry.file_name().to_string_lossy().to_string();
-                            if self.component_exists(api, &version, "editor") {
-                                Some(version)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                if !available_versions.is_empty() {
-                    available_versions.sort_by(|a, b| natord::compare(b, a));
-                    let best_version = &available_versions[0];
-                    eprintln!("🎯 Launching best available version: {}", best_version);
-                    let path_str = format!("user://versions/{}/editor/", best_version);
-                    if let Some(resolved) = api.resolve_path(&path_str) {
-                        if let Some(exe) = self.find_exe_in_dir(Path::new(&resolved)) {
-                            return self.launch_version(&exe);
-                        }
-                    }
-                }
-            }
-        }
-        Err("No valid versions found".to_string())
-    }
-
+    /// Launch version from proper location
     fn launch_version_from_proper_location(
         &self,
         api: &ScriptApi,
@@ -346,127 +119,92 @@ impl BRootScript {
         Err(format!("No exe found for version {}", version))
     }
 
+    /// Ensure running from correct location, relocate if needed
     fn ensure_correct_location(&self, api: &ScriptApi, my_version: &str, exe_path: &Path) {
         let exe_name = exe_path.file_name().unwrap();
         let expected_str = format!("user://versions/{}/editor/", my_version);
+        
         if let Some(expected_dir) = api.resolve_path(&expected_str) {
             let expected = PathBuf::from(&expected_dir);
             let expected_exe = expected.join(&exe_name);
+            
             if exe_path != expected_exe {
-                eprintln!("⚠️  Not running from {}!", expected.display());
+                eprintln!("⚠️  Not running from correct location!");
+                eprintln!("   Current: {}", exe_path.display());
+                eprintln!("   Expected: {}", expected_exe.display());
+                
                 std::fs::create_dir_all(&expected).ok();
+                
                 if std::fs::copy(exe_path, &expected_exe).is_ok() {
+                    eprintln!("✅ Copied to correct location, relaunching...");
                     if self.launch_version(&expected_exe).is_err() {
                         eprintln!("❌ Failed to launch from correct location");
                     }
+                } else {
+                    eprintln!("❌ Failed to copy to correct location");
                 }
-            }
-        }
-    }
-
-    // ------------------- Toolchain assurance -------------------
-
-    fn ensure_project_toolchain(&self, api: &ScriptApi) {
-        if !self.toolchain_ver.is_empty() && !self.toolchain_exists(api, &self.toolchain_ver) {
-            eprintln!("📦 Project requires toolchain: {}", self.toolchain_ver);
-            eprintln!("🔄 This may take a moment for first-time setup...");
-            if let Err(e) = self.install_rust_toolchain(api, &self.toolchain_ver) {
-                eprintln!("❌ Failed to install toolchain: {}", e);
             }
         }
     }
 }
 
-impl Script for BRootScript {
+impl Script for RootScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         let my_version = api.project().version().to_string();
-        api.project()
-            .set_runtime_param("project_path", r"D:\Rust\perro\perro_editor");
+        let exe_path = std::env::current_exe().expect("Could not get exe path");
 
-        self.toolchain_ver = api
-            .project()
-            .get_meta("toolchain")
-            .unwrap_or("")
-            .to_string();
+        eprintln!("🎮 Perro Engine v{}", my_version);
 
-        let exe_path = std::env::current_exe().expect("exe path");
-
+        // Skip version management in debug builds
         if cfg!(debug_assertions) {
-            eprintln!("🐛 Debug build: skipping version mgmt");
+            eprintln!("🐛 Debug build: skipping version management");
             return;
         }
 
-        let has_args = std::env::args().nth(1).is_some();
-        let mode = if has_args { "editor" } else { "manager" };
-
-        eprintln!("🎮 Mode: {} ({})", mode, my_version);
+        // Step 1: Ensure we're in the correct location (fast filesystem check)
         self.ensure_correct_location(api, &my_version, &exe_path);
         eprintln!("✅ Running from correct location");
 
-        if mode == "editor" {
-            self.ensure_project_toolchain(api);
-            eprintln!("🎮 Editor mode ready");
-            api.compile_project();
-        } else {
-            if let Ok(manifest) = self.fetch_manifest(api) {
-                if natord::compare(&manifest.latest, &my_version).is_gt() {
-                    eprintln!("🎉 Update available: {} -> {}", my_version, manifest.latest);
-                    if !self.component_exists(api, &manifest.latest, "editor") {
-                        eprintln!("📦 Downloading engine version {}...", manifest.latest);
-                        if self
-                            .download_and_install_engine_version(api, &manifest.latest)
-                            .is_ok()
-                        {
-                            eprintln!("✅ Download complete, launching {}...", manifest.latest);
-                            if self
-                                .launch_version_from_proper_location(api, &manifest.latest)
-                                .is_err()
-                            {
-                                eprintln!(
-                                    "❌ Failed to launch new version, trying best available..."
-                                );
-                                self.launch_best_version(api).ok();
-                            }
-                        } else {
-                            eprintln!("❌ Download failed, continuing with current version");
-                        }
-                    } else {
-                        eprintln!("🚀 Version {} already installed, launching...", manifest.latest);
-                        if self
-                            .launch_version_from_proper_location(api, &manifest.latest)
-                            .is_err()
-                        {
-                            eprintln!("❌ Failed to launch latest version, trying best available...");
-                            self.launch_best_version(api).ok();
-                        }
-                    }
-                } else {
-                    eprintln!("✅ Running latest version: {}", my_version);
-                }
-            } else {
-                eprintln!("⚠️ Failed to fetch manifest, continuing with current version");
+        // Step 2: Check if higher local version exists (fast filesystem check)
+        if let Some(higher_version) = self.find_highest_local_version(api, &my_version) {
+            eprintln!("🚀 Found higher local version: {} -> {}", my_version, higher_version);
+            eprintln!("   Relaunching with newer version...");
+            
+            if let Err(e) = self.launch_version_from_proper_location(api, &higher_version) {
+                eprintln!("❌ Failed to launch higher version: {}", e);
+                eprintln!("   Continuing with current version");
             }
-            eprintln!("🎮 Manager mode ready");
+        } else {
+            eprintln!("✅ Running highest local version: {}", my_version);
         }
+
+        // Window will open immediately - updater script handles network checks
     }
 
     fn update(&mut self, _api: &mut ScriptApi<'_>) {}
+
     fn set_node_id(&mut self, id: Uuid) {
         self.node_id = id;
     }
+
     fn get_node_id(&self) -> Uuid {
         self.node_id
     }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+
     fn apply_exports(&mut self, _: &HashMap<String, Value>) {}
+
     fn get_var(&self, _: &str) -> Option<Var> {
         None
     }
+
     fn set_var(&mut self, _: &str, _: Var) -> Option<()> {
         None
     }
@@ -478,9 +216,11 @@ mod natord {
         let a: Vec<&str> = a.split('.').collect();
         let b: Vec<&str> = b.split('.').collect();
         let len = a.len().max(b.len());
+        
         for i in 0..len {
             let ai = a.get(i).unwrap_or(&"0");
             let bi = b.get(i).unwrap_or(&"0");
+            
             if let (Ok(na), Ok(nb)) = (ai.parse::<u32>(), bi.parse::<u32>()) {
                 match na.cmp(&nb) {
                     std::cmp::Ordering::Equal => continue,
@@ -493,6 +233,7 @@ mod natord {
                 }
             }
         }
+        
         std::cmp::Ordering::Equal
     }
 }

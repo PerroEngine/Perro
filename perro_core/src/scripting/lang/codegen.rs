@@ -327,7 +327,7 @@ impl Function {
         let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
 
         if needs_delta {
-            out.push_str("        let delta = api.get_delta();\n");
+            out.push_str("        let delta = api.delta();\n");
         }
 
         let mut cloned_nodes = Vec::new();
@@ -376,7 +376,7 @@ impl Function {
         let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
 
         if needs_delta {
-            out.push_str("        let delta = api.get_delta();\n");
+            out.push_str("        let delta = api.delta();\n");
         }
 
         let mut cloned_nodes = Vec::new();

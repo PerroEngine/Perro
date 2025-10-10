@@ -27,7 +27,7 @@ impl Script for EditorPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        let delta = api.get_delta();
+        let delta = api.delta();
         self.b = self.b + delta;
     }
 

@@ -93,7 +93,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn get_delta(&self) -> f32 {
+    pub fn delta(&self) -> f32 {
         self.delta.clone()
     }
 

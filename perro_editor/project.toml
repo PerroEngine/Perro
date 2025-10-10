@@ -1,11 +1,8 @@
 [project]
 name = "Perro Engine"
-main_scene = "res://editor.scn"
+main_scene = "res://manager.scn"
 icon = "res://perro-logo.png"
-version="0.1.0"
-
-[meta]
-toolchain = "1.90.0"
+version="1.0.0"
 
 [performance]
 target_fps = 120
@@ -14,3 +11,5 @@ xps = 60
 [root]
 script = "res://scripts/root.rs"
 
+[meta]
+toolchain = "1.90.0"

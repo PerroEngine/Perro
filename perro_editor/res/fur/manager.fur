@@ -1,0 +1,13 @@
+[UI]
+      [Text fsz=150 anchor=c tx=-550 ty=250]
+     Perro Manager
+      [/Text]
+
+      [Panel w=100% h=5% anchor=t bg=cinder-3/]
+
+
+      [VLayout anchor=t gap=20]
+
+      [/VLayout]
+
+[/UI]
