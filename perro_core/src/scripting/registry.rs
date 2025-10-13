@@ -1,11 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ffi::CString, os::raw::c_char};
 use libloading::Library;
-use crate::script::CreateFn;
+use crate::{asset_io::ProjectRoot, script::{CreateFn, ScriptProvider}};
 
-/// Trait for anything that can provide script constructors
-pub trait ScriptProvider {
-    fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
-}
 
 /// Dynamic DLL-based provider (default for game projects)
 pub struct DllScriptProvider {
@@ -20,6 +16,29 @@ impl DllScriptProvider {
             ctors: HashMap::new(),
         }
     }
+
+pub fn inject_project_root(&self, root: &ProjectRoot) -> anyhow::Result<()> {
+    let lib = self.lib.as_ref().ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
+
+    unsafe {
+        let set_root_fn: libloading::Symbol<unsafe extern "C" fn(*const c_char, *const c_char)> =
+            lib.get(b"perro_set_project_root\0")?;
+
+        // Match to extract disk path and name
+        if let ProjectRoot::Disk { root: path_buf, name } = root {
+            let path_c = CString::new(path_buf.to_string_lossy().as_ref())?;
+            let name_c = CString::new(name.as_str())?;
+
+            set_root_fn(path_c.as_ptr(), name_c.as_ptr());
+        } else {
+            anyhow::bail!("inject_project_root only supports ProjectRoot::Disk for now");
+        }
+    }
+
+    Ok(())
+}
+
+    
 }
 
 impl ScriptProvider for DllScriptProvider {

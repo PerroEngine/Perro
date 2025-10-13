@@ -8,4 +8,4 @@ pub mod script;
 
 pub mod app_command;
 
-pub use registry::{ScriptProvider, DllScriptProvider};
+pub use registry::DllScriptProvider;

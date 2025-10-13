@@ -1,5 +1,5 @@
 use crate::{
-    api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, ScriptProvider, Sprite2D, Vector2 // NEW import
+    api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, Sprite2D, Vector2 // NEW import
 };
 
 use indexmap::IndexMap;
@@ -467,28 +467,55 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
     }
 }
 
+
 impl Scene<DllScriptProvider> {
     pub fn from_project(project: Rc<RefCell<Project>>) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
-        
+
         // Load DLL
         let lib_path = default_perro_rust_path()?;
         println!("Loading script library from {:?}", lib_path);
         let lib = unsafe { Library::new(&lib_path)? };
         let provider = DllScriptProvider::new(Some(lib));
+
+        // Borrow project briefly to clone root_path & name
+        let root = {
+            let project_ref = project.borrow();
+
+            let root_path = project_ref
+                .root()
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Project root path not set"))?
+                .to_path_buf();
+
+            let project_name = project_ref.name().to_owned();
+
+            ProjectRoot::Disk {
+                root: root_path,
+                name: project_name,
+            }
+        };
+
+        // Inject project root into DLL
+        provider.inject_project_root(&root)?;
+
+        // Now move `project` into Scene
         let mut game_scene = Scene::new(root_node, provider, project);
-        
+
         println!("About to graft main scene...");
-        // Graft in normal main scene FIRST
         let main_scene_path = game_scene.project.borrow().main_scene().to_string();
         let loaded_data = SceneData::load(&main_scene_path)?;
         let game_root = *game_scene.get_root().get_id();
         game_scene.graft_data(loaded_data, game_root)?;
-        
+
         println!("Building scene from project manifest...");
-        // NOW instantiate root script after scene exists
-        let root_script_opt = game_scene.project.borrow().root_script().map(|s| s.to_string());
-        if let Some(root_script_path) = root_script_opt {
+        // Borrow separately to avoid conflicts with mutable game_scene borrow
+        let root_script_path_opt = {
+            let project_ref = game_scene.project.borrow();
+            project_ref.root_script().map(|s| s.to_string())
+        };
+
+        if let Some(root_script_path) = root_script_path_opt {
             if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
                 if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
                     let root_id = *game_scene.get_root().get_id();
@@ -497,7 +524,7 @@ impl Scene<DllScriptProvider> {
                 }
             }
         }
-        
+
         Ok(game_scene)
     }
 }

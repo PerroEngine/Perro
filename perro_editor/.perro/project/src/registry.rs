@@ -1,4 +1,4 @@
-use perro_core::{ScriptProvider};
+use perro_core::script::ScriptProvider;
 use perro_core::script::CreateFn;
 use std::collections::HashMap;
 use scripts::get_script_registry;

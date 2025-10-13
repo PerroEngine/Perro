@@ -9,6 +9,10 @@ use uuid::Uuid;
 use crate::app_command::AppCommand;
 use crate::scene_node::SceneNode;
 
+pub trait ScriptProvider {
+    fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
+}
+
 /// A dynamic variable type for script fields/exports
 #[derive(Clone, Debug)]
 pub enum Var {

@@ -5,7 +5,7 @@
 use std::any::Any;
 
 use std::collections::HashMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 use uuid::Uuid;
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
 

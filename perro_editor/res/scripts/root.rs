@@ -3,7 +3,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 use uuid::Uuid;
 use perro_core::{
     script::{UpdateOp, Var},
@@ -154,6 +154,17 @@ impl Script for RootScript {
         let exe_path = std::env::current_exe().expect("Could not get exe path");
 
         eprintln!("🎮 Perro Engine v{}", my_version);
+
+          let file = api.JSON.stringify(&json!({
+            "name": "EXPORT MODE BITCH",
+            "age": 20,
+            "inventory": ["sword", "shield"]
+        })).unwrap();
+
+
+
+        // Save the stringified JSON
+        api.save_asset("user://b.json", file).unwrap();
 
         // Skip version management in debug builds
         if cfg!(debug_assertions) {

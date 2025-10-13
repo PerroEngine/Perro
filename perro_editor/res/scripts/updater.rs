@@ -3,7 +3,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use serde_json::Value;
+use serde_json::{Value, json};
 use uuid::Uuid;
 use perro_core::{
     script::{UpdateOp, Var},
@@ -348,6 +348,9 @@ impl UpdaterScript {
 
 impl Script for UpdaterScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+
+      
+
         self.my_version = api.project().version().to_string();
         
         eprintln!("🔄 Updater initialized for version {}", self.my_version);

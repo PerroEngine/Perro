@@ -103,7 +103,7 @@ impl Script {
     out.push_str("#![allow(unused)]\n\n");
     out.push_str("use std::any::Any;\n\n");
     out.push_str("use std::collections::HashMap;\n");
-    out.push_str("use serde_json::Value;\n");
+    out.push_str("use serde_json::{Value, json};\n");
     out.push_str("use uuid::Uuid;\n");
     out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };\n\n");
 
@@ -748,16 +748,14 @@ impl Op {
 }
 
 pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) -> Result<(), String> {
-
     let base_path = project_path.join(".perro/scripts/src");
-    let lower_name = struct_name.to_lowercase(); // Create binding once
+    let lower_name = struct_name.to_lowercase();
     let file_path = base_path.join(format!("{}.rs", lower_name));
 
     fs::create_dir_all(&base_path).map_err(|e| format!("Failed to create dir: {}", e))?;
-    
-    // ✅ If this is a raw Rust file (ends with _rs), rewrite the create_script function name
+
+    // Rewrite create_script function name for raw Rust files (_rs)
     let final_contents = if lower_name.ends_with("_rs") {
-        // Use regex or string matching to find the actual function name
         if let Some(actual_fn_name) = extract_create_script_fn_name(contents) {
             let expected_fn_name = format!("{}_create_script", lower_name);
             contents.replace(&actual_fn_name, &expected_fn_name)
@@ -767,24 +765,37 @@ pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) ->
     } else {
         contents.to_string()
     };
-    
+
     fs::write(&file_path, final_contents).map_err(|e| format!("Failed to write file: {}", e))?;
 
+    // --- lib.rs handling ---
     let lib_rs_path = base_path.join("lib.rs");
     let mut current_content = fs::read_to_string(&lib_rs_path).unwrap_or_default();
 
+    // Ensure FFI imports exist only in debug
+    if !current_content.contains("use std::ffi::CStr;") {
+        current_content = format!(
+            "#[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n{}",
+            current_content
+        );
+    }
+
+
     // Ensure header exists
     if !current_content.contains("get_script_registry") {
-        current_content = String::from(
-            "use perro_core::script::{CreateFn, Script};\n\
-             use std::collections::HashMap;\n\n\
-             // __PERRO_MODULES__\n\
-             // __PERRO_IMPORTS__\n\n\
-             pub fn get_script_registry() -> HashMap<String, CreateFn> {\n\
-                 let mut map: HashMap<String, CreateFn> = HashMap::new();\n\
-                 // __PERRO_REGISTRY__\n\
-                 map\n\
-             }\n",
+        current_content.push_str(
+            "use perro_core::script::{CreateFn, Script};
+use std::collections::HashMap;
+
+// __PERRO_MODULES__
+// __PERRO_IMPORTS__
+
+pub fn get_script_registry() -> HashMap<String, CreateFn> {
+    let mut map: HashMap<String, CreateFn> = HashMap::new();
+    // __PERRO_REGISTRY__
+    map
+}
+",
         );
     }
 
@@ -798,11 +809,7 @@ pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) ->
     }
 
     // Add import
-    let import_line = format!(
-        "use {}::{}_create_script;",
-        lower_name,
-        lower_name
-    );
+    let import_line = format!("use {}::{}_create_script;", lower_name, lower_name);
     if !current_content.contains(&import_line) {
         current_content = current_content.replace(
             "// __PERRO_IMPORTS__",
@@ -813,8 +820,7 @@ pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) ->
     // Add registry entry
     let registry_line = format!(
         "    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n",
-        lower_name,
-        lower_name
+        lower_name, lower_name
     );
     if !current_content.contains(&registry_line) {
         current_content = current_content.replace(
@@ -823,6 +829,30 @@ pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) ->
         );
     }
 
+    // Add debug-only FFI function for project root
+    let ffi_fn_marker = "perro_set_project_root";
+    if !current_content.contains(ffi_fn_marker) {
+        let debug_root_fn = format!(
+            r#"
+#[cfg(debug_assertions)]
+#[unsafe(no_mangle)]
+pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
+    let path_str = unsafe {{ CStr::from_ptr(path).to_str().unwrap() }};
+    let name_str = unsafe {{ CStr::from_ptr(name).to_str().unwrap() }};
+    perro_core::asset_io::set_project_root(
+        perro_core::asset_io::ProjectRoot::Disk {{
+            root: std::path::PathBuf::from(path_str),
+            name: name_str.to_string(),
+        }}
+    );
+}}
+"#,
+            ffi_fn_marker
+        );
+        current_content.push_str(&debug_root_fn);
+    }
+
+    // Write updated lib.rs
     fs::write(&lib_rs_path, current_content)
         .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
 

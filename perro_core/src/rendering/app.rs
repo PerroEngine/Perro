@@ -16,9 +16,7 @@ use winit::{
 };
 
 use crate::{
-    rendering::{create_graphics, Graphics},
-    scene::Scene, ScriptProvider,
-    app_command::AppCommand, // NEW import
+    app_command::AppCommand, rendering::{create_graphics, Graphics}, scene::Scene, script::ScriptProvider // NEW import
 };
 
 enum State {

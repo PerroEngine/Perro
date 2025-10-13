@@ -8,9 +8,10 @@ use perro_core::manifest::Project;
 use perro_core::registry::DllScriptProvider;
 use perro_core::scene::Scene;
 #[cfg(not(target_arch = "wasm32"))]
-use perro_core::ScriptProvider;
 use perro_core::graphics::Graphics;
 use perro_core::rendering::app::App;
+#[cfg(not(target_arch = "wasm32"))]
+use perro_core::script::ScriptProvider;
 use winit::event_loop::EventLoop;
 
 #[cfg(target_arch = "wasm32")]
