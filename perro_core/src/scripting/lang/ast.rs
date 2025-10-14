@@ -90,23 +90,13 @@ pub enum Stmt {
     VariableDecl(Variable),
     Assign(String, Expr),
     AssignOp(String, Op, Expr),
-    MemberAssign(Expr, Expr), // <-- These are crucial!
-    MemberAssignOp(Expr, Op, Expr), // <-- These are crucial!
-    ScriptAssign(String /*var*/, String /*field*/, Expr /*rhs*/),
-    ScriptAssignOp(String /*var*/, String, Op /*+=, etc.*/, Expr /*rhs*/),
-    Call(String, Vec<Expr>),
+    MemberAssign(Expr, Expr),
+    MemberAssignOp(Expr, Op, Expr),
+    ScriptAssign(String, String, Expr),
+    ScriptAssignOp(String, String, Op, Expr),
     Pass,
 }
 
-#[derive(Debug, Clone)]
-pub enum Builtin {
-    GetDelta,
-    GetTime,
-    GetUnixTime,
-    IsEditor,
-    FrameCount,
-    TargetFps,
-}
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -116,7 +106,8 @@ pub enum Expr {
     MemberAccess(Box<Expr>, String),
     ScriptAccess(Box<Expr>, String),
     SelfAccess,
-    Call(String, Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
+    ObjectLiteral(Vec<(String, Expr)>)
 }
 
 #[derive(Debug, Clone)]
@@ -125,7 +116,8 @@ pub enum Literal {
     Float(f32),
     Number(f32),
     String(String),
-    Bool(bool)
+    Bool(bool),
+    Interpolated(String),
 }
 
 #[derive(Debug, Clone)]

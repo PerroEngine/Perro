@@ -287,99 +287,160 @@ impl PupParser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
-        match &self.current_token {
-            Token::Ident(s) if s == "self" => {
+    match &self.current_token {
+        Token::Ident(s) if s == "self" => {
+            self.next_token();
+            Ok(Expr::SelfAccess)
+        }
+        Token::Ident(n) => {
+            let name = n.clone();
+            self.next_token();
+
+            // Handle simple function call: foo(...)
+            if self.current_token == Token::LParen {
                 self.next_token();
-                Ok(Expr::SelfAccess)
-            }
-            Token::Ident(n) => {
-                let name = n.clone();
-                self.next_token();
-                if self.current_token == Token::LParen {
-                    // function call
-                    self.next_token();
-                    let mut args = Vec::new();
-                    if self.current_token != Token::RParen {
+                let mut args = Vec::new();
+                if self.current_token != Token::RParen {
+                    args.push(self.parse_expression(0)?);
+                    while self.current_token == Token::Comma {
+                        self.next_token();
                         args.push(self.parse_expression(0)?);
-                        while self.current_token == Token::Comma {
-                            self.next_token();
-                            args.push(self.parse_expression(0)?);
-                        }
                     }
-                    self.expect(Token::RParen)?;
-                    Ok(Expr::Call(name, args))
+                }
+                self.expect(Token::RParen)?;
+                Ok(Expr::Call(Box::new(Expr::Ident(name)), args))
+            } else {
+                Ok(Expr::Ident(name))
+            }
+        }
+        Token::Number(n) => {
+            let v = *n;
+            self.next_token();
+            Ok(Expr::Literal(Literal::Float(v)))
+        }
+        Token::String(s) => {
+            let v = s.clone();
+            self.next_token();
+            Ok(Expr::Literal(Literal::String(v)))
+        }
+        Token::InterpolatedString(s) => {
+            let v = s.clone();
+            self.next_token();
+            Ok(Expr::Literal(Literal::Interpolated(v)))
+        }
+        Token::LParen => {
+            self.next_token();
+            let e = self.parse_expression(0)?;
+            self.expect(Token::RParen)?;
+            Ok(e)
+        },
+        Token::LBrace => {
+            self.next_token();
+            let mut pairs = Vec::new();
+
+            while self.current_token != Token::RBrace && self.current_token != Token::Eof {
+                // parse key: ident or string literal
+                let key = match &self.current_token {
+                    Token::Ident(k) => k.clone(),
+                    Token::String(k) => k.clone(),
+                    other => return Err(format!("Expected key in object literal, got {:?}", other)),
+                };
+                self.next_token();
+
+                self.expect(Token::Colon)?;
+
+                // parse value
+                let value = self.parse_expression(0)?;
+                pairs.push((key, value));
+
+                // optional comma
+                if self.current_token == Token::Comma {
+                    self.next_token();
                 } else {
-                    Ok(Expr::Ident(name))
+                    break;
                 }
             }
-            Token::Number(n) => {
-                let v = *n;
-                self.next_token();
-                Ok(Expr::Literal(Literal::Float(v)))
-            }
-            Token::String(s) => {
-                let v = s.clone();
-                self.next_token();
-                Ok(Expr::Literal(Literal::String(v)))
-            }
-            Token::LParen => {
-                self.next_token();
-                let e = self.parse_expression(0)?;
-                self.expect(Token::RParen)?;
-                Ok(e)
-            }
-            other => Err(format!("Unexpected primary {:?}", other)),
+
+            self.expect(Token::RBrace)?;
+            Ok(Expr::ObjectLiteral(pairs))
         }
+        other => Err(format!("Unexpected primary {:?}", other)),
     }
+}
 
     fn parse_infix(&mut self, left: Expr) -> Result<Expr, String> {
-        match &self.current_token {
-            Token::Dot => {
-                self.next_token();
-                let f = if let Token::Ident(n) = &self.current_token {
-                    n.clone()
-                } else {
-                    return Err("Expected field after .".into());
-                };
-                self.next_token();
-                Ok(Expr::MemberAccess(Box::new(left), f))
+    match &self.current_token {
+
+        // ✅ NEW: allow calling any expression (e.g. JSON.stringify())
+        Token::LParen => {
+            self.next_token();
+            let mut args = Vec::new();
+
+            if self.current_token != Token::RParen {
+                args.push(self.parse_expression(0)?);
+                while self.current_token == Token::Comma {
+                    self.next_token();
+                    args.push(self.parse_expression(0)?);
+                }
             }
-            Token::DoubleColon => {
-                self.next_token();
-                let f = if let Token::Ident(n) = &self.current_token {
-                    n.clone()
-                } else {
-                    return Err("Expected ident after ::".into());
-                };
-                self.next_token();
-                Ok(Expr::ScriptAccess(Box::new(left), f))
-            }
-            Token::Star => {
-                self.next_token();
-                let r = self.parse_expression(2)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Mul, Box::new(r)))
-            }
-            Token::Slash => {
-                self.next_token();
-                let r = self.parse_expression(2)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Div, Box::new(r)))
-            }
-            Token::Plus => {
-                self.next_token();
-                let r = self.parse_expression(1)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Add, Box::new(r)))
-            }
-            Token::Minus => {
-                self.next_token();
-                let r = self.parse_expression(1)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Sub, Box::new(r)))
-            }
-            _ => Ok(left),
+
+            self.expect(Token::RParen)?;
+            Ok(Expr::Call(Box::new(left), args))
         }
+
+        Token::Dot => {
+            self.next_token();
+            let f = if let Token::Ident(n) = &self.current_token {
+                n.clone()
+            } else {
+                return Err("Expected field after .".into());
+            };
+            self.next_token();
+            Ok(Expr::MemberAccess(Box::new(left), f))
+        }
+
+        Token::DoubleColon => {
+            self.next_token();
+            let f = if let Token::Ident(n) = &self.current_token {
+                n.clone()
+            } else {
+                return Err("Expected ident after ::".into());
+            };
+            self.next_token();
+            Ok(Expr::ScriptAccess(Box::new(left), f))
+        }
+
+        Token::Star => {
+            self.next_token();
+            let r = self.parse_expression(2)?;
+            Ok(Expr::BinaryOp(Box::new(left), Op::Mul, Box::new(r)))
+        }
+
+        Token::Slash => {
+            self.next_token();
+            let r = self.parse_expression(2)?;
+            Ok(Expr::BinaryOp(Box::new(left), Op::Div, Box::new(r)))
+        }
+
+        Token::Plus => {
+            self.next_token();
+            let r = self.parse_expression(1)?;
+            Ok(Expr::BinaryOp(Box::new(left), Op::Add, Box::new(r)))
+        }
+
+        Token::Minus => {
+            self.next_token();
+            let r = self.parse_expression(1)?;
+            Ok(Expr::BinaryOp(Box::new(left), Op::Sub, Box::new(r)))
+        }
+
+        _ => Ok(left),
     }
+}
 
     fn get_precedence(&self) -> u8 {
         match &self.current_token {
+            Token::LParen => 5, 
             Token::Dot | Token::DoubleColon => 4,
             Token::Star | Token::Slash      => 3,
             Token::Plus | Token::Minus      => 2,

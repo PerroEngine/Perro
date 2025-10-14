@@ -3,6 +3,12 @@ extends Node
 let b: float
 
 fn init() {
+    let file = JSON.stringify({foo: 24})
+
+    let s = Time.get_datetime_string()
+
+    print($"bob is {s} and {file}")
+
 }
 
 fn update(delta: float) {

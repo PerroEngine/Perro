@@ -17,6 +17,10 @@ fn to_pascal_case(s: &str) -> String {
         .collect()
 }
 
+fn is_engine_api(name: &str) -> bool {
+    matches!(name, "JSON" | "OS" | "Time")
+}
+
 impl Script {
 
     pub fn is_struct_field(&self, name: &str) -> bool {
@@ -32,38 +36,77 @@ impl Script {
 }
 
 
-    fn infer_expr_type(&self, expr: &Expr) -> Option<Type> {
-        match expr {
-            Expr::Literal(lit) => match lit {
-                Literal::Int(_) => Some(Type::Int),
-                Literal::Float(_) => Some(Type::Float),
-                Literal::Number(_) => Some(Type::Number),
-                Literal::Bool(_) => Some(Type::Bool),
-                Literal::String(_) => Some(Type::String),
-            },
-            Expr::Ident(name) => self.get_variable_type(name).cloned(),
-            Expr::BinaryOp(left, _, right) => {
-                let left_type = self.infer_expr_type(left)?;
-                let right_type = self.infer_expr_type(right)?;
-                if left_type == right_type {
-                    Some(left_type)
-                } else if (left_type == Type::Float && right_type == Type::Int)
-                    || (left_type == Type::Int && right_type == Type::Float)
-                {
-                    Some(Type::Float)
+   fn infer_expr_type(&self, expr: &Expr) -> Option<Type> {
+    match expr {
+        Expr::Literal(lit) => match lit {
+            Literal::Int(_) => Some(Type::Int),
+            Literal::Float(_) => Some(Type::Float),
+            Literal::Number(_) => Some(Type::Number),
+            Literal::Bool(_) => Some(Type::Bool),
+            Literal::String(_) => Some(Type::String),
+            Literal::Interpolated(_) => Some(Type::String),
+        },
+
+        Expr::Ident(name) => self.get_variable_type(name).cloned(),
+
+        Expr::BinaryOp(left, _, right) => {
+            let left_type = self.infer_expr_type(left)?;
+            let right_type = self.infer_expr_type(right)?;
+            if left_type == right_type {
+                Some(left_type)
+            } else if (left_type == Type::Float && right_type == Type::Int)
+                || (left_type == Type::Int && right_type == Type::Float)
+            {
+                Some(Type::Float)
+            } else {
+                None
+            }
+        }
+
+        Expr::MemberAccess(base, member) => {
+            let base_type = self.infer_expr_type(base)?;
+            self.get_member_type(&base_type, member)
+        }
+
+        // ✅ NEW: handle expression-based calls
+        Expr::Call(target, _) => {
+            match &**target {
+                // Plain identifier: check if it's a known function in this script
+                Expr::Ident(func_name) => self.get_function_return_type(func_name),
+
+                // Method on `self`: infer type from method name if it exists
+                Expr::MemberAccess(base, method) => {
+                    let base_type = self.infer_expr_type(base)?;
+                    // If it’s 'self' type, see if that method exists in the same script node
+                    if let Type::Custom(type_name) = base_type {
+                        if type_name == self.node_type {
+                            self.get_function_return_type(method)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+
+                // Calls on custom API objects like JSON / Time / OS
+                Expr::Ident(name) => {
+                if is_engine_api(name) {
+                    Some(Type::Custom(name.clone()))
                 } else {
-                    None
+                    self.get_variable_type(name).cloned()
                 }
             }
-            Expr::MemberAccess(base, member) => {
-                let base_type = self.infer_expr_type(base)?;
-                self.get_member_type(&base_type, member)
+
+                _ => None,
             }
-            Expr::Call(func_name, _) => self.get_function_return_type(func_name),
-            Expr::SelfAccess => Some(Type::Custom(self.node_type.clone())),
-            _ => None,
         }
+
+        Expr::SelfAccess => Some(Type::Custom(self.node_type.clone())),
+
+        _ => None,
     }
+}
 
     
     fn get_member_type(&self, base_type: &Type, member: &str) -> Option<Type> {
@@ -487,10 +530,6 @@ impl Stmt {
                             rhs_expr.to_rust(needs_self, script, expected_type.as_ref())
                         )
                     }
-            Stmt::Call(name, args) => {
-                        let args_str: Vec<String> = args.iter().map(|arg| arg.to_rust(needs_self, script, None)).collect();
-                        format!("        {}({});\n", name, args_str.join(", "))
-                    }
             Stmt::Pass => "".to_string(),
             Stmt::ScriptAssign(var, field, rhs) => {
                 // 1) generate the RHS expression as a Var constructor
@@ -556,7 +595,6 @@ impl Stmt {
             }
 
             Stmt::Assign(_, e) => e.contains_self(),
-            Stmt::Call(_, args) => args.iter().any(|e| e.contains_self()),
             Stmt::Pass => false,
             Stmt::AssignOp(_, _, e) => e.contains_self(),
             Stmt::MemberAssign(lhs_expr, rhs_expr) => {
@@ -584,7 +622,6 @@ Stmt::ScriptAssign(_, _, expr) => todo!(),
             Stmt::AssignOp(_, _, e) => e.contains_delta(),
             Stmt::MemberAssign(lhs, rhs) => lhs.contains_delta() || rhs.contains_delta(),
             Stmt::MemberAssignOp(lhs, _, rhs) => lhs.contains_delta() || rhs.contains_delta(),
-            Stmt::Call(_, args) => args.iter().any(|e| e.contains_delta()),
             Stmt::Pass => false,
             Stmt::ScriptAssign(_, _, expr) => todo!(),
             Stmt::ScriptAssignOp(_, field, op, expr) => todo!(),
@@ -593,73 +630,205 @@ Stmt::ScriptAssign(_, _, expr) => todo!(),
 }
 
 impl Expr {
-    pub fn to_rust(&self, needs_self: bool, script: &Script, expected_type: Option<&Type>) -> String {
-    match self {
-        Expr::Ident(name) => name.clone(),
-        Expr::Literal(lit) => lit.to_rust(expected_type),
-        Expr::BinaryOp(left, op, right) => {
-            let left_type = script.infer_expr_type(left);
-            let right_type = script.infer_expr_type(right);
-
-            // Determine common type (use your existing logic)
-            let common_type = match (left_type.clone(), right_type.clone()) {
-                (Some(l), Some(r)) if l == r => Some(l),
-                (Some(Type::Float), Some(Type::Int)) | (Some(Type::Int), Some(Type::Float)) => Some(Type::Float),
-                (Some(l), _) => Some(l),
-                (_, Some(r)) => Some(r),
-                _ => expected_type.cloned(),
-            };
-
-            // Helper: cast expression string to the target type if needed
-            fn cast_expr(expr_str: String, expr_type: Option<Type>, target_type: Option<&Type>) -> String {
-                match (expr_type, target_type) {
-                    (Some(from), Some(to)) if from != *to => {
-                        // Cast float/double/int as needed
-                        match to {
-                            Type::Float => format!("({} as f32)", expr_str),
-                            Type::Number => format!("({} as f32)", expr_str),
-                            Type::Int => format!("({} as i32)", expr_str),
-                            _ => expr_str,
-                        }
-                    }
-                    _ => expr_str,
+    pub fn to_rust(
+        &self,
+        needs_self: bool,
+        script: &Script,
+        expected_type: Option<&Type>,
+    ) -> String {
+        match self {
+            // ✅ Changed: map top-level API identifiers like JSON/OS/Time
+            Expr::Ident(name) => {
+                match name.as_str() {
+                    "JSON" | "OS" | "Time" => format!("api.{}", name),
+                    _ => name.clone(),
                 }
             }
 
-            // Generate left and right expr strings with casts if needed
-           let left_str = cast_expr(
-                left.to_rust(needs_self, script, common_type.as_ref()),
-                left_type,
-                common_type.as_ref(),
-            );
+            Expr::Literal(lit) => lit.to_rust(expected_type),
 
-            let right_str = cast_expr(
-                right.to_rust(needs_self, script, common_type.as_ref()),
-                right_type,
-                common_type.as_ref(),
-            );
+            Expr::BinaryOp(left, op, right) => {
+                let left_type = script.infer_expr_type(left);
+                let right_type = script.infer_expr_type(right);
 
-            format!("{} {} {}", left_str, op.to_rust(), right_str)
-        }
+                // Determine common type (same logic you already had)
+                let common_type = match (left_type.clone(), right_type.clone()) {
+                    (Some(l), Some(r)) if l == r => Some(l),
+                    (Some(Type::Float), Some(Type::Int))
+                    | (Some(Type::Int), Some(Type::Float)) => Some(Type::Float),
+                    (Some(l), _) => Some(l),
+                    (_, Some(r)) => Some(r),
+                    _ => expected_type.cloned(),
+                };
 
-        Expr::MemberAccess(base, field) => format!("{}.{}", base.to_rust(needs_self, script, None), field),
-        Expr::ScriptAccess(base, field) => format!("{}.{}", base.to_rust(needs_self, script, None), field),
-        Expr::SelfAccess => {
-            if needs_self {
-                "self_node".to_string()
-            } else {
-                "self".to_string()
+                // Helper: cast expression string to target type if needed
+                fn cast_expr(
+                    expr_str: String,
+                    expr_type: Option<Type>,
+                    target_type: Option<&Type>,
+                ) -> String {
+                    match (expr_type, target_type) {
+                        (Some(from), Some(to)) if from != *to => match to {
+                            Type::Float | Type::Number => format!("({} as f32)", expr_str),
+                            Type::Int => format!("({} as i32)", expr_str),
+                            _ => expr_str,
+                        },
+                        _ => expr_str,
+                    }
+                }
+
+                // Generate left and right expr strings with casts if needed
+                let left_str = cast_expr(
+                    left.to_rust(needs_self, script, common_type.as_ref()),
+                    left_type,
+                    common_type.as_ref(),
+                );
+
+                let right_str = cast_expr(
+                    right.to_rust(needs_self, script, common_type.as_ref()),
+                    right_type,
+                    common_type.as_ref(),
+                );
+
+                format!("{} {} {}", left_str, op.to_rust(), right_str)
+            }
+
+            Expr::MemberAccess(base, field) => {
+                format!("{}.{}", base.to_rust(needs_self, script, None), field)
+            }
+
+            Expr::ScriptAccess(base, field) => {
+                format!("{}.{}", base.to_rust(needs_self, script, None), field)
+            }
+
+            Expr::SelfAccess => {
+                if needs_self {
+                    "self_node".to_string()
+                } else {
+                    "self".to_string()
+                }
+            }
+
+            Expr::Call(target, args) => {
+                if let Expr::Ident(name) = &**target {
+                    match name.as_str() {
+                        "print" => {
+                            // Special-case for print(...) calls
+                            if args.is_empty() {
+                                return "println!();".to_string();
+                            }
+
+                            if args.len() == 1 {
+                                let arg = &args[0];
+
+                                match arg {
+                                    // ✅ Case 1: plain string → println!("Hello");
+                                    Expr::Literal(Literal::String(s)) => {
+                                        return format!("println!(\"{}\");", s);
+                                    }
+
+                                    // ✅ Case 2: interpolated string → println!("foo = {}", foo);
+                                   // ✅ Case 2: interpolated string → println!("foo = {}", foo);
+                                Expr::Literal(Literal::Interpolated(s)) => {
+                                    use regex::Regex;
+
+                                    // Matches anything like {variable_name}
+                                    let re = Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)\}").unwrap();
+
+                                    // We'll build a printf-style format string
+                                    let mut fmt_str = String::new();
+                                    let mut vars = Vec::new();
+                                    let mut last_end = 0usize;
+
+                                    for cap in re.captures_iter(s) {
+                                        let m = cap.get(0).unwrap();
+                                        fmt_str.push_str(&s[last_end..m.start()]);
+                                        fmt_str.push_str("{}");
+                                        last_end = m.end();
+                                        vars.push(cap[1].to_string());
+                                    }
+                                    fmt_str.push_str(&s[last_end..]);
+
+                                    // Escape any literal quotes in the format string
+                                    let fmt_str = fmt_str.replace('"', "\\\"");
+
+                                    // No interpolations? Just a basic println! of raw string
+                                    if vars.is_empty() {
+                                        return format!("println!(\"{}\");", fmt_str);
+                                    }
+
+                                    // Interpolated vars? println!("foo = {}, bar = {}", foo, bar);
+                                    return format!(
+                                        "println!(\"{}\", {});",
+                                        fmt_str,
+                                        vars.join(", ")
+                                    );
+                                }
+
+                                    // ✅ Case 3: any other kind of expression → println!("{}", expr);
+                                    _ => {
+                                        let expr_str = arg.to_rust(needs_self, script, None);
+                                        return format!("println!(\"{{}}\", {});", expr_str);
+                                    }
+                                }
+                            }
+
+                            // ✅ Case 4: multiple arguments → println!("a b c");
+                            // Join them nicely with spaces.
+                            let mut literal_strings = Vec::new();
+                            let mut non_literals = Vec::new();
+
+                            for a in args {
+                                match a {
+                                    Expr::Literal(Literal::String(s)) => {
+                                        literal_strings.push(s.clone());
+                                    }
+                                    _ => {
+                                        non_literals.push(a.to_rust(needs_self, script, None));
+                                    }
+                                }
+                            }
+
+                            // If all are string literals, just join them as one line
+                            if non_literals.is_empty() {
+                                let joined = literal_strings.join(" ");
+                                return format!("println!(\"{}\");", joined);
+                            }
+
+                            // Otherwise mix them dynamically: println!("foo {}", var)
+                            let args_rust: Vec<String> =
+                                args.iter().map(|a| a.to_rust(needs_self, script, None)).collect();
+                            let joined = args_rust.join(" + \" \" + ");
+                            return format!("println!(\"{{}}\", {});", joined);
+                        }
+
+                        // (other named calls handled as normal)
+                        _ => {
+                            let name_str = name.as_str();
+                            let args_rust: Vec<String> =
+                                args.iter().map(|a| a.to_rust(needs_self, script, None)).collect();
+                            return format!("{}({});", name_str, args_rust.join(", "));
+                        }
+                    }
+                }
+
+                // Fallback, if not an identifier (e.g., a.call())
+                let target_str = target.to_rust(needs_self, script, None);
+                let args_rust: Vec<String> = args
+                    .iter()
+                    .map(|a| a.to_rust(needs_self, script, None))
+                    .collect();
+                format!("{}({});", target_str, args_rust.join(", "))
+            }
+
+            Expr::ObjectLiteral(pairs) => {
+                let fields: Vec<String> = pairs.iter()
+                    .map(|(k, v)| format!("\"{}\": {}", k, v.to_rust(needs_self, script, None)))
+                    .collect();
+                format!("&json!({{ {} }})", fields.join(", "))
             }
         }
-        Expr::Call(name, args) => {
-            let args_str: Vec<String> = args
-                .iter()
-                .map(|arg| arg.to_rust(needs_self, script, None))
-                .collect();
-            format!("{}({})", name, args_str.join(", "))
-        }
     }
-}
 
     fn contains_self(&self) -> bool {
         match self {
@@ -667,7 +836,9 @@ impl Expr {
             Expr::MemberAccess(base, _) => base.contains_self(),
             Expr::ScriptAccess(base, _) => base.contains_self(),
             Expr::BinaryOp(left, _, right) => left.contains_self() || right.contains_self(),
-            Expr::Call(_, args) => args.iter().any(|arg| arg.contains_self()),
+            Expr::Call(target, args) => {
+                target.contains_self() || args.iter().any(|arg| arg.contains_self())
+            }
             _ => false,
         }
     }
@@ -678,8 +849,11 @@ impl Expr {
             Expr::BinaryOp(left, _, right) => left.contains_delta() || right.contains_delta(),
             Expr::MemberAccess(base, _) => base.contains_delta(),
             Expr::ScriptAccess(base, _) => base.contains_delta(),
-            Expr::Call(_, args) => args.iter().any(|arg| arg.contains_delta()),
+            Expr::Call(target, args) => {
+                target.contains_delta() || args.iter().any(|arg| arg.contains_delta())
+            }
             Expr::Literal(_) | Expr::SelfAccess => false,
+            _ => false
         }
     }
 }
@@ -712,6 +886,30 @@ impl Literal {
                 Some(Type::Bool) => format!("{}", if !s.is_empty() { "true" } else { "false" }),
                 _ => format!("\"{}\"", s),
             },
+            Literal::Interpolated(s) => {
+            use regex::Regex;
+            let re = Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)\}").unwrap();
+
+            let mut fmt = String::new();
+            let mut args = Vec::new();
+            let mut last_end = 0;
+
+            for cap in re.captures_iter(s) {
+                let m = cap.get(0).unwrap();
+                fmt.push_str(&s[last_end..m.start()]);
+                fmt.push_str("{}");
+                last_end = m.end();
+                args.push(cap[1].to_string());
+            }
+
+            fmt.push_str(&s[last_end..]);
+
+            if args.is_empty() {
+                format!("\"{}\"", fmt)
+            } else {
+                format!("format!(\"{}\", {})", fmt, args.join(", "))
+            }
+        }
             Literal::Bool(b) => match expected_type {
                 Some(Type::Bool) | None => b.to_string(),
                 Some(Type::Int) => format!("{}", if *b { 1 } else { 0 }),

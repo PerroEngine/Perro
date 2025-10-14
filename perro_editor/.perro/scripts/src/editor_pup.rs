@@ -24,6 +24,9 @@ pub struct EditorPupScript {
 
 impl Script for EditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+        let file = api.JSON.stringify(&json!({ "foo": 24f32 }));;
+        let s = api.Time.get_datetime_string();;
+        println!("bob is {} and {}", s, file);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {

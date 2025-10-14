@@ -1,17 +1,18 @@
 // scripting/pup/lexer.rs
-
-#[derive(Debug, Clone, PartialEq,)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Extends,
     Fn,
     Let,
     Pass,
     At,
+    Dollar,
     Export,
     Ident(String),
-    Type(String),  // float, int, etc.
+    Type(String),
     Number(f32),
     String(String),
+    InterpolatedString(String), // ✅ add this
     LParen,
     RParen,
     LBrace,
@@ -109,6 +110,26 @@ impl Lexer {
 
         let ch = self.advance().unwrap();
         match ch {
+            '$' => {
+                if self.peek() == Some('"') {
+                    // Consume the quote after $
+                    self.advance();
+                    let start = self.pos;
+
+                    // Capture until closing quote
+                    while let Some(ch) = self.advance() {
+                        if ch == '"' {
+                            break;
+                        }
+                    }
+
+                    // Extract the inner text
+                    let s: String = self.input[start..self.pos - 1].iter().collect();
+                    Token::InterpolatedString(s)
+                } else {
+                    Token::Dollar
+                }
+            }
             '@' => Token::At,
             '{' => Token::LBrace,
             '}' => Token::RBrace,

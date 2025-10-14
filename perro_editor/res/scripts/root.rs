@@ -159,7 +159,7 @@ impl Script for RootScript {
             "name": "EXPORT MODE BITCH",
             "age": 20,
             "inventory": ["sword", "shield"]
-        })).unwrap();
+        }));
 
 
 
