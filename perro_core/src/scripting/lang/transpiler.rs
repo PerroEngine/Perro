@@ -4,7 +4,7 @@ use walkdir::WalkDir;
 use crate::{
     asset_io::{get_project_root, load_asset, resolve_path, ProjectRoot, ResolvedPath},
     compiler::{BuildProfile, CompileTarget, Compiler},
-    lang::{codegen::write_to_crate, pup::parser::PupParser}
+    lang::{codegen::write_to_crate, csharp::parser::CsParser, pup::parser::PupParser}
 };
 
 /// Convert file path to identifier: "bob.pup" -> "bob_pup"
@@ -41,7 +41,7 @@ fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
 
         if path.is_file() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                if ext == "pup" || ext == "rs" {
+                if ext == "pup" || ext == "rs" || ext == "cs" {
                     scripts.push(path.to_path_buf()); // ✅ full absolute disk path
                 }
             }
@@ -165,6 +165,16 @@ pub fn transpile(project_root: &Path) -> Result<(), String> {
         match extension {
             "pup" => {
                 let script = PupParser::new(&code).parse_script()?;
+                script.to_rust(&identifier, project_root);
+                println!(
+                    "  ✅ Transpiled: {} -> {} ({:.2?})",
+                    path.display(),
+                    identifier,
+                    script_start.elapsed()
+                );
+            }
+            "cs" => {
+                let script = CsParser::new(&code).parse_script()?;
                 script.to_rust(&identifier, project_root);
                 println!(
                     "  ✅ Transpiled: {} -> {} ({:.2?})",

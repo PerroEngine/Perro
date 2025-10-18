@@ -1,6 +1,7 @@
 // scripting/pup/lexer.rs
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+pub enum PupToken {
     Extends,
     Fn,
     Let,
@@ -12,7 +13,7 @@ pub enum Token {
     Type(String),
     Number(f32),
     String(String),
-    InterpolatedString(String), // ✅ add this
+    InterpolatedString(String),
     LParen,
     RParen,
     LBrace,
@@ -41,12 +42,12 @@ pub enum Token {
 }
 
 #[derive(Debug, Clone)] 
-pub struct Lexer {
+pub struct PupLexer {
     input: Vec<char>,
     pos: usize,
 }
 
-impl Lexer {
+impl PupLexer {
     pub fn new(input: &str) -> Self {
         Self {
             input: input.chars().collect(),
@@ -57,8 +58,6 @@ impl Lexer {
     fn peek(&self) -> Option<char> {
         self.input.get(self.pos).copied()
     }
-
-    
 
     fn advance(&mut self) -> Option<char> {
         let ch = self.peek();
@@ -76,7 +75,7 @@ impl Lexer {
         }
     }
 
-    fn read_number(&mut self) -> Token {
+    fn read_number(&mut self) -> PupToken {
         let start = self.pos;
         while let Some(ch) = self.peek() {
             if ch.is_ascii_digit() || ch == '.' {
@@ -85,8 +84,8 @@ impl Lexer {
                 break;
             }
         }
-        let num_str: String = self.input[start..self.pos].iter().collect();
-        Token::Number(num_str.parse().unwrap())
+        let num: String = self.input[start..self.pos].iter().collect();
+        PupToken::Number(num.parse().unwrap())
     }
 
     fn read_identifier(&mut self) -> String {
@@ -101,122 +100,118 @@ impl Lexer {
         self.input[start..self.pos].iter().collect()
     }
 
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> PupToken {
         self.skip_whitespace();
-        
+
         if self.peek().is_none() {
-            return Token::Eof;
+            return PupToken::Eof;
         }
 
         let ch = self.advance().unwrap();
         match ch {
             '$' => {
                 if self.peek() == Some('"') {
-                    // Consume the quote after $
-                    self.advance();
+                    self.advance(); // consume the quote
                     let start = self.pos;
-
-                    // Capture until closing quote
-                    while let Some(ch) = self.advance() {
-                        if ch == '"' {
+                    while let Some(c) = self.advance() {
+                        if c == '"' {
                             break;
                         }
                     }
-
-                    // Extract the inner text
                     let s: String = self.input[start..self.pos - 1].iter().collect();
-                    Token::InterpolatedString(s)
+                    PupToken::InterpolatedString(s)
                 } else {
-                    Token::Dollar
+                    PupToken::Dollar
                 }
             }
-            '@' => Token::At,
-            '{' => Token::LBrace,
-            '}' => Token::RBrace,
-            '(' => Token::LParen,
-            ')' => Token::RParen,
-            '.' => Token::Dot,
-            ';' => Token::Semicolon,
+
+            '@' => PupToken::At,
+            '{' => PupToken::LBrace,
+            '}' => PupToken::RBrace,
+            '(' => PupToken::LParen,
+            ')' => PupToken::RParen,
+            '.' => PupToken::Dot,
+            ';' => PupToken::Semicolon,
             ':' => {
                 if self.peek() == Some(':') {
-                    self.advance(); // consume second ':'
-                    Token::DoubleColon
+                    self.advance();
+                    PupToken::DoubleColon
                 } else {
-                    Token::Colon
+                    PupToken::Colon
                 }
             }
-            ',' => Token::Comma,
+            ',' => PupToken::Comma,
             '=' => {
                 if self.peek() == Some('=') {
                     self.advance();
-                    Token::Eq
+                    PupToken::Eq
                 } else {
-                    Token::Assign
+                    PupToken::Assign
                 }
             }
             '-' => {
                 if self.peek() == Some('=') {
                     self.advance();
-                    Token::MinusEq
+                    PupToken::MinusEq
                 } else {
-                    Token::Minus
+                    PupToken::Minus
                 }
             }
             '+' => {
                 if self.peek() == Some('=') {
                     self.advance();
-                    Token::PlusEq
+                    PupToken::PlusEq
                 } else {
-                    Token::Plus
+                    PupToken::Plus
                 }
             }
             '*' => {
                 if self.peek() == Some('=') {
                     self.advance();
-                    Token::MulEq
+                    PupToken::MulEq
                 } else {
-                    Token::Star
+                    PupToken::Star
                 }
             }
             '/' => {
                 if self.peek() == Some('=') {
                     self.advance();
-                    Token::DivEq
+                    PupToken::DivEq
                 } else {
-                    Token::Slash
+                    PupToken::Slash
                 }
             }
             '"' => {
                 let start = self.pos;
-                while let Some(ch) = self.advance() {
-                    if ch == '"' {
+                while let Some(c) = self.advance() {
+                    if c == '"' {
                         break;
                     }
                 }
-                let s: String = self.input[start..self.pos-1].iter().collect();
-                Token::String(s)
+                let s: String = self.input[start..self.pos - 1].iter().collect();
+                PupToken::String(s)
             }
             _ if ch.is_ascii_digit() => {
-                self.pos -= 1; // backtrack
+                self.pos -= 1; 
                 self.read_number()
             }
             _ if ch.is_alphabetic() || ch == '_' => {
-                self.pos -= 1; // backtrack
+                self.pos -= 1; 
                 let ident = self.read_identifier();
                 match ident.as_str() {
-                    "extends" => Token::Extends,
-                    "export" => Token::Export,
-                    "fn" => Token::Fn,
-                    "let" => Token::Let,
-                    "pass" => Token::Pass,
-                    "delta" => Token::Ident("delta".to_string()),
-                    "self" => Token::Ident("self".to_string()),
-                    "float" => Token::Type("float".to_string()),
-                    "int" => Token::Type("int".to_string()),
-                    "number" => Token::Type("number".to_string()),
-                    "string" => Token::Type("string".to_string()),
-                    "bool" => Token::Type("bool".to_string()),
-                    _ => Token::Ident(ident),
+                    "extends" => PupToken::Extends,
+                    "export" => PupToken::Export,
+                    "fn" => PupToken::Fn,
+                    "let" => PupToken::Let,
+                    "pass" => PupToken::Pass,
+                    "delta" => PupToken::Ident("delta".to_string()),
+                    "self" => PupToken::Ident("self".to_string()),
+                    "float" => PupToken::Type("float".to_string()),
+                    "int" => PupToken::Type("int".to_string()),
+                    "number" => PupToken::Type("number".to_string()),
+                    "string" => PupToken::Type("string".to_string()),
+                    "bool" => PupToken::Type("bool".to_string()),
+                    _ => PupToken::Ident(ident),
                 }
             }
             _ => panic!("Unexpected character: {}", ch),

@@ -10,17 +10,17 @@ use uuid::Uuid;
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_pup_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(EditorPupScript {
+pub extern "C" fn csharp_cs_create_script() -> *mut dyn Script {
+    Box::into_raw(Box::new(CsharpCsScript {
         node_id: Uuid::nil(),
     })) as *mut dyn Script
 }
 
-pub struct EditorPupScript {
+pub struct CsharpCsScript {
     node_id: Uuid,
 }
 
-impl Script for EditorPupScript {
+impl Script for CsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         let mut self_node = api.get_node_clone::<Node>(&self.node_id);
         api.print("Hello World".to_string());

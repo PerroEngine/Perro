@@ -1,0 +1,74 @@
+
+// ----------------------------------------------------------------
+// Central router used by the parser to map syntax → semantic call
+// ----------------------------------------------------------------
+
+use crate::lang::ast_modules::*;
+
+pub struct PupAPI;
+
+impl PupAPI {
+    pub fn resolve(module: &str, func: &str) -> Option<ApiModule> {
+        match module {
+            PupJSON::NAME => PupJSON::resolve_method(func),
+            PupTime::NAME => PupTime::resolve_method(func),
+            PupOS::NAME   => PupOS::resolve_method(func),
+            PupConsole::NAME => PupConsole::resolve_method(func),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupJSON;
+impl PupJSON {
+    pub const NAME: &'static str = "JSON";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "parse"      => Some(ApiModule::JSON(JSONApi::Parse)),
+            "stringify"  => Some(ApiModule::JSON(JSONApi::Stringify)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupTime;
+impl PupTime {
+    pub const NAME: &'static str = "Time";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "sleep_msec"         => Some(ApiModule::Time(TimeApi::SleepMsec)),
+            "get_unix_time_msec" => Some(ApiModule::Time(TimeApi::GetUnixMsec)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupOS;
+impl PupOS {
+    pub const NAME: &'static str = "OS";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "get_env"             => Some(ApiModule::OS(OSApi::GetEnv)),
+            "get_platform_name"   => Some(ApiModule::OS(OSApi::GetPlatformName)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupConsole;
+impl PupConsole {
+    pub const NAME: &'static str = "Console";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "print" | "log" => Some(ApiModule::Console(ConsoleApi::Log)),
+            "warn" | "print_warn" => Some(ApiModule::Console(ConsoleApi::Warn)),
+            "error" | "print_error" => Some(ApiModule::Console(ConsoleApi::Error)),
+            "info" | "print_info" => Some(ApiModule::Console(ConsoleApi::Info)),
+            _ => None,
+        }
+    }
+}

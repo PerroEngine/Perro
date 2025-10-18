@@ -1,25 +1,26 @@
 // scripting/pup/parser.rs
 
-use crate::lang::pup::lexer::{Lexer, Token};
 use crate::lang::ast::*;
+use crate::lang::pup::lexer::{PupLexer, PupToken};
+use crate::lang::pup::api::PupAPI;
 
 pub struct PupParser {
-    lexer: Lexer,
-    current_token: Token,
+    lexer: PupLexer,
+    current_token: PupToken,
 }
 
-    /// Different kinds of assignment
-    enum AssignKind {
-        Set,
-        Add,
-        Sub,
-        Mul,
-        Div,
-    }
+/// Different kinds of assignment
+enum AssignKind {
+    Set,
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
 
 impl PupParser {
     pub fn new(input: &str) -> Self {
-        let mut lex = Lexer::new(input);
+        let mut lex = PupLexer::new(input);
         let cur = lex.next_token();
         Self { lexer: lex, current_token: cur }
     }
@@ -28,7 +29,7 @@ impl PupParser {
         self.current_token = self.lexer.next_token();
     }
 
-    fn expect(&mut self, tok: Token) -> Result<(), String> {
+    fn expect(&mut self, tok: PupToken) -> Result<(), String> {
         if self.current_token == tok {
             self.next_token();
             Ok(())
@@ -38,8 +39,8 @@ impl PupParser {
     }
 
     pub fn parse_script(&mut self) -> Result<Script, String> {
-        self.expect(Token::Extends)?;
-        let node_type = if let Token::Ident(n) = &self.current_token {
+        self.expect(PupToken::Extends)?;
+        let node_type = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
             return Err("Expected identifier after extends".into());
@@ -50,17 +51,17 @@ impl PupParser {
         let mut variables = Vec::new();
         let mut functions = Vec::new();
 
-        while self.current_token != Token::Eof {
+        while self.current_token != PupToken::Eof {
             match &self.current_token {
-                Token::At => {
+                PupToken::At => {
                     self.next_token();
-                    self.expect(Token::Export)?;
+                    self.expect(PupToken::Export)?;
                     exports.push(self.parse_export()?);
                 }
-                Token::Let => {
+                PupToken::Let => {
                     variables.push(self.parse_variable_decl()?);
                 }
-                Token::Fn => {
+                PupToken::Fn => {
                     functions.push(self.parse_function()?);
                 }
                 other => {
@@ -73,47 +74,41 @@ impl PupParser {
     }
 
     fn parse_export(&mut self) -> Result<Variable, String> {
-    // '@' and 'export' consumed
-    self.expect(Token::Let)?;
-    
-    let name = if let Token::Ident(n) = &self.current_token {
-        n.clone()
-    } else {
-        return Err("Expected identifier after export let".into());
-    };
-    self.next_token();
+        // '@' and 'export' consumed
+        self.expect(PupToken::Let)?;
+        
+        let name = if let PupToken::Ident(n) = &self.current_token {
+            n.clone()
+        } else {
+            return Err("Expected identifier after export let".into());
+        };
+        self.next_token();
 
-    self.expect(Token::Colon)?;
-    let typ = Some(self.parse_type()?);
+        self.expect(PupToken::Colon)?;
+        let typ = Some(self.parse_type()?);
 
-    // exports likely don't have initial values, so value is None
-    Ok(Variable {
-        name,
-        typ,
-        value: None,
-    })
-}
-
+        Ok(Variable { name, typ, value: None })
+    }
 
     fn parse_function(&mut self) -> Result<Function, String> {
-        self.expect(Token::Fn)?;
-        let name = if let Token::Ident(n) = &self.current_token {
+        self.expect(PupToken::Fn)?;
+        let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
             return Err("Expected function name".into());
         };
         self.next_token();
 
-        self.expect(Token::LParen)?;
+        self.expect(PupToken::LParen)?;
         let mut params = Vec::new();
-        if self.current_token != Token::RParen {
+        if self.current_token != PupToken::RParen {
             params.push(self.parse_param()?);
-            while self.current_token == Token::Comma {
+            while self.current_token == PupToken::Comma {
                 self.next_token();
                 params.push(self.parse_param()?);
             }
         }
-        self.expect(Token::RParen)?;
+        self.expect(PupToken::RParen)?;
 
         let body = self.parse_block()?;
         let is_trait = name == "init" || name == "update";
@@ -127,25 +122,25 @@ impl PupParser {
     }
 
     fn parse_param(&mut self) -> Result<Param, String> {
-        let name = if let Token::Ident(n) = &self.current_token {
+        let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
             return Err("Expected parameter name".into());
         };
         self.next_token();
-        self.expect(Token::Colon)?;
+        self.expect(PupToken::Colon)?;
         let typ = self.parse_type()?;
         Ok(Param { name, typ })
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
         let ty = match &self.current_token {
-            Token::Type(t) if t=="float"  => Type::Float,
-            Token::Type(t) if t=="int"    => Type::Int,
-            Token::Type(t) if t=="number" => Type::Number,
-            Token::Type(t) if t=="bool"   => Type::Bool,
-            Token::Type(t) if t=="string" => Type::String,
-            Token::Ident(n)                => Type::Custom(n.clone()),
+            PupToken::Type(t) if t == "float"  => Type::Float,
+            PupToken::Type(t) if t == "int"    => Type::Int,
+            PupToken::Type(t) if t == "number" => Type::Number,
+            PupToken::Type(t) if t == "bool"   => Type::Bool,
+            PupToken::Type(t) if t == "string" => Type::String,
+            PupToken::Ident(n) => Type::Custom(n.clone()),
             _ => return Err("Expected type".into()),
         };
         self.next_token();
@@ -153,75 +148,59 @@ impl PupParser {
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, String> {
-        self.expect(Token::LBrace)?;
+        self.expect(PupToken::LBrace)?;
         let mut stmts = Vec::new();
-        while self.current_token != Token::RBrace
-           && self.current_token != Token::Eof
+        while self.current_token != PupToken::RBrace
+           && self.current_token != PupToken::Eof
         {
             stmts.push(self.parse_statement()?);
         }
-        self.expect(Token::RBrace)?;
+        self.expect(PupToken::RBrace)?;
         Ok(stmts)
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, String> {
-        // let / pass
-        if self.current_token == Token::Let {
-            return self.parse_variable_decl().map(Stmt::VariableDecl) ;
+        if self.current_token == PupToken::Let {
+            return self.parse_variable_decl().map(Stmt::VariableDecl);
         }
 
-        if self.current_token == Token::Pass {
+        if self.current_token == PupToken::Pass {
             self.next_token();
             return Ok(Stmt::Pass);
         }
 
-        // 1) parse LHS as an expression
         let lhs = self.parse_expression(0)?;
 
-        // 2) if next is an assignment operator, build an assign‐stmt
         if let Some(kind) = self.take_assign_op() {
             let rhs = self.parse_expression(0)?;
             return self.make_assign_stmt(lhs, kind, rhs);
         }
 
-        // 3) otherwise it's a bare expr‐stmt
         Ok(Stmt::Expr(lhs))
     }
 
-
-
-    /// consume =, +=, -=, *= or /= and return its kind
     fn take_assign_op(&mut self) -> Option<AssignKind> {
         let k = match self.current_token {
-            Token::Assign  => AssignKind::Set,
-            Token::PlusEq  => AssignKind::Add,
-            Token::MinusEq => AssignKind::Sub,
-            Token::MulEq  => AssignKind::Mul,
-            Token::DivEq => AssignKind::Div,
+            PupToken::Assign  => AssignKind::Set,
+            PupToken::PlusEq  => AssignKind::Add,
+            PupToken::MinusEq => AssignKind::Sub,
+            PupToken::MulEq   => AssignKind::Mul,
+            PupToken::DivEq   => AssignKind::Div,
             _ => return None,
         };
         self.next_token();
         Some(k)
     }
 
-    /// build the correct Stmt from lhs‐expr, assign‐kind, and rhs‐expr
-    fn make_assign_stmt(
-        &mut self,
-        lhs: Expr,
-        kind: AssignKind,
-        rhs: Expr
-    ) -> Result<Stmt, String> {
+    fn make_assign_stmt(&mut self, lhs: Expr, kind: AssignKind, rhs: Expr) -> Result<Stmt, String> {
         match lhs {
-            Expr::Ident(name) => {
-                Ok(match kind {
-                    AssignKind::Set => Stmt::Assign(name, rhs),
-                    AssignKind::Add => Stmt::AssignOp(name, Op::Add, rhs),
-                    AssignKind::Sub => Stmt::AssignOp(name, Op::Sub, rhs),
-                    AssignKind::Mul => Stmt::AssignOp(name, Op::Mul, rhs),
-                    AssignKind::Div => Stmt::AssignOp(name, Op::Div, rhs),
-                })
-            }
-
+            Expr::Ident(name) => Ok(match kind {
+                AssignKind::Set => Stmt::Assign(name, rhs),
+                AssignKind::Add => Stmt::AssignOp(name, Op::Add, rhs),
+                AssignKind::Sub => Stmt::AssignOp(name, Op::Sub, rhs),
+                AssignKind::Mul => Stmt::AssignOp(name, Op::Mul, rhs),
+                AssignKind::Div => Stmt::AssignOp(name, Op::Div, rhs),
+            }),
             Expr::MemberAccess(obj, field) => {
                 let ma = Expr::MemberAccess(obj, field);
                 Ok(match kind {
@@ -232,7 +211,6 @@ impl PupParser {
                     AssignKind::Div => Stmt::MemberAssignOp(ma, Op::Div, rhs),
                 })
             }
-
             Expr::ScriptAccess(obj, field) => {
                 if let Expr::Ident(var) = *obj {
                     Ok(match kind {
@@ -246,15 +224,14 @@ impl PupParser {
                     Err("Invalid LHS for script‐access".into())
                 }
             }
-
             other => Err(format!("Invalid LHS of assignment: {:?}", other)),
         }
     }
 
     fn parse_variable_decl(&mut self) -> Result<Variable, String> {
-        self.expect(Token::Let)?;
+        self.expect(PupToken::Let)?;
         
-        let name = if let Token::Ident(n) = &self.current_token {
+        let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
             return Err("Expected identifier after let".into());
@@ -264,19 +241,18 @@ impl PupParser {
         let mut typ: Option<Type> = None;
         let mut value: Option<Expr> = None;
 
-        if self.current_token == Token::Colon {
+        if self.current_token == PupToken::Colon {
             self.next_token();
             typ = Some(self.parse_type()?);
         }
 
-        if self.current_token == Token::Assign {
+        if self.current_token == PupToken::Assign {
             self.next_token();
             value = Some(self.parse_expression(0)?);
         }
 
         Ok(Variable { name, typ, value })
     }
-
 
     fn parse_expression(&mut self, prec: u8) -> Result<Expr, String> {
         let mut left = self.parse_primary()?;
@@ -287,163 +263,164 @@ impl PupParser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
-    match &self.current_token {
-        Token::Ident(s) if s == "self" => {
-            self.next_token();
-            Ok(Expr::SelfAccess)
-        }
-        Token::Ident(n) => {
-            let name = n.clone();
-            self.next_token();
+        match &self.current_token {
+            PupToken::Ident(s) if s == "self" => {
+                self.next_token();
+                Ok(Expr::SelfAccess)
+            }
+            PupToken::Ident(n) => {
+                let name = n.clone();
+                self.next_token();
 
-            // Handle simple function call: foo(...)
-            if self.current_token == Token::LParen {
+                if self.current_token == PupToken::LParen {
+                    self.next_token();
+                    let mut args = Vec::new();
+                    if self.current_token != PupToken::RParen {
+                        args.push(self.parse_expression(0)?);
+                        while self.current_token == PupToken::Comma {
+                            self.next_token();
+                            args.push(self.parse_expression(0)?);
+                        }
+                    }
+                    self.expect(PupToken::RParen)?;
+                    Ok(Expr::Call(Box::new(Expr::Ident(name)), args))
+                } else {
+                    Ok(Expr::Ident(name))
+                }
+            }
+            PupToken::Number(n) => {
+                let v = *n;
+                self.next_token();
+                Ok(Expr::Literal(Literal::Float(v)))
+            }
+            PupToken::String(s) => {
+                let v = s.clone();
+                self.next_token();
+                Ok(Expr::Literal(Literal::String(v)))
+            }
+            PupToken::InterpolatedString(s) => {
+                let v = s.clone();
+                self.next_token();
+                Ok(Expr::Literal(Literal::Interpolated(v)))
+            }
+            PupToken::LParen => {
+                self.next_token();
+                let e = self.parse_expression(0)?;
+                self.expect(PupToken::RParen)?;
+                Ok(e)
+            }
+            PupToken::LBrace => {
+                self.next_token();
+                let mut pairs = Vec::new();
+
+                while self.current_token != PupToken::RBrace && self.current_token != PupToken::Eof {
+                    let key = match &self.current_token {
+                        PupToken::Ident(k) => k.clone(),
+                        PupToken::String(k) => k.clone(),
+                        other => return Err(format!("Expected key in object literal, got {:?}", other)),
+                    };
+                    self.next_token();
+
+                    self.expect(PupToken::Colon)?;
+                    let value = self.parse_expression(0)?;
+                    pairs.push((key, value));
+
+                    if self.current_token == PupToken::Comma {
+                        self.next_token();
+                    } else {
+                        break;
+                    }
+                }
+
+                self.expect(PupToken::RBrace)?;
+                Ok(Expr::ObjectLiteral(pairs))
+            }
+            other => Err(format!("Unexpected primary {:?}", other)),
+        }
+    }
+
+    fn parse_infix(&mut self, left: Expr) -> Result<Expr, String> {
+        match &self.current_token {
+            PupToken::LParen => {
                 self.next_token();
                 let mut args = Vec::new();
-                if self.current_token != Token::RParen {
+
+                if self.current_token != PupToken::RParen {
                     args.push(self.parse_expression(0)?);
-                    while self.current_token == Token::Comma {
+                    while self.current_token == PupToken::Comma {
                         self.next_token();
                         args.push(self.parse_expression(0)?);
                     }
                 }
-                self.expect(Token::RParen)?;
-                Ok(Expr::Call(Box::new(Expr::Ident(name)), args))
-            } else {
-                Ok(Expr::Ident(name))
-            }
-        }
-        Token::Number(n) => {
-            let v = *n;
-            self.next_token();
-            Ok(Expr::Literal(Literal::Float(v)))
-        }
-        Token::String(s) => {
-            let v = s.clone();
-            self.next_token();
-            Ok(Expr::Literal(Literal::String(v)))
-        }
-        Token::InterpolatedString(s) => {
-            let v = s.clone();
-            self.next_token();
-            Ok(Expr::Literal(Literal::Interpolated(v)))
-        }
-        Token::LParen => {
-            self.next_token();
-            let e = self.parse_expression(0)?;
-            self.expect(Token::RParen)?;
-            Ok(e)
-        },
-        Token::LBrace => {
-            self.next_token();
-            let mut pairs = Vec::new();
+                self.expect(PupToken::RParen)?;
 
-            while self.current_token != Token::RBrace && self.current_token != Token::Eof {
-                // parse key: ident or string literal
-                let key = match &self.current_token {
-                    Token::Ident(k) => k.clone(),
-                    Token::String(k) => k.clone(),
-                    other => return Err(format!("Expected key in object literal, got {:?}", other)),
+                if let Expr::MemberAccess(obj, method) = &left {
+                    if let Expr::Ident(module_name) = &**obj {
+                        if let Some(api_semantic) = PupAPI::resolve(module_name, method) {
+                            return Ok(Expr::ApiCall(api_semantic, args));
+                        }
+                    }
+                }
+
+                Ok(Expr::Call(Box::new(left), args))
+            }
+
+            PupToken::Dot => {
+                self.next_token();
+                let f = if let PupToken::Ident(n) = &self.current_token {
+                    n.clone()
+                } else {
+                    return Err("Expected field after .".into());
                 };
                 self.next_token();
+                Ok(Expr::MemberAccess(Box::new(left), f))
+            }
 
-                self.expect(Token::Colon)?;
-
-                // parse value
-                let value = self.parse_expression(0)?;
-                pairs.push((key, value));
-
-                // optional comma
-                if self.current_token == Token::Comma {
-                    self.next_token();
+            PupToken::DoubleColon => {
+                self.next_token();
+                let f = if let PupToken::Ident(n) = &self.current_token {
+                    n.clone()
                 } else {
-                    break;
-                }
+                    return Err("Expected ident after ::".into());
+                };
+                self.next_token();
+                Ok(Expr::ScriptAccess(Box::new(left), f))
             }
 
-            self.expect(Token::RBrace)?;
-            Ok(Expr::ObjectLiteral(pairs))
-        }
-        other => Err(format!("Unexpected primary {:?}", other)),
-    }
-}
-
-    fn parse_infix(&mut self, left: Expr) -> Result<Expr, String> {
-    match &self.current_token {
-
-        // ✅ NEW: allow calling any expression (e.g. JSON.stringify())
-        Token::LParen => {
-            self.next_token();
-            let mut args = Vec::new();
-
-            if self.current_token != Token::RParen {
-                args.push(self.parse_expression(0)?);
-                while self.current_token == Token::Comma {
-                    self.next_token();
-                    args.push(self.parse_expression(0)?);
-                }
+            PupToken::Star => {
+                self.next_token();
+                let r = self.parse_expression(2)?;
+                Ok(Expr::BinaryOp(Box::new(left), Op::Mul, Box::new(r)))
             }
 
-            self.expect(Token::RParen)?;
-            Ok(Expr::Call(Box::new(left), args))
-        }
+            PupToken::Slash => {
+                self.next_token();
+                let r = self.parse_expression(2)?;
+                Ok(Expr::BinaryOp(Box::new(left), Op::Div, Box::new(r)))
+            }
 
-        Token::Dot => {
-            self.next_token();
-            let f = if let Token::Ident(n) = &self.current_token {
-                n.clone()
-            } else {
-                return Err("Expected field after .".into());
-            };
-            self.next_token();
-            Ok(Expr::MemberAccess(Box::new(left), f))
-        }
+            PupToken::Plus => {
+                self.next_token();
+                let r = self.parse_expression(1)?;
+                Ok(Expr::BinaryOp(Box::new(left), Op::Add, Box::new(r)))
+            }
 
-        Token::DoubleColon => {
-            self.next_token();
-            let f = if let Token::Ident(n) = &self.current_token {
-                n.clone()
-            } else {
-                return Err("Expected ident after ::".into());
-            };
-            self.next_token();
-            Ok(Expr::ScriptAccess(Box::new(left), f))
-        }
+            PupToken::Minus => {
+                self.next_token();
+                let r = self.parse_expression(1)?;
+                Ok(Expr::BinaryOp(Box::new(left), Op::Sub, Box::new(r)))
+            }
 
-        Token::Star => {
-            self.next_token();
-            let r = self.parse_expression(2)?;
-            Ok(Expr::BinaryOp(Box::new(left), Op::Mul, Box::new(r)))
+            _ => Ok(left),
         }
-
-        Token::Slash => {
-            self.next_token();
-            let r = self.parse_expression(2)?;
-            Ok(Expr::BinaryOp(Box::new(left), Op::Div, Box::new(r)))
-        }
-
-        Token::Plus => {
-            self.next_token();
-            let r = self.parse_expression(1)?;
-            Ok(Expr::BinaryOp(Box::new(left), Op::Add, Box::new(r)))
-        }
-
-        Token::Minus => {
-            self.next_token();
-            let r = self.parse_expression(1)?;
-            Ok(Expr::BinaryOp(Box::new(left), Op::Sub, Box::new(r)))
-        }
-
-        _ => Ok(left),
     }
-}
 
     fn get_precedence(&self) -> u8 {
         match &self.current_token {
-            Token::LParen => 5, 
-            Token::Dot | Token::DoubleColon => 4,
-            Token::Star | Token::Slash      => 3,
-            Token::Plus | Token::Minus      => 2,
+            PupToken::LParen => 5,
+            PupToken::Dot | PupToken::DoubleColon => 4,
+            PupToken::Star | PupToken::Slash => 3,
+            PupToken::Plus | PupToken::Minus => 2,
             _ => 0,
         }
     }

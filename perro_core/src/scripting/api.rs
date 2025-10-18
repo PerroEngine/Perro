@@ -248,4 +248,29 @@ impl<'a> ScriptApi<'a> {
     ) -> Option<()> {
         self.scene.update_script_var(node_id, name, op, val)
     }
+
+
+    //prints
+
+    pub fn print<T: std::fmt::Display>(&self, msg: T) {
+        println!("{}", msg);
+    }
+
+    /// Print a warning in yellow
+    pub fn print_warn<T: std::fmt::Display>(&self, msg: T) {
+        // ANSI yellow = 33
+        println!("\x1b[33m[WARN]\x1b[0m {}", msg);
+    }
+
+    /// Print an error in red
+    pub fn print_error<T: std::fmt::Display>(&self, msg: T) {
+        // ANSI red = 31
+        eprintln!("\x1b[31m[ERROR]\x1b[0m {}", msg);
+    }
+
+    /// Optionally, print info in cyan if you want another level
+    pub fn print_info<T: std::fmt::Display>(&self, msg: T) {
+        println!("\x1b[36m[INFO]\x1b[0m {}", msg);
+    }
+    
 }

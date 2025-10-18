@@ -1,3 +1,5 @@
+use crate::lang::ast_modules::ApiModule;
+
 
 #[derive(Debug, Clone)]
 pub struct Script {
@@ -107,7 +109,9 @@ pub enum Expr {
     ScriptAccess(Box<Expr>, String),
     SelfAccess,
     Call(Box<Expr>, Vec<Expr>),
-    ObjectLiteral(Vec<(String, Expr)>)
+    ObjectLiteral(Vec<(String, Expr)>),
+
+    ApiCall(ApiModule, Vec<Expr>),
 }
 
 #[derive(Debug, Clone)]

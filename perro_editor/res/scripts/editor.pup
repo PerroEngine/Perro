@@ -1,16 +1,11 @@
 extends Node
 
-let b: float
 
 fn init() {
-    let file = JSON.stringify({foo: 24})
+    Console.log("Hello World")
 
-    let s = Time.get_datetime_string()
-
-    print($"bob is {s} and {file}")
-
+    self.name = "Bob"
 }
 
 fn update(delta: float) {
-    b += delta
 }
