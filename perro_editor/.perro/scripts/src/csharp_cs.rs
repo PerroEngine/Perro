@@ -7,6 +7,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
+use std::ops::{Deref, DerefMut};
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
 
 #[unsafe(no_mangle)]
@@ -20,13 +21,21 @@ pub struct CsharpCsScript {
     node_id: Uuid,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct Player {
+    pub hp: i32,
+    pub name: String,
+}
+
+impl Player {
+    pub fn new() -> Self { Self::default() }
+}
+
+
+
 impl Script for CsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        let mut self_node = api.get_node_clone::<Node>(&self.node_id);
         api.print("Hello World".to_string());
-        self_node.name = "Bob".to_string();
-
-        api.merge_nodes(vec![self_node.to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {

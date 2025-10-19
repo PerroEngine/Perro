@@ -1,11 +1,23 @@
 extends Node
 
+struct Player {
+    hp: int,
+}
+
+struct Stats extends Player {
+    fn heal(amt: int) {
+        JSON.stringify({hp: amt})
+    }
+}
+
 
 fn init() {
     Console.log("Hello World")
-
-    self.name = "Bob"
 }
 
 fn update(delta: float) {
+}
+
+fn bob(poop: float, bob: int, james: string) {
+    
 }

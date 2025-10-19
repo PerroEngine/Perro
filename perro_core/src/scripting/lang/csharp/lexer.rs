@@ -3,10 +3,11 @@ pub enum CsToken {
     Using,
     Namespace,
     Class,
-    Extends, // Not used in C#, but placeholder symmetry
+    New,
     Ident(String),
     Type(String),
     AccessModifier(String),
+    Base,
     Var,
     Fn,
     Void,
@@ -202,6 +203,8 @@ impl CsLexer {
                     "public" | "private" | "protected" | "internal" => {
                         CsToken::AccessModifier(lower)
                     }
+                    "base" => CsToken::Base,
+                    "new" => CsToken::New,
                     "this" => CsToken::This,
                     "var" => CsToken::Var,
                     "void" => CsToken::Void,

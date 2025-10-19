@@ -3,12 +3,15 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum PupToken {
     Extends,
+    Struct,
     Fn,
     Let,
     Pass,
     At,
     Dollar,
     Export,
+    SelfAccess,
+    Super,
     Ident(String),
     Type(String),
     Number(f32),
@@ -200,12 +203,14 @@ impl PupLexer {
                 let ident = self.read_identifier();
                 match ident.as_str() {
                     "extends" => PupToken::Extends,
+                    "struct" => PupToken::Struct,
                     "export" => PupToken::Export,
                     "fn" => PupToken::Fn,
+                    "super" => PupToken::Super,
+                    "self" => PupToken::SelfAccess,
                     "let" => PupToken::Let,
                     "pass" => PupToken::Pass,
                     "delta" => PupToken::Ident("delta".to_string()),
-                    "self" => PupToken::Ident("self".to_string()),
                     "float" => PupToken::Type("float".to_string()),
                     "int" => PupToken::Type("int".to_string()),
                     "number" => PupToken::Type("number".to_string()),

@@ -41,99 +41,177 @@ impl CsParser {
     // ------------------------------------------------------
     //  Parse C# class:   public class Player : Node2D { ... }
     // ------------------------------------------------------
-    pub fn parse_script(&mut self) -> Result<Script, String> {
-        let mut node_type = String::new();
-        let mut variables = Vec::new();
-        let mut functions = Vec::new();
-
-        // skip preambles
-        while matches!(self.current_token, CsToken::Using | CsToken::Namespace) {
-            while self.current_token != CsToken::Semicolon && self.current_token != CsToken::Eof {
-                self.next_token();
-            }
+   pub fn parse_script(&mut self) -> Result<Script, String> {
+    // Skip modifiers/usings etc.
+    while matches!(self.current_token, CsToken::Using | CsToken::Namespace) {
+        while self.current_token != CsToken::Semicolon && self.current_token != CsToken::Eof {
             self.next_token();
         }
+        self.next_token();
+    }
+    while matches!(self.current_token, CsToken::AccessModifier(_)) {
+        self.next_token();
+    }
 
+    // --- Parse the top-level script wrapper ---
+    self.expect(CsToken::Class)?;
+    if let CsToken::Ident(_) = &self.current_token {
+        self.next_token(); // skip class name
+    }
+
+    // Parse base type for our Script.node_type
+    let mut node_type = String::new();
+    if self.current_token == CsToken::Colon {
+        self.next_token();
+        if let CsToken::Ident(base) = &self.current_token {
+            node_type = base.clone();
+            self.next_token();
+        } else {
+            return Err("Expected base identifier after ':'".into());
+        }
+    }
+
+    // Class body
+    self.expect(CsToken::LBrace)?;
+
+    let mut variables = Vec::new();
+    let mut functions = Vec::new();
+    let mut structs = Vec::new();
+
+    while self.current_token != CsToken::RBrace && self.current_token != CsToken::Eof {
         while matches!(self.current_token, CsToken::AccessModifier(_)) {
             self.next_token();
         }
 
-        self.expect(CsToken::Class)?;
-        if let CsToken::Ident(_class_name) = &self.current_token {
-            self.next_token();
-        }
-
-        // base class
-        if self.current_token == CsToken::Colon {
-            self.next_token();
-            if let CsToken::Ident(base) = &self.current_token {
-                node_type = base.clone();
-                self.next_token();
-            } else {
-                return Err("Expected base identifier after ':'".into());
-            }
-        }
-
-        self.expect(CsToken::LBrace)?;
-
-        while self.current_token != CsToken::RBrace && self.current_token != CsToken::Eof {
-            while matches!(self.current_token, CsToken::AccessModifier(_)) {
-                self.next_token();
+        match &self.current_token {
+            // ⚙️ detect inner class definitions
+            CsToken::Class => {
+                structs.push(self.parse_class_def()?);
             }
 
-            match &self.current_token {
-                CsToken::Var => {
-                    variables.push(self.parse_variable_decl(None)?);
+            CsToken::Var => {
+                variables.push(self.parse_variable_decl(None)?);
+            }
+
+            CsToken::Type(t) => {
+                let type_name = t.clone();
+                self.next_token();
+
+                let name = if let CsToken::Ident(n) = &self.current_token {
+                    n.clone()
+                } else {
+                    return Err("Expected identifier after type".into());
+                };
+                self.next_token();
+
+                if self.current_token == CsToken::LParen {
+                    functions.push(self.parse_function(type_name, name)?);
+                } else {
+                    variables.push(self.parse_variable_decl(Some(type_name))?);
                 }
+            }
 
-                CsToken::Type(t) => {
-                    let type_name = t.clone();
-                    self.next_token();
+            CsToken::Void => {
+                let return_type = "void".to_string();
+                self.next_token();
+                let name = if let CsToken::Ident(n) = &self.current_token {
+                    n.clone()
+                } else {
+                    return Err("Expected function name after 'void'".into());
+                };
+                self.next_token();
+                self.expect(CsToken::LParen)?;
+                functions.push(self.parse_function(return_type, name)?);
+            }
 
-                    let name = if let CsToken::Ident(n) = &self.current_token {
-                        n.clone()
-                    } else {
-                        return Err("Expected identifier after type".into());
-                    };
-                    self.next_token();
+            _ => {
+                self.next_token(); // skip stray tokens
+            }
+        }
+    }
 
-                    if self.current_token == CsToken::LParen {
-                        functions.push(self.parse_function(type_name, name)?);
-                    } else {
-                        variables.push(self.parse_variable_decl(Some(type_name))?);
+    self.expect(CsToken::RBrace)?;
+
+    Ok(Script {
+        node_type,
+        exports: vec![],
+        variables,
+        functions,
+        structs,
+    })
+}
+
+
+fn parse_class_def(&mut self) -> Result<StructDef, String> {
+    self.expect(CsToken::Class)?;
+    let mut base: Option<String> = None;
+
+    // Parse class name
+    let name = if let CsToken::Ident(n) = &self.current_token {
+        n.clone()
+    } else {
+        return Err("Expected class name".into());
+    };
+    self.next_token();
+
+    // Optional inheritance: class Foo : Bar
+    if self.current_token == CsToken::Colon {
+        self.next_token();
+        if let CsToken::Ident(base_name) = &self.current_token {
+            base = Some(base_name.clone());
+            self.next_token();
+        } else {
+            return Err("Expected base name after ':'".into());
+        }
+    }
+
+    self.expect(CsToken::LBrace)?;
+    let mut fields = Vec::new();
+    let mut methods = Vec::new();
+
+    while self.current_token != CsToken::RBrace && self.current_token != CsToken::Eof {
+        while matches!(self.current_token, CsToken::AccessModifier(_)) {
+            self.next_token();
+        }
+
+        match &self.current_token {
+            CsToken::Void | CsToken::Type(_) => {
+                let typ_str = match &self.current_token {
+                    CsToken::Void => "void".into(),
+                    CsToken::Type(t) => t.clone(),
+                    _ => unreachable!(),
+                };
+                self.next_token();
+
+                let name = if let CsToken::Ident(n) = &self.current_token {
+                    n.clone()
+                } else {
+                    return Err("Expected name after type".into());
+                };
+                self.next_token();
+
+                if self.current_token == CsToken::LParen {
+                    methods.push(self.parse_function(typ_str, name)?);
+                } else {
+                    fields.push(StructField {
+                        name,
+                        typ: self.map_type(typ_str),
+                    });
+                    if self.current_token == CsToken::Semicolon {
+                        self.next_token();
                     }
                 }
+            }
 
-                CsToken::Void => {
-                    let return_type = "void".to_string();
-                    self.next_token();
-
-                    let name = if let CsToken::Ident(n) = &self.current_token {
-                        n.clone()
-                    } else {
-                        return Err("Expected function name after 'void'".into());
-                    };
-                    self.next_token();
-
-                    self.expect(CsToken::LParen)?;
-                    functions.push(self.parse_function(return_type, name)?);
-                }
-
-                _ => {
-                    self.next_token();
-                }
+            _ => {
+                self.next_token();
             }
         }
-
-        self.expect(CsToken::RBrace)?;
-
-        Ok(Script {
-            node_type,
-            exports: vec![],
-            variables,
-            functions,
-        })
     }
+
+    self.expect(CsToken::RBrace)?;
+    Ok(StructDef { name, fields, methods, base })
+}
 
     // ------------------------------------------------------
     //  Variable declarations
@@ -285,73 +363,42 @@ impl CsParser {
     // ------------------------------------------------------
     //  Primary expressions: identifiers, literals, this
     // ------------------------------------------------------
-    fn parse_primary(&mut self) -> Result<Expr, String> {
-        match &self.current_token {
-            CsToken::This => {
-                self.next_token();
-                Ok(Expr::SelfAccess)
-            }
+   fn parse_primary(&mut self) -> Result<Expr, String> {
+    match &self.current_token {
+        CsToken::This => {
+            self.next_token();
+            Ok(Expr::SelfAccess)
+        }
+        CsToken::Base => {
+            self.next_token();
+            Ok(Expr::BaseAccess)
+        }
+        CsToken::New => {
+            self.next_token(); // consume 'new'
 
-            CsToken::Ident(n) => {
-                let name = n.clone();
-                self.next_token();
-
-                // function call?
-                if self.current_token == CsToken::LParen {
-                    self.next_token();
-                    let mut args = Vec::new();
-                    if self.current_token != CsToken::RParen {
-                        args.push(self.parse_expression(0)?);
-                        while self.current_token == CsToken::Comma {
-                            self.next_token();
-                            args.push(self.parse_expression(0)?);
-                        }
-                    }
-                    self.expect(CsToken::RParen)?;
-                    Ok(Expr::Call(Box::new(Expr::Ident(name)), args))
-                } else {
-                    Ok(Expr::Ident(name))
-                }
-            }
-
-            CsToken::Number(n) => {
-                let v = *n;
-                self.next_token();
-                Ok(Expr::Literal(Literal::Float(v)))
-            }
-
-            CsToken::String(s) => {
-                let v = s.clone();
-                self.next_token();
-                Ok(Expr::Literal(Literal::String(v)))
-            }
-
-            CsToken::LParen => {
-                self.next_token();
-                let e = self.parse_expression(0)?;
-                self.expect(CsToken::RParen)?;
-                Ok(e)
-            }
-
-            CsToken::LBrace => {
+            // Anonymous object literal: new { foo = "bar", baz = 69 }
+            if self.current_token == CsToken::LBrace {
                 self.next_token();
                 let mut pairs = Vec::new();
 
                 while self.current_token != CsToken::RBrace
                     && self.current_token != CsToken::Eof
                 {
+                    // parse property name/identifier
                     let key = match &self.current_token {
                         CsToken::Ident(k) => k.clone(),
                         CsToken::String(k) => k.clone(),
                         other => {
                             return Err(format!(
-                                "Expected key in object literal, got {:?}",
+                                "Expected property name in anonymous object, got {:?}",
                                 other
                             ))
                         }
                     };
                     self.next_token();
-                    self.expect(CsToken::Colon)?;
+
+                    self.expect(CsToken::Assign)?; // '=' instead of ':'
+
                     let value = self.parse_expression(0)?;
                     pairs.push((key, value));
 
@@ -364,11 +411,149 @@ impl CsParser {
 
                 self.expect(CsToken::RBrace)?;
                 Ok(Expr::ObjectLiteral(pairs))
+            } else {
+                // Constructor call case: new SomeType(...)
+                let type_name = if let CsToken::Ident(t) = &self.current_token {
+                    t.clone()
+                } else {
+                    return Err(format!(
+                        "Expected type name or '{{' after 'new', got {:?}",
+                        self.current_token
+                    ));
+                };
+                self.next_token();
+
+                // Handle parentheses (args): new MyType(1, 2)
+                if self.current_token == CsToken::LParen {
+                    self.next_token();
+                    let mut args = Vec::new();
+                    if self.current_token != CsToken::RParen {
+                        args.push(self.parse_expression(0)?);
+                        while self.current_token == CsToken::Comma {
+                            self.next_token();
+                            args.push(self.parse_expression(0)?);
+                        }
+                    }
+                    self.expect(CsToken::RParen)?;
+                    Ok(Expr::Call(Box::new(Expr::Ident(type_name)), args))
+                }
+                // Handle object init syntax: new MyType { x = 1, y = 2 }
+                else if self.current_token == CsToken::LBrace {
+                    self.next_token();
+                    let mut pairs = Vec::new();
+
+                    while self.current_token != CsToken::RBrace
+                        && self.current_token != CsToken::Eof
+                    {
+                        let key = match &self.current_token {
+                            CsToken::Ident(k) => k.clone(),
+                            CsToken::String(k) => k.clone(),
+                            other => {
+                                return Err(format!(
+                                    "Expected field name in object init, got {:?}",
+                                    other
+                                ))
+                            }
+                        };
+                        self.next_token();
+                        self.expect(CsToken::Assign)?;
+                        let value = self.parse_expression(0)?;
+                        pairs.push((key, value));
+
+                        if self.current_token == CsToken::Comma {
+                            self.next_token();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    self.expect(CsToken::RBrace)?;
+                    // Treat `new MyType { ... }` as ObjectLiteral for now — you can later
+                    // wrap this in a new Expr::ConstructWithInit variant if desired
+                    Ok(Expr::ObjectLiteral(pairs))
+                } else {
+                    Err("Expected '(' or '{' after type name in 'new' expression".into())
+                }
+            }
+        }
+
+        CsToken::Ident(n) => {
+            let name = n.clone();
+            self.next_token();
+
+            // function call?
+            if self.current_token == CsToken::LParen {
+                self.next_token();
+                let mut args = Vec::new();
+                if self.current_token != CsToken::RParen {
+                    args.push(self.parse_expression(0)?);
+                    while self.current_token == CsToken::Comma {
+                        self.next_token();
+                        args.push(self.parse_expression(0)?);
+                    }
+                }
+                self.expect(CsToken::RParen)?;
+                Ok(Expr::Call(Box::new(Expr::Ident(name)), args))
+            } else {
+                Ok(Expr::Ident(name))
+            }
+        }
+
+        CsToken::Number(n) => {
+            let v = *n;
+            self.next_token();
+            Ok(Expr::Literal(Literal::Float(v)))
+        }
+
+        CsToken::String(s) => {
+            let v = s.clone();
+            self.next_token();
+            Ok(Expr::Literal(Literal::String(v)))
+        }
+
+        CsToken::LParen => {
+            self.next_token();
+            let e = self.parse_expression(0)?;
+            self.expect(CsToken::RParen)?;
+            Ok(e)
+        }
+
+        CsToken::LBrace => {
+            self.next_token();
+            let mut pairs = Vec::new();
+
+            while self.current_token != CsToken::RBrace
+                && self.current_token != CsToken::Eof
+            {
+                let key = match &self.current_token {
+                    CsToken::Ident(k) => k.clone(),
+                    CsToken::String(k) => k.clone(),
+                    other => {
+                        return Err(format!(
+                            "Expected key in object literal, got {:?}",
+                            other
+                        ))
+                    }
+                };
+                self.next_token();
+                self.expect(CsToken::Colon)?;
+                let value = self.parse_expression(0)?;
+                pairs.push((key, value));
+
+                if self.current_token == CsToken::Comma {
+                    self.next_token();
+                } else {
+                    break;
+                }
             }
 
-            _ => Err(format!("Unexpected primary {:?}", self.current_token)),
+            self.expect(CsToken::RBrace)?;
+            Ok(Expr::ObjectLiteral(pairs))
         }
+
+        _ => Err(format!("Unexpected primary {:?}", self.current_token)),
     }
+}
 
     // ------------------------------------------------------
     //  Infix parsers (.member, (), operators)

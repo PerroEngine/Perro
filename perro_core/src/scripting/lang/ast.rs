@@ -7,6 +7,8 @@ pub struct Script {
     pub exports: Vec<Variable>,
     pub variables: Vec<Variable>,
     pub functions: Vec<Function>,
+
+    pub structs: Vec<StructDef>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +110,7 @@ pub enum Expr {
     MemberAccess(Box<Expr>, String),
     ScriptAccess(Box<Expr>, String),
     SelfAccess,
+    BaseAccess,
     Call(Box<Expr>, Vec<Expr>),
     ObjectLiteral(Vec<(String, Expr)>),
 
@@ -127,4 +130,18 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum Op {
     Add, Sub, Mul, Div,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub name: String,
+    pub base: Option<String>,
+    pub fields: Vec<StructField>,
+    pub methods: Vec<Function>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: String,
+    pub typ: Type,
 }

@@ -18,12 +18,21 @@ impl JSONApi {
         match self {
             JSONApi::Parse => {
                 // JSON.parse(string)
-                // If first arg is a literal string, emit serde_json::from_str(...)
-                let arg = args.get(0).map(|a| a.to_rust(needs_self, script, None)).unwrap_or_default();
-                format!("api.JSON.parse({})", arg)
+                // If first arg is a Literal::String, we emit "&\"literal\"" instead of .to_string()
+                let arg_expr = args.get(0);
+                let arg_code = match arg_expr {
+                    Some(Expr::Literal(Literal::String(s))) => format!("\"{}\"", s),
+                    Some(expr) => expr.to_rust(needs_self, script, None),
+                    None => "\"\".to_string()".to_string(),
+                };
+                format!("api.JSON.parse({})", arg_code)
             }
+
             JSONApi::Stringify => {
-                let arg = args.get(0).map(|a| a.to_rust(needs_self, script, None)).unwrap_or_default();
+                let arg = args
+                    .get(0)
+                    .map(|a| a.to_rust(needs_self, script, None))
+                    .unwrap_or_default();
                 format!("api.JSON.stringify({})", arg)
             }
         }

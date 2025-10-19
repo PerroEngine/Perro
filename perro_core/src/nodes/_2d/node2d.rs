@@ -9,7 +9,7 @@ fn is_default_visible(v: &bool) -> bool { *v == default_visible() }
 
 
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Default,Serialize, Deserialize, Clone, Debug)]
 pub struct Node2D {
     #[serde(rename="type")] pub ty:   String,
 

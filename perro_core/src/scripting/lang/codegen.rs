@@ -1,6 +1,7 @@
 // scripting/lang/codegen/rust.rs
 #![allow(unused)]#![allow(dead_code)]
 use std::{fs, path::{Path, PathBuf}};
+use std::fmt::Write as _;
 
 use crate::{asset_io::{get_project_root, ProjectRoot}, lang::ast::*};
 
@@ -148,8 +149,10 @@ impl Script {
     out.push_str("use std::collections::HashMap;\n");
     out.push_str("use serde_json::{Value, json};\n");
     out.push_str("use uuid::Uuid;\n");
+    out.push_str("use std::ops::{Deref, DerefMut};\n");
     out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };\n\n");
 
+    
 
     let export_fields: Vec<(&str, String, String)> = self.exports.iter()
     .map(|export| {
@@ -178,6 +181,8 @@ impl Script {
     out.push_str(&format!("    Box::into_raw(Box::new({}Script {{\n", pascal_struct_name));
     out.push_str("        node_id: Uuid::nil(),\n");
 
+    
+
     // Use collected data for creator
     for export in &self.exports {
         let init_code = export.rust_initialization(self);
@@ -197,6 +202,8 @@ impl Script {
     out.push_str(&format!("pub struct {}Script {{\n", pascal_struct_name));
     out.push_str("    node_id: Uuid,\n");
 
+    
+
     // Use collected data for struct fields
     for (name, rust_type, _default_val) in &export_fields {
         out.push_str(&format!("    {}: {},\n", name, rust_type));
@@ -207,6 +214,11 @@ impl Script {
     }
 
         out.push_str("}\n\n");
+
+    for s in &self.structs {
+        out.push_str(&s.to_rust_definition(self));
+        out.push_str("\n\n");
+    }
 
         // Script impl
         out.push_str(&format!("impl Script for {}Script {{\n", pascal_struct_name));
@@ -348,7 +360,7 @@ out.push_str("}\n");
         if !helpers.is_empty() {
             out.push_str(&format!("impl {}Script {{\n", pascal_struct_name));
             for func in helpers {
-                out.push_str(&func.to_rust_helper(&self.node_type, &self));
+                out.push_str(&func.to_rust_method(&self.node_type, &self));
             }
             out.push_str("}\n");
         }
@@ -359,10 +371,152 @@ out.push_str("}\n");
 
         out
     }
+
+    pub fn function_uses_api(&self, name: &str) -> bool {
+    if is_engine_api(name) { return true; }
+    self.functions
+        .iter()
+        .find(|f| f.name == name)
+        .map(|f| f.requires_api(self))
+        .unwrap_or(false)
+    }
+}
+
+impl StructDef {
+    pub fn to_rust_definition(&self, script: &Script) -> String {
+        let mut out = String::new();
+
+        // Always derive Default, Debug, Clone
+        writeln!(out, "#[derive(Default, Debug, Clone)]").unwrap();
+        writeln!(out, "pub struct {} {{", self.name).unwrap();
+
+        // ✅ If this struct extends another, emit a base field
+        if let Some(base) = &self.base {
+            writeln!(out, "    pub base: {},", base).unwrap();
+        }
+
+        // Emit regular fields
+        for field in &self.fields {
+            writeln!(
+                out,
+                "    pub {}: {},",
+                field.name,
+                field.typ.to_rust_type()
+            )
+            .unwrap();
+        }
+
+        writeln!(out, "}}\n").unwrap();
+
+        // --- Method impl block ---
+        writeln!(out, "impl {} {{", self.name).unwrap();
+        writeln!(out, "    pub fn new() -> Self {{ Self::default() }}").unwrap();
+       for m in &self.methods {
+    out.push_str(&m.to_rust_method(&self.name, script));
+}
+        writeln!(out, "}}\n").unwrap();
+
+        // ✅ Implement Deref/DerefMut if base exists
+        if let Some(base) = &self.base {
+            writeln!(
+                out,
+                "impl Deref for {} {{\n    type Target = {};\n    fn deref(&self) -> &Self::Target {{ &self.base }}\n}}\n",
+                self.name, base
+            )
+            .unwrap();
+
+            writeln!(
+                out,
+                "impl DerefMut for {} {{\n    fn deref_mut(&mut self) -> &mut Self::Target {{ &mut self.base }}\n}}\n",
+                self.name
+            )
+            .unwrap();
+        }
+
+        out
+    }
+}
+
+impl Type {
+    pub fn to_rust_type(&self) -> &str {
+        match self {
+            Type::Float | Type::Number => "f32",
+            Type::Int => "i32",
+            Type::Bool => "bool",
+            Type::String => "String",
+            Type::Custom(name) => name.as_str(),
+            Type::Void => "()",
+        }
+    }
 }
 
 impl Function {
-    fn to_rust_trait_method(&self, node_type: &str, script: &Script) -> String {
+    pub fn to_rust_method(&self, node_type: &str, script: &Script) -> String {
+        let needs_api = self.requires_api(script);
+        let mut out = String::new();
+
+        // --- build parameter list ---
+        let mut param_list = String::new();
+        param_list.push_str("&mut self");
+
+        // user-defined parameters
+        if !self.params.is_empty() {
+            let joined = self.params
+                .iter()
+                .map(|p| format!("{}: {}", p.name, p.typ.to_rust_type()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(param_list, ", {}", joined).unwrap();
+        }
+
+        // append engine API only if needed
+        if needs_api {
+            write!(param_list, ", api: &mut ScriptApi<'_>").unwrap();
+        }
+            // final header line
+        writeln!(out, "    fn {}({}) {{", self.name, param_list).unwrap();
+
+        // Always shadow all parameters so they behave like mutable Pup locals.
+        for param in &self.params {
+            writeln!(out, "        let mut {0} = {0};", param.name).unwrap();
+        }
+
+        // --- prelude (delta, self_node etc.) ---
+        let needs_delta = self.body.iter().any(|stmt| stmt.contains_delta());
+        let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
+
+        if needs_api && needs_delta {
+            out.push_str("        let delta = api.delta();\n");
+        }
+
+        if needs_api && needs_self {
+            out.push_str(&format!(
+                "        let mut self_node = api.get_node_clone::<{}>(&self.node_id);\n",
+                node_type
+            ));
+        }
+
+        // --- body ---
+        for stmt in &self.body {
+            out.push_str(&stmt.to_rust(needs_self, script));
+        }
+
+        // --- footers (merge node, etc.) ---
+        if needs_api && needs_self {
+            out.push_str("\n        api.merge_nodes(vec![self_node.to_scene_node()]);\n");
+        }
+
+        out.push_str("    }\n\n");
+        out
+    }
+
+    /// Does this function or any child call require ScriptApi?
+    fn requires_api(&self, script: &Script) -> bool {
+        self.body.iter().any(|stmt| stmt.contains_api_call(script))
+    }
+
+    /// For trait / engine lifecycle methods (init, update, etc.)
+    pub fn to_rust_trait_method(&self, node_type: &str, script: &Script) -> String {
         let mut out = format!("    fn {}(", self.name);
         out.push_str("&mut self, api: &mut ScriptApi<'_>) {\n");
 
@@ -383,23 +537,12 @@ impl Function {
             cloned_nodes.push("self_node".to_string());
         }
 
-        // Generate body - when you add GetNode support to your AST,
-        // you'd collect node variables here as you generate each statement
+        // --- body ---
         for stmt in &self.body {
-            // TODO: When you add Stmt::GetNode, do something like:
-            // if let Stmt::GetNode { var_name, node_type, node_id_expr } = stmt {
-            //     let id_expr = node_id_expr.to_rust(needs_self, script, None);
-            //     out.push_str(&format!(
-            //         "        let mut {} = api.get_node_clone::<{}>(&{});\n",
-            //         var_name, node_type, id_expr
-            //     ));
-            //     cloned_nodes.push(var_name.clone());  // <- Collect it here!
-            // }
-            
             out.push_str(&stmt.to_rust(needs_self, script));
         }
 
-        // Merge all cloned nodes back at the end
+        // --- merge nodes ---
         if !cloned_nodes.is_empty() {
             let merge_args = cloned_nodes.iter()
                 .map(|n| format!("{}.to_scene_node()", n))
@@ -411,45 +554,6 @@ impl Function {
         out.push_str("    }\n\n");
         out
     }
-
-    fn to_rust_helper(&self, node_type: &str, script: &Script) -> String {
-        let mut out = format!("    fn {}(&mut self, api: &mut ScriptApi<'_>) {{\n", self.name);
-
-        let needs_delta = self.body.iter().any(|stmt| stmt.contains_delta());
-        let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
-
-        if needs_delta {
-            out.push_str("        let delta = api.delta();\n");
-        }
-
-        let mut cloned_nodes = Vec::new();
-
-        if needs_self {
-            out.push_str(&format!(
-                "        let mut self_node = api.get_node_clone::<{}>(&self.node_id);\n",
-                node_type
-            ));
-            cloned_nodes.push("self_node".to_string());
-        }
-
-        // Generate body - collect nodes as you go
-        for stmt in &self.body {
-            out.push_str(&stmt.to_rust(needs_self, script));
-        }
-
-        // Merge all cloned nodes back at the end
-        if !cloned_nodes.is_empty() {
-            let merge_args = cloned_nodes.iter()
-                .map(|n| format!("{}.to_scene_node()", n))
-                .collect::<Vec<_>>()
-                .join(", ");
-            out.push_str(&format!("\n        api.merge_nodes(vec![{}]);\n", merge_args));
-        }
-
-        out.push_str("    }\n\n");
-        out
-    }
-
 }
 
 impl Stmt {
@@ -583,6 +687,8 @@ impl Stmt {
         }
     }
 
+
+
     fn contains_self(&self) -> bool {
         match self {
             Stmt::Expr(e) => e.contains_self(),
@@ -627,6 +733,20 @@ Stmt::ScriptAssign(_, _, expr) => todo!(),
             Stmt::ScriptAssignOp(_, field, op, expr) => todo!(),
         }
     }
+
+    pub fn contains_api_call(&self, script: &Script) -> bool {
+    match self {
+        Stmt::Expr(e)                   => e.contains_api_call(script),
+        Stmt::VariableDecl(v)           => v.value.as_ref().map_or(false, |e| e.contains_api_call(script)),
+        Stmt::Assign(_, e)              => e.contains_api_call(script),
+        Stmt::AssignOp(_, _, e)         => e.contains_api_call(script),
+        Stmt::MemberAssign(a, b)        => a.contains_api_call(script) || b.contains_api_call(script),
+        Stmt::MemberAssignOp(a, _, b)   => a.contains_api_call(script) || b.contains_api_call(script),
+        Stmt::ScriptAssign(_, _, e)     => e.contains_api_call(script),
+        Stmt::ScriptAssignOp(_, _, _, e)=> e.contains_api_call(script),
+        Stmt::Pass                      => false,
+    }
+}
 }
 
 impl Expr {
@@ -637,12 +757,7 @@ impl Expr {
         expected_type: Option<&Type>,
     ) -> String {
         match self {
-            Expr::Ident(name) => {
-                        match name.as_str() {
-                            "JSON" | "OS" | "Time" => format!("api.{}", name),
-                            _ => name.clone(),
-                        }
-                    }
+            Expr::Ident(name) => { name.clone() }
             Expr::Literal(lit) => lit.to_rust(expected_type),
             Expr::BinaryOp(left, op, right) => {
                         let left_type = script.infer_expr_type(left);
@@ -702,14 +817,42 @@ impl Expr {
                             "self".to_string()
                         }
                     }
-            Expr::Call(target, args) => {
-                        let target_str = target.to_rust(needs_self, script, None);
-                        let args_rust: Vec<String> = args
-                            .iter()
-                            .map(|a| a.to_rust(needs_self, script, None))
-                            .collect();
-                        format!("{}({});", target_str, args_rust.join(", "))
-                    }
+            Expr::BaseAccess => "self.base".to_string(),
+           Expr::Call(target, args) => {
+            // 1️⃣ Extract underlying name for API analysis
+            fn get_target_name(expr: &Expr) -> Option<&str> {
+                match expr {
+                    Expr::Ident(name) => Some(name.as_str()),
+                    Expr::MemberAccess(_, name) => Some(name.as_str()),
+                    _ => None,
+                }
+            }
+
+            // 2️⃣ Get argument strings
+            let args_rust: Vec<String> = args
+                .iter()
+                .map(|a| a.to_rust(needs_self, script, None))
+                .collect();
+
+            // 3️⃣ Determine API usage
+            let needs_api = get_target_name(target)
+                .map(|n| script.function_uses_api(n))
+                .unwrap_or(false);
+
+            // 4️⃣ Now safely render code
+            let target_str = target.to_rust(needs_self, script, None);
+            if needs_api {
+                if args_rust.is_empty() {
+                    format!("{}(api);", target_str)
+                } else {
+                    format!("{}({}, api);", target_str, args_rust.join(", "))
+                }
+            } else if args_rust.is_empty() {
+                format!("{}();", target_str)
+            } else {
+                format!("{}({});", target_str, args_rust.join(", "))
+            }
+        },
             Expr::ObjectLiteral(pairs) => {
                         let fields: Vec<String> = pairs.iter()
                             .map(|(k, v)| format!("\"{}\": {}", k, v.to_rust(needs_self, script, None)))
@@ -744,6 +887,33 @@ impl Expr {
             }
             Expr::Literal(_) | Expr::SelfAccess => false,
             _ => false
+        }
+    }
+
+    pub fn contains_api_call(&self, script: &Script) -> bool {
+    match self {
+        Expr::ApiCall(..) => true,
+        Expr::MemberAccess(base, _) => base.contains_api_call(script),
+        Expr::ScriptAccess(base, _) => base.contains_api_call(script),
+        Expr::BinaryOp(l, _, r) => l.contains_api_call(script) || r.contains_api_call(script),
+        Expr::Call(target, args) => {
+            Self::get_target_name(target)
+                .map(|n| script.function_uses_api(n))
+                .unwrap_or(false)
+                || target.contains_api_call(script)
+                || args.iter().any(|a| a.contains_api_call(script))
+        }
+        Expr::ObjectLiteral(pairs) => pairs.iter().any(|(_, e)| e.contains_api_call(script)),
+        _ => false,
+    }
+}
+
+    // small helper so contains_api_call compiles
+    fn get_target_name(expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Ident(n) => Some(n.as_str()),
+            Expr::MemberAccess(_, n) => Some(n.as_str()),
+            _ => None,
         }
     }
 }

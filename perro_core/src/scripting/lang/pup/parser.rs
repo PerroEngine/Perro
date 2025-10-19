@@ -50,6 +50,7 @@ impl PupParser {
         let mut exports   = Vec::new();
         let mut variables = Vec::new();
         let mut functions = Vec::new();
+        let mut structs   = Vec::new();
 
         while self.current_token != PupToken::Eof {
             match &self.current_token {
@@ -57,6 +58,9 @@ impl PupParser {
                     self.next_token();
                     self.expect(PupToken::Export)?;
                     exports.push(self.parse_export()?);
+                }
+                PupToken::Struct => {
+                    structs.push(self.parse_struct_def()?);
                 }
                 PupToken::Let => {
                     variables.push(self.parse_variable_decl()?);
@@ -70,8 +74,85 @@ impl PupParser {
             }
         }
 
-        Ok(Script { node_type, exports, variables, functions })
+        Ok(Script { node_type, exports, variables, functions, structs })
     }
+
+fn parse_struct_def(&mut self) -> Result<StructDef, String> {
+    self.expect(PupToken::Struct)?;
+
+    // Parse struct name
+    let name = if let PupToken::Ident(n) = &self.current_token {
+        n.clone()
+    } else {
+        return Err("Expected struct name after 'struct'".into());
+    };
+    self.next_token();
+
+    // ✅ Optional inheritance: "extends BaseStruct"
+    let mut base: Option<String> = None;
+    if self.current_token == PupToken::Extends {
+        self.next_token();
+        if let PupToken::Ident(base_name) = &self.current_token {
+            base = Some(base_name.clone());
+            self.next_token();
+        } else {
+            return Err("Expected base struct name after 'extends'".into());
+        }
+    }
+
+    // Struct body
+    self.expect(PupToken::LBrace)?;
+    let mut fields = Vec::new();
+    let mut methods = Vec::new();
+
+    while self.current_token != PupToken::RBrace && self.current_token != PupToken::Eof {
+        match &self.current_token {
+            // Functions
+            PupToken::Fn => {
+                methods.push(self.parse_function()?);
+            }
+
+            // Fields
+            PupToken::Ident(_) | PupToken::Type(_) => {
+                fields.push(self.parse_field()?);
+                if self.current_token == PupToken::Comma {
+                    self.next_token();
+                }
+            }
+
+            PupToken::Let => {
+                self.next_token();
+                fields.push(self.parse_field()?);
+                if self.current_token == PupToken::Comma {
+                    self.next_token();
+                }
+            }
+
+            other => {
+                return Err(format!("Unexpected token {:?} in struct {}", other, name));
+            }
+        }
+    }
+
+    self.expect(PupToken::RBrace)?;
+
+    // ✅ Include base in StructDef
+    Ok(StructDef { name, fields, methods, base })
+}
+
+fn parse_field(&mut self) -> Result<StructField, String> {
+    let field_name = if let PupToken::Ident(n) = &self.current_token {
+        n.clone()
+    } else {
+        return Err("Expected field name".into());
+    };
+    self.next_token();
+
+    self.expect(PupToken::Colon)?;
+    let typ = self.parse_type()?;
+
+    Ok(StructField { name: field_name, typ })
+}
 
     fn parse_export(&mut self) -> Result<Variable, String> {
         // '@' and 'export' consumed
@@ -264,9 +345,13 @@ impl PupParser {
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match &self.current_token {
-            PupToken::Ident(s) if s == "self" => {
+            PupToken::SelfAccess => {
                 self.next_token();
                 Ok(Expr::SelfAccess)
+            }
+            PupToken::Super => {
+                self.next_token();
+                Ok(Expr::BaseAccess)
             }
             PupToken::Ident(n) => {
                 let name = n.clone();

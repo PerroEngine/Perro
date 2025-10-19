@@ -7,6 +7,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
+use std::ops::{Deref, DerefMut};
 use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
 
 #[unsafe(no_mangle)]
@@ -20,13 +21,45 @@ pub struct EditorPupScript {
     node_id: Uuid,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct Player {
+    pub hp: i32,
+}
+
+impl Player {
+    pub fn new() -> Self { Self::default() }
+}
+
+
+
+#[derive(Default, Debug, Clone)]
+pub struct Stats {
+    pub base: Player,
+}
+
+impl Stats {
+    pub fn new() -> Self { Self::default() }
+    fn heal(&mut self, amt: i32, api: &mut ScriptApi<'_>) {
+        let mut amt = amt;
+        api.JSON.stringify(&json!({ "hp": amt }));
+    }
+
+}
+
+impl Deref for Stats {
+    type Target = Player;
+    fn deref(&self) -> &Self::Target { &self.base }
+}
+
+impl DerefMut for Stats {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+}
+
+
+
 impl Script for EditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        let mut self_node = api.get_node_clone::<Node>(&self.node_id);
         api.print("Hello World".to_string());
-        self_node.name = "Bob".to_string();
-
-        api.merge_nodes(vec![self_node.to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -61,4 +94,12 @@ impl Script for EditorPupScript {
             _ => None,
         }
     }
+}
+impl EditorPupScript {
+    fn bob(&mut self, poop: f32, bob: i32, james: String) {
+        let mut poop = poop;
+        let mut bob = bob;
+        let mut james = james;
+    }
+
 }

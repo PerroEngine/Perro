@@ -70,6 +70,9 @@ impl CSharpConsole {
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
             "WriteLine"      => Some(ApiModule::Console(ConsoleApi::Log)),
+            "Warn"   => Some(ApiModule::Console(ConsoleApi::Warn)),
+            "Error"     => Some(ApiModule::Console(ConsoleApi::Error)),
+            "WriteInfo"      => Some(ApiModule::Console(ConsoleApi::Info)),
             _ => None,
         }
     }

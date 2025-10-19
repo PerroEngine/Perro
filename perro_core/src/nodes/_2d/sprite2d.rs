@@ -5,7 +5,7 @@ use wgpu::naga::Handle;
 use crate::{nodes::_2d::node2d::Node2D};
 
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Sprite2D {
   #[serde(rename="type")] pub ty:   String,
   pub texture_path: Option<String>,
