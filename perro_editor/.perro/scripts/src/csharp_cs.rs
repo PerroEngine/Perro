@@ -33,6 +33,50 @@ impl Player {
 
 
 
+#[derive(Default, Debug, Clone)]
+pub struct Player2 {
+    pub base: Player,
+    pub hp1: i32,
+    pub name1: String,
+}
+
+impl Player2 {
+    pub fn new() -> Self { Self::default() }
+}
+
+impl Deref for Player2 {
+    type Target = Player;
+    fn deref(&self) -> &Self::Target { &self.base }
+}
+
+impl DerefMut for Player2 {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+}
+
+
+
+#[derive(Default, Debug, Clone)]
+pub struct Player3 {
+    pub base: Player2,
+    pub hp2: i32,
+    pub name: String,
+}
+
+impl Player3 {
+    pub fn new() -> Self { Self::default() }
+}
+
+impl Deref for Player3 {
+    type Target = Player2;
+    fn deref(&self) -> &Self::Target { &self.base }
+}
+
+impl DerefMut for Player3 {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
+}
+
+
+
 impl Script for CsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("Hello World".to_string());

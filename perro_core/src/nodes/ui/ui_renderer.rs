@@ -380,7 +380,6 @@ fn calculate_all_content_sizes(
         );
         
         if is_container {
-            drop(element); // Drop the borrow
             let content_size = calculate_content_size(elements, current_id);
             if let Some(element) = elements.get_mut(current_id) {
                 println!("Auto-sizing container {:?} to {:?}", current_id, content_size);

@@ -1005,7 +1005,11 @@ impl Op {
     }
 }
 
-pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) -> Result<(), String> {
+pub fn write_to_crate(
+    project_path: &Path,
+    contents: &str,
+    struct_name: &str,
+) -> Result<(), String> {
     let base_path = project_path.join(".perro/scripts/src");
     let lower_name = struct_name.to_lowercase();
     let file_path = base_path.join(format!("{}.rs", lower_name));
@@ -1024,7 +1028,8 @@ pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) ->
         contents.to_string()
     };
 
-    fs::write(&file_path, final_contents).map_err(|e| format!("Failed to write file: {}", e))?;
+    fs::write(&file_path, final_contents)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
 
     // --- lib.rs handling ---
     let lib_rs_path = base_path.join("lib.rs");
@@ -1038,14 +1043,17 @@ pub fn write_to_crate(project_path: &Path, contents: &str, struct_name: &str) ->
         );
     }
 
-
     // Ensure header exists
     if !current_content.contains("get_script_registry") {
-        current_content.push_str(
-            "use perro_core::script::{CreateFn, Script};
-use std::collections::HashMap;
+        if !current_content.contains("use perro_core::script::CreateFn") {
+            current_content.push_str("use perro_core::script::CreateFn;\n");
+        }
+        if !current_content.contains("use std::collections::HashMap") {
+            current_content.push_str("use std::collections::HashMap;\n");
+        }
 
-// __PERRO_MODULES__
+        current_content.push_str(
+            "// __PERRO_MODULES__
 // __PERRO_IMPORTS__
 
 pub fn get_script_registry() -> HashMap<String, CreateFn> {
@@ -1109,6 +1117,11 @@ pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
         );
         current_content.push_str(&debug_root_fn);
     }
+
+    current_content = current_content.replace(
+    "use perro_core::script::{CreateFn, Script};",
+    "use perro_core::script::CreateFn;"
+);
 
     // Write updated lib.rs
     fs::write(&lib_rs_path, current_content)
