@@ -150,7 +150,8 @@ impl Script {
     out.push_str("use serde_json::{Value, json};\n");
     out.push_str("use uuid::Uuid;\n");
     out.push_str("use std::ops::{Deref, DerefMut};\n");
-    out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };\n\n");
+    out.push_str("use std::{rc::Rc, cell::RefCell};\n");
+    out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::*, types::* };\n\n");
 
     
 

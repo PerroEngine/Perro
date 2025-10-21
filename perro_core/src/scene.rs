@@ -393,6 +393,13 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.data.nodes.get_mut(id)
     }
 
+        fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
+        self.provider.load_ctor(short)
+    }
+
+     fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn Script>>> {
+        Self::instantiate_script(ctor, node_id, self)
+    }
 
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         for mut node in nodes {
@@ -521,6 +528,9 @@ impl Scene<DllScriptProvider> {
                     let root_id = *game_scene.get_root().get_id();
                     let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
                     game_scene.scripts.insert(root_id, handle);
+                }
+                else {
+                    println!("❌ Could not find symbol for {}", identifier);
                 }
             }
         }

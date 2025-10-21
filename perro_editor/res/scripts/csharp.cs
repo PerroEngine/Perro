@@ -1,6 +1,6 @@
 using Perro;
 
-public class MainNode : Node {
+public class CSharp : Node {
     
     private class Player {
         public int hp;
@@ -20,9 +20,13 @@ public class MainNode : Node {
 
 
     void Init() {
-        Console.WriteLine("Hello World");
+        Console.WriteLine("Hello World I am csharp.cs");
     }
 
     void Update(float delta) {
+    }
+
+    void Fart() {
+        Console.WriteLine("Fart");
     }
 }

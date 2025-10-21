@@ -16,7 +16,7 @@ use std::time::Duration;
 use std::process::Command;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn updater_rs_create_script() -> *mut dyn Script {
+pub extern "C" fn scripts_updater_rs_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(UpdaterScript {
         node_id: Uuid::nil(),
         check_timer: 0.0,

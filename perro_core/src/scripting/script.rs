@@ -1,4 +1,5 @@
 #![allow(improper_ctypes_definitions)]
+use std::fmt;
 use std::{any::Any, collections::HashMap, cell::RefCell, rc::Rc};
 use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr};
 use std::sync::mpsc::{Sender, Receiver, channel};
@@ -20,6 +21,17 @@ pub enum Var {
     I32(i32),
     Bool(bool),
     String(String),
+}
+
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Var::F32(v) => write!(f, "{}", v),
+            Var::I32(v) => write!(f, "{}", v),
+            Var::Bool(v) => write!(f, "{}", v),
+            Var::String(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 /// Update operations for script variables
@@ -61,6 +73,9 @@ pub trait SceneAccess {
     ) -> Option<()>;
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn Script>>>>;
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
+
+    fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
+    fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn Script>>>;
 }
 
 //

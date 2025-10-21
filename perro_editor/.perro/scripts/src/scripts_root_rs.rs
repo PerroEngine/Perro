@@ -10,18 +10,22 @@ use perro_core::{
     scripting::api::ScriptApi,
     scripting::script::Script,
     nodes::*,
+    types::*
 };
 use std::path::{Path, PathBuf};
+use std::{rc::Rc, cell::RefCell};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn root_rs_create_script() -> *mut dyn Script {
+pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(RootScript {
         node_id: Uuid::nil(),
+        script: None,
     })) as *mut dyn Script
 }
 
 pub struct RootScript {
     node_id: Uuid,
+    script: Option<ScriptType>,
 }
 
 impl RootScript {
@@ -165,6 +169,12 @@ impl Script for RootScript {
 
         // Save the stringified JSON
         api.save_asset("user://b.json", file).unwrap();
+
+        let mut script = api.instantiate_script("res://scripts/editor.pup").unwrap();
+
+        api.print_info(script.get_var("b").unwrap());
+        script.set_var("b", Var::F32(42.0)).unwrap();
+        api.print_info(script.get_var("b").unwrap());
 
         // Skip version management in debug builds
         if cfg!(debug_assertions) {

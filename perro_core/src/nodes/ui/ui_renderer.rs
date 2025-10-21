@@ -510,7 +510,6 @@ pub fn update_global_transforms_with_layout(
 
         // NOW apply auto-sizing for layout containers (this will override any existing size)
         if is_layout_container && !has_explicit_size {
-            drop(element); // Drop the mutable borrow
             let content_size = calculate_content_size(elements, current_id);
             if let Some(element) = elements.get_mut(current_id) {
                 println!("Auto-sizing layout container {:?} to {:?}", current_id, content_size);

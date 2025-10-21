@@ -4,28 +4,14 @@
 
 use uuid::Uuid;
 use std::{
-    env,
-    path::Path,
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-    sync::mpsc::Sender,
-    process,
-    ops::Deref,
+    cell::RefCell, env, ops::Deref, path::Path, process, rc::Rc, sync::mpsc::Sender, thread, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use chrono::{Local, Datelike, Timelike}; // For date/time formatting
 
 use crate::{
-    app_command::AppCommand,
-    asset_io::{self, load_asset, resolve_path, ResolvedPath},
-    compiler::{BuildProfile, CompileTarget, Compiler},
-    lang::transpiler::transpile,
-    manifest::Project,
-    scene_node::{IntoInner, SceneNode},
-    script::{SceneAccess, Script, UpdateOp, Var},
-    ui_node::Ui,
-    Node, Node2D, Sprite2D,
+    app_command::AppCommand, asset_io::{self, load_asset, resolve_path, ResolvedPath}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::transpiler::{script_path_to_identifier, transpile}, manifest::Project, scene_node::{IntoInner, SceneNode}, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::Ui, Node, Node2D, Sprite2D
 };
 
 //-----------------------------------------------------
@@ -211,6 +197,44 @@ impl<'a> ScriptApi<'a> {
             script.update(self);
         }
     }
+
+pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {
+    // Convert to registry key
+    let identifier = match script_path_to_identifier(path) {
+        Ok(id) => id,
+        Err(err) => {
+            eprintln!("[ScriptApi] Invalid path: {}", err);
+            return None;
+        }
+    };
+
+    // Get ctor safely from provider
+    let ctor = match self.scene.load_ctor(&identifier) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!(
+                "[ScriptApi] Failed to find script '{}' ({}).",
+                identifier, e
+            );
+            return None;
+        }
+    };
+
+    // Construct script (create the Box)
+    let raw = ctor();
+    let mut boxed: ScriptType = unsafe { Box::from_raw(raw) };
+    boxed.set_node_id(Uuid::nil()); // detached standalone script
+
+    // Run init() safely using a temporary api context
+    {
+        let project_ref = self.project as *mut _;
+        let project_mut = unsafe { &mut *project_ref };
+        let mut sub_api = ScriptApi::new(0.0, self.scene, project_mut);
+        boxed.init(&mut sub_api);
+    }
+
+    Some(boxed)
+}
 
     //-------------------------------------------------
     // Asset IO

@@ -8,23 +8,25 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
-use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
+use std::{rc::Rc, cell::RefCell};
+use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::*, types::* };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn csharp_cs_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(CsharpCsScript {
+pub extern "C" fn scripts_editor_pup_create_script() -> *mut dyn Script {
+    Box::into_raw(Box::new(ScriptsEditorPupScript {
         node_id: Uuid::nil(),
+    b: 0.0f32,
     })) as *mut dyn Script
 }
 
-pub struct CsharpCsScript {
+pub struct ScriptsEditorPupScript {
     node_id: Uuid,
+    b: f32,
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct Player {
     pub hp: i32,
-    pub name: String,
 }
 
 impl Player {
@@ -34,52 +36,34 @@ impl Player {
 
 
 #[derive(Default, Debug, Clone)]
-pub struct Player2 {
+pub struct Stats {
     pub base: Player,
-    pub hp1: i32,
-    pub name1: String,
 }
 
-impl Player2 {
+impl Stats {
     pub fn new() -> Self { Self::default() }
+    fn heal(&mut self, amt: i32, api: &mut ScriptApi<'_>) {
+        let mut amt = amt;
+        api.JSON.stringify(&json!({ "hp": amt }));
+    }
+
 }
 
-impl Deref for Player2 {
+impl Deref for Stats {
     type Target = Player;
     fn deref(&self) -> &Self::Target { &self.base }
 }
 
-impl DerefMut for Player2 {
+impl DerefMut for Stats {
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
 }
 
 
 
-#[derive(Default, Debug, Clone)]
-pub struct Player3 {
-    pub base: Player2,
-    pub hp2: i32,
-    pub name: String,
-}
-
-impl Player3 {
-    pub fn new() -> Self { Self::default() }
-}
-
-impl Deref for Player3 {
-    type Target = Player2;
-    fn deref(&self) -> &Self::Target { &self.base }
-}
-
-impl DerefMut for Player3 {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.base }
-}
-
-
-
-impl Script for CsharpCsScript {
+impl Script for ScriptsEditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Hello World".to_string());
+        api.print("Hello World I am editor.pup".to_string());
+        self.b = 2f32;
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -105,13 +89,28 @@ impl Script for CsharpCsScript {
 
     fn get_var(&self, name: &str) -> Option<Var> {
         match name {
+            "b" => Some(Var::F32(self.b)),
             _ => None,
         }
     }
 
     fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
         match (name, val) {
+            ("b", Var::F32(v)) => { self.b = v; Some(()) },
             _ => None,
         }
     }
+}
+impl ScriptsEditorPupScript {
+    fn bob(&mut self, poop: f32, bob: i32, james: String, api: &mut ScriptApi<'_>) {
+        let mut poop = poop;
+        let mut bob = bob;
+        let mut james = james;
+        api.JSON.parse("bob: 1");
+    }
+
+    fn foo(&mut self, api: &mut ScriptApi<'_>) {
+        api.print("poop and fart".to_string());
+    }
+
 }

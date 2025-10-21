@@ -8,16 +8,17 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
-use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::* };
+use std::{rc::Rc, cell::RefCell};
+use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::*, types::* };
 
 #[unsafe(no_mangle)]
-pub extern "C" fn editor_pup_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(EditorPupScript {
+pub extern "C" fn scripts_player_poop_pup_create_script() -> *mut dyn Script {
+    Box::into_raw(Box::new(ScriptsPlayerPoopPupScript {
         node_id: Uuid::nil(),
     })) as *mut dyn Script
 }
 
-pub struct EditorPupScript {
+pub struct ScriptsPlayerPoopPupScript {
     node_id: Uuid,
 }
 
@@ -57,7 +58,7 @@ impl DerefMut for Stats {
 
 
 
-impl Script for EditorPupScript {
+impl Script for ScriptsPlayerPoopPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("Hello World".to_string());
     }
@@ -95,11 +96,12 @@ impl Script for EditorPupScript {
         }
     }
 }
-impl EditorPupScript {
-    fn bob(&mut self, poop: f32, bob: i32, james: String) {
+impl ScriptsPlayerPoopPupScript {
+    fn bob(&mut self, poop: f32, bob: i32, james: String, api: &mut ScriptApi<'_>) {
         let mut poop = poop;
         let mut bob = bob;
         let mut james = james;
+        api.JSON.parse("bob: 1");
     }
 
 }

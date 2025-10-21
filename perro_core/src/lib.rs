@@ -6,6 +6,7 @@ pub mod rendering;
 pub mod scripting;
 pub mod project;
 pub mod brk;
+pub mod types;
 
 
 pub use nodes::*;

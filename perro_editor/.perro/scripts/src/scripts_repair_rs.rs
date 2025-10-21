@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn repair_rs_create_script() -> *mut dyn Script {
+pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(RepairScript {
         node_id: Uuid::nil(),
         toolchain_ver: String::new(),

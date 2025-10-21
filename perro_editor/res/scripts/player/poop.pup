@@ -1,7 +1,5 @@
 extends Node
 
-let b: float
-
 struct Player {
     hp: int,
 }
@@ -14,8 +12,7 @@ struct Stats extends Player {
 
 
 fn init() {
-    Console.log("Hello World I am editor.pup")
-    b = 2.0
+    Console.log("Hello World")
 }
 
 fn update(delta: float) {
@@ -23,8 +20,4 @@ fn update(delta: float) {
 
 fn bob(poop: float, bob: int, james: string) {
     JSON.parse("bob: 1")
-}
-
-fn foo() {
-    Console.log("poop and fart")
 }
