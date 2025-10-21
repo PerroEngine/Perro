@@ -14,6 +14,7 @@ impl PupAPI {
             PupTime::NAME => PupTime::resolve_method(func),
             PupOS::NAME   => PupOS::resolve_method(func),
             PupConsole::NAME => PupConsole::resolve_method(func),
+            PupScriptType::NAME => PupScriptType::resolve_method(func),
             _ => None,
         }
     }
@@ -68,6 +69,18 @@ impl PupConsole {
             "warn" | "print_warn" => Some(ApiModule::Console(ConsoleApi::Warn)),
             "error" | "print_error" => Some(ApiModule::Console(ConsoleApi::Error)),
             "info" | "print_info" => Some(ApiModule::Console(ConsoleApi::Info)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupScriptType;
+impl PupScriptType {
+    pub const NAME: &'static str = "Script";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "new" => Some(ApiModule::ScriptType(ScriptTypeApi::Instantiate)),
             _ => None,
         }
     }

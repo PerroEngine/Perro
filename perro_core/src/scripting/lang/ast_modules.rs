@@ -4,6 +4,7 @@ pub enum ApiModule {
     Time(TimeApi),
     OS(OSApi),
     Console(ConsoleApi),
+    ScriptType(ScriptTypeApi),
 }
 
 #[derive(Debug, Clone)]
@@ -30,4 +31,9 @@ pub enum ConsoleApi {
     Warn,
     Error,
     Info
+}
+
+#[derive(Debug, Clone)]
+pub enum ScriptTypeApi {
+    Instantiate
 }

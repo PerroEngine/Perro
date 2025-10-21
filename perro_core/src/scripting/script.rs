@@ -23,6 +23,7 @@ pub enum Var {
     String(String),
 }
 
+
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -82,14 +83,42 @@ pub trait SceneAccess {
 // Operator implementations for Var
 //
 
+impl From<f32> for Var {
+    fn from(v: f32) -> Self { Var::F32(v) }
+}
+
+impl From<i32> for Var {
+    fn from(v: i32) -> Self { Var::I32(v) }
+}
+
+impl From<bool> for Var {
+    fn from(v: bool) -> Self { Var::Bool(v) }
+}
+
+impl From<&str> for Var {
+    fn from(v: &str) -> Self { Var::String(v.to_string()) }
+}
+
+impl From<String> for Var {
+    fn from(v: String) -> Self { Var::String(v) }
+}
+
+
 impl Add for Var {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
+            // numeric coercion
             (Var::I32(a), Var::I32(b)) => Var::I32(a + b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a + b),
-            (Var::String(mut a), Var::String(b)) => { a.push_str(&b); Var::String(a) }
-            _ => panic!("Add not supported"),
+            (Var::I32(a), Var::F32(b)) => Var::F32(a as f32 + b),
+            (Var::F32(a), Var::I32(b)) => Var::F32(a + b as f32),
+            
+            // string concatenation
+            (Var::String(mut a), b) => { a.push_str(&b.to_string()); Var::String(a) }
+            (a, Var::String(mut b)) => { b.insert_str(0, &a.to_string()); Var::String(b) }
+
+            _ => panic!("Add not supported for variables provided"),
         }
     }
 }
@@ -100,7 +129,9 @@ impl Sub for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a - b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a - b),
-            _ => panic!("Sub not supported"),
+            (Var::I32(a), Var::F32(b)) => Var::F32(a as f32 - b),
+            (Var::F32(a), Var::I32(b)) => Var::F32(a - b as f32),
+            _ => panic!("Sub not supported for variables provided"),
         }
     }
 }
@@ -111,7 +142,9 @@ impl Mul for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a * b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a * b),
-            _ => panic!("Mul not supported"),
+            (Var::I32(a), Var::F32(b)) => Var::F32(a as f32 * b),
+            (Var::F32(a), Var::I32(b)) => Var::F32(a * b as f32),
+            _ => panic!("Mul not supported for variables provided"),
         }
     }
 }
@@ -122,7 +155,9 @@ impl Div for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a / b),
             (Var::F32(a), Var::F32(b)) => Var::F32(a / b),
-            _ => panic!("Div not supported"),
+            (Var::I32(a), Var::F32(b)) => Var::F32(a as f32 / b),
+            (Var::F32(a), Var::I32(b)) => Var::F32(a / b as f32),
+            _ => panic!("Div not supported for variables provided"),
         }
     }
 }
@@ -132,7 +167,10 @@ impl Rem for Var {
     fn rem(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a % b),
-            _ => panic!("Rem not supported"),
+            (Var::F32(a), Var::F32(b)) => Var::F32(a % b),
+            (Var::I32(a), Var::F32(b)) => Var::F32(a as f32 % b),
+            (Var::F32(a), Var::I32(b)) => Var::F32(a % b as f32),
+            _ => panic!("Rem not supported for variables provided"),
         }
     }
 }
@@ -143,7 +181,9 @@ impl BitAnd for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a & b),
             (Var::Bool(a), Var::Bool(b)) => Var::Bool(a & b),
-            _ => panic!("BitAnd not supported"),
+            (Var::Bool(a), Var::I32(b)) => Var::I32((a as i32) & b),
+            (Var::I32(a), Var::Bool(b)) => Var::I32(a & (b as i32)),
+            _ => panic!("BitAnd not supported for variables provided"),
         }
     }
 }
@@ -154,7 +194,9 @@ impl BitOr for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a | b),
             (Var::Bool(a), Var::Bool(b)) => Var::Bool(a | b),
-            _ => panic!("BitOr not supported"),
+            (Var::Bool(a), Var::I32(b)) => Var::I32((a as i32) | b),
+            (Var::I32(a), Var::Bool(b)) => Var::I32(a | (b as i32)),
+            _ => panic!("BitOr not supported for variables provided"),
         }
     }
 }
@@ -165,7 +207,9 @@ impl BitXor for Var {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a ^ b),
             (Var::Bool(a), Var::Bool(b)) => Var::Bool(a ^ b),
-            _ => panic!("BitXor not supported"),
+            (Var::Bool(a), Var::I32(b)) => Var::I32((a as i32) ^ b),
+            (Var::I32(a), Var::Bool(b)) => Var::I32(a ^ (b as i32)),
+            _ => panic!("BitXor not supported for variables provided"),
         }
     }
 }
@@ -175,7 +219,8 @@ impl Shl for Var {
     fn shl(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a << b),
-            _ => panic!("Shl not supported"),
+            (Var::Bool(a), Var::I32(b)) => Var::I32((a as i32) << b),
+            _ => panic!("Shl not supported for variables provided"),
         }
     }
 }
@@ -185,7 +230,8 @@ impl Shr for Var {
     fn shr(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Var::I32(a), Var::I32(b)) => Var::I32(a >> b),
-            _ => panic!("Shr not supported"),
+            (Var::Bool(a), Var::I32(b)) => Var::I32((a as i32) >> b),
+            _ => panic!("Shr not supported for variables provided"),
         }
     }
 }

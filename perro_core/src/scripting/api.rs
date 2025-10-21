@@ -198,43 +198,42 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {
-    // Convert to registry key
-    let identifier = match script_path_to_identifier(path) {
-        Ok(id) => id,
-        Err(err) => {
-            eprintln!("[ScriptApi] Invalid path: {}", err);
-            return None;
+    pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {
+        // Convert to registry key
+        let identifier = match script_path_to_identifier(path) {
+            Ok(id) => id,
+            Err(err) => {
+                eprintln!("[ScriptApi] Invalid path: {}", err);
+                return None;
+            }
+        };
+
+        // Get ctor safely from provider (no scene.borrow_mut recursion)
+        let ctor = match self.scene.load_ctor(&identifier) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[ScriptApi] Failed to find script '{}': {}", identifier, e);
+                return None;
+            }
+        };
+
+        // Construct script without registering it
+        let raw = ctor();
+        let mut boxed: ScriptType = unsafe { Box::from_raw(raw) };
+        boxed.set_node_id(Uuid::nil()); // explicitly detached
+
+
+        // run init() safely using a temporary sub‑APIs
+        // note: doesn’t touch scene.scripts, only passes mut ref
+        {
+            let project_ref = self.project as *mut _;
+            let project_mut = unsafe { &mut *project_ref };
+            let mut sub_api = ScriptApi::new(0.0, self.scene, project_mut);
+            boxed.init(&mut sub_api);
         }
-    };
 
-    // Get ctor safely from provider
-    let ctor = match self.scene.load_ctor(&identifier) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!(
-                "[ScriptApi] Failed to find script '{}' ({}).",
-                identifier, e
-            );
-            return None;
-        }
-    };
-
-    // Construct script (create the Box)
-    let raw = ctor();
-    let mut boxed: ScriptType = unsafe { Box::from_raw(raw) };
-    boxed.set_node_id(Uuid::nil()); // detached standalone script
-
-    // Run init() safely using a temporary api context
-    {
-        let project_ref = self.project as *mut _;
-        let project_mut = unsafe { &mut *project_ref };
-        let mut sub_api = ScriptApi::new(0.0, self.scene, project_mut);
-        boxed.init(&mut sub_api);
+        Some(boxed)
     }
-
-    Some(boxed)
-}
 
     //-------------------------------------------------
     // Asset IO
@@ -281,20 +280,22 @@ pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {
     }
 
     /// Print a warning in yellow
-    pub fn print_warn<T: std::fmt::Display>(&self, msg: T) {
-        // ANSI yellow = 33
-        println!("\x1b[33m[WARN]\x1b[0m {}", msg);
+   pub fn print_warn<T: std::fmt::Display>(&self, msg: T) {
+        // [WARN] in bright yellow, message in dim golden yellow
+        println!("\x1b[93m[WARN]\x1b[0m \x1b[33m{}\x1b[0m", msg);
     }
 
-    /// Print an error in red
-    pub fn print_error<T: std::fmt::Display>(&self, msg: T) {
-        // ANSI red = 31
-        eprintln!("\x1b[31m[ERROR]\x1b[0m {}", msg);
-    }
+/// Print an error with `[ERROR]` in ruby red and message in red
+pub fn print_error<T: std::fmt::Display>(&self, msg: T) {
+    // `[ERROR]` in ruby-like red (38;5;160), message in standard red (31)
+    eprintln!("\x1b[38;5;160m[ERROR]\x1b[0m \x1b[31m{}\x1b[0m", msg);
+}
 
-    /// Optionally, print info in cyan if you want another level
+
+    /// Print info in blue/cyan tones (bright blue tag, cyan/yellowish message)
     pub fn print_info<T: std::fmt::Display>(&self, msg: T) {
-        println!("\x1b[36m[INFO]\x1b[0m {}", msg);
+        // [INFO] in bright blue, message in cyan (or pale yellow if you want warmth)
+        println!("\x1b[94m[INFO]\x1b[0m \x1b[96m{}\x1b[0m", msg);
     }
     
 }

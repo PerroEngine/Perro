@@ -1,9 +1,8 @@
-// scripting/pup/lexer.rs
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum PupToken {
     Extends,
     Struct,
+    New,
     Fn,
     Let,
     Pass,
@@ -48,6 +47,7 @@ pub enum PupToken {
 pub struct PupLexer {
     input: Vec<char>,
     pos: usize,
+    prev_token: Option<PupToken>, // Track previous token
 }
 
 impl PupLexer {
@@ -55,6 +55,7 @@ impl PupLexer {
         Self {
             input: input.chars().collect(),
             pos: 0,
+            prev_token: None,
         }
     }
 
@@ -107,27 +108,23 @@ impl PupLexer {
         self.skip_whitespace();
 
         if self.peek().is_none() {
+            self.prev_token = Some(PupToken::Eof);
             return PupToken::Eof;
         }
 
         let ch = self.advance().unwrap();
-        match ch {
+        let tok = match ch {
             '$' => {
                 if self.peek() == Some('"') {
                     self.advance(); // consume the quote
                     let start = self.pos;
                     while let Some(c) = self.advance() {
-                        if c == '"' {
-                            break;
-                        }
+                        if c == '"' { break; }
                     }
                     let s: String = self.input[start..self.pos - 1].iter().collect();
                     PupToken::InterpolatedString(s)
-                } else {
-                    PupToken::Dollar
-                }
+                } else { PupToken::Dollar }
             }
-
             '@' => PupToken::At,
             '{' => PupToken::LBrace,
             '}' => PupToken::RBrace,
@@ -135,91 +132,55 @@ impl PupLexer {
             ')' => PupToken::RParen,
             '.' => PupToken::Dot,
             ';' => PupToken::Semicolon,
-            ':' => {
-                if self.peek() == Some(':') {
-                    self.advance();
-                    PupToken::DoubleColon
-                } else {
-                    PupToken::Colon
-                }
-            }
+            ':' => if self.peek() == Some(':') { self.advance(); PupToken::DoubleColon } else { PupToken::Colon },
             ',' => PupToken::Comma,
-            '=' => {
-                if self.peek() == Some('=') {
-                    self.advance();
-                    PupToken::Eq
-                } else {
-                    PupToken::Assign
-                }
-            }
-            '-' => {
-                if self.peek() == Some('=') {
-                    self.advance();
-                    PupToken::MinusEq
-                } else {
-                    PupToken::Minus
-                }
-            }
-            '+' => {
-                if self.peek() == Some('=') {
-                    self.advance();
-                    PupToken::PlusEq
-                } else {
-                    PupToken::Plus
-                }
-            }
-            '*' => {
-                if self.peek() == Some('=') {
-                    self.advance();
-                    PupToken::MulEq
-                } else {
-                    PupToken::Star
-                }
-            }
-            '/' => {
-                if self.peek() == Some('=') {
-                    self.advance();
-                    PupToken::DivEq
-                } else {
-                    PupToken::Slash
-                }
-            }
+            '=' => if self.peek() == Some('=') { self.advance(); PupToken::Eq } else { PupToken::Assign },
+            '-' => if self.peek() == Some('=') { self.advance(); PupToken::MinusEq } else { PupToken::Minus },
+            '+' => if self.peek() == Some('=') { self.advance(); PupToken::PlusEq } else { PupToken::Plus },
+            '*' => if self.peek() == Some('=') { self.advance(); PupToken::MulEq } else { PupToken::Star },
+            '/' => if self.peek() == Some('=') { self.advance(); PupToken::DivEq } else { PupToken::Slash },
             '"' => {
                 let start = self.pos;
                 while let Some(c) = self.advance() {
-                    if c == '"' {
-                        break;
-                    }
+                    if c == '"' { break; }
                 }
                 let s: String = self.input[start..self.pos - 1].iter().collect();
                 PupToken::String(s)
             }
-            _ if ch.is_ascii_digit() => {
-                self.pos -= 1; 
-                self.read_number()
-            }
+            _ if ch.is_ascii_digit() => { self.pos -= 1; self.read_number() }
             _ if ch.is_alphabetic() || ch == '_' => {
-                self.pos -= 1; 
+                self.pos -= 1;
                 let ident = self.read_identifier();
+
+                // ⚡ Check for context after 'new'
+                let after_new = matches!(self.prev_token, Some(PupToken::New));
+
                 match ident.as_str() {
                     "extends" => PupToken::Extends,
                     "struct" => PupToken::Struct,
+                    "new"    => PupToken::New,
                     "export" => PupToken::Export,
-                    "fn" => PupToken::Fn,
-                    "super" => PupToken::Super,
-                    "self" => PupToken::SelfAccess,
-                    "let" => PupToken::Let,
-                    "pass" => PupToken::Pass,
-                    "delta" => PupToken::Ident("delta".to_string()),
-                    "float" => PupToken::Type("float".to_string()),
-                    "int" => PupToken::Type("int".to_string()),
+                    "fn"     => PupToken::Fn,
+                    "super"  => PupToken::Super,
+                    "self"   => PupToken::SelfAccess,
+                    "let"    => PupToken::Let,
+                    "pass"   => PupToken::Pass,
+                    "delta"  => PupToken::Ident("delta".to_string()),
+                    "float"  => PupToken::Type("float".to_string()),
+                    "int"    => PupToken::Type("int".to_string()),
                     "number" => PupToken::Type("number".to_string()),
                     "string" => PupToken::Type("string".to_string()),
-                    "bool" => PupToken::Type("bool".to_string()),
+                    "bool"   => PupToken::Type("bool".to_string()),
+                    "Script" => {
+                        if after_new { PupToken::Ident("Script".to_string()) } else { PupToken::Type("script".to_string()) }
+                    }
                     _ => PupToken::Ident(ident),
                 }
             }
             _ => panic!("Unexpected character: {}", ch),
-        }
+        };
+
+        self.prev_token = Some(tok.clone());
+        tok
     }
 }

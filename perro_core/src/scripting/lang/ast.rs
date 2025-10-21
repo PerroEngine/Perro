@@ -28,6 +28,8 @@ impl Variable {
             Some(Type::Number) => "f32".to_string(),
             Some(Type::Bool)   => "bool".to_string(),
             Some(Type::String) => "String".to_string(),
+            Some(Type::StrRef) => "&str".to_string(),
+            Some(Type::Script) => "Option<ScriptType>".to_string(),
             Some(Type::Void)   => panic!("Void type cannot be used as field type"),
             Some(Type::Custom(name)) => name.clone(),
             None => panic!("Cannot convert None type to Rust — type inference not resolved yet"),
@@ -50,7 +52,9 @@ impl Variable {
         Some(Type::Int)    => "0i32".to_string(),
         Some(Type::Number) => "0.0f32".to_string(),
         Some(Type::Bool)   => "false".to_string(),
+        Some(Type::Script) => "None".to_string(),
         Some(Type::String) => "\"\".to_string()".to_string(),
+        Some(Type::StrRef) => "\"\"".to_owned(),
         Some(Type::Void)   => panic!("Void type cannot be used as field type"),
         Some(Type::Custom(_)) => "Default::default()".to_string(),
         None => panic!("Cannot generate default value for inferred type"),
@@ -85,6 +89,8 @@ pub enum Type {
     Void,
     Bool,
     String,
+    StrRef,
+    Script,
     Custom(String),
 }
 

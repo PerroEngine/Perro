@@ -15,13 +15,13 @@ use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::
 pub extern "C" fn scripts_editor_pup_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(ScriptsEditorPupScript {
         node_id: Uuid::nil(),
-    b: 0.0f32,
+    b: None,
     })) as *mut dyn Script
 }
 
 pub struct ScriptsEditorPupScript {
     node_id: Uuid,
-    b: f32,
+    b: Option<ScriptType>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -62,8 +62,8 @@ impl DerefMut for Stats {
 
 impl Script for ScriptsEditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Hello World I am editor.pup".to_string());
-        self.b = 2f32;
+        api.print("Hello World I am editor.pup");
+        self.b = api.instantiate_script("res://scripts/csharp.cs");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -89,14 +89,14 @@ impl Script for ScriptsEditorPupScript {
 
     fn get_var(&self, name: &str) -> Option<Var> {
         match name {
-            "b" => Some(Var::F32(self.b)),
+            // TODO: get_var for unsupported type `Option<ScriptType>`
             _ => None,
         }
     }
 
     fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
         match (name, val) {
-            ("b", Var::F32(v)) => { self.b = v; Some(()) },
+            // TODO: set_var for unsupported type `Option<ScriptType>`
             _ => None,
         }
     }
@@ -110,7 +110,7 @@ impl ScriptsEditorPupScript {
     }
 
     fn foo(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("poop and fart".to_string());
+        api.print("poop and fart");
     }
 
 }

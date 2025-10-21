@@ -221,6 +221,7 @@ fn parse_field(&mut self) -> Result<StructField, String> {
             PupToken::Type(t) if t == "number" => Type::Number,
             PupToken::Type(t) if t == "bool"   => Type::Bool,
             PupToken::Type(t) if t == "string" => Type::String,
+            PupToken::Type(t) if t == "script" => Type::Script,
             PupToken::Ident(n) => Type::Custom(n.clone()),
             _ => return Err("Expected type".into()),
         };
@@ -345,6 +346,36 @@ fn parse_field(&mut self) -> Result<StructField, String> {
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match &self.current_token {
+PupToken::New => {
+    self.next_token();
+
+    // Accept Ident (API name) for constructor
+    let api_name = if let PupToken::Ident(n) = &self.current_token {
+        n.clone()
+    } else {
+        return Err("Expected type/API name after 'new'".into());
+    };
+    self.next_token();
+
+    self.expect(PupToken::LParen)?;
+    let mut args = Vec::new();
+    if self.current_token != PupToken::RParen {
+        args.push(self.parse_expression(0)?);
+        while self.current_token == PupToken::Comma {
+            self.next_token();
+            args.push(self.parse_expression(0)?);
+        }
+    }
+    self.expect(PupToken::RParen)?;
+
+    Ok(Expr::ApiCall(
+        PupAPI::resolve(&api_name, "new")
+            .ok_or_else(|| format!("Type/API '{}' has no .new() constructor", api_name))?,
+        args,
+    ))
+}
+
+
             PupToken::SelfAccess => {
                 self.next_token();
                 Ok(Expr::SelfAccess)

@@ -80,7 +80,7 @@ impl DerefMut for Player3 {
 
 impl Script for ScriptsCsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Hello World I am csharp.cs".to_string());
+        api.print("Hello World I am csharp.cs");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -118,7 +118,7 @@ impl Script for ScriptsCsharpCsScript {
 }
 impl ScriptsCsharpCsScript {
     fn fart(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Fart".to_string());
+        api.print("Fart");
     }
 
 }

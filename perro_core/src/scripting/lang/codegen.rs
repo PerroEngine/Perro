@@ -445,6 +445,8 @@ impl Type {
             Type::Int => "i32",
             Type::Bool => "bool",
             Type::String => "String",
+            Type::StrRef => "&str",
+            Type::Script => "Option<ScriptType>",
             Type::Custom(name) => name.as_str(),
             Type::Void => "()",
         }
@@ -710,8 +712,8 @@ impl Stmt {
             Stmt::MemberAssignOp(lhs_expr, _, rhs_expr) => {
                         lhs_expr.contains_self() || rhs_expr.contains_self()
                     }
-Stmt::ScriptAssign(_, _, expr) => todo!(),
-            Stmt::ScriptAssignOp(_, field, op, expr) => todo!(),
+Stmt::ScriptAssign(_, _, expr) => expr.contains_self(),
+            Stmt::ScriptAssignOp(_, _, _, expr) => expr.contains_self(),
         }
     }
 
@@ -730,8 +732,9 @@ Stmt::ScriptAssign(_, _, expr) => todo!(),
             Stmt::MemberAssign(lhs, rhs) => lhs.contains_delta() || rhs.contains_delta(),
             Stmt::MemberAssignOp(lhs, _, rhs) => lhs.contains_delta() || rhs.contains_delta(),
             Stmt::Pass => false,
-            Stmt::ScriptAssign(_, _, expr) => todo!(),
-            Stmt::ScriptAssignOp(_, field, op, expr) => todo!(),
+            Stmt::ScriptAssign(_, _, expr) => expr.contains_delta(),
+            Stmt::ScriptAssignOp(_, _, _, expr) => expr.contains_delta(),
+
         }
     }
 
@@ -820,40 +823,27 @@ impl Expr {
                     }
             Expr::BaseAccess => "self.base".to_string(),
            Expr::Call(target, args) => {
-            // 1️⃣ Extract underlying name for API analysis
-            fn get_target_name(expr: &Expr) -> Option<&str> {
-                match expr {
-                    Expr::Ident(name) => Some(name.as_str()),
-                    Expr::MemberAccess(_, name) => Some(name.as_str()),
-                    _ => None,
-                }
-            }
+    let args_rust: Vec<String> = args
+        .iter()
+        .map(|a| a.to_rust(needs_self, script, None))
+        .collect();
+    let needs_api = Self::get_target_name(target)
+        .map(|n| script.function_uses_api(n))
+        .unwrap_or(false);
+    let target_str = target.to_rust(needs_self, script, None);
+    if needs_api {
+        if args_rust.is_empty() {
+            format!("{}(api);", target_str)
+        } else {
+            format!("{}({}, api);", target_str, args_rust.join(", "))
+        }
+    } else if args_rust.is_empty() {
+        format!("{}();", target_str)
+    } else {
+        format!("{}({});", target_str, args_rust.join(", "))
+    }
+}
 
-            // 2️⃣ Get argument strings
-            let args_rust: Vec<String> = args
-                .iter()
-                .map(|a| a.to_rust(needs_self, script, None))
-                .collect();
-
-            // 3️⃣ Determine API usage
-            let needs_api = get_target_name(target)
-                .map(|n| script.function_uses_api(n))
-                .unwrap_or(false);
-
-            // 4️⃣ Now safely render code
-            let target_str = target.to_rust(needs_self, script, None);
-            if needs_api {
-                if args_rust.is_empty() {
-                    format!("{}(api);", target_str)
-                } else {
-                    format!("{}({}, api);", target_str, args_rust.join(", "))
-                }
-            } else if args_rust.is_empty() {
-                format!("{}();", target_str)
-            } else {
-                format!("{}({});", target_str, args_rust.join(", "))
-            }
-        },
             Expr::ObjectLiteral(pairs) => {
                         let fields: Vec<String> = pairs.iter()
                             .map(|(k, v)| format!("\"{}\": {}", k, v.to_rust(needs_self, script, None)))
@@ -943,7 +933,8 @@ impl Literal {
                 _ => format!("{}f32", *f as f32),
             },
             Literal::String(s) => match expected_type {
-                Some(Type::String) | None => format!("\"{}\".to_string()", s),
+                Some(Type::String) | None => format!("\"{}\"", s),
+                Some(Type::StrRef) => format!("\"{}\"", s), // &str
                 Some(Type::Bool) => format!("{}", if !s.is_empty() { "true" } else { "false" }),
                 _ => format!("\"{}\"", s),
             },

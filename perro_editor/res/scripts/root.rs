@@ -20,12 +20,14 @@ pub extern "C" fn root_create_script() -> *mut dyn Script {
     Box::into_raw(Box::new(RootScript {
         node_id: Uuid::nil(),
         script: None,
+        bob: "hello"
     })) as *mut dyn Script
 }
 
 pub struct RootScript {
     node_id: Uuid,
     script: Option<ScriptType>,
+    bob: &'static str
 }
 
 impl RootScript {
@@ -171,10 +173,6 @@ impl Script for RootScript {
         api.save_asset("user://b.json", file).unwrap();
 
         let mut script = api.instantiate_script("res://scripts/editor.pup").unwrap();
-
-        api.print_info(script.get_var("b").unwrap());
-        script.set_var("b", Var::F32(42.0)).unwrap();
-        api.print_info(script.get_var("b").unwrap());
 
         // Skip version management in debug builds
         if cfg!(debug_assertions) {

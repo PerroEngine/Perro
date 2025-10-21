@@ -8,6 +8,7 @@ impl ApiModule {
             ApiModule::Time(api_fn) => api_fn.to_rust(args, script, needs_self),
             ApiModule::OS(api_fn) => api_fn.to_rust(args, script, needs_self),
             ApiModule::Console(api_fn) => api_fn.to_rust(args, script, needs_self),
+            ApiModule::ScriptType(api_fn) => api_fn.to_rust(args, script, needs_self),
         }
     }
 }
@@ -103,6 +104,20 @@ impl ConsoleApi {
                 } else {
                     format!("api.print_info({});", args_str)
                 }
+            }
+        }
+    }
+}
+
+impl ScriptTypeApi {
+    pub fn to_rust(&self, args: &[Expr], _script: &Script, _needs_self: bool) -> String {
+        match self {
+            ScriptTypeApi::Instantiate => {
+                let arg = args
+                    .get(0)
+                    .map(|a| a.to_rust(_needs_self, _script, None))
+                    .unwrap_or_default();
+                format!("api.instantiate_script({})", arg)
             }
         }
     }

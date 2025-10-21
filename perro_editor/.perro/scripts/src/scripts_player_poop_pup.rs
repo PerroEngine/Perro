@@ -60,7 +60,7 @@ impl DerefMut for Stats {
 
 impl Script for ScriptsPlayerPoopPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Hello World".to_string());
+        api.print("Hello World");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
