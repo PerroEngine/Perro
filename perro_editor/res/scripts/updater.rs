@@ -5,24 +5,27 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
-use perro_core::{
-    script::{UpdateOp, Var},
-    scripting::api::ScriptApi,
-    scripting::script::Script,
-    nodes::*,
-};
+use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::process::Command;
 
+/// @PerroScript
+pub struct UpdaterScript {
+    node_id: Uuid,
+    check_timer: f32,
+    state: UpdateState,
+    my_version: String,
+}
+
 #[unsafe(no_mangle)]
-pub extern "C" fn updater_create_script() -> *mut dyn Script {
+pub extern "C" fn updater_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(UpdaterScript {
         node_id: Uuid::nil(),
         check_timer: 0.0,
         state: UpdateState::Initial,
         my_version: String::new(),
-    })) as *mut dyn Script
+    })) as *mut dyn ScriptObject
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,12 +39,6 @@ enum UpdateState {
     Error(String),
 }
 
-pub struct UpdaterScript {
-    node_id: Uuid,
-    check_timer: f32,
-    state: UpdateState,
-    my_version: String,
-}
 
 const MANIFEST_CACHE_HOURS: u64 = 6;
 
@@ -384,32 +381,6 @@ impl Script for UpdaterScript {
         } else if matches!(self.state, UpdateState::ReadyToRelaunch { .. }) {
             self.process_update_check(api);
         }
-    }
-
-    fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
-    }
-
-    fn get_node_id(&self) -> Uuid {
-        self.node_id
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn apply_exports(&mut self, _: &HashMap<String, Value>) {}
-
-    fn get_var(&self, _: &str) -> Option<Var> {
-        None
-    }
-
-    fn set_var(&mut self, _: &str, _: Var) -> Option<()> {
-        None
     }
 }
 

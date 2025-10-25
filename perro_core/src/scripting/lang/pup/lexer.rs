@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum PupToken {
+    Import,
     Extends,
     Struct,
     New,
@@ -42,6 +43,7 @@ pub enum PupToken {
     Comma,
     Eof,
 }
+
 
 #[derive(Debug, Clone)] 
 pub struct PupLexer {
@@ -152,30 +154,26 @@ impl PupLexer {
                 self.pos -= 1;
                 let ident = self.read_identifier();
 
-                // ⚡ Check for context after 'new'
-                let after_new = matches!(self.prev_token, Some(PupToken::New));
-
-                match ident.as_str() {
-                    "extends" => PupToken::Extends,
-                    "struct" => PupToken::Struct,
-                    "new"    => PupToken::New,
-                    "export" => PupToken::Export,
-                    "fn"     => PupToken::Fn,
-                    "super"  => PupToken::Super,
-                    "self"   => PupToken::SelfAccess,
-                    "let"    => PupToken::Let,
-                    "pass"   => PupToken::Pass,
-                    "delta"  => PupToken::Ident("delta".to_string()),
-                    "float"  => PupToken::Type("float".to_string()),
-                    "int"    => PupToken::Type("int".to_string()),
-                    "number" => PupToken::Type("number".to_string()),
-                    "string" => PupToken::Type("string".to_string()),
-                    "bool"   => PupToken::Type("bool".to_string()),
-                    "Script" => {
-                        if after_new { PupToken::Ident("Script".to_string()) } else { PupToken::Type("script".to_string()) }
-                    }
-                    _ => PupToken::Ident(ident),
-                }
+              match ident.as_str() {
+                "extends" => PupToken::Extends,
+                "struct"  => PupToken::Struct,
+                "new"     => PupToken::New,
+                "export"  => PupToken::Export,
+                "fn"      => PupToken::Fn,
+                "super"   => PupToken::Super,
+                "self"    => PupToken::SelfAccess,
+                "let"     => PupToken::Let,
+                "pass"    => PupToken::Pass,
+                "script"  => PupToken::Ident("script".to_string()), // Keep as Ident for now
+                "import"  => PupToken::Import, // Add this
+                "delta"   => PupToken::Ident("delta".to_string()),
+                "float"   => PupToken::Type("float".to_string()),
+                "int"     => PupToken::Type("int".to_string()),
+                "number"  => PupToken::Type("number".to_string()),
+                "string"  => PupToken::Type("string".to_string()),
+                "bool"    => PupToken::Type("bool".to_string()),
+                _ => PupToken::Ident(ident),
+            }
             }
             _ => panic!("Unexpected character: {}", ch),
         };

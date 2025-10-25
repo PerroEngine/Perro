@@ -5,29 +5,40 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
-use perro_core::{
-    script::{UpdateOp, Var},
-    scripting::api::ScriptApi,
-    scripting::script::Script,
-    nodes::*,
-    types::*
-};
+use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn root_create_script() -> *mut dyn Script {
+pub extern "C" fn root_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RootScript {
         node_id: Uuid::nil(),
-        script: None,
-        bob: "hello"
-    })) as *mut dyn Script
+        b: 0.0f32,
+        a: 0i32,
+        e: String::new(),
+        f: F { g: 0 },
+        h: 0,
+    })) as *mut dyn ScriptObject
 }
 
+/// @PerroScript
 pub struct RootScript {
     node_id: Uuid,
-    script: Option<ScriptType>,
-    bob: &'static str
+    /// @expose
+    pub b: f32,
+    /// @expose
+    pub a: i32,
+    /// @expose
+    e: String,
+    /// @expose
+    pub f: F,
+    /// @expose
+    pub h: i64,
+}
+
+#[derive(Clone)]
+pub struct F {
+    pub g: i32,
 }
 
 impl RootScript {
@@ -201,32 +212,6 @@ impl Script for RootScript {
     }
 
     fn update(&mut self, _api: &mut ScriptApi<'_>) {}
-
-    fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
-    }
-
-    fn get_node_id(&self) -> Uuid {
-        self.node_id
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn apply_exports(&mut self, _: &HashMap<String, Value>) {}
-
-    fn get_var(&self, _: &str) -> Option<Var> {
-        None
-    }
-
-    fn set_var(&mut self, _: &str, _: Var) -> Option<()> {
-        None
-    }
 }
 
 // Natural ordering for version comparison

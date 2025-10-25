@@ -1,26 +1,37 @@
 #![allow(improper_ctypes_definitions)]
-
 #![allow(unused)]
 
 use std::any::Any;
-
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
 use std::{rc::Rc, cell::RefCell};
-use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::*, types::* };
 
-#[unsafe(no_mangle)]
-pub extern "C" fn scripts_player_poop_pup_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(ScriptsPlayerPoopPupScript {
-        node_id: Uuid::nil(),
-    })) as *mut dyn Script
-}
+use perro_core::prelude::*;
+
+// ========================================================================
+// ScriptsPlayerPoopPup - Main Script Structure
+// ========================================================================
 
 pub struct ScriptsPlayerPoopPupScript {
     node_id: Uuid,
 }
+
+// ========================================================================
+// ScriptsPlayerPoopPup - Creator Function (FFI Entry Point)
+// ========================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn scripts_player_poop_pup_create_script() -> *mut dyn ScriptObject {
+    Box::into_raw(Box::new(ScriptsPlayerPoopPupScript {
+        node_id: Uuid::nil(),
+    })) as *mut dyn ScriptObject
+}
+
+// ========================================================================
+// Supporting Struct Definitions
+// ========================================================================
 
 #[derive(Default, Debug, Clone)]
 pub struct Player {
@@ -58,6 +69,10 @@ impl DerefMut for Stats {
 
 
 
+// ========================================================================
+// ScriptsPlayerPoopPup - Script Init & Update Implementation
+// ========================================================================
+
 impl Script for ScriptsPlayerPoopPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("Hello World");
@@ -66,6 +81,24 @@ impl Script for ScriptsPlayerPoopPupScript {
     fn update(&mut self, api: &mut ScriptApi<'_>) {
     }
 
+}
+
+// ========================================================================
+// ScriptsPlayerPoopPup - Script-Defined Methods
+// ========================================================================
+
+impl ScriptsPlayerPoopPupScript {
+    fn bob(&mut self, poop: f32, bob: i32, james: String, api: &mut ScriptApi<'_>) {
+        let mut poop = poop;
+        let mut bob = bob;
+        let mut james = james;
+        api.JSON.parse("bob: 1");
+    }
+
+}
+
+
+impl ScriptObject for ScriptsPlayerPoopPupScript {
     fn set_node_id(&mut self, id: Uuid) {
         self.node_id = id;
     }
@@ -81,27 +114,24 @@ impl Script for ScriptsPlayerPoopPupScript {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self as &mut dyn Any
     }
-    fn apply_exports(&mut self, hashmap: &std::collections::HashMap<String, serde_json::Value>) {
-    }
 
-    fn get_var(&self, name: &str) -> Option<Var> {
+    fn get_var(&self, name: &str) -> Option<&dyn Any> {
         match name {
             _ => None,
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
-        match (name, val) {
+    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+        match name {
             _ => None,
         }
     }
-}
-impl ScriptsPlayerPoopPupScript {
-    fn bob(&mut self, poop: f32, bob: i32, james: String, api: &mut ScriptApi<'_>) {
-        let mut poop = poop;
-        let mut bob = bob;
-        let mut james = james;
-        api.JSON.parse("bob: 1");
-    }
 
+    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+        for (key, _) in hashmap.iter() {
+            match key.as_str() {
+                _ => {},
+            }
+        }
+    }
 }

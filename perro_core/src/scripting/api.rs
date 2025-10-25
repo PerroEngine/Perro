@@ -194,7 +194,7 @@ impl<'a> ScriptApi<'a> {
     pub fn call_update(&mut self, id: Uuid) {
         if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
-            script.update(self);
+            script.engine_update(self);
         }
     }
 
@@ -266,10 +266,16 @@ impl<'a> ScriptApi<'a> {
     pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         self.scene.merge_nodes(nodes);
     }
-    pub fn update_script_var(
-        &mut self, node_id: &Uuid, name: &str, op: UpdateOp, val: Var,
+    pub fn set_script_var(
+        &mut self, node_id: &Uuid, name: &str, val: Var,
     ) -> Option<()> {
-        self.scene.update_script_var(node_id, name, op, val)
+        self.scene.set_script_var(node_id, name, val)
+    }
+
+    pub fn get_script_var(
+        &mut self, node_id: &Uuid, name: &str,
+    ) {
+        println!("Getting script var '{}' for node {}", name, node_id);
     }
 
 

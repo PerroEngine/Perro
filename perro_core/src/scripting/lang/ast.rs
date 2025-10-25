@@ -25,7 +25,6 @@ impl Variable {
         match &self.typ {
             Some(Type::Float)  => "f32".to_string(),
             Some(Type::Int)    => "i32".to_string(),
-            Some(Type::Number) => "f32".to_string(),
             Some(Type::Bool)   => "bool".to_string(),
             Some(Type::String) => "String".to_string(),
             Some(Type::StrRef) => "&str".to_string(),
@@ -35,6 +34,18 @@ impl Variable {
             None => panic!("Cannot convert None type to Rust — type inference not resolved yet"),
         }
     }
+
+    pub fn parse_type(s: &str) -> Type {
+        match s {
+                "f32"    => Type::Float,
+                "i32"    => Type::Int,
+                "bool"   => Type::Bool,
+                "String" => Type::String,
+                "&str"   => Type::StrRef,
+                other    => Type::Custom(other.to_string()),
+            }
+        }
+
 
     pub fn rust_initialization(&self, script: &Script) -> String {
         if let Some(expr) = &self.value {
@@ -50,7 +61,6 @@ impl Variable {
     match &self.typ {
         Some(Type::Float)  => "0.0f32".to_string(),
         Some(Type::Int)    => "0i32".to_string(),
-        Some(Type::Number) => "0.0f32".to_string(),
         Some(Type::Bool)   => "false".to_string(),
         Some(Type::Script) => "None".to_string(),
         Some(Type::String) => "\"\".to_string()".to_string(),
@@ -85,7 +95,6 @@ pub struct Param {
 pub enum Type {
     Float,
     Int,
-    Number,
     Void,
     Bool,
     String,
@@ -114,7 +123,6 @@ pub enum Expr {
     Literal(Literal),
     BinaryOp(Box<Expr>, Op, Box<Expr>),
     MemberAccess(Box<Expr>, String),
-    ScriptAccess(Box<Expr>, String),
     SelfAccess,
     BaseAccess,
     Call(Box<Expr>, Vec<Expr>),
@@ -127,7 +135,6 @@ pub enum Expr {
 pub enum Literal {
     Int(i32),
     Float(f32),
-    Number(f32),
     String(String),
     Bool(bool),
     Interpolated(String),

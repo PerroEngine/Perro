@@ -9,6 +9,7 @@ impl ApiModule {
             ApiModule::OS(api_fn) => api_fn.to_rust(args, script, needs_self),
             ApiModule::Console(api_fn) => api_fn.to_rust(args, script, needs_self),
             ApiModule::ScriptType(api_fn) => api_fn.to_rust(args, script, needs_self),
+            ApiModule::NodeSugar(api_fn) => api_fn.to_rust(args, script, needs_self),
         }
     }
 }
@@ -118,6 +119,47 @@ impl ScriptTypeApi {
                     .map(|a| a.to_rust(_needs_self, _script, None))
                     .unwrap_or_default();
                 format!("api.instantiate_script({})", arg)
+            }
+        }
+    }
+}
+
+impl NodeSugarApi {
+    pub fn to_rust(&self, args: &[Expr], _script: &Script, _needs_self: bool) -> String {
+        match self {
+            NodeSugarApi::GetVar => {
+                // args[0] = node expression
+                // args[1] = variable name (string literal)
+                let node_expr = args
+                    .get(0)
+                    .map(|a| a.to_rust(_needs_self, _script, None))
+                    .unwrap_or_default();
+                let var_name = args
+                    .get(1)
+                    .map(|a| a.to_rust(_needs_self, _script, None))
+                    .unwrap_or_default();
+
+                format!("api.get_script_var(&{}.id, {})", node_expr, var_name)
+            }
+
+            NodeSugarApi::SetVar => {
+                // args[0] = node expression
+                // args[1] = variable name (string literal)
+                // args[2] = new value
+                let node_expr = args
+                    .get(0)
+                    .map(|a| a.to_rust(_needs_self, _script, None))
+                    .unwrap_or_default();
+                let var_name = args
+                    .get(1)
+                    .map(|a| a.to_rust(_needs_self, _script, None))
+                    .unwrap_or_default();
+                let new_value = args
+                    .get(2)
+                    .map(|a| a.to_rust(_needs_self, _script, None))
+                    .unwrap_or_default();
+
+                format!("api.set_script_var(&{}.id, {}, {})", node_expr, var_name, new_value)
             }
         }
     }

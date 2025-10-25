@@ -1,6 +1,7 @@
 extends Node
 
-let b: Script
+
+let a: float
 
 struct Player {
     hp: int,
@@ -16,7 +17,6 @@ struct Stats extends Player {
 fn init() {
     Console.log("Hello World I am editor.pup")
 
-    b = new Script("res://scripts/csharp.cs")
 }
 
 fn update(delta: float) {

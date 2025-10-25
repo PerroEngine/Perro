@@ -1,29 +1,27 @@
 #![allow(improper_ctypes_definitions)]
 #![allow(unused)]
 
+
+
 use std::any::Any;
 use std::collections::HashMap;
 use serde_json::Value;
 use uuid::Uuid;
-use perro_core::{
-    script::{UpdateOp, Var},
-    scripting::api::ScriptApi,
-    scripting::script::Script,
-    nodes::*,
-};
+use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn Script {
+pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RepairScript {
         node_id: Uuid::nil(),
         toolchain_ver: String::new(),
         engine_ver: String::new(),
         editor_mode: false,
-    })) as *mut dyn Script
+    })) as *mut dyn ScriptObject
 }
 
+/// @PerroScript
 pub struct RepairScript {
     node_id: Uuid,
     toolchain_ver: String,
@@ -318,7 +316,11 @@ impl Script for RepairScript {
         // Repair script doesn't do anything in update loop
         // All operations are manual or triggered in init
     }
+}
 
+
+
+impl ScriptObject for RepairScript {
     fn set_node_id(&mut self, id: Uuid) {
         self.node_id = id;
     }
@@ -328,20 +330,30 @@ impl Script for RepairScript {
     }
 
     fn as_any(&self) -> &dyn Any {
-        self
+        self as &dyn Any
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+        self as &mut dyn Any
     }
 
-    fn apply_exports(&mut self, _: &HashMap<String, Value>) {}
-
-    fn get_var(&self, _: &str) -> Option<Var> {
-        None
+    fn get_var(&self, name: &str) -> Option<&dyn Any> {
+        match name {
+            _ => None,
+        }
     }
 
-    fn set_var(&mut self, _: &str, _: Var) -> Option<()> {
-        None
+    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+        match name {
+            _ => None,
+        }
+    }
+
+    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+        for (key, _) in hashmap.iter() {
+            match key.as_str() {
+                _ => {},
+            }
+        }
     }
 }

@@ -5,29 +5,40 @@ use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
-use perro_core::{
-    script::{UpdateOp, Var},
-    scripting::api::ScriptApi,
-    scripting::script::Script,
-    nodes::*,
-    types::*
-};
+use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn Script {
+pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RootScript {
         node_id: Uuid::nil(),
-        script: None,
-        bob: "hello"
-    })) as *mut dyn Script
+        b: 0.0f32,
+        a: 0i32,
+        e: String::new(),
+        f: F { g: 0 },
+        h: 0,
+    })) as *mut dyn ScriptObject
 }
 
+/// @PerroScript
 pub struct RootScript {
     node_id: Uuid,
-    script: Option<ScriptType>,
-    bob: &'static str
+    /// @expose
+    pub b: f32,
+    /// @expose
+    pub a: i32,
+    /// @expose
+    e: String,
+    /// @expose
+    pub f: F,
+    /// @expose
+    pub h: i64,
+}
+
+#[derive(Clone)]
+pub struct F {
+    pub g: i32,
 }
 
 impl RootScript {
@@ -201,32 +212,6 @@ impl Script for RootScript {
     }
 
     fn update(&mut self, _api: &mut ScriptApi<'_>) {}
-
-    fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
-    }
-
-    fn get_node_id(&self) -> Uuid {
-        self.node_id
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn apply_exports(&mut self, _: &HashMap<String, Value>) {}
-
-    fn get_var(&self, _: &str) -> Option<Var> {
-        None
-    }
-
-    fn set_var(&mut self, _: &str, _: Var) -> Option<()> {
-        None
-    }
 }
 
 // Natural ordering for version comparison
@@ -254,5 +239,119 @@ mod natord {
         }
         
         std::cmp::Ordering::Equal
+    }
+}
+
+
+impl ScriptObject for RootScript {
+    fn set_node_id(&mut self, id: Uuid) {
+        self.node_id = id;
+    }
+
+    fn get_node_id(&self) -> Uuid {
+        self.node_id
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self as &mut dyn Any
+    }
+
+    fn get_var(&self, name: &str) -> Option<&dyn Any> {
+        match name {
+            "b" => Some(&self.b as &dyn Any),
+            "a" => Some(&self.a as &dyn Any),
+            "e" => Some(&self.e as &dyn Any),
+            "f" => Some(&self.f as &dyn Any),
+            "h" => Some(&self.h as &dyn Any),
+            _ => None,
+        }
+    }
+
+    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+        match name {
+            "b" => {
+                if let Ok(v) = val.downcast::<f32>() {
+                    self.b = *v;
+                    return Some(());
+                }
+                return None;
+            },
+            "a" => {
+                if let Ok(v) = val.downcast::<i32>() {
+                    self.a = *v;
+                    return Some(());
+                }
+                return None;
+            },
+            "e" => {
+                if let Ok(v) = val.downcast::<String>() {
+                    self.e = *v;
+                    return Some(());
+                }
+                return None;
+            },
+            "f" => {
+                if let Ok(v) = val.downcast::<F>() {
+                    self.f = *v;
+                    return Some(());
+                }
+                return None;
+            },
+            "h" => {
+                if let Ok(v) = val.downcast::<i64>() {
+                    self.h = *v;
+                    return Some(());
+                }
+                return None;
+            },
+            _ => None,
+        }
+    }
+
+    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+        for (key, _) in hashmap.iter() {
+            match key.as_str() {
+                "b" => {
+                    if let Some(value) = hashmap.get("b") {
+                        if let Some(v) = value.downcast_ref::<f32>() {
+                            self.b = *v;
+                        }
+                    }
+                },
+                "a" => {
+                    if let Some(value) = hashmap.get("a") {
+                        if let Some(v) = value.downcast_ref::<i32>() {
+                            self.a = *v;
+                        }
+                    }
+                },
+                "e" => {
+                    if let Some(value) = hashmap.get("e") {
+                        if let Some(v) = value.downcast_ref::<String>() {
+                            self.e = v.clone();
+                        }
+                    }
+                },
+                "f" => {
+                    if let Some(value) = hashmap.get("f") {
+                        if let Some(v) = value.downcast_ref::<F>() {
+                            self.f = v.clone();
+                        }
+                    }
+                },
+                "h" => {
+                    if let Some(value) = hashmap.get("h") {
+                        if let Some(v) = value.downcast_ref::<i64>() {
+                            self.h = v.clone();
+                        }
+                    }
+                },
+                _ => {},
+            }
+        }
     }
 }

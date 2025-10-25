@@ -1,26 +1,37 @@
 #![allow(improper_ctypes_definitions)]
-
 #![allow(unused)]
 
 use std::any::Any;
-
 use std::collections::HashMap;
 use serde_json::{Value, json};
 use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
 use std::{rc::Rc, cell::RefCell};
-use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::*, types::* };
 
-#[unsafe(no_mangle)]
-pub extern "C" fn scripts_csharp_cs_create_script() -> *mut dyn Script {
-    Box::into_raw(Box::new(ScriptsCsharpCsScript {
-        node_id: Uuid::nil(),
-    })) as *mut dyn Script
-}
+use perro_core::prelude::*;
+
+// ========================================================================
+// ScriptsCsharpCs - Main Script Structure
+// ========================================================================
 
 pub struct ScriptsCsharpCsScript {
     node_id: Uuid,
 }
+
+// ========================================================================
+// ScriptsCsharpCs - Creator Function (FFI Entry Point)
+// ========================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn scripts_csharp_cs_create_script() -> *mut dyn ScriptObject {
+    Box::into_raw(Box::new(ScriptsCsharpCsScript {
+        node_id: Uuid::nil(),
+    })) as *mut dyn ScriptObject
+}
+
+// ========================================================================
+// Supporting Struct Definitions
+// ========================================================================
 
 #[derive(Default, Debug, Clone)]
 pub struct Player {
@@ -78,6 +89,10 @@ impl DerefMut for Player3 {
 
 
 
+// ========================================================================
+// ScriptsCsharpCs - Script Init & Update Implementation
+// ========================================================================
+
 impl Script for ScriptsCsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("Hello World I am csharp.cs");
@@ -86,6 +101,21 @@ impl Script for ScriptsCsharpCsScript {
     fn update(&mut self, api: &mut ScriptApi<'_>) {
     }
 
+}
+
+// ========================================================================
+// ScriptsCsharpCs - Script-Defined Methods
+// ========================================================================
+
+impl ScriptsCsharpCsScript {
+    fn fart(&mut self, api: &mut ScriptApi<'_>) {
+        api.print("Fart");
+    }
+
+}
+
+
+impl ScriptObject for ScriptsCsharpCsScript {
     fn set_node_id(&mut self, id: Uuid) {
         self.node_id = id;
     }
@@ -101,24 +131,24 @@ impl Script for ScriptsCsharpCsScript {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self as &mut dyn Any
     }
-    fn apply_exports(&mut self, hashmap: &std::collections::HashMap<String, serde_json::Value>) {
-    }
 
-    fn get_var(&self, name: &str) -> Option<Var> {
+    fn get_var(&self, name: &str) -> Option<&dyn Any> {
         match name {
             _ => None,
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Var) -> Option<()> {
-        match (name, val) {
+    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+        match name {
             _ => None,
         }
     }
-}
-impl ScriptsCsharpCsScript {
-    fn fart(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Fart");
-    }
 
+    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+        for (key, _) in hashmap.iter() {
+            match key.as_str() {
+                _ => {},
+            }
+        }
+    }
 }

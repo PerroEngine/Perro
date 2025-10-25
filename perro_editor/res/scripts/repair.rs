@@ -1,29 +1,27 @@
 #![allow(improper_ctypes_definitions)]
 #![allow(unused)]
 
+
+
 use std::any::Any;
 use std::collections::HashMap;
 use serde_json::Value;
 use uuid::Uuid;
-use perro_core::{
-    script::{UpdateOp, Var},
-    scripting::api::ScriptApi,
-    scripting::script::Script,
-    nodes::*,
-};
+use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn repair_create_script() -> *mut dyn Script {
+pub extern "C" fn repair_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RepairScript {
         node_id: Uuid::nil(),
         toolchain_ver: String::new(),
         engine_ver: String::new(),
         editor_mode: false,
-    })) as *mut dyn Script
+    })) as *mut dyn ScriptObject
 }
 
+/// @PerroScript
 pub struct RepairScript {
     node_id: Uuid,
     toolchain_ver: String,
@@ -317,31 +315,5 @@ impl Script for RepairScript {
     fn update(&mut self, _api: &mut ScriptApi<'_>) {
         // Repair script doesn't do anything in update loop
         // All operations are manual or triggered in init
-    }
-
-    fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
-    }
-
-    fn get_node_id(&self) -> Uuid {
-        self.node_id
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn apply_exports(&mut self, _: &HashMap<String, Value>) {}
-
-    fn get_var(&self, _: &str) -> Option<Var> {
-        None
-    }
-
-    fn set_var(&mut self, _: &str, _: Var) -> Option<()> {
-        None
     }
 }

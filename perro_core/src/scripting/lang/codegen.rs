@@ -3,7 +3,9 @@
 use std::{fs, path::{Path, PathBuf}};
 use std::fmt::Write as _;
 
-use crate::{asset_io::{get_project_root, ProjectRoot}, lang::ast::*};
+use regex::Regex;
+
+use crate::{asset_io::{get_project_root, ProjectRoot}, lang::ast::*, script::Var};
 
 fn to_pascal_case(s: &str) -> String {
     s.split('_')
@@ -42,7 +44,6 @@ impl Script {
         Expr::Literal(lit) => match lit {
             Literal::Int(_) => Some(Type::Int),
             Literal::Float(_) => Some(Type::Float),
-            Literal::Number(_) => Some(Type::Number),
             Literal::Bool(_) => Some(Type::Bool),
             Literal::String(_) => Some(Type::String),
             Literal::Interpolated(_) => Some(Type::String),
@@ -137,32 +138,30 @@ impl Script {
             .map(|f| f.return_type.clone())
     }
 
-    pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
-        let mut out = String::new();
+pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
+    let mut out = String::new();
+    let pascal_struct_name = to_pascal_case(struct_name);
 
-        let pascal_struct_name = to_pascal_case(struct_name);
-
-        // Headers
-    out.push_str("#![allow(improper_ctypes_definitions)]\n\n");
+    // Headers
+    out.push_str("#![allow(improper_ctypes_definitions)]\n");
     out.push_str("#![allow(unused)]\n\n");
-    out.push_str("use std::any::Any;\n\n");
+    out.push_str("use std::any::Any;\n");
     out.push_str("use std::collections::HashMap;\n");
     out.push_str("use serde_json::{Value, json};\n");
     out.push_str("use uuid::Uuid;\n");
     out.push_str("use std::ops::{Deref, DerefMut};\n");
-    out.push_str("use std::{rc::Rc, cell::RefCell};\n");
-    out.push_str("use perro_core::{script::{UpdateOp, Var}, scripting::api::ScriptApi, scripting::script::Script, nodes::*, types::* };\n\n");
+    out.push_str("use std::{rc::Rc, cell::RefCell};\n\n");
+    out.push_str("use perro_core::prelude::*;\n\n");
 
-    
-
+    // Collect field data
     let export_fields: Vec<(&str, String, String)> = self.exports.iter()
-    .map(|export| {
-        let name = export.name.as_str();
-        let rust_type = export.rust_type();
-        let default_val = export.default_value();
-        (name, rust_type, default_val)
-    })
-    .collect();
+        .map(|export| {
+            let name = export.name.as_str();
+            let rust_type = export.rust_type();
+            let default_val = export.default_value();
+            (name, rust_type, default_val)
+        })
+        .collect();
 
     let variable_fields: Vec<(&str, String, String)> = self.variables.iter()
         .map(|var| {
@@ -173,198 +172,112 @@ impl Script {
         })
         .collect();
 
-    // Creator function
+    // ========================================================================
+    // MAIN SCRIPT STRUCT
+    // ========================================================================
+    out.push_str("// ========================================================================\n");
+    out.push_str(&format!("// {} - Main Script Structure\n", pascal_struct_name));
+    out.push_str("// ========================================================================\n\n");
+    
+    out.push_str(&format!("pub struct {}Script {{\n", pascal_struct_name));
+    out.push_str("    node_id: Uuid,\n");
+
+    // Add export fields
+    for (name, rust_type, _default_val) in &export_fields {
+        out.push_str(&format!("    {}: {},\n", name, rust_type));
+    }
+
+    // Add variable fields
+    for (name, rust_type, _default_val) in &variable_fields {
+        out.push_str(&format!("    {}: {},\n", name, rust_type));
+    }
+
+    out.push_str("}\n\n");
+
+    // ========================================================================
+    // SCRIPT CREATOR FUNCTION
+    // ========================================================================
+    out.push_str("// ========================================================================\n");
+    out.push_str(&format!("// {} - Creator Function (FFI Entry Point)\n", pascal_struct_name));
+    out.push_str("// ========================================================================\n\n");
+    
     out.push_str("#[unsafe(no_mangle)]\n");
     out.push_str(&format!(
-        "pub extern \"C\" fn {}_create_script() -> *mut dyn Script {{\n",
+        "pub extern \"C\" fn {}_create_script() -> *mut dyn ScriptObject {{\n",
         struct_name.to_lowercase()
     ));
     out.push_str(&format!("    Box::into_raw(Box::new({}Script {{\n", pascal_struct_name));
     out.push_str("        node_id: Uuid::nil(),\n");
 
-    
-
-    // Use collected data for creator
+    // Initialize exports
     for export in &self.exports {
         let init_code = export.rust_initialization(self);
-        out.push_str(&format!("    {}: {},\n", export.name, init_code));
+        out.push_str(&format!("        {}: {},\n", export.name, init_code));
     }
 
+    // Initialize variables
     for var in &self.variables {
         let init_code = var.rust_initialization(self);
-        out.push_str(&format!("    {}: {},\n", var.name, init_code));
+        out.push_str(&format!("        {}: {},\n", var.name, init_code));
     }
 
-
-    out.push_str("    })) as *mut dyn Script\n");
+    out.push_str("    })) as *mut dyn ScriptObject\n");
     out.push_str("}\n\n");
 
-    // Struct definition
-    out.push_str(&format!("pub struct {}Script {{\n", pascal_struct_name));
-    out.push_str("    node_id: Uuid,\n");
-
-    
-
-    // Use collected data for struct fields
-    for (name, rust_type, _default_val) in &export_fields {
-        out.push_str(&format!("    {}: {},\n", name, rust_type));
+    // ========================================================================
+    // SUPPORTING STRUCTURES
+    // ========================================================================
+    if !self.structs.is_empty() {
+        out.push_str("// ========================================================================\n");
+        out.push_str("// Supporting Struct Definitions\n");
+        out.push_str("// ========================================================================\n\n");
+        
+        for s in &self.structs {
+            out.push_str(&s.to_rust_definition(self));
+            out.push_str("\n\n");
+        }
     }
 
-    for (name, rust_type, _default_val) in &variable_fields {
-    out.push_str(&format!("    {}: {},\n", name, rust_type));
-    }
 
-        out.push_str("}\n\n");
 
-    for s in &self.structs {
-        out.push_str(&s.to_rust_definition(self));
-        out.push_str("\n\n");
-    }
+    out.push_str("// ========================================================================\n");
+    out.push_str(&format!("// {} - Script Init & Update Implementation\n", pascal_struct_name));
+    out.push_str("// ========================================================================\n\n");
 
-        // Script impl
-        out.push_str(&format!("impl Script for {}Script {{\n", pascal_struct_name));
+ // Script impl
+     out.push_str(&format!("impl Script for {}Script {{\n", pascal_struct_name));
 
-        // Trait methods (init, update)
+         // Trait methods (init, update)
         for func in &self.functions {
             if func.is_trait_method {
                 out.push_str(&func.to_rust_trait_method(&self.node_type, &self));
             }
         }
+         out.push_str("}\n\n");
 
-        // Required methods
-        out.push_str("    fn set_node_id(&mut self, id: Uuid) {\n");
-        out.push_str("        self.node_id = id;\n");
-        out.push_str("    }\n\n");
-
-        out.push_str("    fn get_node_id(&self) -> Uuid {\n");
-        out.push_str("        self.node_id\n");
-        out.push_str("    }\n\n");
-
-        // Within your `impl Script for {}` block:
-        out.push_str("    fn as_any(&self) -> &dyn Any {\n");
-        out.push_str("        self as &dyn Any\n");
-        out.push_str("    }\n\n");
-        out.push_str("    fn as_any_mut(&mut self) -> &mut dyn Any {\n");
-        out.push_str("        self as &mut dyn Any\n");
-        out.push_str("    }\n");
-
-        // Add set_exports_from_map method
-
-    out.push_str("    fn apply_exports(&mut self, hashmap: &std::collections::HashMap<String, serde_json::Value>) {\n");
-
-    for export in &self.exports {
-        let name = &export.name;
-        let typ = export.rust_type();
-
-        let assignment = match typ.as_str() {
-            "String" => format!(
-                "        self.{0} = hashmap.get(\"{0}\").and_then(|v| v.as_str()).unwrap_or(\"\").to_string();\n",
-                name
-            ),
-            "f32" => format!(
-                "        self.{0} = hashmap.get(\"{0}\").and_then(|v| v.as_f64()).map(|v| v as f32).unwrap_or(0.0);\n",
-                name
-            ),
-
-            "i32" => format!(
-                "        self.{0} = hashmap.get(\"{0}\").and_then(|v| v.as_i64()).map(|v| v as i32).unwrap_or(0);\n",
-                name
-            ),
-            "bool" => format!(
-                "        self.{0} = hashmap.get(\"{0}\").and_then(|v| v.as_bool()).unwrap_or(false);\n",
-                name
-            ),
-            _ => format!("        // TODO: implement assignment for type {}\n", typ),
-        };
-
-        out.push_str(&assignment);
-    }
-
-    out.push_str("    }\n\n");
-    
-    
-
-        // 1) get_var
-out.push_str("    fn get_var(&self, name: &str) -> Option<Var> {\n");
-out.push_str("        match name {\n");
-for field in self.exports.iter().chain(self.variables.iter()) {
-    let name = &field.name;
-    let typ  = field.rust_type();
-    let arm = match typ.as_str() {
-        "String" => format!(
-            "            \"{0}\" => Some(Var::String(self.{0}.clone())),\n",
-            name
-        ),
-        "f32" => format!(
-            "            \"{0}\" => Some(Var::F32(self.{0})),\n",
-            name
-        ),
-        "i32" => format!(
-            "            \"{0}\" => Some(Var::I32(self.{0})),\n",
-            name
-        ),
-        "bool" => format!(
-            "            \"{0}\" => Some(Var::Bool(self.{0})),\n",
-            name
-        ),
-        other => format!(
-            "            // TODO: get_var for unsupported type `{}`\n",
-            other
-        ),
-    };
-    out.push_str(&arm);
-}
-out.push_str("            _ => None,\n");
-out.push_str("        }\n");
-out.push_str("    }\n\n");
-
-// 2) set_var
-out.push_str(
-    "    fn set_var(&mut self, name: &str, val: Var) -> Option<()> {\n",
-);
-out.push_str("        match (name, val) {\n");
-for field in self.exports.iter().chain(self.variables.iter()) {
-    let name = &field.name;
-    let typ  = field.rust_type();
-    let arm = match typ.as_str() {
-        "String" => format!(
-            "            (\"{0}\", Var::String(v)) => {{ self.{0} = v; Some(()) }},\n",
-            name
-        ),
-        "f32" => format!(
-            "            (\"{0}\", Var::F32(v)) => {{ self.{0} = v; Some(()) }},\n",
-            name
-        ),
-        "i32" => format!(
-            "            (\"{0}\", Var::I32(v)) => {{ self.{0} = v; Some(()) }},\n",
-            name
-        ),
-        "bool" => format!(
-            "            (\"{0}\", Var::Bool(v)) => {{ self.{0} = v; Some(()) }},\n",
-            name
-        ),
-        other => format!(
-            "            // TODO: set_var for unsupported type `{}`\n",
-            other
-        ),
-    };
-    out.push_str(&arm);
-}
-out.push_str("            _ => None,\n");
-out.push_str("        }\n");
-out.push_str("    }\n");
-
-out.push_str("}\n");
-
-        // Helper methods
+           // Helper methods
         let helpers: Vec<_> = self.functions.iter().filter(|f| !f.is_trait_method).collect();
         if !helpers.is_empty() {
+
+              out.push_str("// ========================================================================\n");
+    out.push_str(&format!("// {} - Script-Defined Methods\n", pascal_struct_name));
+    out.push_str("// ========================================================================\n\n");
+
             out.push_str(&format!("impl {}Script {{\n", pascal_struct_name));
             for func in helpers {
                 out.push_str(&func.to_rust_method(&self.node_type, &self));
             }
-            out.push_str("}\n");
+            out.push_str("}\n\n");
         }
+
+
+        
+        out.push_str(&implement_script_boilerplate(
+            &format!("{}Script", pascal_struct_name),
+            &self.exports,
+            &self.variables,
+        ));
+
 
         if let Err(e) = write_to_crate(&project_path, &out, struct_name) {
             eprintln!("Warning: Failed to write to crate: {}", e);
@@ -372,6 +285,8 @@ out.push_str("}\n");
 
         out
     }
+
+ 
 
     pub fn function_uses_api(&self, name: &str) -> bool {
     if is_engine_api(name) { return true; }
@@ -381,6 +296,101 @@ out.push_str("}\n");
         .map(|f| f.requires_api(self))
         .unwrap_or(false)
     }
+}
+
+
+fn implement_script_boilerplate(
+    struct_name: &str,
+    exports: &[Variable],
+    variables: &[Variable],
+) -> String {
+    let mut get_matches = String::new();
+    let mut set_matches = String::new();
+    let mut apply_exports_matches = String::new();
+
+    for var in variables {
+        let name = &var.name;
+        let rust_type = var.rust_type();
+
+        get_matches.push_str(&format!(
+            "            \"{name}\" => Some(&self.{name} as &dyn Any),\n"
+        ));
+
+        set_matches.push_str(&format!(
+            "            \"{name}\" => {{\n                \
+if let Ok(v) = val.downcast::<{rust_type}>() {{\n                    \
+self.{name} = *v;\n                    \
+return Some(());\n                \
+}}\n                \
+return None;\n            \
+}},\n"
+        ));
+
+    }
+
+   for var in exports {
+    let name = &var.name;
+    let rust_type = var.rust_type();
+
+    let assignment = match rust_type.as_str() {
+        "i32" | "f32" | "bool" => format!("self.{name} = *v;"),
+        _ => format!("self.{name} = v.clone();"), // clone non-primitives
+    };
+
+    apply_exports_matches.push_str(&format!(
+        "                \"{name}\" => {{
+                    if let Some(value) = hashmap.get(\"{name}\") {{
+                        if let Some(v) = value.downcast_ref::<{rust_type}>() {{
+                            {assignment}
+                        }}
+                    }}
+                }},\n"
+    ));
+}
+
+
+
+    format!(
+        r#"
+impl ScriptObject for {struct_name} {{
+    fn set_node_id(&mut self, id: Uuid) {{
+        self.node_id = id;
+    }}
+
+    fn get_node_id(&self) -> Uuid {{
+        self.node_id
+    }}
+
+    fn as_any(&self) -> &dyn Any {{
+        self as &dyn Any
+    }}
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {{
+        self as &mut dyn Any
+    }}
+
+    fn get_var(&self, name: &str) -> Option<&dyn Any> {{
+        match name {{
+{get_matches}            _ => None,
+        }}
+    }}
+
+    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {{
+        match name {{
+{set_matches}            _ => None,
+        }}
+    }}
+
+    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {{
+        for (key, _) in hashmap.iter() {{
+            match key.as_str() {{
+{apply_exports_matches}                _ => {{}},
+            }}
+        }}
+    }}
+}}
+"#
+    )
 }
 
 impl StructDef {
@@ -441,7 +451,7 @@ impl StructDef {
 impl Type {
     pub fn to_rust_type(&self) -> &str {
         match self {
-            Type::Float | Type::Number => "f32",
+            Type::Float => "f32",
             Type::Int => "i32",
             Type::Bool => "bool",
             Type::String => "String",
@@ -785,7 +795,7 @@ impl Expr {
                         ) -> String {
                             match (expr_type, target_type) {
                                 (Some(from), Some(to)) if from != *to => match to {
-                                    Type::Float | Type::Number => format!("({} as f32)", expr_str),
+                                    Type::Float => format!("({} as f32)", expr_str),
                                     Type::Int => format!("({} as i32)", expr_str),
                                     _ => expr_str,
                                 },
@@ -809,9 +819,6 @@ impl Expr {
                         format!("{} {} {}", left_str, op.to_rust(), right_str)
                     }
             Expr::MemberAccess(base, field) => {
-                        format!("{}.{}", base.to_rust(needs_self, script, None), field)
-                    }
-            Expr::ScriptAccess(base, field) => {
                         format!("{}.{}", base.to_rust(needs_self, script, None), field)
                     }
             Expr::SelfAccess => {
@@ -858,7 +865,6 @@ impl Expr {
         match self {
             Expr::SelfAccess => true,
             Expr::MemberAccess(base, _) => base.contains_self(),
-            Expr::ScriptAccess(base, _) => base.contains_self(),
             Expr::BinaryOp(left, _, right) => left.contains_self() || right.contains_self(),
             Expr::Call(target, args) => {
                 target.contains_self() || args.iter().any(|arg| arg.contains_self())
@@ -872,7 +878,6 @@ impl Expr {
             Expr::Ident(name) => name == "delta",
             Expr::BinaryOp(left, _, right) => left.contains_delta() || right.contains_delta(),
             Expr::MemberAccess(base, _) => base.contains_delta(),
-            Expr::ScriptAccess(base, _) => base.contains_delta(),
             Expr::Call(target, args) => {
                 target.contains_delta() || args.iter().any(|arg| arg.contains_delta())
             }
@@ -885,7 +890,6 @@ impl Expr {
     match self {
         Expr::ApiCall(..) => true,
         Expr::MemberAccess(base, _) => base.contains_api_call(script),
-        Expr::ScriptAccess(base, _) => base.contains_api_call(script),
         Expr::BinaryOp(l, _, r) => l.contains_api_call(script) || r.contains_api_call(script),
         Expr::Call(target, args) => {
             Self::get_target_name(target)
@@ -914,23 +918,14 @@ impl Literal {
         match self {
             Literal::Int(i) => match expected_type {
                 Some(Type::Float) => format!("{}f32", *i as f32),
-                Some(Type::Number) => format!("{}f32", *i as f32),
                 Some(Type::Bool) => format!("{}", if *i != 0 { "true" } else { "false" }),
                 _ => i.to_string(),
             },
             Literal::Float(f) => match expected_type {
                 Some(Type::Int) => format!("{}", *f as i32),
-                Some(Type::Number) => format!("{}f32", *f as f32),
                 Some(Type::Bool) => format!("{}", if *f != 0.0 { "true" } else { "false" }),
                 Some(Type::Float) => format!("{}f32", f),
                 _ => format!("{}f32", f),
-            },
-            Literal::Number(f) => match expected_type {
-                Some(Type::Int) => format!("{}", *f as i32),
-                Some(Type::Float) => format!("{}f32", *f as f32),
-                Some(Type::Bool) => format!("{}", if *f != 0.0 { "true" } else { "false" }),
-                Some(Type::Number) | None => format!("{}f32", *f as f32),
-                _ => format!("{}f32", *f as f32),
             },
             Literal::String(s) => match expected_type {
                 Some(Type::String) | None => format!("\"{}\"", s),
@@ -966,7 +961,6 @@ impl Literal {
                 Some(Type::Bool) | None => b.to_string(),
                 Some(Type::Int) => format!("{}", if *b { 1 } else { 0 }),
                 Some(Type::Float) => format!("{}", if *b { 1.0 } else { 0.0 }),
-                Some(Type::Number) => format!("{}", if *b { 1.0 } else { 0.0 }),
                 Some(Type::String) => format!("\"{}\"", b),
                 _ => b.to_string(),
             },
@@ -1008,54 +1002,15 @@ pub fn write_to_crate(
 
     fs::create_dir_all(&base_path).map_err(|e| format!("Failed to create dir: {}", e))?;
 
-    // Rewrite create_script function name for raw Rust files (_rs)
-    let final_contents = if lower_name.ends_with("_rs") {
-        if let Some(actual_fn_name) = extract_create_script_fn_name(contents) {
-            let expected_fn_name = format!("{}_create_script", lower_name);
-            contents.replace(&actual_fn_name, &expected_fn_name)
-        } else {
-            contents.to_string()
-        }
-    } else {
-        contents.to_string()
-    };
+    // Rename create function only for raw Rust scripts
+   
 
-    fs::write(&file_path, final_contents)
+    fs::write(&file_path, contents)
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
-    // --- lib.rs handling ---
+    // --- Update lib.rs dynamic content only ---
     let lib_rs_path = base_path.join("lib.rs");
     let mut current_content = fs::read_to_string(&lib_rs_path).unwrap_or_default();
-
-    // Ensure FFI imports exist only in debug
-    if !current_content.contains("use std::ffi::CStr;") {
-        current_content = format!(
-            "#[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n{}",
-            current_content
-        );
-    }
-
-    // Ensure header exists
-    if !current_content.contains("get_script_registry") {
-        if !current_content.contains("use perro_core::script::CreateFn") {
-            current_content.push_str("use perro_core::script::CreateFn;\n");
-        }
-        if !current_content.contains("use std::collections::HashMap") {
-            current_content.push_str("use std::collections::HashMap;\n");
-        }
-
-        current_content.push_str(
-            "// __PERRO_MODULES__
-// __PERRO_IMPORTS__
-
-pub fn get_script_registry() -> HashMap<String, CreateFn> {
-    let mut map: HashMap<String, CreateFn> = HashMap::new();
-    // __PERRO_REGISTRY__
-    map
-}
-",
-        );
-    }
 
     // Add module
     let mod_line = format!("pub mod {};", lower_name);
@@ -1087,35 +1042,6 @@ pub fn get_script_registry() -> HashMap<String, CreateFn> {
         );
     }
 
-    // Add debug-only FFI function for project root
-    let ffi_fn_marker = "perro_set_project_root";
-    if !current_content.contains(ffi_fn_marker) {
-        let debug_root_fn = format!(
-            r#"
-#[cfg(debug_assertions)]
-#[unsafe(no_mangle)]
-pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
-    let path_str = unsafe {{ CStr::from_ptr(path).to_str().unwrap() }};
-    let name_str = unsafe {{ CStr::from_ptr(name).to_str().unwrap() }};
-    perro_core::asset_io::set_project_root(
-        perro_core::asset_io::ProjectRoot::Disk {{
-            root: std::path::PathBuf::from(path_str),
-            name: name_str.to_string(),
-        }}
-    );
-}}
-"#,
-            ffi_fn_marker
-        );
-        current_content.push_str(&debug_root_fn);
-    }
-
-    current_content = current_content.replace(
-    "use perro_core::script::{CreateFn, Script};",
-    "use perro_core::script::CreateFn;"
-);
-
-    // Write updated lib.rs
     fs::write(&lib_rs_path, current_content)
         .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
 
@@ -1126,6 +1052,7 @@ pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
 
     Ok(())
 }
+
 
 
 fn extract_create_script_fn_name(contents: &str) -> Option<String> {
@@ -1145,4 +1072,86 @@ fn extract_create_script_fn_name(contents: &str) -> Option<String> {
         }
     }
     None
+}
+
+
+pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &str) -> Result<(), String> {
+    // Only generate boilerplate if @PerroScript is present
+    let marker_re = Regex::new(r"///\s*@PerroScript").unwrap();
+    let marker_pos = match marker_re.find(code) {
+        Some(m) => m.end(),
+        None => return write_to_crate(project_path, code, struct_name),
+    };
+
+    // Starting from the marker, find the NEXT struct definition only
+    let struct_after_marker_re = Regex::new(r"struct\s+(\w+)\s*\{([^}]*)\}").unwrap();
+    let captures = struct_after_marker_re
+        .captures(&code[marker_pos..])
+        .ok_or_else(|| "Could not find struct after @PerroScript".to_string())?;
+
+    let actual_struct_name_from_struct = captures[1].to_string();
+    let struct_body = captures[2].to_string();
+
+    let mut exports = Vec::new();
+    let mut variables = Vec::new();
+
+    // Match @expose fields first (next line is always the field)
+    let expose_re = Regex::new(r"///\s*@expose[^\n]*\n\s*(?:pub\s+)?(\w+)\s*:\s*([^,]+),").unwrap();
+    for cap in expose_re.captures_iter(&struct_body) {
+        let name = cap[1].to_string();
+        let typ = cap[2].trim().to_string();
+        exports.push(Variable {
+            name: name.clone(),
+            typ: Some(Variable::parse_type(&typ)),
+            value: None,
+        });
+        variables.push(Variable {
+            name,
+            typ: Some(Variable::parse_type(&typ)),
+            value: None,
+        });
+    }
+
+    // Match remaining public fields (but not node_id, and not ones already added)
+    let pub_re = Regex::new(r"pub\s+(\w+)\s*:\s*([^,]+),").unwrap();
+    for cap in pub_re.captures_iter(&struct_body) {
+        let name = cap[1].to_string();
+        if name == "node_id" || variables.iter().any(|v| v.name == name) {
+            continue;
+        }
+        let typ = cap[2].trim().to_string();
+        variables.push(Variable {
+            name,
+            typ: Some(Variable::parse_type(&typ)),
+            value: None,
+        });
+    }
+
+    eprintln!("EXPORTS: {:?}", exports.iter().map(|v| &v.name).collect::<Vec<_>>());
+    eprintln!("VARIABLES: {:?}", variables.iter().map(|v| &v.name).collect::<Vec<_>>());
+
+    // --- Keep original logic for impl Script / create function renaming ---
+    let lower_name = struct_name.to_lowercase();
+
+    // Extract the actual struct name from the code using regex
+    let impl_script_re = Regex::new(r"impl\s+Script\s+for\s+(\w+)\s*\{").unwrap();
+    let actual_struct_name = if let Some(cap) = impl_script_re.captures(&code) {
+        cap[1].to_string()
+    } else {
+        to_pascal_case(struct_name)
+    };
+
+    // Rename the create function to match expected convention
+    let final_contents = if let Some(actual_fn_name) = extract_create_script_fn_name(&code) {
+        let expected_fn_name = format!("{}_create_script", lower_name);
+        code.replace(&actual_fn_name, &expected_fn_name)
+    } else {
+        code.to_string()
+    };
+
+    // Generate boilerplate using the fields we collected
+    let boilerplate = implement_script_boilerplate(&actual_struct_name, &exports, &variables);
+    let combined = format!("{}\n\n{}", final_contents, boilerplate);
+
+    write_to_crate(project_path, &combined, struct_name)
 }

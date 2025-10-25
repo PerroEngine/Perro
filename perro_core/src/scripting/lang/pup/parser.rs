@@ -1,8 +1,9 @@
 // scripting/pup/parser.rs
 
 use crate::lang::ast::*;
+use crate::lang::ast_modules::{ApiModule, NodeSugarApi};
 use crate::lang::pup::lexer::{PupLexer, PupToken};
-use crate::lang::pup::api::PupAPI;
+use crate::lang::pup::api::{PupAPI, PupNodeSugar};
 
 pub struct PupParser {
     lexer: PupLexer,
@@ -218,7 +219,6 @@ fn parse_field(&mut self) -> Result<StructField, String> {
         let ty = match &self.current_token {
             PupToken::Type(t) if t == "float"  => Type::Float,
             PupToken::Type(t) if t == "int"    => Type::Int,
-            PupToken::Type(t) if t == "number" => Type::Number,
             PupToken::Type(t) if t == "bool"   => Type::Bool,
             PupToken::Type(t) if t == "string" => Type::String,
             PupToken::Type(t) if t == "script" => Type::Script,
@@ -293,19 +293,22 @@ fn parse_field(&mut self) -> Result<StructField, String> {
                     AssignKind::Div => Stmt::MemberAssignOp(ma, Op::Div, rhs),
                 })
             }
-            Expr::ScriptAccess(obj, field) => {
-                if let Expr::Ident(var) = *obj {
-                    Ok(match kind {
-                        AssignKind::Set => Stmt::ScriptAssign(var, field, rhs),
-                        AssignKind::Add => Stmt::ScriptAssignOp(var, field, Op::Add, rhs),
-                        AssignKind::Sub => Stmt::ScriptAssignOp(var, field, Op::Sub, rhs),
-                        AssignKind::Mul => Stmt::ScriptAssignOp(var, field, Op::Mul, rhs),
-                        AssignKind::Div => Stmt::ScriptAssignOp(var, field, Op::Div, rhs),
-                    })
-                } else {
-                    Err("Invalid LHS for script‐access".into())
-                }
+
+             Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetVar), args) => {
+            // convert get_var into set_var
+            if args.len() == 2 {
+                let node = args[0].clone();
+                let field = args[1].clone();
+
+                Ok(Stmt::Expr(Expr::ApiCall(
+                    ApiModule::NodeSugar(NodeSugarApi::SetVar),
+                    vec![node, field, rhs],
+                )))
+            } else {
+                Err("Invalid NodeSugar get_var arg count".into())
             }
+        }
+           
             other => Err(format!("Invalid LHS of assignment: {:?}", other)),
         }
     }
@@ -470,13 +473,24 @@ PupToken::New => {
                 }
                 self.expect(PupToken::RParen)?;
 
-                if let Expr::MemberAccess(obj, method) = &left {
-                    if let Expr::Ident(module_name) = &**obj {
-                        if let Some(api_semantic) = PupAPI::resolve(module_name, method) {
-                            return Ok(Expr::ApiCall(api_semantic, args));
-                        }
+              if let Expr::MemberAccess(obj, method) = &left {
+                if let Expr::Ident(module_name) = &**obj {
+                    // Try resolving built-in API first
+                    if let Some(api_semantic) = PupAPI::resolve(module_name, method) {
+                        return Ok(Expr::ApiCall(api_semantic, args));
                     }
                 }
+
+                // ✅ Fallback: check if it's a NodeSugar method (get_var/set_var)
+                if let Some(api_semantic) = PupNodeSugar::resolve_method(method) {
+                    let mut full_args = vec![*obj.clone()];
+                    full_args.extend(args);
+                    return Ok(Expr::ApiCall(api_semantic, full_args));
+                }
+            }
+
+
+                
 
                 Ok(Expr::Call(Box::new(left), args))
             }
@@ -493,15 +507,39 @@ PupToken::New => {
             }
 
             PupToken::DoubleColon => {
-                self.next_token();
-                let f = if let PupToken::Ident(n) = &self.current_token {
-                    n.clone()
-                } else {
-                    return Err("Expected ident after ::".into());
-                };
-                self.next_token();
-                Ok(Expr::ScriptAccess(Box::new(left), f))
+            self.next_token();
+            let f = if let PupToken::Ident(n) = &self.current_token {
+                n.clone()
+            } else {
+                return Err("Expected ident after ::".into());
+            };
+            self.next_token();
+
+            // Check if this is an assignment (i.e. set_var)
+            if self.current_token == PupToken::Eq {
+                self.next_token(); // consume '='
+                let value = self.parse_expression(2)?; // parse right-hand value
+
+                Ok(Expr::ApiCall(
+                    ApiModule::NodeSugar(NodeSugarApi::SetVar),
+                    vec![
+                        left,                           // node expression
+                        Expr::Literal(Literal::String((f))),          // variable name
+                        value,                           // value to assign
+                    ],
+                ))
+            } else {
+                // Otherwise, just a get_var access
+                Ok(Expr::ApiCall(
+                    ApiModule::NodeSugar(NodeSugarApi::GetVar),
+                    vec![
+                        left,
+                        Expr::Literal(Literal::String((f))),
+                    ],
+                ))
             }
+        }
+
 
             PupToken::Star => {
                 self.next_token();

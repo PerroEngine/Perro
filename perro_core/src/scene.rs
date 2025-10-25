@@ -1,5 +1,5 @@
 use crate::{
-    api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, Sprite2D, Vector2 // NEW import
+    api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, Sprite2D, Vector2 // NEW import
 };
 
 use indexmap::IndexMap;
@@ -75,7 +75,7 @@ impl SceneData {
 /// Now holds a reference to the project via Rc<RefCell<Project>>
 pub struct Scene<P: ScriptProvider> {
     data: SceneData,
-    pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn Script>>>>,
+    pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn ScriptObject>>>>,
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
@@ -198,19 +198,19 @@ impl<P: ScriptProvider> Scene<P> {
         ctor: CreateFn,
         node_id: Uuid,
         scene: &mut Scene<P>,
-    ) -> Rc<RefCell<Box<dyn Script>>> {
+    ) -> Rc<RefCell<Box<dyn ScriptObject>>> {
         let raw = ctor();
-        let mut boxed: Box<dyn Script> = unsafe { Box::from_raw(raw) };
+        let mut boxed: Box<dyn ScriptObject> = unsafe { Box::from_raw(raw) };
         boxed.set_node_id(node_id);
 
-        let handle: Rc<RefCell<Box<dyn Script>>> = Rc::new(RefCell::new(boxed));
+        let handle: Rc<RefCell<Box<dyn ScriptObject>>> = Rc::new(RefCell::new(boxed));
 
         {
             // Clone the Rc before borrowing scene
             let project_ref = scene.project.clone();
             let mut project_borrow = project_ref.borrow_mut();
             let mut api = ScriptApi::new(0.0, scene, &mut *project_borrow);
-            handle.borrow_mut().init(&mut api);
+            handle.borrow_mut().engine_init(&mut api);
         }
 
         handle
@@ -260,32 +260,16 @@ impl<P: ScriptProvider> Scene<P> {
         Ok(())
     }
 
-    pub fn update_script_var(
+    pub fn set_script_var(
         &mut self,
         node_id: &Uuid,
         name: &str,
-        op: UpdateOp,
         val: Var,
     ) -> Option<()> {
         let rc_script = self.scripts.get(node_id)?;
         let mut script = rc_script.borrow_mut();
-        let current = script.get_var(name)?;
 
-        let new_val = match op {
-            UpdateOp::Set => val,
-            UpdateOp::Add => current + val,
-            UpdateOp::Sub => current - val,
-            UpdateOp::Mul => current * val,
-            UpdateOp::Div => current / val,
-            UpdateOp::Rem => current % val,
-            UpdateOp::And => current & val,
-            UpdateOp::Or => current | val,
-            UpdateOp::Xor => current ^ val,
-            UpdateOp::Shl => current << val,
-            UpdateOp::Shr => current >> val,
-        };
-
-        script.set_var(name, new_val)?;
+        script.set_var(name, Box::new(val))?;
         Some(())
     }
 
@@ -397,7 +381,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.provider.load_ctor(short)
     }
 
-     fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn Script>>> {
+     fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn ScriptObject>>> {
         Self::instantiate_script(ctor, node_id, self)
     }
 
@@ -418,17 +402,16 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
 
-    fn update_script_var(
+    fn set_script_var(
         &mut self,
         node_id: &Uuid,
         name: &str,
-        op: UpdateOp,
         val: Var,
     ) -> Option<()> {
-        self.update_script_var(node_id, name, op, val)
+        self.set_script_var(node_id, name, val)
     }
 
-    fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn Script>>>> {
+    fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>> {
         self.scripts.get(&id).cloned()
     }
 

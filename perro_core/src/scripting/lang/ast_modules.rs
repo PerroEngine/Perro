@@ -5,6 +5,7 @@ pub enum ApiModule {
     OS(OSApi),
     Console(ConsoleApi),
     ScriptType(ScriptTypeApi),
+    NodeSugar(NodeSugarApi),
 }
 
 #[derive(Debug, Clone)]
@@ -36,4 +37,10 @@ pub enum ConsoleApi {
 #[derive(Debug, Clone)]
 pub enum ScriptTypeApi {
     Instantiate
+}
+
+#[derive(Debug, Clone)]
+pub enum NodeSugarApi {
+    GetVar,
+    SetVar,
 }

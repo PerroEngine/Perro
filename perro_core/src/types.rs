@@ -1,4 +1,4 @@
-use crate::script::Script;
+use crate::script::{ScriptObject};
 
 
-pub type ScriptType = Box<dyn Script>;
+pub type ScriptType = Box<dyn ScriptObject>;

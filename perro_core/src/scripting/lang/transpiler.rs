@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 use crate::{
     asset_io::{get_project_root, load_asset, resolve_path, ProjectRoot, ResolvedPath},
     compiler::{BuildProfile, CompileTarget, Compiler},
-    lang::{codegen::write_to_crate, csharp::parser::CsParser, pup::parser::PupParser},
+    lang::{codegen::{derive_rust_perro_script, write_to_crate}, csharp::parser::CsParser, pup::parser::PupParser},
 };
 
 /// Convert a *res:// path* or absolute path under res/
@@ -125,38 +125,64 @@ fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Res
     Ok(())
 }
 
-/// Completely rebuild lib.rs with only active scripts
-fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Result<(), String> {
+pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Result<(), String> {
     let lib_rs_path = project_root.join(".perro/scripts/src/lib.rs");
 
     let mut content = String::from(
-        "use perro_core::script::CreateFn;\nuse std::collections::HashMap;\n\n",
+        "#[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n\
+        use perro_core::script::CreateFn;\nuse std::collections::HashMap;\n\n\
+        // __PERRO_MODULES__\n// __PERRO_IMPORTS__\n\n\
+        pub fn get_script_registry() -> HashMap<String, CreateFn> {\n\
+        let mut map: HashMap<String, CreateFn> = HashMap::new();\n\
+        // __PERRO_REGISTRY__\n\
+        map\n}\n\n"
     );
 
     // Modules
     for id in active_ids {
-        content.push_str(&format!("pub mod {};\n", id));
+        content = content.replace(
+            "// __PERRO_MODULES__",
+            &format!("pub mod {};\n// __PERRO_MODULES__", id)
+        );
     }
-    content.push('\n');
 
     // Imports
     for id in active_ids {
-        content.push_str(&format!("use {}::{}_create_script;\n", id, id));
+        content = content.replace(
+            "// __PERRO_IMPORTS__",
+            &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id)
+        );
     }
-    content.push('\n');
 
-    // Registry
-    content.push_str("pub fn get_script_registry() -> HashMap<String, CreateFn> {\n");
-    content.push_str("    let mut map: HashMap<String, CreateFn> = HashMap::new();\n");
-
+    // Registry entries
     for id in active_ids {
-        content.push_str(&format!(
-            "    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n",
-            id, id
-        ));
+        content = content.replace(
+            "// __PERRO_REGISTRY__",
+            &format!("    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n    // __PERRO_REGISTRY__", id, id)
+        );
     }
 
-    content.push_str("    map\n}\n");
+    // Add debug-only FFI function for project root
+    let ffi_fn_marker = "perro_set_project_root";
+    let debug_root_fn = format!(
+        r#"
+#[cfg(debug_assertions)]
+#[unsafe(no_mangle)]
+pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
+    let path_str = unsafe {{ CStr::from_ptr(path).to_str().unwrap() }};
+    let name_str = unsafe {{ CStr::from_ptr(name).to_str().unwrap() }};
+    perro_core::asset_io::set_project_root(
+        perro_core::asset_io::ProjectRoot::Disk {{
+            root: std::path::PathBuf::from(path_str),
+            name: name_str.to_string(),
+        }}
+    );
+}}
+"#,
+        ffi_fn_marker
+    );
+
+    content.push_str(&debug_root_fn);
 
     fs::write(&lib_rs_path, content).map_err(|e| e.to_string())?;
     Ok(())
@@ -201,7 +227,7 @@ pub fn transpile(project_root: &Path) -> Result<(), String> {
                 script.to_rust(&identifier, project_root);
             }
             "rs" => {
-                write_to_crate(project_root, &code, &identifier)?;
+                derive_rust_perro_script(project_root, &code, &identifier)?;
             }
             _ => return Err(format!("Unsupported file extension: {}", extension)),
         }

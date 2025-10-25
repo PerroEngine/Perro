@@ -22,3 +22,20 @@ use crate::registry::DllScriptProvider;
 
 pub type RuntimeApp = App<DllScriptProvider>;
 
+pub mod prelude {
+    // Core engine node types
+    pub use crate::nodes::*;
+
+    // Transform + math types commonly needed for 2D
+    pub use crate::structs2d::*;
+
+    // Script API — only what script authors should use
+    pub use crate::script::*;
+
+    pub use crate::api::ScriptApi;
+    // Correct source for UpdateOp
+    pub use crate::script::{UpdateOp, Var};
+
+    // Core primitive/shared types (Vec2, Color, etc.)
+    pub use crate::types::*;
+}

@@ -85,3 +85,16 @@ impl PupScriptType {
         }
     }
 }
+
+pub struct PupNodeSugar;
+impl PupNodeSugar {
+    pub const NAME: &'static str = "NodeSugar";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "get_var" => Some(ApiModule::NodeSugar(NodeSugarApi::GetVar)),
+            "set_var" => Some(ApiModule::NodeSugar(NodeSugarApi::SetVar)),
+            _ => None,
+        }
+    }
+}
