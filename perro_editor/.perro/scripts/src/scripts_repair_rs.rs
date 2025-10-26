@@ -5,11 +5,13 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use serde_json::Value;
+use serde_json::{Value, json};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn ScriptObject {
@@ -329,27 +331,19 @@ impl ScriptObject for RepairScript {
         self.node_id
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self as &mut dyn Any
-    }
-
-    fn get_var(&self, name: &str) -> Option<&dyn Any> {
+    fn get_var(&self, name: &str) -> Option<Value> {
         match name {
             _ => None,
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
         match name {
             _ => None,
         }
     }
 
-    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {
         for (key, _) in hashmap.iter() {
             match key.as_str() {
                 _ => {},

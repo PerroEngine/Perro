@@ -49,13 +49,12 @@ pub trait Script {
 }
 
 pub trait ScriptObject: Script {
-    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()>;
-    fn get_var(&self, name: &str) -> Option<&dyn Any>;
+    fn get_var(&self, name: &str) -> Option<Value>;
+    fn set_var(&mut self, name: &str, val: Value) -> Option<()>;
+    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>);
+
     fn set_node_id(&mut self, id: Uuid);
     fn get_node_id(&self) -> Uuid;
-    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>);
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     // Engine-facing init/update that calls the Script version
     fn engine_init(&mut self, api: &mut ScriptApi) {
@@ -79,7 +78,7 @@ pub trait SceneAccess {
         &mut self,
         node_id: &Uuid,
         name: &str,
-        val: Var,
+        val: Value,
     ) -> Option<()>;
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>>;
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;

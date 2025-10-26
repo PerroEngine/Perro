@@ -4,7 +4,7 @@ use crate::lang::ast_modules::ApiModule;
 #[derive(Debug, Clone)]
 pub struct Script {
     pub node_type: String,
-    pub exports: Vec<Variable>,
+    pub exposed: Vec<Variable>,
     pub variables: Vec<Variable>,
     pub functions: Vec<Function>,
 
@@ -21,30 +21,98 @@ pub struct Variable {
 
 
 impl Variable {
-        pub fn rust_type(&self) -> String {
+    pub fn rust_type(&self) -> String {
         match &self.typ {
-            Some(Type::Float)  => "f32".to_string(),
-            Some(Type::Int)    => "i32".to_string(),
-            Some(Type::Bool)   => "bool".to_string(),
-            Some(Type::String) => "String".to_string(),
-            Some(Type::StrRef) => "&str".to_string(),
-            Some(Type::Script) => "Option<ScriptType>".to_string(),
-            Some(Type::Void)   => panic!("Void type cannot be used as field type"),
-            Some(Type::Custom(name)) => name.clone(),
-            None => panic!("Cannot convert None type to Rust — type inference not resolved yet"),
+            Some(t) => t.to_rust_type(),
+            None => panic!("Type inference unresolved for variable"),
         }
     }
 
-    pub fn parse_type(s: &str) -> Type {
-        match s {
-                "f32"    => Type::Float,
-                "i32"    => Type::Int,
-                "bool"   => Type::Bool,
-                "String" => Type::String,
-                "&str"   => Type::StrRef,
-                other    => Type::Custom(other.to_string()),
+   pub fn parse_type(s: &str) -> Type {
+    match s {
+        // Signed
+        "i8" | "i16" | "i32" | "i64" | "i128" => {
+            let size = s.trim_start_matches('i').parse().unwrap();
+            Type::Number(NumberKind::Signed(size))
+        }
+
+        // Unsigned
+        "u8" | "u16" | "u32" | "u64" | "u128" => {
+            let size = s.trim_start_matches('u').parse().unwrap();
+            Type::Number(NumberKind::Unsigned(size))
+        }
+
+        // Float
+        "f16" => Type::Number(NumberKind::Float(16)),
+        "f32" => Type::Number(NumberKind::Float(32)),
+        "f64" => Type::Number(NumberKind::Float(64)),
+        "f128" => Type::Number(NumberKind::Float(128)),
+
+        "bool" => Type::Bool,
+        "String" => Type::String,
+        "&str" => Type::StrRef,
+        other => Type::Custom(other.to_string()),
+    }
+}
+
+
+pub fn json_access(&self) -> (&'static str, String) {
+    match self.typ.as_ref().unwrap() {
+        Type::Number(NumberKind::Signed(w)) => {
+            if *w == 128 {
+                ("as_i128", "".into())
+            } else {
+                ("as_i64", format!(" as i{}", w))
             }
         }
+
+        Type::Number(NumberKind::Unsigned(w)) => {
+            if *w == 128 {
+                ("as_u128", "".into())
+            } else {
+                ("as_u64", format!(" as u{}", w))
+            }
+        }
+
+        Type::Number(NumberKind::Float(w)) => {
+            if *w == 128 {
+                ("as_f128", "".into())
+            } else {
+                let rust_ty = match *w {
+                    16 => "half::f16".to_string(),
+                    32 => "f32".to_string(),
+                    64 => "f64".to_string(),
+                    _ => "f64".to_string(),
+                };
+                ("as_f64", format!(" as {}", rust_ty))
+            }
+        }
+
+        Type::Number(NumberKind::Decimal) => {
+            ("as_str", format!(".parse::<Decimal>().unwrap()"))
+        }
+
+        Type::Number(NumberKind::BigInt) => { 
+            ("as_str", format!(".parse::<BigInt>().unwrap()"))
+        }
+
+        Type::Bool =>
+            ("as_bool", "".into()),
+
+        Type::String | Type::StrRef =>
+            ("as_str", ".to_string()".into()),
+
+        Type::Script =>
+            ("as_str", ".parse().unwrap()".into()),
+
+        Type::Custom(type_name) => {
+            ("__CUSTOM__", type_name.clone())
+        }
+
+        Type::Void =>
+            panic!("Void invalid"),
+    }
+}
 
 
     pub fn rust_initialization(&self, script: &Script) -> String {
@@ -57,19 +125,31 @@ impl Variable {
     }
 
 
-    pub fn default_value(&self) -> String {
+pub fn default_value(&self) -> String {
     match &self.typ {
-        Some(Type::Float)  => "0.0f32".to_string(),
-        Some(Type::Int)    => "0i32".to_string(),
-        Some(Type::Bool)   => "false".to_string(),
-        Some(Type::Script) => "None".to_string(),
-        Some(Type::String) => "\"\".to_string()".to_string(),
-        Some(Type::StrRef) => "\"\"".to_owned(),
-        Some(Type::Void)   => panic!("Void type cannot be used as field type"),
-        Some(Type::Custom(_)) => "Default::default()".to_string(),
-        None => panic!("Cannot generate default value for inferred type"),
+        Some(Type::Number(NumberKind::Signed(w))) => format!("0i{}", w),
+        Some(Type::Number(NumberKind::Unsigned(w))) => format!("0u{}", w),
+        Some(Type::Number(NumberKind::Float(w))) => match w {
+            16 => "half::f16::from_f32(0.0)".to_string(),
+            32 => "0.0f32".to_string(),
+            64 => "0.0f64".to_string(),
+            128 => "0.0f128".to_string(),
+            _ => "0.0f64".to_string(),
+        },
+
+        Some(Type::Number(NumberKind::Decimal)) => "Decimal::from_str(\"0\").unwrap()".to_string(),
+        Some(Type::Number(NumberKind::BigInt)) => "BigInt::from_str(\"0\").unwrap()".to_string(),
+
+        Some(Type::Bool) => "false".into(),
+        Some(Type::Script) => "None".into(),
+        Some(Type::String) => "\"\".to_string()".into(),
+        Some(Type::StrRef) => "\"\"".into(),
+        Some(Type::Custom(_)) => "Default::default()".into(),
+        Some(Type::Void) => panic!("Void invalid"),
+        None => panic!("Type inference unresolved"),
     }
 }
+
 
 }
 
@@ -80,6 +160,7 @@ impl Variable {
 pub struct Function {
     pub name: String,
     pub params: Vec<Param>,
+    pub locals: Vec<Variable>,
     pub body: Vec<Stmt>,
     pub is_trait_method: bool,
     pub return_type: Type,
@@ -93,15 +174,61 @@ pub struct Param {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    Float,
-    Int,
-    Void,
+    Number(NumberKind),
     Bool,
     String,
     StrRef,
     Script,
+    Void,
     Custom(String),
 }
+
+impl Type {
+   pub fn to_rust_type(&self) -> String {
+        match self {
+            Type::Number(NumberKind::Signed(w)) => match w {
+                8 | 16 | 32 | 64 | 128 => format!("i{}", w),
+                _ => panic!("Unsupported signed integer width: {}", w),
+            },
+
+            Type::Number(NumberKind::Unsigned(w)) => match w {
+                8 | 16 | 32 | 64 | 128 => format!("u{}", w),
+                _ => panic!("Unsupported unsigned integer width: {}", w),
+            },
+
+            Type::Number(NumberKind::Float(w)) => match w {
+                16 => "half::f16".to_string(),
+                32 => "f32".to_string(),
+                64 => "f64".to_string(),
+                128 => "f128".to_string(),
+                _ => panic!("Unsupported float width: {}", w),
+            },
+
+            Type::Number(NumberKind::Decimal) => "Decimal".to_string(),
+            Type::Number(NumberKind::BigInt) => "BigInt".to_string(),
+
+            Type::Bool => "bool".to_string(),
+            Type::String => "String".to_string(),
+            Type::StrRef => "&'static str".to_string(),
+            Type::Script => "Option<ScriptType>".to_string(),
+            Type::Custom(name) => name.clone(),
+            Type::Void => "()".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum NumberKind {
+    Signed(u8),   // width: 8,16,32,64,128
+    Unsigned(u8), // width: ^
+    Float(u8),    // 16,32,64,128
+    Decimal,
+    BigInt
+}
+
+
+
+
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
@@ -133,8 +260,10 @@ pub enum Expr {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    Int(i32),
-    Float(f32),
+    Int(String),
+    Float(String),
+    BigInt(String),
+    Decimal(String),
     String(String),
     Bool(bool),
     Interpolated(String),

@@ -267,7 +267,7 @@ impl<'a> ScriptApi<'a> {
         self.scene.merge_nodes(nodes);
     }
     pub fn set_script_var(
-        &mut self, node_id: &Uuid, name: &str, val: Var,
+        &mut self, node_id: &Uuid, name: &str, val: Value,
     ) -> Option<()> {
         self.scene.set_script_var(node_id, name, val)
     }

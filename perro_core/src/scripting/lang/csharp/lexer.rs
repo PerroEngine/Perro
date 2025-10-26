@@ -127,6 +127,17 @@ impl CsLexer {
         CsToken::Number(s.parse().unwrap_or(0.0))
     }
 
+     fn is_type_keyword(s: &str) -> bool {
+        matches!(s,
+            // C# primitive types
+            "bool" | "byte" | "sbyte" | "char" | 
+            "decimal" | "double" | "float" |
+            "int" | "uint" | "nint" | "nuint" |
+            "long" | "ulong" | "short" | "ushort" |
+            "object" | "string" | "dynamic"
+        )
+    }
+
     pub fn next_token(&mut self) -> CsToken {
         self.skip_whitespace_and_comments();
         if self.peek().is_none() {
@@ -208,9 +219,7 @@ impl CsLexer {
                     "this" => CsToken::This,
                     "var" => CsToken::Var,
                     "void" => CsToken::Void,
-                    "float" | "int" | "double" | "string" | "bool" => {
-                        CsToken::Type(lower)
-                    }
+                    s if Self::is_type_keyword(s) => CsToken::Type(s.to_string()),
                     _ => CsToken::Ident(ident),
                 }
             }

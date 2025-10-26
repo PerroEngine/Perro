@@ -48,7 +48,7 @@ impl PupParser {
         };
         self.next_token();
 
-        let mut exports   = Vec::new();
+        let mut exposed   = Vec::new();
         let mut variables = Vec::new();
         let mut functions = Vec::new();
         let mut structs   = Vec::new();
@@ -57,13 +57,13 @@ impl PupParser {
             match &self.current_token {
                 PupToken::At => {
                     self.next_token();
-                    self.expect(PupToken::Export)?;
-                    exports.push(self.parse_export()?);
+                    self.expect(PupToken::Expose)?;
+                    exposed.push(self.parse_export()?);
                 }
                 PupToken::Struct => {
                     structs.push(self.parse_struct_def()?);
                 }
-                PupToken::Let => {
+                PupToken::Var => {
                     variables.push(self.parse_variable_decl()?);
                 }
                 PupToken::Fn => {
@@ -75,7 +75,7 @@ impl PupParser {
             }
         }
 
-        Ok(Script { node_type, exports, variables, functions, structs })
+        Ok(Script { node_type, exposed, variables, functions, structs })
     }
 
 fn parse_struct_def(&mut self) -> Result<StructDef, String> {
@@ -121,7 +121,7 @@ fn parse_struct_def(&mut self) -> Result<StructDef, String> {
                 }
             }
 
-            PupToken::Let => {
+            PupToken::Var => {
                 self.next_token();
                 fields.push(self.parse_field()?);
                 if self.current_token == PupToken::Comma {
@@ -157,7 +157,7 @@ fn parse_field(&mut self) -> Result<StructField, String> {
 
     fn parse_export(&mut self) -> Result<Variable, String> {
         // '@' and 'export' consumed
-        self.expect(PupToken::Let)?;
+        self.expect(PupToken::Var)?;
         
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
@@ -194,14 +194,28 @@ fn parse_field(&mut self) -> Result<StructField, String> {
 
         let body = self.parse_block()?;
         let is_trait = name == "init" || name == "update";
+
+        let locals = self.collect_locals(&body);
+
         Ok(Function {
             name,
             params,
+            locals,
             body,
             is_trait_method: is_trait,
             return_type: Type::Void,
         })
     }
+
+fn collect_locals(&self, body: &[Stmt]) -> Vec<Variable> {
+    let mut out = Vec::new();
+    for stmt in body {
+        if let Stmt::VariableDecl(v) = stmt {
+            out.push(v.clone());
+        }
+    }
+    out
+}
 
     fn parse_param(&mut self) -> Result<Param, String> {
         let name = if let PupToken::Ident(n) = &self.current_token {
@@ -216,18 +230,14 @@ fn parse_field(&mut self) -> Result<StructField, String> {
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
-        let ty = match &self.current_token {
-            PupToken::Type(t) if t == "float"  => Type::Float,
-            PupToken::Type(t) if t == "int"    => Type::Int,
-            PupToken::Type(t) if t == "bool"   => Type::Bool,
-            PupToken::Type(t) if t == "string" => Type::String,
-            PupToken::Type(t) if t == "script" => Type::Script,
-            PupToken::Ident(n) => Type::Custom(n.clone()),
-            _ => return Err("Expected type".into()),
-        };
-        self.next_token();
-        Ok(ty)
-    }
+    let type_str = match &self.current_token {
+        PupToken::Type(t) => t.clone(),
+        PupToken::Ident(n) => n.clone(), // for custom types
+        _ => return Err("Expected type".into()),
+    };
+    self.next_token();
+    Ok(self.map_type(type_str))
+}
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, String> {
         self.expect(PupToken::LBrace)?;
@@ -242,7 +252,7 @@ fn parse_field(&mut self) -> Result<StructField, String> {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, String> {
-        if self.current_token == PupToken::Let {
+        if self.current_token == PupToken::Var {
             return self.parse_variable_decl().map(Stmt::VariableDecl);
         }
 
@@ -314,7 +324,7 @@ fn parse_field(&mut self) -> Result<StructField, String> {
     }
 
     fn parse_variable_decl(&mut self) -> Result<Variable, String> {
-        self.expect(PupToken::Let)?;
+        self.expect(PupToken::Var)?;
         
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
@@ -410,7 +420,7 @@ PupToken::New => {
             PupToken::Number(n) => {
                 let v = *n;
                 self.next_token();
-                Ok(Expr::Literal(Literal::Float(v)))
+                Ok(Expr::Literal(Literal::Float(v.to_string())))
             }
             PupToken::String(s) => {
                 let v = s.clone();
@@ -577,5 +587,41 @@ PupToken::New => {
             PupToken::Plus | PupToken::Minus => 2,
             _ => 0,
         }
+    }
+
+    fn map_type(&self, t: String) -> Type {
+        match t.as_str() {
+            // Float types
+            "float_16" => Type::Number(NumberKind::Float(16)),
+            "float" | "float_32" => Type::Number(NumberKind::Float(32)),
+            "float_64" => Type::Number(NumberKind::Float(64)),
+            "float_128" => Type::Number(NumberKind::Float(128)),
+            
+            // Signed int types
+            "int_8" => Type::Number(NumberKind::Signed(8)),
+            "int_16" => Type::Number(NumberKind::Signed(16)),
+            "int" | "int_32" => Type::Number(NumberKind::Signed(32)),
+            "int_64" => Type::Number(NumberKind::Signed(64)),
+            "int_128" => Type::Number(NumberKind::Signed(128)),
+            
+            // Unsigned int types
+            "uint_8" => Type::Number(NumberKind::Unsigned(8)),
+            "uint_16" => Type::Number(NumberKind::Unsigned(16)),
+            "uint" | "uint_32" => Type::Number(NumberKind::Unsigned(32)),
+            "uint_64" => Type::Number(NumberKind::Unsigned(64)),
+            "uint_128" => Type::Number(NumberKind::Unsigned(128)),
+            
+            // Decimal/Fixed point
+            "decimal" | "fixed" => Type::Number(NumberKind::Decimal),
+            "big_int" | "big" => Type::Number(NumberKind::BigInt),
+            
+            // Other types
+            "bool" => Type::Bool,
+            "string" => Type::String,
+            "script" => Type::Script,
+            
+            // Custom types (fallback)
+            _ => Type::Custom(t),
+        } 
     }
 }

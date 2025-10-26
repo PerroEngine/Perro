@@ -1,7 +1,13 @@
 extends Node
 
 
-let a: float
+@expose var a: float
+
+@expose var bi: big
+
+@expose var dec: fixed
+
+var c: Player
 
 struct Player {
     hp: int,
@@ -17,15 +23,37 @@ struct Stats extends Player {
 fn init() {
     Console.log("Hello World I am editor.pup")
 
+    bi = 2
+
 }
 
 fn update(delta: float) {
 }
 
-fn bob(poop: float, bob: int, james: string) {
-    JSON.parse("bob: 1")
+fn test() {
+    var big_val: big = 0
+    var dec_val: decimal = 0
+    var float_val: float = 0
+    var int_val: int = 0
+    
+    big_val = 999999999999999999999 
+    dec_val = 123.45             
+    float_val = int_val          
+    int_val = big_val             
 }
 
-fn foo() {
-    Console.log("poop and fart")
+fn compute(delta: float) {
+    var poopy = 420000
+    a = 3                  
+    bi = 2                  
+    dec = 99                 
+
+    a += poopy       
+    bi += 100       
+    dec += 0.5  
+
+    a = 5.0       
+    bi += 10           
+    dec += 1
+
 }

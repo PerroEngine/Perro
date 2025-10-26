@@ -4,8 +4,11 @@
 use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
+use rust_decimal::{Decimal, prelude::*};
+use num_bigint::BigInt;
 use std::{rc::Rc, cell::RefCell};
 
 use perro_core::prelude::*;
@@ -17,6 +20,9 @@ use perro_core::prelude::*;
 pub struct ScriptsEditorPupScript {
     node_id: Uuid,
     a: f32,
+    bi: BigInt,
+    dec: Decimal,
+    c: Player,
 }
 
 // ========================================================================
@@ -28,6 +34,9 @@ pub extern "C" fn scripts_editor_pup_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(ScriptsEditorPupScript {
         node_id: Uuid::nil(),
         a: 0.0f32,
+        bi: BigInt::from_str("0").unwrap(),
+        dec: Decimal::from_str("0").unwrap(),
+        c: Default::default(),
     })) as *mut dyn ScriptObject
 }
 
@@ -35,7 +44,7 @@ pub extern "C" fn scripts_editor_pup_create_script() -> *mut dyn ScriptObject {
 // Supporting Struct Definitions
 // ========================================================================
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
     pub hp: i32,
 }
@@ -46,7 +55,7 @@ impl Player {
 
 
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Stats {
     pub base: Player,
 }
@@ -78,6 +87,7 @@ impl DerefMut for Stats {
 impl Script for ScriptsEditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("Hello World I am editor.pup");
+        self.bi = BigInt::from_str("").unwrap();
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -90,15 +100,29 @@ impl Script for ScriptsEditorPupScript {
 // ========================================================================
 
 impl ScriptsEditorPupScript {
-    fn bob(&mut self, poop: f32, bob: i32, james: String, api: &mut ScriptApi<'_>) {
-        let mut poop = poop;
-        let mut bob = bob;
-        let mut james = james;
-        api.JSON.parse("bob: 1");
+    fn test(&mut self) {
+        let mut big_val = BigInt::from_str("").unwrap();
+        let mut dec_val = Decimal::from_str("0").unwrap();
+        let mut float_val = 0f32;
+        let mut int_val = 0i32;
+        big_val = BigInt::from_str("").unwrap();
+        dec_val = Decimal::from_str("123.45").unwrap();
+        float_val = int_val;
+        int_val = (big_val as i32).to_i32().unwrap();
     }
 
-    fn foo(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("poop and fart");
+    fn compute(&mut self, delta: f32) {
+        let mut delta = delta;
+        let mut poopy = 420000f32;
+        self.a = 3f32;
+        self.bi = BigInt::from_str("").unwrap();
+        self.dec = Decimal::from_str("99").unwrap();
+        self.a += (poopy as f32);
+        self.bi += BigInt::from_str("").unwrap();
+        self.dec += Decimal::from_str("0.5").unwrap();
+        self.a = 5f32;
+        self.bi += BigInt::from_str("").unwrap();
+        self.dec += Decimal::from_str("1").unwrap();
     }
 
 }
@@ -113,37 +137,50 @@ impl ScriptObject for ScriptsEditorPupScript {
         self.node_id
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self as &mut dyn Any
-    }
-
-    fn get_var(&self, name: &str) -> Option<&dyn Any> {
+    fn get_var(&self, name: &str) -> Option<Value> {
         match name {
-            "a" => Some(&self.a as &dyn Any),
+            "c" => Some(json!(self.c)),
             _ => None,
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
         match name {
-            "a" => {
-                if let Ok(v) = val.downcast::<f32>() {
-                    self.a = *v;
+            "c" => {
+                if let Ok(v) = serde_json::from_value::<Player>(val) {
+                    self.c = v;
                     return Some(());
                 }
-                return None;
+                None
             },
             _ => None,
         }
     }
 
-    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {
         for (key, _) in hashmap.iter() {
             match key.as_str() {
+                "a" => {
+                    if let Some(value) = hashmap.get("a") {
+                        if let Some(v) = value.as_f64() {
+                            self.a = v as f32;
+                        }
+                    }
+                },
+                "bi" => {
+                    if let Some(value) = hashmap.get("bi") {
+                        if let Some(v) = value.as_str() {
+                            self.bi = v.parse::<BigInt>().unwrap();
+                        }
+                    }
+                },
+                "dec" => {
+                    if let Some(value) = hashmap.get("dec") {
+                        if let Some(v) = value.as_str() {
+                            self.dec = v.parse::<Decimal>().unwrap();
+                        }
+                    }
+                },
                 _ => {},
             }
         }

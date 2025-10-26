@@ -4,8 +4,10 @@
 use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
 
@@ -36,7 +38,7 @@ pub struct RootScript {
     pub h: i64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct F {
     pub g: i32,
 }
@@ -252,101 +254,93 @@ impl ScriptObject for RootScript {
         self.node_id
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self as &mut dyn Any
-    }
-
-    fn get_var(&self, name: &str) -> Option<&dyn Any> {
+    fn get_var(&self, name: &str) -> Option<Value> {
         match name {
-            "b" => Some(&self.b as &dyn Any),
-            "a" => Some(&self.a as &dyn Any),
-            "e" => Some(&self.e as &dyn Any),
-            "f" => Some(&self.f as &dyn Any),
-            "h" => Some(&self.h as &dyn Any),
+            "b" => Some(json!(self.b)),
+            "a" => Some(json!(self.a)),
+            "e" => Some(json!(self.e)),
+            "f" => Some(json!(self.f)),
+            "h" => Some(json!(self.h)),
             _ => None,
         }
     }
 
-    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {
+    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
         match name {
             "b" => {
-                if let Ok(v) = val.downcast::<f32>() {
-                    self.b = *v;
+                if let Some(v) = val.as_f64() {
+                    self.b = v as f32;
                     return Some(());
                 }
-                return None;
+                None
             },
             "a" => {
-                if let Ok(v) = val.downcast::<i32>() {
-                    self.a = *v;
+                if let Some(v) = val.as_i64() {
+                    self.a = v as i32;
                     return Some(());
                 }
-                return None;
+                None
             },
             "e" => {
-                if let Ok(v) = val.downcast::<String>() {
-                    self.e = *v;
+                if let Some(v) = val.as_str() {
+                    self.e = v.to_string();
                     return Some(());
                 }
-                return None;
+                None
             },
             "f" => {
-                if let Ok(v) = val.downcast::<F>() {
-                    self.f = *v;
+                if let Ok(v) = serde_json::from_value::<F>(val) {
+                    self.f = v;
                     return Some(());
                 }
-                return None;
+                None
             },
             "h" => {
-                if let Ok(v) = val.downcast::<i64>() {
-                    self.h = *v;
+                if let Some(v) = val.as_i64() {
+                    self.h = v as i64;
                     return Some(());
                 }
-                return None;
+                None
             },
             _ => None,
         }
     }
 
-    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {
+    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {
         for (key, _) in hashmap.iter() {
             match key.as_str() {
                 "b" => {
                     if let Some(value) = hashmap.get("b") {
-                        if let Some(v) = value.downcast_ref::<f32>() {
-                            self.b = *v;
+                        if let Some(v) = value.as_f64() {
+                            self.b = v as f32;
                         }
                     }
                 },
                 "a" => {
                     if let Some(value) = hashmap.get("a") {
-                        if let Some(v) = value.downcast_ref::<i32>() {
-                            self.a = *v;
+                        if let Some(v) = value.as_i64() {
+                            self.a = v as i32;
                         }
                     }
                 },
                 "e" => {
                     if let Some(value) = hashmap.get("e") {
-                        if let Some(v) = value.downcast_ref::<String>() {
-                            self.e = v.clone();
+                        if let Some(v) = value.as_str() {
+                            self.e = v.to_string();
                         }
                     }
                 },
                 "f" => {
                     if let Some(value) = hashmap.get("f") {
-                        if let Some(v) = value.downcast_ref::<F>() {
-                            self.f = v.clone();
+                        if let Ok(v) = serde_json::from_value::<F>(value.clone()) {
+                            self.f = v;
                         }
                     }
                 },
                 "h" => {
                     if let Some(value) = hashmap.get("h") {
-                        if let Some(v) = value.downcast_ref::<i64>() {
-                            self.h = v.clone();
+                        if let Some(v) = value.as_i64() {
+                            self.h = v as i64;
                         }
                     }
                 },

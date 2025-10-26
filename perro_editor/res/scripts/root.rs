@@ -4,8 +4,10 @@
 use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
 
@@ -36,7 +38,7 @@ pub struct RootScript {
     pub h: i64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct F {
     pub g: i32,
 }

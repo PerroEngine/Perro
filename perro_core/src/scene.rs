@@ -4,6 +4,7 @@ use crate::{
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use wgpu::RenderPass;
 use std::{
     any::Any, cell::RefCell, collections::HashMap, io, path::PathBuf, rc::Rc, sync::mpsc::Sender, time::{Duration, Instant} // NEW import
@@ -264,12 +265,12 @@ impl<P: ScriptProvider> Scene<P> {
         &mut self,
         node_id: &Uuid,
         name: &str,
-        val: Var,
+        val: Value,
     ) -> Option<()> {
         let rc_script = self.scripts.get(node_id)?;
         let mut script = rc_script.borrow_mut();
 
-        script.set_var(name, Box::new(val))?;
+        script.set_var(name, val)?;
         Some(())
     }
 
@@ -406,7 +407,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         &mut self,
         node_id: &Uuid,
         name: &str,
-        val: Var,
+        val: Value,
     ) -> Option<()> {
         self.set_script_var(node_id, name, val)
     }

@@ -20,55 +20,131 @@ fn to_pascal_case(s: &str) -> String {
         .collect()
 }
 
-fn is_engine_api(name: &str) -> bool {
-    matches!(name, "JSON" | "OS" | "Time")
-}
-
 impl Script {
 
     pub fn is_struct_field(&self, name: &str) -> bool {
         self.variables.iter().any(|v| v.name == name)
-            || self.exports.iter().any(|v| v.name == name)
+            || self.exposed.iter().any(|v| v.name == name)
     }
 
-    pub fn get_variable_type(&self, name: &str) -> Option<&Type> {
-    self.variables
-        .iter()
-        .find(|v| v.name == name)
-        .and_then(|v| v.typ.as_ref())
+pub fn get_variable_type(&self, name: &str) -> Option<&Type> {
+    // First check local vars
+    if let Some(v) = self.variables.iter().find(|v| v.name == name) {
+        return v.typ.as_ref();
+    }
+
+    // 🔧 Also check exposed vars
+    if let Some(v) = self.exposed.iter().find(|v| v.name == name) {
+        return v.typ.as_ref();
+    }
+
+    None
 }
 
 
    fn infer_expr_type(&self, expr: &Expr) -> Option<Type> {
-    match expr {
+    let t = match expr {
         Expr::Literal(lit) => match lit {
-            Literal::Int(_) => Some(Type::Int),
-            Literal::Float(_) => Some(Type::Float),
+            Literal::Int(_) => Some(Type::Number(NumberKind::Signed(32))),  // default to i32
+            Literal::Float(_) => Some(Type::Number(NumberKind::Float(32))), // default to f64
+            Literal::BigInt(_) => Some(Type::Number(NumberKind::BigInt)),
+            Literal::Decimal(_) => Some(Type::Number(NumberKind::Decimal)),
             Literal::Bool(_) => Some(Type::Bool),
             Literal::String(_) => Some(Type::String),
             Literal::Interpolated(_) => Some(Type::String),
         },
 
-        Expr::Ident(name) => self.get_variable_type(name).cloned(),
+        Expr::Ident(name) => {
+    // check locals + parameters of all functions first
+    for func in &self.functions {
+        if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+            return local.typ.clone();
+        }
+        if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+            return Some(param.typ.clone());
+        }
+    }
 
-        Expr::BinaryOp(left, _, right) => {
-            let left_type = self.infer_expr_type(left)?;
-            let right_type = self.infer_expr_type(right)?;
-            if left_type == right_type {
-                Some(left_type)
-            } else if (left_type == Type::Float && right_type == Type::Int)
-                || (left_type == Type::Int && right_type == Type::Float)
-            {
-                Some(Type::Float)
-            } else {
-                None
+    // fallback to script vars + exposed fields
+    self.get_variable_type(name).cloned()
+}
+
+Expr::BinaryOp(left, op, right) => {
+    let left_type = self.infer_expr_type(left);
+    let right_type = self.infer_expr_type(right);
+
+    match (left_type, right_type) {
+        // ✅ If both have known same type
+        (Some(ref l), Some(ref r)) if l == r => Some(l.clone()),
+
+        // ✅ If only LHS is known, prefer it — this fixes BigInt and Decimal math
+        (Some(l), None) => Some(l),
+
+        // ✅ If only RHS is known, use that (rare case)
+        (None, Some(r)) => Some(r),
+
+        // ✅ Both known but different kinds (fallback to promotion logic)
+        (Some(l), Some(r)) => match (&l, &r) {
+
+// BigInt dominates everything
+(Type::Number(NumberKind::BigInt), Type::Number(_))
+| (Type::Number(_), Type::Number(NumberKind::BigInt)) => {
+    Some(Type::Number(NumberKind::BigInt))
+}
+
+// Decimal dominates non-BigInt
+(Type::Number(NumberKind::Decimal), Type::Number(_))
+| (Type::Number(_), Type::Number(NumberKind::Decimal)) => {
+    Some(Type::Number(NumberKind::Decimal))
+}
+
+            (Type::Number(NumberKind::Float(w1)), Type::Number(NumberKind::Float(w2))) => {
+                Some(Type::Number(NumberKind::Float(*w1.max(w2))))
             }
-        }
 
-        Expr::MemberAccess(base, member) => {
-            let base_type = self.infer_expr_type(base)?;
-            self.get_member_type(&base_type, member)
+            (Type::Number(NumberKind::Float(w)), Type::Number(_))
+            | (Type::Number(_), Type::Number(NumberKind::Float(w))) => {
+                Some(Type::Number(NumberKind::Float(*w)))
+            }
+
+            (Type::Number(NumberKind::Signed(w1)), Type::Number(NumberKind::Unsigned(w2)))
+            | (Type::Number(NumberKind::Unsigned(w2)), Type::Number(NumberKind::Signed(w1))) => {
+                Some(Type::Number(NumberKind::Signed(*w1.max(w2))))
+            }
+
+            (Type::Number(NumberKind::Signed(w1)), Type::Number(NumberKind::Signed(w2))) => {
+                Some(Type::Number(NumberKind::Signed(*w1.max(w2))))
+            }
+
+            (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Unsigned(w2))) => {
+                Some(Type::Number(NumberKind::Unsigned(*w1.max(w2))))
+            }
+
+            _ => Some(l.clone()), // default to LHS type, not float
+        },
+
+        // ✅ Unknown types → default integer (safer than defaulting to f32)
+        _ => Some(Type::Number(NumberKind::Signed(32))),
+    }
+}
+
+Expr::MemberAccess(base, member) => {
+    // ✅ Special-case: self.member or self_node.member
+    if matches!(**base, Expr::SelfAccess) {
+        // Try exposed first
+        if let Some(exposed) = self.exposed.iter().find(|v| v.name == member.as_str()) {
+            return exposed.typ.clone();
         }
+        // Try variables
+        if let Some(var) = self.variables.iter().find(|v| v.name == member.as_str()) {
+            return var.typ.clone();
+        }
+    }
+
+    // Fallback: regular object member of some other type
+    let base_type = self.infer_expr_type(base)?;
+    self.get_member_type(&base_type, member)
+}
 
         // ✅ NEW: handle expression-based calls
         Expr::Call(target, _) => {
@@ -93,12 +169,21 @@ impl Script {
 
                 // Calls on custom API objects like JSON / Time / OS
                 Expr::Ident(name) => {
-                if is_engine_api(name) {
-                    Some(Type::Custom(name.clone()))
-                } else {
-                    self.get_variable_type(name).cloned()
+                // 1️⃣ Check if called within a specific function (you can pass this info at generation time)
+                // For now, just a global lookup for simplicity:
+                for func in &self.functions {
+                    if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+                        return local.typ.clone();
+                    }
+                    if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+                        return Some(param.typ.clone());
+                    }
                 }
+
+                // 2️⃣ Fallback to script-level vars/exposed
+                self.get_variable_type(name).cloned()
             }
+            
 
                 _ => None,
             }
@@ -107,15 +192,18 @@ impl Script {
         Expr::SelfAccess => Some(Type::Custom(self.node_type.clone())),
 
         _ => None,
-    }
+    };
+
+    eprintln!("infer_expr_type({:?}) -> {:?}", expr, t);
+    t
 }
 
     
     fn get_member_type(&self, base_type: &Type, member: &str) -> Option<Type> {
     match base_type {
         Type::Custom(type_name) if type_name == &self.node_type => {
-            // Check exports first
-            if let Some(export) = self.exports.iter().find(|v| v.name == member) {
+            // Check exposed first
+            if let Some(export) = self.exposed.iter().find(|v| v.name == member) {
                 export.typ.clone()
             }
             // Then check variables
@@ -148,13 +236,16 @@ pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
     out.push_str("use std::any::Any;\n");
     out.push_str("use std::collections::HashMap;\n");
     out.push_str("use serde_json::{Value, json};\n");
+    out.push_str("use serde::{Serialize, Deserialize};\n");
     out.push_str("use uuid::Uuid;\n");
     out.push_str("use std::ops::{Deref, DerefMut};\n");
+    out.push_str("use rust_decimal::{Decimal, prelude::*};\n");
+    out.push_str("use num_bigint::BigInt;\n");
     out.push_str("use std::{rc::Rc, cell::RefCell};\n\n");
     out.push_str("use perro_core::prelude::*;\n\n");
 
     // Collect field data
-    let export_fields: Vec<(&str, String, String)> = self.exports.iter()
+    let export_fields: Vec<(&str, String, String)> = self.exposed.iter()
         .map(|export| {
             let name = export.name.as_str();
             let rust_type = export.rust_type();
@@ -209,8 +300,8 @@ pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
     out.push_str(&format!("    Box::into_raw(Box::new({}Script {{\n", pascal_struct_name));
     out.push_str("        node_id: Uuid::nil(),\n");
 
-    // Initialize exports
-    for export in &self.exports {
+    // Initialize exposed
+    for export in &self.exposed {
         let init_code = export.rust_initialization(self);
         out.push_str(&format!("        {}: {},\n", export.name, init_code));
     }
@@ -274,7 +365,7 @@ pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
         
         out.push_str(&implement_script_boilerplate(
             &format!("{}Script", pascal_struct_name),
-            &self.exports,
+            &self.exposed,
             &self.variables,
         ));
 
@@ -289,7 +380,6 @@ pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
  
 
     pub fn function_uses_api(&self, name: &str) -> bool {
-    if is_engine_api(name) { return true; }
     self.functions
         .iter()
         .find(|f| f.name == name)
@@ -301,54 +391,74 @@ pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
 
 fn implement_script_boilerplate(
     struct_name: &str,
-    exports: &[Variable],
+    exposed: &[Variable],
     variables: &[Variable],
 ) -> String {
     let mut get_matches = String::new();
     let mut set_matches = String::new();
-    let mut apply_exports_matches = String::new();
+    let mut apply_exposed_matches = String::new();
 
     for var in variables {
         let name = &var.name;
-        let rust_type = var.rust_type();
+        let (accessor, conv) = var.json_access();
 
         get_matches.push_str(&format!(
-            "            \"{name}\" => Some(&self.{name} as &dyn Any),\n"
+            "            \"{name}\" => Some(json!(self.{name})),\n"
         ));
 
-        set_matches.push_str(&format!(
-            "            \"{name}\" => {{\n                \
-if let Ok(v) = val.downcast::<{rust_type}>() {{\n                    \
-self.{name} = *v;\n                    \
-return Some(());\n                \
-}}\n                \
-return None;\n            \
-}},\n"
-        ));
-
+        // Handle custom types differently
+        if accessor == "__CUSTOM__" {
+            let type_name = &conv; // conv contains the type name for custom types
+            set_matches.push_str(&format!(
+                "            \"{name}\" => {{
+                if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
+                    self.{name} = v;
+                    return Some(());
+                }}
+                None
+            }},\n"
+            ));
+        } else {
+            set_matches.push_str(&format!(
+                "            \"{name}\" => {{
+                if let Some(v) = val.{accessor}() {{
+                    self.{name} = v{conv};
+                    return Some(());
+                }}
+                None
+            }},\n"
+            ));
+        }
     }
 
-   for var in exports {
-    let name = &var.name;
-    let rust_type = var.rust_type();
+    for var in exposed {
+        let name = &var.name;
+        let (accessor, conv) = var.json_access();
 
-    let assignment = match rust_type.as_str() {
-        "i32" | "f32" | "bool" => format!("self.{name} = *v;"),
-        _ => format!("self.{name} = v.clone();"), // clone non-primitives
-    };
-
-    apply_exports_matches.push_str(&format!(
-        "                \"{name}\" => {{
+        // Handle custom types differently
+        if accessor == "__CUSTOM__" {
+            let type_name = &conv;
+            apply_exposed_matches.push_str(&format!(
+                "                \"{name}\" => {{
                     if let Some(value) = hashmap.get(\"{name}\") {{
-                        if let Some(v) = value.downcast_ref::<{rust_type}>() {{
-                            {assignment}
+                        if let Ok(v) = serde_json::from_value::<{type_name}>(value.clone()) {{
+                            self.{name} = v;
                         }}
                     }}
                 }},\n"
-    ));
-}
-
-
+            ));
+        } else {
+            apply_exposed_matches.push_str(&format!(
+                "                \"{name}\" => {{
+                    if let Some(value) = hashmap.get(\"{name}\") {{
+                        if let Some(v) = value.{accessor}() {{
+                            self.{name} = v{conv};
+                        }}
+                    }}
+                }},\n"
+            ));
+        }
+    }
 
     format!(
         r#"
@@ -361,30 +471,22 @@ impl ScriptObject for {struct_name} {{
         self.node_id
     }}
 
-    fn as_any(&self) -> &dyn Any {{
-        self as &dyn Any
-    }}
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {{
-        self as &mut dyn Any
-    }}
-
-    fn get_var(&self, name: &str) -> Option<&dyn Any> {{
+    fn get_var(&self, name: &str) -> Option<Value> {{
         match name {{
 {get_matches}            _ => None,
         }}
     }}
 
-    fn set_var(&mut self, name: &str, val: Box<dyn Any>) -> Option<()> {{
+    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {{
         match name {{
 {set_matches}            _ => None,
         }}
     }}
 
-    fn apply_exports(&mut self, hashmap: &HashMap<String, Box<dyn Any>>) {{
+    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {{
         for (key, _) in hashmap.iter() {{
             match key.as_str() {{
-{apply_exports_matches}                _ => {{}},
+{apply_exposed_matches}                _ => {{}},
             }}
         }}
     }}
@@ -393,12 +495,13 @@ impl ScriptObject for {struct_name} {{
     )
 }
 
+
 impl StructDef {
     pub fn to_rust_definition(&self, script: &Script) -> String {
         let mut out = String::new();
 
         // Always derive Default, Debug, Clone
-        writeln!(out, "#[derive(Default, Debug, Clone)]").unwrap();
+        writeln!(out, "#[derive(Default, Debug, Clone, Serialize, Deserialize)]").unwrap();
         writeln!(out, "pub struct {} {{", self.name).unwrap();
 
         // ✅ If this struct extends another, emit a base field
@@ -448,20 +551,8 @@ impl StructDef {
     }
 }
 
-impl Type {
-    pub fn to_rust_type(&self) -> &str {
-        match self {
-            Type::Float => "f32",
-            Type::Int => "i32",
-            Type::Bool => "bool",
-            Type::String => "String",
-            Type::StrRef => "&str",
-            Type::Script => "Option<ScriptType>",
-            Type::Custom(name) => name.as_str(),
-            Type::Void => "()",
-        }
-    }
-}
+
+
 
 impl Function {
     pub fn to_rust_method(&self, node_type: &str, script: &Script) -> String {
@@ -599,37 +690,258 @@ impl Stmt {
                     };
                     
                     if expr_str.is_empty() {
-                        format!("        let {};\n", var.name)
+                        format!("        let mut {};\n", var.name)
                     } else {
-                        format!("        let {} = {};\n", var.name, expr_str)
+                        format!("        let mut {} = {};\n", var.name, expr_str)
                     }
                 }
 
-            Stmt::Assign(name, expr) => {
-                        let target = if script.is_struct_field(name) {
-                            format!("self.{}", name)
-                        } else {
-                            name.clone()
-                        };
-                        let expected_type = script.get_variable_type(name); // you implement this
-                        let expr_str = expr.to_rust(needs_self, script, expected_type);
-                        format!("        {} = {};\n", target, expr_str)
+Stmt::Assign(name, expr) => {
+    let target = if script.is_struct_field(name) {
+        format!("self.{}", name)
+    } else {
+        name.clone()
+    };
+
+    // --- 🔍 Get expected type (including locals and params) ---
+    let expected_type = {
+        let mut t = None;
+        for func in &script.functions {
+            if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+                t = local.typ.clone();
+                break;
+            }
+            if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+                t = Some(param.typ.clone());
+                break;
+            }
+        }
+        t.or_else(|| script.get_variable_type(name).cloned())
+    };
+
+    let mut expr_str = expr.to_rust(needs_self, script, expected_type.as_ref());
+
+    // --- 🎯 Smart promotion and casting logic for assignments ---
+    if !matches!(expr, Expr::Literal(_)) {
+        let rhs_type = script.infer_expr_type(expr);
+
+        if let (Some(to), Some(from)) = (expected_type.as_ref(), rhs_type.as_ref()) {
+            // Helper: can we safely promote without explicit cast?
+            let can_promote = |from: &Type, to: &Type| -> bool {
+                match (from, to) {
+                    // Same type
+                    (a, b) if a == b => true,
+
+                    // BigInt accepts everything
+                    (_, Type::Number(NumberKind::BigInt)) => true,
+
+                    // Decimal accepts everything except BigInt
+                    (Type::Number(NumberKind::BigInt), Type::Number(NumberKind::Decimal)) => false,
+                    (_, Type::Number(NumberKind::Decimal)) => true,
+
+                    // Floats accept any integer
+                    (Type::Number(NumberKind::Signed(_)), Type::Number(NumberKind::Float(_))) => true,
+                    (Type::Number(NumberKind::Unsigned(_)), Type::Number(NumberKind::Float(_))) => true,
+
+                    // Integer widening (same signedness)
+                    (Type::Number(NumberKind::Signed(w1)), Type::Number(NumberKind::Signed(w2))) if w1 <= w2 => true,
+                    (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Unsigned(w2))) if w1 <= w2 => true,
+
+                    // Unsigned→Signed (safe if small enough)
+                    (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Signed(w2))) if w1 < w2 => true,
+
+                    _ => false,
+                }
+            };
+
+            // --- Case 1: Not safely promotable, force cast/conversion ---
+            if !can_promote(from, to) {
+                expr_str = match to {
+                    Type::Number(NumberKind::BigInt) => match from {
+                        Type::Number(NumberKind::Float(_)) => {
+                            format!("BigInt::from({} as i64)", expr_str)
+                        }
+                        Type::Number(NumberKind::Decimal) => {
+                            format!("BigInt::from_str(&{}.to_string()).unwrap()", expr_str)
+                        }
+                        _ => format!("BigInt::from({})", expr_str),
+                    },
+                    Type::Number(NumberKind::Decimal) => match from {
+                        Type::Number(NumberKind::Float(_)) => {
+                            format!("Decimal::from_f32({}).unwrap()", expr_str)
+                        }
+                        Type::Number(NumberKind::BigInt) => {
+                            format!("Decimal::from_str(&{}.to_string()).unwrap()", expr_str)
+                        }
+                        _ => format!("Decimal::from({})", expr_str),
+                    },
+                    _ => {
+                        // Standard primitive cast
+                        format!("({} as {})", expr_str, to.to_rust_type())
                     }
-            Stmt::AssignOp(name, op, expr) => {
-                        let target = if script.is_struct_field(name) {
-                            format!("self.{}", name)
-                        } else {
-                            name.clone()
-                        };
-                        let expected_type = script.get_variable_type(name);
-                        format!(
-                            "        {} = {} {} {};\n",
-                            target,
-                            target,
-                            op.to_rust(),
-                            expr.to_rust(needs_self, script, expected_type)
-                        )
+                };
+
+                // --- 💡 Additional case: BigInt → primitive numeric target ---
+                if let (Type::Number(NumberKind::BigInt), Type::Number(NumberKind::Signed(w))) = (from, to) {
+                    expr_str = format!("{}.to_i{}().unwrap()", expr_str, w);
+                } else if let (Type::Number(NumberKind::BigInt), Type::Number(NumberKind::Unsigned(w))) =
+                    (from, to)
+                {
+                    expr_str = format!("{}.to_u{}().unwrap()", expr_str, w);
+                } else if let (Type::Number(NumberKind::BigInt), Type::Number(NumberKind::Float(w))) =
+                    (from, to)
+                {
+                    expr_str = format!("{}.to_f{}().unwrap()", expr_str, w);
+                }
+            }
+            // --- Case 2: Safe promotion, build appropriate wrapper ---
+            else if from != to {
+                expr_str = match to {
+                    Type::Number(NumberKind::BigInt) => format!("BigInt::from({})", expr_str),
+                    Type::Number(NumberKind::Decimal) => match from {
+                        Type::Number(NumberKind::Float(_)) => {
+                            format!("Decimal::from_f32({}).unwrap()", expr_str)
+                        }
+                        _ => format!("Decimal::from({})", expr_str),
+                    },
+                    _ => expr_str, // no change
+                }
+            }
+        }
+        // --- Case 3: Unknown RHS type but known LHS ---
+        else if let Some(to) = expected_type.as_ref() {
+            match to {
+                Type::Number(NumberKind::Float(_)) => {
+                    expr_str = format!("({} as {})", expr_str, to.to_rust_type());
+                }
+                Type::Number(NumberKind::BigInt) => {
+                    expr_str = format!("BigInt::from({})", expr_str);
+                }
+                Type::Number(NumberKind::Decimal) => {
+                    expr_str = format!("Decimal::from({})", expr_str);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    format!("        {} = {};\n", target, expr_str)
+}
+Stmt::AssignOp(name, op, expr) => {
+    let target = if script.is_struct_field(name) {
+        format!("self.{}", name)
+    } else {
+        name.clone()
+    };
+
+    // --- 🔍 Get expected type (with local variable support) ---
+    let expected_type = {
+        let mut t = None;
+        for func in &script.functions {
+            if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+                t = local.typ.clone();
+                break;
+            }
+            if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+                t = Some(param.typ.clone());
+                break;
+            }
+        }
+        t.or_else(|| script.get_variable_type(name).cloned())
+    };
+
+    let mut rhs = expr.to_rust(needs_self, script, expected_type.as_ref());
+
+    // --- 🎯 Smart promotion and casting logic ---
+    if !matches!(expr, Expr::Literal(_)) {
+        let rhs_type = script.infer_expr_type(expr);
+
+        if let (Some(to), Some(from)) = (expected_type.as_ref(), rhs_type.as_ref()) {
+            // Helper function for safe promotions
+            let can_promote = |from: &Type, to: &Type| -> bool {
+                match (from, to) {
+                    // Same type - no cast needed
+                    (a, b) if a == b => true,
+
+                    // BigInt accepts everything (safe promotion)
+                    (_, Type::Number(NumberKind::BigInt)) => true,
+                    
+                    // Decimal accepts everything except BigInt (safe promotion)
+                    (Type::Number(NumberKind::BigInt), Type::Number(NumberKind::Decimal)) => false,
+                    (_, Type::Number(NumberKind::Decimal)) => true,
+
+                    // Float accepts integers (common promotion)
+                    (Type::Number(NumberKind::Signed(_)), Type::Number(NumberKind::Float(_))) => true,
+                    (Type::Number(NumberKind::Unsigned(_)), Type::Number(NumberKind::Float(_))) => true,
+
+                    // Integer widening (same signedness)
+                    (Type::Number(NumberKind::Signed(w1)), Type::Number(NumberKind::Signed(w2))) if w1 <= w2 => true,
+                    (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Unsigned(w2))) if w1 <= w2 => true,
+
+                    // Signed/unsigned mixing (promote to signed if same or larger width)
+                    (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Signed(w2))) if w1 < w2 => true,
+
+                    _ => false,
+                }
+            };
+
+            // Apply cast only if promotion is not safe
+            if !can_promote(from, to) {
+                // Generate appropriate conversion based on target type
+                rhs = match to {
+                    Type::Number(NumberKind::BigInt) => {
+                        match from {
+                            Type::Number(NumberKind::Float(_)) => format!("BigInt::from({} as i64)", rhs),
+                            Type::Number(NumberKind::Decimal) => format!("BigInt::from_str(&{}.to_string()).unwrap()", rhs),
+                            _ => format!("BigInt::from({})", rhs),
+                        }
                     }
+                    Type::Number(NumberKind::Decimal) => {
+                        match from {
+                            Type::Number(NumberKind::Float(_)) => format!("Decimal::from_f32({}).unwrap()", rhs),
+                            Type::Number(NumberKind::BigInt) => format!("Decimal::from_str(&{}.to_string()).unwrap()", rhs),
+                            _ => format!("Decimal::from({})", rhs),
+                        }
+                    }
+                    _ => {
+                        // Standard cast for primitives
+                        format!("({} as {})", rhs, to.to_rust_type())
+                    }
+                }
+            } else if from != to {
+                // Safe promotion - generate appropriate constructor
+                rhs = match to {
+                    Type::Number(NumberKind::BigInt) => {
+                        format!("BigInt::from({})", rhs)
+                    }
+                    Type::Number(NumberKind::Decimal) => {
+                        match from {
+                            Type::Number(NumberKind::Float(_)) => format!("Decimal::from_f32({}).unwrap()", rhs),
+                            _ => format!("Decimal::from({})", rhs),
+                        }
+                    }
+                    _ => rhs, // No conversion needed for other safe promotions
+                }
+            }
+        } else if let Some(to) = expected_type.as_ref() {
+            // Fallback: RHS type unknown but LHS has known type
+            match to {
+                Type::Number(NumberKind::Float(_)) => {
+                    rhs = format!("({} as {})", rhs, to.to_rust_type());
+                }
+                Type::Number(NumberKind::BigInt) => {
+                    rhs = format!("BigInt::from({})", rhs);
+                }
+                Type::Number(NumberKind::Decimal) => {
+                    rhs = format!("Decimal::from({})", rhs);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    format!("        {} {}= {};\n", target, op.to_rust_assign(), rhs)
+}
             Stmt::MemberAssign(lhs_expr, rhs_expr) => {
                         let expected_type = script.infer_expr_type(lhs_expr); // implement this
                         format!(
@@ -652,16 +964,15 @@ impl Stmt {
                 // 1) generate the RHS expression as a Var constructor
                 let rhs_str = rhs.to_rust(needs_self, script, None);
                 // pick the Var:: variant based on the AST Literal or expected type:
-                let ctor = match rhs {
-                    Expr::Literal(Literal::Int(_))    => "I32",
-                    Expr::Literal(Literal::Float(_))  => "F32",
-                    Expr::Literal(Literal::Bool(_))   => "Bool",
-                    Expr::Literal(Literal::String(_)) => "String",
-                    _ => { 
-                        // fallback, or query script.infer_expr_type(rhs) 
-                        "I32" 
-                    }
-                };
+let ctor = match rhs {
+    Expr::Literal(Literal::Int(_))     => "I32",
+    Expr::Literal(Literal::Float(_))   => "F32", 
+    Expr::Literal(Literal::BigInt(_))  => "BigInt",  // ADD THIS
+    Expr::Literal(Literal::Decimal(_)) => "Decimal", // ADD THIS
+    Expr::Literal(Literal::Bool(_))    => "Bool",
+    Expr::Literal(Literal::String(_))  => "String",
+    _ => "I32" // fallback
+};
                 format!(
                     "        api.update_script_var(&{var}_id, \"{field}\", \
             UpdateOp::Set, Var::{ctor}({rhs}));\n",
@@ -680,13 +991,15 @@ impl Stmt {
                     Op::Mul => "Mul",
                     Op::Div => "Div",
                 };
-                let ctor = match rhs {
-                    Expr::Literal(Literal::Int(_))    => "I32",
-                    Expr::Literal(Literal::Float(_))  => "F32",
-                    Expr::Literal(Literal::Bool(_))   => "Bool",
-                    Expr::Literal(Literal::String(_)) => "String",
-                    _ => "I32",
-                };
+let ctor = match rhs {
+    Expr::Literal(Literal::Int(_))     => "I32",
+    Expr::Literal(Literal::Float(_))   => "F32",
+    Expr::Literal(Literal::BigInt(_))  => "BigInt",
+    Expr::Literal(Literal::Decimal(_)) => "Decimal",
+    Expr::Literal(Literal::Bool(_))    => "Bool",
+    Expr::Literal(Literal::String(_)) => "String",
+    _ => "I32",
+};
                 format!(
                     "        api.update_script_var(&{var}_id, \"{field}\", \
             UpdateOp::{op_str}, Var::{ctor}({rhs}));\n",
@@ -763,6 +1076,27 @@ Stmt::ScriptAssign(_, _, expr) => expr.contains_self(),
 }
 }
 
+fn can_promote(from: &Type, to: &Type) -> bool {
+    match (from, to) {
+        // same type
+        (a, b) if a == b => true,
+
+        // anything → BigInt or Decimal (safe promotion)
+        (_, Type::Number(NumberKind::BigInt)) => true,
+        (_, Type::Number(NumberKind::Decimal)) => true,
+
+        // int → float
+        (Type::Number(NumberKind::Signed(_)), Type::Number(NumberKind::Float(_))) => true,
+        (Type::Number(NumberKind::Unsigned(_)), Type::Number(NumberKind::Float(_))) => true,
+
+        // int widening
+        (Type::Number(NumberKind::Signed(w1)), Type::Number(NumberKind::Signed(w2))) if w1 <= w2 => true,
+        (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Unsigned(w2))) if w1 <= w2 => true,
+
+        _ => false,
+    }
+}
+
 impl Expr {
     pub fn to_rust(
         &self,
@@ -771,53 +1105,47 @@ impl Expr {
         expected_type: Option<&Type>,
     ) -> String {
         match self {
-            Expr::Ident(name) => { name.clone() }
-            Expr::Literal(lit) => lit.to_rust(expected_type),
-            Expr::BinaryOp(left, op, right) => {
-                        let left_type = script.infer_expr_type(left);
-                        let right_type = script.infer_expr_type(right);
+        Expr::Ident(name) => name.clone(),
+       Expr::Literal(lit) => {
+    // Propagate expected type, or fall back to inferred type from script.
+    let inferred_type = script.infer_expr_type(self); // Option<Type>
+    let type_ref = match (expected_type, inferred_type.as_ref()) {
+        (Some(t), _) => Some(t),
+        (None, Some(t)) => Some(t),
+        (None, None) => None,
+    };
 
-                        // Determine common type (same logic you already had)
-                        let common_type = match (left_type.clone(), right_type.clone()) {
-                            (Some(l), Some(r)) if l == r => Some(l),
-                            (Some(Type::Float), Some(Type::Int))
-                            | (Some(Type::Int), Some(Type::Float)) => Some(Type::Float),
-                            (Some(l), _) => Some(l),
-                            (_, Some(r)) => Some(r),
-                            _ => expected_type.cloned(),
-                        };
+    lit.to_rust(type_ref)
+}
+Expr::BinaryOp(left, op, right) => {
+    let left_type = script.infer_expr_type(left);
+    let right_type = script.infer_expr_type(right);
 
-                        // Helper: cast expression string to target type if needed
-                        fn cast_expr(
-                            expr_str: String,
-                            expr_type: Option<Type>,
-                            target_type: Option<&Type>,
-                        ) -> String {
-                            match (expr_type, target_type) {
-                                (Some(from), Some(to)) if from != *to => match to {
-                                    Type::Float => format!("({} as f32)", expr_str),
-                                    Type::Int => format!("({} as i32)", expr_str),
-                                    _ => expr_str,
-                                },
-                                _ => expr_str,
-                            }
-                        }
+    // Prefer LHS type if known (BigInt, Decimal, etc.)
+    let dominant_type = left_type.as_ref().or(right_type.as_ref());
 
-                        // Generate left and right expr strings with casts if needed
-                        let left_str = cast_expr(
-                            left.to_rust(needs_self, script, common_type.as_ref()),
-                            left_type,
-                            common_type.as_ref(),
-                        );
+    let mut left_str = left.to_rust(needs_self, script, dominant_type);
+    let mut right_str = right.to_rust(needs_self, script, dominant_type);
 
-                        let right_str = cast_expr(
-                            right.to_rust(needs_self, script, common_type.as_ref()),
-                            right_type,
-                            common_type.as_ref(),
-                        );
+    // Only cast for non‑literals and only when the inferred type actually differs
+    if !Expr::is_literal_expr(left) {
+        if let (Some(from), Some(to)) = (left_type.as_ref(), dominant_type) {
+            if from != to {
+                left_str = format!("({} as {})", left_str, to.to_rust_type());
+            }
+        }
+    }
 
-                        format!("{} {} {}", left_str, op.to_rust(), right_str)
-                    }
+    if !Expr::is_literal_expr(right) {
+        if let (Some(from), Some(to)) = (right_type.as_ref(), dominant_type) {
+            if from != to {
+                right_str = format!("({} as {})", right_str, to.to_rust_type());
+            }
+        }
+    }
+
+    format!("{} {} {}", left_str, op.to_rust(), right_str)
+}
             Expr::MemberAccess(base, field) => {
                         format!("{}.{}", base.to_rust(needs_self, script, None), field)
                     }
@@ -911,60 +1239,193 @@ impl Expr {
             _ => None,
         }
     }
+
+    fn is_literal_expr(expr: &Expr) -> bool {
+    matches!(expr,
+        Expr::Literal(_)
+    )
+}
 }
 
 impl Literal {
     fn to_rust(&self, expected_type: Option<&Type>) -> String {
-        match self {
-            Literal::Int(i) => match expected_type {
-                Some(Type::Float) => format!("{}f32", *i as f32),
-                Some(Type::Bool) => format!("{}", if *i != 0 { "true" } else { "false" }),
-                _ => i.to_string(),
-            },
-            Literal::Float(f) => match expected_type {
-                Some(Type::Int) => format!("{}", *f as i32),
-                Some(Type::Bool) => format!("{}", if *f != 0.0 { "true" } else { "false" }),
-                Some(Type::Float) => format!("{}f32", f),
-                _ => format!("{}f32", f),
-            },
+        let result = match self {
+            // INTEGER LITERALS ─────────────────────────────────────────────
+            Literal::Int(i) => {
+                // Show intent explicitly (optional debug aid)
+                // eprintln!("Literal::Int expected_type = {:?}", expected_type);
+
+                match expected_type {
+                    Some(Type::Number(NumberKind::Signed(w)))   => format!("{}i{}", i, w),
+                    Some(Type::Number(NumberKind::Unsigned(w))) => format!("{}u{}", i, w),
+                    Some(Type::Number(NumberKind::Float(w))) => match w {
+                        16 => format!("half::f16::from_f32({}.0)", i),
+                        32 => format!("{}.0f32", i),
+                        64 => format!("{}.0f64", i),
+                        128 => format!("{}.0f128", i),
+                        _ => format!("{}.0", i),
+                    },
+                    Some(Type::Number(NumberKind::Decimal)) => format!("Decimal::from_str(\"{}\").unwrap()", i),
+                    Some(Type::Number(NumberKind::BigInt))  => format!("BigInt::from_str(\"{}\").unwrap()", i),
+                    Some(Type::Number(NumberKind::Signed(w)))   => format!("{}i{}", i, w),
+                    Some(Type::Number(NumberKind::Unsigned(w))) => format!("{}u{}", i, w),
+                    Some(Type::Bool) => format!("{}", if i != "0" { "true" } else { "false" }),
+                    // 👇 default ‑ if no expected type provided, assume float for general math
+                    None => i.clone(),
+                    _    => format!("{}f32", i),
+                }
+            }
+
+            // FLOAT LITERALS ───────────────────────────────────────────────
+            Literal::Float(f) => {
+                match expected_type {
+                    Some(Type::Number(NumberKind::Signed(w)))   => format!("{}i{}", f, w),
+                    Some(Type::Number(NumberKind::Unsigned(w))) => format!("{}u{}", f, w),
+                    Some(Type::Number(NumberKind::Float(w))) => match w {
+                        16 => format!("half::f16::from_f32({})", f),
+                        32 => format!("{}f32", f),
+                        64 => format!("{}f64", f),
+                        128 => format!("{}f128", f),
+                        _ => format!("{}f32", f),
+                    },
+                    Some(Type::Number(NumberKind::Decimal)) => format!("Decimal::from_str(\"{}\").unwrap()", f),
+                    Some(Type::Number(NumberKind::BigInt)) => format!("BigInt::from_str(\"{:.0}\").unwrap()", f),
+                    Some(Type::Bool) => format!("{}", if f != "0.0" && f != "0" { "true" } else { "false" }),
+                    // 👇 fallback: plain float literal defaulting to f32
+                    None => format!("{}f32", f),
+                    _    => format!("{}f32", f),
+                }
+            }
+            Literal::Decimal(d) => {
+    // For literal forms like 123.45dec or "123.45"
+    match expected_type {
+        // Decimal stays Decimal
+        Some(Type::Number(NumberKind::Decimal)) | None => {
+            format!("Decimal::from_str(\"{}\").unwrap()", d)
+        }
+
+        // Decimal → Float conversions
+        Some(Type::Number(NumberKind::Float(w))) => match w {
+            32 => format!("Decimal::from_f32({}f32).unwrap()", d),
+            64 => format!("Decimal::from_f64({}f64).unwrap()", d),
+            128 => format!("Decimal::from_f64({}f64).unwrap()", d),
+            _ => format!("Decimal::from_f64({}f64).unwrap()", d),
+        },
+
+        // Decimal → BigInt
+        Some(Type::Number(NumberKind::BigInt)) => {
+            format!("BigInt::from({} as i64)", d)
+        }
+
+        // Anything else just create Decimal
+        _ => format!("Decimal::from_str(\"{}\").unwrap()", d),
+    }
+}
+
+Literal::BigInt(b) => {
+    // Handles integer or numeric big-int literals
+    match expected_type {
+        // BigInt literal
+        Some(Type::Number(NumberKind::BigInt)) | None => {
+            format!("BigInt::from_str(\"{}\").unwrap()", b)
+        }
+
+        // Coerce to Decimal if needed
+        Some(Type::Number(NumberKind::Decimal)) => {
+            format!("Decimal::from_str(\"{}\").unwrap()", b)
+        }
+
+        // Or numeric cast
+        Some(Type::Number(NumberKind::Float(w))) => match w {
+            32 => format!("BigInt::from({} as i32)", b),
+            64 => format!("BigInt::from({} as i64)", b),
+            128 => format!("BigInt::from({} as i128)", b),
+            _ => format!("BigInt::from({} as i64)", b),
+        },
+
+        _ => format!("BigInt::from_str(\"{}\").unwrap()", b),
+    }
+}
+
             Literal::String(s) => match expected_type {
                 Some(Type::String) | None => format!("\"{}\"", s),
-                Some(Type::StrRef) => format!("\"{}\"", s), // &str
+                Some(Type::StrRef) => format!("\"{}\"", s),
                 Some(Type::Bool) => format!("{}", if !s.is_empty() { "true" } else { "false" }),
+                Some(Type::Number(NumberKind::Signed(w))) => {
+                    format!("\"{}\".parse::<i{}>().unwrap()", s, w)
+                }
+                Some(Type::Number(NumberKind::Unsigned(w))) => {
+                    format!("\"{}\".parse::<u{}>().unwrap()", s, w)
+                }
+                Some(Type::Number(NumberKind::Float(w))) => {
+                    format!("\"{}\".parse::<f{}>().unwrap()", s, w)
+                }
+                Some(Type::Number(NumberKind::Decimal)) => {
+                    format!("Decimal::from_str(\"{}\").unwrap()", s)
+                }
+                Some(Type::Number(NumberKind::BigInt)) => {
+                    format!("\"{}\".parse::<BigInt>().unwrap()", s)
+                }
                 _ => format!("\"{}\"", s),
             },
+            
             Literal::Interpolated(s) => {
-            use regex::Regex;
-            let re = Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)\}").unwrap();
+                use regex::Regex;
+                let re = Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)\}").unwrap();
 
-            let mut fmt = String::new();
-            let mut args = Vec::new();
-            let mut last_end = 0;
+                let mut fmt = String::new();
+                let mut args = Vec::new();
+                let mut last_end = 0;
 
-            for cap in re.captures_iter(s) {
-                let m = cap.get(0).unwrap();
-                fmt.push_str(&s[last_end..m.start()]);
-                fmt.push_str("{}");
-                last_end = m.end();
-                args.push(cap[1].to_string());
+                for cap in re.captures_iter(s) {
+                    let m = cap.get(0).unwrap();
+                    fmt.push_str(&s[last_end..m.start()]);
+                    fmt.push_str("{}");
+                    last_end = m.end();
+                    args.push(cap[1].to_string());
+                }
+
+                fmt.push_str(&s[last_end..]);
+
+                if args.is_empty() {
+                    format!("\"{}\"", fmt)
+                } else {
+                    format!("format!(\"{}\", {})", fmt, args.join(", "))
+                }
             }
-
-            fmt.push_str(&s[last_end..]);
-
-            if args.is_empty() {
-                format!("\"{}\"", fmt)
-            } else {
-                format!("format!(\"{}\", {})", fmt, args.join(", "))
-            }
-        }
+            
             Literal::Bool(b) => match expected_type {
                 Some(Type::Bool) | None => b.to_string(),
-                Some(Type::Int) => format!("{}", if *b { 1 } else { 0 }),
-                Some(Type::Float) => format!("{}", if *b { 1.0 } else { 0.0 }),
+                Some(Type::Number(NumberKind::Signed(w))) => {
+                    format!("{}i{}", if *b { 1 } else { 0 }, w)
+                }
+                Some(Type::Number(NumberKind::Unsigned(w))) => {
+                    format!("{}u{}", if *b { 1 } else { 0 }, w)
+                }
+                Some(Type::Number(NumberKind::Float(w))) => {
+                    match w {
+                        16 => format!("half::f16::from_f32({})", if *b { 1.0 } else { 0.0 }),
+                        32 => format!("{}f32", if *b { 1.0 } else { 0.0 }),
+                        64 => format!("{}f64", if *b { 1.0 } else { 0.0 }),
+                        128 => format!("{}f128", if *b { 1.0 } else { 0.0 }),
+                        _ => format!("{}", if *b { 1.0 } else { 0.0 }),
+                    }
+                }
+                Some(Type::Number(NumberKind::Decimal)) => {
+                    format!("Decimal::from({})", if *b { 1 } else { 0 })
+                }
+                Some(Type::Number(NumberKind::BigInt)) => {
+                    format!("BigInt::from({})", if *b { 1 } else { 0 })
+                }
                 Some(Type::String) => format!("\"{}\"", b),
                 _ => b.to_string(),
             },
-        }
+            
+        };
+        eprintln!("LITERAL OUTPUT: {:?} -> {}", self, result);
+
+        result
+        
     }
 }
 
@@ -990,6 +1451,8 @@ impl Op {
         }
     }
 }
+
+
 
 pub fn write_to_crate(
     project_path: &Path,
@@ -1092,7 +1555,7 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
     let actual_struct_name_from_struct = captures[1].to_string();
     let struct_body = captures[2].to_string();
 
-    let mut exports = Vec::new();
+    let mut exposed = Vec::new();
     let mut variables = Vec::new();
 
     // Match @expose fields first (next line is always the field)
@@ -1100,7 +1563,7 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
     for cap in expose_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
         let typ = cap[2].trim().to_string();
-        exports.push(Variable {
+        exposed.push(Variable {
             name: name.clone(),
             typ: Some(Variable::parse_type(&typ)),
             value: None,
@@ -1127,7 +1590,7 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
         });
     }
 
-    eprintln!("EXPORTS: {:?}", exports.iter().map(|v| &v.name).collect::<Vec<_>>());
+    eprintln!("EXPORTS: {:?}", exposed.iter().map(|v| &v.name).collect::<Vec<_>>());
     eprintln!("VARIABLES: {:?}", variables.iter().map(|v| &v.name).collect::<Vec<_>>());
 
     // --- Keep original logic for impl Script / create function renaming ---
@@ -1150,7 +1613,7 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
     };
 
     // Generate boilerplate using the fields we collected
-    let boilerplate = implement_script_boilerplate(&actual_struct_name, &exports, &variables);
+    let boilerplate = implement_script_boilerplate(&actual_struct_name, &exposed, &variables);
     let combined = format!("{}\n\n{}", final_contents, boilerplate);
 
     write_to_crate(project_path, &combined, struct_name)

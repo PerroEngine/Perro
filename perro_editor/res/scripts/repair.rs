@@ -5,11 +5,13 @@
 
 use std::any::Any;
 use std::collections::HashMap;
-use serde_json::Value;
+use serde_json::{Value, json};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn repair_create_script() -> *mut dyn ScriptObject {

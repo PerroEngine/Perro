@@ -5,11 +5,11 @@ pub enum PupToken {
     Struct,
     New,
     Fn,
-    Let,
+    Var,
     Pass,
     At,
     Dollar,
-    Export,
+    Expose,
     SelfAccess,
     Super,
     Ident(String),
@@ -106,6 +106,24 @@ impl PupLexer {
         self.input[start..self.pos].iter().collect()
     }
 
+
+        fn is_type_keyword(s: &str) -> bool {
+            matches!(s,
+                // Base types
+                "float" | "int" | "uint" | "string" | "bool" |
+                // Decimal/Fixed point
+                "decimal" | "fixed" |
+                // BigInt
+                "big_int" | "big" |
+                // Float variants
+                "float_16" | "float_32" | "float_64" | "float_128" |
+                // Signed int variants
+                "int_8" | "int_16" | "int_32" | "int_64" | "int_128" |
+                // Unsigned int variants  
+                "uint_8" | "uint_16" | "uint_32" | "uint_64" | "uint_128"
+            )
+        }
+
     pub fn next_token(&mut self) -> PupToken {
         self.skip_whitespace();
 
@@ -155,23 +173,19 @@ impl PupLexer {
                 let ident = self.read_identifier();
 
               match ident.as_str() {
+                "import"  => PupToken::Import,
                 "extends" => PupToken::Extends,
                 "struct"  => PupToken::Struct,
                 "new"     => PupToken::New,
-                "export"  => PupToken::Export,
+                "expose"  => PupToken::Expose,
                 "fn"      => PupToken::Fn,
                 "super"   => PupToken::Super,
                 "self"    => PupToken::SelfAccess,
-                "let"     => PupToken::Let,
+                "let" | "var"=> PupToken::Var,
                 "pass"    => PupToken::Pass,
-                "script"  => PupToken::Ident("script".to_string()), // Keep as Ident for now
-                "import"  => PupToken::Import, // Add this
+                "script"  => PupToken::Ident("script".to_string()),
                 "delta"   => PupToken::Ident("delta".to_string()),
-                "float"   => PupToken::Type("float".to_string()),
-                "int"     => PupToken::Type("int".to_string()),
-                "number"  => PupToken::Type("number".to_string()),
-                "string"  => PupToken::Type("string".to_string()),
-                "bool"    => PupToken::Type("bool".to_string()),
+                s if Self::is_type_keyword(s) => PupToken::Type(s.to_string()),
                 _ => PupToken::Ident(ident),
             }
             }

@@ -134,7 +134,7 @@ impl CsParser {
 
     Ok(Script {
         node_type,
-        exports: vec![],
+        exposed: vec![],
         variables,
         functions,
         structs,
@@ -263,14 +263,27 @@ fn parse_class_def(&mut self) -> Result<StructDef, String> {
         let trait_name = name.to_lowercase();
         let is_trait = trait_name == "init" || trait_name == "update";
 
+        let locals = self.collect_locals(&body);
+
         Ok(Function {
             name: trait_name,
             params,
+            locals,
             body,
             is_trait_method: is_trait,
             return_type: self.map_type(return_type),
         })
     }
+
+fn collect_locals(&self, body: &[Stmt]) -> Vec<Variable> {
+    let mut out = Vec::new();
+    for stmt in body {
+        if let Stmt::VariableDecl(v) = stmt {
+            out.push(v.clone());
+        }
+    }
+    out
+}
 
     // ------------------------------------------------------
     //  Block { ... }
@@ -502,7 +515,7 @@ fn parse_class_def(&mut self) -> Result<StructDef, String> {
         CsToken::Number(n) => {
             let v = *n;
             self.next_token();
-            Ok(Expr::Literal(Literal::Float(v)))
+            Ok(Expr::Literal(Literal::Float(v.to_string())))
         }
 
         CsToken::String(s) => {
@@ -635,14 +648,42 @@ fn parse_class_def(&mut self) -> Result<StructDef, String> {
     // ------------------------------------------------------
     //  Map type keywords
     // ------------------------------------------------------
-    fn map_type(&self, t: String) -> Type {
-        match t.as_str() {
-            "void" => Type::Void,
-            "float" | "double" => Type::Float,
-            "int" => Type::Int,
-            "bool" => Type::Bool,
-            "string" => Type::String,
-            _ => Type::Custom(t),
-        }
+fn map_type(&self, t: String) -> Type {
+    match t.as_str() {
+        "void" => Type::Void,
+        
+        // Floating point types
+        "Half" => Type::Number(NumberKind::Float(16)),
+        "float" => Type::Number(NumberKind::Float(32)),
+        "double" => Type::Number(NumberKind::Float(64)),
+        "decimal" => Type::Number(NumberKind::Decimal),
+        
+        // Signed integer types
+        "sbyte" => Type::Number(NumberKind::Signed(8)),
+        "short" => Type::Number(NumberKind::Signed(16)),
+        "int" => Type::Number(NumberKind::Signed(32)),
+        "long" => Type::Number(NumberKind::Signed(64)),
+        "Int128" => Type::Number(NumberKind::Signed(128)),
+        
+        // Unsigned integer types
+        "byte" => Type::Number(NumberKind::Unsigned(8)),
+        "ushort" => Type::Number(NumberKind::Unsigned(16)),
+        "uint" => Type::Number(NumberKind::Unsigned(32)),
+        "ulong" => Type::Number(NumberKind::Unsigned(64)),
+        "UInt128" => Type::Number(NumberKind::Unsigned(128)),
+        
+        // Other types
+        "bool" => Type::Bool,
+        "char" => Type::Number(NumberKind::Unsigned(16)), // C# char is 16-bit Unicode
+        "string" => Type::String,
+        
+        // Native-sized integers (context-dependent, default to 64-bit)
+        "nint" => Type::Number(NumberKind::Signed(64)),
+        "nuint" => Type::Number(NumberKind::Unsigned(64)),
+        
+        "object" | "dynamic" => Type::Custom(t), // treat as custom for now
+        // Custom types
+        _ => Type::Custom(t),
     }
+}
 }

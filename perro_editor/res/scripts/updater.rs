@@ -4,11 +4,13 @@
 use std::any::Any;
 use std::collections::HashMap;
 use serde_json::{Value, json};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::process::Command;
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 /// @PerroScript
 pub struct UpdaterScript {
@@ -28,7 +30,7 @@ pub extern "C" fn updater_create_script() -> *mut dyn ScriptObject {
     })) as *mut dyn ScriptObject
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 enum UpdateState {
     Initial,
     CheckingCache,
