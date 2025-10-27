@@ -9,6 +9,7 @@ use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
 use rust_decimal::{Decimal, prelude::*};
 use num_bigint::BigInt;
+use std::str::FromStr;
 use std::{rc::Rc, cell::RefCell};
 
 use perro_core::prelude::*;
@@ -21,7 +22,6 @@ pub struct ScriptsEditorPupScript {
     node_id: Uuid,
     a: f32,
     bi: BigInt,
-    dec: Decimal,
     c: Player,
 }
 
@@ -35,7 +35,6 @@ pub extern "C" fn scripts_editor_pup_create_script() -> *mut dyn ScriptObject {
         node_id: Uuid::nil(),
         a: 0.0f32,
         bi: BigInt::from_str("0").unwrap(),
-        dec: Decimal::from_str("0").unwrap(),
         c: Default::default(),
     })) as *mut dyn ScriptObject
 }
@@ -64,7 +63,7 @@ impl Stats {
     pub fn new() -> Self { Self::default() }
     fn heal(&mut self, amt: i32, api: &mut ScriptApi<'_>) {
         let mut amt = amt;
-        api.JSON.stringify(&json!({ "hp": amt }));
+        /* API call: JSON(Stringify) with 1 args */;
     }
 
 }
@@ -86,8 +85,9 @@ impl DerefMut for Stats {
 
 impl Script for ScriptsEditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Hello World I am editor.pup");
-        self.bi = BigInt::from_str("").unwrap();
+        /* API call: Console(Log) with 1 args */;
+        let mut dghj = 12f64;
+        self.bi = BigInt::from(dghj as i64);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -100,29 +100,65 @@ impl Script for ScriptsEditorPupScript {
 // ========================================================================
 
 impl ScriptsEditorPupScript {
-    fn test(&mut self) {
-        let mut big_val = BigInt::from_str("").unwrap();
-        let mut dec_val = Decimal::from_str("0").unwrap();
-        let mut float_val = 0f32;
-        let mut int_val = 0i32;
-        big_val = BigInt::from_str("").unwrap();
-        dec_val = Decimal::from_str("123.45").unwrap();
-        float_val = int_val;
-        int_val = (big_val as i32).to_i32().unwrap();
-    }
-
-    fn compute(&mut self, delta: f32) {
-        let mut delta = delta;
-        let mut poopy = 420000f32;
-        self.a = 3f32;
-        self.bi = BigInt::from_str("").unwrap();
-        self.dec = Decimal::from_str("99").unwrap();
-        self.a += (poopy as f32);
-        self.bi += BigInt::from_str("").unwrap();
-        self.dec += Decimal::from_str("0.5").unwrap();
-        self.a = 5f32;
-        self.bi += BigInt::from_str("").unwrap();
-        self.dec += Decimal::from_str("1").unwrap();
+    fn test_casting_behavior(&mut self) {
+        let mut i8_val = 10i8;
+        let mut i16_val = 100i16;
+        let mut i32_val = 1000i32;
+        let mut i64_val = 10000i64;
+        let mut u8_val = 10u8;
+        let mut u16_val = 100u16;
+        let mut u32_val = 1000u32;
+        let mut u64_val = 10000u64;
+        let mut i128_val = 100000000000000000i128;
+        let mut u128_val = 200000000000000000u128;
+        let mut f32_val = 1.5f32;
+        let mut f64_val = 2.5f64;
+        let mut d_val = Decimal::from_str("10.25347895848347638934783478943748376484734394445783874664").unwrap();
+        let mut big_val = BigInt::from_str("12345678901234567890").unwrap();
+        i16_val = (i8_val as i16);
+        i32_val = (i16_val as i32);
+        i64_val = (i32_val as i64);
+        i128_val = (i64_val as i128);
+        u16_val = (u8_val as u16);
+        u32_val = (u16_val as u32);
+        u64_val = (u32_val as u64);
+        u128_val = (u64_val as u128);
+        i64_val = (u32_val as i64);
+        i128_val = (u64_val as i128);
+        f32_val = (i32_val as f32);
+        f64_val = (i64_val as f64);
+        f32_val = (u16_val as f32);
+        f64_val = (u32_val as f64);
+        f64_val = (f32_val as f64);
+        big_val = BigInt::from(i32_val);
+        big_val = BigInt::from(u32_val);
+        d_val = Decimal::from(i32_val);
+        d_val = Decimal::from(u64_val);
+        i8_val = big_val.to_i8().unwrap_or_default();
+        i16_val = big_val.to_i16().unwrap_or_default();
+        i32_val = big_val.to_i32().unwrap_or_default();
+        i64_val = big_val.to_i64().unwrap_or_default();
+        u8_val = big_val.to_u8().unwrap_or_default();
+        u16_val = big_val.to_u16().unwrap_or_default();
+        u32_val = big_val.to_u32().unwrap_or_default();
+        u64_val = big_val.to_u64().unwrap_or_default();
+        f32_val = big_val.to_f32().unwrap_or_default();
+        f64_val = big_val.to_f64().unwrap_or_default();
+        big_val = BigInt::from(f32_val as i32);
+        big_val = BigInt::from(f64_val as i64);
+        i32_val = (f32_val as i32);
+        i64_val = (f64_val as i64);
+        u32_val = (f32_val as u32);
+        u64_val = (f64_val as u64);
+        f32_val = (i16_val as f32);
+        f64_val = (i32_val as f64);
+        f64_val = (f32_val as f64);
+        f32_val = (f64_val as f32);
+        i32_val = d_val.to_i32().unwrap_or_default();
+        u32_val = d_val.to_u32().unwrap_or_default();
+        d_val = Decimal::from(i16_val);
+        d_val = Decimal::from(u32_val);
+        d_val = Decimal::from(big_val.to_i64().unwrap_or_default());
     }
 
 }
@@ -171,13 +207,6 @@ impl ScriptObject for ScriptsEditorPupScript {
                     if let Some(value) = hashmap.get("bi") {
                         if let Some(v) = value.as_str() {
                             self.bi = v.parse::<BigInt>().unwrap();
-                        }
-                    }
-                },
-                "dec" => {
-                    if let Some(value) = hashmap.get("dec") {
-                        if let Some(v) = value.as_str() {
-                            self.dec = v.parse::<Decimal>().unwrap();
                         }
                     }
                 },

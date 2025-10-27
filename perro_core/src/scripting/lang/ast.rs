@@ -15,7 +15,7 @@ pub struct Script {
 pub struct Variable {
     pub name: String,
     pub typ: Option<Type>, 
-    pub value: Option<Expr>, 
+    pub value: Option<TypedExpr>, 
 }
 
 
@@ -75,17 +75,12 @@ pub fn json_access(&self) -> (&'static str, String) {
         }
 
         Type::Number(NumberKind::Float(w)) => {
-            if *w == 128 {
-                ("as_f128", "".into())
-            } else {
                 let rust_ty = match *w {
-                    16 => "half::f16".to_string(),
                     32 => "f32".to_string(),
                     64 => "f64".to_string(),
                     _ => "f64".to_string(),
                 };
                 ("as_f64", format!(" as {}", rust_ty))
-            }
         }
 
         Type::Number(NumberKind::Decimal) => {
@@ -115,14 +110,13 @@ pub fn json_access(&self) -> (&'static str, String) {
 }
 
 
-    pub fn rust_initialization(&self, script: &Script) -> String {
-        if let Some(expr) = &self.value {
-            // Generate Rust code from expression, pass type if needed for type hints
-            expr.to_rust(false, script, self.typ.as_ref())
-        } else {
-            self.default_value()
-        }
-    }
+pub fn rust_initialization(&self, script: &Script) -> String {
+if let Some(expr) = &self.value {
+    expr.to_rust(false, script) // let TypedExpr handle type propagation
+} else {
+    self.default_value()
+}
+}
 
 
 pub fn default_value(&self) -> String {
@@ -197,10 +191,8 @@ impl Type {
             },
 
             Type::Number(NumberKind::Float(w)) => match w {
-                16 => "half::f16".to_string(),
                 32 => "f32".to_string(),
                 64 => "f64".to_string(),
-                128 => "f128".to_string(),
                 _ => panic!("Unsupported float width: {}", w),
             },
 
@@ -215,6 +207,39 @@ impl Type {
             Type::Void => "()".to_string(),
         }
     }
+
+
+pub fn can_implicitly_convert_to(&self, target: &Type) -> bool {
+    use NumberKind::*;
+    match (self, target) {
+        (a, b) if a == b => true,
+
+        // integer widening (signed)
+        (Type::Number(Signed(s)), Type::Number(Signed(t))) if s < t => true,
+        (Type::Number(Unsigned(s)), Type::Number(Unsigned(t))) if s < t => true,
+
+        // unsigned → signed (widening)
+        (Type::Number(Unsigned(s)), Type::Number(Signed(t))) if t >= s => true,
+
+        // int → float
+        (Type::Number(Signed(_)) | Type::Number(Unsigned(_)), Type::Number(Float(_))) => true,
+
+        // float widening (f32 → f64)
+        (Type::Number(Float(s)), Type::Number(Float(t))) if s < t => true,
+
+        // int → BigInt
+        (Type::Number(Signed(_)) | Type::Number(Unsigned(_)), Type::Number(BigInt)) => true,
+
+        // ✅ NEW rules
+        // int → Decimal
+        (Type::Number(Signed(_)) | Type::Number(Unsigned(_)), Type::Number(Decimal)) => true,
+        // float → Decimal
+        (Type::Number(Float(_)), Type::Number(Decimal)) => true,
+
+        _ => false,
+    }
+}
+
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -232,14 +257,14 @@ pub enum NumberKind {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Expr(Expr),
-    VariableDecl(Variable),
-    Assign(String, Expr),
-    AssignOp(String, Op, Expr),
-    MemberAssign(Expr, Expr),
-    MemberAssignOp(Expr, Op, Expr),
-    ScriptAssign(String, String, Expr),
-    ScriptAssignOp(String, String, Op, Expr),
+    Expr(TypedExpr),
+    VariableDecl(Variable),                    // Update Variable to use TypedExpr internally
+    Assign(String, TypedExpr),
+    AssignOp(String, Op, TypedExpr),
+    MemberAssign(TypedExpr, TypedExpr),        // Both LHS and RHS need types
+    MemberAssignOp(TypedExpr, Op, TypedExpr),  // Both need types
+    ScriptAssign(String, String, TypedExpr),   // RHS needs type
+    ScriptAssignOp(String, String, Op, TypedExpr), // RHS needs type
     Pass,
 }
 
@@ -253,18 +278,23 @@ pub enum Expr {
     SelfAccess,
     BaseAccess,
     Call(Box<Expr>, Vec<Expr>),
+    Cast(Box<Expr>, Type),
+
     ObjectLiteral(Vec<(String, Expr)>),
 
     ApiCall(ApiModule, Vec<Expr>),
 }
 
 #[derive(Debug, Clone)]
+pub struct TypedExpr {
+    pub expr: Expr,
+    pub inferred_type: Option<Type>,  // Gets filled during type inference
+}
+
+#[derive(Debug, Clone)]
 pub enum Literal {
-    Int(String),
-    Float(String),
-    BigInt(String),
-    Decimal(String),
-    String(String),
+    Number(String),           // "5", "3.14", "999999999", etc.
+    String(String),           
     Bool(bool),
     Interpolated(String),
 }

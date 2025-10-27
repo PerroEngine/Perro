@@ -9,6 +9,7 @@ use uuid::Uuid;
 use std::ops::{Deref, DerefMut};
 use rust_decimal::{Decimal, prelude::*};
 use num_bigint::BigInt;
+use std::str::FromStr;
 use std::{rc::Rc, cell::RefCell};
 
 use perro_core::prelude::*;
@@ -98,7 +99,7 @@ impl DerefMut for Player3 {
 
 impl Script for ScriptsCsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Hello World I am csharp.cs");
+        /* API call: Console(Log) with 1 args */;
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -112,7 +113,7 @@ impl Script for ScriptsCsharpCsScript {
 
 impl ScriptsCsharpCsScript {
     fn fart(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("Fart");
+        /* API call: Console(Log) with 1 args */;
     }
 
 }

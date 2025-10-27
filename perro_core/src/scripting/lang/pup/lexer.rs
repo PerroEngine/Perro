@@ -8,14 +8,17 @@ pub enum PupToken {
     Var,
     Pass,
     At,
+    As,
     Dollar,
     Expose,
     SelfAccess,
     Super,
     Ident(String),
     Type(String),
-    Number(f32),
+    Number(String),
     String(String),
+    True,
+    False,
     InterpolatedString(String),
     LParen,
     RParen,
@@ -43,7 +46,6 @@ pub enum PupToken {
     Comma,
     Eof,
 }
-
 
 #[derive(Debug, Clone)] 
 pub struct PupLexer {
@@ -75,9 +77,53 @@ impl PupLexer {
         while let Some(ch) = self.peek() {
             if ch.is_whitespace() {
                 self.advance();
+            } else if ch == '/' {
+                // Check for comments
+                if self.input.get(self.pos + 1) == Some(&'/') {
+                    // Single line comment - skip to end of line
+                    self.skip_single_line_comment();
+                } else if self.input.get(self.pos + 1) == Some(&'*') {
+                    // Multi-line comment - skip to */
+                    self.skip_multi_line_comment();
+                } else {
+                    // Not a comment, break out
+                    break;
+                }
             } else {
                 break;
             }
+        }
+    }
+
+    fn skip_single_line_comment(&mut self) {
+        // Skip the '//'
+        self.advance();
+        self.advance();
+        
+        // Skip until newline or EOF
+        while let Some(ch) = self.peek() {
+            if ch == '\n' {
+                self.advance(); // Consume the newline
+                break;
+            }
+            self.advance();
+        }
+    }
+
+    fn skip_multi_line_comment(&mut self) {
+        // Skip the '/*'
+        self.advance();
+        self.advance();
+        
+        // Skip until we find '*/'
+        while let Some(ch) = self.peek() {
+            if ch == '*' && self.input.get(self.pos + 1) == Some(&'/') {
+                // Found end of comment
+                self.advance(); // consume '*'
+                self.advance(); // consume '/'
+                break;
+            }
+            self.advance();
         }
     }
 
@@ -90,8 +136,8 @@ impl PupLexer {
                 break;
             }
         }
-        let num: String = self.input[start..self.pos].iter().collect();
-        PupToken::Number(num.parse().unwrap())
+        let num_str: String = self.input[start..self.pos].iter().collect();
+        PupToken::Number(num_str)
     }
 
     fn read_identifier(&mut self) -> String {
@@ -106,23 +152,18 @@ impl PupLexer {
         self.input[start..self.pos].iter().collect()
     }
 
-
-        fn is_type_keyword(s: &str) -> bool {
-            matches!(s,
-                // Base types
-                "float" | "int" | "uint" | "string" | "bool" |
-                // Decimal/Fixed point
-                "decimal" | "fixed" |
-                // BigInt
-                "big_int" | "big" |
-                // Float variants
-                "float_16" | "float_32" | "float_64" | "float_128" |
-                // Signed int variants
-                "int_8" | "int_16" | "int_32" | "int_64" | "int_128" |
-                // Unsigned int variants  
-                "uint_8" | "uint_16" | "uint_32" | "uint_64" | "uint_128"
-            )
-        }
+    fn is_type_keyword(s: &str) -> bool {
+        matches!(s,
+            // Core types
+            "float" | "double" | "int" | "uint" | "string" | "bool" |
+            // Extended
+            "decimal" | "bigint" | "big" | "big_int" |
+            // Explicit sizes for the stable ones
+            "float_32" | "float_64" |
+            "int_8" | "int_16" | "int_32" | "int_64" | "int_128" |
+            "uint_8" | "uint_16" | "uint_32" | "uint_64" | "uint_128"
+        )
+    }
 
     pub fn next_token(&mut self) -> PupToken {
         self.skip_whitespace();
@@ -172,22 +213,25 @@ impl PupLexer {
                 self.pos -= 1;
                 let ident = self.read_identifier();
 
-              match ident.as_str() {
-                "import"  => PupToken::Import,
-                "extends" => PupToken::Extends,
-                "struct"  => PupToken::Struct,
-                "new"     => PupToken::New,
-                "expose"  => PupToken::Expose,
-                "fn"      => PupToken::Fn,
-                "super"   => PupToken::Super,
-                "self"    => PupToken::SelfAccess,
-                "let" | "var"=> PupToken::Var,
-                "pass"    => PupToken::Pass,
-                "script"  => PupToken::Ident("script".to_string()),
-                "delta"   => PupToken::Ident("delta".to_string()),
-                s if Self::is_type_keyword(s) => PupToken::Type(s.to_string()),
-                _ => PupToken::Ident(ident),
-            }
+                match ident.as_str() {
+                    "import"  => PupToken::Import,
+                    "extends" => PupToken::Extends,
+                    "struct"  => PupToken::Struct,
+                    "new"     => PupToken::New,
+                    "as" => PupToken::As,
+                    "expose"  => PupToken::Expose,
+                    "fn"      => PupToken::Fn,
+                    "super"   => PupToken::Super,
+                    "true" => PupToken::True,
+                    "false" => PupToken::False,
+                    "self"    => PupToken::SelfAccess,
+                    "let" | "var"=> PupToken::Var,
+                    "pass"    => PupToken::Pass,
+                    "script"  => PupToken::Ident("script".to_string()),
+                    "delta"   => PupToken::Ident("delta".to_string()),
+                    s if Self::is_type_keyword(s) => PupToken::Type(s.to_string()),
+                    _ => PupToken::Ident(ident),
+                }
             }
             _ => panic!("Unexpected character: {}", ch),
         };

@@ -15,7 +15,7 @@ pub trait ScriptProvider {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
 }
 
-/// A dynamic variable type for script fields/exports
+/// A dynamic variable type for script fields/exposed fields
 #[derive(Clone, Debug)]
 pub enum Var {
     F32(f32),

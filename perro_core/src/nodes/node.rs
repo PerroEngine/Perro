@@ -19,7 +19,7 @@ pub struct Node {
     pub script_path: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub script_exports: Option<HashMap<String, Value>>,
+    pub script_exp_vars: Option<HashMap<String, Value>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<Uuid>,
@@ -41,7 +41,7 @@ impl Node {
             ty:       "Node".into(),
             name:     name.into(),
             script_path: None,
-            script_exports: None,
+            script_exp_vars : None,
             parent,
             children: Vec::new(),
             metadata: None,
