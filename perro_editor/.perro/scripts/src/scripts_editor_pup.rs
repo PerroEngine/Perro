@@ -63,7 +63,7 @@ impl Stats {
     pub fn new() -> Self { Self::default() }
     fn heal(&mut self, amt: i32, api: &mut ScriptApi<'_>) {
         let mut amt = amt;
-        /* API call: JSON(Stringify) with 1 args */;
+        api.JSON.stringify(&json!({ "hp": amt }));
     }
 
 }
@@ -85,9 +85,14 @@ impl DerefMut for Stats {
 
 impl Script for ScriptsEditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        /* API call: Console(Log) with 1 args */;
+        let mut s = String::from("Hellow World");
+        api.print(s.as_str());
+        api.print(s.as_str());
         let mut dghj = 12f64;
         self.bi = BigInt::from(dghj as i64);
+        let mut b = api.JSON.stringify(&json!({ "foo": 5f32 }));
+        api.print(b.as_str());
+        self.test_casting_behavior();
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -100,6 +105,11 @@ impl Script for ScriptsEditorPupScript {
 // ========================================================================
 
 impl ScriptsEditorPupScript {
+    fn fart(&mut self, api: &mut ScriptApi<'_>) {
+        let mut s = 5f32;
+        api.print(s);
+    }
+
     fn test_casting_behavior(&mut self) {
         let mut i8_val = 10i8;
         let mut i16_val = 100i16;
@@ -115,6 +125,7 @@ impl ScriptsEditorPupScript {
         let mut f64_val = 2.5f64;
         let mut d_val = Decimal::from_str("10.25347895848347638934783478943748376484734394445783874664").unwrap();
         let mut big_val = BigInt::from_str("12345678901234567890").unwrap();
+        let mut str_val = String::from("hello");
         i16_val = (i8_val as i16);
         i32_val = (i16_val as i32);
         i64_val = (i32_val as i64);
@@ -146,10 +157,10 @@ impl ScriptsEditorPupScript {
         f64_val = big_val.to_f64().unwrap_or_default();
         big_val = BigInt::from(f32_val as i32);
         big_val = BigInt::from(f64_val as i64);
-        i32_val = (f32_val as i32);
-        i64_val = (f64_val as i64);
-        u32_val = (f32_val as u32);
-        u64_val = (f64_val as u64);
+        i32_val = (f32_val.round() as i32);
+        i64_val = (f64_val.round() as i64);
+        u32_val = (f32_val.round() as u32);
+        u64_val = (f64_val.round() as u64);
         f32_val = (i16_val as f32);
         f64_val = (i32_val as f64);
         f64_val = (f32_val as f64);
@@ -159,6 +170,25 @@ impl ScriptsEditorPupScript {
         d_val = Decimal::from(i16_val);
         d_val = Decimal::from(u32_val);
         d_val = Decimal::from(big_val.to_i64().unwrap_or_default());
+        str_val = i8_val.to_string();
+        str_val = i16_val.to_string();
+        str_val = i32_val.to_string();
+        str_val = i64_val.to_string();
+        str_val = u8_val.to_string();
+        str_val = u16_val.to_string();
+        str_val = u32_val.to_string();
+        str_val = u64_val.to_string();
+        str_val = i128_val.to_string();
+        str_val = u128_val.to_string();
+        str_val = f32_val.to_string();
+        str_val = f64_val.to_string();
+        str_val = d_val.to_string();
+        str_val = big_val.to_string();
+        i32_val = str_val.parse::<i32>().unwrap_or_default();
+        f64_val = (str_val.parse::<f32>().unwrap_or_default() as f64);
+        f32_val = (str_val.parse::<i32>().unwrap_or_default() as f32);
+        d_val = Decimal::from_str(str_val.as_ref()).unwrap_or_default();
+        big_val = BigInt::from_str(str_val.as_ref()).unwrap_or_default();
     }
 
 }

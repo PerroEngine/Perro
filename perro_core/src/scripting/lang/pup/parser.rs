@@ -330,9 +330,9 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
         }
     }
 
-   fn parse_variable_decl(&mut self) -> Result<Variable, String> {
+  fn parse_variable_decl(&mut self) -> Result<Variable, String> {
     self.expect(PupToken::Var)?;
-    
+
     let name = if let PupToken::Ident(n) = &self.current_token {
         n.clone()
     } else {
@@ -343,27 +343,57 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
     let mut typ: Option<Type> = None;
     let mut value: Option<TypedExpr> = None;
 
+    // Explicit typing (`var foo: float_64`)
     if self.current_token == PupToken::Colon {
         self.next_token();
-        typ = Some(self.parse_type()?); // Store the explicit type
+        typ = Some(self.parse_type()?);
     }
 
-   if self.current_token == PupToken::Assign {
-    self.next_token();
-    let expr = self.parse_expression(0)?;
-    
-    // new: auto infer default type for numeric literals
-    if typ.is_none() {
-        if let Expr::Literal(Literal::Number(_)) = expr {
-            typ = Some(Type::Number(NumberKind::Float(32)));
+    // Assignment and inference (`var foo = JSON.parse("...")`)
+    if self.current_token == PupToken::Assign {
+        self.next_token();
+        let expr = self.parse_expression(0)?;
+
+        if typ.is_none() {
+            // Attempt inference by expression shape
+            typ = match &expr {
+                Expr::Literal(Literal::Number(_)) => {
+                    Some(Type::Number(NumberKind::Float(32)))
+                }
+                Expr::Literal(Literal::String(_))
+                | Expr::Literal(Literal::Interpolated(_)) => Some(Type::String),
+                Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
+
+                // 🧠 Automatically infer from API semantics
+                Expr::ApiCall(api, _) => api.return_type(),
+
+                // Casting expression e.g. `x as big`
+                Expr::Cast(_, cast_ty) => Some(cast_ty.clone()),
+
+                Expr::Call(inner, _) => {
+                    if let Expr::MemberAccess(base, method) = &**inner {
+                        if method == "new" {
+                            if let Expr::Ident(id) = &**base {
+                                Some(Type::Custom(id.clone()))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
         }
-    }
 
-    value = Some(TypedExpr {
-        expr,
-        inferred_type: typ.clone(),
-    });
-}
+        value = Some(TypedExpr {
+            expr,
+            inferred_type: typ.clone(),
+        });
+    }
 
     Ok(Variable { name, typ, value })
 }
@@ -379,32 +409,38 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match &self.current_token {
             PupToken::New => {
-                self.next_token();
+    self.next_token();
 
-                let api_name = if let PupToken::Ident(n) = &self.current_token {
-                    n.clone()
-                } else {
-                    return Err("Expected type/API name after 'new'".into());
-                };
-                self.next_token();
+    let api_name = if let PupToken::Ident(n) = &self.current_token {
+        n.clone()
+    } else {
+        return Err("Expected type/API name after 'new'".into());
+    };
+    self.next_token();
 
-                self.expect(PupToken::LParen)?;
-                let mut args = Vec::new();
-                if self.current_token != PupToken::RParen {
-                    args.push(self.parse_expression(0)?);
-                    while self.current_token == PupToken::Comma {
-                        self.next_token();
-                        args.push(self.parse_expression(0)?);
-                    }
-                }
-                self.expect(PupToken::RParen)?;
+    self.expect(PupToken::LParen)?;
+    let mut args = Vec::new();
+    if self.current_token != PupToken::RParen {
+        args.push(self.parse_expression(0)?);
+        while self.current_token == PupToken::Comma {
+            self.next_token();
+            args.push(self.parse_expression(0)?);
+        }
+    }
+    self.expect(PupToken::RParen)?;
 
-                Ok(Expr::ApiCall(
-                    PupAPI::resolve(&api_name, "new")
-                        .ok_or_else(|| format!("Type/API '{}' has no .new() constructor", api_name))?,
-                    args,
-                ))
-            }
+    // 🔹 Try to resolve built-in API first
+    if let Some(api) = PupAPI::resolve(&api_name, "new") {
+        return Ok(Expr::ApiCall(api, args));
+    }
+
+    // 🔹 If it’s NOT a known API, treat it as a user struct type name
+    // Equivalent to Something::new(args…)
+    Ok(Expr::Call(
+        Box::new(Expr::MemberAccess(Box::new(Expr::Ident(api_name.clone())), "new".into())),
+        args,
+    ))
+}
 
             PupToken::SelfAccess => {
                 self.next_token();

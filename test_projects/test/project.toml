@@ -1,0 +1,9 @@
+[project]
+name = "Perro Test Project"
+main_scene = "res://main.scn"
+icon = "res://perro-logo.png"
+version="1.0.0"
+
+[performance]
+target_fps = 120
+xps = 60

@@ -99,7 +99,7 @@ impl DerefMut for Player3 {
 
 impl Script for ScriptsCsharpCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        /* API call: Console(Log) with 1 args */;
+        api.print(String::from("Hello World I am csharp.cs").as_str());
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -113,7 +113,7 @@ impl Script for ScriptsCsharpCsScript {
 
 impl ScriptsCsharpCsScript {
     fn fart(&mut self, api: &mut ScriptApi<'_>) {
-        /* API call: Console(Log) with 1 args */;
+        api.print(String::from("Fart").as_str());
     }
 
 }

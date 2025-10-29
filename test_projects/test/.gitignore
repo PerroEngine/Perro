@@ -1,0 +1,10 @@
+# Ignore Perro build artifacts
+target/
+
+/.perro/project/src/key.rs
+
+/assets.brk
+
+build.log
+
+icon.ico

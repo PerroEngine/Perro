@@ -23,9 +23,20 @@ fn to_pascal_case(s: &str) -> String {
 
 impl Script {
     fn generate_implicit_cast_for_expr(&self, expr: &str, from: &Type, to: &Type) -> String {
-        // Only for numeric types - use plain `as` casts
-        Stmt::generate_implicit_cast(expr, from, to)
+    use Type::*;
+    if from == to {
+        return expr.to_string();
     }
+
+    // 🔹 if the expression already ends with the expected type suffix, skip extra cast
+    let to_ty = to.to_rust_type();
+    if expr.ends_with(&to_ty) {
+        return expr.to_string();
+    }
+
+    // fallback to normal casting
+    Stmt::generate_implicit_cast(expr, from, to)
+}
 
     pub fn is_struct_field(&self, name: &str) -> bool {
         self.variables.iter().any(|v| v.name == name)
@@ -42,25 +53,47 @@ impl Script {
         None
     }
 
-    fn infer_expr_type(&self, expr: &Expr) -> Option<Type> {
-        match expr {
+   pub fn infer_expr_type(
+    &self,
+    expr: &Expr,
+    current_func: Option<&Function>,
+) -> Option<Type> {
+     let kind = match expr {
+        Expr::MemberAccess(_, _) => "MemberAccess",
+        Expr::Ident(_) => "Ident",
+        Expr::Literal(_) => "Literal",
+        _ => "Other",
+    };
+    eprintln!("[infer] Analyzing {:?} kind={}", expr, kind);
+
+
+      let result =  match expr {
             Expr::Literal(lit) => self.infer_literal_type(lit, None),
 
-            Expr::Ident(name) => {
-                for func in &self.functions {
-                    if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
-                        return local.typ.clone();
-                    }
-                    if let Some(param) = func.params.iter().find(|p| p.name == *name) {
-                        return Some(param.typ.clone());
-                    }
-                }
-                self.get_variable_type(name).cloned()
+         Expr::Ident(name) => {
+    // First, check current function locals and params if provided
+    if let Some(func) = current_func {
+        if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+            if let Some(typ) = &local.typ {
+                return Some(typ.clone());
             }
+            // If local has no type, try to infer from its value
+            if let Some(value) = &local.value {
+                return self.infer_expr_type(&value.expr, current_func);
+            }
+        }
+        if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+            return Some(param.typ.clone());
+        }
+    }
+
+    // Then try global variables
+    self.get_variable_type(name).cloned()
+}
 
             Expr::BinaryOp(left, _op, right) => {
-                let left_type = self.infer_expr_type(left);
-                let right_type = self.infer_expr_type(right);
+                let left_type = self.infer_expr_type(left, current_func);
+                let right_type = self.infer_expr_type(right, current_func);
 
                 match (left_type, right_type) {
                     (Some(ref l), Some(ref r)) if l == r => Some(l.clone()),
@@ -80,7 +113,7 @@ impl Script {
                         return var.typ.clone();
                     }
                 }
-                let base_type = self.infer_expr_type(base)?;
+                let base_type = self.infer_expr_type(base, current_func)?;
                 self.get_member_type(&base_type, member)
             }
 
@@ -88,7 +121,7 @@ impl Script {
                 match &**target {
                     Expr::Ident(func_name) => self.get_function_return_type(func_name),
                     Expr::MemberAccess(base, method) => {
-                        let base_type = self.infer_expr_type(base)?;
+                        let base_type = self.infer_expr_type(base, current_func)?;
                         if let Type::Custom(type_name) = base_type {
                             if type_name == self.node_type {
                                 self.get_function_return_type(method)
@@ -106,9 +139,14 @@ impl Script {
             Expr::SelfAccess => Some(Type::Custom(self.node_type.clone())),
             
             Expr::Cast(_, target_type) => Some(target_type.clone()),
+
+            Expr::ApiCall(api, _) => api.return_type(),
             
             _ => None,
-        }
+        };
+
+         eprintln!("   [infer] {:?} => {:?}\n", expr, result);
+    result
     }
 
     fn infer_literal_type(&self, lit: &Literal, expected_type: Option<&Type>) -> Option<Type> {
@@ -163,19 +201,34 @@ impl Script {
     }
     
     fn get_member_type(&self, base_type: &Type, member: &str) -> Option<Type> {
-        match base_type {
-            Type::Custom(type_name) if type_name == &self.node_type => {
-                if let Some(exposed) = self.exposed.iter().find(|v| v.name == member) {
-                    exposed.typ.clone()
-                } else if let Some(var) = self.variables.iter().find(|v| v.name == member) {
-                    var.typ.clone()
-                } else {
-                    None
-                }
+    match base_type {
+        // ✅ case 1: current script or base node type
+        Type::Custom(type_name) if type_name == &self.node_type => {
+            if let Some(exposed) = self.exposed.iter().find(|v| v.name == member) {
+                return exposed.typ.clone();
             }
-            _ => None,
+            if let Some(var) = self.variables.iter().find(|v| v.name == member) {
+                return var.typ.clone();
+            }
+            None
         }
+
+        // ✅ case 2: other user-defined struct types
+        Type::Custom(type_name) => {
+            if let Some(struct_def) = self.structs.iter().find(|s| &s.name == type_name) {
+                struct_def
+                    .fields
+                    .iter()
+                    .find(|f| f.name == member)
+                    .map(|f| f.typ.clone())
+            } else {
+                None
+            }
+        }
+
+        _ => None,
     }
+}
 
     fn get_function_return_type(&self, func_name: &str) -> Option<Type> {
         self.functions
@@ -192,7 +245,7 @@ impl Script {
             .unwrap_or(false)
     }
 
-    pub fn to_rust(&self, struct_name: &str, project_path: &Path) -> String {
+    pub fn to_rust(&self, struct_name: &str, project_path: &Path, current_func: Option<&Function>) -> String {
         let mut out = String::new();
         let pascal_struct_name = to_pascal_case(struct_name);
 
@@ -259,12 +312,12 @@ impl Script {
         out.push_str("        node_id: Uuid::nil(),\n");
 
         for exposed in &self.exposed {
-            let init_code = exposed.rust_initialization(self);
+            let init_code = exposed.rust_initialization(self, current_func);
             out.push_str(&format!("        {}: {},\n", exposed.name, init_code));
         }
 
         for var in &self.variables {
-            let init_code = var.rust_initialization(self);
+            let init_code = var.rust_initialization(self, current_func);
             out.push_str(&format!("        {}: {},\n", var.name, init_code));
         }
 
@@ -339,6 +392,24 @@ impl StructDef {
 
         writeln!(out, "}}\n").unwrap();
 
+// 🧩 Compact single-line Display: "{ foo = 5, bar = 10 }"
+writeln!(out, "impl std::fmt::Display for {} {{", self.name).unwrap();
+writeln!(out, "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{").unwrap();
+writeln!(out, "        write!(f, \"{{{{ \")?;").unwrap(); // start brace `{{`
+for (i, field) in self.fields.iter().enumerate() {
+    let sep = if i + 1 < self.fields.len() { ", " } else { " " };
+    writeln!(
+        out,
+        "        write!(f, \"{name}: {{:?}}{sep}\", self.{name})?;",
+        name = field.name,
+        sep = sep
+    )
+    .unwrap();
+}
+writeln!(out, "        write!(f, \"}}}}\")").unwrap(); // end brace `}}`
+writeln!(out, "    }}").unwrap();
+writeln!(out, "}}\n").unwrap();
+
         writeln!(out, "impl {} {{", self.name).unwrap();
         writeln!(out, "    pub fn new() -> Self {{ Self::default() }}").unwrap();
         for m in &self.methods {
@@ -365,57 +436,81 @@ impl StructDef {
 }
 
 impl Function {
-    pub fn to_rust_method(&self, node_type: &str, script: &Script) -> String {
-        let needs_api = self.requires_api(script);
-        let mut out = String::new();
+pub fn to_rust_method(&self, node_type: &str, script: &Script) -> String {
+    let needs_api = self.requires_api(script);
+    let mut out = String::new();
 
-        let mut param_list = String::new();
-        param_list.push_str("&mut self");
+    // Set up function header
+    let mut param_list = String::from("&mut self");
 
-        if !self.params.is_empty() {
-            let joined = self.params
-                .iter()
-                .map(|p| format!("{}: {}", p.name, p.typ.to_rust_type()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            write!(param_list, ", {}", joined).unwrap();
-        }
-
-        if needs_api {
-            write!(param_list, ", api: &mut ScriptApi<'_>").unwrap();
-        }
-
-        writeln!(out, "    fn {}({}) {{", self.name, param_list).unwrap();
-
-        for param in &self.params {
-            writeln!(out, "        let mut {0} = {0};", param.name).unwrap();
-        }
-
-        let needs_delta = self.body.iter().any(|stmt| stmt.contains_delta());
-        let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
-
-        if needs_api && needs_delta {
-            out.push_str("        let delta = api.delta();\n");
-        }
-
-        if needs_api && needs_self {
-            out.push_str(&format!(
-                "        let mut self_node = api.get_node_clone::<{}>(&self.node_id);\n",
-                node_type
-            ));
-        }
-
-        for stmt in &self.body {
-            out.push_str(&stmt.to_rust(needs_self, script));
-        }
-
-        if needs_api && needs_self {
-            out.push_str("\n        api.merge_nodes(vec![self_node.to_scene_node()]);\n");
-        }
-
-        out.push_str("    }\n\n");
-        out
+    if !self.params.is_empty() {
+        // Generate param list with automatic borrowing of &str for readability
+        let joined = self
+            .params
+            .iter()
+            .map(|p| {
+                // If this parameter is a `String`, we still pass as borrowed `&str`
+                match p.typ {
+                    Type::String => format!("{}: &str", p.name),
+                    _ => format!("{}: {}", p.name, p.typ.to_rust_type()),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(param_list, ", {}", joined).unwrap();
     }
+
+    if needs_api {
+        write!(param_list, ", api: &mut ScriptApi<'_>").unwrap();
+    }
+
+    // Emit function header
+    writeln!(out, "    fn {}({}) {{", self.name, param_list).unwrap();
+
+    // Local rebinding: if you want owned Strings, convert back
+    for param in &self.params {
+        match param.typ {
+            Type::String => {
+                // Automatically re-own the borrowed &str if needed inside the method body
+                writeln!(
+                    out,
+                    "        let mut {0} = {0}.to_string();",
+                    param.name
+                )
+                .unwrap();
+            }
+            _ => {
+                writeln!(out, "        let mut {0} = {0};", param.name).unwrap();
+            }
+        }
+    }
+
+    let needs_delta = self.body.iter().any(|stmt| stmt.contains_delta());
+    let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
+
+    if needs_api && needs_delta {
+        out.push_str("        let delta = api.delta();\n");
+    }
+
+    if needs_api && needs_self {
+        out.push_str(&format!(
+            "        let mut self_node = api.get_node_clone::<{}>(&self.node_id);\n",
+            node_type
+        ));
+    }
+
+    // Generate body statements
+    for stmt in &self.body {
+        out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
+    }
+
+    if needs_api && needs_self {
+        out.push_str("\n        api.merge_nodes(vec![self_node.to_scene_node()]);\n");
+    }
+
+    out.push_str("    }\n\n");
+    out
+}
 
     fn requires_api(&self, script: &Script) -> bool {
         self.body.iter().any(|stmt| stmt.contains_api_call(script))
@@ -443,7 +538,7 @@ impl Function {
         }
 
         for stmt in &self.body {
-            out.push_str(&stmt.to_rust(needs_self, script));
+            out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
         if !cloned_nodes.is_empty() {
@@ -460,10 +555,10 @@ impl Function {
 }
 
 impl Stmt {
-    fn to_rust(&self, needs_self: bool, script: &Script) -> String {
+    fn to_rust(&self, needs_self: bool, script: &Script, current_func: Option<&Function>) -> String {
         match self {
             Stmt::Expr(expr) => {
-                let expr_str = expr.to_rust(needs_self, script);
+                let expr_str = expr.to_rust(needs_self, script, current_func);
                 if expr_str.trim().is_empty() {
                     "".to_string()
                 } else if expr_str.trim_end().ends_with(';') {
@@ -476,7 +571,7 @@ impl Stmt {
             Stmt::VariableDecl(var) => {
                 let expected_type = var.typ.as_ref();
                 let expr_str = if let Some(expr) = &var.value {
-                    expr.to_rust(needs_self, script)
+                    expr.to_rust(needs_self, script, current_func)
                 } else {
                     if var.typ.is_some() {
                         var.default_value()
@@ -492,97 +587,202 @@ impl Stmt {
                 }
             }
 
-            Stmt::Assign(name, expr) => {
-                let target = if script.is_struct_field(name) {
-                    format!("self.{}", name)
-                } else {
-                    name.clone()
-                };
+Stmt::Assign(name, expr) => {
+    // ---------------------------------------------------------
+    // Determine the target (self.field for struct member)
+    // ---------------------------------------------------------
+    let target = if script.is_struct_field(name) {
+        format!("self.{}", name)
+    } else {
+        name.clone()
+    };
 
-                let target_type = self.get_target_type(name, script);
-                let expr_str = expr.to_rust(needs_self, script);
+    // ---------------------------------------------------------
+    // Determine target and expression types
+    // ---------------------------------------------------------
+    let target_type = self.get_target_type(name, script, current_func);
+    let expr_type = script.infer_expr_type(&expr.expr, current_func);
 
-                // Apply cast if needed and allowed
-                let final_expr = if let Some(target_type) = &target_type {
-                    let expr_type = script.infer_expr_type(&expr.expr);
+    // ---------------------------------------------------------
+    // Build expression string - PASS TARGET_TYPE AS EXPECTED_TYPE
+    // ---------------------------------------------------------
+    let mut expr_str = expr.expr.to_rust(needs_self, script, target_type.as_ref(), current_func);
 
-                    if let Some(expr_type) = &expr_type {
-                        // Check if implicit cast is allowed
-                        if expr_type.can_implicitly_convert_to(target_type) {
-                            // Safe implicit cast - generate it
-                            script.generate_implicit_cast_for_expr(&expr_str, expr_type, target_type)
-                        } else if expr_type == target_type {
-                            // Same type, no cast needed
-                            expr_str
-                        } else {
-                            // Would need explicit cast - error or keep as is
-                            eprintln!("Warning: Cannot implicitly cast {:?} to {:?} - explicit cast required", expr_type, target_type);
-                            expr_str
-                        }
-                    } else {
-                        expr_str
-                    }
-                } else {
-                    expr_str
-                };
+    // ---------------------------------------------------------
+    // Apply .clone() for strings and Custom structs 
+    // only when RHS is a variable or field (not temporary)
+    // ---------------------------------------------------------
+    let should_clone = matches!(expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
+        && match (&target_type, &expr_type) {
+            (Some(Type::String), Some(Type::String))
+            | (Some(Type::Custom(_)), Some(Type::Custom(_))) => true,
+            _ => false,
+        };
 
-                format!("        {} = {};\n", target, final_expr)
+    if should_clone {
+        expr_str = format!("{}.clone()", expr_str);
+    }
+
+    // ---------------------------------------------------------
+    // Casts or identical types (numeric conversions)
+    // ---------------------------------------------------------
+    let final_expr = if let Some(target_type) = &target_type {
+        if let Some(expr_type) = &expr_type {
+            if expr_type.can_implicitly_convert_to(target_type) && expr_type != target_type {
+                script.generate_implicit_cast_for_expr(&expr_str, expr_type, target_type)
+            } else if expr_type == target_type {
+                expr_str
+            } else {
+                eprintln!(
+                    "Warning: Cannot implicitly cast {:?} to {:?} - explicit cast required",
+                    expr_type, target_type
+                );
+                expr_str
             }
+        } else {
+            expr_str
+        }
+    } else {
+        expr_str
+    };
 
-            Stmt::AssignOp(name, op, expr) => {
-                let target = if script.is_struct_field(name) {
-                    format!("self.{}", name)
-                } else {
-                    name.clone()
-                };
+    format!("        {} = {};\n", target, final_expr)
+},
 
-                let target_type = self.get_target_type(name, script);
-                let expr_str = expr.to_rust(needs_self, script);
-                
-                // For op-assign, also check if implicit cast is allowed
-                if let Some(target_type) = &target_type {
-                    let expr_type = script.infer_expr_type(&expr.expr);
-                    if let Some(expr_type) = expr_type {
-                        let cast_expr = if expr_type.can_implicitly_convert_to(target_type) {
-                            Self::generate_implicit_cast(&expr_str, &expr_type, target_type)
-                        } else if target_type != &expr_type {
-                            eprintln!("Warning: Cannot implicitly cast {:?} to {:?} in op-assign", expr_type, target_type);
-                            expr_str
-                        } else {
-                            expr_str
-                        };
-                        format!("        {} {}= {};\n", target, op.to_rust_assign(), cast_expr)
-                    } else {
-                        format!("        {} {}= {};\n", target, op.to_rust_assign(), expr_str)
-                    }
-                } else {
-                    format!("        {} {}= {};\n", target, op.to_rust_assign(), expr_str)
-                }
+     Stmt::AssignOp(name, op, expr) => {
+    let target = if script.is_struct_field(name) {
+        format!("self.{}", name)
+    } else {
+        name.clone()
+    };
+
+    let target_type = self.get_target_type(name, script, current_func);
+    
+    // PASS TARGET_TYPE AS EXPECTED_TYPE
+    let expr_str = expr.expr.to_rust(needs_self, script, target_type.as_ref(), current_func);
+
+    if matches!(op, Op::Add) && target_type == Some(Type::String) {
+        return format!("        {target}.push_str({expr_str}.as_str());\n");
+    }
+    
+    // For op-assign, check if implicit cast is needed
+    if let Some(target_type) = &target_type {
+        let expr_type = script.infer_expr_type(&expr.expr, current_func);
+        if let Some(expr_type) = expr_type {
+            let cast_expr = if expr_type.can_implicitly_convert_to(target_type) && &expr_type != target_type {
+                Self::generate_implicit_cast(&expr_str, &expr_type, target_type)
+            } else if target_type != &expr_type {
+                eprintln!("Warning: Cannot implicitly cast {:?} to {:?} in op-assign", expr_type, target_type);
+                expr_str
+            } else {
+                expr_str
+            };
+            format!("        {} {}= {};\n", target, op.to_rust_assign(), cast_expr)
+        } else {
+            format!("        {} {}= {};\n", target, op.to_rust_assign(), expr_str)
+        }
+    } else {
+        format!("        {} {}= {};\n", target, op.to_rust_assign(), expr_str)
+    }
+}
+
+Stmt::MemberAssign(lhs_expr, rhs_expr) => {
+    // ---------------------------------------------------------
+    // Left-hand side + type information
+    // ---------------------------------------------------------
+    let lhs_code = lhs_expr.to_rust(needs_self, script, current_func);
+    let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
+    let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
+
+    // ---------------------------------------------------------
+    // Generate RHS code - PASS LHS_TYPE AS EXPECTED_TYPE
+    // ---------------------------------------------------------
+    let mut rhs_code = rhs_expr.expr.to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+
+    // ---------------------------------------------------------
+    // Implicit casting to target type
+    // ---------------------------------------------------------
+    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+        if let Some(rhs_ty) = &rhs_type {
+            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+            } else {
+                rhs_code
             }
+        } else {
+            rhs_code
+        }
+    } else {
+        rhs_code
+    };
 
-            Stmt::MemberAssign(lhs_expr, rhs_expr) => {
-                format!(
-                    "        {} = {};\n",
-                    lhs_expr.to_rust(needs_self, script),
-                    rhs_expr.to_rust(needs_self, script)
-                )
-            }
+    // ---------------------------------------------------------
+    // Clone logic for non-primitives (String, Custom structs)
+    // ---------------------------------------------------------
+    let should_clone = matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
+        && match (&lhs_type, &rhs_type) {
+            (Some(Type::String), Some(Type::String))
+            | (Some(Type::Custom(_)), Some(Type::Custom(_))) => true,
+            _ => false,
+        };
 
-            Stmt::MemberAssignOp(lhs_expr, op, rhs_expr) => {
-                format!(
-                    "        {} {}= {};\n",
-                    lhs_expr.to_rust(needs_self, script),
-                    op.to_rust_assign(),
-                    rhs_expr.to_rust(needs_self, script)
-                )
+    if should_clone {
+        let final_rhs_cloned = format!("{}.clone()", final_rhs);
+        format!("        {lhs_code} = {final_rhs_cloned};\n")
+    } else {
+        format!("        {lhs_code} = {final_rhs};\n")
+    }
+}
+
+       Stmt::MemberAssignOp(lhs_expr, op, rhs_expr) => {
+    // Code for the left side (e.g. p1.pos.x)
+    let lhs_code = lhs_expr.to_rust(needs_self, script, current_func);
+
+    // Determine the left-hand type (so we can match literal widths)
+    let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
+
+    // ---------------------------------------------------------
+    // Generate RHS - PASS LHS_TYPE AS EXPECTED_TYPE
+    // ---------------------------------------------------------
+    let mut rhs_code = rhs_expr.expr.to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+
+    // ---------------------------------------------------------
+    // Handle string += operations
+    // ---------------------------------------------------------
+    if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
+        return format!("        {lhs_code}.push_str({rhs_code}.as_str());\n");
+    }
+
+    // ---------------------------------------------------------
+    // Implicit casting to target type
+    // ---------------------------------------------------------
+    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+        let rhs_ty = script.infer_expr_type(&rhs_expr.expr, current_func);
+        if let Some(rhs_ty) = rhs_ty {
+            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != *lhs_ty {
+                script.generate_implicit_cast_for_expr(&rhs_code, &rhs_ty, lhs_ty)
+            } else {
+                rhs_code
             }
+        } else {
+            rhs_code
+        }
+    } else {
+        rhs_code
+    };
+
+    // ---------------------------------------------------------
+    // Generate default op-assign form for all other types
+    // ---------------------------------------------------------
+    format!("        {lhs_code} {}= {};\n", op.to_rust_assign(), final_rhs)
+}
 
             Stmt::Pass => "".to_string(),
 
             Stmt::ScriptAssign(var, field, rhs) => {
-                let rhs_str = rhs.to_rust(needs_self, script);
+                let rhs_str = rhs.to_rust(needs_self, script, current_func);
                 
-                let ctor = match script.infer_expr_type(&rhs.expr) {
+                let ctor = match script.infer_expr_type(&rhs.expr, current_func) {
                     Some(Type::Number(NumberKind::Signed(_))) => "I32",
                     Some(Type::Number(NumberKind::Unsigned(_))) => "U32", 
                     Some(Type::Number(NumberKind::Float(_))) => "F32",
@@ -600,7 +800,7 @@ impl Stmt {
             }
 
             Stmt::ScriptAssignOp(var, field, op, rhs) => {
-                let rhs_str = rhs.to_rust(needs_self, script);
+                let rhs_str = rhs.to_rust(needs_self, script, current_func);
                 let op_str = match op {
                     Op::Add => "Add",
                     Op::Sub => "Sub",
@@ -608,7 +808,7 @@ impl Stmt {
                     Op::Div => "Div",
                 };
 
-                let ctor = match script.infer_expr_type(&rhs.expr) {
+                let ctor = match script.infer_expr_type(&rhs.expr, current_func) {
                     Some(Type::Number(NumberKind::Signed(_))) => "I32",
                     Some(Type::Number(NumberKind::Unsigned(_))) => "U32",
                     Some(Type::Number(NumberKind::Float(_))) => "F32",
@@ -636,17 +836,19 @@ impl Stmt {
         }
 
         match (from_type, to_type) {
+            // Float specific matches
+            (Number(Float(32)), Number(Float(64))) => format!("({} as f64)", expr),
+            (Number(Float(64)), Number(Float(32))) => format!("({} as f32)", expr),
+
+            // Signed/Unsigned to float matches
+            (Number(Signed(_) | Unsigned(_)), Number(Float(64))) => format!("({} as f64)", expr),
+            (Number(Signed(_) | Unsigned(_)), Number(Float(32))) => format!("({} as f32)", expr),
+
             // Simple numeric casts
             (Number(Signed(_)), Number(Signed(to_w))) => format!("({} as i{})", expr, to_w),
             (Number(Signed(_)), Number(Unsigned(to_w))) => format!("({} as u{})", expr, to_w),
             (Number(Unsigned(_)), Number(Unsigned(to_w))) => format!("({} as u{})", expr, to_w),
             (Number(Unsigned(_)), Number(Signed(to_w))) => format!("({} as i{})", expr, to_w),
-            (Number(Signed(_) | Unsigned(_)), Number(Float(32))) => format!("({} as f32)", expr),
-            (Number(Signed(_) | Unsigned(_)), Number(Float(64))) => format!("({} as f64)", expr),
-            (Number(Float(_)), Number(Signed(w))) => format!("({}.round() as i{})", expr, w),
-            (Number(Float(_)), Number(Unsigned(w))) => format!("({}.round() as u{})", expr, w),
-            (Number(Float(32)), Number(Float(64))) => format!("({} as f64)", expr),
-            (Number(Float(64)), Number(Float(32))) => format!("({} as f32)", expr),
 
             // BigInt
             (Number(BigInt), Number(Signed(w))) => match w {
@@ -672,17 +874,29 @@ impl Stmt {
         }
     }
 
-    fn get_target_type(&self, name: &str, script: &Script) -> Option<Type> {
-        for func in &script.functions {
-            if let Some(local) = func.locals.iter().find(|v| v.name == name) {
-                return local.typ.clone();
-            }
-            if let Some(param) = func.params.iter().find(|p| p.name == name) {
-                return Some(param.typ.clone());
+fn get_target_type(&self, name: &str, script: &Script, current_func: Option<&Function>) -> Option<Type> {
+    // Check current function's locals and params first
+    if let Some(func) = current_func {
+        if let Some(local) = func.locals.iter().find(|v| v.name == name) {
+            return local.typ.clone();
+        }
+        if let Some(param) = func.params.iter().find(|p| p.name == name) {
+            return Some(param.typ.clone());
+        }
+    }
+
+    // Handle dotted struct.member access explicitly
+    if let Some((base, field)) = name.split_once('.') {
+        if let Some(base_ty) = script.get_variable_type(base) {
+            if let Some(field_ty) = script.get_member_type(base_ty, field) {
+                return Some(field_ty);
             }
         }
-        script.get_variable_type(name).cloned()
     }
+
+    script.get_variable_type(name).cloned()
+}
+
 
     fn contains_self(&self) -> bool {
         match self {
@@ -725,9 +939,9 @@ impl Stmt {
 }
 
 impl TypedExpr {
-    pub fn to_rust(&self, needs_self: bool, script: &Script) -> String {
+    pub fn to_rust(&self, needs_self: bool, script: &Script, current_func: Option<&Function>) -> String {
         let type_hint = self.inferred_type.as_ref();
-        self.expr.to_rust(needs_self, script, type_hint)
+        self.expr.to_rust(needs_self, script, type_hint, current_func)
     }
 
     pub fn contains_self(&self) -> bool {
@@ -744,9 +958,11 @@ impl TypedExpr {
 }
 
 impl Expr {
-    pub fn to_rust(&self, needs_self: bool, script: &Script, expected_type: Option<&Type>) -> String {
+    pub fn to_rust(&self, needs_self: bool, script: &Script, expected_type: Option<&Type>, current_func: Option<&Function>) -> String {
         match self {
-            Expr::Ident(name) => name.clone(),
+            Expr::Ident(name) => {
+            name.clone()
+        }
             
             Expr::Literal(lit) => {
                 if let Some(expected) = expected_type {
@@ -758,43 +974,69 @@ impl Expr {
             }
             
             Expr::BinaryOp(left, op, right) => {
-                let left_type = script.infer_expr_type(left);
-                let right_type = script.infer_expr_type(right);
+            let left_type = script.infer_expr_type(left, current_func);
+            let right_type = script.infer_expr_type(right, current_func);
 
-                let dominant_type = match (&left_type, &right_type) {
+            // Prefer expected_type if provided, otherwise infer from operands
+            let dominant_type = if let Some(expected) = expected_type.cloned() {
+                Some(expected)
+            } else {
+                match (&left_type, &right_type) {
                     (Some(l), Some(r)) => script.promote_types(l, r).or(Some(l.clone())),
                     (Some(l), None) => Some(l.clone()),
                     (None, Some(r)) => Some(r.clone()),
-                    _ => expected_type.cloned(),
-                };
+                    _ => None,
+                }
+            };
 
-                let left_raw = left.to_rust(needs_self, script, dominant_type.as_ref());
-                let right_raw = right.to_rust(needs_self, script, dominant_type.as_ref());
+                let left_raw = left.to_rust(needs_self, script, dominant_type.as_ref(), current_func);
+                let right_raw = right.to_rust(needs_self, script, dominant_type.as_ref(), current_func);
 
                 // Cast both sides if needed
-                let (left_str, right_str) = match (&left_type, &right_type, &dominant_type) {
-                    (Some(l), Some(r), Some(dom)) => {
-                        let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
-                            script.generate_implicit_cast_for_expr(&left_raw, l, dom)
-                        } else {
-                            left_raw
-                        };
-                        let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
-                            script.generate_implicit_cast_for_expr(&right_raw, r, dom)
-                        } else {
-                            right_raw
-                        };
-                        (l_cast, r_cast)
-                    }
-                    _ => (left_raw, right_raw),
-                };
+               let (left_str, right_str) = match (&left_type, &right_type, &dominant_type) {
+    (Some(l), Some(r), Some(dom)) => {
+        eprintln!("BinaryOp: left={:?}, right={:?}, dominant={:?}", l, r, dom);
+        let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
+            let cast = script.generate_implicit_cast_for_expr(&left_raw, l, dom);
+            eprintln!("  Left needs cast: {} -> {}", left_raw, cast);
+            cast
+        } else {
+            eprintln!("  Left no cast needed: {}", left_raw);
+            left_raw
+        };
+        let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
+            let cast = script.generate_implicit_cast_for_expr(&right_raw, r, dom);
+            eprintln!("  Right needs cast: {} -> {}", right_raw, cast);
+            cast
+        } else {
+            eprintln!("  Right no cast needed: {}", right_raw);
+            right_raw
+        };
+        (l_cast, r_cast)
+    }
+    _ => (left_raw, right_raw),
+};
+            if matches!(op, Op::Add)
+                    && (left_type == Some(Type::String) || right_type == Some(Type::String))
+                {
+                    return format!("format!(\"{{}}{{}}\", {}, {})", left_str, right_str);
+                }
 
                 format!("({} {} {})", left_str, op.to_rust(), right_str)
             }
             
-            Expr::MemberAccess(base, field) => {
-                format!("{}.{}", base.to_rust(needs_self, script, None), field)
+           Expr::MemberAccess(base, field) => {
+            if let Expr::Ident(base_name) = &**base {
+                if script.structs.iter().any(|s| s.name == *base_name) {
+                    return format!("{}::{}", base_name, field);
+                }
             }
+            format!(
+                "{}.{}",
+                base.to_rust(needs_self, script, None, current_func),
+                field
+            )
+        }
             
             Expr::SelfAccess => {
                 if needs_self {
@@ -806,76 +1048,157 @@ impl Expr {
             
             Expr::BaseAccess => "self.base".to_string(),
             
-            Expr::Call(target, args) => {
-                let args_rust: Vec<String> = args.iter()
-                    .map(|a| a.to_rust(needs_self, script, None))
-                    .collect();
-                    
-                let needs_api = Self::get_target_name(target)
-                    .map(|n| script.function_uses_api(n))
-                    .unwrap_or(false);
-                    
-                let target_str = target.to_rust(needs_self, script, None);
-                
-                if needs_api {
-                    if args_rust.is_empty() {
-                        format!("{}(api);", target_str)
-                    } else {
-                        format!("{}({}, api);", target_str, args_rust.join(", "))
-                    }
-                } else if args_rust.is_empty() {
-                    format!("{}();", target_str)
+         Expr::Call(target, args) => {
+    // ---------------------------------------------------------------
+    // Generate all argument Rust expressions (owned for now)
+    // For user functions, we’ll borrow String args.
+    // API calls are handled separately in Expr::ApiCall
+    // ---------------------------------------------------------------
+    let args_rust: Vec<String> = args
+        .iter()
+        .map(|a| {
+            let code = a.to_rust(needs_self, script, None, current_func);
+            // Auto borrow for string variables in user calls
+            if let Some(Type::String) = script.infer_expr_type(a, current_func) {
+                if !code.ends_with(".as_str()") {
+                    format!("{}.as_str()", code)
                 } else {
-                    format!("{}({});", target_str, args_rust.join(", "))
+                    code
                 }
+            } else {
+                code
             }
+        })
+        .collect();
+
+    // ---------------------------------------------------------------
+    // Determine if we're calling a local method
+    // ---------------------------------------------------------------
+    let func_name = Self::get_target_name(target);
+    let is_local_function = func_name
+        .map(|name| script.functions.iter().any(|f| f.name == name))
+        .unwrap_or(false);
+
+    let needs_api = func_name
+        .map(|n| script.function_uses_api(n))
+        .unwrap_or(false);
+
+    let mut target_str = target.to_rust(needs_self, script, None, current_func);
+
+    if is_local_function {
+        target_str = format!("self.{}", func_name.unwrap());
+    }
+
+    // ---------------------------------------------------------------
+    // Generate actual call expression
+    // ---------------------------------------------------------------
+    if needs_api {
+        // This branch is for user-defined functions that take API as param
+        if args_rust.is_empty() {
+            format!("{}(api);", target_str)
+        } else {
+            format!("{}({}, api);", target_str, args_rust.join(", "))
+        }
+    } else if args_rust.is_empty() {
+        format!("{}();", target_str)
+    } else {
+        format!("{}({});", target_str, args_rust.join(", "))
+    }
+}
             
             Expr::ObjectLiteral(pairs) => {
                 let fields: Vec<String> = pairs.iter()
-                    .map(|(k, v)| format!("\"{}\": {}", k, v.to_rust(needs_self, script, None)))
+                    .map(|(k, v)| format!("\"{}\": {}", k, v.to_rust(needs_self, script, None, current_func)))
                     .collect();
                 format!("&json!({{ {} }})", fields.join(", "))
             }
             
             Expr::ApiCall(module, args) => {
-                let args_rust: Vec<String> = args.iter()
-                    .map(|a| a.to_rust(needs_self, script, None))
-                    .collect();
-                // This would need actual ApiModule::to_rust implementation
-                format!("/* API call: {:?} with {} args */", module, args_rust.len())
+                module.to_rust(args, script, needs_self, current_func)
             }
- Expr::Cast(inner, target_type) => {
-    let inner_type = script.infer_expr_type(inner);
-    let inner_code = inner.to_rust(needs_self, script, Some(target_type));
+Expr::Cast(inner, target_type) => {
+    let inner_type = script.infer_expr_type(inner, current_func);
+    let inner_code = inner.to_rust(needs_self, script, Some(target_type), current_func);
 
     match (&inner_type, target_type) {
-        // ───────────────────────────────
+        // ═══════════════════════════════════════════════════════════
+        // String → Numeric Type Conversions
+        // ═══════════════════════════════════════════════════════════
+        
+        // String → Signed Integer
+        (Some(Type::String), Type::Number(NumberKind::Signed(w))) => match w {
+            8   => format!("{}.parse::<i8>().unwrap_or_default()", inner_code),
+            16  => format!("{}.parse::<i16>().unwrap_or_default()", inner_code),
+            32  => format!("{}.parse::<i32>().unwrap_or_default()", inner_code),
+            64  => format!("{}.parse::<i64>().unwrap_or_default()", inner_code),
+            128 => format!("{}.parse::<i128>().unwrap_or_default()", inner_code),
+            _   => format!("{}.parse::<i32>().unwrap_or_default()", inner_code),
+        },
+
+        // String → Unsigned Integer
+        (Some(Type::String), Type::Number(NumberKind::Unsigned(w))) => match w {
+            8   => format!("{}.parse::<u8>().unwrap_or_default()", inner_code),
+            16  => format!("{}.parse::<u16>().unwrap_or_default()", inner_code),
+            32  => format!("{}.parse::<u32>().unwrap_or_default()", inner_code),
+            64  => format!("{}.parse::<u64>().unwrap_or_default()", inner_code),
+            128 => format!("{}.parse::<u128>().unwrap_or_default()", inner_code),
+            _   => format!("{}.parse::<u32>().unwrap_or_default()", inner_code),
+        },
+
+        // String → Float
+        (Some(Type::String), Type::Number(NumberKind::Float(w))) => match w {
+            32 => format!("{}.parse::<f32>().unwrap_or_default()", inner_code),
+            64 => format!("{}.parse::<f64>().unwrap_or_default()", inner_code),
+            _  => format!("{}.parse::<f32>().unwrap_or_default()", inner_code),
+        },
+
+        // String → Decimal
+        (Some(Type::String), Type::Number(NumberKind::Decimal)) =>
+            format!("Decimal::from_str({}.as_ref()).unwrap_or_default()", inner_code),
+
+        // String → BigInt
+        (Some(Type::String), Type::Number(NumberKind::BigInt)) =>
+            format!("BigInt::from_str({}.as_ref()).unwrap_or_default()", inner_code),
+
+        // String → Bool
+        (Some(Type::String), Type::Bool) =>
+            format!("{}.parse::<bool>().unwrap_or_default()", inner_code),
+
+        // ═══════════════════════════════════════════════════════════
+        // Numeric/Bool → String Conversions
+        // ═══════════════════════════════════════════════════════════
+        
+        (Some(Type::Number(_)), Type::String) =>
+            format!("{}.to_string()", inner_code),
+        
+        (Some(Type::Bool), Type::String) =>
+            format!("{}.to_string()", inner_code),
+
+        // ═══════════════════════════════════════════════════════════
+        // BigInt → Everything
+        // ═══════════════════════════════════════════════════════════
+        
         // BigInt → Signed Integer
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::BigInt)), Type::Number(NumberKind::Signed(w))) => match w {
-            8  => format!("{}.to_i8().unwrap_or_default()", inner_code),
-            16 => format!("{}.to_i16().unwrap_or_default()", inner_code),
-            32 => format!("{}.to_i32().unwrap_or_default()", inner_code),
-            64 => format!("{}.to_i64().unwrap_or_default()", inner_code),
+            8   => format!("{}.to_i8().unwrap_or_default()", inner_code),
+            16  => format!("{}.to_i16().unwrap_or_default()", inner_code),
+            32  => format!("{}.to_i32().unwrap_or_default()", inner_code),
+            64  => format!("{}.to_i64().unwrap_or_default()", inner_code),
             128 => format!("{}.to_i128().unwrap_or_default()", inner_code),
-            _  => format!("({}.to_i64().unwrap_or_default() as i{})", inner_code, w),
+            _   => format!("({}.to_i64().unwrap_or_default() as i{})", inner_code, w),
         },
 
-        // ───────────────────────────────
         // BigInt → Unsigned Integer
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::BigInt)), Type::Number(NumberKind::Unsigned(w))) => match w {
-            8  => format!("{}.to_u8().unwrap_or_default()", inner_code),
-            16 => format!("{}.to_u16().unwrap_or_default()", inner_code),
-            32 => format!("{}.to_u32().unwrap_or_default()", inner_code),
-            64 => format!("{}.to_u64().unwrap_or_default()", inner_code),
+            8   => format!("{}.to_u8().unwrap_or_default()", inner_code),
+            16  => format!("{}.to_u16().unwrap_or_default()", inner_code),
+            32  => format!("{}.to_u32().unwrap_or_default()", inner_code),
+            64  => format!("{}.to_u64().unwrap_or_default()", inner_code),
             128 => format!("{}.to_u128().unwrap_or_default()", inner_code),
-            _  => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
+            _   => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
         },
 
-        // ───────────────────────────────
         // BigInt ↔ Float
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::BigInt)), Type::Number(NumberKind::Float(32))) =>
             format!("{}.to_f32().unwrap_or_default()", inner_code),
         (Some(Type::Number(NumberKind::BigInt)), Type::Number(NumberKind::Float(64))) =>
@@ -886,60 +1209,102 @@ impl Expr {
             _  => format!("BigInt::from({} as i64)", inner_code),
         },
 
-        // ───────────────────────────────
+        // BigInt → String
+        (Some(Type::Number(NumberKind::BigInt)), Type::String) =>
+            format!("{}.to_string()", inner_code),
+
+        // ═══════════════════════════════════════════════════════════
+        // Decimal → Everything
+        // ═══════════════════════════════════════════════════════════
+        
         // Decimal → Integer
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::Decimal)), Type::Number(NumberKind::Signed(w))) => match w {
-            8  => format!("{}.to_i8().unwrap_or_default()", inner_code),
-            16 => format!("{}.to_i16().unwrap_or_default()", inner_code),
-            32 => format!("{}.to_i32().unwrap_or_default()", inner_code),
-            64 => format!("{}.to_i64().unwrap_or_default()", inner_code),
+            8   => format!("{}.to_i8().unwrap_or_default()", inner_code),
+            16  => format!("{}.to_i16().unwrap_or_default()", inner_code),
+            32  => format!("{}.to_i32().unwrap_or_default()", inner_code),
+            64  => format!("{}.to_i64().unwrap_or_default()", inner_code),
             128 => format!("({}.to_i64().unwrap_or_default() as i{})", inner_code, w),
-            _  => format!("({}.to_i64().unwrap_or_default() as i{})", inner_code, w),
+            _   => format!("({}.to_i64().unwrap_or_default() as i{})", inner_code, w),
         },
         (Some(Type::Number(NumberKind::Decimal)), Type::Number(NumberKind::Unsigned(w))) => match w {
-            8  => format!("{}.to_u8().unwrap_or_default()", inner_code),
-            16 => format!("{}.to_u16().unwrap_or_default()", inner_code),
-            32 => format!("{}.to_u32().unwrap_or_default()", inner_code),
-            64 => format!("{}.to_u64().unwrap_or_default()", inner_code),
+            8   => format!("{}.to_u8().unwrap_or_default()", inner_code),
+            16  => format!("{}.to_u16().unwrap_or_default()", inner_code),
+            32  => format!("{}.to_u32().unwrap_or_default()", inner_code),
+            64  => format!("{}.to_u64().unwrap_or_default()", inner_code),
             128 => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
-            _  => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
+            _   => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
         },
 
-        // ───────────────────────────────
         // Decimal → Float
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::Decimal)), Type::Number(NumberKind::Float(32))) =>
             format!("{}.to_f32().unwrap_or_default()", inner_code),
         (Some(Type::Number(NumberKind::Decimal)), Type::Number(NumberKind::Float(64))) =>
             format!("{}.to_f64().unwrap_or_default()", inner_code),
 
-        // ───────────────────────────────
-        // Integer → Decimal
-        // ───────────────────────────────
+        // Integer/Float → Decimal
         (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Type::Number(NumberKind::Decimal)) =>
             format!("Decimal::from({})", inner_code),
 
-        // ───────────────────────────────
         // Float → Decimal
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::Float(32))), Type::Number(NumberKind::Decimal)) =>
             format!("Decimal::from_f32({}).unwrap_or_default()", inner_code),
         (Some(Type::Number(NumberKind::Float(64))), Type::Number(NumberKind::Decimal)) =>
             format!("Decimal::from_f64({}).unwrap_or_default()", inner_code),
 
-        // ───────────────────────────────
         // Decimal ↔ BigInt
-        // ───────────────────────────────
         (Some(Type::Number(NumberKind::Decimal)), Type::Number(NumberKind::BigInt)) =>
             format!("BigInt::from({}.to_i64().unwrap_or_default())", inner_code),
         (Some(Type::Number(NumberKind::BigInt)), Type::Number(NumberKind::Decimal)) =>
             format!("Decimal::from({}.to_i64().unwrap_or_default())", inner_code),
 
-        // ───────────────────────────────
-        // Everything else
-        // ───────────────────────────────
-        (_, tgt) => format!("({} as {})", inner_code, tgt.to_rust_type()),
+        // Decimal → String
+        (Some(Type::Number(NumberKind::Decimal)), Type::String) =>
+            format!("{}.to_string()", inner_code),
+
+        // ═══════════════════════════════════════════════════════════
+        // Standard Numeric Casts (your existing code)
+        // ═══════════════════════════════════════════════════════════
+        
+        // Integer widening/conversion
+        (Some(Type::Number(NumberKind::Signed(_))), Type::Number(NumberKind::Signed(to_w))) =>
+            format!("({} as i{})", inner_code, to_w),
+        (Some(Type::Number(NumberKind::Signed(_))), Type::Number(NumberKind::Unsigned(to_w))) =>
+            format!("({} as u{})", inner_code, to_w),
+        (Some(Type::Number(NumberKind::Unsigned(_))), Type::Number(NumberKind::Unsigned(to_w))) =>
+            format!("({} as u{})", inner_code, to_w),
+        (Some(Type::Number(NumberKind::Unsigned(_))), Type::Number(NumberKind::Signed(to_w))) =>
+            format!("({} as i{})", inner_code, to_w),
+        
+        // Integer → Float
+        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Type::Number(NumberKind::Float(32))) =>
+            format!("({} as f32)", inner_code),
+        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Type::Number(NumberKind::Float(64))) =>
+            format!("({} as f64)", inner_code),
+        
+        // Float → Integer (with rounding)
+        (Some(Type::Number(NumberKind::Float(_))), Type::Number(NumberKind::Signed(w))) =>
+            format!("({}.round() as i{})", inner_code, w),
+        (Some(Type::Number(NumberKind::Float(_))), Type::Number(NumberKind::Unsigned(w))) =>
+            format!("({}.round() as u{})", inner_code, w),
+        
+        // Float conversions
+        (Some(Type::Number(NumberKind::Float(32))), Type::Number(NumberKind::Float(64))) =>
+            format!("({} as f64)", inner_code),
+        (Some(Type::Number(NumberKind::Float(64))), Type::Number(NumberKind::Float(32))) =>
+            format!("({} as f32)", inner_code),
+
+        // Integer → BigInt
+        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Type::Number(NumberKind::BigInt)) =>
+            format!("BigInt::from({})", inner_code),
+
+        // ═══════════════════════════════════════════════════════════
+        // Fallback
+        // ═══════════════════════════════════════════════════════════
+        
+        _ => {
+            eprintln!("Warning: Unhandled cast from {:?} to {:?}", inner_type, target_type);
+            format!("({} as {})", inner_code, target_type.to_rust_type())
+        }
     }
 }
         }
@@ -1019,7 +1384,7 @@ impl Literal {
                 }
             }
 
-            Literal::String(s) => format!("\"{}\"", s),
+            Literal::String(s) => format!("String::from(\"{}\")", s),
             
             Literal::Bool(b) => b.to_string(),
             

@@ -342,31 +342,30 @@ impl<P: ScriptProvider> Scene<P> {
 
     
     fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
-        for node_id in dirty_nodes {
-            if let Some(node) = self.data.nodes.get_mut(&node_id) {
-                match node {
-                    SceneNode::Sprite2D(sprite) => {
-                        if let Some(tex) = &sprite.texture_path {
-                            // gfx.draw_texture(
-                            //     node_id,
-                            //     tex,
-                            //     sprite.transform.clone(),
-                            //     Vector2::new(0.5, 0.5),
-                            // );
-                        }
+    for node_id in dirty_nodes {
+        println!("Rendering node with ID: {:?}", node_id);
+        if let Some(node) = self.data.nodes.get_mut(&node_id) {
+            match node {
+                SceneNode::Sprite2D(sprite) => {
+                    if let Some(tex) = &sprite.texture_path {
+                        // gfx.draw_texture(
+                        //     node_id,
+                        //     tex,
+                        //     sprite.transform.clone(),
+                        //     Vector2::new(0.5, 0.5),
+                        // );
                     }
-                    SceneNode::UI(ui_node) => {
-                        // UI renderer handles layout + rendering internally
-                        render_ui(ui_node, gfx);
-                    }
-                    _ => {}
                 }
-                
-                // Mark as clean after processing
-                node.set_dirty(false);
+                SceneNode::UI(ui_node) => {
+                    // UI renderer handles layout + rendering internally
+                    render_ui(ui_node, gfx);
+                }
+                _ => {}
             }
+            node.set_dirty(false); // Set the dirty flag to false after rendering
         }
     }
+}
 }
 
 //
@@ -392,13 +391,15 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
             let id = *node.get_id();
             node.mark_dirty();
         
-            if let Some(existing_node) = self.data.nodes.get_mut(&id) {
-                // Replace the inner data completely
-                *existing_node = node;
-            } else {
-                // Insert new node if it doesn't exist
-                self.data.nodes.insert(id, node);
-            }
+           if let Some(existing_node) = self.data.nodes.get_mut(&id) {
+
+    println!("Replacing existing node with ID {}: {:?}", id, existing_node);
+    *existing_node = node;
+    println!("Updated node with ID {}: {:?}", id, existing_node);
+} else {
+    println!("Inserting new node with ID {}: {:?}", id, node);
+    self.data.nodes.insert(id, node);
+}
         }
     }
 

@@ -17,11 +17,23 @@ struct Stats extends Player {
     }
 }
 
+fn fart() {
+    let s = 5
+    Console.log(s)
+}
+
 
 fn init() {
-    Console.log("Hello World I am editor.pup")
+    let s = "Hellow World"
+    Console.log(s)
+    Console.log(s)
     var dghj: float_64 = 12
     bi = dghj as big
+
+    let b = JSON.stringify({foo: 5})
+    Console.log(b)
+
+    test_casting_behavior()
 
 }
 
@@ -41,11 +53,12 @@ fn test_casting_behavior() {
     var u32_val: uint_32 = 1000
     var u64_val: uint_64 = 10000
     var i128_val: int_128 = 100000000000000000
-var u128_val: uint_128 = 200000000000000000
+    var u128_val: uint_128 = 200000000000000000
     var f32_val: float_32 = 1.5
     var f64_val: float_64 = 2.5
     var d_val: decimal = 10.25347895848347638934783478943748376484734394445783874664
     var big_val: big = 12345678901234567890
+    var str_val: string = "hello"
 
     // =========================================================================
     // IMPLICIT CASTS (should use generate_implicit_cast)
@@ -131,4 +144,28 @@ var u128_val: uint_128 = 200000000000000000
     d_val = u32_val as decimal
 
     d_val = big_val as decimal
+
+        // All numeric → string
+    str_val = i8_val as string
+    str_val = i16_val as string
+    str_val = i32_val as string
+    str_val = i64_val as string
+    str_val = u8_val as string
+    str_val = u16_val as string
+    str_val = u32_val as string
+    str_val = u64_val as string
+    str_val = i128_val as string
+    str_val = u128_val as string
+    str_val = f32_val as string
+    str_val = f64_val as string
+    str_val = d_val as string
+    str_val = big_val as string
+
+    // String → numeric (runtime error possible, so explicit only)
+    i32_val = str_val as int
+    f64_val = str_val as float_32
+    f32_val = str_val as int as float
+
+    d_val = str_val as decimal
+    big_val = str_val as big
 }

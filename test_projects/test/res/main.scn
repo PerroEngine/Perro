@@ -1,0 +1,15 @@
+{
+  "root_id": "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48",
+  "nodes": {
+    "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48": {
+      "type": "UI",
+      "fur_path": "res://main.fur",
+      "node": {
+        "type": "Node",
+        "script_path":"res://main.pup",
+        "name": " UI"
+      }
+    }
+  },
+  "is_game_scene": false
+}

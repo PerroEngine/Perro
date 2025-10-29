@@ -25,6 +25,7 @@ pub type RuntimeApp = App<DllScriptProvider>;
 pub mod prelude {
     // Core engine node types
     pub use crate::nodes::*;
+    pub use crate::ui_node::Ui;
 
     // Transform + math types commonly needed for 2D
     pub use crate::structs2d::*;

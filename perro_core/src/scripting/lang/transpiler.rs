@@ -128,6 +128,12 @@ fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Res
 pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Result<(), String> {
     let lib_rs_path = project_root.join(".perro/scripts/src/lib.rs");
 
+    if let Some(parent) = lib_rs_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            return Err(format!("Failed to create script source dir: {}", e));
+        }
+    }
+
     let mut content = String::from(
         "#[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n\
         use perro_core::script::CreateFn;\nuse std::collections::HashMap;\n\n\
@@ -220,11 +226,11 @@ pub fn transpile(project_root: &Path) -> Result<(), String> {
         match extension {
             "pup" => {
                 let script = PupParser::new(&code).parse_script()?;
-                script.to_rust(&identifier, project_root);
+                script.to_rust(&identifier, project_root, None);
             }
             "cs" => {
                 let script = CsParser::new(&code).parse_script()?;
-                script.to_rust(&identifier, project_root);
+                script.to_rust(&identifier, project_root, None);
             }
             "rs" => {
                 derive_rust_perro_script(project_root, &code, &identifier)?;

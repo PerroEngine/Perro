@@ -65,8 +65,8 @@ impl TimeApi {
 #[derive(Default)]
 pub struct OsApi;
 impl OsApi {
-    pub fn get_platform_name(&self) -> &'static str {
-        env::consts::OS
+    pub fn get_platform_name(&self) -> String {
+        env::consts::OS.to_string()
     }
     pub fn getenv(&self, key: &str) -> Option<String> {
         env::var(key).ok()

@@ -1,0 +1,27 @@
+[workspace]
+
+[package]
+name = "scripts"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+perro_core = { path = "../../../../perro_core" }
+uuid = { version = "1.4", features = ["serde", "v4"] }
+serde = { version = "1.0", features = ["derive","rc"] }
+serde_json = "1.0"
+rust_decimal = "1.36"
+num-bigint = "0.4"
+
+[profile.hotreload]
+inherits = "dev"
+opt-level = 2
+incremental = true
+codegen-units = 256
+lto = false
+debug = false
+strip = "debuginfo"
+overflow-checks = false

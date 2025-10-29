@@ -110,9 +110,9 @@ pub fn json_access(&self) -> (&'static str, String) {
 }
 
 
-pub fn rust_initialization(&self, script: &Script) -> String {
+pub fn rust_initialization(&self, script: &Script, current_func: Option<&Function>) -> String {
 if let Some(expr) = &self.value {
-    expr.to_rust(false, script) // let TypedExpr handle type propagation
+    expr.to_rust(false, script, current_func) // let TypedExpr handle type propagation
 } else {
     self.default_value()
 }
@@ -124,10 +124,8 @@ pub fn default_value(&self) -> String {
         Some(Type::Number(NumberKind::Signed(w))) => format!("0i{}", w),
         Some(Type::Number(NumberKind::Unsigned(w))) => format!("0u{}", w),
         Some(Type::Number(NumberKind::Float(w))) => match w {
-            16 => "half::f16::from_f32(0.0)".to_string(),
             32 => "0.0f32".to_string(),
             64 => "0.0f64".to_string(),
-            128 => "0.0f128".to_string(),
             _ => "0.0f64".to_string(),
         },
 
@@ -136,7 +134,7 @@ pub fn default_value(&self) -> String {
 
         Some(Type::Bool) => "false".into(),
         Some(Type::Script) => "None".into(),
-        Some(Type::String) => "\"\".to_string()".into(),
+        Some(Type::String) => "String::new()".into(),
         Some(Type::StrRef) => "\"\"".into(),
         Some(Type::Custom(_)) => "Default::default()".into(),
         Some(Type::Void) => panic!("Void invalid"),
@@ -225,7 +223,7 @@ pub fn can_implicitly_convert_to(&self, target: &Type) -> bool {
         (Type::Number(Signed(_)) | Type::Number(Unsigned(_)), Type::Number(Float(_))) => true,
 
         // float widening (f32 → f64)
-        (Type::Number(Float(s)), Type::Number(Float(t))) if s < t => true,
+        (Type::Number(Float(32)), Type::Number(Float(64))) => true,
 
         // int → BigInt
         (Type::Number(Signed(_)) | Type::Number(Unsigned(_)), Type::Number(BigInt)) => true,

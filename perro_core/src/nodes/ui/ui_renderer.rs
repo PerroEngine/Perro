@@ -95,7 +95,7 @@ pub fn calculate_content_size(
             let max_width = resolved_child_sizes.iter().map(|size| size.x).fold(0.0, f32::max);
             let max_height = resolved_child_sizes.iter().map(|size| size.y).fold(0.0, f32::max);
             
-            println!("BoxContainer content size for {:?}: {:?}", parent_id, Vector2::new(max_width, max_height));
+            // println!("BoxContainer content size for {:?}: {:?}", parent_id, Vector2::new(max_width, max_height));
             return Vector2::new(max_width, max_height);
         },
         UIElement::Layout(layout) => {
@@ -382,7 +382,7 @@ fn calculate_all_content_sizes(
         if is_container {
             let content_size = calculate_content_size(elements, current_id);
             if let Some(element) = elements.get_mut(current_id) {
-                println!("Auto-sizing container {:?} to {:?}", current_id, content_size);
+                // println!("Auto-sizing container {:?} to {:?}", current_id, content_size);
                 element.set_size(content_size);
             }
         }
@@ -395,7 +395,7 @@ pub fn update_global_transforms_with_layout(
     parent_global: &Transform2D,
     layout_positions: &HashMap<Uuid, Vector2>,
 ) {
-    println!("Processing element: {:?}", current_id);
+    // println!("Processing element: {:?}", current_id);
     
     // Get parent info
     let (parent_size, parent_z) = {
@@ -448,18 +448,18 @@ pub fn update_global_transforms_with_layout(
                             percentage_reference_size.x * fraction, 
                             element.get_size().y
                         ));
-                        println!("Element {:?} size.x: {}% of reference size {:?} = {}", 
-                                 current_id, pct, percentage_reference_size, 
-                                 percentage_reference_size.x * fraction);
+                        // println!("Element {:?} size.x: {}% of reference size {:?} = {}", 
+                        //          current_id, pct, percentage_reference_size, 
+                        //          percentage_reference_size.x * fraction);
                     }
                     "size.y" => {
                         element.set_size(Vector2::new(
                             element.get_size().x, 
                             percentage_reference_size.y * fraction
                         ));
-                        println!("Element {:?} size.y: {}% of reference size {:?} = {}", 
-                                 current_id, pct, percentage_reference_size, 
-                                 percentage_reference_size.y * fraction);
+                        // println!("Element {:?} size.y: {}% of reference size {:?} = {}", 
+                        //          current_id, pct, percentage_reference_size, 
+                        //          percentage_reference_size.y * fraction);
                     }
 
                     // Position percentages still use immediate parent
@@ -512,7 +512,7 @@ pub fn update_global_transforms_with_layout(
         if is_layout_container && !has_explicit_size {
             let content_size = calculate_content_size(elements, current_id);
             if let Some(element) = elements.get_mut(current_id) {
-                println!("Auto-sizing layout container {:?} to {:?}", current_id, content_size);
+                // println!("Auto-sizing layout container {:?} to {:?}", current_id, content_size);
                 element.set_size(content_size);
             }
         }
@@ -525,13 +525,13 @@ pub fn update_global_transforms_with_layout(
             let child_size = *element.get_size();
             let pivot = *element.get_pivot();
 
-            println!("Element {:?} final size before anchoring: {:?}", current_id, child_size);
+            // println!("Element {:?} final size before anchoring: {:?}", current_id, child_size);
 
             // STEP 1: Layout positioning (if this element is in a layout)
             let mut layout_offset = Vector2::new(0.0, 0.0);
             if let Some(&layout_pos) = layout_positions.get(current_id) {
                 layout_offset = layout_pos;
-                println!("Element {:?} in layout, positioned at {:?}", current_id, layout_pos);
+                // println!("Element {:?} in layout, positioned at {:?}", current_id, layout_pos);
             } else {
                 // STEP 2: Anchor positioning (only if NOT in a layout)
                 // For anchoring, we want to use the immediate parent's size for positioning
@@ -601,8 +601,8 @@ pub fn update_global_transforms_with_layout(
                 };
                 layout_offset.x = anchor_x;
                 layout_offset.y = anchor_y;
-                println!("Element {:?} using anchor {:?}, positioned at {:?} (parent size: {:?}, child size: {:?}, pivot: {:?})", 
-                         current_id, element.get_anchor(), layout_offset, anchor_reference_size, child_size, pivot);
+                // println!("Element {:?} using anchor {:?}, positioned at {:?} (parent size: {:?}, child size: {:?}, pivot: {:?})", 
+                //          current_id, element.get_anchor(), layout_offset, anchor_reference_size, child_size, pivot);
             }
 
             // STEP 3: Apply layout/anchor offset + user translation
@@ -623,7 +623,7 @@ pub fn update_global_transforms_with_layout(
             let global_z = local_z + parent_z + 2;
             element.set_z_index(global_z);
 
-            println!("Element {:?} final global position: {:?}", current_id, global.position);
+            // println!("Element {:?} final global position: {:?}", current_id, global.position);
 
             // Get children list before dropping the mutable borrow
             let children_ids = element.get_children().to_vec();
@@ -637,7 +637,7 @@ pub fn update_global_transforms_with_layout(
 }
 /// Updated layout function that uses the new layout system
 pub fn update_ui_layout(ui_node: &mut Ui) {
-    println!("=== Starting UI Layout Update ===");
+    // println!("=== Starting UI Layout Update ===");
     
     // First pass: Calculate all content sizes from leaves to roots
     for root_id in &ui_node.root_ids {
@@ -654,7 +654,7 @@ pub fn update_ui_layout(ui_node: &mut Ui) {
             &empty_layout_map
         );
     }
-    println!("=== Finished UI Layout Update ===");
+    // println!("=== Finished UI Layout Update ===");
 }
 
 pub fn render_ui(ui_node: &mut Ui, gfx: &mut Graphics) {
