@@ -330,32 +330,35 @@ impl<P: ScriptProvider> Scene<P> {
      // Handle script attachment
   // Handle script attachment
 // Handle script attachment
-if let Some(script_path) = node.get_script_path().cloned() {
-    println!("   ✅ Found script_path: {}", script_path);
-    let identifier = script_path_to_identifier(&script_path)
-        .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
-    let ctor = self.ctor(&identifier)?;
-    
-    // Create script (without initializing)
-    let handle = Scene::instantiate_script(ctor, id, self);
-    
-    // Insert into map FIRST
-    self.scripts.insert(id, handle);
-    println!("   ✅ Script inserted into self.scripts with key: {}", id);
-    
-    // NOW initialize - get a fresh reference from the map
-    let project_ref = self.project.clone();
-    let mut project_borrow = project_ref.borrow_mut();
-    let mut api = ScriptApi::new(0.0, self, &mut *project_borrow);
-    
-    // Call engine_init through the API instead
-    api.call_init(id);
-    println!("   ✅ Script initialized");
-}
+
 
     node.mark_dirty();
     self.data.nodes.insert(id, node);
     println!("✅ Node {} fully created\n", id);
+
+   // node is moved already, so get it back immutably from scene
+if let Some(node_ref) = self.data.nodes.get(&id) {
+    if let Some(script_path) = node_ref.get_script_path().cloned() {
+        println!("   ✅ Found script_path: {}", script_path);
+        
+        let identifier = script_path_to_identifier(&script_path)
+            .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+        let ctor = self.ctor(&identifier)?;
+
+        // Create the script
+        let handle = Scene::instantiate_script(ctor, id, self);
+        self.scripts.insert(id, handle);
+
+        // Initialize now that node exists
+        let project_ref = self.project.clone();
+        let mut project_borrow = project_ref.borrow_mut();
+        let mut api = ScriptApi::new(0.0, self, &mut *project_borrow);
+        api.call_init(id);
+
+        println!("   ✅ Script initialized");
+    }
+}
+
     Ok(())
 }
 
@@ -472,8 +475,8 @@ if let Some(script_path) = node.get_script_path().cloned() {
 //
 
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
-    fn get_scene_node(&mut self, id: &Uuid) -> Option<&mut SceneNode> {
-        self.data.nodes.get_mut(id)
+    fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
+        self.data.nodes.get_mut(&id)
     }
 
         fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {

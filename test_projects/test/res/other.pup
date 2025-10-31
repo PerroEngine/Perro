@@ -16,4 +16,6 @@ fn update() {
 
 fn bob(c: float) {
     Console.info("Wow I am being called from a signal with this parameter: ", c)
+
+    self.name = "pb"
 }

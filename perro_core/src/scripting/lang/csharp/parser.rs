@@ -266,6 +266,7 @@ impl CsParser {
             locals,
             body,
             is_trait_method: is_trait,
+            uses_self: false,
             return_type: self.map_type(return_type),
         })
     }

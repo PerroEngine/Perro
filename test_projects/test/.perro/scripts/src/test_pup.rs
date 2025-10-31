@@ -56,11 +56,11 @@ impl Script for TestPupScript {
 // ========================================================================
 
 impl TestPupScript {
-    fn test_func(&mut self, mut b: f32, api: &mut ScriptApi<'_>) {
+    fn test_func(&mut self, mut b: f32, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print_info(&format!("{} {}", String::from("test function called from the signal with paramter: "), b));
     }
 
-    fn func(&mut self, mut db: String, api: &mut ScriptApi<'_>) {
+    fn func(&mut self, mut db: String, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print_warn(&format!("{} {}", String::from("what if i make it a string"), db));
     }
 
@@ -102,14 +102,14 @@ impl ScriptObject for TestPupScript {
                 let b = params.get(0)
                     .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
                     .unwrap_or_default() as f32;
-                self.test_func(b, api);
+                self.test_func(b, api, true);
             },
             "func" => {
                 let db = params.get(0)
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_default();
-                self.func(db, api);
+                self.func(db, api, true);
             },
             _ => {}
         }

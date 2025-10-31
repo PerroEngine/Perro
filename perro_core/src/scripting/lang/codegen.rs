@@ -263,17 +263,14 @@ impl Script {
             .map(|f| f.return_type.clone())
     }
 
-    pub fn function_uses_api(&self, name: &str) -> bool {
-        self.functions
-            .iter()
-            .find(|f| f.name == name)
-            .map(|f| f.requires_api(self))
-            .unwrap_or(false)
-    }
 
   pub fn to_rust(&self, struct_name: &str, project_path: &Path, current_func: Option<&Function>) -> String {
         // Clear cache at the start of codegen
         clear_type_cache();
+
+         let mut script = self.clone();
+        // 🔹 Analyze self usage and call propagation before codegen
+        analyze_self_usage(&mut script);
         
         let mut out = String::with_capacity(8192); // Pre-allocate larger buffer
         let pascal_struct_name = to_pascal_case(struct_name);
@@ -293,7 +290,7 @@ impl Script {
         out.push_str("use std::{rc::Rc, cell::RefCell};\n\n");
         out.push_str("use perro_core::prelude::*;\n\n");
 
-        let exposed_fields: Vec<(&str, String, String)> = self.exposed.iter()
+        let exposed_fields: Vec<(&str, String, String)> = script.exposed.iter()
             .map(|exposed| {
                 let name = exposed.name.as_str();
                 let rust_type = exposed.rust_type();
@@ -302,7 +299,7 @@ impl Script {
             })
             .collect();
 
-        let variable_fields: Vec<(&str, String, String)> = self.variables.iter()
+        let variable_fields: Vec<(&str, String, String)> = script.variables.iter()
             .map(|var| {
                 let name = var.name.as_str();
                 let rust_type = var.rust_type(); 
@@ -316,7 +313,7 @@ impl Script {
         out.push_str("// ========================================================================\n\n");
         
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
-        write!(out, "    node: {},\n", self.node_type).unwrap();
+        write!(out, "    node: {},\n", script.node_type).unwrap();
 
         for (name, rust_type, _) in &exposed_fields {
             write!(out, "    {}: {},\n", name, rust_type).unwrap();
@@ -336,31 +333,31 @@ impl Script {
         write!(out, "pub extern \"C\" fn {}_create_script() -> *mut dyn ScriptObject {{\n", struct_name.to_lowercase()).unwrap();
         write!(out, "    Box::into_raw(Box::new({}Script {{\n", pascal_struct_name).unwrap();
         if self.node_type == "Node" {
-            write!(out, "        node: {}::new(\"{}\", None),\n", self.node_type, pascal_struct_name).unwrap();
+            write!(out, "        node: {}::new(\"{}\", None),\n", script.node_type, pascal_struct_name).unwrap();
         } else {
-            write!(out, "        node: {}::new(\"{}\"),\n", self.node_type, pascal_struct_name).unwrap();
+            write!(out, "        node: {}::new(\"{}\"),\n", script.node_type, pascal_struct_name).unwrap();
         }
 
-        for exposed in &self.exposed {
-            let init_code = exposed.rust_initialization(self, current_func);
+        for exposed in &script.exposed {
+            let init_code = exposed.rust_initialization(&script, current_func);
             write!(out, "        {}: {},\n", exposed.name, init_code).unwrap();
         }
 
-        for var in &self.variables {
-            let init_code = var.rust_initialization(self, current_func);
+        for var in &script.variables {
+            let init_code = var.rust_initialization(&script, current_func);
             write!(out, "        {}: {},\n", var.name, init_code).unwrap();
         }
 
         out.push_str("    })) as *mut dyn ScriptObject\n");
         out.push_str("}\n\n");
 
-        if !self.structs.is_empty() {
+        if !script.structs.is_empty() {
             out.push_str("// ========================================================================\n");
             out.push_str("// Supporting Struct Definitions\n");
             out.push_str("// ========================================================================\n\n");
             
-            for s in &self.structs {
-                out.push_str(&s.to_rust_definition(self));
+            for s in &script.structs {
+                out.push_str(&s.to_rust_definition(&script));
                 out.push_str("\n\n");
             }
         }
@@ -371,14 +368,14 @@ impl Script {
 
         write!(out, "impl Script for {}Script {{\n", pascal_struct_name).unwrap();
 
-        for func in &self.functions {
+        for func in &script.functions {
             if func.is_trait_method {
-                out.push_str(&func.to_rust_trait_method(&self.node_type, &self));
+                out.push_str(&func.to_rust_trait_method(&script.node_type, &script));
             }
         }
         out.push_str("}\n\n");
 
-        let helpers: Vec<_> = self.functions.iter().filter(|f| !f.is_trait_method).collect();
+        let helpers: Vec<_> = script.functions.iter().filter(|f| !f.is_trait_method).collect();
         if !helpers.is_empty() {
             out.push_str("// ========================================================================\n");
             write!(out, "// {} - Script-Defined Methods\n", pascal_struct_name).unwrap();
@@ -386,16 +383,16 @@ impl Script {
 
             write!(out, "impl {}Script {{\n", pascal_struct_name).unwrap();
             for func in helpers {
-                out.push_str(&func.to_rust_method(&self.node_type, &self));
+                out.push_str(&func.to_rust_method(&script.node_type, &script));
             }
             out.push_str("}\n\n");
         }
 
         out.push_str(&implement_script_boilerplate(
             &format!("{}Script", pascal_struct_name),
-            &self.exposed,
-            &self.variables,
-            &self.functions
+            &script.exposed,
+            &script.variables,
+            &script.functions
         ));
 
         if let Err(e) = write_to_crate(&project_path, &out, struct_name) {
@@ -406,6 +403,88 @@ impl Script {
     }
 }
 
+fn analyze_self_usage(script: &mut Script) {
+    // Step 1: mark direct `self` usage
+    for func in &mut script.functions {
+        func.uses_self = func.body.iter().any(|stmt| stmt.contains_self());
+    }
+
+    // Step 2: track which functions call which others
+    let mut edges: HashMap<String, Vec<String>> = HashMap::new();
+    for func in &script.functions {
+        let callees = extract_called_functions(&func.body);
+        edges.insert(func.name.clone(), callees);
+    }
+
+    // Step 3: recursively propagate self usage through the call graph
+   let mut changed = true;
+while changed {
+    changed = false;
+
+    // Take a snapshot of current function states (immutable copy)
+    let snapshot: Vec<(String, bool)> = script
+        .functions
+        .iter()
+        .map(|f| (f.name.clone(), f.uses_self))
+        .collect();
+
+    for func in &mut script.functions {
+        if !func.uses_self {
+            if let Some(callees) = edges.get(&func.name) {
+                if callees.iter().any(|callee_name| {
+                    snapshot
+                        .iter()
+                        .any(|(name, uses_self)| name == callee_name && *uses_self)
+                }) {
+                    func.uses_self = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+}
+}
+
+fn extract_called_functions(stmts: &[Stmt]) -> Vec<String> {
+    fn recurse_expr(expr: &Expr) -> Vec<String> {
+        match expr {
+            Expr::Call(target, _) => {
+                let mut v = Vec::new();
+                if let Some(name) = Expr::get_target_name(target) {
+                    v.push(name.to_string());
+                }
+                v.extend(recurse_expr(target));
+                v
+            }
+            Expr::BinaryOp(l, _, r) => {
+                let mut v = recurse_expr(l);
+                v.extend(recurse_expr(r));
+                v
+            }
+            Expr::MemberAccess(b, _) => recurse_expr(b),
+            _ => vec![],
+        }
+    }
+
+    let mut out = Vec::new();
+    for s in stmts {
+        match s {
+            Stmt::Expr(e) => out.extend(recurse_expr(&e.expr)),
+            Stmt::Assign(_, e) | Stmt::AssignOp(_, _, e) => out.extend(recurse_expr(&e.expr)),
+            Stmt::MemberAssign(l, r) | Stmt::MemberAssignOp(l, _, r) => {
+                out.extend(recurse_expr(&l.expr));
+                out.extend(recurse_expr(&r.expr));
+            }
+            Stmt::VariableDecl(v) => {
+                if let Some(init) = &v.value {
+                    out.extend(recurse_expr(&init.expr));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
 
 impl StructDef {
     pub fn to_rust_definition(&self, script: &Script) -> String {
@@ -462,7 +541,7 @@ impl StructDef {
 
 impl Function {
     pub fn to_rust_method(&self, node_type: &str, script: &Script) -> String {
-        let needs_api = self.requires_api(script);
+
         let mut out = String::with_capacity(512);
 
         // ---------------------------------------------------
@@ -492,9 +571,7 @@ impl Function {
             write!(param_list, ", {}", joined).unwrap();
         }
 
-        if needs_api {
-            param_list.push_str(", api: &mut ScriptApi<'_>");
-        }
+            param_list.push_str(", api: &mut ScriptApi<'_>, external_call: bool");
 
         writeln!(out, "    fn {}({}) {{", self.name, param_list).unwrap();
 
@@ -502,16 +579,22 @@ impl Function {
         // ---------------------------------------------------
         // (1) Insert additional preamble if the method uses self/api
         // ---------------------------------------------------
-        let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
+        let needs_self = self.uses_self;
+        
 
-        if needs_api && needs_self {
+        if needs_self {
             writeln!(
                 out,
-                "        self.node = \
-                 api.get_node_clone::<{}>(&self.node.id);",
+                "        if external_call {{"
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "            self.node = api.get_node_clone::<{}>(self.node.id);",
                 node_type
             )
             .unwrap();
+            writeln!(out, "        }}").unwrap();
         }
 
         // ---------------------------------------------------
@@ -521,20 +604,17 @@ impl Function {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
-        if needs_api && needs_self {
-            out.push_str("\n        api.merge_nodes(vec![self.node.clone().to_scene_node()]);\n");
+        if needs_self {
+            out.push_str("\n        if external_call {\n");
+            out.push_str("            api.merge_nodes(vec![self.node.clone().to_scene_node()]);\n");
+            out.push_str("        }\n");
         }
+        
 
         out.push_str("    }\n\n");
         out
     }
 
-    // ============================================================
-    // helper for detecting API usage
-    // ============================================================
-    fn requires_api(&self, script: &Script) -> bool {
-        self.body.iter().any(|stmt| stmt.contains_api_call(script))
-    }
 
     // ============================================================
     // for trait-style API methods (unchanged, still fine)
@@ -543,12 +623,12 @@ impl Function {
         let mut out = String::with_capacity(512);
         writeln!(out, "    fn {}(&mut self, api: &mut ScriptApi<'_>) {{", self.name).unwrap();
 
-        let needs_self = self.body.iter().any(|stmt| stmt.contains_self());
+        let needs_self = self.uses_self;
 
         if needs_self {
             writeln!(
                 out,
-                "        self.node = api.get_node_clone::<{}>(&self.node.id);",
+                "        self.node = api.get_node_clone::<{}>(self.node.id);",
                 node_type
             )
             .unwrap();
@@ -1035,13 +1115,6 @@ Expr::Call(target, args) => {
         })
         .collect();
 
-    // ==============================================================
-    // Check if this function uses the Script API
-    // ==============================================================
-    let needs_api = func_name
-        .as_ref()
-        .map(|n| script.function_uses_api(n))
-        .unwrap_or(false);
 
     // Convert the target expression (e.g., func or self.method)
     let mut target_str = target.to_rust(needs_self, script, None, current_func);
@@ -1055,17 +1128,11 @@ Expr::Call(target, args) => {
     // Finally, build the Rust call string
     // Handles API injection and empty arg lists
     // ==============================================================
-    if needs_api {
         if args_rust.is_empty() {
-            format!("{}(api);", target_str)
+            format!("{}(api, false);", target_str)
         } else {
-            format!("{}({}, api);", target_str, args_rust.join(", "))
+            format!("{}({}, api, false);", target_str, args_rust.join(", "))
         }
-    } else if args_rust.is_empty() {
-        format!("{}();", target_str)
-    } else {
-        format!("{}({});", target_str, args_rust.join(", "))
-    }
 }
             
             Expr::ObjectLiteral(pairs) => {
@@ -1255,10 +1322,7 @@ Expr::Call(target, args) => {
             Expr::MemberAccess(base, _) => base.contains_api_call(script),
             Expr::BinaryOp(l, _, r) => l.contains_api_call(script) || r.contains_api_call(script),
             Expr::Call(target, args) => {
-                Self::get_target_name(target)
-                    .map(|n| script.function_uses_api(n))
-                    .unwrap_or(false)
-                    || target.contains_api_call(script)
+                target.contains_api_call(script)
                     || args.iter().any(|a| a.contains_api_call(script))
             }
             Expr::ObjectLiteral(pairs) => pairs.iter().any(|(_, e)| e.contains_api_call(script)),
@@ -1425,7 +1489,7 @@ fn implement_script_boilerplate(
                 // No parameters
                 write!(call_function_matches,
                     "            \"{func_name}\" => {{
-                self.{func_name}(api);
+                self.{func_name}(api, true);
             }},\n"
                 ).unwrap();
             } else {
@@ -1477,7 +1541,7 @@ fn implement_script_boilerplate(
                 
                 write!(call_function_matches,
                     "            \"{func_name}\" => {{
-{param_parsing}                self.{func_name}({param_list}, api);
+{param_parsing}                self.{func_name}({param_list}, api, true);
             }},\n"
                 ).unwrap();
             }
@@ -1714,6 +1778,7 @@ if let Some(impl_cap) = impl_block_re.captures(&code) {
             is_trait_method: false,
             params,
             return_type,
+            uses_self: false,
             body: vec![],
             locals: vec![],
         });

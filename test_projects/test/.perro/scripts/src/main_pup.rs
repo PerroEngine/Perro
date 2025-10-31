@@ -39,10 +39,48 @@ pub extern "C" fn main_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for MainPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+        self.node = api.get_node_clone::<UINode>(self.node.id);
         api.emit_signal(&String::from("TestSignal"), vec![json!(100f32)]);
+        self.node.name = String::from("f");
+        api.print(&self.node.name);
+
+        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+        self.node = api.get_node_clone::<UINode>(self.node.id);
+        self.ass(api, false);
+
+        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+    }
+
+}
+
+// ========================================================================
+// MainPup - Script-Defined Methods
+// ========================================================================
+
+impl MainPupScript {
+    fn fart(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
+        if external_call {
+            self.node = api.get_node_clone::<UINode>(self.node.id);
+        }
+        self.node.name = String::from("tim");
+
+        if external_call {
+            api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        }
+    }
+
+    fn ass(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
+        if external_call {
+            self.node = api.get_node_clone::<UINode>(self.node.id);
+        }
+        self.fart(api, false);
+
+        if external_call {
+            api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        }
     }
 
 }
@@ -79,6 +117,12 @@ impl ScriptObject for MainPupScript {
 
     fn call_function(&mut self, name: &str, api: &mut ScriptApi<'_>, params: &Vec<Value>) {
         match name {
+            "fart" => {
+                self.fart(api, true);
+            },
+            "ass" => {
+                self.ass(api, true);
+            },
             _ => {}
         }
     }

@@ -150,6 +150,7 @@ pub struct Function {
     pub locals: Vec<Variable>,
     pub body: Vec<Stmt>,
     pub is_trait_method: bool,
+    pub uses_self: bool,
     pub return_type: Type,
 }
 

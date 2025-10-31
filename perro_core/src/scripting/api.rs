@@ -281,7 +281,7 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     // Scene / Node Access
     //-------------------------------------------------
-    pub fn get_node_clone<T: Clone>(&mut self, id: &Uuid) -> T
+    pub fn get_node_clone<T: Clone>(&mut self, id: Uuid) -> T
     where SceneNode: IntoInner<T> {
         let node_enum = self.scene
             .get_scene_node(id)

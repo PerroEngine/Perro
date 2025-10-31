@@ -56,8 +56,16 @@ impl Script for OtherPupScript {
 // ========================================================================
 
 impl OtherPupScript {
-    fn bob(&mut self, mut c: f32, api: &mut ScriptApi<'_>) {
+    fn bob(&mut self, mut c: f32, api: &mut ScriptApi<'_>, external_call: bool) {
+        if external_call {
+            self.node = api.get_node_clone::<Node>(self.node.id);
+        }
         api.print_info(&format!("{} {}", String::from("Wow I am being called from a signal with this parameter: "), c));
+        self.node.name = String::from("pb");
+
+        if external_call {
+            api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        }
     }
 
 }
@@ -98,7 +106,7 @@ impl ScriptObject for OtherPupScript {
                 let c = params.get(0)
                     .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
                     .unwrap_or_default() as f32;
-                self.bob(c, api);
+                self.bob(c, api, true);
             },
             _ => {}
         }

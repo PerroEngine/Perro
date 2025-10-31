@@ -2,9 +2,19 @@ extends UINode
 
 fn init() {
     Signal.emit("TestSignal", 100)
+    self.name = "f"
+    Console.log(self.name)
 }
 
 
 fn update() {
+    ass()
+}
 
+fn fart() {
+    self.name = "tim"
+}
+
+fn ass() {
+    fart()
 }
