@@ -14,50 +14,31 @@ pub trait ApiCodegen {
         current_func: Option<&Function>,
     ) -> String;
 
-    /// Smart argument generator — automatically borrows values but
-    /// leaves string literals and `.as_str()` untouched.
-    fn rust_args(
-        &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
-    ) -> Vec<String> {
-        args.iter()
-            .map(|a| {
-                let mut code = a.to_rust(needs_self, script, None, current_func);
-                let inferred = script.infer_expr_type(a, current_func);
-
-                let is_literal = matches!(a, Expr::Literal(_));
-                let is_already_ref = code.starts_with('&');
-                let uses_as_str = code.contains(".as_str()");
-                let is_string_lit =
-                    code.starts_with("\"") && code.ends_with("\"") && code.len() > 1;
-
-                // --- String / StrRef handling ---------------------------------
-                if let Some(Type::String) | Some(Type::StrRef) = inferred {
-                    // Automatic borrow for owned Strings: to &str.
-                    if !uses_as_str && !is_string_lit {
-                        code = format!("{}.as_str()", code);
-                    }
-                    // Don't also prepend "&" here — .as_str() already borrows.
-                    return code;
+/// Smart argument generator — automatically borrows values but
+/// leaves string literals and `.as_str()` untouched.
+/// Also prepends `self.` to struct field variables.
+fn rust_args(
+    &self,
+    args: &[Expr],
+    script: &Script,
+    needs_self: bool,
+    current_func: Option<&Function>,
+) -> Vec<String> {
+    args.iter()
+        .map(|a| {
+            let code = a.to_rust(needs_self, script, None, current_func);
+            
+            // Check if this is a simple identifier that's a struct field
+            if let Expr::Ident(name) = a {
+                if script.is_struct_field(name) {
+                    return format!("self.{}", code);
                 }
-
-                // --- Literals / numbers / booleans -----------------------------
-                if is_literal {
-                    return code;
-                }
-
-                // --- Default behavior: reference everything else ----------------
-                if !is_already_ref {
-                    code = format!("&{}", code);
-                }
-
-                code
-            })
-            .collect()
-    }
+            }
+            
+            code
+        })
+        .collect()
+}
 }
 
 /// Provides return‑type semantics for each API.
@@ -85,6 +66,7 @@ impl ApiModule {
             ApiModule::Console(api) => api.to_rust(args, script, needs_self, current_func),
             ApiModule::ScriptType(api) => api.to_rust(args, script, needs_self, current_func),
             ApiModule::NodeSugar(api) => api.to_rust(args, script, needs_self, current_func),
+            ApiModule::Signal(api) => api.to_rust(args, script, needs_self, current_func)
         }
     }
 
@@ -96,6 +78,7 @@ impl ApiModule {
             ApiModule::Console(api) => api.return_type(),
             ApiModule::ScriptType(api) => api.return_type(),
             ApiModule::NodeSugar(api) => api.return_type(),
+            ApiModule::Signal(api) => api.return_type()
         }
     }
 }
@@ -116,11 +99,11 @@ impl ApiCodegen for JSONApi {
         match self {
             JSONApi::Parse => {
                 let arg = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                format!("api.JSON.parse({})", arg)
+                format!("api.JSON.parse(&{})", arg)
             }
             JSONApi::Stringify => {
                 let arg = args.get(0).cloned().unwrap_or_else(|| "json!({})".into());
-                format!("api.JSON.stringify({})", arg)
+                format!("api.JSON.stringify(&{})", arg)
             }
         }
     }
@@ -149,6 +132,7 @@ impl ApiCodegen for TimeApi {
     ) -> String {
         let args = self.rust_args(args, script, needs_self, current_func);
         match self {
+            TimeApi::DeltaTime => "api.Time.get_delta()".into(),
             TimeApi::GetUnixMsec => "api.Time.get_unix_time_msec()".into(),
             TimeApi::SleepMsec => {
                 let arg = args.get(0).cloned().unwrap_or_else(|| "0".into());
@@ -161,6 +145,7 @@ impl ApiCodegen for TimeApi {
 impl ApiSemantic for TimeApi {
     fn return_type(&self) -> Option<Type> {
         match self {
+            TimeApi::DeltaTime => Some(Type::Number(NumberKind::Float(32))),
             TimeApi::GetUnixMsec => Some(Type::Number(NumberKind::Unsigned(64))),
             TimeApi::SleepMsec => Some(Type::Void),
         }
@@ -212,17 +197,21 @@ impl ApiCodegen for ConsoleApi {
         current_func: Option<&Function>,
     ) -> String {
         let args = self.rust_args(args, script, needs_self, current_func);
-        let joined = if args.is_empty() {
-            "\"\"".into()
-        } else {
-            args.join(", ")
-        };
+        
+        let joined = if args.len() <= 1 {
+                args.get(0).cloned().unwrap_or("\"\"".into())
+            } else {
+                format!("format!(\"{}\", {})", 
+                    (0..args.len()).map(|_i| "{}").collect::<Vec<_>>().join(" "), 
+                    args.join(", ")
+                )
+            };
 
         match self {
-            ConsoleApi::Log => format!("api.print({});", joined),
-            ConsoleApi::Warn => format!("api.print_warn({});", joined),
-            ConsoleApi::Error => format!("api.print_error({});", joined),
-            ConsoleApi::Info => format!("api.print_info({});", joined),
+            ConsoleApi::Log => format!("api.print(&{});", joined),
+            ConsoleApi::Warn => format!("api.print_warn(&{});", joined),
+            ConsoleApi::Error => format!("api.print_error(&{});", joined),
+            ConsoleApi::Info => format!("api.print_info(&{});", joined),
         }
     }
 }
@@ -301,6 +290,73 @@ impl ApiSemantic for NodeSugarApi {
         match self {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
+        }
+    }
+}
+
+impl ApiCodegen for SignalApi {
+    fn to_rust(
+        &self,
+        args: &[Expr],
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        let args = self.rust_args(args, script, needs_self, current_func);
+        match self {
+            SignalApi::New => {
+                let arg = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                // If it's already `String::from(`, leave it alone; otherwise wrap it
+                if arg.starts_with("String::from(") || arg.starts_with('&') {
+                    arg
+                } else {
+                    format!("String::from({})", arg)
+                }
+            }
+           SignalApi::Connect => {
+                let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                
+                // Check if signal is a struct field variable
+                if script.is_struct_field(&signal) {
+                    signal = format!("self.{}", signal);
+                }
+                
+                let mut node = args.get(1).cloned().unwrap_or_else(|| "self.node".into());
+                if node == "self" { 
+                    node = "self.node".into(); 
+                }
+                let func = args.get(2).cloned().unwrap_or_else(|| "\"\"".into());
+                format!("api.connect_signal(&{}, {}.id, &{})", signal, node, func)
+            }
+           SignalApi::Emit => {
+                let signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                
+                // If there are additional arguments, collect them into a Vec<Value>
+                if args.len() > 1 {
+                    let params: Vec<String> = args[1..]
+                        .iter()
+                        .map(|arg| format!("json!({})", arg))
+                        .collect();
+                    
+                    format!(
+                        "api.emit_signal(&{}, vec![{}])",
+                        signal,
+                        params.join(", ")
+                    )
+                } else {
+                    // No parameters, pass empty vec
+                    format!("api.emit_signal(&{}, vec![])", signal)
+                }
+            }
+        }
+    }
+}
+
+impl ApiSemantic for SignalApi {
+        fn return_type(&self) -> Option<Type> {
+        match self {
+            SignalApi::New => Some(Type::Custom("Signal".into())),
+            _ => Some(Type::Void),
         }
     }
 }

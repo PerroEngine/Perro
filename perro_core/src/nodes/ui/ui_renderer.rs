@@ -1,11 +1,9 @@
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use wgpu::RenderPass;
 use std::collections::HashMap;
 
 use crate::{
-    ast::FurAnchor, font::{Font, FontAtlas, Style, Weight}, graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, ui_element::{BaseElement, UIElement}, ui_elements::{ui_container::{ContainerMode, UIPanel}, ui_text::UIText}, ui_node::Ui, Color, Graphics, Transform2D, Vector2
+    ast::FurAnchor, font::{Font, FontAtlas, Style, Weight}, graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, ui_element::{BaseElement, UIElement}, ui_elements::{ui_container::{ContainerMode, UIPanel}, ui_text::UIText}, ui_node::UINode, Graphics, structs2d::{Transform2D, Vector2, Color}
 };
 
 /// Helper function to find the first non-layout ancestor for percentage calculations
@@ -394,6 +392,7 @@ pub fn update_global_transforms_with_layout(
     current_id: &Uuid,
     parent_global: &Transform2D,
     layout_positions: &HashMap<Uuid, Vector2>,
+    parent_z: i32,
 ) {
     // println!("Processing element: {:?}", current_id);
     
@@ -620,7 +619,7 @@ pub fn update_global_transforms_with_layout(
             element.set_global_transform(global.clone());
 
             // Set inherited z-index: local z + parent z
-            let global_z = local_z + parent_z + 2;
+            let global_z = parent_z + 2; // deterministic “2 per depth step”
             element.set_z_index(global_z);
 
             // println!("Element {:?} final global position: {:?}", current_id, global.position);
@@ -630,13 +629,13 @@ pub fn update_global_transforms_with_layout(
 
             // STEP 6: Recurse into children with their layout positions
             for child_id in children_ids {
-                update_global_transforms_with_layout(elements, &child_id, &global, &child_layout_map);
+                update_global_transforms_with_layout(elements, &child_id, &global, &child_layout_map, global_z);
             }
         }
     }
 }
 /// Updated layout function that uses the new layout system
-pub fn update_ui_layout(ui_node: &mut Ui) {
+pub fn update_ui_layout(ui_node: &mut UINode) {
     // println!("=== Starting UI Layout Update ===");
     
     // First pass: Calculate all content sizes from leaves to roots
@@ -651,13 +650,14 @@ pub fn update_ui_layout(ui_node: &mut Ui) {
             &mut ui_node.elements, 
             root_id, 
             &Transform2D::default(),
-            &empty_layout_map
+            &empty_layout_map,
+            0
         );
     }
     // println!("=== Finished UI Layout Update ===");
 }
 
-pub fn render_ui(ui_node: &mut Ui, gfx: &mut Graphics) {
+pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     update_ui_layout(ui_node); // now works with layout system
     for (_, element) in &ui_node.elements {
         if !element.get_visible() {

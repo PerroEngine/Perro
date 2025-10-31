@@ -1,5 +1,4 @@
-// scripting/pup/parser.rs
-
+use std::collections::HashMap;
 use crate::lang::ast::*;
 use crate::lang::ast_modules::{ApiModule, NodeSugarApi};
 use crate::lang::pup::lexer::{PupLexer, PupToken};
@@ -8,13 +7,19 @@ use crate::lang::pup::api::{PupAPI, PupNodeSugar};
 pub struct PupParser {
     lexer: PupLexer,
     current_token: PupToken,
+    /// Variable name → inferred type
+    type_env: HashMap<String, Type>,
 }
 
 impl PupParser {
     pub fn new(input: &str) -> Self {
         let mut lex = PupLexer::new(input);
         let cur = lex.next_token();
-        Self { lexer: lex, current_token: cur }
+        Self {
+            lexer: lex,
+            current_token: cur,
+            type_env: HashMap::new(),
+        }
     }
 
     fn next_token(&mut self) {
@@ -30,6 +35,10 @@ impl PupParser {
         }
     }
 
+    // ============================================================
+    // Script-Level Parsing
+    // ============================================================
+
     pub fn parse_script(&mut self) -> Result<Script, String> {
         self.expect(PupToken::Extends)?;
         let node_type = if let PupToken::Ident(n) = &self.current_token {
@@ -39,66 +48,70 @@ impl PupParser {
         };
         self.next_token();
 
-        let mut exposed   = Vec::new();
+        let mut exposed = Vec::new();
         let mut variables = Vec::new();
         let mut functions = Vec::new();
-        let mut structs   = Vec::new();
+        let mut structs = Vec::new();
 
         while self.current_token != PupToken::Eof {
             match &self.current_token {
-            PupToken::At => {
-                self.next_token();
-                // Now check what directive follows @
-                match &self.current_token {
-                    PupToken::Expose => {
-                        self.next_token();
-                        exposed.push(self.parse_expose()?);
+                PupToken::At => {
+                    self.next_token();
+                    match &self.current_token {
+                        PupToken::Expose => {
+                            self.next_token();
+                            exposed.push(self.parse_expose()?);
+                        }
+                        PupToken::Ident(directive) => {
+                            return Err(format!("Unknown directive @{}", directive));
+                        }
+                        other => {
+                            return Err(format!(
+                                "Expected directive after '@', got {:?}",
+                                other
+                            ));
+                        }
                     }
-                    PupToken::Ident(directive) => {
-                        // Handle custom directives or give better error
-                        return Err(format!("Unknown directive @{}", directive));
-                    }
-                    other => {
-                        return Err(format!("Expected directive after '@', got {:?}", other));
-                    }
                 }
-            }
-                PupToken::Struct => {
-                    structs.push(self.parse_struct_def()?);
-                }
-                PupToken::Var => {
-                    variables.push(self.parse_variable_decl()?);
-                }
-                PupToken::Fn => {
-                    functions.push(self.parse_function()?);
-                }
+                PupToken::Struct => structs.push(self.parse_struct_def()?),
+                PupToken::Var => variables.push(self.parse_variable_decl()?),
+                PupToken::Fn => functions.push(self.parse_function()?),
                 other => {
-                    return Err(format!("Unexpected top‐level token {:?}", other));
+                    return Err(format!("Unexpected top‑level token {:?}", other));
                 }
             }
         }
 
-        Ok(Script { node_type, exposed, variables, functions, structs })
+        Ok(Script {
+            node_type,
+            exposed,
+            variables,
+            functions,
+            structs,
+        })
     }
+
+    // ============================================================
+    // Structs, Variables, Functions
+    // ============================================================
 
     fn parse_struct_def(&mut self) -> Result<StructDef, String> {
         self.expect(PupToken::Struct)?;
-
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
-            return Err("Expected struct name after 'struct'".into());
+            return Err("Expected struct name".into());
         };
         self.next_token();
 
-        let mut base: Option<String> = None;
+        let mut base = None;
         if self.current_token == PupToken::Extends {
             self.next_token();
-            if let PupToken::Ident(base_name) = &self.current_token {
-                base = Some(base_name.clone());
+            if let PupToken::Ident(base_n) = &self.current_token {
+                base = Some(base_n.clone());
                 self.next_token();
             } else {
-                return Err("Expected base struct name after 'extends'".into());
+                return Err("Expected base struct name".into());
             }
         }
 
@@ -108,9 +121,7 @@ impl PupParser {
 
         while self.current_token != PupToken::RBrace && self.current_token != PupToken::Eof {
             match &self.current_token {
-                PupToken::Fn => {
-                    methods.push(self.parse_function()?);
-                }
+                PupToken::Fn => methods.push(self.parse_function()?),
                 PupToken::Ident(_) | PupToken::Type(_) => {
                     fields.push(self.parse_field()?);
                     if self.current_token == PupToken::Comma {
@@ -131,40 +142,43 @@ impl PupParser {
         }
 
         self.expect(PupToken::RBrace)?;
-        Ok(StructDef { name, fields, methods, base })
+        Ok(StructDef {
+            name,
+            fields,
+            methods,
+            base,
+        })
     }
 
     fn parse_field(&mut self) -> Result<StructField, String> {
-        let field_name = if let PupToken::Ident(n) = &self.current_token {
+        let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
             return Err("Expected field name".into());
         };
         self.next_token();
-
         self.expect(PupToken::Colon)?;
-        let typ = self.parse_type()?;
-
-        Ok(StructField { name: field_name, typ })
+        Ok(StructField {
+            name,
+            typ: self.parse_type()?,
+        })
     }
 
-fn parse_expose(&mut self) -> Result<Variable, String> {
-    // Expose token already consumed in parse_script
-    println!("DEBUG: Current token before expecting Var: {:?}", self.current_token);
-    self.expect(PupToken::Var)?;
-    
-    println!("DEBUG: Current token after expecting Var: {:?}", self.current_token);
-    let name = if let PupToken::Ident(n) = &self.current_token {
-        n.clone()
-    } else {
-        return Err("Expected identifier after exposed var".into());
-    };
-    self.next_token();
-
-    self.expect(PupToken::Colon)?;
-    let typ = Some(self.parse_type()?);
-
-        Ok(Variable { name, typ, value: None })
+    fn parse_expose(&mut self) -> Result<Variable, String> {
+        self.expect(PupToken::Var)?;
+        let name = if let PupToken::Ident(n) = &self.current_token {
+            n.clone()
+        } else {
+            return Err("Expected identifier".into());
+        };
+        self.next_token();
+        self.expect(PupToken::Colon)?;
+        let typ = Some(self.parse_type()?);
+        Ok(Variable {
+            name,
+            typ,
+            value: None,
+        })
     }
 
     fn parse_function(&mut self) -> Result<Function, String> {
@@ -189,7 +203,6 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
 
         let body = self.parse_block()?;
         let is_trait = name == "init" || name == "update";
-
         let locals = self.collect_locals(&body);
 
         Ok(Function {
@@ -203,105 +216,96 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
     }
 
     fn collect_locals(&self, body: &[Stmt]) -> Vec<Variable> {
-        let mut out = Vec::new();
-        for stmt in body {
-            if let Stmt::VariableDecl(v) = stmt {
-                out.push(v.clone());
-            }
-        }
-        out
+        body.iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::VariableDecl(v) => Some(v.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     fn parse_param(&mut self) -> Result<Param, String> {
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
-            return Err("Expected parameter name".into());
+            return Err("Expected param name".into());
         };
         self.next_token();
         self.expect(PupToken::Colon)?;
-        let typ = self.parse_type()?;
-        Ok(Param { name, typ })
+        Ok(Param {
+            name,
+            typ: self.parse_type()?,
+        })
     }
 
     fn parse_type(&mut self) -> Result<Type, String> {
-        let type_str = match &self.current_token {
+        let tstr = match &self.current_token {
             PupToken::Type(t) => t.clone(),
             PupToken::Ident(n) => n.clone(),
             _ => return Err("Expected type".into()),
         };
         self.next_token();
-        Ok(self.map_type(type_str))
+        Ok(self.map_type(tstr))
     }
+
+    // ============================================================
+    // Statements and Expressions
+    // ============================================================
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, String> {
         self.expect(PupToken::LBrace)?;
-        let mut stmts = Vec::new();
-        while self.current_token != PupToken::RBrace
-           && self.current_token != PupToken::Eof
-        {
-            stmts.push(self.parse_statement()?);
+        let mut body = Vec::new();
+        while self.current_token != PupToken::RBrace && self.current_token != PupToken::Eof {
+            body.push(self.parse_statement()?);
         }
         self.expect(PupToken::RBrace)?;
-        Ok(stmts)
+        Ok(body)
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, String> {
         if self.current_token == PupToken::Var {
-            return self.parse_variable_decl().map(Stmt::VariableDecl);
+            return Ok(Stmt::VariableDecl(self.parse_variable_decl()?));
         }
-
         if self.current_token == PupToken::Pass {
             self.next_token();
             return Ok(Stmt::Pass);
         }
 
         let lhs = self.parse_expression(0)?;
-
         if let Some(op) = self.take_assign_op() {
             let rhs = self.parse_expression(0)?;
             return self.make_assign_stmt(lhs, op, rhs);
         }
 
-        // Wrap in TypedExpr
-        Ok(Stmt::Expr(TypedExpr { 
-            expr: lhs, 
-            inferred_type: None 
+        Ok(Stmt::Expr(TypedExpr {
+            expr: lhs,
+            inferred_type: None,
         }))
     }
 
-    // Simplified - returns None for regular assignment, Some(Op) for op assignment
-    fn take_assign_op(&mut self) -> Option<Option<Op>> {
-        let op = match self.current_token {
-            PupToken::Assign  => Some(None),           // Regular assignment
-            PupToken::PlusEq  => Some(Some(Op::Add)),  // Op assignment
-            PupToken::MinusEq => Some(Some(Op::Sub)),
-            PupToken::MulEq   => Some(Some(Op::Mul)),
-            PupToken::DivEq   => Some(Some(Op::Div)),
-            _ => None,
-        };
-        if op.is_some() {
-            self.next_token();
-        }
-        op
-    }
-
-    fn make_assign_stmt(&mut self, lhs: Expr, op: Option<Op>, rhs: Expr) -> Result<Stmt, String> {
-        let typed_rhs = TypedExpr { 
-            expr: rhs, 
-            inferred_type: None 
+    fn make_assign_stmt(
+        &mut self,
+        lhs: Expr,
+        op: Option<Op>,
+        rhs: Expr,
+    ) -> Result<Stmt, String> {
+        let typed_rhs = TypedExpr {
+            expr: rhs,
+            inferred_type: None,
         };
 
         match lhs {
+            // Simple variable assignment
             Expr::Ident(name) => Ok(match op {
                 None => Stmt::Assign(name, typed_rhs),
                 Some(op) => Stmt::AssignOp(name, op, typed_rhs),
             }),
 
+            // Member assignment: e.g. a.field = value
             Expr::MemberAccess(obj, field) => {
-                let typed_lhs = TypedExpr { 
-                    expr: Expr::MemberAccess(obj, field), 
-                    inferred_type: None 
+                let typed_lhs = TypedExpr {
+                    expr: Expr::MemberAccess(obj, field),
+                    inferred_type: None,
                 };
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),
@@ -309,11 +313,11 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
                 })
             }
 
+            // Script var assignment sugar: Node::var = x
             Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetVar), args) => {
                 if args.len() == 2 {
                     let node = args[0].clone();
                     let field = args[1].clone();
-
                     Ok(Stmt::Expr(TypedExpr {
                         expr: Expr::ApiCall(
                             ApiModule::NodeSugar(NodeSugarApi::SetVar),
@@ -326,77 +330,98 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
                 }
             }
 
-            other => Err(format!("Invalid LHS of assignment: {:?}", other)),
+            // Invalid LHS
+            other => Err(format!("Invalid assignment target: {:?}", other)),
         }
     }
 
-  fn parse_variable_decl(&mut self) -> Result<Variable, String> {
-    self.expect(PupToken::Var)?;
-
-    let name = if let PupToken::Ident(n) = &self.current_token {
-        n.clone()
-    } else {
-        return Err("Expected identifier after var".into());
-    };
-    self.next_token();
-
-    let mut typ: Option<Type> = None;
-    let mut value: Option<TypedExpr> = None;
-
-    // Explicit typing (`var foo: float_64`)
-    if self.current_token == PupToken::Colon {
-        self.next_token();
-        typ = Some(self.parse_type()?);
+    fn take_assign_op(&mut self) -> Option<Option<Op>> {
+        let op = match self.current_token {
+            PupToken::Assign => Some(None),
+            PupToken::PlusEq => Some(Some(Op::Add)),
+            PupToken::MinusEq => Some(Some(Op::Sub)),
+            PupToken::MulEq => Some(Some(Op::Mul)),
+            PupToken::DivEq => Some(Some(Op::Div)),
+            _ => None,
+        };
+        if op.is_some() {
+            self.next_token();
+        }
+        op
     }
 
-    // Assignment and inference (`var foo = JSON.parse("...")`)
-    if self.current_token == PupToken::Assign {
+    // ============================================================
+    // Variable Declarations
+    // ============================================================
+
+    fn parse_variable_decl(&mut self) -> Result<Variable, String> {
+        self.expect(PupToken::Var)?;
+        let name = if let PupToken::Ident(n) = &self.current_token {
+            n.clone()
+        } else {
+            return Err("Expected var name".into());
+        };
         self.next_token();
-        let expr = self.parse_expression(0)?;
 
-        if typ.is_none() {
-            // Attempt inference by expression shape
-            typ = match &expr {
-                Expr::Literal(Literal::Number(_)) => {
-                    Some(Type::Number(NumberKind::Float(32)))
-                }
-                Expr::Literal(Literal::String(_))
-                | Expr::Literal(Literal::Interpolated(_)) => Some(Type::String),
-                Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
+        let mut typ: Option<Type> = None;
+        let mut value: Option<TypedExpr> = None;
 
-                // 🧠 Automatically infer from API semantics
-                Expr::ApiCall(api, _) => api.return_type(),
+        if self.current_token == PupToken::Colon {
+            self.next_token();
+            typ = Some(self.parse_type()?);
+        }
 
-                // Casting expression e.g. `x as big`
-                Expr::Cast(_, cast_ty) => Some(cast_ty.clone()),
+        if self.current_token == PupToken::Assign {
+            self.next_token();
+            let expr = self.parse_expression(0)?;
 
-                Expr::Call(inner, _) => {
-                    if let Expr::MemberAccess(base, method) = &**inner {
-                        if method == "new" {
-                            if let Expr::Ident(id) = &**base {
-                                Some(Type::Custom(id.clone()))
+            // Infer type if needed
+            if typ.is_none() {
+                typ = match &expr {
+                    Expr::Literal(Literal::Number(_)) => {
+                        Some(Type::Number(NumberKind::Float(32)))
+                    }
+                    Expr::Literal(Literal::String(_))
+                    | Expr::Literal(Literal::Interpolated(_)) => Some(Type::String),
+                    Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
+                    Expr::ApiCall(api, _) => api.return_type(),
+                    Expr::Cast(_, target) => Some(target.clone()),
+                    Expr::Call(inner, _) => {
+                        if let Expr::MemberAccess(base, method) = &**inner {
+                            if method == "new" {
+                                if let Expr::Ident(id) = &**base {
+                                    Some(Type::Custom(id.clone()))
+                                } else {
+                                    None
+                                }
                             } else {
                                 None
                             }
                         } else {
                             None
                         }
-                    } else {
-                        None
                     }
-                }
-                _ => None,
-            };
+                    _ => None,
+                };
+            }
+
+            value = Some(TypedExpr {
+                expr,
+                inferred_type: typ.clone(),
+            });
         }
 
-        value = Some(TypedExpr {
-            expr,
-            inferred_type: typ.clone(),
-        });
+        // 🔹 Store in type environment
+        if let Some(ty) = &typ {
+            self.type_env.insert(name.clone(), ty.clone());
+        }
+
+        Ok(Variable { name, typ, value })
     }
 
-    Ok(Variable { name, typ, value })
-}
+    // ============================================================
+    // Expression Parsing
+    // ============================================================
 
     fn parse_expression(&mut self, prec: u8) -> Result<Expr, String> {
         let mut left = self.parse_primary()?;
@@ -409,63 +434,55 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match &self.current_token {
             PupToken::New => {
-    self.next_token();
+                self.next_token();
+                let api_name = match &self.current_token {
+                    PupToken::Ident(n) => n.clone(),
+                    _ => return Err("Expected identifier after 'new'".into()),
+                };
+                self.next_token();
+                self.expect(PupToken::LParen)?;
+                let mut args = Vec::new();
+                if self.current_token != PupToken::RParen {
+                    args.push(self.parse_expression(0)?);
+                    while self.current_token == PupToken::Comma {
+                        self.next_token();
+                        args.push(self.parse_expression(0)?);
+                    }
+                }
+                self.expect(PupToken::RParen)?;
 
-    let api_name = if let PupToken::Ident(n) = &self.current_token {
-        n.clone()
-    } else {
-        return Err("Expected type/API name after 'new'".into());
-    };
-    self.next_token();
+                if let Some(api) = PupAPI::resolve(&api_name, "new") {
+                    return Ok(Expr::ApiCall(api, args));
+                }
 
-    self.expect(PupToken::LParen)?;
-    let mut args = Vec::new();
-    if self.current_token != PupToken::RParen {
-        args.push(self.parse_expression(0)?);
-        while self.current_token == PupToken::Comma {
-            self.next_token();
-            args.push(self.parse_expression(0)?);
-        }
-    }
-    self.expect(PupToken::RParen)?;
-
-    // 🔹 Try to resolve built-in API first
-    if let Some(api) = PupAPI::resolve(&api_name, "new") {
-        return Ok(Expr::ApiCall(api, args));
-    }
-
-    // 🔹 If it’s NOT a known API, treat it as a user struct type name
-    // Equivalent to Something::new(args…)
-    Ok(Expr::Call(
-        Box::new(Expr::MemberAccess(Box::new(Expr::Ident(api_name.clone())), "new".into())),
-        args,
-    ))
-}
+                Ok(Expr::Call(
+                    Box::new(Expr::MemberAccess(
+                        Box::new(Expr::Ident(api_name.clone())),
+                        "new".into(),
+                    )),
+                    args,
+                ))
+            }
 
             PupToken::SelfAccess => {
                 self.next_token();
                 Ok(Expr::SelfAccess)
             }
-
             PupToken::Super => {
                 self.next_token();
                 Ok(Expr::BaseAccess)
             }
-
             PupToken::True => {
                 self.next_token();
                 Ok(Expr::Literal(Literal::Bool(true)))
             }
-
             PupToken::False => {
                 self.next_token();
                 Ok(Expr::Literal(Literal::Bool(false)))
             }
-
             PupToken::Ident(n) => {
                 let name = n.clone();
                 self.next_token();
-
                 if self.current_token == PupToken::LParen {
                     self.next_token();
                     let mut args = Vec::new();
@@ -482,93 +499,79 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
                     Ok(Expr::Ident(name))
                 }
             }
-
             PupToken::Number(n) => {
-                let raw = n.clone();
+                let val = n.clone();
                 self.next_token();
-                Ok(Expr::Literal(Literal::Number(raw)))
+                Ok(Expr::Literal(Literal::Number(val)))
             }
-
             PupToken::String(s) => {
-                let v = s.clone();
+                let val = s.clone();
                 self.next_token();
-                Ok(Expr::Literal(Literal::String(v)))
+                Ok(Expr::Literal(Literal::String(val)))
             }
-
             PupToken::InterpolatedString(s) => {
-                let v = s.clone();
+                let val = s.clone();
                 self.next_token();
-                Ok(Expr::Literal(Literal::Interpolated(v)))
+                Ok(Expr::Literal(Literal::Interpolated(val)))
             }
-
             PupToken::LParen => {
                 self.next_token();
-                let e = self.parse_expression(0)?;
+                let expr = self.parse_expression(0)?;
                 self.expect(PupToken::RParen)?;
-                Ok(e)
+                Ok(expr)
             }
-
             PupToken::LBrace => {
                 self.next_token();
                 let mut pairs = Vec::new();
-
-                while self.current_token != PupToken::RBrace && self.current_token != PupToken::Eof {
+                while self.current_token != PupToken::RBrace
+                    && self.current_token != PupToken::Eof
+                {
                     let key = match &self.current_token {
-                        PupToken::Ident(k) => k.clone(),
-                        PupToken::String(k) => k.clone(),
-                        other => return Err(format!("Expected key in object literal, got {:?}", other)),
+                        PupToken::Ident(k) | PupToken::String(k) => k.clone(),
+                        other => {
+                            return Err(format!(
+                                "Expected key in object literal, got {:?}",
+                                other
+                            ))
+                        }
                     };
                     self.next_token();
-
                     self.expect(PupToken::Colon)?;
                     let value = self.parse_expression(0)?;
                     pairs.push((key, value));
-
                     if self.current_token == PupToken::Comma {
                         self.next_token();
                     } else {
                         break;
                     }
                 }
-
                 self.expect(PupToken::RBrace)?;
                 Ok(Expr::ObjectLiteral(pairs))
             }
-
             other => Err(format!("Unexpected primary {:?}", other)),
         }
     }
 
+    // ============================================================
+    // Member Access, Calls, Operators
+    // ============================================================
+
     fn parse_infix(&mut self, left: Expr) -> Result<Expr, String> {
         match &self.current_token {
-        PupToken::As => {
-    self.next_token();
+            PupToken::As => {
+                self.next_token();
+                let tstr = match &self.current_token {
+                    PupToken::Type(t) => t.clone(),
+                    PupToken::Ident(i) => i.clone(),
+                    _ => return Err("Expected type".into()),
+                };
+                self.next_token();
+                Ok(Expr::Cast(Box::new(left), self.map_type(tstr)))
+            }
 
-    // Ignore casts that immediately follow literal numbers or strings
-    if matches!(left, Expr::Literal(_)) {
-        // Consume the type token anyway so parsing continues correctly
-        match &self.current_token {
-            PupToken::Type(_) | PupToken::Ident(_) => self.next_token(),
-            _ => {},
-        }
-        // Just return the literal expression unchanged
-        return Ok(left);
-    }
-
-    let type_str = match &self.current_token {
-        PupToken::Type(t) => t.clone(),
-        PupToken::Ident(t) => t.clone(),
-        _ => return Err("Expected type after 'as'".into()),
-    };
-    self.next_token();
-
-    let target_type = self.map_type(type_str);
-    Ok(Expr::Cast(Box::new(left), target_type))
-}
             PupToken::LParen => {
                 self.next_token();
                 let mut args = Vec::new();
-
                 if self.current_token != PupToken::RParen {
                     args.push(self.parse_expression(0)?);
                     while self.current_token == PupToken::Comma {
@@ -578,17 +581,33 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
                 }
                 self.expect(PupToken::RParen)?;
 
+                // Static and instance API resolution
                 if let Expr::MemberAccess(obj, method) = &left {
-                    if let Expr::Ident(module_name) = &**obj {
-                        if let Some(api_semantic) = PupAPI::resolve(module_name, method) {
-                            return Ok(Expr::ApiCall(api_semantic, args));
+                    // Static like Time.get_delta()
+                    if let Expr::Ident(mod_name) = &**obj {
+                        if let Some(api) = PupAPI::resolve(mod_name, method) {
+                            return Ok(Expr::ApiCall(api, args));
                         }
                     }
 
-                    if let Some(api_semantic) = PupNodeSugar::resolve_method(method) {
-                        let mut full_args = vec![*obj.clone()];
-                        full_args.extend(args);
-                        return Ok(Expr::ApiCall(api_semantic, full_args));
+                    // Node sugar
+                    if let Some(api) = PupNodeSugar::resolve_method(method) {
+                        let mut args_full = vec![*obj.clone()];
+                        args_full.extend(args);
+                        return Ok(Expr::ApiCall(api, args_full));
+                    }
+
+                    // Instance API — a.emit(), etc.
+                    if let Expr::Ident(var_name) = &**obj {
+                        if let Some(var_type) = self.type_env.get(var_name) {
+                            if let Type::Custom(type_name) = var_type {
+                                if let Some(api) = PupAPI::resolve(type_name, method) {
+                                    let mut call_args = vec![*obj.clone()];
+                                    call_args.extend(args);
+                                    return Ok(Expr::ApiCall(api, call_args));
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -600,7 +619,7 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
                 let f = if let PupToken::Ident(n) = &self.current_token {
                     n.clone()
                 } else {
-                    return Err("Expected field after .".into());
+                    return Err("Expected field after '.'".into());
                 };
                 self.next_token();
                 Ok(Expr::MemberAccess(Box::new(left), f))
@@ -611,97 +630,91 @@ fn parse_expose(&mut self) -> Result<Variable, String> {
                 let f = if let PupToken::Ident(n) = &self.current_token {
                     n.clone()
                 } else {
-                    return Err("Expected ident after ::".into());
+                    return Err("Expected identifier after '::'".into());
                 };
                 self.next_token();
-
                 if self.current_token == PupToken::Assign {
                     self.next_token();
-                    let value = self.parse_expression(2)?;
-
+                    let val = self.parse_expression(2)?;
                     Ok(Expr::ApiCall(
                         ApiModule::NodeSugar(NodeSugarApi::SetVar),
-                        vec![
-                            left,
-                            Expr::Literal(Literal::String(f)),
-                            value,
-                        ],
+                        vec![left, Expr::Literal(Literal::String(f)), val],
                     ))
                 } else {
                     Ok(Expr::ApiCall(
                         ApiModule::NodeSugar(NodeSugarApi::GetVar),
-                        vec![
-                            left,
-                            Expr::Literal(Literal::String(f)),
-                        ],
+                        vec![left, Expr::Literal(Literal::String(f))],
                     ))
                 }
             }
 
             PupToken::Star => {
                 self.next_token();
-                let r = self.parse_expression(2)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Mul, Box::new(r)))
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Mul,
+                    Box::new(self.parse_expression(2)?),
+                ))
             }
-
             PupToken::Slash => {
                 self.next_token();
-                let r = self.parse_expression(2)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Div, Box::new(r)))
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Div,
+                    Box::new(self.parse_expression(2)?),
+                ))
             }
-
             PupToken::Plus => {
                 self.next_token();
-                let r = self.parse_expression(1)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Add, Box::new(r)))
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Add,
+                    Box::new(self.parse_expression(1)?),
+                ))
             }
-
             PupToken::Minus => {
                 self.next_token();
-                let r = self.parse_expression(1)?;
-                Ok(Expr::BinaryOp(Box::new(left), Op::Sub, Box::new(r)))
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Sub,
+                    Box::new(self.parse_expression(1)?),
+                ))
             }
-
             _ => Ok(left),
         }
     }
 
-fn get_precedence(&self) -> u8 {
-    match &self.current_token {
-        PupToken::LParen => 6,
-        PupToken::Dot | PupToken::DoubleColon => 5,
-        PupToken::As => 4,  // Cast between member access and multiply
-        PupToken::Star | PupToken::Slash => 3,
-        PupToken::Plus | PupToken::Minus => 2,
-        _ => 0,
+    fn get_precedence(&self) -> u8 {
+        match &self.current_token {
+            PupToken::LParen => 6,
+            PupToken::Dot | PupToken::DoubleColon => 5,
+            PupToken::As => 4,
+            PupToken::Star | PupToken::Slash => 3,
+            PupToken::Plus | PupToken::Minus => 2,
+            _ => 0,
+        }
     }
-}
 
     fn map_type(&self, t: String) -> Type {
         match t.as_str() {
             "float" | "float_32" => Type::Number(NumberKind::Float(32)),
             "double" | "float_64" => Type::Number(NumberKind::Float(64)),
-            
             "int_8" => Type::Number(NumberKind::Signed(8)),
             "int_16" => Type::Number(NumberKind::Signed(16)),
             "int" | "int_32" => Type::Number(NumberKind::Signed(32)),
             "int_64" => Type::Number(NumberKind::Signed(64)),
             "int_128" => Type::Number(NumberKind::Signed(128)),
-            
             "uint_8" => Type::Number(NumberKind::Unsigned(8)),
             "uint_16" => Type::Number(NumberKind::Unsigned(16)),
             "uint" | "uint_32" => Type::Number(NumberKind::Unsigned(32)),
             "uint_64" => Type::Number(NumberKind::Unsigned(64)),
             "uint_128" => Type::Number(NumberKind::Unsigned(128)),
-            
             "decimal" => Type::Number(NumberKind::Decimal),
-            "big_int" | "big" | "bigint "=> Type::Number(NumberKind::BigInt),
-            
+            "big_int" | "big" | "bigint" => Type::Number(NumberKind::BigInt),
             "bool" => Type::Bool,
             "string" => Type::String,
             "script" => Type::Script,
-            
             _ => Type::Custom(t),
-        } 
+        }
     }
 }

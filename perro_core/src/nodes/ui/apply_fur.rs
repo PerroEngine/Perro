@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Instant};
 use uuid::Uuid;
 
 use crate::{
-    asset_io::load_asset, ast::{FurAnchor, FurElement, FurNode}, ui_element::{BaseElement, BaseUIElement, UIElement}, ui_elements::{ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel}, ui_text::UIText}, ui_node::Ui, Color, Vector2
+    asset_io::load_asset, ast::{FurAnchor, FurElement, FurNode}, structs2d::{Color, Vector2}, ui_element::{BaseElement, BaseUIElement, UIElement}, ui_elements::{ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel}, ui_text::UIText}, ui_node::UINode
 };
 
 // =================== FILE PARSING ===================
@@ -487,7 +487,7 @@ fn convert_fur_element_to_ui_elements(fur: &FurElement, parent_uuid: Option<Uuid
 
 // =================== BUILD UI ===================
 
-pub fn build_ui_elements_from_fur(ui: &mut Ui, fur_elements: &[FurElement]) {
+pub fn build_ui_elements_from_fur(ui: &mut UINode, fur_elements: &[FurElement]) {
     ui.elements.clear();
     ui.root_ids.clear();
 

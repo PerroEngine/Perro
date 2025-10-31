@@ -1,6 +1,6 @@
 //! “Public” API of your engine
 pub mod nodes;
-pub mod structs2d;
+pub mod structs;
 pub mod scene;     
 pub mod rendering;
 pub mod scripting;
@@ -10,7 +10,7 @@ pub mod types;
 
 
 pub use nodes::*;
-pub use structs2d::*;
+pub use structs::*;
 pub use rendering::*;
 pub use scripting::*;
 pub use scene::*;
@@ -25,10 +25,10 @@ pub type RuntimeApp = App<DllScriptProvider>;
 pub mod prelude {
     // Core engine node types
     pub use crate::nodes::*;
-    pub use crate::ui_node::Ui;
+    pub use crate::ui_node::UINode;
 
-    // Transform + math types commonly needed for 2D
-    pub use crate::structs2d::*;
+    
+    pub use crate::structs::*;
 
     // Script API — only what script authors should use
     pub use crate::script::*;

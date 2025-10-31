@@ -1,13 +1,23 @@
 {
-  "root_id": "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48",
+  "root_id": "61bcc144-573f-49db-88a7-8faca16519d0",
   "nodes": {
+    "61bcc144-573f-49db-88a7-8faca16519d0": {
+        "type": "Node",
+        "script_path":"res://test.pup",
+        "name": "Root"
+    },
+    "51bcc144-573f-49db-88a7-8faca16519d0": {
+        "type": "Node",
+        "script_path":"res://other.pup",
+        "name": "Other"
+    },
     "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48": {
       "type": "UI",
       "fur_path": "res://main.fur",
       "node": {
         "type": "Node",
         "script_path":"res://main.pup",
-        "name": " UI"
+        "name": "UI"
       }
     }
   },

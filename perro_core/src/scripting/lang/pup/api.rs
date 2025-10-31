@@ -15,6 +15,7 @@ impl PupAPI {
             PupOS::NAME   => PupOS::resolve_method(func),
             PupConsole::NAME => PupConsole::resolve_method(func),
             PupScriptType::NAME => PupScriptType::resolve_method(func),
+            PupSignal::NAME => PupSignal::resolve_method(func),
             _ => None,
         }
     }
@@ -39,6 +40,7 @@ impl PupTime {
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
+            "get_delta"           => Some(ApiModule::Time(TimeApi::DeltaTime)),
             "sleep_msec"         => Some(ApiModule::Time(TimeApi::SleepMsec)),
             "get_unix_time_msec" => Some(ApiModule::Time(TimeApi::GetUnixMsec)),
             _ => None,
@@ -94,6 +96,20 @@ impl PupNodeSugar {
         match method {
             "get_var" => Some(ApiModule::NodeSugar(NodeSugarApi::GetVar)),
             "set_var" => Some(ApiModule::NodeSugar(NodeSugarApi::SetVar)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupSignal;
+impl PupSignal {
+        pub const NAME: &'static str = "Signal";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "new" => Some(ApiModule::Signal(SignalApi::New)),
+            "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
+            "emit" =>  Some(ApiModule::Signal(SignalApi::Emit)),
             _ => None,
         }
     }

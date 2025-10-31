@@ -1,0 +1,24 @@
+extends Node
+
+
+fn init() {
+    Signal.connect("TestSignal", self, "test_func")
+        Signal.connect("TestSignal", self, "func")
+         Signal.connect("TestSignal", self, "func")
+          Signal.connect("TestSignal", self, "func")
+           Signal.connect("TestSignal", self, "func")
+           
+}
+
+
+fn update() {
+
+}
+
+fn test_func(b: float) {
+    Console.info("test function called from the signal with paramter: ", b)
+}
+
+fn func(db: string) {
+    Console.warn("what if i make it a string", db)
+}

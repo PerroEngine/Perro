@@ -14,7 +14,7 @@ fn is_default_visible(v: &bool) -> bool { *v == default_visible() }
 
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
-pub struct Ui {
+pub struct UINode {
     #[serde(rename="type")] pub ty:   String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,7 +35,7 @@ pub struct Ui {
     pub node:    Node,
 }
 
-impl Ui {
+impl UINode {
   pub fn new(name: &str) -> Self {
       Self {
       ty:    "UI".into(),
@@ -59,7 +59,7 @@ impl Ui {
 }
 
 
-impl Deref for Ui {
+impl Deref for UINode {
   type Target = Node;
 
   fn deref(&self) -> &Self::Target {
@@ -67,7 +67,7 @@ impl Deref for Ui {
   }
 }
 
-impl DerefMut for Ui {
+impl DerefMut for UINode {
   fn deref_mut(&mut self) -> &mut Self::Target {
       &mut self.node
   }

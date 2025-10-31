@@ -1,5 +1,5 @@
 use crate::{
-    api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{get_project_root, load_asset, save_asset, ProjectRoot}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, nodes::scene_node::SceneNode, scene_node::BaseNode, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, update_ui_layout}, Graphics, Node, Sprite2D, Vector2 // NEW import
+    Graphics, Node, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::SceneNode, node_registry::BaseNode, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui// NEW import
 };
 
 use indexmap::IndexMap;
@@ -76,10 +76,24 @@ impl SceneData {
 /// Now holds a reference to the project via Rc<RefCell<Project>>
 pub struct Scene<P: ScriptProvider> {
     data: SceneData,
+    pub signals: SignalBus,
+    queued_signals: Vec<(String, Vec<Value>)>,
     pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn ScriptObject>>>>,
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
+}
+
+#[derive(Default)]
+pub struct SignalBus {
+    // "Hit" → [ (script_id, "on_hit"), ... ]
+    pub connections: HashMap<String, Vec<SignalConnection>>,
+}
+
+#[derive(Clone)]
+pub struct SignalConnection {
+    pub target_script_id: Uuid,
+    pub function_name: String,
 }
 
 impl<P: ScriptProvider> Scene<P> {
@@ -88,10 +102,12 @@ impl<P: ScriptProvider> Scene<P> {
         let data = SceneData::new(root);
         Self {
             data,
+            signals: SignalBus::default(),
+            queued_signals: Vec::new(),
             scripts: HashMap::new(),
             provider,
             project,
-            app_command_tx: None, // NEW field
+            app_command_tx: None,
         }
     }
 
@@ -99,10 +115,12 @@ impl<P: ScriptProvider> Scene<P> {
     pub fn from_data(data: SceneData, provider: P, project: Rc<RefCell<Project>>) -> Self {
         Self {
             data,
+            signals: SignalBus::default(),
+            queued_signals: Vec::new(),
             scripts: HashMap::new(),
             provider,
             project,
-            app_command_tx: None, // NEW field
+            app_command_tx: None,
         }
     }
 
@@ -193,7 +211,79 @@ impl<P: ScriptProvider> Scene<P> {
             let mut api = ScriptApi::new(delta, self, &mut *project_borrow);
             api.call_update(id);
         }
+
+        self.process_queued_signals();
     }
+
+    
+    fn connect_signal(&mut self, signal: &str, target_id: Uuid, function: &str) {
+    println!("🔗 Registering connection: signal '{}' → script {} → fn {}()", 
+        signal, target_id, function);
+
+        let entry = self.signals.connections
+            .entry(signal.to_string())
+            .or_default();
+        entry.push(SignalConnection {
+            target_script_id: target_id,
+            function_name: function.to_string(),
+        });
+
+         println!("   Total listeners for '{}': {}", signal, entry.len());
+    }
+
+    fn queue_signal(&mut self, signal: &str, params: Vec<Value>) {
+        println!("📤 Queuing signal '{}' for next frame", signal);
+        self.queued_signals.push((signal.to_string(), params));
+    }
+    
+    // Process all queued signals
+    fn process_queued_signals(&mut self) {
+        if self.queued_signals.is_empty() {
+            return;
+        }
+        
+        println!("\n🔄 Processing {} queued signal(s)", self.queued_signals.len());
+        
+        // Take the queue to avoid borrow issues
+        let signals_to_process = std::mem::take(&mut self.queued_signals);
+        
+        for (signal, params) in signals_to_process {
+            self.emit_signal(&signal, params);
+        }
+    }
+    
+    // Actually emit the signal (renamed from old emit_signal)
+    fn emit_signal(&mut self, signal: &str, params: Vec<Value>) {
+        println!("📢 Signal '{}' firing with {} params", signal, params.len());
+
+        let calls_to_make: Vec<SignalConnection> = self.signals.connections
+            .get(signal)
+            .map(|listeners| listeners.clone())
+            .unwrap_or_default();
+        
+        println!("   Found {} listener(s)", calls_to_make.len());
+
+        for conn in calls_to_make {
+            println!("   → Calling {}() on script {}", conn.function_name, conn.target_script_id);
+            
+            if let Some(script_rc) = self.scripts.get(&conn.target_script_id).cloned() {
+                let project_ref = self.project.clone();
+                let mut project_borrow = project_ref.borrow_mut();
+                let mut api = ScriptApi::new(0f32, self, &mut *project_borrow);
+                
+                {
+                    let mut script = script_rc.borrow_mut();
+                    script.call_function(&conn.function_name, &mut api, &params);
+                }
+                
+                println!("   ✓ Successfully called {}()", conn.function_name);
+            } else {
+                println!("   ✗ Script {} not found!", conn.target_script_id);
+            }
+        }
+        println!("📢 Signal '{}' completed\n", signal);
+    }
+
 
    pub fn instantiate_script(
         ctor: CreateFn,
@@ -206,14 +296,6 @@ impl<P: ScriptProvider> Scene<P> {
 
         let handle: Rc<RefCell<Box<dyn ScriptObject>>> = Rc::new(RefCell::new(boxed));
 
-        {
-            // Clone the Rc before borrowing scene
-            let project_ref = scene.project.clone();
-            let mut project_borrow = project_ref.borrow_mut();
-            let mut api = ScriptApi::new(0.0, scene, &mut *project_borrow);
-            handle.borrow_mut().engine_init(&mut api);
-        }
-
         handle
     }
 
@@ -221,7 +303,7 @@ impl<P: ScriptProvider> Scene<P> {
         let id = *node.get_id();
 
         // Handle UI nodes with .fur files
-        if let SceneNode::UI(ref mut ui_node) = node {
+        if let SceneNode::UINode(ref mut ui_node) = node {
             if let Some(fur_path) = &ui_node.fur_path {
                 match parse_fur_file(fur_path) {
                     Ok(ast) => {
@@ -245,21 +327,37 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
 
-        // Handle script attachment
-        if let Some(script_path) = node.get_script_path().cloned() {
-            let identifier = script_path_to_identifier(&script_path)
-                .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+     // Handle script attachment
+  // Handle script attachment
+// Handle script attachment
+if let Some(script_path) = node.get_script_path().cloned() {
+    println!("   ✅ Found script_path: {}", script_path);
+    let identifier = script_path_to_identifier(&script_path)
+        .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+    let ctor = self.ctor(&identifier)?;
+    
+    // Create script (without initializing)
+    let handle = Scene::instantiate_script(ctor, id, self);
+    
+    // Insert into map FIRST
+    self.scripts.insert(id, handle);
+    println!("   ✅ Script inserted into self.scripts with key: {}", id);
+    
+    // NOW initialize - get a fresh reference from the map
+    let project_ref = self.project.clone();
+    let mut project_borrow = project_ref.borrow_mut();
+    let mut api = ScriptApi::new(0.0, self, &mut *project_borrow);
+    
+    // Call engine_init through the API instead
+    api.call_init(id);
+    println!("   ✅ Script initialized");
+}
 
-            let ctor = self.ctor(&identifier)?;
-            let handle = Scene::instantiate_script(ctor, id, self);
-            self.scripts.insert(id, handle);
-        }
-
-        // Mark new nodes as dirty so they get rendered
-        node.mark_dirty();
-        self.data.nodes.insert(id, node);
-        Ok(())
-    }
+    node.mark_dirty();
+    self.data.nodes.insert(id, node);
+    println!("✅ Node {} fully created\n", id);
+    Ok(())
+}
 
     pub fn set_script_var(
         &mut self,
@@ -273,6 +371,8 @@ impl<P: ScriptProvider> Scene<P> {
         script.set_var(name, val)?;
         Some(())
     }
+
+
 
     pub fn get_root(&self) -> &SceneNode {
         &self.data.nodes[&self.data.root_id]
@@ -313,7 +413,7 @@ impl<P: ScriptProvider> Scene<P> {
             gfx.stop_rendering(node_id);
             
             // If it's a UI node, stop rendering all its elements
-            if let SceneNode::UI(ui_node) = node {
+            if let SceneNode::UINode(ui_node) = node {
                 for element in &ui_node.elements {
                     gfx.stop_rendering(*element.0);
                 }
@@ -343,7 +443,6 @@ impl<P: ScriptProvider> Scene<P> {
     
     fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
     for node_id in dirty_nodes {
-        println!("Rendering node with ID: {:?}", node_id);
         if let Some(node) = self.data.nodes.get_mut(&node_id) {
             match node {
                 SceneNode::Sprite2D(sprite) => {
@@ -356,7 +455,7 @@ impl<P: ScriptProvider> Scene<P> {
                         // );
                     }
                 }
-                SceneNode::UI(ui_node) => {
+                SceneNode::UINode(ui_node) => {
                     // UI renderer handles layout + rendering internally
                     render_ui(ui_node, gfx);
                 }
@@ -392,14 +491,15 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
             node.mark_dirty();
         
            if let Some(existing_node) = self.data.nodes.get_mut(&id) {
+                *existing_node = node;
+            } else {
+                println!("Inserting new node with ID {}: {:?} during merge", id, node);
+                self.data.nodes.insert(id, node);
+            }
 
-    println!("Replacing existing node with ID {}: {:?}", id, existing_node);
-    *existing_node = node;
-    println!("Updated node with ID {}: {:?}", id, existing_node);
-} else {
-    println!("Inserting new node with ID {}: {:?}", id, node);
-    self.data.nodes.insert(id, node);
-}
+
+
+
         }
     }
 
@@ -411,6 +511,14 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         val: Value,
     ) -> Option<()> {
         self.set_script_var(node_id, name, val)
+    }
+
+    fn connect_signal(&mut self, signal: &str, target_id: Uuid, function: &str) {
+        self.connect_signal(signal, target_id, function);
+    }
+
+    fn queue_signal(&mut self, signal: &str, params: Vec<Value>) {
+        self.queue_signal(signal, params);
     }
 
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>> {

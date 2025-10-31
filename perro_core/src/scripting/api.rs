@@ -11,7 +11,7 @@ use serde_json::Value;
 use chrono::{Local, Datelike, Timelike}; // For date/time formatting
 
 use crate::{
-    app_command::AppCommand, asset_io::{self, load_asset, resolve_path, ResolvedPath}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::transpiler::{script_path_to_identifier, transpile}, manifest::Project, scene_node::{IntoInner, SceneNode}, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::Ui, Node, Node2D, Sprite2D
+    Node, Node2D, Sprite2D, app_command::AppCommand, asset_io::{self, ResolvedPath, load_asset, resolve_path}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::transpiler::{script_path_to_identifier, transpile}, manifest::Project, node_registry::SceneNode, node_registry::IntoInner, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::UINode
 };
 
 //-----------------------------------------------------
@@ -30,7 +30,9 @@ impl JsonApi {
 }
 
 #[derive(Default)]
-pub struct TimeApi;
+pub struct TimeApi {
+    pub delta: f32,
+}
 impl TimeApi {
     pub fn get_unix_time_msec(&self) -> u128 {
         SystemTime::now()
@@ -57,8 +59,8 @@ impl TimeApi {
     pub fn get_ticks_msec(&self) -> u128 {
         self.get_unix_time_msec()
     }
-    pub fn get_delta(&self, delta: f32) -> f32 {
-        delta
+    pub fn get_delta(&self) -> f32 {
+        self.delta
     }
 }
 
@@ -97,6 +99,9 @@ impl ProcessApi {
     }
 }
 
+
+
+
 //-----------------------------------------------------
 // 2️⃣ Engine API Aggregator
 //-----------------------------------------------------
@@ -125,7 +130,6 @@ impl<'a> Deref for ScriptApi<'a> {
 // 3️⃣ Script API Context (main entry point for scripts)
 //-----------------------------------------------------
 pub struct ScriptApi<'a> {
-    delta: f32,
     scene: &'a mut dyn SceneAccess,
     project: &'a mut Project,
     engine: EngineApi,
@@ -133,12 +137,9 @@ pub struct ScriptApi<'a> {
 
 impl<'a> ScriptApi<'a> {
     pub fn new(delta: f32, scene: &'a mut dyn SceneAccess, project: &'a mut Project) -> Self {
-        Self {
-            delta,
-            scene,
-            project,
-            engine: EngineApi::default(),
-        }
+        let mut engine = EngineApi::default();
+        engine.Time.delta = delta;
+        Self { scene, project, engine }
     }
 
     //-------------------------------------------------
@@ -146,9 +147,6 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     pub fn project(&mut self) -> &mut Project {
         self.project
-    }
-    pub fn delta(&self) -> f32 {
-        self.delta
     }
 
     //-------------------------------------------------
@@ -191,11 +189,39 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     // Lifecycle / Updates
     //-------------------------------------------------
+    pub fn call_init(&mut self, script_id: Uuid) {
+        if let Some(script_rc) = self.scene.get_script(script_id) {
+            script_rc.borrow_mut().engine_init(self);
+        }
+    }
+
     pub fn call_update(&mut self, id: Uuid) {
         if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
             script.engine_update(self);
         }
+    }
+
+    pub fn call_function(&mut self, id: Uuid, func: &str, params: Vec<Value>) {
+          if let Some(rc_script) = self.scene.get_script(id) {
+            let mut script = rc_script.borrow_mut();
+            script.call_function(func, self, &params);
+        }
+    }
+
+   pub fn connect_signal(
+        &mut self,
+        signal: &str,
+        target_id: Uuid,
+        function: &str,
+    ) {
+        println!("📡 Signal Connection: '{}' → Node {} → fn {}()", signal, target_id, function);
+        self.scene.connect_signal(signal, target_id, function);
+    }
+
+    pub fn emit_signal(&mut self, signal: &str, params: Vec<Value>) {
+        println!("📤 Emitting signal '{}' with {} parameter(s): {:?}", signal, params.len(), params);
+        self.scene.queue_signal(signal, params);
     }
 
     pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {

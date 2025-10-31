@@ -1,4 +1,4 @@
-use crate::lang::ast_modules::ApiModule;
+use crate::{engine_structs::EngineStruct, lang::ast_modules::ApiModule, node_registry::NodeType};
 
 
 #[derive(Debug, Clone)]
@@ -65,7 +65,6 @@ pub fn json_access(&self) -> (&'static str, String) {
                 ("as_i64", format!(" as i{}", w))
             }
         }
-
         Type::Number(NumberKind::Unsigned(w)) => {
             if *w == 128 {
                 ("as_u128", "".into())
@@ -73,7 +72,6 @@ pub fn json_access(&self) -> (&'static str, String) {
                 ("as_u64", format!(" as u{}", w))
             }
         }
-
         Type::Number(NumberKind::Float(w)) => {
                 let rust_ty = match *w {
                     32 => "f32".to_string(),
@@ -82,30 +80,27 @@ pub fn json_access(&self) -> (&'static str, String) {
                 };
                 ("as_f64", format!(" as {}", rust_ty))
         }
-
         Type::Number(NumberKind::Decimal) => {
             ("as_str", format!(".parse::<Decimal>().unwrap()"))
         }
-
         Type::Number(NumberKind::BigInt) => { 
             ("as_str", format!(".parse::<BigInt>().unwrap()"))
         }
-
         Type::Bool =>
             ("as_bool", "".into()),
-
-        Type::String | Type::StrRef =>
+        Type::String | Type::StrRef => 
             ("as_str", ".to_string()".into()),
-
+        Type::Custom(type_name) if type_name == "Signal" => 
+            ("as_str", ".to_string()".into()),
         Type::Script =>
             ("as_str", ".parse().unwrap()".into()),
-
         Type::Custom(type_name) => {
             ("__CUSTOM__", type_name.clone())
         }
-
         Type::Void =>
             panic!("Void invalid"),
+        Type::Node(node_type) => ("__NODE__", "NodeType".to_owned()),
+        Type::EngineStruct(engine_struct) => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()),
     }
 }
 
@@ -138,7 +133,7 @@ pub fn default_value(&self) -> String {
         Some(Type::StrRef) => "\"\"".into(),
         Some(Type::Custom(_)) => "Default::default()".into(),
         Some(Type::Void) => panic!("Void invalid"),
-        None => panic!("Type inference unresolved"),
+        _ => panic!("Type inference unresolved"),
     }
 }
 
@@ -172,8 +167,13 @@ pub enum Type {
     StrRef,
     Script,
     Void,
+
+    Node(NodeType),
+    EngineStruct(EngineStruct),
     Custom(String),
 }
+
+
 
 impl Type {
    pub fn to_rust_type(&self) -> String {
@@ -201,8 +201,10 @@ impl Type {
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
             Type::Script => "Option<ScriptType>".to_string(),
+            Type::Custom(name) if name == "Signal" => "String".to_string(),
             Type::Custom(name) => name.clone(),
             Type::Void => "()".to_string(),
+            _ => "".to_string()
         }
     }
 

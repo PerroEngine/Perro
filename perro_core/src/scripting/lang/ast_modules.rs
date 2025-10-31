@@ -6,6 +6,7 @@ pub enum ApiModule {
     Console(ConsoleApi),
     ScriptType(ScriptTypeApi),
     NodeSugar(NodeSugarApi),
+    Signal(SignalApi)
 }
 
 #[derive(Debug, Clone)]
@@ -16,6 +17,7 @@ pub enum JSONApi {
 
 #[derive(Debug, Clone)]
 pub enum TimeApi {
+    DeltaTime,
     GetUnixMsec,
     SleepMsec,
 }
@@ -43,4 +45,13 @@ pub enum ScriptTypeApi {
 pub enum NodeSugarApi {
     GetVar,
     SetVar,
+}
+
+
+
+#[derive(Debug, Clone)]
+pub enum SignalApi {
+    New,
+    Connect,
+    Emit
 }

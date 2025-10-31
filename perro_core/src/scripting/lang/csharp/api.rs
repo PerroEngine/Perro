@@ -42,6 +42,7 @@ impl CSharpTime {
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
+            "GetDeltaTime" => Some(ApiModule::Time(TimeApi::DeltaTime)),
             "Sleep" => Some(ApiModule::Time(TimeApi::SleepMsec)),
             "Now"   => Some(ApiModule::Time(TimeApi::GetUnixMsec)),
             _ => None,

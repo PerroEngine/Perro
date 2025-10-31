@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 
-use crate::Vector2;
+use crate::structs2d::Vector2;
+
 
 fn default_position() -> Vector2 { Vector2::zero() }
 fn is_default_position(v: &Vector2) -> bool { *v == default_position() }

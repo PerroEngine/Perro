@@ -5,14 +5,20 @@ use std::os::raw::c_char;
 use perro_core::script::CreateFn;
 use std::collections::HashMap;
 
+pub mod test_pup;
 pub mod main_pup;
+pub mod other_pup;
 // __PERRO_MODULES__
+use test_pup::test_pup_create_script;
 use main_pup::main_pup_create_script;
+use other_pup::other_pup_create_script;
 // __PERRO_IMPORTS__
 
 pub fn get_script_registry() -> HashMap<String, CreateFn> {
 let mut map: HashMap<String, CreateFn> = HashMap::new();
-    map.insert("main_pup".to_string(), main_pup_create_script as CreateFn);
+    map.insert("test_pup".to_string(), test_pup_create_script as CreateFn);
+        map.insert("main_pup".to_string(), main_pup_create_script as CreateFn);
+        map.insert("other_pup".to_string(), other_pup_create_script as CreateFn);
     // __PERRO_REGISTRY__
 map
 }

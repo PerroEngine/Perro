@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
-use crate::{impl_ui_element, ui_element::BaseUIElement, Vector2, Color};
-
+use crate::{impl_ui_element, ui_element::BaseUIElement};
+use crate::structs2d::{Vector2, Color};
 /// =========================
 /// 1. Placeholder container
 /// =========================

@@ -4,7 +4,7 @@ use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{ast::FurAnchor, ui_elements::{ui_container::{BoxContainer, GridLayout, Layout, UIPanel}, ui_text::UIText}, Color, Transform2D, Vector2};
+use crate::{ast::FurAnchor, ui_elements::{ui_container::{BoxContainer, GridLayout, Layout, UIPanel}, ui_text::UIText}, structs2d::{Color, Transform2D, Vector2}};
 
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -94,8 +94,8 @@ pub trait BaseElement {
     fn set_anchor(&mut self, anchor: FurAnchor);
 
     // Modulate
-    fn get_modulate(&self) -> Option<&crate::Color>;
-    fn set_modulate(&mut self, color: Option<crate::Color>);
+    fn get_modulate(&self) -> Option<&crate::structs2d::Color>;
+    fn set_modulate(&mut self, color: Option<crate::structs2d::Color>);
 
     // Z-index
     fn get_z_index(&self) -> i32;
@@ -126,23 +126,23 @@ macro_rules! impl_ui_element {
             fn get_children(&self) -> &[uuid::Uuid] { &self.base.children }
             fn set_children(&mut self, children: Vec<uuid::Uuid>) { self.base.children = children; }
 
-            fn get_transform(&self) -> &crate::Transform2D { &self.base.transform }
-            fn get_transform_mut(&mut self) -> &mut crate::Transform2D { &mut self.base.transform }
+            fn get_transform(&self) -> &crate::structs2d::Transform2D { &self.base.transform }
+            fn get_transform_mut(&mut self) -> &mut crate::structs2d::Transform2D { &mut self.base.transform }
 
-            fn get_global_transform(&self) -> &crate::Transform2D { &self.base.global_transform }
-            fn set_global_transform(&mut self, transform: crate::Transform2D) { self.base.global_transform = transform; }
+            fn get_global_transform(&self) -> &crate::structs2d::Transform2D { &self.base.global_transform }
+            fn set_global_transform(&mut self, transform: crate::structs2d::Transform2D) { self.base.global_transform = transform; }
 
-            fn get_size(&self) -> &crate::Vector2 { &self.base.size }
-            fn set_size(&mut self, size: crate::Vector2) { self.base.size = size; }
+            fn get_size(&self) -> &crate::structs2d::Vector2 { &self.base.size }
+            fn set_size(&mut self, size: crate::structs2d::Vector2) { self.base.size = size; }
 
-            fn get_pivot(&self) -> &crate::Vector2 { &self.base.pivot }
-            fn set_pivot(&mut self, pivot: crate::Vector2) { self.base.pivot = pivot; }
+            fn get_pivot(&self) -> &crate::structs2d::Vector2 { &self.base.pivot }
+            fn set_pivot(&mut self, pivot: crate::structs2d::Vector2) { self.base.pivot = pivot; }
 
             fn get_anchor(&self) -> &crate::ast::FurAnchor { &self.base.anchor }
             fn set_anchor(&mut self, anchor: crate::ast::FurAnchor) { self.base.anchor = anchor; }
 
-            fn get_modulate(&self) -> Option<&crate::Color> { self.base.modulate.as_ref() }
-            fn set_modulate(&mut self, color: Option<crate::Color>) { self.base.modulate = color; }
+            fn get_modulate(&self) -> Option<&crate::structs2d::Color> { self.base.modulate.as_ref() }
+            fn set_modulate(&mut self, color: Option<crate::structs2d::Color>) { self.base.modulate = color; }
 
             fn get_z_index(&self) -> i32 { self.base.z_index }
             fn set_z_index(&mut self, z_index: i32) { self.base.z_index = z_index; }

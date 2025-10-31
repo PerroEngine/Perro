@@ -15,31 +15,35 @@ use std::{rc::Rc, cell::RefCell};
 use perro_core::prelude::*;
 
 // ========================================================================
-// MainPup - Main Script Structure
+// OtherPup - Main Script Structure
 // ========================================================================
 
-pub struct MainPupScript {
-    node: UINode,
+pub struct OtherPupScript {
+    node: Node,
 }
 
 // ========================================================================
-// MainPup - Creator Function (FFI Entry Point)
+// OtherPup - Creator Function (FFI Entry Point)
 // ========================================================================
 
 #[unsafe(no_mangle)]
-pub extern "C" fn main_pup_create_script() -> *mut dyn ScriptObject {
-    Box::into_raw(Box::new(MainPupScript {
-        node: UINode::new("MainPup"),
+pub extern "C" fn other_pup_create_script() -> *mut dyn ScriptObject {
+    Box::into_raw(Box::new(OtherPupScript {
+        node: Node::new("OtherPup", None),
     })) as *mut dyn ScriptObject
 }
 
 // ========================================================================
-// MainPup - Script Init & Update Implementation
+// OtherPup - Script Init & Update Implementation
 // ========================================================================
 
-impl Script for MainPupScript {
+impl Script for OtherPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.emit_signal(&String::from("TestSignal"), vec![json!(100f32)]);
+        api.connect_signal(&String::from("TestSignal"), self.node.id, &String::from("bob"));
+        api.connect_signal(&String::from("TestSignal"), self.node.id, &String::from("bob"));
+        api.connect_signal(&String::from("TestSignal"), self.node.id, &String::from("bob"));
+        api.connect_signal(&String::from("TestSignal"), self.node.id, &String::from("bob"));
+        api.connect_signal(&String::from("TestSignal"), self.node.id, &String::from("bob"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -47,8 +51,19 @@ impl Script for MainPupScript {
 
 }
 
+// ========================================================================
+// OtherPup - Script-Defined Methods
+// ========================================================================
 
-impl ScriptObject for MainPupScript {
+impl OtherPupScript {
+    fn bob(&mut self, mut c: f32, api: &mut ScriptApi<'_>) {
+        api.print_info(&format!("{} {}", String::from("Wow I am being called from a signal with this parameter: "), c));
+    }
+
+}
+
+
+impl ScriptObject for OtherPupScript {
     fn set_node_id(&mut self, id: Uuid) {
         self.node.id = id;
     }
@@ -79,6 +94,12 @@ impl ScriptObject for MainPupScript {
 
     fn call_function(&mut self, name: &str, api: &mut ScriptApi<'_>, params: &Vec<Value>) {
         match name {
+            "bob" => {
+                let c = params.get(0)
+                    .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+                    .unwrap_or_default() as f32;
+                self.bob(c, api);
+            },
             _ => {}
         }
     }

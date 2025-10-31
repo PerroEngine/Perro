@@ -1,12 +1,13 @@
+
+pub mod node_registry;
+
 pub mod node;
 pub mod _2d;
 pub mod ui;
 
-pub use node::Node;
+// Re-export base nodes
+pub use node::*;
 pub use _2d::*;
 pub use ui::*;
 
-
-
-#[macro_use]
-pub mod scene_node;
+pub use node_registry::{BaseNode, IntoInner};

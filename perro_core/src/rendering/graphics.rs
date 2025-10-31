@@ -7,7 +7,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{asset_io::{load_asset}, font::{Font, FontAtlas}, ui_elements::ui_container::CornerRadius, vertex::Vertex, ImageTexture, Transform2D, Vector2};
+use crate::{asset_io::{load_asset}, font::{Font, FontAtlas}, ui_elements::ui_container::CornerRadius, vertex::Vertex, structs2d::{ImageTexture, Transform2D, Vector2}};
 
 #[cfg(target_arch = "wasm32")]
 pub type Rc<T> = std::rc::Rc<T>;
@@ -814,7 +814,7 @@ impl Graphics {
         transform: Transform2D,
         size: Vector2,
         pivot: Vector2,
-        color: crate::Color,
+        color: crate::structs2d::Color,
         corner_radius: Option<CornerRadius>,
         border_thickness: f32,
         is_border: bool,
@@ -921,7 +921,7 @@ pub fn draw_text(
     font_size: f32,
     transform: Transform2D,
     _pivot: Vector2,
-    color: crate::Color,
+    color: crate::structs2d::Color,
     z_index: i32,
 ) {
     if let Some(ref atlas) = self.font_atlas {

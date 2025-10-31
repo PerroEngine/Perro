@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use crate::Transform2D;
+use crate::structs2d::Transform2D;
 use crate::{nodes::node::Node};
 use std::ops::{Deref, DerefMut};
 

@@ -1,0 +1,19 @@
+extends Node
+
+
+fn init() {
+    Signal.connect("TestSignal", self, "bob")
+    Signal.connect("TestSignal", self, "bob")
+    Signal.connect("TestSignal", self, "bob")
+    Signal.connect("TestSignal", self, "bob")
+    Signal.connect("TestSignal", self, "bob")
+}
+
+
+fn update() {
+
+}
+
+fn bob(c: float) {
+    Console.info("Wow I am being called from a signal with this parameter: ", c)
+}

@@ -1,103 +1,10 @@
-extends Ui
-
-struct Player {
-    health: int
-    max_health: int
-    speed: float
-    score: float_64
-    position_x: float
-    position_y: float
-}
-
-struct Enemy {
-    health: int
-    damage: int
-    x: float_64
-    y: float
-}
+extends UINode
 
 fn init() {
-    var player = new Player()
-    player.health = 100
-    player.max_health = 100
-    player.speed = 5.0
-    player.score = 0.0
-    player.position_x = 0.0
-    player.position_y = 0.0
-    
-    var enemy = new Enemy()
-    enemy.health = 50
-    enemy.damage = 10
-    enemy.x = 100.0
-    enemy.y = 50.0
-    
-    Console.log("Game initialized!")
-    Console.log(JSON.stringify(player))
+    Signal.emit("TestSignal", 100)
 }
 
-fn update(delta: float) {
-    Console.log(self.name)
-    let x = delta
-    self.name = x as string
-    var player = new Player()
-    player.health = 100
-    player.speed = 5.0
-    player.position_x = 10.0
-    player.position_y = 20.0
-    player.score = 1000.0
-    
-    var enemy = new Enemy()
-    enemy.health = 30
-    enemy.damage = 15
-    enemy.x = 50.0
-    enemy.y = 40.0
-    
-    // Movement with expressions
-    player.position_x = player.position_x + player.speed
-    player.position_y = player.position_y + 2.0
-    
-    // Enemy movement
-    enemy.x = enemy.x + 1.5
-    enemy.y += 0.5 + 1.0
-    
-    // Combat calculations
-    var distance_x = enemy.x + player.position_x
-    var distance_y = enemy.y + player.position_y
-    var total_distance = distance_x + distance_y
-    
-    // Check collision (simplified)
-    var collision_range: float = 5.0
-    
-    // Take damage if close
-    player.health = player.health + enemy.damage
-    player.health += 5 + 10
-    
-    // Gain score over time
-    player.score += 10.0 + 5.0
-    player.score = player.score + 100.0
-    
-    // Regenerate health
-    var regen_rate: int = 2
-    var bonus_regen: int = 3
-    player.health += regen_rate + bonus_regen
-    
-    // Speed boost calculation
-    var base_boost: float = 1.0
-    var time_boost: float = 0.5
-    player.speed = player.speed + base_boost + time_boost
-    player.speed += 0.25 + 0.25 + 0.5
-    
-    // Cap health at max
-    var health_diff = player.max_health + player.health
-    
-    // Enemy gets stronger
-    enemy.damage = enemy.damage + 1 + 2
-    enemy.damage += 5
-    
-    // Update score based on damage dealt
-    var score_multiplier: float_64 = 2.5
-    var base_points: float_64 = 10.0
-    player.score += base_points + score_multiplier
-    player.score = player.score + 50.0 + 25.0
+
+fn update() {
 
 }
