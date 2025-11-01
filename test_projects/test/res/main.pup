@@ -1,20 +1,40 @@
 extends UINode
 
 fn init() {
-    Signal.emit("TestSignal", 100)
-    self.name = "f"
-    Console.log(self.name)
+  
+
 }
 
-
-fn update() {
-    ass()
+fn update() {    Signal.emit("FromB_1", "pingB_1")
 }
 
-fn fart() {
-    self.name = "tim"
-}
-
-fn ass() {
-    fart()
-}
+fn on_from_a_1(m:String){Console.error("[B] heard A_1:",m)}
+fn on_from_a_2(m:String){Console.error("[B] heard A_2:",m)}
+fn on_from_a_3(m:String){Console.error("[B] heard A_3:",m)}
+fn on_from_a_4(m:String){Console.error("[B] heard A_4:",m)}
+fn on_from_a_5(m:String){Console.error("[B] heard A_5:",m)}
+fn on_from_a_6(m:String){Console.error("[B] heard A_6:",m)}
+fn on_from_a_7(m:String){Console.error("[B] heard A_7:",m)}
+fn on_from_a_8(m:String){Console.error("[B] heard A_8:",m)}
+fn on_from_a_9(m:String){Console.error("[B] heard A_9:",m)}
+fn on_from_a_10(m:String){Console.error("[B] heard A_10:",m)}
+fn on_from_a_11(m:String){Console.error("[B] heard A_11:",m)}
+fn on_from_a_12(m:String){Console.error("[B] heard A_12:",m)}
+fn on_from_a_13(m:String){Console.error("[B] heard A_13:",m)}
+fn on_from_a_14(m:String){Console.error("[B] heard A_14:",m)}
+fn on_from_a_15(m:String){Console.error("[B] heard A_15:",m)}
+fn on_from_c_1(m:String){Console.error("[B] heard C_1:",m)}
+fn on_from_c_2(m:String){Console.error("[B] heard C_2:",m)}
+fn on_from_c_3(m:String){Console.error("[B] heard C_3:",m)}
+fn on_from_c_4(m:String){Console.error("[B] heard C_4:",m)}
+fn on_from_c_5(m:String){Console.error("[B] heard C_5:",m)}
+fn on_from_c_6(m:String){Console.error("[B] heard C_6:",m)}
+fn on_from_c_7(m:String){Console.error("[B] heard C_7:",m)}
+fn on_from_c_8(m:String){Console.error("[B] heard C_8:",m)}
+fn on_from_c_9(m:String){Console.error("[B] heard C_9:",m)}
+fn on_from_c_10(m:String){Console.error("[B] heard C_10:",m)}
+fn on_from_c_11(m:String){Console.error("[B] heard C_11:",m)}
+fn on_from_c_12(m:String){Console.error("[B] heard C_12:",m)}
+fn on_from_c_13(m:String){Console.error("[B] heard C_13:",m)}
+fn on_from_c_14(m:String){Console.error("[B] heard C_14:",m)}
+fn on_from_c_15(m:String){Console.error("[B] heard C_15:",m)}

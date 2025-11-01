@@ -2,6 +2,7 @@
 //! Perro Script API (single-file version with Deref)
 //! Provides all engine APIs (JSON, Time, OS, Process) directly under `api`
 
+use smallvec::SmallVec;
 use uuid::Uuid;
 use std::{
     cell::RefCell, env, ops::Deref, path::Path, process, rc::Rc, sync::mpsc::Sender, thread, time::{Duration, SystemTime, UNIX_EPOCH}
@@ -11,7 +12,7 @@ use serde_json::Value;
 use chrono::{Local, Datelike, Timelike}; // For date/time formatting
 
 use crate::{
-    Node, Node2D, Sprite2D, app_command::AppCommand, asset_io::{self, ResolvedPath, load_asset, resolve_path}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::transpiler::{script_path_to_identifier, transpile}, manifest::Project, node_registry::SceneNode, node_registry::IntoInner, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::UINode
+    Node, Node2D, Sprite2D, app_command::AppCommand, asset_io::{self, ResolvedPath, load_asset, resolve_path}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::{api_bindings::signal_to_id, transpiler::{script_path_to_identifier, transpile}}, manifest::Project, node_registry::{IntoInner, SceneNode}, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::UINode
 };
 
 //-----------------------------------------------------
@@ -165,7 +166,7 @@ impl<'a> ScriptApi<'a> {
             .ok_or("Missing runtime param: project_path")?;
         eprintln!("📁 Project path: {}", project_path_str);
         let project_path = Path::new(project_path_str);
-        transpile(project_path).map_err(|e| format!("Transpile failed: {}", e))?;
+        transpile(project_path, false).map_err(|e| format!("Transpile failed: {}", e))?;
         let compiler = Compiler::new(project_path, target, false);
         compiler.compile(profile).map_err(|e| format!("Compile failed: {}", e))
     }
@@ -202,26 +203,35 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_function(&mut self, id: Uuid, func: &str, params: Vec<Value>) {
+    pub fn call_function(&mut self, id: Uuid, func: &str, params: SmallVec<[Value; 3]>) {
           if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
             script.call_function(func, self, &params);
         }
     }
 
-   pub fn connect_signal(
-        &mut self,
-        signal: &str,
-        target_id: Uuid,
-        function: &str,
-    ) {
-        println!("📡 Signal Connection: '{}' → Node {} → fn {}()", signal, target_id, function);
-        self.scene.connect_signal(signal, target_id, function);
+    pub fn signal_to_id(&mut self, signal: &str) -> u64 {
+        signal_to_id(signal)
     }
 
-    pub fn emit_signal(&mut self, signal: &str, params: Vec<Value>) {
-        println!("📤 Emitting signal '{}' with {} parameter(s): {:?}", signal, params.len(), params);
-        self.scene.queue_signal(signal, params);
+    // The human-friendly one
+    pub fn emit_signal(&mut self, name: &str, params: SmallVec<[Value; 3]>) {
+        let id = self.signal_to_id(name);
+        self.scene.queue_signal_id(id, params);
+    }
+
+    // The low-level one
+    pub fn emit_signal_id(&mut self, id: u64, params: SmallVec<[Value; 3]>) {
+        self.scene.queue_signal_id(id, params);
+    }
+
+    pub fn connect_signal(&mut self, name: &str, target: Uuid, function: &'static str) {
+        let id = self.signal_to_id(name);
+        self.scene.connect_signal_id(id, target, function);
+    }
+
+    pub fn connect_signal_id(&mut self, id: u64, target: Uuid, function: &'static str) {
+        self.scene.connect_signal_id(id, target, function);
     }
 
     pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {

@@ -9,6 +9,8 @@ pub struct Script {
     pub functions: Vec<Function>,
 
     pub structs: Vec<StructDef>,
+
+    pub verbose: bool
 }
 
 #[derive(Debug, Clone)]
@@ -91,7 +93,7 @@ pub fn json_access(&self) -> (&'static str, String) {
         Type::String | Type::StrRef => 
             ("as_str", ".to_string()".into()),
         Type::Custom(type_name) if type_name == "Signal" => 
-            ("as_str", ".to_string()".into()),
+           ("as_u64", format!(" as u64")),
         Type::Script =>
             ("as_str", ".parse().unwrap()".into()),
         Type::Custom(type_name) => {
@@ -202,7 +204,7 @@ impl Type {
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
             Type::Script => "Option<ScriptType>".to_string(),
-            Type::Custom(name) if name == "Signal" => "String".to_string(),
+            Type::Custom(name) if name == "Signal" => "u64".to_string(),
             Type::Custom(name) => name.clone(),
             Type::Void => "()".to_string(),
             _ => "".to_string()

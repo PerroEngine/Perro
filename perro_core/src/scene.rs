@@ -5,6 +5,7 @@ use crate::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use smallvec::SmallVec;
 use wgpu::RenderPass;
 use std::{
     any::Any, cell::RefCell, collections::HashMap, io, path::PathBuf, rc::Rc, sync::mpsc::Sender, time::{Duration, Instant} // NEW import
@@ -77,7 +78,7 @@ impl SceneData {
 pub struct Scene<P: ScriptProvider> {
     data: SceneData,
     pub signals: SignalBus,
-    queued_signals: Vec<(String, Vec<Value>)>,
+    queued_signals: Vec<(u64, SmallVec<[Value; 3]>)>,
     pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn ScriptObject>>>>,
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
@@ -87,13 +88,13 @@ pub struct Scene<P: ScriptProvider> {
 #[derive(Default)]
 pub struct SignalBus {
     // "Hit" → [ (script_id, "on_hit"), ... ]
-    pub connections: HashMap<String, Vec<SignalConnection>>,
+    pub connections: HashMap<u64, SmallVec<[SignalConnection; 4]>>,
 }
 
 #[derive(Clone)]
 pub struct SignalConnection {
     pub target_script_id: Uuid,
-    pub function_name: String,
+    pub function_name: &'static str,
 }
 
 impl<P: ScriptProvider> Scene<P> {
@@ -216,74 +217,76 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     
-    fn connect_signal(&mut self, signal: &str, target_id: Uuid, function: &str) {
-    println!("🔗 Registering connection: signal '{}' → script {} → fn {}()", 
-        signal, target_id, function);
+    fn connect_signal(&mut self, signal: u64, target_id: Uuid, function: &'static str) {
+        println!("🔗 Registering connection: signal '{}' → script {} → fn {}()", 
+            signal, target_id, function);
 
         let entry = self.signals.connections
-            .entry(signal.to_string())
+            .entry(signal)
             .or_default();
+
         entry.push(SignalConnection {
             target_script_id: target_id,
-            function_name: function.to_string(),
+            function_name: function,
         });
 
-         println!("   Total listeners for '{}': {}", signal, entry.len());
+        println!("   Total listeners for '{}': {}", signal, entry.len());
     }
 
-    fn queue_signal(&mut self, signal: &str, params: Vec<Value>) {
-        println!("📤 Queuing signal '{}' for next frame", signal);
-        self.queued_signals.push((signal.to_string(), params));
+  fn queue_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
+        self.queued_signals.push((signal, params));
     }
     
     // Process all queued signals
-    fn process_queued_signals(&mut self) {
-        if self.queued_signals.is_empty() {
+       // ✅ OPTIMIZED: Use drain() to reuse Vec allocation
+fn process_queued_signals(&mut self) {
+    use std::time::Instant;
+
+    if self.queued_signals.is_empty() {
+        return;
+    }
+
+    let start_total = Instant::now();
+    let count = self.queued_signals.len();
+
+    // Drain instead of take – reuses Vec allocation
+    let signals: Vec<_> = self.queued_signals.drain(..).collect();
+
+    for (signal, params) in signals {
+        self.emit_signal(signal, params);
+    }
+
+    let total_elapsed = start_total.elapsed();
+    // println!(
+    //     "🕓 Completed processing of {count} signal(s) in {:?}\n",
+    //     total_elapsed
+    // );
+}
+    
+fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
+
+    // Copy out listeners — break the immutable borrow early
+    let listeners: Vec<SignalConnection> = match self.signals.connections.get(&signal) {
+        Some(v) => v.to_vec(),
+        None => {
             return;
         }
-        
-        println!("\n🔄 Processing {} queued signal(s)", self.queued_signals.len());
-        
-        // Take the queue to avoid borrow issues
-        let signals_to_process = std::mem::take(&mut self.queued_signals);
-        
-        for (signal, params) in signals_to_process {
-            self.emit_signal(&signal, params);
-        }
+    };
+
+
+    for conn in listeners {
+
+        // Clone the Rc out of the scripts map — no borrow held
+        if let Some(script_rc) = self.scripts.get(&conn.target_script_id).cloned() {
+            let project_ref = self.project.clone();
+            let mut project_borrow = project_ref.borrow_mut();
+            let mut api = ScriptApi::new(0.0, self, &mut *project_borrow);
+
+            let mut script = script_rc.borrow_mut();
+            script.call_function(conn.function_name, &mut api, &params);
+        } 
     }
-    
-    // Actually emit the signal (renamed from old emit_signal)
-    fn emit_signal(&mut self, signal: &str, params: Vec<Value>) {
-        println!("📢 Signal '{}' firing with {} params", signal, params.len());
-
-        let calls_to_make: Vec<SignalConnection> = self.signals.connections
-            .get(signal)
-            .map(|listeners| listeners.clone())
-            .unwrap_or_default();
-        
-        println!("   Found {} listener(s)", calls_to_make.len());
-
-        for conn in calls_to_make {
-            println!("   → Calling {}() on script {}", conn.function_name, conn.target_script_id);
-            
-            if let Some(script_rc) = self.scripts.get(&conn.target_script_id).cloned() {
-                let project_ref = self.project.clone();
-                let mut project_borrow = project_ref.borrow_mut();
-                let mut api = ScriptApi::new(0f32, self, &mut *project_borrow);
-                
-                {
-                    let mut script = script_rc.borrow_mut();
-                    script.call_function(&conn.function_name, &mut api, &params);
-                }
-                
-                println!("   ✓ Successfully called {}()", conn.function_name);
-            } else {
-                println!("   ✗ Script {} not found!", conn.target_script_id);
-            }
-        }
-        println!("📢 Signal '{}' completed\n", signal);
-    }
-
+}
 
    pub fn instantiate_script(
         ctor: CreateFn,
@@ -516,11 +519,11 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.set_script_var(node_id, name, val)
     }
 
-    fn connect_signal(&mut self, signal: &str, target_id: Uuid, function: &str) {
+    fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: &'static str) {
         self.connect_signal(signal, target_id, function);
     }
 
-    fn queue_signal(&mut self, signal: &str, params: Vec<Value>) {
+    fn queue_signal_id(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
         self.queue_signal(signal, params);
     }
 

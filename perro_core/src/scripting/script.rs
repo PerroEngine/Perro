@@ -5,6 +5,7 @@ use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr};
 use std::sync::mpsc::{Sender};
 
 use serde_json::Value;
+use smallvec::SmallVec;
 use uuid::Uuid;
 
 use crate::api::ScriptApi;
@@ -52,7 +53,7 @@ pub trait ScriptObject: Script {
     fn get_var(&self, name: &str) -> Option<Value>;
     fn set_var(&mut self, name: &str, val: Value) -> Option<()>;
     fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>);
-    fn call_function(&mut self, func: &str, api: &mut ScriptApi, params: &Vec<Value>);
+    fn call_function(&mut self, func: &str, api: &mut ScriptApi, params: &SmallVec<[Value; 3]>);
 
     fn set_node_id(&mut self, id: Uuid);
     fn get_node_id(&self) -> Uuid;
@@ -87,8 +88,8 @@ pub trait SceneAccess {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn ScriptObject>>>;
 
-    fn connect_signal(&mut self, signal: &str, target_id: Uuid, function: &str);
-    fn queue_signal(&mut self, signal: &str, params: Vec<Value>);
+    fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: &'static str);
+    fn queue_signal_id(&mut self, signal: u64, params: SmallVec<[Value; 3]>);
 
 }
 

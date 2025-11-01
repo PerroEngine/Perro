@@ -1,21 +1,49 @@
 extends Node
 
+var x: float
+var y: int
 
 fn init() {
-    Signal.connect("TestSignal", self, "bob")
-    Signal.connect("TestSignal", self, "bob")
-    Signal.connect("TestSignal", self, "bob")
-    Signal.connect("TestSignal", self, "bob")
-    Signal.connect("TestSignal", self, "bob")
-}
 
 
-fn update() {
 
 }
 
-fn bob(c: float) {
-    Console.info("Wow I am being called from a signal with this parameter: ", c)
-
-    self.name = "pb"
+fn update() {     Signal.emit("FromA_1", "helloA_1")
 }
+
+
+
+
+fn on_from_b_1(m:String){Console.warn("[A] got B_1:",m)}
+fn on_from_b_2(m:String){Console.warn("[A] got B_2:",m)}
+fn on_from_b_3(m:String){Console.warn("[A] got B_3:",m)}
+fn on_from_b_4(m:String){Console.warn("[A] got B_4:",m)}
+fn on_from_b_5(m:String){Console.warn("[A] got B_5:",m)}
+fn on_from_b_6(m:String){Console.warn("[A] got B_6:",m)}
+fn on_from_b_7(m:String){Console.warn("[A] got B_7:",m)}
+fn on_from_b_8(m:String){Console.warn("[A] got B_8:",m)}
+fn on_from_b_9(m:String){Console.warn("[A] got B_9:",m)}
+fn on_from_b_10(m:String){Console.warn("[A] got B_10:",m)}
+fn on_from_b_11(m:String){Console.warn("[A] got B_11:",m)}
+fn on_from_b_12(m:String){Console.warn("[A] got B_12:",m)}
+fn on_from_b_13(m:String){Console.warn("[A] got B_13:",m)}
+fn on_from_b_14(m:String){Console.warn("[A] got B_14:",m)}
+fn on_from_b_15(m:String){Console.warn("[A] got B_15:",m)}
+
+
+fn on_from_c_1(m:String){Console.warn("[A] got C_1:",m)}
+fn on_from_c_2(m:String){Console.warn("[A] got C_2:",m)}
+fn on_from_c_3(m:String){Console.warn("[A] got C_3:",m)}
+fn on_from_c_4(m:String){Console.warn("[A] got C_4:",m)}
+fn on_from_c_5(m:String){Console.warn("[A] got C_5:",m)}
+fn on_from_c_6(m:String){Console.warn("[A] got C_6:",m)}
+fn on_from_c_7(m:String){Console.warn("[A] got C_7:",m)}
+fn on_from_c_8(m:String){Console.warn("[A] got C_8:",m)}
+fn on_from_c_9(m:String){Console.warn("[A] got C_9:",m)}
+fn on_from_c_10(m:String){Console.warn("[A] got C_10:",m)}
+fn on_from_c_11(m:String){Console.warn("[A] got C_11:",m)}
+fn on_from_c_12(m:String){Console.warn("[A] got C_12:",m)}
+fn on_from_c_13(m:String){Console.warn("[A] got C_13:",m)}
+fn on_from_c_14(m:String){Console.warn("[A] got C_14:",m)}
+fn on_from_c_15(m:String){Console.warn("[A] got C_15:",m)}

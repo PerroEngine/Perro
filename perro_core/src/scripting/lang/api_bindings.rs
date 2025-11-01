@@ -197,21 +197,32 @@ impl ApiCodegen for ConsoleApi {
         current_func: Option<&Function>,
     ) -> String {
         let args = self.rust_args(args, script, needs_self, current_func);
-        
-        let joined = if args.len() <= 1 {
-                args.get(0).cloned().unwrap_or("\"\"".into())
-            } else {
-                format!("format!(\"{}\", {})", 
-                    (0..args.len()).map(|_i| "{}").collect::<Vec<_>>().join(" "), 
-                    args.join(", ")
-                )
-            };
 
-        match self {
+        let joined = if args.len() <= 1 {
+            args.get(0).cloned().unwrap_or("\"\"".into())
+        } else {
+            format!(
+                "format!(\"{}\", {})",
+                (0..args.len())
+                    .map(|_| "{}")
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                args.join(", "),
+            )
+        };
+
+        let line = match self {
             ConsoleApi::Log => format!("api.print(&{});", joined),
             ConsoleApi::Warn => format!("api.print_warn(&{});", joined),
             ConsoleApi::Error => format!("api.print_error(&{});", joined),
             ConsoleApi::Info => format!("api.print_info(&{});", joined),
+        };
+
+        if script.verbose {
+            line
+        } else {
+            // keep a commented placeholder so the developer can still see what was generated
+            format!("// [stripped for release] {}", line)
         }
     }
 }
@@ -294,6 +305,18 @@ impl ApiSemantic for NodeSugarApi {
     }
 }
 
+    #[inline]
+    pub fn signal_to_id(name: &str) -> u64 {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+        let mut hash = FNV_OFFSET_BASIS;
+        for byte in name.as_bytes() {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        hash
+    }
+
 impl ApiCodegen for SignalApi {
     fn to_rust(
         &self,
@@ -302,50 +325,99 @@ impl ApiCodegen for SignalApi {
         needs_self: bool,
         current_func: Option<&Function>,
     ) -> String {
+
+    fn prehash_if_literal(arg: &str) -> String {
+        let trimmed = arg.trim();
+
+        // Case 1: plain literal: "FooSignal"
+        if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
+            let inner = &trimmed[1..trimmed.len()-1];
+            let id = signal_to_id(inner);
+            return format!("{id}u64");
+        }
+
+        // Case 2: String::from("FooSignal")
+        if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+            // Extract the inner part between parens
+            let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1];
+            let inner_section = inner_section.trim();
+            if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                let inner = &inner_section[1..inner_section.len() - 1];
+                let id = signal_to_id(inner);
+                return format!("{id}u64");
+            }
+        }
+
+        // Everything else: variable, numeric, etc. leave alone
+        trimmed.to_string()
+    }
+
+    fn strip_string_from(arg: &str) -> String {
+            let trimmed = arg.trim();
+
+            // Case 1: String::from("literal")
+            if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1];
+                let inner_section = inner_section.trim();
+                if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                    // Return just the string literal
+                    return inner_section.to_string();
+                }
+            }
+
+            // Case 2: Already a plain literal "foo" - keep it
+            if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                return trimmed.to_string();
+            }
+
+            // Case 3: Variable or expression - keep as-is
+            trimmed.to_string()
+        }
+
+
         let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             SignalApi::New => {
-                let arg = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                // If it's already `String::from(`, leave it alone; otherwise wrap it
-                if arg.starts_with("String::from(") || arg.starts_with('&') {
-                    arg
-                } else {
-                    format!("String::from({})", arg)
+                let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                if script.is_struct_field(&signal) {
+                    signal = format!("self.{signal}");
                 }
+                prehash_if_literal(&signal)
             }
            SignalApi::Connect => {
                 let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                
-                // Check if signal is a struct field variable
                 if script.is_struct_field(&signal) {
-                    signal = format!("self.{}", signal);
+                    signal = format!("self.{signal}");
                 }
-                
+                let signal = prehash_if_literal(&signal);
+
                 let mut node = args.get(1).cloned().unwrap_or_else(|| "self.node".into());
-                if node == "self" { 
-                    node = "self.node".into(); 
+                if node == "self" {
+                    node = "self.node".into();
                 }
+
+                // ✅ CHANGED: Use strip_string_from to get a plain string literal
                 let func = args.get(2).cloned().unwrap_or_else(|| "\"\"".into());
-                format!("api.connect_signal(&{}, {}.id, &{})", signal, node, func)
+                let func = strip_string_from(&func);
+                
+                // No & prefix needed - string literals are already &'static str
+                format!("api.connect_signal_id({signal}, {node}.id, {func})")
             }
            SignalApi::Emit => {
-                let signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                
-                // If there are additional arguments, collect them into a Vec<Value>
+                let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                if script.is_struct_field(&signal) {
+                    signal = format!("self.{signal}");
+                }
+                let signal = prehash_if_literal(&signal);
+
                 if args.len() > 1 {
                     let params: Vec<String> = args[1..]
                         .iter()
-                        .map(|arg| format!("json!({})", arg))
+                        .map(|a| format!("json!({a})"))
                         .collect();
-                    
-                    format!(
-                        "api.emit_signal(&{}, vec![{}])",
-                        signal,
-                        params.join(", ")
-                    )
+                    format!("api.emit_signal_id({signal}, smallvec![{}])", params.join(", "))
                 } else {
-                    // No parameters, pass empty vec
-                    format!("api.emit_signal(&{}, vec![])", signal)
+                    format!("api.emit_signal_id({signal}, smallvec![])")
                 }
             }
         }

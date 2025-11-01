@@ -88,6 +88,7 @@ impl PupParser {
             variables,
             functions,
             structs,
+            verbose: true
         })
     }
 

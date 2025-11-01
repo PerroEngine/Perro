@@ -264,7 +264,8 @@ impl Script {
     }
 
 
-  pub fn to_rust(&self, struct_name: &str, project_path: &Path, current_func: Option<&Function>) -> String {
+  pub fn to_rust(&mut self, struct_name: &str, project_path: &Path, current_func: Option<&Function>, verbose: bool) -> String {
+        self.verbose = verbose;
         // Clear cache at the start of codegen
         clear_type_cache();
 
@@ -280,6 +281,7 @@ impl Script {
         out.push_str("#![allow(unused)]\n\n");
         out.push_str("use std::any::Any;\n");
         out.push_str("use std::collections::HashMap;\n");
+        out.push_str("use smallvec::{SmallVec, smallvec};\n");
         out.push_str("use serde_json::{Value, json};\n");
         out.push_str("use serde::{Serialize, Deserialize};\n");
         out.push_str("use uuid::Uuid;\n");
@@ -1519,7 +1521,7 @@ fn implement_script_boilerplate(
                         }
                         Type::Custom(type_name) if type_name == "Signal" => {
                             // Treat Signal as String
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_str())\n                    .map(|s| s.to_string())\n                    .unwrap_or_default();\n")
+                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))\n                    .unwrap_or_default() as u64;\n")
                         }
                         Type::Custom(type_name) => {
                             format!("let {param_name} = params.get({i})\n                    .and_then(|v| serde_json::from_value::<{type_name}>(v.clone()).ok())\n                    .unwrap_or_default();\n")
@@ -1579,7 +1581,7 @@ impl ScriptObject for {struct_name} {{
         }}
     }}
 
-    fn call_function(&mut self, name: &str, api: &mut ScriptApi<'_>, params: &Vec<Value>) {{
+    fn call_function(&mut self, name: &str, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {{
         match name {{
 {call_function_matches}            _ => {{}}
         }}

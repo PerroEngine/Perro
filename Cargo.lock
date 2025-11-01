@@ -1806,6 +1806,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "smallvec",
  "swash",
  "toml",
  "uuid",

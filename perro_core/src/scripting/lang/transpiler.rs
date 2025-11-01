@@ -194,7 +194,7 @@ pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
     Ok(())
 }
 
-pub fn transpile(project_root: &Path) -> Result<(), String> {
+pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     let total_start = Instant::now();
 
     let script_paths = discover_scripts(project_root)?;
@@ -225,12 +225,12 @@ pub fn transpile(project_root: &Path) -> Result<(), String> {
 
         match extension {
             "pup" => {
-                let script = PupParser::new(&code).parse_script()?;
-                script.to_rust(&identifier, project_root, None);
+                let mut script = PupParser::new(&code).parse_script()?;
+                script.to_rust(&identifier, project_root, None, verbose);
             }
             "cs" => {
-                let script = CsParser::new(&code).parse_script()?;
-                script.to_rust(&identifier, project_root, None);
+                let mut script = CsParser::new(&code).parse_script()?;
+                script.to_rust(&identifier, project_root, None, verbose);
             }
             "rs" => {
                 derive_rust_perro_script(project_root, &code, &identifier)?;

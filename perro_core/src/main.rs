@@ -78,7 +78,7 @@ fn main() {
     match target {
         CompileTarget::Scripts => {
             println!("📜 Transpiling scripts…");
-            if let Err(e) = transpile(&project_root) {
+            if let Err(e) = transpile(&project_root, true) {
                 eprintln!("❌ Transpile failed: {}", e);
                 return;
             }
@@ -93,12 +93,27 @@ fn main() {
         }
         CompileTarget::Project => {
             println!("🏗️  Building project…");
-            if let Err(e) = transpile(&project_root) {
+            if let Err(e) = transpile(&project_root, false) {
                 eprintln!("❌ Transpile failed: {}", e);
                 return;
             }
 
             let compiler = Compiler::new(&project_root, CompileTarget::Project, true);
+            if let Err(e) = compiler.compile(BuildProfile::Release) {
+                eprintln!("❌ Project build failed: {}", e);
+                return;
+            }
+
+            println!("✅ Project built!");
+        }
+         CompileTarget::VerboseProject => {
+            println!("🏗️  Building verbose project…");
+            if let Err(e) = transpile(&project_root, true) {
+                eprintln!("❌ Transpile failed: {}", e);
+                return;
+            }
+
+            let compiler = Compiler::new(&project_root, CompileTarget::VerboseProject, true);
             if let Err(e) = compiler.compile(BuildProfile::Release) {
                 eprintln!("❌ Project build failed: {}", e);
                 return;

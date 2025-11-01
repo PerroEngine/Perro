@@ -140,99 +140,103 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    #[inline(always)]
-    fn process_game(&mut self) {
-        if let State::Ready(gfx) = &mut self.state {
-            // NEW: Poll for app commands from scripts
-            while let Ok(cmd) = self.command_rx.try_recv() {
-                match cmd {
-                    AppCommand::SetWindowTitle(title) => {
-                        println!("Setting window title to: {}", title);
-                        gfx.window().set_title(&title);
-                        self.window_title = title;
-                    }
-                    AppCommand::SetTargetFPS(fps) => {
-                        println!("Setting target FPS to: {}", fps);
-                        self.target_fps = fps;
-                    }
-                    AppCommand::Quit => {
-                        println!("Quit command received from script");
-                        std::process::exit(0);
-                    }
+   #[inline(always)]
+fn process_game(&mut self) {
+    if let State::Ready(gfx) = &mut self.state {
+        // 1) Poll app commands once per update
+        while let Ok(cmd) = self.command_rx.try_recv() {
+            match cmd {
+                AppCommand::SetWindowTitle(title) => {
+                    gfx.window().set_title(&title);
+                    self.window_title = title;
+                    println!("Window title set to: {}", self.window_title);
+                }
+                AppCommand::SetTargetFPS(fps) => {
+                    self.target_fps = fps;
+                    println!("Target FPS changed to: {}", fps);
+                }
+                AppCommand::Quit => {
+                    println!("Quit command received");
+                    std::process::exit(0);
                 }
             }
-
-            let now = std::time::Instant::now();
-            let dt = (now - self.last_update).as_secs_f32();
-            self.last_update = now;
-
-            // --- Scene update (UPS) ---
-            if let Some(scene) = self.game_scene.as_mut() {
-                scene.update(dt);
-                self.ups_frames += 1;
-            }
-
-            // --- Frame debt system ---
-            let elapsed_time = (now - self.start_time).as_secs_f64();
-            let target_frames = elapsed_time * self.target_fps as f64;
-            self.frame_debt = target_frames - self.total_frames_rendered as f64;
-
-            // Cap frame debt to prevent excessive catch-up
-            self.frame_debt = self.frame_debt.min(self.target_fps as f64 * 0.025);
-
-            let should_render = self.first_frame || self.frame_debt > -1.0;
-
-            if should_render {
-                self.first_frame = false;
-                self.total_frames_rendered += 1;
-                self.fps_frames += 1;
-
-                // --- FPS + UPS measurement (once per second) ---
-                let measurement_duration =
-                    (now - self.fps_measurement_start).as_secs_f32();
-                if measurement_duration >= 1.0 {
-                    let fps = self.fps_frames as f32 / measurement_duration;
-                    let ups = self.ups_frames as f32 / measurement_duration;
-
-                    println!("fps: {:.1}, ups: {:.1}", fps, ups);
-
-                    self.fps_frames = 0;
-                    self.ups_frames = 0;
-                    self.fps_measurement_start = now;
-                    self.skip_counter = 0;
-                }
-
-                // --- Render scene ---
-                if let Some(scene) = self.game_scene.as_mut() {
-                    scene.render(gfx);
-                }
-
-                let (frame, view, mut encoder) = gfx.begin_frame();
-                let color_attachment = wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: self.cached_operations,
-                };
-
-                let mut rpass =
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some(RENDER_PASS_LABEL),
-                        color_attachments: &[Some(color_attachment)],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-
-                gfx.draw_instances(&mut rpass);
-                drop(rpass);
-                gfx.end_frame(frame, encoder);
-            } else {
-                self.skip_counter += 1;
-            }
-
-            gfx.window().request_redraw();
         }
+
+        // 2) Time and delta calculation
+        let now = std::time::Instant::now();
+        let dt = (now - self.last_update).as_secs_f32();
+        self.last_update = now;
+
+        // 3) Update scene and increment UPS
+        if let Some(scene) = self.game_scene.as_mut() {
+            scene.update(dt);
+            self.ups_frames += 1;
+        }
+
+        // 4) Frame debt calculation for pacing rendering
+        let elapsed = (now - self.start_time).as_secs_f64();
+        let target_frames = elapsed * self.target_fps as f64;
+        let mut frame_debt = target_frames - (self.total_frames_rendered as f64);
+        frame_debt = frame_debt.min(self.target_fps as f64 * 0.025);
+        self.frame_debt = frame_debt;
+
+        // 5) Decide if we should render this frame
+        let render_frame = self.first_frame || self.frame_debt > -1.0;
+
+        if render_frame {
+            self.first_frame = false;
+            self.total_frames_rendered += 1;
+            self.fps_frames += 1;
+
+            // 6) FPS/UPS measurement once per second, with delta print
+            let measurement_interval = (now - self.fps_measurement_start).as_secs_f32();
+            if measurement_interval >= 1.0 {
+                let fps = self.fps_frames as f32 / measurement_interval;
+                let ups = self.ups_frames as f32 / measurement_interval;
+
+                println!(
+                    "fps: {:.1}, ups: {:.1}, measurement interval: {:.6} seconds, delta: {:.6} seconds",
+                    fps, ups, measurement_interval, dt
+                );
+
+                self.fps_frames = 0;
+                self.ups_frames = 0;
+                self.fps_measurement_start = now;
+                self.skip_counter = 0;
+            }
+
+            // 7) Render scene
+            if let Some(scene) = self.game_scene.as_mut() {
+                scene.render(gfx);
+            }
+
+            // 8) Draw frame with wgpu
+            let (frame, view, mut encoder) = gfx.begin_frame();
+            let color_attachment = wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: self.cached_operations,
+            };
+
+            {
+                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(RENDER_PASS_LABEL),
+                    color_attachments: &[Some(color_attachment)],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                gfx.draw_instances(&mut rpass);
+            }
+            gfx.end_frame(frame, encoder);
+        } else {
+            self.skip_counter += 1;
+        }
+
+        // 9) Request redraw after processing game (drives event loop)
+        gfx.window().request_redraw();
     }
+}
 
     #[inline(always)]
     fn resized(&mut self, size: PhysicalSize<u32>) {

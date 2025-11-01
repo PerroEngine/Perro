@@ -49,3 +49,5 @@ ab_glyph = "0.2"
 guillotiere = "0.6"
 fontdue = "0.8"
 swash = "0.1"
+
+smallvec = "1.11"

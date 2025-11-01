@@ -20,6 +20,7 @@ pub enum BuildProfile {
 pub enum CompileTarget {
     Scripts, // .perro/scripts
     Project, // .perro/project
+    VerboseProject
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +71,7 @@ impl Compiler {
     pub fn new(project_root: &Path, target: CompileTarget, from_source: bool) -> Self {
         let manifest = match target {
             CompileTarget::Scripts => project_root.join(".perro/scripts/Cargo.toml"),
-            CompileTarget::Project => project_root.join(".perro/project/Cargo.toml"),
+            CompileTarget::Project | CompileTarget::VerboseProject => project_root.join(".perro/project/Cargo.toml"),
         };
 
         let manifest = dunce::canonicalize(&manifest).unwrap_or(manifest);
@@ -176,7 +177,7 @@ impl Compiler {
             CompileTarget::Scripts => {
                 cmd.arg("--profile").arg("hotreload");
             }
-            CompileTarget::Project => {
+            CompileTarget::Project | CompileTarget::VerboseProject => {
                 match profile {
                     BuildProfile::Dev => cmd.arg("--profile").arg("dev"),
                     BuildProfile::Release => cmd.arg("--release"),
@@ -245,7 +246,7 @@ impl Compiler {
     fn target_name(&self) -> &'static str {
         match self.target {
             CompileTarget::Scripts => "scripts",
-            CompileTarget::Project => "project",
+            CompileTarget::Project | CompileTarget::VerboseProject => "project",
         }
     }
 

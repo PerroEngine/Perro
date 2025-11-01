@@ -130,6 +130,8 @@ impl CsParser {
             variables,
             functions,
             structs,
+
+            verbose: true
         })
     }
 
