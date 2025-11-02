@@ -140,7 +140,7 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-   #[inline(always)]
+#[inline(always)]
 fn process_game(&mut self) {
     if let State::Ready(gfx) = &mut self.state {
         // 1) Poll app commands once per update
@@ -162,15 +162,14 @@ fn process_game(&mut self) {
             }
         }
 
-        // 2) Time and delta calculation
+        // 2) Time for frame pacing
         let now = std::time::Instant::now();
-        let dt = (now - self.last_update).as_secs_f32();
+
         self.last_update = now;
 
-        // 3) Update scene and increment UPS
+        // 3) Update the scene
         if let Some(scene) = self.game_scene.as_mut() {
-            scene.update(dt);
-            self.ups_frames += 1;
+            scene.update();
         }
 
         // 4) Frame debt calculation for pacing rendering
@@ -188,19 +187,16 @@ fn process_game(&mut self) {
             self.total_frames_rendered += 1;
             self.fps_frames += 1;
 
-            // 6) FPS/UPS measurement once per second, with delta print
+            // 6) FPS measurement once per second
             let measurement_interval = (now - self.fps_measurement_start).as_secs_f32();
             if measurement_interval >= 1.0 {
                 let fps = self.fps_frames as f32 / measurement_interval;
-                let ups = self.ups_frames as f32 / measurement_interval;
-
                 println!(
-                    "fps: {:.1}, ups: {:.1}, measurement interval: {:.6} seconds, delta: {:.6} seconds",
-                    fps, ups, measurement_interval, dt
+                    "fps: {:.1}",
+                    fps
                 );
 
                 self.fps_frames = 0;
-                self.ups_frames = 0;
                 self.fps_measurement_start = now;
                 self.skip_counter = 0;
             }
@@ -233,7 +229,7 @@ fn process_game(&mut self) {
             self.skip_counter += 1;
         }
 
-        // 9) Request redraw after processing game (drives event loop)
+        // 9) Request redraw after processing game
         gfx.window().request_redraw();
     }
 }

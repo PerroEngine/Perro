@@ -76,12 +76,6 @@ pub type CreateFn = extern "C" fn() -> *mut dyn ScriptObject;
 pub trait SceneAccess {
     fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode>;
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>);
-    fn set_script_var(
-        &mut self,
-        node_id: &Uuid,
-        name: &str,
-        val: Value,
-    ) -> Option<()>;
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>>;
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
 

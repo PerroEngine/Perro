@@ -8,7 +8,7 @@ use serde_json::Value;
 use smallvec::SmallVec;
 use wgpu::RenderPass;
 use std::{
-    any::Any, cell::RefCell, collections::HashMap, io, path::PathBuf, rc::Rc, sync::mpsc::Sender, time::{Duration, Instant} // NEW import
+    any::Any, cell::RefCell, collections::HashMap, io, path::PathBuf, rc::Rc, str::FromStr, sync::mpsc::Sender, time::{Duration, Instant} // NEW import
 };
 use uuid::Uuid;
 
@@ -83,6 +83,11 @@ pub struct Scene<P: ScriptProvider> {
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
+
+    pub last_scene_update: Option<Instant>,
+    pub delta_accum: f32,
+    pub true_updates: i32,
+    pub test_val: Value
 }
 
 #[derive(Default)]
@@ -109,6 +114,11 @@ impl<P: ScriptProvider> Scene<P> {
             provider,
             project,
             app_command_tx: None,
+
+            last_scene_update: Some(Instant::now()),
+            delta_accum: 0.0,
+            true_updates: 0,
+            test_val: Value::Null
         }
     }
 
@@ -122,6 +132,11 @@ impl<P: ScriptProvider> Scene<P> {
             provider,
             project,
             app_command_tx: None,
+
+            last_scene_update: Some(Instant::now()),
+            delta_accum: 0.0,
+            true_updates: 0,
+            test_val: Value::Null
         }
     }
 
@@ -201,16 +216,40 @@ impl<P: ScriptProvider> Scene<P> {
         self.traverse_and_render(dirty_nodes, gfx);
     }
 
-    pub fn update(&mut self, delta: f32) {
-        // Collect script IDs to avoid borrow checker issues
+       pub fn update(&mut self) {
+        let now = Instant::now();
+        let true_delta = match self.last_scene_update {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            None => 0.0, // first update
+        };
+        self.last_scene_update = Some(now);
+
+        // store this dt somewhere for global stats
+        self.delta_accum += true_delta;
+        self.true_updates += 1;
+
+        if self.delta_accum >= 1.0 {
+            let ups = self.true_updates as f32 / self.delta_accum;
+            println!(
+                "🔹 True UPS: {:.2}, True Delta: {:.12}, Script Updates: {:.12}",
+                ups,
+                true_delta,
+                self.test_val
+            );
+            self.delta_accum = 0.0;
+            self.true_updates = 0;
+        }
+
+        // now use `true_delta` instead of external_delta
         let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
-        
+        let project_ref = self.project.clone();
+        let mut project_borrow = project_ref.borrow_mut();
+
         for id in script_ids {
-            // Borrow project first, before borrowing self
-            let project_ref = self.project.clone();
-            let mut project_borrow = project_ref.borrow_mut();
-            let mut api = ScriptApi::new(delta, self, &mut *project_borrow);
+            let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
             api.call_update(id);
+            let uuid = Uuid::from_str("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48").unwrap();
+            self.test_val = api.get_script_var(uuid, "script_updates").into();
         }
 
         self.process_queued_signals();
@@ -273,20 +312,22 @@ fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
         }
     };
 
-
-    for conn in listeners {
-
-        // Clone the Rc out of the scripts map — no borrow held
-        if let Some(script_rc) = self.scripts.get(&conn.target_script_id).cloned() {
-            let project_ref = self.project.clone();
+    let now = Instant::now();
+        let true_delta = match self.last_scene_update {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            None => 0.0,
+        };
+                    let project_ref = self.project.clone();
             let mut project_borrow = project_ref.borrow_mut();
-            let mut api = ScriptApi::new(0.0, self, &mut *project_borrow);
 
-            let mut script = script_rc.borrow_mut();
-            script.call_function(conn.function_name, &mut api, &params);
+        let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
+
+
+        for conn in listeners {
+            api.call_function(conn.target_script_id, conn.function_name, &params);
         } 
     }
-}
+
 
    pub fn instantiate_script(
         ctor: CreateFn,
@@ -355,7 +396,15 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
         // Initialize now that node exists
         let project_ref = self.project.clone();
         let mut project_borrow = project_ref.borrow_mut();
-        let mut api = ScriptApi::new(0.0, self, &mut *project_borrow);
+
+        let now = Instant::now();
+let true_delta = match self.last_scene_update {
+    Some(prev) => now.duration_since(prev).as_secs_f32(),
+    None => 0.0,
+};
+
+
+        let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
         api.call_init(id);
 
         println!("   ✅ Script initialized");
@@ -365,18 +414,7 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
     Ok(())
 }
 
-    pub fn set_script_var(
-        &mut self,
-        node_id: &Uuid,
-        name: &str,
-        val: Value,
-    ) -> Option<()> {
-        let rc_script = self.scripts.get(node_id)?;
-        let mut script = rc_script.borrow_mut();
 
-        script.set_var(name, val)?;
-        Some(())
-    }
 
 
 
@@ -509,15 +547,6 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         }
     }
 
-
-    fn set_script_var(
-        &mut self,
-        node_id: &Uuid,
-        name: &str,
-        val: Value,
-    ) -> Option<()> {
-        self.set_script_var(node_id, name, val)
-    }
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: &'static str) {
         self.connect_signal(signal, target_id, function);

@@ -21,6 +21,7 @@ use perro_core::prelude::*;
 
 pub struct MainPupScript {
     node: UINode,
+    script_updates: i32,
 }
 
 // ========================================================================
@@ -31,6 +32,7 @@ pub struct MainPupScript {
 pub extern "C" fn main_pup_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(MainPupScript {
         node: UINode::new("MainPup"),
+        script_updates: 0i32,
     })) as *mut dyn ScriptObject
 }
 
@@ -40,10 +42,12 @@ pub extern "C" fn main_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for MainPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+        self.script_updates = 0i32;
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         api.emit_signal_id(299076141623528637u64, smallvec![json!(String::from("pingB_1"))]);
+        self.script_updates += 1i32;
     }
 
 }
@@ -187,12 +191,20 @@ impl ScriptObject for MainPupScript {
 
     fn get_var(&self, name: &str) -> Option<Value> {
         match name {
+            "script_updates" => Some(json!(self.script_updates)),
             _ => None,
         }
     }
 
     fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
         match name {
+            "script_updates" => {
+                if let Some(v) = val.as_i64() {
+                    self.script_updates = v as i32;
+                    return Some(());
+                }
+                None
+            },
             _ => None,
         }
     }

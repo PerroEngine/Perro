@@ -203,10 +203,10 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_function(&mut self, id: Uuid, func: &str, params: SmallVec<[Value; 3]>) {
+    pub fn call_function(&mut self, id: Uuid, func: &str, params: &SmallVec<[Value; 3]>) {
           if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
-            script.call_function(func, self, &params);
+            script.call_function(func, self, params);
         }
     }
 
@@ -303,15 +303,23 @@ impl<'a> ScriptApi<'a> {
         self.scene.merge_nodes(nodes);
     }
     pub fn set_script_var(
-        &mut self, node_id: &Uuid, name: &str, val: Value,
+        &mut self, node_id: Uuid, name: &str, val: Value,
     ) -> Option<()> {
-        self.scene.set_script_var(node_id, name, val)
+        let rc_script = self.scene.get_script(node_id)?;
+        let mut script = rc_script.borrow_mut();
+
+        script.set_var(name, val)?;
+        Some(())
     }
 
     pub fn get_script_var(
-        &mut self, node_id: &Uuid, name: &str,
-    ) {
-        println!("Getting script var '{}' for node {}", name, node_id);
+        &mut self,id: Uuid, name: &str,
+    ) -> Value {
+        if let Some(rc_script) = self.scene.get_script(id) {
+            let script = rc_script.borrow_mut();
+            return script.get_var(name).unwrap_or_default();
+        }
+        Value::Null
     }
 
 

@@ -3,7 +3,8 @@
   "nodes": {
     "61bcc144-573f-49db-88a7-8faca16519d0": {
         "type": "Node",
-        "name": "Root"
+        "name": "Root",
+        "script_path":"res://test.pup"
     },
     "51bcc144-573f-49db-88a7-8faca16519d0": {
         "type": "Node",

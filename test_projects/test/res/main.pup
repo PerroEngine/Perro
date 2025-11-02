@@ -1,11 +1,14 @@
 extends UINode
 
+var script_updates: int
+
 fn init() {
-  
+  script_updates = 0
 
 }
 
 fn update() {    Signal.emit("FromB_1", "pingB_1")
+script_updates += 1
 }
 
 fn on_from_a_1(m:String){Console.error("[B] heard A_1:",m)}
