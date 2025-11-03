@@ -8,7 +8,7 @@ use std::cell::RefCell;
 
 use regex::Regex;
 
-use crate::{asset_io::{get_project_root, ProjectRoot}, lang::ast::*, script::Var};
+use crate::{asset_io::{ProjectRoot, get_project_root}, lang::ast::*, prelude::string_to_u64, script::Var};
 
 // ============================================================================
 // Type Inference Cache - Dramatically speeds up repeated type lookups
@@ -310,20 +310,39 @@ impl Script {
             })
             .collect();
 
+        let mut merged_fields: HashMap<&str, (&String, &String, bool)> = HashMap::new();
+        let mut field_order: Vec<&str> = Vec::new(); // preserve output order
+
+        // Insert exposed first
+        for (name, rust_type, default_val) in &exposed_fields {
+            merged_fields.insert(name, (rust_type, default_val, true));
+            field_order.push(name);
+        }
+
+        // Then add variables only if not already present
+        for (name, rust_type, default_val) in &variable_fields {
+            if !merged_fields.contains_key(name) {
+                merged_fields.insert(name, (rust_type, default_val, false));
+                field_order.push(name);
+            }
+        }
+
+        // ========================================================================
+        // {} - Main Script Structure
+        // ========================================================================
+
         out.push_str("// ========================================================================\n");
         write!(out, "// {} - Main Script Structure\n", pascal_struct_name).unwrap();
         out.push_str("// ========================================================================\n\n");
-        
+
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
         write!(out, "    node: {},\n", script.node_type).unwrap();
 
-        for (name, rust_type, _) in &exposed_fields {
+        for name in &field_order {
+            let (rust_type, _, _) = merged_fields.get(name).unwrap();
             write!(out, "    {}: {},\n", name, rust_type).unwrap();
         }
 
-        for (name, rust_type, _) in &variable_fields {
-            write!(out, "    {}: {},\n", name, rust_type).unwrap();
-        }
 
         out.push_str("}\n\n");
 
@@ -340,15 +359,24 @@ impl Script {
             write!(out, "        node: {}::new(\"{}\"),\n", script.node_type, pascal_struct_name).unwrap();
         }
 
-        for exposed in &script.exposed {
-            let init_code = exposed.rust_initialization(&script, current_func);
-            write!(out, "        {}: {},\n", exposed.name, init_code).unwrap();
+       for name in &field_order {
+            let (_, _, is_exposed) = merged_fields.get(name).unwrap();
+
+            let init_code = if *is_exposed {
+                script.exposed.iter()
+                    .find(|e| e.name == **name)
+                    .unwrap()
+                    .rust_initialization(&script, current_func)
+            } else {
+                script.variables.iter()
+                    .find(|v| v.name == **name)
+                    .unwrap()
+                    .rust_initialization(&script, current_func)
+            };
+
+            write!(out, "        {}: {},\n", name, init_code).unwrap();
         }
 
-        for var in &script.variables {
-            let init_code = var.rust_initialization(&script, current_func);
-            write!(out, "        {}: {},\n", var.name, init_code).unwrap();
-        }
 
         out.push_str("    })) as *mut dyn ScriptObject\n");
         out.push_str("}\n\n");
@@ -1412,145 +1440,195 @@ impl Op {
     }
 }
 
-fn implement_script_boilerplate(
+pub fn implement_script_boilerplate(
     struct_name: &str,
     exposed: &[Variable],
     variables: &[Variable],
-    functions: &[Function], // Add this parameter
+    functions: &[Function],
 ) -> String {
-    let mut out = String::with_capacity(2048);
-    let mut get_matches = String::with_capacity(512);
-    let mut set_matches = String::with_capacity(512);
-    let mut apply_exposed_matches = String::with_capacity(512);
-    let mut call_function_matches = String::with_capacity(512);
+    let mut out = String::with_capacity(8192);
+    let mut get_entries = String::with_capacity(512);
+    let mut set_entries = String::with_capacity(512);
+    let mut apply_entries = String::with_capacity(512);
+    let mut dispatch_entries = String::with_capacity(4096);
 
+    //----------------------------------------------------
+    // Generate VAR GET, SET, APPLY tables
+    //----------------------------------------------------
     for var in variables {
         let name = &var.name;
+        let var_id = string_to_u64(name);
         let (accessor, conv) = var.json_access();
 
-        write!(get_matches, "            \"{name}\" => Some(json!(self.{name})),\n").unwrap();
+        // ---- GET ----
+        write!(
+            get_entries,
+            "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+            Some(json!(script.{name}))
+        }});\n"
+        )
+        .unwrap();
 
+        // ---- SET ----
         if accessor == "__CUSTOM__" {
             let type_name = &conv;
-            write!(set_matches,
-                "            \"{name}\" => {{
-                if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
-                    self.{name} = v;
-                    return Some(());
-                }}
-                None
-            }},\n"
-            ).unwrap();
+            write!(
+                set_entries,
+                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+            if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
+                script.{name} = v;
+                return Some(());
+            }}
+            None
+        }});\n"
+            )
+            .unwrap();
         } else {
-            write!(set_matches,
-                "            \"{name}\" => {{
-                if let Some(v) = val.{accessor}() {{
-                    self.{name} = v{conv};
-                    return Some(());
-                }}
-                None
-            }},\n"
-            ).unwrap();
+            write!(
+                set_entries,
+                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+            if let Some(v) = val.{accessor}() {{
+                script.{name} = v{conv};
+                return Some(());
+            }}
+            None
+        }});\n"
+            )
+            .unwrap();
         }
     }
 
-    for var in exposed {
+       for var in exposed {
         let name = &var.name;
+        let var_id = string_to_u64(name);
         let (accessor, conv) = var.json_access();
 
         if accessor == "__CUSTOM__" {
             let type_name = &conv;
-            write!(apply_exposed_matches,
-                "                \"{name}\" => {{
-                    if let Some(value) = hashmap.get(\"{name}\") {{
-                        if let Ok(v) = serde_json::from_value::<{type_name}>(value.clone()) {{
-                            self.{name} = v;
-                        }}
-                    }}
-                }},\n"
+            writeln!(
+                apply_entries,
+                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+            if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
+                script.{name} = v;
+            }}
+        }});"
             ).unwrap();
         } else {
-            write!(apply_exposed_matches,
-                "                \"{name}\" => {{
-                    if let Some(value) = hashmap.get(\"{name}\") {{
-                        if let Some(v) = value.{accessor}() {{
-                            self.{name} = v{conv};
-                        }}
-                    }}
-                }},\n"
+            writeln!(
+                apply_entries,
+                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+            if let Some(v) = val.{accessor}() {{
+                script.{name} = v{conv};
+            }}
+        }});"
             ).unwrap();
         }
     }
 
-    // Generate function call matches for non-trait methods
-   for func in functions {
-        if !func.is_trait_method {
-            let func_name = &func.name;
-            
-            if func.params.is_empty() {
-                // No parameters
-                write!(call_function_matches,
-                    "            \"{func_name}\" => {{
-                self.{func_name}(api, true);
-            }},\n"
-                ).unwrap();
-            } else {
-                // Has parameters - need to parse from Vec<Value>
-                let mut param_parsing = String::new();
-                
-                for (i, param) in func.params.iter().enumerate() {
-                    let param_name = &param.name;
-                    let parse_code = match &param.typ {
-                        Type::String => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_str())\n                    .map(|s| s.to_string())\n                    .unwrap_or_default();\n")
-                        }
-                        Type::Number(NumberKind::Signed(w)) => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))\n                    .unwrap_or_default() as i{w};\n")
-                        }
-                        Type::Number(NumberKind::Unsigned(w)) => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))\n                    .unwrap_or_default() as u{w};\n")
-                        }
-                        Type::Number(NumberKind::Float(32)) => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))\n                    .unwrap_or_default() as f32;\n")
-                        }
-                        Type::Number(NumberKind::Float(64)) => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))\n                    .unwrap_or_default();\n")
-                        }
-                        Type::Bool => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_bool())\n                    .unwrap_or_default();\n")
-                        }
-                        Type::Custom(type_name) if type_name == "Signal" => {
-                            // Treat Signal as String
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))\n                    .unwrap_or_default() as u64;\n")
-                        }
-                        Type::Custom(type_name) => {
-                            format!("let {param_name} = params.get({i})\n                    .and_then(|v| serde_json::from_value::<{type_name}>(v.clone()).ok())\n                    .unwrap_or_default();\n")
-                        }
-                        _ => {
-                            format!("let {param_name} = Default::default(); // Unsupported type\n")
-                        }
-                    };
-                    
-                    param_parsing.push_str("                ");
-                    param_parsing.push_str(&parse_code);
-                }
-                
-                let param_names: Vec<_> = func.params.iter().map(|p| &p.name).collect();
-               let param_list = func.params.iter()
+    //----------------------------------------------------
+    // FUNCTION DISPATCH TABLE GENERATION
+    //----------------------------------------------------
+    for func in functions {
+        if func.is_trait_method {
+            continue;
+        }
+
+        let func_name = &func.name;
+        let func_id = string_to_u64(func_name);
+
+        let mut param_parsing = String::new();
+        let mut param_list = String::new();
+
+        if !func.params.is_empty() {
+            for (i, param) in func.params.iter().enumerate() {
+                let param_name = &param.name;
+                let parse_code = match &param.typ {
+                    Type::String => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_default();\n"
+                        )
+                    }
+                    Type::Number(NumberKind::Signed(w)) => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                .unwrap_or_default() as i{w};\n"
+                        )
+                    }
+                    Type::Number(NumberKind::Unsigned(w)) => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+                .unwrap_or_default() as u{w};\n"
+                        )
+                    }
+                    Type::Number(NumberKind::Float(32)) => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+                .unwrap_or_default() as f32;\n"
+                        )
+                    }
+                    Type::Number(NumberKind::Float(64)) => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+                .unwrap_or_default();\n"
+                        )
+                    }
+                    Type::Bool => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_bool())
+                .unwrap_or_default();\n"
+                        )
+                    }
+                    Type::Custom(tn) if tn == "Signal" => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+                .unwrap_or_default() as u64;\n"
+                        )
+                    }
+                    Type::Custom(tn) => {
+                        format!(
+                            "let {param_name} = params.get({i})
+                .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok())
+                .unwrap_or_default();\n"
+                        )
+                    }
+                    _ => format!("let {param_name} = Default::default();\n"),
+                };
+                param_parsing.push_str(&parse_code);
+            }
+
+            param_list = func
+                .params
+                .iter()
                 .map(|p| p.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-                
-                write!(call_function_matches,
-                    "            \"{func_name}\" => {{
-{param_parsing}                self.{func_name}({param_list}, api, true);
-            }},\n"
-                ).unwrap();
-            }
+            param_list.push_str(", ");
         }
+
+        write!(
+            dispatch_entries,
+            "        m.insert({func_id}u64,
+            |this: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
+{param_parsing}            this.{func_name}({param_list}api, true);
+        }});\n"
+        )
+        .unwrap();
     }
 
-    write!(out,
+    //----------------------------------------------------
+    // FINAL OUTPUT
+    //----------------------------------------------------
+    write!(
+        out,
         r#"
 impl ScriptObject for {struct_name} {{
     fn set_node_id(&mut self, id: Uuid) {{
@@ -1561,34 +1639,79 @@ impl ScriptObject for {struct_name} {{
         self.node.id
     }}
 
-    fn get_var(&self, name: &str) -> Option<Value> {{
-        match name {{
-{get_matches}            _ => None,
-        }}
+    fn get_var(&self, var_id: u64) -> Option<Value> {{
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }}
 
-    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {{
-        match name {{
-{set_matches}            _ => None,
-        }}
+    fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {{
+        VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }}
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {{
-        for (key, _) in hashmap.iter() {{
-            match key.as_str() {{
-{apply_exposed_matches}                _ => {{}}
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {{
+        for (var_id, val) in hashmap.iter() {{
+            if let Some(f) = VAR_APPLY_TABLE.get(var_id) {{
+                f(self, val);
             }}
         }}
     }}
 
-    fn call_function(&mut self, name: &str, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {{
-        match name {{
-{call_function_matches}            _ => {{}}
+    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {{
+        if let Some(f) = DISPATCH_TABLE.get(&id) {{
+            f(self, params, api);
         }}
     }}
 }}
-"#
-    ).unwrap();
+
+// =========================== Static Dispatch Tables ===========================
+
+static VAR_GET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&{struct_name}) -> Option<Value>>
+> = once_cell::sync::Lazy::new(|| {{
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&{struct_name}) -> Option<Value>> =
+        HashMap::with_capacity({var_count});
+{get_entries}    m
+}});
+
+static VAR_SET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut {struct_name}, Value) -> Option<()>>
+> = once_cell::sync::Lazy::new(|| {{
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut {struct_name}, Value) -> Option<()>> =
+        HashMap::with_capacity({var_count});
+{set_entries}    m
+}});
+
+static VAR_APPLY_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut {struct_name}, &Value)>
+> = once_cell::sync::Lazy::new(|| {{
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut {struct_name}, &Value)> =
+        HashMap::with_capacity({var_count});
+{apply_entries}    m
+}});
+
+static DISPATCH_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64,
+        fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)
+    >
+> = once_cell::sync::Lazy::new(|| {{
+    use std::collections::HashMap;
+    let mut m:
+        HashMap<u64, fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)> =
+        HashMap::with_capacity({funcs});
+{dispatch_entries}    m
+}});
+"#,
+        struct_name = struct_name,
+        var_count = variables.len(),
+        get_entries = get_entries,
+        set_entries = set_entries,
+        apply_entries = apply_entries,
+        dispatch_entries = dispatch_entries,
+        funcs = functions.len()
+    )
+    .unwrap();
 
     out
 }
@@ -1682,7 +1805,7 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
     let mut exposed = Vec::new();
     let mut variables = Vec::new();
 
-    let expose_re = Regex::new(r"///\s*@expose[^\n]*\n\s*(?:pub\s+)?(\w+)\s*:\s*([^,]+),").unwrap();
+    let expose_re = Regex::new(r"///\s*@expose[^\n]*\n\s*(?:pub\s+)?(\w+)\s*:\s*([^,]+),?").unwrap();
     for cap in expose_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
         let typ = cap[2].trim().to_string();
@@ -1691,14 +1814,16 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
             typ: Some(Variable::parse_type(&typ)),
             value: None,
         });
-        variables.push(Variable {
-            name,
-            typ: Some(Variable::parse_type(&typ)),
-            value: None,
-        });
+        if cap[0].contains("pub") {
+            variables.push(Variable {
+                name,
+                typ: Some(Variable::parse_type(&typ)),
+                value: None,
+            });
+    }
     }
 
-    let pub_re = Regex::new(r"pub\s+(\w+)\s*:\s*([^,]+),").unwrap();
+    let pub_re = Regex::new(r"pub\s+(\w+)\s*:\s*([^,\n}]+)").unwrap();
     for cap in pub_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
         if name == "node" || variables.iter().any(|v| v.name == name) {

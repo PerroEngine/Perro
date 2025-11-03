@@ -12,7 +12,7 @@ use serde_json::Value;
 use chrono::{Local, Datelike, Timelike}; // For date/time formatting
 
 use crate::{
-    Node, Node2D, Sprite2D, app_command::AppCommand, asset_io::{self, ResolvedPath, load_asset, resolve_path}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::{api_bindings::signal_to_id, transpiler::{script_path_to_identifier, transpile}}, manifest::Project, node_registry::{IntoInner, SceneNode}, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::UINode
+    Node, Node2D, Sprite2D, app_command::AppCommand, asset_io::{self, ResolvedPath, load_asset, resolve_path}, compiler::{BuildProfile, CompileTarget, Compiler}, lang::transpiler::{script_path_to_identifier, transpile}, manifest::Project, node_registry::{IntoInner, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, types::ScriptType, ui_node::UINode
 };
 
 //-----------------------------------------------------
@@ -204,19 +204,26 @@ impl<'a> ScriptApi<'a> {
     }
 
     pub fn call_function(&mut self, id: Uuid, func: &str, params: &SmallVec<[Value; 3]>) {
+         let func_id = self.string_to_u64(func);
+          self.call_function_id(id, func_id, params);
+        }
+    
+
+    pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &SmallVec<[Value; 3]>) {
           if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
             script.call_function(func, self, params);
         }
     }
 
-    pub fn signal_to_id(&mut self, signal: &str) -> u64 {
-        signal_to_id(signal)
+    pub fn string_to_u64(&mut self, string: &str) -> u64 {
+        string_to_u64(string)
     }
+
 
     // The human-friendly one
     pub fn emit_signal(&mut self, name: &str, params: SmallVec<[Value; 3]>) {
-        let id = self.signal_to_id(name);
+        let id = self.string_to_u64(name);
         self.scene.queue_signal_id(id, params);
     }
 
@@ -226,12 +233,13 @@ impl<'a> ScriptApi<'a> {
     }
 
     pub fn connect_signal(&mut self, name: &str, target: Uuid, function: &'static str) {
-        let id = self.signal_to_id(name);
-        self.scene.connect_signal_id(id, target, function);
+        let id = string_to_u64(name);
+        let fn_id = string_to_u64(function);
+        self.scene.connect_signal_id(id, target, fn_id);
     }
 
-    pub fn connect_signal_id(&mut self, id: u64, target: Uuid, function: &'static str) {
-        self.scene.connect_signal_id(id, target, function);
+    pub fn connect_signal_id(&mut self, id: u64, target: Uuid, function_id: u64) {
+        self.scene.connect_signal_id(id, target, function_id);
     }
 
     pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {
@@ -302,22 +310,40 @@ impl<'a> ScriptApi<'a> {
     pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         self.scene.merge_nodes(nodes);
     }
+
     pub fn set_script_var(
         &mut self, node_id: Uuid, name: &str, val: Value,
+    ) -> Option<()> {
+        let var_id = string_to_u64(name);
+
+        self.set_script_var_id(node_id, var_id, val)
+    }
+
+    pub fn set_script_var_id(
+        &mut self, node_id: Uuid, var_id: u64, val: Value,
     ) -> Option<()> {
         let rc_script = self.scene.get_script(node_id)?;
         let mut script = rc_script.borrow_mut();
 
-        script.set_var(name, val)?;
+        script.set_var(var_id, val)?;
         Some(())
     }
 
     pub fn get_script_var(
         &mut self,id: Uuid, name: &str,
     ) -> Value {
+        let var_id = string_to_u64(name);
+
+        self.get_script_var_id(id, var_id)
+    }
+
+        pub fn get_script_var_id(
+        &mut self,id: Uuid, var_id: u64,
+    ) -> Value {
+        
         if let Some(rc_script) = self.scene.get_script(id) {
             let script = rc_script.borrow_mut();
-            return script.get_var(name).unwrap_or_default();
+            return script.get_var(var_id).unwrap_or_default();
         }
         Value::Null
     }
@@ -349,3 +375,4 @@ pub fn print_error<T: std::fmt::Display>(&self, msg: T) {
     }
     
 }
+

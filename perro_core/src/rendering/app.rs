@@ -75,9 +75,8 @@ pub struct App<P: ScriptProvider> {
     game_scene: Option<Scene<P>>,
     last_update: std::time::Instant,
 
-    // FPS/UPS tracking
+    // FPS tracking
     fps_frames: u32,
-    ups_frames: u32,
     fps_measurement_start: std::time::Instant,
 
     // Frame pacing
@@ -125,7 +124,6 @@ impl<P: ScriptProvider> App<P> {
             last_update: now,
 
             fps_frames: 0,
-            ups_frames: 0,
             fps_measurement_start: now,
 
             target_fps,

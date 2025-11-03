@@ -1,5 +1,5 @@
 use crate::{
-    Graphics, Node, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::SceneNode, node_registry::BaseNode, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui// NEW import
+    Graphics, Node, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui// NEW import
 };
 
 use indexmap::IndexMap;
@@ -92,15 +92,10 @@ pub struct Scene<P: ScriptProvider> {
 
 #[derive(Default)]
 pub struct SignalBus {
-    // "Hit" → [ (script_id, "on_hit"), ... ]
-    pub connections: HashMap<u64, SmallVec<[SignalConnection; 4]>>,
+    // signal_id → { script_uuid → SmallVec<[u64; 4]> (function_ids) }
+    pub connections: HashMap<u64, HashMap<Uuid, SmallVec<[u64; 4]>>>,
 }
 
-#[derive(Clone)]
-pub struct SignalConnection {
-    pub target_script_id: Uuid,
-    pub function_name: &'static str,
-}
 
 impl<P: ScriptProvider> Scene<P> {
     /// Create a runtime scene from a root node
@@ -231,7 +226,7 @@ impl<P: ScriptProvider> Scene<P> {
         if self.delta_accum >= 1.0 {
             let ups = self.true_updates as f32 / self.delta_accum;
             println!(
-                "🔹 True UPS: {:.2}, True Delta: {:.12}, Script Updates: {:.12}",
+                "🔹 UPS: {:.2}, Delta: {:.12}, Script Updates: {:.12}",
                 ups,
                 true_delta,
                 self.test_val
@@ -242,10 +237,10 @@ impl<P: ScriptProvider> Scene<P> {
 
         // now use `true_delta` instead of external_delta
         let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
-        let project_ref = self.project.clone();
-        let mut project_borrow = project_ref.borrow_mut();
 
         for id in script_ids {
+            let project_ref = self.project.clone();
+            let mut project_borrow = project_ref.borrow_mut();
             let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
             api.call_update(id);
             let uuid = Uuid::from_str("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48").unwrap();
@@ -256,21 +251,30 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     
-    fn connect_signal(&mut self, signal: u64, target_id: Uuid, function: &'static str) {
-        println!("🔗 Registering connection: signal '{}' → script {} → fn {}()", 
-            signal, target_id, function);
+fn connect_signal(&mut self, signal: u64, target_id: Uuid, function_id: u64) {
+    println!(
+        "🔗 Registering connection: signal '{}' → script {} → fn {}()",
+        signal, target_id, function_id
+    );
 
-        let entry = self.signals.connections
-            .entry(signal)
-            .or_default();
+    // Top-level map: signal_id → inner map (script → list of fn ids)
+    let script_map = self.signals.connections.entry(signal).or_default();
 
-        entry.push(SignalConnection {
-            target_script_id: target_id,
-            function_name: function,
-        });
+    // Inner: target script → function list
+    let funcs = script_map.entry(target_id).or_default();
 
-        println!("   Total listeners for '{}': {}", signal, entry.len());
+    // Avoid duplicate function connections
+    if !funcs.iter().any(|&id| id == function_id) {
+        funcs.push(function_id);
     }
+
+    println!(
+        "   Total listeners for signal '{}': {} script(s), {} total function(s)",
+        signal,
+        script_map.len(),
+        script_map.values().map(|v| v.len()).sum::<usize>()
+    );
+}
 
   fn queue_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
         self.queued_signals.push((signal, params));
@@ -303,30 +307,39 @@ fn process_queued_signals(&mut self) {
 }
     
 fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
-
-    // Copy out listeners — break the immutable borrow early
-    let listeners: Vec<SignalConnection> = match self.signals.connections.get(&signal) {
-        Some(v) => v.to_vec(),
-        None => {
-            return;
-        }
-    };
-
-    let now = Instant::now();
-        let true_delta = match self.last_scene_update {
-            Some(prev) => now.duration_since(prev).as_secs_f32(),
-            None => 0.0,
-        };
-                    let project_ref = self.project.clone();
-            let mut project_borrow = project_ref.borrow_mut();
-
-        let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
-
-
-        for conn in listeners {
-            api.call_function(conn.target_script_id, conn.function_name, &params);
-        } 
+    // Copy out listeners before mutable borrow
+    let script_map_opt = self.signals.connections.get(&signal);
+    if script_map_opt.is_none() {
+        return;
     }
+
+    // Clone the minimal subset you need (script_id + function ids)
+    let listeners: Vec<(Uuid, SmallVec<[u64; 4]>)> = script_map_opt
+        .unwrap()
+        .iter()
+        .map(|(uuid, fns)| (*uuid, fns.clone()))
+        .collect();
+
+    // Now all borrows of self.signals are dropped ✅
+    let now = Instant::now();
+    let true_delta = self
+        .last_scene_update
+        .map(|prev| now.duration_since(prev).as_secs_f32())
+        .unwrap_or(0.0);
+
+    let project_ref = self.project.clone();
+    let mut project_borrow = project_ref.borrow_mut();
+
+    // Safe mutable borrow of self again
+    let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
+
+    // Emit to all registered scripts
+    for (target_id, funcs) in listeners {
+        for fn_id in funcs {
+            api.call_function_id(target_id, fn_id, &params);
+        }
+    }
+}
 
 
    pub fn instantiate_script(
@@ -398,10 +411,10 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
         let mut project_borrow = project_ref.borrow_mut();
 
         let now = Instant::now();
-let true_delta = match self.last_scene_update {
-    Some(prev) => now.duration_since(prev).as_secs_f32(),
-    None => 0.0,
-};
+        let true_delta = match self.last_scene_update {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            None => 0.0,
+        };
 
 
         let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
@@ -548,7 +561,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
 
-    fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: &'static str) {
+    fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64) {
         self.connect_signal(signal, target_id, function);
     }
 

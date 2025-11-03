@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::lang::ast::*;
-use crate::lang::ast_modules::{ApiModule, NodeSugarApi};
+use crate::lang::api_modules::{ApiModule, NodeSugarApi};
 use crate::lang::pup::lexer::{PupLexer, PupToken};
 use crate::lang::pup::api::{PupAPI, PupNodeSugar};
 
@@ -61,6 +61,8 @@ impl PupParser {
                         PupToken::Expose => {
                             self.next_token();
                             exposed.push(self.parse_expose()?);
+                            let last = exposed.last().unwrap().clone();
+                            variables.push(last);
                         }
                         PupToken::Ident(directive) => {
                             return Err(format!("Unknown directive @{}", directive));
@@ -81,6 +83,7 @@ impl PupParser {
                 }
             }
         }
+
 
         Ok(Script {
             node_type,

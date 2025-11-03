@@ -4,14 +4,44 @@ var x: float
 var y: int
 
 fn init() {
+    // connect to all B signals
+    Signal.connect("FromB_1", self, on_from_b_1)
+    Signal.connect("FromB_2", self, on_from_b_2)
+    Signal.connect("FromB_3", self, on_from_b_3)
+    Signal.connect("FromB_4", self, on_from_b_4)
+    Signal.connect("FromB_5", self, on_from_b_5)
+    Signal.connect("FromB_6", self, on_from_b_6)
+    Signal.connect("FromB_7", self, on_from_b_7)
+    Signal.connect("FromB_8", self, on_from_b_8)
+    Signal.connect("FromB_9", self, on_from_b_9)
+    Signal.connect("FromB_10", self, on_from_b_10)
+    Signal.connect("FromB_11", self, on_from_b_11)
+    Signal.connect("FromB_12", self, on_from_b_12)
+    Signal.connect("FromB_13", self, on_from_b_13)
+    Signal.connect("FromB_14", self, on_from_b_14)
+    Signal.connect("FromB_15", self, on_from_b_15)
 
-
-
+   //connect to all C signals
+    Signal.connect("FromC_1", self, on_from_c_1)
+    Signal.connect("FromC_2", self, on_from_c_2)
+    Signal.connect("FromC_3", self, on_from_c_3)
+    Signal.connect("FromC_4", self, on_from_c_4)
+    Signal.connect("FromC_5", self, on_from_c_5)
+    Signal.connect("FromC_6", self, on_from_c_6)
+    Signal.connect("FromC_7", self, on_from_c_7)
+    Signal.connect("FromC_8", self, on_from_c_8)
+    Signal.connect("FromC_9", self, on_from_c_9)
+    Signal.connect("FromC_10", self, on_from_c_10)
+    Signal.connect("FromC_11", self, on_from_c_11)
+    Signal.connect("FromC_12", self, on_from_c_12)
+    Signal.connect("FromC_13", self, on_from_c_13)
+    Signal.connect("FromC_14", self, on_from_c_14)
+    Signal.connect("FromC_15", self, on_from_c_15)
 }
 
-fn update() {     Signal.emit("FromA_1", "helloA_1")
-}
+fn update() {
 
+}
 
 
 

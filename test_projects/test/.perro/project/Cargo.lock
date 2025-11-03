@@ -2572,6 +2572,7 @@ name = "scripts"
 version = "0.1.0"
 dependencies = [
  "num-bigint",
+ "once_cell",
  "perro_core",
  "rust_decimal",
  "serde",

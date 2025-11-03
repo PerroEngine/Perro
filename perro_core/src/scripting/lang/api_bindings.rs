@@ -1,4 +1,4 @@
-use crate::lang::{ast::*, ast_modules::*};
+use crate::{lang::{api_modules::*, ast::*}, prelude::string_to_u64};
 
 /// ===========================================================
 ///  Shared API Traits — Codegen + Semantics
@@ -305,17 +305,6 @@ impl ApiSemantic for NodeSugarApi {
     }
 }
 
-    #[inline]
-    pub fn signal_to_id(name: &str) -> u64 {
-        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-        const FNV_PRIME: u64 = 0x100000001b3;
-        let mut hash = FNV_OFFSET_BASIS;
-        for byte in name.as_bytes() {
-            hash ^= *byte as u64;
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-        hash
-    }
 
 impl ApiCodegen for SignalApi {
     fn to_rust(
@@ -332,7 +321,7 @@ impl ApiCodegen for SignalApi {
         // Case 1: plain literal: "FooSignal"
         if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
             let inner = &trimmed[1..trimmed.len()-1];
-            let id = signal_to_id(inner);
+            let id = string_to_u64(inner);
             return format!("{id}u64");
         }
 
@@ -343,34 +332,33 @@ impl ApiCodegen for SignalApi {
             let inner_section = inner_section.trim();
             if inner_section.starts_with('"') && inner_section.ends_with('"') {
                 let inner = &inner_section[1..inner_section.len() - 1];
-                let id = signal_to_id(inner);
+                let id = string_to_u64(inner);
                 return format!("{id}u64");
             }
         }
 
-        // Everything else: variable, numeric, etc. leave alone
-        trimmed.to_string()
+        // Everything else: variable, numeric, convert to an id
+        format!("string_to_u64(&{trimmed})")
     }
 
-    fn strip_string_from(arg: &str) -> String {
+        fn strip_string_from(arg: &str) -> String {
             let trimmed = arg.trim();
 
-            // Case 1: String::from("literal")
+            // String::from("foo") case
             if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
                 let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1];
                 let inner_section = inner_section.trim();
                 if inner_section.starts_with('"') && inner_section.ends_with('"') {
-                    // Return just the string literal
-                    return inner_section.to_string();
+                    return inner_section[1..inner_section.len() - 1].to_string(); // <‑ remove quotes
                 }
             }
 
-            // Case 2: Already a plain literal "foo" - keep it
+            // Already "foo" ‑ strip quotes
             if trimmed.starts_with('"') && trimmed.ends_with('"') {
-                return trimmed.to_string();
+                return trimmed[1..trimmed.len() - 1].to_string();                // <‑ remove quotes
             }
 
-            // Case 3: Variable or expression - keep as-is
+            // Variable / expression
             trimmed.to_string()
         }
 
@@ -399,9 +387,11 @@ impl ApiCodegen for SignalApi {
                 // ✅ CHANGED: Use strip_string_from to get a plain string literal
                 let func = args.get(2).cloned().unwrap_or_else(|| "\"\"".into());
                 let func = strip_string_from(&func);
+
+                let func_id = string_to_u64(&func);
                 
                 // No & prefix needed - string literals are already &'static str
-                format!("api.connect_signal_id({signal}, {node}.id, {func})")
+                format!("api.connect_signal_id({signal}, {node}.id, {func_id}u64)")
             }
            SignalApi::Emit => {
                 let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());

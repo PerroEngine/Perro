@@ -22,6 +22,8 @@ use crate::registry::DllScriptProvider;
 
 pub type RuntimeApp = App<DllScriptProvider>;
 
+
+
 pub mod prelude {
     // Core engine node types
     pub use crate::nodes::*;
@@ -32,6 +34,17 @@ pub mod prelude {
 
     // Script API — only what script authors should use
     pub use crate::script::*;
+
+    pub fn string_to_u64(s: &str) -> u64 {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+        let mut hash = FNV_OFFSET_BASIS;
+        for byte in s.as_bytes() {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        hash
+}
 
     pub use crate::api::ScriptApi;
     // Correct source for UpdateOp

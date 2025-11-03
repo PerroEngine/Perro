@@ -1,12 +1,44 @@
 extends Node
 
 fn init() {
-  
+    // connect to all A signals
+    Signal.connect("FromA_1", self, on_from_a_1)
+    Signal.connect("FromA_2", self, on_from_a_2)
+    Signal.connect("FromA_3", self, on_from_a_3)
+    Signal.connect("FromA_4", self, on_from_a_4)
+    Signal.connect("FromA_5", self, on_from_a_5)
+    Signal.connect("FromA_6", self, on_from_a_6)
+    Signal.connect("FromA_7", self, on_from_a_7)
+    Signal.connect("FromA_8", self, on_from_a_8)
+    Signal.connect("FromA_9", self, on_from_a_9)
+    Signal.connect("FromA_10", self, on_from_a_10)
+    Signal.connect("FromA_11", self, on_from_a_11)
+    Signal.connect("FromA_12", self, on_from_a_12)
+    Signal.connect("FromA_13", self, on_from_a_13)
+    Signal.connect("FromA_14", self, on_from_a_14)
+    Signal.connect("FromA_15", self, on_from_a_15)
 
+    // connect to all B signals
+    Signal.connect("FromB_1", self, on_from_b_1)
+    Signal.connect("FromB_2", self, on_from_b_2)
+    Signal.connect("FromB_3", self, on_from_b_3)
+    Signal.connect("FromB_4", self, on_from_b_4)
+    Signal.connect("FromB_5", self, on_from_b_5)
+    Signal.connect("FromB_6", self, on_from_b_6)
+    Signal.connect("FromB_7", self, on_from_b_7)
+    Signal.connect("FromB_8", self, on_from_b_8)
+    Signal.connect("FromB_9", self, on_from_b_9)
+    Signal.connect("FromB_10", self, on_from_b_10)
+    Signal.connect("FromB_11", self, on_from_b_11)
+    Signal.connect("FromB_12", self, on_from_b_12)
+    Signal.connect("FromB_13", self, on_from_b_13)
+    Signal.connect("FromB_14", self, on_from_b_14)
+    Signal.connect("FromB_15", self, on_from_b_15)
 }
 
-fn update() {     Signal.emit("FromC_1", "greetC_1")
- }
+fn update() {
+  
+}
 
 fn on_from_a_1(m:String){
     self.name = m
