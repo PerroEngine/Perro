@@ -1,75 +1,83 @@
-use crate::{lang::{api_modules::*, ast::*}, prelude::string_to_u64};
+use crate::{
+    lang::{api_modules::*, ast::*},
+    node_registry::NodeType, // Ensure this is correctly in scope
+    prelude::string_to_u64,
+};
 
-/// ===========================================================
-///  Shared API Traits — Codegen + Semantics
-/// ===========================================================
+// ===========================================================
+// Shared API Traits — Codegen + Types
+// ===========================================================
+
+/// Provides type semantics for API calls (return types, parameter types).
+pub trait ApiTypes {
+    /// Returns the return type of the API call.
+    fn return_type(&self) -> Option<Type>;
+
+    /// Returns the expected argument types for the API call, in order.
+    /// Default is `None` (no specific type expectations).
+    fn param_types(&self) -> Option<Vec<Type>> {
+        None // Default implementation, no specific param types
+    }
+}
 
 /// Converts a generic API call into Rust source code output.
 pub trait ApiCodegen {
-    fn to_rust(
+    /// Generates the final Rust code string for a specific API call.
+    /// The `args_strs` parameter contains the already-processed (and potentially casted)
+    /// Rust code strings for each argument. This trait's implementors are purely
+    /// responsible for constructing the final call string from these prepared arguments.
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
+        args_strs: &[String], // Pre-processed, potentially casted argument strings
+        script: &Script,      // `script` context is needed for things like `script.verbose` in ConsoleApi
         needs_self: bool,
         current_func: Option<&Function>,
     ) -> String;
-
-/// Smart argument generator — automatically borrows values but
-/// leaves string literals and `.as_str()` untouched.
-/// Also prepends `self.` to struct field variables.
-fn rust_args(
-    &self,
-    args: &[Expr],
-    script: &Script,
-    needs_self: bool,
-    current_func: Option<&Function>,
-) -> Vec<String> {
-    args.iter()
-        .map(|a| {
-            let code = a.to_rust(needs_self, script, None, current_func);
-            
-            // Check if this is a simple identifier that's a struct field
-            if let Expr::Ident(name) = a {
-                if script.is_struct_field(name) {
-                    return format!("self.{}", code);
-                }
-            }
-            
-            code
-        })
-        .collect()
-}
 }
 
-/// Provides return‑type semantics for each API.
-pub trait ApiSemantic {
-    /// Returns what type this API call produces.
-    fn return_type(&self) -> Option<Type>;
-}
-
-/// ===========================================================
-///  Aggregator — routes both codegen + type semantics
-/// ===========================================================
+// ===========================================================
+// Aggregator — routes both codegen + type semantics
+// ===========================================================
 
 impl ApiModule {
+    /// Primary entry point for code generation of an API call from its AST representation.
+    /// This orchestrates the argument processing (including `self.` prefixing and type-aware casting)
+    /// before delegating to the specific `ApiCodegen` implementation for final Rust string assembly.
     pub fn to_rust(
         &self,
-        args: &[Expr],
+        args: &[Expr], // Raw AST expressions for arguments
         script: &Script,
         needs_self: bool,
         current_func: Option<&Function>,
     ) -> String {
+        // 1. Get the expected parameter types for *this specific* API call.
+        // This call dispatches to the correct `ApiTypes` implementation (e.g., `ArrayApi`'s `param_types`).
+        let expected_arg_types = self.param_types();
+
+
+        // 2. Process the raw AST arguments into Rust code strings.
+        // This `generate_rust_args` helper handles:
+        //    - Converting `Expr` to basic Rust code string.
+        //    - Applying `self.` prefixing for script fields.
+        //    - Applying implicit type casts based on `expected_arg_types`.
+        let rust_args_strings =
+            generate_rust_args(args, script, needs_self, current_func, expected_arg_types.as_ref());
+
+        // 3. Delegate to the specific `ApiCodegen` implementation to build the final Rust call string.
+        // This `match self` ensures the correct `to_rust_prepared` method is called based on the `ApiModule` variant.
         match self {
-            ApiModule::JSON(api) => api.to_rust(args, script, needs_self, current_func),
-            ApiModule::Time(api) => api.to_rust(args, script, needs_self, current_func),
-            ApiModule::OS(api) => api.to_rust(args, script, needs_self, current_func),
-            ApiModule::Console(api) => api.to_rust(args, script, needs_self, current_func),
-            ApiModule::ScriptType(api) => api.to_rust(args, script, needs_self, current_func),
-            ApiModule::NodeSugar(api) => api.to_rust(args, script, needs_self, current_func),
-            ApiModule::Signal(api) => api.to_rust(args, script, needs_self, current_func)
+            ApiModule::JSON(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::Time(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::OS(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::Console(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::ScriptType(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::NodeSugar(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::Signal(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::ArrayOp(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
         }
     }
 
+    /// Dispatches the `return_type` call to the appropriate `ApiTypes` implementation for this module variant.
     pub fn return_type(&self) -> Option<Type> {
         match self {
             ApiModule::JSON(api) => api.return_type(),
@@ -78,71 +86,149 @@ impl ApiModule {
             ApiModule::Console(api) => api.return_type(),
             ApiModule::ScriptType(api) => api.return_type(),
             ApiModule::NodeSugar(api) => api.return_type(),
-            ApiModule::Signal(api) => api.return_type()
+            ApiModule::Signal(api) => api.return_type(),
+            ApiModule::ArrayOp(api) => api.return_type(),
         }
+    }
+
+    /// Dispatches the `param_types` call to the appropriate `ApiTypes` implementation for this module variant.
+     pub fn param_types(&self) -> Option<Vec<Type>> {
+        let result = match self {
+            ApiModule::JSON(api) => api.param_types(),
+            ApiModule::Time(api) => api.param_types(),
+            ApiModule::OS(api) => api.param_types(),
+            ApiModule::Console(api) => api.param_types(),
+            ApiModule::ScriptType(api) => api.param_types(),
+            ApiModule::NodeSugar(api) => api.param_types(),
+            ApiModule::Signal(api) => api.param_types(),
+            ApiModule::ArrayOp(api) => api.param_types(),
+        };
+        // Add this line:
+        println!("ApiModule::param_types for {:?} returning: {:?}", self, result.as_ref().map(|v| v.len()));
+        result
     }
 }
 
-/// ===========================================================
-///  JSON API
-/// ===========================================================
+/// Helper function to process raw `Expr` arguments into formatted Rust code strings.
+/// This includes converting the `Expr` to its basic Rust code, applying `self.` prefixing
+/// for script fields, and handling implicit type casts based on `expected_arg_types`.
+fn generate_rust_args(
+    args: &[Expr],
+    script: &Script,
+    needs_self: bool,
+    current_func: Option<&Function>,
+    expected_arg_types: Option<&Vec<Type>>,
+) -> Vec<String> {
+    args.iter()
+        .enumerate()
+        .map(|(i, a)| {
+            // 1. Convert the raw AST expression `a` into its basic Rust code string.
+            //    This `code_raw` is the *uncasted*, *unprefixed* base string.
+            let expected_ty_hint = expected_arg_types
+                .and_then(|v| v.get(i));
+            let mut code_raw = a.to_rust(needs_self, script, expected_ty_hint, current_func);
+
+            // 2. Determine if a cast is needed and apply it to `code_raw`.
+            //    This part happens first on the raw expression's representation.
+            if let Some(expected_types) = expected_arg_types {
+                if let Some(expect_ty) = expected_types.get(i) {
+                    if let Some(actual_ty) = script.infer_expr_type(a, current_func) {
+                        if actual_ty.can_implicitly_convert_to(expect_ty)
+                            && actual_ty != *expect_ty
+                        {
+                            code_raw = script.generate_implicit_cast_for_expr(
+                                &code_raw, // Use code_raw here!
+                                &actual_ty,
+                                expect_ty,
+                            );
+                            println!("Casted arg {}: {} (from {:?} to {:?})", i, code_raw, actual_ty, expect_ty);
+                        }
+                    }
+                }
+            }
+
+            // 3. Now, take the (potentially casted) `code_raw` and apply `self.` prefixing.
+            //    This is the *last* step to construct the final argument string.
+            let mut final_code = code_raw;
+            if let Expr::Ident(name) = a {
+                if script.is_struct_field(name) && !final_code.starts_with("self.") {
+                    final_code = format!("self.{final_code}");
+                }
+            }
+            final_code // Return the final, processed string
+        })
+        .collect()
+}
+
+// ===========================================================
+// JSON API Implementations
+// ===========================================================
 
 impl ApiCodegen for JSONApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        _script: &Script, // script not usually needed here
+        _needs_self: bool, // needs_self not usually needed here
+        _current_func: Option<&Function>, // current_func not usually needed here
     ) -> String {
-        let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             JSONApi::Parse => {
-                let arg = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.JSON.parse(&{})", arg)
             }
             JSONApi::Stringify => {
-                let arg = args.get(0).cloned().unwrap_or_else(|| "json!({})".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "json!({})".into());
                 format!("api.JSON.stringify(&{})", arg)
             }
         }
     }
 }
 
-impl ApiSemantic for JSONApi {
+impl ApiTypes for JSONApi {
     fn return_type(&self) -> Option<Type> {
         match self {
-            JSONApi::Parse => Some(Type::Custom("json".into())),
+            JSONApi::Parse => Some(Type::Container(ContainerKind::Object)),
             JSONApi::Stringify => Some(Type::String),
+        }
+    }
+    
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            JSONApi::Parse => Some(vec![
+                Type::String
+            ]),
+            JSONApi::Stringify => Some(vec![
+                Type::Container(ContainerKind::Object)
+            ])
         }
     }
 }
 
-/// ===========================================================
-///  Time API
-/// ===========================================================
+// ===========================================================
+// Time API Implementations
+// ===========================================================
 
 impl ApiCodegen for TimeApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
     ) -> String {
-        let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             TimeApi::DeltaTime => "api.Time.get_delta()".into(),
             TimeApi::GetUnixMsec => "api.Time.get_unix_time_msec()".into(),
             TimeApi::SleepMsec => {
-                let arg = args.get(0).cloned().unwrap_or_else(|| "0".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "0".into());
                 format!("api.Time.sleep_msec({})", arg)
             }
         }
     }
 }
 
-impl ApiSemantic for TimeApi {
+impl ApiTypes for TimeApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             TimeApi::DeltaTime => Some(Type::Number(NumberKind::Float(32))),
@@ -150,64 +236,81 @@ impl ApiSemantic for TimeApi {
             TimeApi::SleepMsec => Some(Type::Void),
         }
     }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            TimeApi::SleepMsec => Some(vec![
+                Type::Number(NumberKind::Float(32))
+            ]),
+            _ => None
+        }
+    }
+    // No specific param_types for Time APIs needed by default, uses None.
 }
 
-/// ===========================================================
-///  OS API
-/// ===========================================================
+// ===========================================================
+// OS API Implementations
+// ===========================================================
 
 impl ApiCodegen for OSApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
     ) -> String {
-        let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             OSApi::GetPlatformName => "api.OS.get_platform_name()".into(),
             OSApi::GetEnv => {
-                let arg = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.OS.getenv({})", arg)
             }
         }
     }
 }
 
-impl ApiSemantic for OSApi {
+impl ApiTypes for OSApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             OSApi::GetPlatformName => Some(Type::String),
             OSApi::GetEnv => Some(Type::String),
         }
     }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            OSApi::GetEnv => Some(vec![
+                Type::String
+            ]),
+            _ => None
+        }
+    }
+    // No specific param_types for OS APIs needed by default, uses None.
 }
 
-/// ===========================================================
-///  Console API
-/// ===========================================================
+// ===========================================================
+// Console API Implementations
+// ===========================================================
 
 impl ApiCodegen for ConsoleApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        script: &Script, // Keep script here for verbose check
+        _needs_self: bool,
+        _current_func: Option<&Function>,
     ) -> String {
-        let args = self.rust_args(args, script, needs_self, current_func);
-
-        let joined = if args.len() <= 1 {
-            args.get(0).cloned().unwrap_or("\"\"".into())
+        let joined = if args_strs.len() <= 1 {
+            args_strs.get(0).cloned().unwrap_or("\"\"".into())
         } else {
             format!(
                 "format!(\"{}\", {})",
-                (0..args.len())
+                (0..args_strs.len())
                     .map(|_| "{}")
                     .collect::<Vec<_>>()
                     .join(" "),
-                args.join(", "),
+                args_strs.join(", "),
             )
         };
 
@@ -221,62 +324,61 @@ impl ApiCodegen for ConsoleApi {
         if script.verbose {
             line
         } else {
-            // keep a commented placeholder so the developer can still see what was generated
             format!("// [stripped for release] {}", line)
         }
     }
 }
 
-impl ApiSemantic for ConsoleApi {
+impl ApiTypes for ConsoleApi {
     fn return_type(&self) -> Option<Type> {
         Some(Type::Void)
     }
+    // No specific param_types for Console APIs needed by default, uses None.
 }
 
-/// ===========================================================
-///  ScriptType API
-/// ===========================================================
+// ===========================================================
+// ScriptType API Implementations
+// ===========================================================
 
 impl ApiCodegen for ScriptTypeApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
     ) -> String {
-        let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             ScriptTypeApi::Instantiate => {
-                let arg = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.instantiate_script({})", arg)
             }
         }
     }
 }
 
-impl ApiSemantic for ScriptTypeApi {
+impl ApiTypes for ScriptTypeApi {
     fn return_type(&self) -> Option<Type> {
         Some(Type::Script)
     }
+    // No specific param_types for ScriptType APIs needed by default, uses None.
 }
 
-/// ===========================================================
-///  NodeSugar API
-/// ===========================================================
+// ===========================================================
+// NodeSugar API Implementations
+// ===========================================================
 
 impl ApiCodegen for NodeSugarApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
     ) -> String {
-        let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             NodeSugarApi::GetVar => {
-                let (node, name) = (args.get(0), args.get(1));
+                let (node, name) = (args_strs.get(0), args_strs.get(1));
                 format!(
                     "api.get_script_var(&{}.id, {})",
                     node.map(|s| s.as_str()).unwrap_or("self"),
@@ -284,7 +386,7 @@ impl ApiCodegen for NodeSugarApi {
                 )
             }
             NodeSugarApi::SetVar => {
-                let (node, name, val) = (args.get(0), args.get(1), args.get(2));
+                let (node, name, val) = (args_strs.get(0), args_strs.get(1), args_strs.get(2));
                 format!(
                     "api.set_script_var(&{}.id, {}, {})",
                     node.map(|s| s.as_str()).unwrap_or("self"),
@@ -296,112 +398,84 @@ impl ApiCodegen for NodeSugarApi {
     }
 }
 
-impl ApiSemantic for NodeSugarApi {
+impl ApiTypes for NodeSugarApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
         }
     }
+    // No specific param_types for NodeSugar APIs needed by default, uses None.
 }
 
+// ===========================================================
+// Signal API Implementations
+// ===========================================================
 
 impl ApiCodegen for SignalApi {
-    fn to_rust(
+    fn to_rust_prepared(
         &self,
-        args: &[Expr],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
     ) -> String {
-
-    fn prehash_if_literal(arg: &str) -> String {
-        let trimmed = arg.trim();
-
-        // Case 1: plain literal: "FooSignal"
-        if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
-            let inner = &trimmed[1..trimmed.len()-1];
-            let id = string_to_u64(inner);
-            return format!("{id}u64");
-        }
-
-        // Case 2: String::from("FooSignal")
-        if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
-            // Extract the inner part between parens
-            let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1];
-            let inner_section = inner_section.trim();
-            if inner_section.starts_with('"') && inner_section.ends_with('"') {
-                let inner = &inner_section[1..inner_section.len() - 1];
+        fn prehash_if_literal(arg: &str) -> String {
+            let trimmed = arg.trim();
+            if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
+                let inner = &trimmed[1..trimmed.len() - 1];
                 let id = string_to_u64(inner);
                 return format!("{id}u64");
             }
+            if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
+                if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                    let inner = &inner_section[1..inner_section.len() - 1];
+                    let id = string_to_u64(inner);
+                    return format!("{id}u64");
+                }
+            }
+            format!("string_to_u64(&{trimmed})")
         }
-
-        // Everything else: variable, numeric, convert to an id
-        format!("string_to_u64(&{trimmed})")
-    }
 
         fn strip_string_from(arg: &str) -> String {
             let trimmed = arg.trim();
-
-            // String::from("foo") case
             if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
-                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1];
-                let inner_section = inner_section.trim();
+                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
                 if inner_section.starts_with('"') && inner_section.ends_with('"') {
-                    return inner_section[1..inner_section.len() - 1].to_string(); // <‑ remove quotes
+                    return inner_section[1..inner_section.len() - 1].to_string();
                 }
             }
-
-            // Already "foo" ‑ strip quotes
             if trimmed.starts_with('"') && trimmed.ends_with('"') {
-                return trimmed[1..trimmed.len() - 1].to_string();                // <‑ remove quotes
+                return trimmed[1..trimmed.len() - 1].to_string();
             }
-
-            // Variable / expression
             trimmed.to_string()
         }
 
-
-        let args = self.rust_args(args, script, needs_self, current_func);
         match self {
             SignalApi::New => {
-                let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                if script.is_struct_field(&signal) {
-                    signal = format!("self.{signal}");
-                }
+                let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                // Note: `is_struct_field` and `format!("self.{signal}")` logic
+                // usually belongs in `generate_rust_args` for `Expr::Ident`,
+                // but if `SignalApi::New` argument is ever an `Expr::Ident` that
+                // `generate_rust_args` missed, it might need to be re-evaluated.
+                // Assuming `generate_rust_args` has handled this for `args_strs`.
                 prehash_if_literal(&signal)
             }
-           SignalApi::Connect => {
-                let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                if script.is_struct_field(&signal) {
-                    signal = format!("self.{signal}");
-                }
-                let signal = prehash_if_literal(&signal);
-
-                let mut node = args.get(1).cloned().unwrap_or_else(|| "self.node".into());
+            SignalApi::Connect => {
+                let signal = prehash_if_literal(args_strs.get(0).unwrap());
+                let mut node = args_strs.get(1).cloned().unwrap_or_else(|| "self.node".into());
                 if node == "self" {
-                    node = "self.node".into();
+                    node = "self.node".into()
                 }
-
-                // ✅ CHANGED: Use strip_string_from to get a plain string literal
-                let func = args.get(2).cloned().unwrap_or_else(|| "\"\"".into());
-                let func = strip_string_from(&func);
-
+                let func = strip_string_from(args_strs.get(2).unwrap());
                 let func_id = string_to_u64(&func);
-                
-                // No & prefix needed - string literals are already &'static str
                 format!("api.connect_signal_id({signal}, {node}.id, {func_id}u64)")
             }
-           SignalApi::Emit => {
-                let mut signal = args.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                if script.is_struct_field(&signal) {
-                    signal = format!("self.{signal}");
-                }
-                let signal = prehash_if_literal(&signal);
-
-                if args.len() > 1 {
-                    let params: Vec<String> = args[1..]
+            SignalApi::Emit => {
+                let signal = prehash_if_literal(args_strs.get(0).unwrap());
+                if args_strs.len() > 1 {
+                    let params: Vec<String> = args_strs[1..]
                         .iter()
                         .map(|a| format!("json!({a})"))
                         .collect();
@@ -414,11 +488,97 @@ impl ApiCodegen for SignalApi {
     }
 }
 
-impl ApiSemantic for SignalApi {
-        fn return_type(&self) -> Option<Type> {
+impl ApiTypes for SignalApi {
+    fn return_type(&self) -> Option<Type> {
         match self {
             SignalApi::New => Some(Type::Custom("Signal".into())),
             _ => Some(Type::Void),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            SignalApi::New => Some(vec![
+                Type::String
+            ]),
+            _ => None
+        }
+    }
+    // No specific param_types for Signal APIs needed by default, uses None.
+}
+
+
+// ===========================================================
+// ArrayOp API Implementations
+// ===========================================================
+
+impl ApiCodegen for ArrayApi {
+    fn to_rust_prepared(
+        &self,
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            ArrayApi::Push => {
+                // args: [vec, value]
+                format!("{}.push(json!({}))", args_strs[0], args_strs[1])
+            }
+            ArrayApi::Pop => {
+                // args: [vec]
+                format!("{}.pop()", args_strs[0])
+            }
+            ArrayApi::Len => {
+                // args: [vec]
+                format!("{}.len()", args_strs[0])
+            }
+            ArrayApi::Insert => {
+                // args: [vec, index, value]
+                format!("{}.insert({} as usize, json!({}))", args_strs[0], args_strs[1], args_strs[2])
+            }
+            ArrayApi::Remove => {
+                // args: [vec, index]
+                format!("{}.remove({} as usize)", args_strs[0], args_strs[1])
+            }
+            ArrayApi::New => {
+                format!("Vec::new()")
+            }
+        }
+    }
+}
+
+impl ApiTypes for ArrayApi {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            ArrayApi::Push   => Some(Type::Void),
+            ArrayApi::Pop    => Some(Type::Container(ContainerKind::Object)),
+            ArrayApi::Insert => Some(Type::Void),
+            ArrayApi::Remove => Some(Type::Container(ContainerKind::Object)),
+            ArrayApi::Len    => Some(Type::Number(NumberKind::Unsigned(32))),
+            ArrayApi::New    => Some(Type::Container(ContainerKind::Array)),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        use ContainerKind::*;
+        use NumberKind::*;
+
+        match self {
+            ArrayApi::Push => Some(vec![
+                Type::Container(Array),
+                Type::Container(Object), // any value; just “Value”
+            ]),
+            ArrayApi::Insert => Some(vec![
+                Type::Container(Array),
+                Type::Number(Unsigned(32)),       // index
+                Type::Container(Object),          // value
+            ]),
+            ArrayApi::Remove => Some(vec![
+                Type::Container(Array),
+                Type::Number(Unsigned(32)),       // index expected
+            ]),
+            ArrayApi::Len | ArrayApi::Pop | ArrayApi::New => None,
         }
     }
 }

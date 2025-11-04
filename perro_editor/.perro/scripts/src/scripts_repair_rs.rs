@@ -12,11 +12,12 @@ use perro_core::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
+use smallvec::{SmallVec, smallvec};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RepairScript {
-        node_id: Uuid::nil(),
+        node: Node::new("Repair", None),
         toolchain_ver: String::new(),
         engine_ver: String::new(),
         editor_mode: false,
@@ -25,7 +26,7 @@ pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn ScriptObject {
 
 /// @PerroScript
 pub struct RepairScript {
-    node_id: Uuid,
+    node: Node,
     toolchain_ver: String,
     engine_ver: String,
     editor_mode: bool,
@@ -324,30 +325,73 @@ impl Script for RepairScript {
 
 impl ScriptObject for RepairScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
+        self.node.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node_id
+        self.node.id
     }
 
-    fn get_var(&self, name: &str) -> Option<Value> {
-        match name {
-            _ => None,
-        }
+    fn get_var(&self, var_id: u64) -> Option<Value> {
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
-    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
-        match name {
-            _ => None,
-        }
+    fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
+        VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {
-        for (key, _) in hashmap.iter() {
-            match key.as_str() {
-                _ => {},
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {
+        for (var_id, val) in hashmap.iter() {
+            if let Some(f) = VAR_APPLY_TABLE.get(var_id) {
+                f(self, val);
             }
         }
     }
+
+    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+        if let Some(f) = DISPATCH_TABLE.get(&id) {
+            f(self, params, api);
+        }
+    }
 }
+
+// =========================== Static Dispatch Tables ===========================
+
+static VAR_GET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&RepairScript) -> Option<Value>>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&RepairScript) -> Option<Value>> =
+        HashMap::with_capacity(0);
+    m
+});
+
+static VAR_SET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut RepairScript, Value) -> Option<()>>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut RepairScript, Value) -> Option<()>> =
+        HashMap::with_capacity(0);
+    m
+});
+
+static VAR_APPLY_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut RepairScript, &Value)>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut RepairScript, &Value)> =
+        HashMap::with_capacity(0);
+    m
+});
+
+static DISPATCH_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64,
+        fn(&mut RepairScript, &[Value], &mut ScriptApi<'_>)
+    >
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m:
+        HashMap<u64, fn(&mut RepairScript, &[Value], &mut ScriptApi<'_>)> =
+        HashMap::with_capacity(0);
+    m
+});

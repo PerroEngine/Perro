@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{engine_structs::EngineStruct, lang::api_modules::ApiModule, node_registry::NodeType};
 
 
@@ -30,32 +32,34 @@ impl Variable {
         }
     }
 
-   pub fn parse_type(s: &str) -> Type {
-    match s {
-        // Signed
-        "i8" | "i16" | "i32" | "i64" | "i128" => {
-            let size = s.trim_start_matches('i').parse().unwrap();
-            Type::Number(NumberKind::Signed(size))
+    pub fn parse_type(s: &str) -> Type {
+        match s {
+            // Primitive numeric
+            "i8" | "i16" | "i32" | "i64" | "i128" => {
+                let w = s.trim_start_matches('i').parse().unwrap();
+                Type::Number(NumberKind::Signed(w))
+            }
+            "u8" | "u16" | "u32" | "u64" | "u128" => {
+                let w = s.trim_start_matches('u').parse().unwrap();
+                Type::Number(NumberKind::Unsigned(w))
+            }
+            "f32" => Type::Number(NumberKind::Float(32)),
+            "f64" => Type::Number(NumberKind::Float(64)),
+
+            // Other primitives
+            "bool" => Type::Bool,
+            "String" => Type::String,
+            "&str" => Type::StrRef,
+
+            // Containers
+            "HashMap" => Type::Container(ContainerKind::HashMap),
+            "Vec" => Type::Container(ContainerKind::Array),
+            "Value" => Type::Container(ContainerKind::Object),
+
+            // Everything else
+            name => Type::Custom(name.to_string()),
         }
-
-        // Unsigned
-        "u8" | "u16" | "u32" | "u64" | "u128" => {
-            let size = s.trim_start_matches('u').parse().unwrap();
-            Type::Number(NumberKind::Unsigned(size))
-        }
-
-        // Float
-        "f16" => Type::Number(NumberKind::Float(16)),
-        "f32" => Type::Number(NumberKind::Float(32)),
-        "f64" => Type::Number(NumberKind::Float(64)),
-        "f128" => Type::Number(NumberKind::Float(128)),
-
-        "bool" => Type::Bool,
-        "String" => Type::String,
-        "&str" => Type::StrRef,
-        other => Type::Custom(other.to_string()),
     }
-}
 
 
 pub fn json_access(&self) -> (&'static str, String) {
@@ -94,6 +98,19 @@ pub fn json_access(&self) -> (&'static str, String) {
             ("as_str", ".to_string()".into()),
         Type::Custom(type_name) if type_name == "Signal" => 
            ("as_u64", format!(" as u64")),
+
+        // Containers
+        Type::Container(ContainerKind::Array)
+        | Type::Container(ContainerKind::FixedArray(_)) => {
+            ("as_array", ".clone()".into())
+        }
+        Type::Container(ContainerKind::HashMap) => {
+            ("as_object", ".iter().map(|(k, v)| (k.clone(), v.clone())).collect()".into())
+        }
+        Type::Container(ContainerKind::Object) => {
+            ("as_object", ".clone().into()".into())
+        }
+
         Type::Script =>
             ("as_str", ".parse().unwrap()".into()),
         Type::Custom(type_name) => {
@@ -133,6 +150,11 @@ pub fn default_value(&self) -> String {
         Some(Type::Script) => "None".into(),
         Some(Type::String) => "String::new()".into(),
         Some(Type::StrRef) => "\"\"".into(),
+
+        Some(Type::Container(ContainerKind::HashMap)) => "HashMap::new()".into(),
+        Some(Type::Container(ContainerKind::Array)) => "Vec::new()".into(),
+        Some(Type::Container(ContainerKind::Object)) => "json!({})".into(),
+
         Some(Type::Custom(_)) => "Default::default()".into(),
         Some(Type::Void) => panic!("Void invalid"),
         _ => panic!("Type inference unresolved"),
@@ -171,9 +193,19 @@ pub enum Type {
     Script,
     Void,
 
+    Container(ContainerKind),
+
     Node(NodeType),
     EngineStruct(EngineStruct),
     Custom(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ContainerKind {
+    HashMap,
+    Object,
+    Array,
+    FixedArray(usize),
 }
 
 
@@ -203,6 +235,12 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
+
+            Type::Container(ContainerKind::HashMap) => "HashMap<String, Value>".into(),
+            Type::Container(ContainerKind::Array) => "Vec<Value>".into(),
+            Type::Container(ContainerKind::Object) => "Value".into(),
+            Type::Container(ContainerKind::FixedArray(size)) => format!("[Value; {}]", size),
+
             Type::Script => "Option<ScriptType>".to_string(),
             Type::Custom(name) if name == "Signal" => "u64".to_string(),
             Type::Custom(name) => name.clone(),
@@ -243,6 +281,21 @@ pub fn can_implicitly_convert_to(&self, target: &Type) -> bool {
     }
 }
 
+    pub fn is_copy_type(&self) -> bool {
+        use Type::*;
+        use NumberKind::*;
+
+        match self {
+            // all numeric primitives are Copy
+            Number(Signed(_)) | Number(Unsigned(_)) | Number(Float(_)) | Bool => true,
+            _ => false,
+        }
+    }
+
+    pub fn requires_clone(&self) -> bool {
+        !self.is_copy_type()
+    }
+
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,6 +321,8 @@ pub enum Stmt {
     MemberAssignOp(TypedExpr, Op, TypedExpr),  // Both need types
     ScriptAssign(String, String, TypedExpr),   // RHS needs type
     ScriptAssignOp(String, String, Op, TypedExpr), // RHS needs type
+    IndexAssign(Box<Expr>, Box<Expr>, TypedExpr),
+    IndexAssignOp(Box<Expr>, Box<Expr>, Op, TypedExpr),
     Pass,
 }
 
@@ -283,7 +338,10 @@ pub enum Expr {
     Call(Box<Expr>, Vec<Expr>),
     Cast(Box<Expr>, Type),
 
-    ObjectLiteral(Vec<(String, Expr)>),
+    ContainerLiteral(ContainerKind, Vec<(Option<String>, Expr)>),
+    Index(Box<Expr>, Box<Expr>),
+
+    StructNew(String, Vec<(String, Expr)>),
 
     ApiCall(ApiModule, Vec<Expr>),
 }

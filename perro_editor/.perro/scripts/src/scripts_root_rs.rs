@@ -10,22 +10,12 @@ use perro_core::prelude::*;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
+use smallvec::{SmallVec, smallvec};
 
-#[unsafe(no_mangle)]
-pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn ScriptObject {
-    Box::into_raw(Box::new(RootScript {
-        node_id: Uuid::nil(),
-        b: 0.0f32,
-        a: 0i32,
-        e: String::new(),
-        f: F { g: 0 },
-        h: 0,
-    })) as *mut dyn ScriptObject
-}
 
 /// @PerroScript
 pub struct RootScript {
-    node_id: Uuid,
+    node: Node,
     /// @expose
     pub b: f32,
     /// @expose
@@ -36,6 +26,18 @@ pub struct RootScript {
     pub f: F,
     /// @expose
     pub h: i64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn ScriptObject {
+    Box::into_raw(Box::new(RootScript {
+        node: Node::new("Root", None),
+        b: 0.0f32,
+        a: 0i32,
+        e: String::new(),
+        f: F { g: 0 },
+        h: 0,
+    })) as *mut dyn ScriptObject
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -247,105 +249,138 @@ mod natord {
 
 impl ScriptObject for RootScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
+        self.node.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node_id
+        self.node.id
     }
 
-    fn get_var(&self, name: &str) -> Option<Value> {
-        match name {
-            "b" => Some(json!(self.b)),
-            "a" => Some(json!(self.a)),
-            "e" => Some(json!(self.e)),
-            "f" => Some(json!(self.f)),
-            "h" => Some(json!(self.h)),
-            _ => None,
-        }
+    fn get_var(&self, var_id: u64) -> Option<Value> {
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
-    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
-        match name {
-            "b" => {
-                if let Some(v) = val.as_f64() {
-                    self.b = v as f32;
-                    return Some(());
-                }
-                None
-            },
-            "a" => {
-                if let Some(v) = val.as_i64() {
-                    self.a = v as i32;
-                    return Some(());
-                }
-                None
-            },
-            "e" => {
-                if let Some(v) = val.as_str() {
-                    self.e = v.to_string();
-                    return Some(());
-                }
-                None
-            },
-            "f" => {
-                if let Ok(v) = serde_json::from_value::<F>(val) {
-                    self.f = v;
-                    return Some(());
-                }
-                None
-            },
-            "h" => {
-                if let Some(v) = val.as_i64() {
-                    self.h = v as i64;
-                    return Some(());
-                }
-                None
-            },
-            _ => None,
-        }
+    fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
+        VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {
-        for (key, _) in hashmap.iter() {
-            match key.as_str() {
-                "b" => {
-                    if let Some(value) = hashmap.get("b") {
-                        if let Some(v) = value.as_f64() {
-                            self.b = v as f32;
-                        }
-                    }
-                },
-                "a" => {
-                    if let Some(value) = hashmap.get("a") {
-                        if let Some(v) = value.as_i64() {
-                            self.a = v as i32;
-                        }
-                    }
-                },
-                "e" => {
-                    if let Some(value) = hashmap.get("e") {
-                        if let Some(v) = value.as_str() {
-                            self.e = v.to_string();
-                        }
-                    }
-                },
-                "f" => {
-                    if let Some(value) = hashmap.get("f") {
-                        if let Ok(v) = serde_json::from_value::<F>(value.clone()) {
-                            self.f = v;
-                        }
-                    }
-                },
-                "h" => {
-                    if let Some(value) = hashmap.get("h") {
-                        if let Some(v) = value.as_i64() {
-                            self.h = v as i64;
-                        }
-                    }
-                },
-                _ => {},
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {
+        for (var_id, val) in hashmap.iter() {
+            if let Some(f) = VAR_APPLY_TABLE.get(var_id) {
+                f(self, val);
             }
         }
     }
+
+    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+        if let Some(f) = DISPATCH_TABLE.get(&id) {
+            f(self, params, api);
+        }
+    }
 }
+
+// =========================== Static Dispatch Tables ===========================
+
+static VAR_GET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&RootScript) -> Option<Value>>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&RootScript) -> Option<Value>> =
+        HashMap::with_capacity(4);
+        m.insert(12638190499090526629u64, |script: &RootScript| -> Option<Value> {
+            Some(json!(script.b))
+        });
+        m.insert(12638187200555641996u64, |script: &RootScript| -> Option<Value> {
+            Some(json!(script.a))
+        });
+        m.insert(12638186101044013785u64, |script: &RootScript| -> Option<Value> {
+            Some(json!(script.f))
+        });
+        m.insert(12638197096160295895u64, |script: &RootScript| -> Option<Value> {
+            Some(json!(script.h))
+        });
+    m
+});
+
+static VAR_SET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut RootScript, Value) -> Option<()>>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut RootScript, Value) -> Option<()>> =
+        HashMap::with_capacity(4);
+        m.insert(12638190499090526629u64, |script: &mut RootScript, val: Value| -> Option<()> {
+            if let Some(v) = val.as_f64() {
+                script.b = v as f32;
+                return Some(());
+            }
+            None
+        });
+        m.insert(12638187200555641996u64, |script: &mut RootScript, val: Value| -> Option<()> {
+            if let Some(v) = val.as_i64() {
+                script.a = v as i32;
+                return Some(());
+            }
+            None
+        });
+        m.insert(12638186101044013785u64, |script: &mut RootScript, val: Value| -> Option<()> {
+            if let Ok(v) = serde_json::from_value::<F>(val) {
+                script.f = v;
+                return Some(());
+            }
+            None
+        });
+        m.insert(12638197096160295895u64, |script: &mut RootScript, val: Value| -> Option<()> {
+            if let Some(v) = val.as_i64() {
+                script.h = v as i64;
+                return Some(());
+            }
+            None
+        });
+    m
+});
+
+static VAR_APPLY_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut RootScript, &Value)>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut RootScript, &Value)> =
+        HashMap::with_capacity(4);
+        m.insert(12638190499090526629u64, |script: &mut RootScript, val: &Value| {
+            if let Some(v) = val.as_f64() {
+                script.b = v as f32;
+            }
+        });
+        m.insert(12638187200555641996u64, |script: &mut RootScript, val: &Value| {
+            if let Some(v) = val.as_i64() {
+                script.a = v as i32;
+            }
+        });
+        m.insert(12638182802509129152u64, |script: &mut RootScript, val: &Value| {
+            if let Some(v) = val.as_str() {
+                script.e = v.to_string();
+            }
+        });
+        m.insert(12638186101044013785u64, |script: &mut RootScript, val: &Value| {
+            if let Ok(v) = serde_json::from_value::<F>(val.clone()) {
+                script.f = v;
+            }
+        });
+        m.insert(12638197096160295895u64, |script: &mut RootScript, val: &Value| {
+            if let Some(v) = val.as_i64() {
+                script.h = v as i64;
+            }
+        });
+    m
+});
+
+static DISPATCH_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64,
+        fn(&mut RootScript, &[Value], &mut ScriptApi<'_>)
+    >
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m:
+        HashMap<u64, fn(&mut RootScript, &[Value], &mut ScriptApi<'_>)> =
+        HashMap::with_capacity(0);
+    m
+});

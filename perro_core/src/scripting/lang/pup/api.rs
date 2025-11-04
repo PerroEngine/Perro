@@ -3,7 +3,7 @@
 // Central router used by the parser to map syntax → semantic call
 // ----------------------------------------------------------------
 
-use crate::lang::api_modules::*;
+use crate::lang::{api_modules::*, ast::{ContainerKind, Type}};
 
 pub struct PupAPI;
 
@@ -16,8 +16,21 @@ impl PupAPI {
             PupConsole::NAME => PupConsole::resolve_method(func),
             PupScriptType::NAME => PupScriptType::resolve_method(func),
             PupSignal::NAME => PupSignal::resolve_method(func),
+
+
+            PupArray::NAME => PupArray::resolve_method(func),
             _ => None,
         }
+    }
+}
+
+pub fn normalize_type_name(type_: &Type) -> &str {
+    match type_ {
+        Type::Container(ContainerKind::Array) => "Array",
+        Type::Container(ContainerKind::HashMap) => "Map",
+        Type::Container(ContainerKind::Object) => "Object",
+        Type::Custom(s) => s.as_str(),
+        _ => "",
     }
 }
 
@@ -110,6 +123,30 @@ impl PupSignal {
             "new" => Some(ApiModule::Signal(SignalApi::New)),
             "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
             "emit" =>  Some(ApiModule::Signal(SignalApi::Emit)),
+            _ => None,
+        }
+    }
+}
+
+
+
+
+
+
+
+pub struct PupArray;
+impl PupArray {
+    pub const NAME: &'static str = "Array";
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "push" | "append" => Some(ApiModule::ArrayOp(ArrayApi::Push)),
+            "insert" => Some(ApiModule::ArrayOp(ArrayApi::Insert)),
+            "remove" => Some(ApiModule::ArrayOp(ArrayApi::Remove)),
+            "pop"  => Some(ApiModule::ArrayOp(ArrayApi::Pop)),
+            "len" | "size" => Some(ApiModule::ArrayOp(ArrayApi::Len)),
+
+            "new" => Some(ApiModule::ArrayOp(ArrayApi::New)),
+            // Add more mappings here!
             _ => None,
         }
     }

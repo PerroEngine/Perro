@@ -10,22 +10,12 @@ use perro_core::prelude::*;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
+use smallvec::{SmallVec, smallvec};
 
-#[unsafe(no_mangle)]
-pub extern "C" fn root_create_script() -> *mut dyn ScriptObject {
-    Box::into_raw(Box::new(RootScript {
-        node_id: Uuid::nil(),
-        b: 0.0f32,
-        a: 0i32,
-        e: String::new(),
-        f: F { g: 0 },
-        h: 0,
-    })) as *mut dyn ScriptObject
-}
 
 /// @PerroScript
 pub struct RootScript {
-    node_id: Uuid,
+    node: Node,
     /// @expose
     pub b: f32,
     /// @expose
@@ -36,6 +26,18 @@ pub struct RootScript {
     pub f: F,
     /// @expose
     pub h: i64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn root_create_script() -> *mut dyn ScriptObject {
+    Box::into_raw(Box::new(RootScript {
+        node: Node::new("Root", None),
+        b: 0.0f32,
+        a: 0i32,
+        e: String::new(),
+        f: F { g: 0 },
+        h: 0,
+    })) as *mut dyn ScriptObject
 }
 
 #[derive(Clone, Deserialize, Serialize)]

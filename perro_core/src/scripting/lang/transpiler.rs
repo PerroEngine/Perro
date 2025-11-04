@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use walkdir::WalkDir;
 
@@ -199,6 +199,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
 
     let script_paths = discover_scripts(project_root)?;
     if script_paths.is_empty() {
+        println!("📜 No scripts found.");
         return Ok(());
     }
 
@@ -211,8 +212,19 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
 
     clean_orphaned_scripts(project_root, &script_res_paths)?;
 
+    // For summarizing timings at the end
+    struct Timing {
+        path: String,
+        io_time: Duration,
+        parse_time: Duration,
+        transpile_time: Duration,
+        total_time: Duration,
+    }
+
+    let mut timings: Vec<Timing> = Vec::new();
+
     for path in &script_paths {
-        let script_start = Instant::now();
+        let script_total_start = Instant::now();
         let identifier = script_path_to_identifier(&path.to_string_lossy())?;
 
         let extension = path
@@ -220,32 +232,83 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
             .and_then(|ext| ext.to_str())
             .ok_or_else(|| "Failed to extract file extension".to_string())?;
 
+        // I/O timing
+        let io_start = Instant::now();
         let code = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        let io_time = io_start.elapsed();
+
+        let parse_start = Instant::now();
+        let transpile_start;
+        let parse_time;
+        let transpile_time;
 
         match extension {
             "pup" => {
                 let mut script = PupParser::new(&code).parse_script()?;
+                parse_time = parse_start.elapsed();
+
+                transpile_start = Instant::now();
                 script.to_rust(&identifier, project_root, None, verbose);
+                transpile_time = transpile_start.elapsed();
             }
             "cs" => {
                 let mut script = CsParser::new(&code).parse_script()?;
+                parse_time = parse_start.elapsed();
+
+                transpile_start = Instant::now();
                 script.to_rust(&identifier, project_root, None, verbose);
+                transpile_time = transpile_start.elapsed();
             }
             "rs" => {
+                parse_time = Duration::ZERO;
+                transpile_start = Instant::now();
                 derive_rust_perro_script(project_root, &code, &identifier)?;
+                transpile_time = transpile_start.elapsed();
             }
             _ => return Err(format!("Unsupported file extension: {}", extension)),
         }
 
+        let total_time = script_total_start.elapsed();
+
+        timings.push(Timing {
+            path: path.display().to_string(),
+            io_time,
+            parse_time,
+            transpile_time,
+            total_time,
+        });
+
         println!(
-            "  ✅ Transpiled: {} -> {} ({:.2?})",
+            "  ✅ {} -> {} (I/O: {:.2?}, Parse: {:.2?}, Transpile: {:.2?}, Total: {:.2?})",
             path.display(),
             identifier,
-            script_start.elapsed()
+            io_time,
+            parse_time,
+            transpile_time,
+            total_time
         );
     }
 
-    println!("✅ Total transpilation time: {:.2?}", total_start.elapsed());
+    // Overall summary
+    let total_time = total_start.elapsed();
+    let total_scripts = timings.len();
+
+    let total_io: Duration = timings.iter().map(|t| t.io_time).sum();
+    let total_parse: Duration = timings.iter().map(|t| t.parse_time).sum();
+    let total_transpile: Duration = timings.iter().map(|t| t.transpile_time).sum();
+
+   println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!(
+        "📊 **Transpilation Summary**\n  \
+        📜 Scripts: {}\n  \
+        💾 Total I/O: {:.2?}\n  \
+        🧩 Total Parse: {:.2?}\n  \
+        🔧 Total Transpile: {:.2?}\n  \
+        ⏱️  Overall Time: {:.2?}",
+        total_scripts, total_io, total_parse, total_transpile, total_time
+    );
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
     Ok(())
 }

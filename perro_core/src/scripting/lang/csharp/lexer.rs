@@ -11,13 +11,15 @@ pub enum CsToken {
     Var,
     Fn,
     Void,
-    Number(f32),
+    Number(String),
     String(String),
     This,
 
     // braces and punctuation
     LParen,
     RParen,
+    LBracket,
+    RBracket,
     LBrace,
     RBrace,
     Dot,
@@ -58,7 +60,7 @@ impl CsLexer {
         }
     }
 
-    fn peek(&self) -> Option<char> {
+    pub fn peek(&self) -> Option<char> {
         self.input.get(self.pos).copied()
     }
 
@@ -84,7 +86,7 @@ impl CsLexer {
                 continue;
             }
 
-            // block comment /* */
+            // block comment /* ... */
             if self.peek() == Some('/') && self.input.get(self.pos + 1) == Some(&'*') {
                 self.advance();
                 self.advance();
@@ -124,18 +126,7 @@ impl CsLexer {
             }
         }
         let s: String = self.input[start..self.pos].iter().collect();
-        CsToken::Number(s.parse().unwrap_or(0.0))
-    }
-
-     fn is_type_keyword(s: &str) -> bool {
-        matches!(s,
-            // C# primitive types
-            "bool" | "byte" | "sbyte" | "char" | 
-            "decimal" | "double" | "float" |
-            "int" | "uint" | "nint" | "nuint" |
-            "long" | "ulong" | "short" | "ushort" |
-            "object" | "string" | "dynamic"
-        )
+        CsToken::Number(s)
     }
 
     pub fn next_token(&mut self) -> CsToken {
@@ -145,12 +136,13 @@ impl CsLexer {
         }
 
         let ch = self.advance().unwrap();
-
         match ch {
             '{' => CsToken::LBrace,
             '}' => CsToken::RBrace,
             '(' => CsToken::LParen,
             ')' => CsToken::RParen,
+            '[' => CsToken::LBracket,
+            ']' => CsToken::RBracket,
             ';' => CsToken::Semicolon,
             ',' => CsToken::Comma,
             '.' => CsToken::Dot,
@@ -206,7 +198,6 @@ impl CsLexer {
                 self.pos -= 1;
                 let ident = self.read_identifier();
                 let lower = ident.to_lowercase();
-
                 match lower.as_str() {
                     "using" => CsToken::Using,
                     "namespace" => CsToken::Namespace,
@@ -219,7 +210,6 @@ impl CsLexer {
                     "this" => CsToken::This,
                     "var" => CsToken::Var,
                     "void" => CsToken::Void,
-                    s if Self::is_type_keyword(s) => CsToken::Type(s.to_string()),
                     _ => CsToken::Ident(ident),
                 }
             }

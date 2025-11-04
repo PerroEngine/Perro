@@ -6,7 +6,11 @@ pub enum ApiModule {
     Console(ConsoleApi),
     ScriptType(ScriptTypeApi),
     NodeSugar(NodeSugarApi),
-    Signal(SignalApi)
+    Signal(SignalApi),
+
+
+
+    ArrayOp(ArrayApi),
 }
 
 #[derive(Debug, Clone)]
@@ -54,4 +58,20 @@ pub enum SignalApi {
     New,
     Connect,
     Emit
+}
+
+
+
+
+
+#[derive(Debug, Clone)]
+pub enum ArrayApi {
+    Push,
+    Pop,
+    Insert,
+    Remove,
+    Len,
+
+    New
+    // etc, add more as needed!
 }

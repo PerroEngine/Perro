@@ -3,6 +3,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use smallvec::{SmallVec, smallvec};
 use serde_json::{Value, json};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
@@ -19,7 +20,7 @@ use perro_core::prelude::*;
 // ========================================================================
 
 pub struct ScriptsEditorPupScript {
-    node_id: Uuid,
+    node: Node,
     a: f32,
     bi: BigInt,
     c: Player,
@@ -32,7 +33,7 @@ pub struct ScriptsEditorPupScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_editor_pup_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(ScriptsEditorPupScript {
-        node_id: Uuid::nil(),
+        node: Node::new("ScriptsEditorPup", None),
         a: 0.0f32,
         bi: BigInt::from_str("0").unwrap(),
         c: Default::default(),
@@ -48,6 +49,14 @@ pub struct Player {
     pub hp: i32,
 }
 
+impl std::fmt::Display for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
+        write!(f, "hp: {:?} ", self.hp)?;
+        write!(f, "}}")
+    }
+}
+
 impl Player {
     pub fn new() -> Self { Self::default() }
 }
@@ -59,11 +68,17 @@ pub struct Stats {
     pub base: Player,
 }
 
+impl std::fmt::Display for Stats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
+        write!(f, "}}")
+    }
+}
+
 impl Stats {
     pub fn new() -> Self { Self::default() }
-    fn heal(&mut self, amt: i32, api: &mut ScriptApi<'_>) {
-        let mut amt = amt;
-        api.JSON.stringify(&json!({ "hp": amt }));
+    fn heal(&mut self, mut amt: i32, api: &mut ScriptApi<'_>, external_call: bool) {
+        api.JSON.stringify(&&json!({ "hp": amt }));
     }
 
 }
@@ -86,13 +101,13 @@ impl DerefMut for Stats {
 impl Script for ScriptsEditorPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         let mut s = String::from("Hellow World");
-        api.print(s.as_str());
-        api.print(s.as_str());
+        api.print(&s);
+        api.print(&s);
         let mut dghj = 12f64;
         self.bi = BigInt::from(dghj as i64);
-        let mut b = api.JSON.stringify(&json!({ "foo": 5f32 }));
-        api.print(b.as_str());
-        self.test_casting_behavior();
+        let mut b = api.JSON.stringify(&&json!({ "foo": 5f32 }));
+        api.print(&b);
+        self.test_casting_behavior(api, false);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -105,12 +120,12 @@ impl Script for ScriptsEditorPupScript {
 // ========================================================================
 
 impl ScriptsEditorPupScript {
-    fn fart(&mut self, api: &mut ScriptApi<'_>) {
+    fn fart(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         let mut s = 5f32;
-        api.print(s);
+        api.print(&s);
     }
 
-    fn test_casting_behavior(&mut self) {
+    fn test_casting_behavior(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         let mut i8_val = 10i8;
         let mut i16_val = 100i16;
         let mut i32_val = 1000i32;
@@ -196,52 +211,121 @@ impl ScriptsEditorPupScript {
 
 impl ScriptObject for ScriptsEditorPupScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node_id = id;
+        self.node.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node_id
+        self.node.id
     }
 
-    fn get_var(&self, name: &str) -> Option<Value> {
-        match name {
-            "c" => Some(json!(self.c)),
-            _ => None,
-        }
+    fn get_var(&self, var_id: u64) -> Option<Value> {
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
-    fn set_var(&mut self, name: &str, val: Value) -> Option<()> {
-        match name {
-            "c" => {
-                if let Ok(v) = serde_json::from_value::<Player>(val) {
-                    self.c = v;
-                    return Some(());
-                }
-                None
-            },
-            _ => None,
-        }
+    fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
+        VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<String, Value>) {
-        for (key, _) in hashmap.iter() {
-            match key.as_str() {
-                "a" => {
-                    if let Some(value) = hashmap.get("a") {
-                        if let Some(v) = value.as_f64() {
-                            self.a = v as f32;
-                        }
-                    }
-                },
-                "bi" => {
-                    if let Some(value) = hashmap.get("bi") {
-                        if let Some(v) = value.as_str() {
-                            self.bi = v.parse::<BigInt>().unwrap();
-                        }
-                    }
-                },
-                _ => {},
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {
+        for (var_id, val) in hashmap.iter() {
+            if let Some(f) = VAR_APPLY_TABLE.get(var_id) {
+                f(self, val);
             }
         }
     }
+
+    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+        if let Some(f) = DISPATCH_TABLE.get(&id) {
+            f(self, params, api);
+        }
+    }
 }
+
+// =========================== Static Dispatch Tables ===========================
+
+static VAR_GET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&ScriptsEditorPupScript) -> Option<Value>>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&ScriptsEditorPupScript) -> Option<Value>> =
+        HashMap::with_capacity(3);
+        m.insert(12638187200555641996u64, |script: &ScriptsEditorPupScript| -> Option<Value> {
+            Some(json!(script.a))
+        });
+        m.insert(623250502729981348u64, |script: &ScriptsEditorPupScript| -> Option<Value> {
+            Some(json!(script.bi))
+        });
+        m.insert(12638189399578898418u64, |script: &ScriptsEditorPupScript| -> Option<Value> {
+            Some(json!(script.c))
+        });
+    m
+});
+
+static VAR_SET_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut ScriptsEditorPupScript, Value) -> Option<()>>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut ScriptsEditorPupScript, Value) -> Option<()>> =
+        HashMap::with_capacity(3);
+        m.insert(12638187200555641996u64, |script: &mut ScriptsEditorPupScript, val: Value| -> Option<()> {
+            if let Some(v) = val.as_f64() {
+                script.a = v as f32;
+                return Some(());
+            }
+            None
+        });
+        m.insert(623250502729981348u64, |script: &mut ScriptsEditorPupScript, val: Value| -> Option<()> {
+            if let Some(v) = val.as_str() {
+                script.bi = v.parse::<BigInt>().unwrap();
+                return Some(());
+            }
+            None
+        });
+        m.insert(12638189399578898418u64, |script: &mut ScriptsEditorPupScript, val: Value| -> Option<()> {
+            if let Ok(v) = serde_json::from_value::<Player>(val) {
+                script.c = v;
+                return Some(());
+            }
+            None
+        });
+    m
+});
+
+static VAR_APPLY_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64, fn(&mut ScriptsEditorPupScript, &Value)>
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m: HashMap<u64, fn(&mut ScriptsEditorPupScript, &Value)> =
+        HashMap::with_capacity(3);
+        m.insert(12638187200555641996u64, |script: &mut ScriptsEditorPupScript, val: &Value| {
+            if let Some(v) = val.as_f64() {
+                script.a = v as f32;
+            }
+        });
+        m.insert(623250502729981348u64, |script: &mut ScriptsEditorPupScript, val: &Value| {
+            if let Some(v) = val.as_str() {
+                script.bi = v.parse::<BigInt>().unwrap();
+            }
+        });
+    m
+});
+
+static DISPATCH_TABLE: once_cell::sync::Lazy<
+    std::collections::HashMap<u64,
+        fn(&mut ScriptsEditorPupScript, &[Value], &mut ScriptApi<'_>)
+    >
+> = once_cell::sync::Lazy::new(|| {
+    use std::collections::HashMap;
+    let mut m:
+        HashMap<u64, fn(&mut ScriptsEditorPupScript, &[Value], &mut ScriptApi<'_>)> =
+        HashMap::with_capacity(4);
+        m.insert(17246073498204514350u64,
+            |this: &mut ScriptsEditorPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            this.fart(api, true);
+        });
+        m.insert(3588896087067325934u64,
+            |this: &mut ScriptsEditorPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            this.test_casting_behavior(api, true);
+        });
+    m
+});

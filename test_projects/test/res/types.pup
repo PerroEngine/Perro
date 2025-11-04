@@ -1,0 +1,33 @@
+extends Node2D
+
+@expose var player_speed: float = 300
+@expose var player_name: string
+var tags_array: Array = ["player", "friendly"]
+var stat_map: Map = <["strength": 5, "agility": 6]>
+var meta_object: Object = { level: 3, zone: "forest" }
+var current_score = 0
+
+struct Inventory {
+    var inventory_items: Array
+    var inventory_slots: int
+}
+
+struct SuperInventory extends Inventory {
+    var super_owner: string
+}
+
+fn init() {
+    current_score = 42
+    tags_array.push("start")
+
+    var b = new Array()
+    b.push("fart")
+    b.push(2)
+    var t: int = 4
+    b.remove(0)
+    b.remove(t)
+}
+
+fn update() {
+
+}

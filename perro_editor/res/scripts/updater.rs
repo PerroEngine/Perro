@@ -11,10 +11,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::process::Command;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
+use smallvec::{SmallVec, smallvec};
 
 /// @PerroScript
 pub struct UpdaterScript {
-    node_id: Uuid,
+    node: Node,
     check_timer: f32,
     state: UpdateState,
     my_version: String,
@@ -23,7 +24,7 @@ pub struct UpdaterScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn updater_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(UpdaterScript {
-        node_id: Uuid::nil(),
+        node: Node::new("Updater", None),
         check_timer: 0.0,
         state: UpdateState::Initial,
         my_version: String::new(),
@@ -369,7 +370,7 @@ impl Script for UpdaterScript {
             return;
         }
 
-        self.check_timer += api.delta();
+        self.check_timer += api.Time.get_delta();
 
         // Start checking after 1.0 seconds
         if self.check_timer >= 0.0 && self.state == UpdateState::Initial {
