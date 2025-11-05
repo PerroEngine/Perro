@@ -3,9 +3,11 @@ extends Node2D
 @expose var player_speed: float = 300
 @expose var player_name: string
 var tags_array: Array = ["player", "friendly"]
-var stat_map: Map = <["strength": 5, "agility": 6]>
+var stat_map: Map = <["strength": 12], ["agility": 51]>
+var stat_map2 = <["strength": tags_array], ["agility": player_speed]>
 var meta_object: Object = { level: 3, zone: "forest" }
-var current_score = 0
+var meta_object2 = { level: 1, zone: "forest2" }
+var current_score = stat_map
 
 struct Inventory {
     var inventory_items: Array
@@ -17,10 +19,26 @@ struct SuperInventory extends Inventory {
 }
 
 fn init() {
-    current_score = 42
+    current_score = <["b": 2],["foo": "bar"]>
     tags_array.push("start")
 
-    var b = new Array()
+    let maptest: Map<[int: float]> = <[1: 1], [2: 2]>
+
+    let f = maptest.get(1) as int
+
+    f += 2
+
+    let v = new Map()
+    v.insert("hp", 99)
+    let q = 12
+    v.insert(q as string, q)
+    var u = v.get("hp") as float
+    
+    u = 2
+
+    let o = {}
+
+    var b = []
     b.push("fart")
     b.push(2)
     var t: int = 4

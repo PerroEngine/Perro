@@ -8,7 +8,7 @@ use std::cell::RefCell;
 
 use regex::Regex;
 
-use crate::{asset_io::{ProjectRoot, get_project_root}, lang::ast::*, prelude::string_to_u64, script::Var};
+use crate::{asset_io::{ProjectRoot, get_project_root}, lang::{api_modules::*, ast::*}, prelude::string_to_u64, script::Var};
 
 // ============================================================================
 // Type Inference Cache - Dramatically speeds up repeated type lookups
@@ -40,6 +40,30 @@ fn to_pascal_case(s: &str) -> String {
 }
 
 impl Script {
+
+    pub fn infer_map_key_type(
+        &self,
+        map_expr: &Expr,
+        current_func: Option<&Function>,
+    ) -> Option<Type> {
+        self.infer_expr_type(map_expr, current_func)
+            .and_then(|t| match t {
+                Type::Container(ContainerKind::HashMap, ref types) => types.get(0).cloned(),
+                _ => None,
+            })
+    }
+    pub fn infer_map_value_type(
+        &self,
+        map_expr: &Expr,
+        current_func: Option<&Function>,
+    ) -> Option<Type> {
+        self.infer_expr_type(map_expr, current_func)
+            .and_then(|t| match t {
+                Type::Container(ContainerKind::HashMap, ref types) => types.get(1).cloned(),
+                _ => None,
+            })
+    }
+
     pub fn get_struct_field_type(&self, struct_name: &str, field_name: &str) -> Option<Type> {
         self.structs
             .iter()
@@ -180,7 +204,22 @@ impl Script {
         // -------------------------------------------------------------
         // API CALL (Time.get_delta() etc.)
         // -------------------------------------------------------------
-        Expr::ApiCall(api, _) => api.return_type(),
+        Expr::ApiCall(api, args) => match api {
+        ApiModule::MapOp(MapApi::Get) => {
+            if let Some(Type::Container(ContainerKind::HashMap, ref params)) = self.infer_expr_type(&args[0], current_func) {
+                return params.get(1).cloned(); // value type
+            }
+            Some(Type::Object)
+        }
+        ApiModule::ArrayOp(ArrayApi::Pop) => {
+            if let Some(Type::Container(ContainerKind::Array, ref params)) = self.infer_expr_type(&args[0], current_func) {
+                return params.get(0).cloned(); // element type
+            }
+            Some(Type::Object)
+        }
+        // ... other API cases ...
+        _ => api.return_type(),
+    }
 
         // -------------------------------------------------------------
         // STRUCT INITIALIZATION (new MyStruct(...) or literal form)
@@ -198,7 +237,13 @@ impl Script {
         // -------------------------------------------------------------
         // ARRAY or OBJECT LITERAL (future extension)
         // -------------------------------------------------------------
-       Expr::ContainerLiteral(kind, elems) => Some(Type::Container(kind.clone())),
+        Expr::ObjectLiteral(_) => Some(Type::Object),
+
+        Expr::ContainerLiteral(kind, _) => match kind {
+            ContainerKind::Array    => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
+            ContainerKind::HashMap  => Some(Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object])),
+            ContainerKind::FixedArray(_) => Some(Type::Container(kind.clone(), vec![Type::Object])),
+        },
 
         _ => None,
     };
@@ -386,37 +431,121 @@ impl Script {
 
         out.push_str("}\n\n");
 
-        out.push_str("// ========================================================================\n");
-        write!(out, "// {} - Creator Function (FFI Entry Point)\n", pascal_struct_name).unwrap();
+       out.push_str("// ========================================================================\n");
+        write!(
+            out,
+            "// {} - Creator Function (FFI Entry Point)\n",
+            pascal_struct_name
+        )
+        .unwrap();
         out.push_str("// ========================================================================\n\n");
-        
+
+        // Emit FFI header
         out.push_str("#[unsafe(no_mangle)]\n");
-        write!(out, "pub extern \"C\" fn {}_create_script() -> *mut dyn ScriptObject {{\n", struct_name.to_lowercase()).unwrap();
-        write!(out, "    Box::into_raw(Box::new({}Script {{\n", pascal_struct_name).unwrap();
+        write!(
+            out,
+            "pub extern \"C\" fn {}_create_script() -> *mut dyn ScriptObject {{\n",
+            struct_name.to_lowercase()
+        )
+        .unwrap();
+
+        // Optional: handle node init
         if self.node_type == "Node" {
-            write!(out, "        node: {}::new(\"{}\", None),\n", script.node_type, pascal_struct_name).unwrap();
+            write!(
+                out,
+                "    let node = {}::new(\"{}\", None);\n",
+                script.node_type, pascal_struct_name
+            )
+            .unwrap();
         } else {
-            write!(out, "        node: {}::new(\"{}\"),\n", script.node_type, pascal_struct_name).unwrap();
+            write!(
+                out,
+                "    let node = {}::new(\"{}\");\n",
+                script.node_type, pascal_struct_name
+            )
+            .unwrap();
         }
 
-       for name in &field_order {
+        // -----------------------------------------------------
+        // 1. Emit local variable predefinitions for all fields
+        // -----------------------------------------------------
+        for name in &field_order {
             let (_, _, is_exposed) = merged_fields.get(name).unwrap();
 
-            let init_code = if *is_exposed {
-                script.exposed.iter()
+            let mut init_code = if *is_exposed {
+                script
+                    .exposed
+                    .iter()
                     .find(|e| e.name == **name)
                     .unwrap()
                     .rust_initialization(&script, current_func)
             } else {
-                script.variables.iter()
+                script
+                    .variables
+                    .iter()
                     .find(|v| v.name == **name)
                     .unwrap()
                     .rust_initialization(&script, current_func)
             };
 
-            write!(out, "        {}: {},\n", name, init_code).unwrap();
+                if init_code.contains("self.") {
+                    init_code = init_code.replace("self.", "");
+                }
+
+                let re_ident = Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\b").unwrap();
+
+    // track which other variables this initializer mentions
+    let mut referenced_vars = Vec::new();
+    for cap in re_ident.captures_iter(&init_code) {
+        let ref_name = cap[1].to_string();
+
+        // skip self-reference and Rust keywords
+        if ref_name == *name
+            || !field_order.contains(&ref_name.as_str())
+            || ["let", "mut", "new", "HashMap", "vec", "json"].contains(&ref_name.as_str())
+        {
+            continue;
         }
 
+        referenced_vars.push(ref_name);
+    }
+
+    // ------------------------------
+    // 3. If any referenced variable is non-Copy, ensure ".clone()"
+    // ------------------------------
+    for ref_name in referenced_vars {
+        if let Some(ref_type) = script.get_variable_type(&ref_name) {
+            if ref_type.requires_clone() {
+                // Replace *bare identifier* occurrences with `.clone()`
+                let re_replace =
+                    Regex::new(&format!(r"\b{}\b", regex::escape(&ref_name))).unwrap();
+                init_code = re_replace
+                    .replace_all(&init_code, format!("{}.clone()", ref_name))
+                    .to_string();
+            }
+        }
+    }
+                
+
+            // Predeclare variable instead of inline it
+            write!(out, "    let {} = {};\n", name, init_code).unwrap();
+        }
+
+        // -----------------------------------------------------
+        // 2. Emit actual struct construction
+        // -----------------------------------------------------
+        write!(
+            out,
+            "\n    Box::into_raw(Box::new({}Script {{\n",
+            pascal_struct_name
+        )
+        .unwrap();
+
+        // Fill in struct fields using locals (safe to reference one another now)
+        write!(out, "        node,\n").unwrap();
+        for name in &field_order {
+            write!(out, "        {},\n", name).unwrap();
+        }
 
         out.push_str("    })) as *mut dyn ScriptObject\n");
         out.push_str("}\n\n");
@@ -1086,10 +1215,13 @@ Stmt::IndexAssignOp(array_expr, index_expr, op, rhs_expr) => {
                 _ => format!("({}.to_i64().unwrap_or_default() as i{})", expr, w),
             },
             (Number(Signed(_) | Unsigned(_)), Number(Decimal)) => format!("Decimal::from({})", expr),
+
+
             _ => {
                 eprintln!("Warning: Unhandled cast from {:?} to {:?}", from_type, to_type);
                 expr.to_string()
-            }
+            },
+
         }
     }
 
@@ -1171,26 +1303,35 @@ impl Expr {
         use ContainerKind::*;
 
         match self {
-           Expr::Ident(name) => {
-            let is_local = current_func
-                .and_then(|f| {
-                    Some(
+            Expr::Ident(name) => {
+                let is_local = current_func
+                    .map(|f| {
                         f.locals.iter().any(|v| v.name == *name)
-                        || f.params.iter().any(|p| p.name == *name),
-                    )
-                }).unwrap_or(false);
+                            || f.params.iter().any(|p| p.name == *name)
+                    })
+                    .unwrap_or(false);
 
-            let is_field = script.variables.iter().any(|v| v.name == *name)
-                || script.exposed.iter().any(|v| v.name == *name);
+                let is_field = script.variables.iter().any(|v| v.name == *name)
+                    || script.exposed.iter().any(|v| v.name == *name);
 
-            if !is_local && is_field && !name.starts_with("self.") {
-                format!("self.{}", name)
-            } else {
-                name.clone()
+                let ident_code = if !is_local && is_field && !name.starts_with("self.") {
+                    format!("self.{}", name)
+                } else {
+                    name.clone()
+                };
+
+                // ✨ Add this: wrap in json! if going to Value/Object
+                if let Some(Type::Object) = expected_type {
+                    format!("json!({})", ident_code)
+                } else {
+                    ident_code
+                }
             }
-        }
             Expr::Literal(lit) => {
-                if let Some(expected) = expected_type {
+                // New: check if the expected_type is Type::Object
+                if let Some(Type::Object) = expected_type {
+                    format!("json!({})", lit.to_rust(None))
+                } else if let Some(expected) = expected_type {
                     lit.to_rust(Some(expected))
                 } else {
                     let inferred_type = script.infer_literal_type(lit, None);
@@ -1244,18 +1385,17 @@ impl Expr {
                 let base_type = script.infer_expr_type(base, current_func);
 
                 match base_type {
-                    Some(Type::Container(ContainerKind::Object)) => {
-                        // dynamic object (serde_json::Value, like json!({ ... }))
+                    Some(Type::Object) => {
+                        // dynamic object (serde_json::Value)
                         let base_code = base.to_rust(needs_self, script, None, current_func);
                         format!("{}[\"{}\"].clone()", base_code, field)
                     }
-                    Some(Type::Container(ContainerKind::HashMap)) => {
-                        // HashMap-style map access
+                    Some(Type::Container(ContainerKind::HashMap, _)) => {
                         let base_code = base.to_rust(needs_self, script, None, current_func);
                         format!("{}[\"{}\"].clone()", base_code, field)
                     }
-                    Some(Type::Container(ContainerKind::Array)) |
-                    Some(Type::Container(ContainerKind::FixedArray(_))) => {
+                    Some(Type::Container(ContainerKind::Array, _)) |
+                    Some(Type::Container(ContainerKind::FixedArray(_), _)) => {
                         // Vec or FixedArray (support access via integer index, not field name)
                         // We'll still return an error if used as .field, but you can choose logic:
                         let base_code = base.to_rust(needs_self, script, None, current_func);
@@ -1379,50 +1519,78 @@ impl Expr {
                         format!("{}({}, api, false);", target_str, args_rust.join(", "))
                     }
             }
-           Expr::ContainerLiteral(kind, elems) => match kind {
-                HashMap => {
-                    let entries: Vec<_> = elems.iter()
-                        .map(|(k, v)| format!(
-                            "({}, json!({}))",  // <--- wrap value in json!(...)
-                            k.as_ref().map(|s| format!("\"{}\".to_string()", s))
-                                .unwrap_or_else(|| "\"\".to_string()".into()),
-                            v.to_rust(needs_self, script, None, current_func)
-                        ))
-                        .collect();
-                    format!("HashMap::from([{}])", entries.join(", "))
-                }
-                Array => {
-                    let elements: Vec<_> = elems.iter()
-                        .map(|(_, v)| format!("json!({})", v.to_rust(needs_self, script, None, current_func)))
-                        .collect();
-                    format!("vec![{}]", elements.join(", "))
-                }
-                Object => {
-                    let pairs: Vec<_> = elems.iter()
-                        .map(|(k, v)| format!(
-                            "\"{}\": {}",
-                            k.as_deref().unwrap_or(""),
-                            v.to_rust(needs_self, script, None, current_func)
-                        ))
-                        .collect();
-                    format!("json!({{ {} }})", pairs.join(", "))
-                }
-                FixedArray(size) => {
-                    let elements: Vec<_> = elems.iter()
-                        .map(|(_, v)| v.to_rust(needs_self, script, None, current_func))
-                        .collect();
+      Expr::ContainerLiteral(_, data) => match data {
+    ContainerLiteralData::HashMap(pairs) => {
+        let code = if pairs.is_empty() {
+            "HashMap::new()".to_string()
+        } else {
+            // Get expected key/value types from the expected_type if needed!
+            let (expected_key_type, expected_val_type) =
+                match expected_type {
+                    Some(Type::Container(ContainerKind::HashMap, types)) if types.len() == 2 => 
+                        (&types[0], &types[1]),
+                    _ => (&Type::String, &Type::Object)
+                };
 
-                    // Rust: fill up to fixed size; pad with Default::default() if needed
-                    let mut body = elements.clone();
-                    while body.len() < *size {
-                        body.push("Default::default()".into());
-                    }
-                    if body.len() > *size {
-                        body.truncate(*size);
-                    }
-                    format!("[{}]", body.join(", "))
-                }
-            },
+            let entries : Vec<_> = pairs
+                .iter()
+                .map(|(k_expr, v_expr)| format!(
+                    "({}, {})",
+                    k_expr.to_rust(needs_self, script, Some(expected_key_type), current_func),
+                    v_expr.to_rust(needs_self, script, Some(expected_val_type), current_func)
+                ))
+                .collect();
+            format!("HashMap::from([{}])", entries.join(", "))
+        };
+
+        // 👇 Wrap in json! if requested type is Object
+        if matches!(expected_type, Some(Type::Object)) {
+            format!("json!({})", code)
+        } else {
+            code
+        }
+    }
+    ContainerLiteralData::Array(elems) => {
+        let code = if elems.is_empty() {
+            "Vec::new()".to_string()
+        } else {
+            let elem_ty = match expected_type {
+                Some(Type::Container(ContainerKind::Array, types)) if !types.is_empty() => &types[0],
+                _ => &Type::Object
+            };
+            let elements : Vec<_> = elems
+                .iter()
+                .map(|v| v.to_rust(needs_self, script, Some(elem_ty), current_func))
+                .collect();
+            format!("vec![{}]", elements.join(", "))
+        };
+
+        if matches!(expected_type, Some(Type::Object)) {
+            format!("json!({})", code)
+        } else {
+            code
+        }
+    }
+    ContainerLiteralData::FixedArray(size, elems) => {
+        let mut body: Vec<_> = elems
+            .iter()
+            .map(|v| v.to_rust(needs_self, script, None, current_func))
+            .collect();
+        while body.len() < *size {
+            body.push("Default::default()".into());
+        }
+        if body.len() > *size {
+            body.truncate(*size);
+        }
+        let code = format!("[{}]", body.join(", "));
+
+        if matches!(expected_type, Some(Type::Object)) {
+            format!("json!({})", code)
+        } else {
+            code
+        }
+    }
+}
             Expr::StructNew(ty, fields) => {
                 if fields.is_empty() {
                     // Simple default constructor
@@ -1436,18 +1604,18 @@ impl Expr {
                             let field_type = script.get_struct_field_type(ty, fname);
                             // Generate expression using that type as hint
                             let mut expr_code = fexpr.to_rust(needs_self, script, field_type.as_ref(), current_func);
-                            
+                
                             // 🔹 Clone non-Copy types when they're identifiers or member accesses
                             let expr_type = script.infer_expr_type(fexpr, current_func);
                             let should_clone = matches!(fexpr, Expr::Ident(_) | Expr::MemberAccess(..))
                                 && expr_type
                                     .as_ref()
                                     .map_or(false, |ty| ty.requires_clone());
-                            
+                
                             if should_clone {
                                 expr_code = format!("{}.clone()", expr_code);
                             }
-                            
+                
                             format!("{}: {}", fname, expr_code)
                         })
                         .collect();
@@ -1459,14 +1627,14 @@ impl Expr {
                 }
             }
             Expr::ApiCall(module, args) => {
-    // Get expected param types (if defined for this API)
-    let expected_param_types = module.param_types();
+                // Get expected param types (if defined for this API)
+                let expected_param_types = module.param_types();
 
-    // Generate argument code with expected type hints applied **now**
-    let mut arg_strs: Vec<String> = args
-        .iter()
-        .enumerate()
-        .map(|(i, arg)| {
+                // Generate argument code with expected type hints applied **now**
+                let mut arg_strs: Vec<String> = args
+                    .iter()
+                    .enumerate()
+                    .map(|(i, arg)| {
             // Determine expected type for this argument
             let expected_ty_hint = expected_param_types
                 .as_ref()
@@ -1474,12 +1642,12 @@ impl Expr {
 
             // Ask expression to render itself, with the hint
             arg.to_rust(needs_self, script, expected_ty_hint, current_func)
-        })
-        .collect();
+                    })
+                    .collect();
 
-    // Re‑enforce if API declares argument types and conversion is still needed
-    if let Some(expected) = &expected_param_types {
-        for (i, expected_ty) in expected.iter().enumerate() {
+                // Re‑enforce if API declares argument types and conversion is still needed
+                if let Some(expected) = &expected_param_types {
+                    for (i, expected_ty) in expected.iter().enumerate() {
             if let Some(arg_expr) = args.get(i) {
                 // 1. Infer arg type (contextually refined now)
                 let actual_ty = script.infer_expr_type(arg_expr, current_func);
@@ -1497,12 +1665,12 @@ impl Expr {
                     }
                 }
             }
-        }
-    }
+                    }
+                }
 
-    // Delegate to actual API handler for final construction
-    module.to_rust(&args, script, needs_self, current_func)
-}
+                // Delegate to actual API handler for final construction
+                module.to_rust(&args, script, needs_self, current_func)
+            }
             Expr::Cast(inner, target_type) => {
                 let inner_type = script.infer_expr_type(inner, current_func);
                 let inner_code = inner.to_rust(needs_self, script, Some(target_type), current_func);
@@ -1652,6 +1820,50 @@ impl Expr {
                     (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Type::Number(NumberKind::BigInt)) =>
                         format!("BigInt::from({})", inner_code),
 
+                    // ==========================================================
+                    // JSON Value (ContainerKind::Object) → Anything
+                    // ==========================================================
+                    (Some(Type::Object), target) => {
+                        use NumberKind::*;
+                        match target {
+                            // --- To numbers ---
+                            Type::Number(Float(32)) => format!("{}.as_f64().unwrap_or_default() as f32", inner_code),
+                            Type::Number(Float(64)) => format!("{}.as_f64().unwrap_or_default()", inner_code),
+                            Type::Number(Signed(w)) => format!("{}.as_i64().unwrap_or_default() as i{}", inner_code, w),
+                            Type::Number(Unsigned(w)) => format!("{}.as_u64().unwrap_or_default() as u{}", inner_code, w),
+                            Type::Number(BigInt) => format!(
+                                "BigInt::from({}.as_i64().unwrap_or_default())",
+                                inner_code
+                            ),
+                            Type::Number(Decimal) => format!(
+                                "Decimal::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default()",
+                                inner_code
+                            ),
+
+                            // --- To bool ---
+                            Type::Bool => format!("{}.as_bool().unwrap_or_default()", inner_code),
+
+                            // --- To string ---
+                            Type::String => format!(
+                                "{}.as_str().unwrap_or_default().to_string()",
+                                inner_code
+                            ),
+                            Type::StrRef => format!("{}.as_str().unwrap_or_default()", inner_code),
+
+                            // --- To nested JSON/container values ---
+                            Type::Container(_, _) => format!("{}.clone()", inner_code),
+
+                            // --- To custom/script types (try just deserializing) ---
+                            Type::Custom(name) => format!(
+                                "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
+                                name, inner_code
+                            ),
+
+                            // --- Fallback (no idea) ---
+                            _ => format!("{}.clone()", inner_code),
+                        }
+                    },
+
                     _ => {
                         eprintln!("Warning: Unhandled cast from {:?} to {:?}", inner_type, target_type);
                         format!("({} as {})", inner_code, target_type.to_rust_type())
@@ -1659,34 +1871,51 @@ impl Expr {
                 }
             }
             Expr::Index(base, key) => {
-    let base_type = script.infer_expr_type(base, current_func);
-    let base_code = base.to_rust(needs_self, script, None, current_func);
-    let key_code = key.to_rust(needs_self, script, Some(&Type::String), current_func);
+                let base_type = script.infer_expr_type(base, current_func);
+                let base_code = base.to_rust(needs_self, script, None, current_func);
+                let key_code = key.to_rust(needs_self, script, Some(&Type::String), current_func);
 
-    match base_type {
-        Some(Type::Container(ContainerKind::HashMap)) => {
-            // HashMap: .get(key).cloned().unwrap_or_default()
-            format!("{}.get({}).cloned().unwrap_or_default()", base_code, key_code)
-        }
-        Some(Type::Container(ContainerKind::Object)) => {
-            // serde_json::Value or JSON-style dynamic object
-            format!("{}[{}].clone()", base_code, key_code)
-        }
-        Some(Type::Container(ContainerKind::Array))
-        | Some(Type::Container(ContainerKind::FixedArray(_))) => {
-            // Array or FixedArray: index must be integer; try to cast
-            let index_code = key.to_rust(needs_self, script, Some(&Type::Number(NumberKind::Unsigned(32))), current_func);
-            format!("{}.get({} as usize).cloned().unwrap_or_default()", base_code, index_code)
-        }
-        Some(Type::Custom(_)) => {
-            // Custom structs do not support indexing
-            "/* invalid index on struct */".to_string()
-        }
-        _ => {
-            "/* unsupported index expression */".to_string()
-        }
-    }
-}
+                match base_type {
+            // Strongly-typed HashMap (e.g. Map<int, float>, Map<string, Vec<MyStruct>>)
+            Some(Type::Container(ContainerKind::HashMap, _)) => {
+                format!("{}.get({}).cloned().unwrap_or_default()", base_code, key_code)
+            }
+
+            // Dynamic object/serde_json::Value -- always Type::Object!
+            Some(Type::Object) => {
+                format!("{}[{}].clone()", base_code, key_code)
+            }
+
+            // Arrays
+            Some(Type::Container(ContainerKind::Array, _))
+            | Some(Type::Container(ContainerKind::FixedArray(_), _)) => {
+                let index_code = key.to_rust(
+                    needs_self, script,
+                    Some(&Type::Number(NumberKind::Unsigned(32))),
+                    current_func
+                );
+                format!("{}.get({} as usize).cloned().unwrap_or_default()", base_code, index_code)
+            }
+
+            Some(Type::Custom(_)) => {
+                "/* invalid index on struct */".to_string()
+            }
+
+            _ => {
+                "/* unsupported index expression */".to_string()
+            }
+                }
+            }
+            Expr::ObjectLiteral(items) => {
+                let pairs: Vec<_> = items.iter()
+                    .map(|(k, v)| format!(
+                        "\"{}\": {}",
+                        k.as_deref().unwrap_or(""),
+                        v.to_rust(needs_self, script, None, current_func)
+                    ))
+                    .collect();
+                format!("json!({{ {} }})", pairs.join(", "))
+            }
         }
     }
 
@@ -1711,7 +1940,17 @@ impl Expr {
                 target.contains_api_call(script)
                     || args.iter().any(|a| a.contains_api_call(script))
             }
-            Expr::ContainerLiteral(_, elems) => elems.iter().any(|(_, e)| e.contains_api_call(script)),
+            Expr::ContainerLiteral(_, data) => match data {
+                ContainerLiteralData::Array(elements) => {
+                    elements.iter().any(|e| e.contains_api_call(script))
+                }
+                ContainerLiteralData::HashMap(pairs) => {
+                    pairs.iter().any(|(k, v)| k.contains_api_call(script) || v.contains_api_call(script))
+                }
+                ContainerLiteralData::FixedArray(_, elements) => {
+                    elements.iter().any(|e| e.contains_api_call(script))
+                }
+            }
             _ => false,
         }
     }

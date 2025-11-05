@@ -27,12 +27,13 @@ pub trait ApiCodegen {
     /// Rust code strings for each argument. This trait's implementors are purely
     /// responsible for constructing the final call string from these prepared arguments.
     fn to_rust_prepared(
-        &self,
-        args_strs: &[String], // Pre-processed, potentially casted argument strings
-        script: &Script,      // `script` context is needed for things like `script.verbose` in ConsoleApi
-        needs_self: bool,
-        current_func: Option<&Function>,
-    ) -> String;
+            &self,
+            args: &[Expr],             // <--- ADD THIS so you have access to the typed AST
+            args_strs: &[String],      // Keep: for easy code plug-in
+            script: &Script,
+            needs_self: bool,
+            current_func: Option<&Function>,
+        ) -> String;
 }
 
 // ===========================================================
@@ -66,14 +67,15 @@ impl ApiModule {
         // 3. Delegate to the specific `ApiCodegen` implementation to build the final Rust call string.
         // This `match self` ensures the correct `to_rust_prepared` method is called based on the `ApiModule` variant.
         match self {
-            ApiModule::JSON(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::Time(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::OS(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::Console(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::ScriptType(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::NodeSugar(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::Signal(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
-            ApiModule::ArrayOp(api) => api.to_rust_prepared(&rust_args_strings, script, needs_self, current_func),
+            ApiModule::JSON(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::Time(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::OS(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::Console(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::ScriptType(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::NodeSugar(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::Signal(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::ArrayOp(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
+            ApiModule::MapOp(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func)
         }
     }
 
@@ -88,6 +90,7 @@ impl ApiModule {
             ApiModule::NodeSugar(api) => api.return_type(),
             ApiModule::Signal(api) => api.return_type(),
             ApiModule::ArrayOp(api) => api.return_type(),
+            ApiModule::MapOp(api) => api.return_type(),
         }
     }
 
@@ -102,9 +105,9 @@ impl ApiModule {
             ApiModule::NodeSugar(api) => api.param_types(),
             ApiModule::Signal(api) => api.param_types(),
             ApiModule::ArrayOp(api) => api.param_types(),
+            ApiModule::MapOp(api) => api.param_types()
         };
         // Add this line:
-        println!("ApiModule::param_types for {:?} returning: {:?}", self, result.as_ref().map(|v| v.len()));
         result
     }
 }
@@ -141,7 +144,6 @@ fn generate_rust_args(
                                 &actual_ty,
                                 expect_ty,
                             );
-                            println!("Casted arg {}: {} (from {:?} to {:?})", i, code_raw, actual_ty, expect_ty);
                         }
                     }
                 }
@@ -167,6 +169,7 @@ fn generate_rust_args(
 impl ApiCodegen for JSONApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script, // script not usually needed here
         _needs_self: bool, // needs_self not usually needed here
@@ -188,7 +191,7 @@ impl ApiCodegen for JSONApi {
 impl ApiTypes for JSONApi {
     fn return_type(&self) -> Option<Type> {
         match self {
-            JSONApi::Parse => Some(Type::Container(ContainerKind::Object)),
+            JSONApi::Parse => Some(Type::Object),
             JSONApi::Stringify => Some(Type::String),
         }
     }
@@ -199,7 +202,7 @@ impl ApiTypes for JSONApi {
                 Type::String
             ]),
             JSONApi::Stringify => Some(vec![
-                Type::Container(ContainerKind::Object)
+                Type::Object
             ])
         }
     }
@@ -212,6 +215,7 @@ impl ApiTypes for JSONApi {
 impl ApiCodegen for TimeApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -255,6 +259,7 @@ impl ApiTypes for TimeApi {
 impl ApiCodegen for OSApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -296,6 +301,7 @@ impl ApiTypes for OSApi {
 impl ApiCodegen for ConsoleApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         script: &Script, // Keep script here for verbose check
         _needs_self: bool,
@@ -343,6 +349,7 @@ impl ApiTypes for ConsoleApi {
 impl ApiCodegen for ScriptTypeApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -371,6 +378,7 @@ impl ApiTypes for ScriptTypeApi {
 impl ApiCodegen for NodeSugarApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -415,6 +423,7 @@ impl ApiTypes for NodeSugarApi {
 impl ApiCodegen for SignalApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -515,6 +524,7 @@ impl ApiTypes for SignalApi {
 impl ApiCodegen for ArrayApi {
     fn to_rust_prepared(
         &self,
+        args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -552,11 +562,11 @@ impl ApiTypes for ArrayApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             ArrayApi::Push   => Some(Type::Void),
-            ArrayApi::Pop    => Some(Type::Container(ContainerKind::Object)),
+            ArrayApi::Pop    => Some(Type::Object),
             ArrayApi::Insert => Some(Type::Void),
-            ArrayApi::Remove => Some(Type::Container(ContainerKind::Object)),
+            ArrayApi::Remove => Some(Type::Object),
             ArrayApi::Len    => Some(Type::Number(NumberKind::Unsigned(32))),
-            ArrayApi::New    => Some(Type::Container(ContainerKind::Array)),
+            ArrayApi::New    => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
         }
     }
 
@@ -566,19 +576,131 @@ impl ApiTypes for ArrayApi {
 
         match self {
             ArrayApi::Push => Some(vec![
-                Type::Container(Array),
-                Type::Container(Object), // any value; just “Value”
+                Type::Container(Array, vec![Type::Object]),
+                Type::Object, // any value; just “Value”
             ]),
             ArrayApi::Insert => Some(vec![
-                Type::Container(Array),
+                Type::Container(Array, vec![Type::Object]),
                 Type::Number(Unsigned(32)),       // index
-                Type::Container(Object),          // value
+                Type::Object,                     // value
             ]),
             ArrayApi::Remove => Some(vec![
-                Type::Container(Array),
+                Type::Container(Array, vec![Type::Object]),
                 Type::Number(Unsigned(32)),       // index expected
             ]),
             ArrayApi::Len | ArrayApi::Pop | ArrayApi::New => None,
+        }
+    }
+}
+
+
+impl ApiCodegen for MapApi {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            // args: [map, key (string), value]
+
+         MapApi::Insert => {
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                let val_type = script.infer_map_value_type(&args[0], current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                let val_code = args[2].to_rust(needs_self, script, val_type.as_ref(), current_func);
+                format!("{}.insert({}, {})", args_strs[0], key_code, val_code)
+            }
+
+            // args: [map, key]
+          MapApi::Remove => {
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                if let Some(Type::String) = key_type.as_ref() {
+                    format!("{}.remove({}.as_str())", args_strs[0], key_code)
+                } else {
+                    format!("{}.remove(&{})", args_strs[0], key_code)
+                }
+            }
+
+            // args: [map, key]
+          MapApi::Get => {
+                // 1. Infer key type from map
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                // 2. Render the key argument with the right type hint
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+
+                if let Some(Type::String) = key_type.as_ref() {
+                    // for String keys, .as_str() may be appropriate
+                    format!(
+                        "{}.get({}.as_str()).cloned().unwrap_or_default()",
+                        args_strs[0], key_code
+                    )
+                } else {
+                    // for any other key type (i32, u64, f32, etc)
+                    format!(
+                        "{}.get(&{}).cloned().unwrap_or_default()",
+                        args_strs[0], key_code
+                    )
+                }
+            }
+
+            // args: [map, key]
+            MapApi::Contains => {
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                if let Some(Type::String) = key_type.as_ref() {
+                    format!("{}.contains_key({}.as_str())", args_strs[0], key_code)
+                } else {
+                    format!("{}.contains_key(&{})", args_strs[0], key_code)
+                }
+            }
+
+            // args: [map]
+            MapApi::Len => {
+                format!("{}.len()", args_strs[0])
+            }
+
+            // args: [map]
+            MapApi::Clear => {
+                format!("{}.clear()", args_strs[0])
+            }
+
+            // no args
+            MapApi::New => "HashMap::new()".into(),
+        }
+    }
+}
+
+impl ApiTypes for MapApi {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            MapApi::Insert | MapApi::Clear => Some(Type::Void),
+            MapApi::Remove | MapApi::Get => Some(Type::Object),
+            MapApi::Contains => Some(Type::Bool),
+            MapApi::Len => Some(Type::Number(NumberKind::Unsigned(32))),
+            MapApi::New => Some(Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object])),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            MapApi::Insert => Some(vec![
+                Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                Type::String,
+                Type::Object,
+            ]),
+            MapApi::Remove | MapApi::Get => Some(vec![
+                Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                Type::String,
+            ]),
+            MapApi::Contains => Some(vec![
+                Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                Type::String,
+            ]),
+            _ => None,
         }
     }
 }

@@ -11,6 +11,7 @@ pub enum ApiModule {
 
 
     ArrayOp(ArrayApi),
+    MapOp(MapApi)
 }
 
 #[derive(Debug, Clone)]
@@ -73,5 +74,17 @@ pub enum ArrayApi {
     Len,
 
     New
-    // etc, add more as needed!
+}
+
+
+#[derive(Debug, Clone)]
+pub enum MapApi {
+    Insert,
+    Remove,
+    Get,
+    Contains,
+    Len,
+    Clear,
+    
+    New,
 }

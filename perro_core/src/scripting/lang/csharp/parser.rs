@@ -338,7 +338,7 @@ impl CsParser {
                             }
                         }
                         self.expect(CsToken::RBrace)?;
-                        Ok(Expr::ContainerLiteral(ContainerKind::Object, pairs))
+                        Ok(Expr::ObjectLiteral(pairs))
                     }
                     // new T[] { ... } OR new T[expr]
                     CsToken::Ident(ty) if self.lexer.peek() == Some('[') => {
@@ -352,7 +352,7 @@ impl CsParser {
                                 let mut elems = Vec::new();
                                 while self.current_token != CsToken::RBrace && self.current_token != CsToken::Eof {
                                     let val = self.parse_expression(0)?;
-                                    elems.push((None, val));
+                                    elems.push(val);
                                     if self.current_token == CsToken::Comma {
                                         self.next_token();
                                     } else {
@@ -361,7 +361,7 @@ impl CsParser {
                                 }
                                 self.expect(CsToken::RBrace)?;
                                 let len = elems.len();
-                                Ok(Expr::ContainerLiteral(ContainerKind::FixedArray(len), elems))
+                                Ok(Expr::ContainerLiteral(ContainerKind::Array, ContainerLiteralData::Array(elems)))
                             } else {
                                 Err("Expected array initializer for new T[]".into())
                             }
@@ -371,7 +371,10 @@ impl CsParser {
                                 let size = n.parse::<usize>().unwrap_or(0);
                                 self.next_token();
                                 self.expect(CsToken::RBracket)?;
-                                Ok(Expr::ContainerLiteral(ContainerKind::FixedArray(size), vec![]))
+                                Ok(Expr::ContainerLiteral(
+                                    ContainerKind::FixedArray(size),
+                                    ContainerLiteralData::FixedArray(size, vec![])
+                                ))
                             } else {
                                 Err("Expected array size or initializer".into())
                             }
@@ -395,10 +398,16 @@ impl CsParser {
                                 self.next_token();
                             }
                             self.expect(CsToken::RParen)?;
-                            if type_name.starts_with("Dictionary") {
-                                return Ok(Expr::ContainerLiteral(ContainerKind::HashMap, vec![]));
+                           if type_name.starts_with("Dictionary") {
+                                return Ok(Expr::ContainerLiteral(
+                                    ContainerKind::HashMap,
+                                    ContainerLiteralData::HashMap(vec![])
+                                ));
                             } else if type_name.starts_with("List") {
-                                return Ok(Expr::ContainerLiteral(ContainerKind::Array, vec![]));
+                                return Ok(Expr::ContainerLiteral(
+                                    ContainerKind::Array,
+                                    ContainerLiteralData::Array(vec![])
+                                ));
                             }
                         }
                         Ok(Expr::Call(Box::new(Expr::Ident(type_name)), vec![]))
@@ -529,13 +538,15 @@ impl CsParser {
             "char" => Type::Number(NumberKind::Unsigned(16)),
             "string" => Type::String,
             "object" => Type::Custom("object".to_string()),
-            ty if ty.starts_with("Dictionary") => Type::Container(ContainerKind::HashMap),
-            ty if ty.starts_with("List") => Type::Container(ContainerKind::Array),
-            ty if ty.ends_with("[]") => {
-                // Parse fixed array, e.g., float[]
-                Type::Container(ContainerKind::FixedArray(0))
+            ty if ty.starts_with("Dictionary") =>
+                        // By default, fallback to dynamic (String->Object), but you may want to parse generic args
+                        Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                    ty if ty.starts_with("List") =>
+                        Type::Container(ContainerKind::Array, vec![Type::Object]), // Optionally extract T
+                    ty if ty.ends_with("[]") => {
+                        Type::Container(ContainerKind::FixedArray(0), vec![Type::Object])
+                    }
+                    _ => Type::Custom(t)
+                }
             }
-            _ => Type::Custom(t)
-        }
-    }
 }

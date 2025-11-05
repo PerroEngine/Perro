@@ -31,10 +31,14 @@ pub struct MainPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main_pup_create_script() -> *mut dyn ScriptObject {
+    let node = UINode::new("MainPup");
+    let bob = String::new();
+    let script_updates = 0i32;
+
     Box::into_raw(Box::new(MainPupScript {
-        node: UINode::new("MainPup"),
-        bob: String::new(),
-        script_updates: 0i32,
+        node,
+        bob,
+        script_updates,
     })) as *mut dyn ScriptObject
 }
 

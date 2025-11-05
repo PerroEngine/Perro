@@ -52,9 +52,16 @@ impl Variable {
             "&str" => Type::StrRef,
 
             // Containers
-            "HashMap" => Type::Container(ContainerKind::HashMap),
-            "Vec" => Type::Container(ContainerKind::Array),
-            "Value" => Type::Container(ContainerKind::Object),
+            "object" | "Object" | "Value" | "Any" | "any" => Type::Object,
+
+            // Containers — always with type arguments!
+            "HashMap" | "Map" | "map" => 
+                Type::Container(
+                    ContainerKind::HashMap,
+                    vec![Type::String, Type::Object] // default key: String, value: Object
+                ),
+            "Vec" | "Array" | "array" => 
+                Type::Container(ContainerKind::Array, vec![Type::Object]),
 
             // Everything else
             name => Type::Custom(name.to_string()),
@@ -100,14 +107,14 @@ pub fn json_access(&self) -> (&'static str, String) {
            ("as_u64", format!(" as u64")),
 
         // Containers
-        Type::Container(ContainerKind::Array)
-        | Type::Container(ContainerKind::FixedArray(_)) => {
+        Type::Container(ContainerKind::Array, _) 
+        | Type::Container(ContainerKind::FixedArray(_), _) => {
             ("as_array", ".clone()".into())
         }
-        Type::Container(ContainerKind::HashMap) => {
+        Type::Container(ContainerKind::HashMap, _) => {
             ("as_object", ".iter().map(|(k, v)| (k.clone(), v.clone())).collect()".into())
         }
-        Type::Container(ContainerKind::Object) => {
+        Type::Object => {
             ("as_object", ".clone().into()".into())
         }
 
@@ -135,29 +142,8 @@ if let Some(expr) = &self.value {
 
 pub fn default_value(&self) -> String {
     match &self.typ {
-        Some(Type::Number(NumberKind::Signed(w))) => format!("0i{}", w),
-        Some(Type::Number(NumberKind::Unsigned(w))) => format!("0u{}", w),
-        Some(Type::Number(NumberKind::Float(w))) => match w {
-            32 => "0.0f32".to_string(),
-            64 => "0.0f64".to_string(),
-            _ => "0.0f64".to_string(),
-        },
-
-        Some(Type::Number(NumberKind::Decimal)) => "Decimal::from_str(\"0\").unwrap()".to_string(),
-        Some(Type::Number(NumberKind::BigInt)) => "BigInt::from_str(\"0\").unwrap()".to_string(),
-
-        Some(Type::Bool) => "false".into(),
-        Some(Type::Script) => "None".into(),
-        Some(Type::String) => "String::new()".into(),
-        Some(Type::StrRef) => "\"\"".into(),
-
-        Some(Type::Container(ContainerKind::HashMap)) => "HashMap::new()".into(),
-        Some(Type::Container(ContainerKind::Array)) => "Vec::new()".into(),
-        Some(Type::Container(ContainerKind::Object)) => "json!({})".into(),
-
-        Some(Type::Custom(_)) => "Default::default()".into(),
-        Some(Type::Void) => panic!("Void invalid"),
-        _ => panic!("Type inference unresolved"),
+        Some(t) => t.rust_default_value(),
+        None => panic!("Type inference unresolved"),
     }
 }
 
@@ -193,7 +179,8 @@ pub enum Type {
     Script,
     Void,
 
-    Container(ContainerKind),
+    Container(ContainerKind, Vec<Type>),
+    Object,
 
     Node(NodeType),
     EngineStruct(EngineStruct),
@@ -203,7 +190,6 @@ pub enum Type {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContainerKind {
     HashMap,
-    Object,
     Array,
     FixedArray(usize),
 }
@@ -236,10 +222,23 @@ impl Type {
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
 
-            Type::Container(ContainerKind::HashMap) => "HashMap<String, Value>".into(),
-            Type::Container(ContainerKind::Array) => "Vec<Value>".into(),
-            Type::Container(ContainerKind::Object) => "Value".into(),
-            Type::Container(ContainerKind::FixedArray(size)) => format!("[Value; {}]", size),
+          // ---- Containers ----
+            Type::Container(ContainerKind::HashMap, params) => {
+                let k = params.get(0).map_or("String".to_string(), |p| p.to_rust_type());
+                let v = params.get(1).map_or("Value".to_string(), |p| p.to_rust_type());
+                format!("HashMap<{}, {}>", k, v)
+            }
+            Type::Container(ContainerKind::Array, params) => {
+                let val = params.get(0).map_or("Value".to_string(), |p| p.to_rust_type());
+                format!("Vec<{}>", val)
+            }
+            Type::Container(ContainerKind::FixedArray(size), params) => {
+                let val = params.get(0).map_or("Value".to_string(), |p| p.to_rust_type());
+                format!("[{}; {}]", val, size)
+            }
+
+            // ---- "Object" (serde_json::Value) ----
+            Type::Object => "Value".to_string(),
 
             Type::Script => "Option<ScriptType>".to_string(),
             Type::Custom(name) if name == "Signal" => "u64".to_string(),
@@ -250,6 +249,40 @@ impl Type {
     }
 
 
+    pub fn rust_default_value(&self) -> String {
+        use ContainerKind::*;
+        match self {
+            Type::Number(NumberKind::Signed(w)) => format!("0i{}", w),
+            Type::Number(NumberKind::Unsigned(w)) => format!("0u{}", w),
+            Type::Number(NumberKind::Float(w)) => match w {
+                32 => "0.0f32".to_string(),
+                64 => "0.0f64".to_string(),
+                _  => "0.0f64".to_string(),
+            },
+            Type::Number(NumberKind::Decimal) => "Decimal::from_str(\"0\").unwrap()".to_string(),
+            Type::Number(NumberKind::BigInt) => "BigInt::from_str(\"0\").unwrap()".to_string(),
+
+            Type::Bool      => "false".into(),
+            Type::Script    => "None".into(),
+            Type::String    => "String::new()".into(),
+            Type::StrRef    => "\"\"".into(),
+
+            Type::Object    => "json!({})".into(),
+
+            Type::Container(HashMap, _) => "HashMap::new()".into(),
+            Type::Container(Array, _)   => "Vec::new()".into(),
+            Type::Container(FixedArray(size), params) => {
+                let elem_val = params.get(0)
+                    .map(|p| p.rust_default_value())
+                    .unwrap_or_else(|| "Default::default()".into());
+                format!("[{}; {}]", elem_val, size)
+            }
+
+            Type::Custom(_) | Type::EngineStruct(_) | Type::Node(_) => "Default::default()".to_string(),
+            Type::Void     => panic!("Cannot make default for void"),
+        }
+    }
+    
 pub fn can_implicitly_convert_to(&self, target: &Type) -> bool {
     use NumberKind::*;
     match (self, target) {
@@ -277,6 +310,7 @@ pub fn can_implicitly_convert_to(&self, target: &Type) -> bool {
         // float → Decimal
         (Type::Number(Float(_)), Type::Number(Decimal)) => true,
 
+     
         _ => false,
     }
 }
@@ -338,12 +372,20 @@ pub enum Expr {
     Call(Box<Expr>, Vec<Expr>),
     Cast(Box<Expr>, Type),
 
-    ContainerLiteral(ContainerKind, Vec<(Option<String>, Expr)>),
+    ObjectLiteral(Vec<(Option<String>, Expr)>),
+    ContainerLiteral(ContainerKind, ContainerLiteralData),
     Index(Box<Expr>, Box<Expr>),
 
     StructNew(String, Vec<(String, Expr)>),
 
     ApiCall(ApiModule, Vec<Expr>),
+}
+
+#[derive(Debug, Clone)]
+pub enum ContainerLiteralData {
+    Array(Vec<Expr>),
+    HashMap(Vec<(Expr, Expr)>),
+    FixedArray(usize, Vec<Expr>),
 }
 
 #[derive(Debug, Clone)]

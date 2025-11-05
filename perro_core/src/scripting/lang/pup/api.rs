@@ -19,6 +19,7 @@ impl PupAPI {
 
 
             PupArray::NAME => PupArray::resolve_method(func),
+            PupMap::NAME => PupMap::resolve_method(func),
             _ => None,
         }
     }
@@ -26,9 +27,9 @@ impl PupAPI {
 
 pub fn normalize_type_name(type_: &Type) -> &str {
     match type_ {
-        Type::Container(ContainerKind::Array) => "Array",
-        Type::Container(ContainerKind::HashMap) => "Map",
-        Type::Container(ContainerKind::Object) => "Object",
+        Type::Container(ContainerKind::Array, _) => "Array",
+        Type::Container(ContainerKind::HashMap, _) => "Map",
+        Type::Object => "Object",
         Type::Custom(s) => s.as_str(),
         _ => "",
     }
@@ -147,6 +148,24 @@ impl PupArray {
 
             "new" => Some(ApiModule::ArrayOp(ArrayApi::New)),
             // Add more mappings here!
+            _ => None,
+        }
+    }
+}
+
+pub struct PupMap;
+impl PupMap {
+    pub const NAME: &'static str = "Map";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "insert" => Some(ApiModule::MapOp(MapApi::Insert)),
+            "remove" => Some(ApiModule::MapOp(MapApi::Remove)),
+            "get" => Some(ApiModule::MapOp(MapApi::Get)),
+            "contains" | "contains_key" => Some(ApiModule::MapOp(MapApi::Contains)),
+            "len" | "size" => Some(ApiModule::MapOp(MapApi::Len)),
+            "clear" => Some(ApiModule::MapOp(MapApi::Clear)),
+            "new" => Some(ApiModule::MapOp(MapApi::New)),
             _ => None,
         }
     }

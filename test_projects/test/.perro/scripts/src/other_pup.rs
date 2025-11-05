@@ -31,10 +31,14 @@ pub struct OtherPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn other_pup_create_script() -> *mut dyn ScriptObject {
+    let node = Node::new("OtherPup", None);
+    let x = 0.0f32;
+    let y = 0i32;
+
     Box::into_raw(Box::new(OtherPupScript {
-        node: Node::new("OtherPup", None),
-        x: 0.0f32,
-        y: 0i32,
+        node,
+        x,
+        y,
     })) as *mut dyn ScriptObject
 }
 

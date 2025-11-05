@@ -225,14 +225,45 @@ impl PupParser {
         })
     }
 
-    fn parse_type(&mut self) -> Result<Type, String> {
-        let tstr = match &self.current_token {
-            PupToken::Ident(n) => n.clone(),
-            _ => return Err("Expected type".into()),
-        };
+   fn parse_type(&mut self) -> Result<Type, String> {
+    if let PupToken::Ident(base) = &self.current_token {
+        let base_name = base.clone();
         self.next_token();
-        Ok(self.map_type(tstr))
+
+        // Handle Array shorthand e.g. float[]
+        if self.current_token == PupToken::LBracket {
+            self.next_token();
+            if self.current_token == PupToken::RBracket {
+                self.next_token();
+                return Ok(Type::Container(ContainerKind::Array, vec![self.map_type(base_name)]));
+            }
+        }
+
+        // Typed Map: Map<[K: V]>
+        if self.current_token == PupToken::LessThan {
+            self.next_token();
+            self.expect(PupToken::LBracket)?;
+            let key_type = self.parse_type()?;
+            self.expect(PupToken::Colon)?;
+            let val_type = self.parse_type()?;
+            self.expect(PupToken::RBracket)?;
+            self.expect(PupToken::GreaterThan)?;
+            return Ok(Type::Container(ContainerKind::HashMap, vec![key_type, val_type]));
+        }
+
+        // Typed Array: Array[T]
+        if self.current_token == PupToken::LBracket {
+            self.next_token();
+            let inner = self.parse_type()?;
+            self.expect(PupToken::RBracket)?;
+            return Ok(Type::Container(ContainerKind::Array, vec![inner]));
+        }
+
+        Ok(self.map_type(base_name))
+    } else {
+        Err("Expected type".into())
     }
+}
 
     // ======================= BLOCKS/STMTS =======================
 
@@ -362,9 +393,18 @@ impl PupParser {
                     Expr::Literal(Literal::String(_))
                     | Expr::Literal(Literal::Interpolated(_)) => Some(Type::String),
                     Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
-                    Expr::ContainerLiteral(kind, _) => Some(Type::Container(kind.clone())),
+                    
+                    Expr::ContainerLiteral(kind, _) => match kind {
+                        ContainerKind::HashMap => Some(Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object])),
+                        ContainerKind::Array => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
+                        _ => None, // or panic!("Unexpected kind for ContainerLiteral in infer_expr_type")
+                    },
+                    Expr::ObjectLiteral(_) => Some(Type::Object),
                     Expr::ApiCall(api, _) => api.return_type(),
                     Expr::Cast(_, target) => Some(target.clone()),
+                    Expr::Ident(var_name) => {
+                        self.type_env.get(var_name).cloned()
+                    }
                     Expr::Call(inner, _) => {
                         if let Expr::MemberAccess(base, method) = &**inner {
                             if method == "new" {
@@ -409,44 +449,45 @@ impl PupParser {
 
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match &self.current_token {
-            PupToken::LessThan => {
+        PupToken::LessThan => {
+            self.next_token();
+
+            // Handle empty map case
+            if self.current_token == PupToken::GreaterThan {
                 self.next_token();
-                self.expect(PupToken::LBracket)?;
-                if self.current_token == PupToken::RBracket {
-                    self.next_token();
-                    self.expect(PupToken::GreaterThan)?;
-                    return Ok(Expr::ContainerLiteral(ContainerKind::HashMap, vec![]));
-                }
-                let mut temp_lexer = self.lexer.clone();
-                let lookahead = temp_lexer.next_token();
-                if lookahead != PupToken::Colon {
-                    return Err("Pup only allows <[key: value, ...]> as map".into());
-                }
-                let mut pairs = Vec::new();
-                loop {
-                    let key = match &self.current_token {
-                        PupToken::Ident(k) | PupToken::String(k) => k.clone(),
-                        other => return Err(format!("Expected key, got {:?}", other)),
-                    };
-                    self.next_token();
-                    self.expect(PupToken::Colon)?;
-                    let val = self.parse_expression(0)?;
-                    pairs.push((Some(key), val));
-                    if self.current_token == PupToken::Comma {
-                        self.next_token();
-                        continue;
-                    }
-                    break;
-                }
-                self.expect(PupToken::RBracket)?;
-                self.expect(PupToken::GreaterThan)?;
-                Ok(Expr::ContainerLiteral(ContainerKind::HashMap, pairs))
+                return Ok(Expr::ContainerLiteral(ContainerKind::HashMap, ContainerLiteralData::HashMap(vec![])))
             }
+
+            let mut pairs = Vec::new();
+
+            // Loop through [key: val] blocks separated by commas
+            loop {
+                self.expect(PupToken::LBracket)?;
+
+                // Parse key
+                let key_expr = self.parse_expression(0)?;
+                self.expect(PupToken::Colon)?;
+                let val = self.parse_expression(0)?;
+                self.expect(PupToken::RBracket)?;
+
+                pairs.push((key_expr, val));
+
+                if self.current_token == PupToken::Comma {
+                    self.next_token();
+                    continue;
+                }
+
+                break;
+            }
+
+            self.expect(PupToken::GreaterThan)?;
+            Ok(Expr::ContainerLiteral(ContainerKind::HashMap, ContainerLiteralData::HashMap(pairs)))
+        }
             PupToken::LBracket => {
                 self.next_token();
                 let mut elements = Vec::new();
                 while self.current_token != PupToken::RBracket && self.current_token != PupToken::Eof {
-                    elements.push((None, self.parse_expression(0)?));
+                    elements.push((self.parse_expression(0)?));
                     if self.current_token == PupToken::Comma {
                         self.next_token();
                     } else {
@@ -454,7 +495,10 @@ impl PupParser {
                     }
                 }
                 self.expect(PupToken::RBracket)?;
-                Ok(Expr::ContainerLiteral(ContainerKind::Array, elements))
+                    Ok(Expr::ContainerLiteral(
+                        ContainerKind::Array,
+                        ContainerLiteralData::Array(elements)
+                    ))
             }
             PupToken::LBrace => {
                 self.next_token();
@@ -475,7 +519,7 @@ impl PupParser {
                     }
                 }
                 self.expect(PupToken::RBrace)?;
-                Ok(Expr::ContainerLiteral(ContainerKind::Object, pairs))
+                Ok(Expr::ObjectLiteral(pairs))
             }
             PupToken::New => {
                 self.next_token();
@@ -709,9 +753,14 @@ impl PupParser {
             "bool" => Type::Bool,
             "string" => Type::String,
             "script" => Type::Script,
-            "Map" | "map" => Type::Container(ContainerKind::HashMap),
-            "Array" | "array" => Type::Container(ContainerKind::Array),
-            "Object" | "object" => Type::Container(ContainerKind::Object),
+            "Map" | "map" => Type::Container(ContainerKind::HashMap, vec![
+                Type::String,
+                Type::Object
+            ]),
+            "Array" | "array" => Type::Container(ContainerKind::Array, vec![
+                Type::Object
+            ]),
+            "Object" | "object" => Type::Object,
             _ => Type::Custom(t),
         }
     }
