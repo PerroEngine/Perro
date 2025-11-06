@@ -399,7 +399,6 @@ impl PupParser {
                         _ => None, // or panic!("Unexpected kind for ContainerLiteral in infer_expr_type")
                     },
                     Expr::ObjectLiteral(_) => Some(Type::Object),
-                    Expr::ApiCall(api, _) => api.return_type(),
                     Expr::Cast(_, target) => Some(target.clone()),
                     Expr::Ident(var_name) => {
                         self.type_env.get(var_name).cloned()

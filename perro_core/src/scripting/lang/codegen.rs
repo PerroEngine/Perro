@@ -1299,6 +1299,21 @@ impl TypedExpr {
 }
 
 impl Expr {
+    fn clone_if_needed(
+    expr_code: String,
+    expr: &Expr,
+    script: &Script,
+    current_func: Option<&Function>,
+) -> String {
+    let inferred = script.infer_expr_type(expr, current_func);
+    if inferred.as_ref().map_or(false, |t| t.requires_clone()) {
+        format!("{}.clone()", expr_code)
+    } else {
+        expr_code
+    }
+}
+
+
     pub fn to_rust(&self, needs_self: bool, script: &Script, expected_type: Option<&Type>, current_func: Option<&Function>) -> String {
         use ContainerKind::*;
 
@@ -1519,49 +1534,117 @@ impl Expr {
                         format!("{}({}, api, false);", target_str, args_rust.join(", "))
                     }
             }
-      Expr::ContainerLiteral(_, data) => match data {
+  Expr::ContainerLiteral(_, data) => match data {
+    // ===============================================================
+    // MAP LITERAL: { "key": value, other_key: expr }
+    // ===============================================================
     ContainerLiteralData::Map(pairs) => {
         let code = if pairs.is_empty() {
             "HashMap::new()".to_string()
         } else {
-            // Get expected key/value types from the expected_type if needed!
-            let (expected_key_type, expected_val_type) =
-                match expected_type {
-                    Some(Type::Container(ContainerKind::Map, types)) if types.len() == 2 => 
-                        (&types[0], &types[1]),
-                    _ => (&Type::String, &Type::Object)
-                };
+            // Expected key/value types (from context if known)
+            let (expected_key_type, expected_val_type) = match expected_type {
+                Some(Type::Container(ContainerKind::Map, types)) if types.len() == 2 => {
+                    (&types[0], &types[1])
+                }
+                _ => (&Type::String, &Type::Object),
+            };
 
-            let entries : Vec<_> = pairs
+            let entries: Vec<_> = pairs
                 .iter()
-                .map(|(k_expr, v_expr)| format!(
-                    "({}, {})",
-                    k_expr.to_rust(needs_self, script, Some(expected_key_type), current_func),
-                    v_expr.to_rust(needs_self, script, Some(expected_val_type), current_func)
-                ))
+                .map(|(k_expr, v_expr)| {
+                    // Render key/value
+                    let raw_k = k_expr.to_rust(
+                        needs_self,
+                        script,
+                        Some(expected_key_type),
+                        current_func,
+                    );
+                    let raw_v = v_expr.to_rust(
+                        needs_self,
+                        script,
+                        Some(expected_val_type),
+                        current_func,
+                    );
+
+                    // Only clone if expression is a variable or member access
+                    let k_final = match k_expr {
+                        Expr::Ident(_) | Expr::MemberAccess(..) => {
+                            let kt = script.infer_expr_type(k_expr, current_func);
+                            if kt.as_ref().map_or(false, |t| t.requires_clone()) {
+                                format!("{}.clone()", raw_k)
+                            } else {
+                                raw_k
+                            }
+                        }
+                        _ => raw_k,
+                    };
+
+                    let v_final = match v_expr {
+                        Expr::Ident(_) | Expr::MemberAccess(..) => {
+                            let vt = script.infer_expr_type(v_expr, current_func);
+                            if vt.as_ref().map_or(false, |t| t.requires_clone()) {
+                                format!("{}.clone()", raw_v)
+                            } else {
+                                raw_v
+                            }
+                        }
+                        _ => raw_v,
+                    };
+
+                    format!("({}, {})", k_final, v_final)
+                })
                 .collect();
+
             format!("HashMap::from([{}])", entries.join(", "))
         };
 
-        // 👇 Wrap in json! if requested type is Object
         if matches!(expected_type, Some(Type::Object)) {
             format!("json!({})", code)
         } else {
             code
         }
     }
+
+    // ===============================================================
+    // ARRAY LITERAL: [expr1, expr2, expr3]
+    // ===============================================================
     ContainerLiteralData::Array(elems) => {
         let code = if elems.is_empty() {
             "Vec::new()".to_string()
         } else {
             let elem_ty = match expected_type {
-                Some(Type::Container(ContainerKind::Array, types)) if !types.is_empty() => &types[0],
-                _ => &Type::Object
+                Some(Type::Container(ContainerKind::Array, types))
+                    if !types.is_empty() =>
+                {
+                    &types[0]
+                }
+                _ => &Type::Object,
             };
-            let elements : Vec<_> = elems
+
+            let elements: Vec<_> = elems
                 .iter()
-                .map(|v| v.to_rust(needs_self, script, Some(elem_ty), current_func))
+                .map(|e| {
+                    let rendered = e.to_rust(
+                        needs_self,
+                        script,
+                        Some(elem_ty),
+                        current_func,
+                    );
+                    match e {
+                        Expr::Ident(_) | Expr::MemberAccess(..) => {
+                            let ty = script.infer_expr_type(e, current_func);
+                            if ty.as_ref().map_or(false, |t| t.requires_clone()) {
+                                format!("{}.clone()", rendered)
+                            } else {
+                                rendered
+                            }
+                        }
+                        _ => rendered,
+                    }
+                })
                 .collect();
+
             format!("vec![{}]", elements.join(", "))
         };
 
@@ -1571,17 +1654,36 @@ impl Expr {
             code
         }
     }
+
+    // ===============================================================
+    // FIXED ARRAY LITERAL: [a, b, c] with explicit constant size
+    // ===============================================================
     ContainerLiteralData::FixedArray(size, elems) => {
         let mut body: Vec<_> = elems
             .iter()
-            .map(|v| v.to_rust(needs_self, script, None, current_func))
+            .map(|e| {
+                let rendered = e.to_rust(needs_self, script, None, current_func);
+                match e {
+                    Expr::Ident(_) | Expr::MemberAccess(..) => {
+                        let ty = script.infer_expr_type(e, current_func);
+                        if ty.as_ref().map_or(false, |t| t.requires_clone()) {
+                            format!("{}.clone()", rendered)
+                        } else {
+                            rendered
+                        }
+                    }
+                    _ => rendered,
+                }
+            })
             .collect();
+
         while body.len() < *size {
             body.push("Default::default()".into());
         }
         if body.len() > *size {
             body.truncate(*size);
         }
+
         let code = format!("[{}]", body.join(", "));
 
         if matches!(expected_type, Some(Type::Object)) {

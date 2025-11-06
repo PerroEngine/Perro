@@ -208,26 +208,26 @@ impl TypesPupScript {
         api.print(&format!("{} {}", String::from("map get(x):"), val));
         let mut p1 = Player { name: String::from("Pup"), hp: 120i32, ..Default::default() };
         let mut p2 = Player { name: String::from("Dog"), hp: 99i32, ..Default::default() };
-        let mut players = HashMap::from([(String::from("one"), p1)]);
+        let mut players = HashMap::from([(String::from("one"), p1.clone())]);
         players.insert(String::from("two"), p2);
         let mut second = players.get(String::from("two").as_str()).cloned().unwrap_or_default();
-        api.print(&format!("{} {}", String::from("players(two).hp ="), second["hp"].clone()));
+        api.print(&format!("{} {}", String::from("players(two).hp ="), second.hp));
     }
 
     fn test_structs_array_map_mixed(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("-- STRUCT CONTAINERS --"));
         let mut p = SuperPlayer { base: Player { name: String::from("Hero"), hp: 150i32, ..Default::default() }, energy: 20.5f32, ..Default::default() };
-        let mut dyn_arr = vec![json!(p)];
-        let mut dyn_map = HashMap::from([(String::from("main"), json!(p))]);
+        let mut dyn_arr = vec![json!(p).clone()];
+        let mut dyn_map = HashMap::from([(String::from("main"), json!(p).clone())]);
         let mut p_name = serde_json::from_value::<SuperPlayer>(dyn_map.get(String::from("main").as_str()).cloned().unwrap_or_default().clone()).unwrap_or_default().name;
         api.print(&format!("{} {}", String::from("dynamic struct name:"), p_name));
-        let mut arr_typed = vec![p];
+        let mut arr_typed = vec![p.clone()];
         arr_typed.push(SuperPlayer { base: Player { name: String::from("Sidekick"), hp: 75i32, ..Default::default() }, energy: 8.8f32, ..Default::default() });
         let mut first = arr_typed.get(0u32 as usize).cloned().unwrap_or_default();
         api.print(&format!("{} {}", String::from("first static player:"), first.name));
-        let mut map_typed = HashMap::from([(String::from("owner"), p)]);
+        let mut map_typed = HashMap::from([(String::from("owner"), p.clone())]);
         let mut o = map_typed.get(String::from("owner").as_str()).cloned().unwrap_or_default();
-        api.print(&format!("{} {}", String::from("map_typed.owner.energy ="), o["energy"].clone()));
+        api.print(&format!("{} {}", String::from("map_typed.owner.energy ="), o.energy));
     }
 
     fn test_casting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
