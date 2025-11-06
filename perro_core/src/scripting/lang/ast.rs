@@ -57,7 +57,7 @@ impl Variable {
             // Containers — always with type arguments!
             "HashMap" | "Map" | "map" => 
                 Type::Container(
-                    ContainerKind::HashMap,
+                    ContainerKind::Map,
                     vec![Type::String, Type::Object] // default key: String, value: Object
                 ),
             "Vec" | "Array" | "array" => 
@@ -111,7 +111,7 @@ pub fn json_access(&self) -> (&'static str, String) {
         | Type::Container(ContainerKind::FixedArray(_), _) => {
             ("as_array", ".clone()".into())
         }
-        Type::Container(ContainerKind::HashMap, _) => {
+        Type::Container(ContainerKind::Map, _) => {
             ("as_object", ".iter().map(|(k, v)| (k.clone(), v.clone())).collect()".into())
         }
         Type::Object => {
@@ -189,7 +189,7 @@ pub enum Type {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ContainerKind {
-    HashMap,
+    Map,
     Array,
     FixedArray(usize),
 }
@@ -223,7 +223,7 @@ impl Type {
             Type::StrRef => "&'static str".to_string(),
 
           // ---- Containers ----
-            Type::Container(ContainerKind::HashMap, params) => {
+            Type::Container(ContainerKind::Map, params) => {
                 let k = params.get(0).map_or("String".to_string(), |p| p.to_rust_type());
                 let v = params.get(1).map_or("Value".to_string(), |p| p.to_rust_type());
                 format!("HashMap<{}, {}>", k, v)
@@ -377,6 +377,7 @@ pub enum Expr {
     Index(Box<Expr>, Box<Expr>),
 
     StructNew(String, Vec<(String, Expr)>),
+    
 
     ApiCall(ApiModule, Vec<Expr>),
 }
@@ -384,7 +385,7 @@ pub enum Expr {
 #[derive(Debug, Clone)]
 pub enum ContainerLiteralData {
     Array(Vec<Expr>),
-    HashMap(Vec<(Expr, Expr)>),
+    Map(Vec<(Expr, Expr)>),
     FixedArray(usize, Vec<Expr>),
 }
 

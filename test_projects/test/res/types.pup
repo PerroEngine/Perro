@@ -1,49 +1,184 @@
 extends Node2D
 
-@expose var player_speed: float = 300
-@expose var player_name: string
-var tags_array: Array = ["player", "friendly"]
-var stat_map: Map = <["strength": 12], ["agility": 51]>
-var stat_map2 = <["strength": tags_array], ["agility": player_speed]>
-var meta_object: Object = { level: 3, zone: "forest" }
-var meta_object2 = { level: 1, zone: "forest2" }
-var current_score = stat_map
+// =====================================================
+// TOP-LEVEL: Dynamic (Value-based) vs Static (typed) containers
+// =====================================================
 
-struct Inventory {
-    var inventory_items: Array
-    var inventory_slots: int
+// --- Dynamic, inferred containers (Vec<Value> / HashMap<String,Value>) ---
+@expose var arr_inferred = [1, 2.5, "three"]
+@expose var map_inferred = <["hp": 100], ["name": "dog"]>
+
+// --- Dynamic, annotated containers (identical runtime types) ---
+@expose var arr_dynamic: Array = ["mix", 123, true]
+@expose var map_dynamic: Map = <["flag": true], ["val": 55.5]>
+
+// --- Statically typed containers (Vec<i32>, HashMap<string,f32>) ---
+@expose var arr_static: Array[int] = [1, 2, 3, 4]
+@expose var map_static: Map<[string: float]> = <["x": 1.0], ["y": 2.5]>
+
+// --- Various scalar and object types for sanity ---
+var score: int = 42
+var player_meta: Object = { name: "Doggo", lvl: 3 }
+
+// =====================================================
+// STRUCT TYPES
+// =====================================================
+struct Player {
+    var name: string
+    var hp: int
 }
 
-struct SuperInventory extends Inventory {
-    var super_owner: string
+struct SuperPlayer extends Player {
+    var energy: float
 }
 
+struct SuperDuperPlayer extends SuperPlayer {
+    var farting: bool
+}
+
+// =====================================================
+// FUNCTION: test_dynamic_containers
+// Tests inferred & annotated Dynamic Map/Array (Value-based)
+// =====================================================
+fn test_dynamic_containers() {
+    Console.log("-- DYNAMIC CONTAINERS --")
+
+    var sdp = new SuperDuperPlayer("bob", 2, 3)
+    var sp = new SuperPlayer("b", 2, 3)
+
+    var spl = new SuperDuperPlayer { hp: 4, farting: true }
+    var spll = new SuperPlayer { name: "f", energy: 2 }
+
+    // Inferred array (Value[])
+    var dyn_arr = [10, 20, "thirty"]
+    dyn_arr.push(99)
+    var val = dyn_arr[0] as int
+    var strval = dyn_arr[2] as string
+    dyn_arr.remove(1)
+    Console.log("dyn_arr val:", val, "str:", strval)
+
+    // Annotated Array (still Value[])
+    var dyn_arr2: Array = ["mix", 55, true]
+    dyn_arr2.push("added")
+    var casted_val = dyn_arr2[1] as int
+    Console.log("dyn_arr2 casted_val:", casted_val)
+
+    // Inferred Map (HashMap<String, Value>)
+    var dyn_map = <["a": 10], ["b": 20]>
+    dyn_map.insert("c", 30)
+    var retrieved = dyn_map.get("a") as int
+    var has_c = dyn_map.contains("c")
+    Console.log("dyn_map get(a):", retrieved, "has c:", has_c)
+
+    // Annotated Map (still Value)
+    var dyn_map2: Map = <["num": 5.5], ["str": "hey"]>
+    dyn_map2.insert("extra", true)
+    var s = dyn_map2.get("str") as string
+    Console.log("dyn_map2 str:", s)
+}
+
+// =====================================================
+// FUNCTION: test_static_containers
+// Tests fully typed Map/Array with static inner type info
+// =====================================================
+fn test_static_containers() {
+    Console.log("-- STATIC CONTAINERS --")
+
+    // Static array
+    var arr: Array[int] = [1, 2, 3]
+    arr.push(4)
+    var first = arr[0]       // no cast needed
+    Console.log("arr[0]:", first)
+
+    // Static map
+    var map: Map<[string: float]> = <["x": 1.1], ["y": 2.2]>
+    map.insert("z", 3.3)
+    var val = map.get("x")   // no cast needed
+    Console.log("map get(x):", val)
+
+    // map of custom struct type
+    var p1 = new Player("Pup", 120)
+    var p2 = new Player("Dog", 99)
+    var players: Map<[string: Player]> = <["one": p1]>
+    players.insert("two", p2)
+    var second = players.get("two")
+    Console.log("players(two).hp =", second.hp)
+}
+
+// =====================================================
+// FUNCTION: test_structs_array_map_mixed
+// Tests storing custom structs in typed/untyped containers
+// =====================================================
+fn test_structs_array_map_mixed() {
+    Console.log("-- STRUCT CONTAINERS --")
+
+    var p = new SuperPlayer("Hero", 150, 20.5)
+
+    // Dynamic containers
+    var dyn_arr = [p]
+    var dyn_map = <["main": p]>
+    var p_name = (dyn_map.get("main") as SuperPlayer).name
+    Console.log("dynamic struct name:", p_name)
+
+    // Static containers
+    var arr_typed: Array[SuperPlayer] = [p]
+    arr_typed.push(new SuperPlayer("Sidekick", 75, 8.8))
+    var first = arr_typed[0]
+    Console.log("first static player:", first.name)
+
+    var map_typed: Map<[string: SuperPlayer]> = <["owner": p]>
+    var o = map_typed.get("owner")
+    Console.log("map_typed.owner.energy =", o.energy)
+}
+
+// =====================================================
+// FUNCTION: test_casting
+// Covers explicit & implicit conversions
+// =====================================================
+fn test_casting() {
+    Console.log("-- CASTING --")
+
+    var i: int = 12
+    var f: float = i          // implicit
+    var s: string = i as string
+    var back = "55" as int
+    var obj = { val: 10 }
+    var v = obj["val"] as int
+    Console.log("i:", i, "f:", f, "s:", s, "back:", back, "v:", v)
+}
+
+// =====================================================
+// FUNCTION: test_api
+// Basic PupAPI call coverage
+// =====================================================
+fn test_api() {
+    Console.log("-- API RUN --")
+    var platform = OS.get_platform_name()
+    Console.log("Platform:", platform)
+
+    var now = Time.get_unix_time_msec()
+    Time.sleep_msec(1)
+    var delta = Time.get_unix_time_msec() - now
+    Console.log("Delta:", delta)
+
+    var sig = Signal.new("hit")
+    Signal.emit(sig)
+
+    var js = JSON.stringify({ data: 1 })
+    var parsed = JSON.parse(js)
+    Console.log("JSON round=", js)
+}
+
+// =====================================================
+// INIT and UPDATE
+// =====================================================
 fn init() {
-    current_score = <["b": 2],["foo": "bar"]>
-    tags_array.push("start")
-
-    let maptest: Map<[int: float]> = <[1: 1], [2: 2]>
-
-    let f = maptest.get(1) as int
-
-    f += 2
-
-    let v = new Map()
-    v.insert("hp", 99)
-    let q = 12
-    v.insert(q as string, q)
-    var u = v.get("hp") as float
-    
-    u = 2
-
-    let o = {}
-
-    var b = []
-    b.push("fart")
-    b.push(2)
-    var t: int = 4
-    b.remove(0)
-    b.remove(t)
+    test_dynamic_containers()
+    test_static_containers()
+    test_structs_array_map_mixed()
+    test_casting()
+    test_api()
+    Console.log("-- INIT DONE --")
 }
 
 fn update() {

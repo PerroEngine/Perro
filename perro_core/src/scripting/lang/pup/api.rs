@@ -20,7 +20,7 @@ impl PupAPI {
 
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
-            _ => None,
+            _ => PupNodeSugar::resolve_method(func),
         }
     }
 }
@@ -28,7 +28,7 @@ impl PupAPI {
 pub fn normalize_type_name(type_: &Type) -> &str {
     match type_ {
         Type::Container(ContainerKind::Array, _) => "Array",
-        Type::Container(ContainerKind::HashMap, _) => "Map",
+        Type::Container(ContainerKind::Map, _) => "Map",
         Type::Object => "Object",
         Type::Custom(s) => s.as_str(),
         _ => "",

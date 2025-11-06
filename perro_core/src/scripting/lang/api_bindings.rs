@@ -244,7 +244,7 @@ impl ApiTypes for TimeApi {
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
             TimeApi::SleepMsec => Some(vec![
-                Type::Number(NumberKind::Float(32))
+                Type::Number(NumberKind::Unsigned(64))
             ]),
             _ => None
         }
@@ -321,10 +321,10 @@ impl ApiCodegen for ConsoleApi {
         };
 
         let line = match self {
-            ConsoleApi::Log => format!("api.print(&{});", joined),
-            ConsoleApi::Warn => format!("api.print_warn(&{});", joined),
-            ConsoleApi::Error => format!("api.print_error(&{});", joined),
-            ConsoleApi::Info => format!("api.print_info(&{});", joined),
+            ConsoleApi::Log => format!("api.print(&{})", joined),
+            ConsoleApi::Warn => format!("api.print_warn(&{})", joined),
+            ConsoleApi::Error => format!("api.print_error(&{})", joined),
+            ConsoleApi::Info => format!("api.print_info(&{})", joined),
         };
 
         if script.verbose {
@@ -425,9 +425,9 @@ impl ApiCodegen for SignalApi {
         &self,
         args: &[Expr],
         args_strs: &[String],
-        _script: &Script,
+        script: &Script, // <-- Remove leading underscore
         _needs_self: bool,
-        _current_func: Option<&Function>,
+        current_func: Option<&Function>, // <-- Remove leading underscore
     ) -> String {
         fn prehash_if_literal(arg: &str) -> String {
             let trimmed = arg.trim();
@@ -464,33 +464,41 @@ impl ApiCodegen for SignalApi {
         match self {
             SignalApi::New => {
                 let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                // Note: `is_struct_field` and `format!("self.{signal}")` logic
-                // usually belongs in `generate_rust_args` for `Expr::Ident`,
-                // but if `SignalApi::New` argument is ever an `Expr::Ident` that
-                // `generate_rust_args` missed, it might need to be re-evaluated.
-                // Assuming `generate_rust_args` has handled this for `args_strs`.
                 prehash_if_literal(&signal)
             }
-            SignalApi::Connect => {
-                let signal = prehash_if_literal(args_strs.get(0).unwrap());
-                let mut node = args_strs.get(1).cloned().unwrap_or_else(|| "self.node".into());
-                if node == "self" {
-                    node = "self.node".into()
-                }
-                let func = strip_string_from(args_strs.get(2).unwrap());
-                let func_id = string_to_u64(&func);
-                format!("api.connect_signal_id({signal}, {node}.id, {func_id}u64)")
-            }
-            SignalApi::Emit => {
-                let signal = prehash_if_literal(args_strs.get(0).unwrap());
-                if args_strs.len() > 1 {
-                    let params: Vec<String> = args_strs[1..]
-                        .iter()
-                        .map(|a| format!("json!({a})"))
-                        .collect();
-                    format!("api.emit_signal_id({signal}, smallvec![{}])", params.join(", "))
-                } else {
-                    format!("api.emit_signal_id({signal}, smallvec![])")
+           SignalApi::Connect | SignalApi::Emit => {
+                // -- Fix: Accept both u64 and Type::Custom("Signal") as passthrough variables
+                let arg_expr = args.get(0).unwrap();
+                let arg_type = script.infer_expr_type(arg_expr, current_func);
+
+                let signal = match arg_type {
+                    Some(Type::Number(NumberKind::Unsigned(64))) => args_strs[0].clone(),
+                    Some(Type::Custom(ref s)) if s == "Signal" => args_strs[0].clone(),
+                    _ => prehash_if_literal(&args_strs[0]),
+                };
+
+                match self {
+                    SignalApi::Connect => {
+                        let mut node = args_strs.get(1).cloned().unwrap_or_else(|| "self.node".into());
+                        if node == "self" {
+                            node = "self.node".into()
+                        }
+                        let func = strip_string_from(args_strs.get(2).unwrap());
+                        let func_id = string_to_u64(&func);
+                        format!("api.connect_signal_id({signal}, {node}.id, {func_id}u64)")
+                    }
+                    SignalApi::Emit => {
+                        if args_strs.len() > 1 {
+                            let params: Vec<String> = args_strs[1..]
+                                .iter()
+                                .map(|a| format!("json!({a})"))
+                                .collect();
+                            format!("api.emit_signal_id({signal}, smallvec![{}])", params.join(", "))
+                        } else {
+                            format!("api.emit_signal_id({signal}, smallvec![])")
+                        }
+                    }
+                    _ => unreachable!(),
                 }
             }
         }
@@ -510,7 +518,14 @@ impl ApiTypes for SignalApi {
             SignalApi::New => Some(vec![
                 Type::String
             ]),
-            _ => None
+            SignalApi::Emit => Some(vec![
+                Type::Custom("Signal".to_string()),
+                Type::Object
+            ]),
+            SignalApi::Connect => Some(vec![
+                 Type::Custom("Signal".to_string()),
+            ])
+
         }
     }
     // No specific param_types for Signal APIs needed by default, uses None.
@@ -533,7 +548,7 @@ impl ApiCodegen for ArrayApi {
         match self {
             ArrayApi::Push => {
                 // args: [vec, value]
-                format!("{}.push(json!({}))", args_strs[0], args_strs[1])
+                format!("{}.push({})", args_strs[0], args_strs[1])
             }
             ArrayApi::Pop => {
                 // args: [vec]
@@ -545,7 +560,7 @@ impl ApiCodegen for ArrayApi {
             }
             ArrayApi::Insert => {
                 // args: [vec, index, value]
-                format!("{}.insert({} as usize, json!({}))", args_strs[0], args_strs[1], args_strs[2])
+                format!("{}.insert({} as usize, {})", args_strs[0], args_strs[1], args_strs[2])
             }
             ArrayApi::Remove => {
                 // args: [vec, index]
@@ -681,23 +696,23 @@ impl ApiTypes for MapApi {
             MapApi::Remove | MapApi::Get => Some(Type::Object),
             MapApi::Contains => Some(Type::Bool),
             MapApi::Len => Some(Type::Number(NumberKind::Unsigned(32))),
-            MapApi::New => Some(Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object])),
+            MapApi::New => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
         }
     }
 
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
             MapApi::Insert => Some(vec![
-                Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
                 Type::String,
                 Type::Object,
             ]),
             MapApi::Remove | MapApi::Get => Some(vec![
-                Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
                 Type::String,
             ]),
             MapApi::Contains => Some(vec![
-                Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
                 Type::String,
             ]),
             _ => None,

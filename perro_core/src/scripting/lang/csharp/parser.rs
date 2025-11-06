@@ -400,8 +400,8 @@ impl CsParser {
                             self.expect(CsToken::RParen)?;
                            if type_name.starts_with("Dictionary") {
                                 return Ok(Expr::ContainerLiteral(
-                                    ContainerKind::HashMap,
-                                    ContainerLiteralData::HashMap(vec![])
+                                    ContainerKind::Map,
+                                    ContainerLiteralData::Map(vec![])
                                 ));
                             } else if type_name.starts_with("List") {
                                 return Ok(Expr::ContainerLiteral(
@@ -540,7 +540,7 @@ impl CsParser {
             "object" => Type::Custom("object".to_string()),
             ty if ty.starts_with("Dictionary") =>
                         // By default, fallback to dynamic (String->Object), but you may want to parse generic args
-                        Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object]),
+                        Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
                     ty if ty.starts_with("List") =>
                         Type::Container(ContainerKind::Array, vec![Type::Object]), // Optionally extract T
                     ty if ty.ends_with("[]") => {

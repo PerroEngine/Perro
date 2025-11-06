@@ -48,7 +48,7 @@ impl Script {
     ) -> Option<Type> {
         self.infer_expr_type(map_expr, current_func)
             .and_then(|t| match t {
-                Type::Container(ContainerKind::HashMap, ref types) => types.get(0).cloned(),
+                Type::Container(ContainerKind::Map, ref types) => types.get(0).cloned(),
                 _ => None,
             })
     }
@@ -59,7 +59,7 @@ impl Script {
     ) -> Option<Type> {
         self.infer_expr_type(map_expr, current_func)
             .and_then(|t| match t {
-                Type::Container(ContainerKind::HashMap, ref types) => types.get(1).cloned(),
+                Type::Container(ContainerKind::Map, ref types) => types.get(1).cloned(),
                 _ => None,
             })
     }
@@ -206,7 +206,7 @@ impl Script {
         // -------------------------------------------------------------
         Expr::ApiCall(api, args) => match api {
         ApiModule::MapOp(MapApi::Get) => {
-            if let Some(Type::Container(ContainerKind::HashMap, ref params)) = self.infer_expr_type(&args[0], current_func) {
+            if let Some(Type::Container(ContainerKind::Map, ref params)) = self.infer_expr_type(&args[0], current_func) {
                 return params.get(1).cloned(); // value type
             }
             Some(Type::Object)
@@ -241,7 +241,7 @@ impl Script {
 
         Expr::ContainerLiteral(kind, _) => match kind {
             ContainerKind::Array    => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
-            ContainerKind::HashMap  => Some(Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object])),
+            ContainerKind::Map  => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
             ContainerKind::FixedArray(_) => Some(Type::Container(kind.clone(), vec![Type::Object])),
         },
 
@@ -1390,7 +1390,7 @@ impl Expr {
                         let base_code = base.to_rust(needs_self, script, None, current_func);
                         format!("{}[\"{}\"].clone()", base_code, field)
                     }
-                    Some(Type::Container(ContainerKind::HashMap, _)) => {
+                    Some(Type::Container(ContainerKind::Map, _)) => {
                         let base_code = base.to_rust(needs_self, script, None, current_func);
                         format!("{}[\"{}\"].clone()", base_code, field)
                     }
@@ -1520,14 +1520,14 @@ impl Expr {
                     }
             }
       Expr::ContainerLiteral(_, data) => match data {
-    ContainerLiteralData::HashMap(pairs) => {
+    ContainerLiteralData::Map(pairs) => {
         let code = if pairs.is_empty() {
             "HashMap::new()".to_string()
         } else {
             // Get expected key/value types from the expected_type if needed!
             let (expected_key_type, expected_val_type) =
                 match expected_type {
-                    Some(Type::Container(ContainerKind::HashMap, types)) if types.len() == 2 => 
+                    Some(Type::Container(ContainerKind::Map, types)) if types.len() == 2 => 
                         (&types[0], &types[1]),
                     _ => (&Type::String, &Type::Object)
                 };
@@ -1591,41 +1591,158 @@ impl Expr {
         }
     }
 }
-            Expr::StructNew(ty, fields) => {
-                if fields.is_empty() {
-                    // Simple default constructor
-                    format!("{}::default()", ty)
-                } else {
-                    // Field-aware initialization
-                    let field_inits: Vec<String> = fields
-                        .iter()
-                        .map(|(fname, fexpr)| {
-                            // Look up the declared field type
-                            let field_type = script.get_struct_field_type(ty, fname);
-                            // Generate expression using that type as hint
-                            let mut expr_code = fexpr.to_rust(needs_self, script, field_type.as_ref(), current_func);
-                
-                            // 🔹 Clone non-Copy types when they're identifiers or member accesses
-                            let expr_type = script.infer_expr_type(fexpr, current_func);
-                            let should_clone = matches!(fexpr, Expr::Ident(_) | Expr::MemberAccess(..))
-                                && expr_type
-                                    .as_ref()
-                                    .map_or(false, |ty| ty.requires_clone());
-                
-                            if should_clone {
-                                expr_code = format!("{}.clone()", expr_code);
-                            }
-                
-                            format!("{}: {}", fname, expr_code)
-                        })
-                        .collect();
+Expr::StructNew(ty, args) => {
+    use std::collections::HashMap;
 
-                    format!("{} {{ {}, ..Default::default() }}",
-                        ty,
-                        field_inits.join(", ")
-                    )
-                }
+    // --- Flatten structure hierarchy correctly ---
+    fn gather_flat_fields<'a>(
+        s: &'a StructDef,
+        script: &'a Script,
+        out: &mut Vec<(&'a str, &'a Type, Option<&'a str>)>,
+    ) {
+        if let Some(ref base) = s.base {
+            if let Some(basedef) = script.structs.iter().find(|b| &b.name == base) {
+                gather_flat_fields_with_parent(basedef, script, out, Some(base.as_str()));
             }
+        }
+
+        // Derived-level fields: no parent
+        for f in &s.fields {
+            out.push((f.name.as_str(), &f.typ, None));
+        }
+    }
+
+    fn gather_flat_fields_with_parent<'a>(
+        s: &'a StructDef,
+        script: &'a Script,
+        out: &mut Vec<(&'a str, &'a Type, Option<&'a str>)>,
+        parent_name: Option<&'a str>,
+    ) {
+        // Include base of the base, recursively
+        if let Some(ref base) = s.base {
+            if let Some(basedef) = script.structs.iter().find(|b| &b.name == base) {
+                gather_flat_fields_with_parent(basedef, script, out, Some(base.as_str()));
+            }
+        }
+
+        // Tag each field in this struct with its owning base
+        for f in &s.fields {
+            out.push((f.name.as_str(), &f.typ, parent_name));
+        }
+    }
+
+    // --- Get struct info ---
+    let struct_def = script
+        .structs
+        .iter()
+        .find(|s| s.name == *ty)
+        .expect("Struct not found");
+
+    let mut flat_fields = Vec::new();
+    gather_flat_fields(struct_def, script, &mut flat_fields);
+
+    // Map arguments in order to flattened field list
+    // ----------------------------------------------------------
+// Map each parsed (field_name, expr) to its real definition
+// ----------------------------------------------------------
+let mut field_exprs: Vec<(&str, &Type, Option<&str>, &Expr)> = Vec::new();
+
+for (field_name, expr) in args {
+    // look for a matching field by name anywhere in the flattened struct hierarchy
+    if let Some((fname, fty, parent)) =
+        flat_fields.iter().find(|(fname, _, _)| *fname == field_name.as_str())
+    {
+        // found: record exact type & base
+        field_exprs.push((*fname, *fty, *parent, expr));
+    } else {
+        // unknown field; keep it but use Type::Object as a fallback
+        field_exprs.push((field_name.as_str(), &Type::Object, None, expr));
+    }
+}
+
+    // --- Group by base name (if parent) ---
+    let mut base_fields: HashMap<&str, Vec<(&str, &Type, &Expr)>> = HashMap::new();
+    let mut derived_fields: Vec<(&str, &Type, &Expr)> = Vec::new();
+
+    for (fname, fty, parent, expr) in &field_exprs {
+        if let Some(base_name) = parent {
+            base_fields
+                .entry(base_name)
+                .or_default()
+                .push((*fname, *fty, *expr));
+        } else {
+            derived_fields.push((*fname, *fty, *expr));
+        }
+    }
+
+    // --- Recursive builder for nested base init ---
+    fn build_base_init(
+        base_name: &str,
+        base_fields: &HashMap<&str, Vec<(&str, &Type, &Expr)>>,
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        let base_struct = script
+            .structs
+            .iter()
+            .find(|s| s.name == base_name)
+            .expect("Base struct not found");
+
+        let mut parts = String::new();
+
+        // Handle deeper bases first
+        if let Some(ref inner) = base_struct.base {
+            let inner_code =
+                build_base_init(inner, base_fields, script, needs_self, current_func);
+            parts.push_str(&format!("base: {}, ", inner_code));
+        }
+
+        // Write base’s own fields
+        if let Some(local_fields) = base_fields.get(base_name) {
+            for (fname, fty, expr) in local_fields {
+                let mut expr_code =
+                    expr.to_rust(needs_self, script, Some(fty), current_func);
+                let expr_type = script.infer_expr_type(expr, current_func);
+                let should_clone = matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
+                    && expr_type
+                        .as_ref()
+                        .map_or(false, |ty| ty.requires_clone());
+                if should_clone {
+                    expr_code = format!("{}.clone()", expr_code);
+                }
+                parts.push_str(&format!("{}: {}, ", fname, expr_code));
+            }
+        }
+
+        format!("{} {{ {}..Default::default() }}", base_name, parts)
+    }
+
+    // --- Build final top-level struct ---
+    let mut code = String::new();
+
+    // 1️⃣ Base (if exists)
+    if let Some(ref base_name) = struct_def.base {
+        let base_code = build_base_init(base_name, &base_fields, script, needs_self, current_func);
+        code.push_str(&format!("base: {}, ", base_code));
+    }
+
+    // 2️⃣ Derived-only fields
+    for (fname, fty, expr) in &derived_fields {
+        let mut expr_code = expr.to_rust(needs_self, script, Some(fty), current_func);
+        let expr_type = script.infer_expr_type(expr, current_func);
+        let should_clone = matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
+            && expr_type
+                .as_ref()
+                .map_or(false, |ty| ty.requires_clone());
+        if should_clone {
+            expr_code = format!("{}.clone()", expr_code);
+        }
+        code.push_str(&format!("{}: {}, ", fname, expr_code));
+    }
+
+    format!("{} {{ {}..Default::default() }}", ty, code)
+}
             Expr::ApiCall(module, args) => {
                 // Get expected param types (if defined for this API)
                 let expected_param_types = module.param_types();
@@ -1877,7 +1994,7 @@ impl Expr {
 
                 match base_type {
             // Strongly-typed HashMap (e.g. Map<int, float>, Map<string, Vec<MyStruct>>)
-            Some(Type::Container(ContainerKind::HashMap, _)) => {
+            Some(Type::Container(ContainerKind::Map, _)) => {
                 format!("{}.get({}).cloned().unwrap_or_default()", base_code, key_code)
             }
 
@@ -1944,7 +2061,7 @@ impl Expr {
                 ContainerLiteralData::Array(elements) => {
                     elements.iter().any(|e| e.contains_api_call(script))
                 }
-                ContainerLiteralData::HashMap(pairs) => {
+                ContainerLiteralData::Map(pairs) => {
                     pairs.iter().any(|(k, v)| k.contains_api_call(script) || v.contains_api_call(script))
                 }
                 ContainerLiteralData::FixedArray(_, elements) => {

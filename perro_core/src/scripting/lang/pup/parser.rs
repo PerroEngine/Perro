@@ -225,19 +225,10 @@ impl PupParser {
         })
     }
 
-   fn parse_type(&mut self) -> Result<Type, String> {
+  fn parse_type(&mut self) -> Result<Type, String> {
     if let PupToken::Ident(base) = &self.current_token {
         let base_name = base.clone();
         self.next_token();
-
-        // Handle Array shorthand e.g. float[]
-        if self.current_token == PupToken::LBracket {
-            self.next_token();
-            if self.current_token == PupToken::RBracket {
-                self.next_token();
-                return Ok(Type::Container(ContainerKind::Array, vec![self.map_type(base_name)]));
-            }
-        }
 
         // Typed Map: Map<[K: V]>
         if self.current_token == PupToken::LessThan {
@@ -248,12 +239,20 @@ impl PupParser {
             let val_type = self.parse_type()?;
             self.expect(PupToken::RBracket)?;
             self.expect(PupToken::GreaterThan)?;
-            return Ok(Type::Container(ContainerKind::HashMap, vec![key_type, val_type]));
+            return Ok(Type::Container(ContainerKind::Map, vec![key_type, val_type]));
         }
 
-        // Typed Array: Array[T]
+        // Handle both Array[T] and float[] syntaxes
         if self.current_token == PupToken::LBracket {
             self.next_token();
+            
+            // Check if empty brackets (shorthand: float[])
+            if self.current_token == PupToken::RBracket {
+                self.next_token();
+                return Ok(Type::Container(ContainerKind::Array, vec![self.map_type(base_name)]));
+            }
+            
+            // Otherwise parse inner type (explicit: Array[int])
             let inner = self.parse_type()?;
             self.expect(PupToken::RBracket)?;
             return Ok(Type::Container(ContainerKind::Array, vec![inner]));
@@ -395,7 +394,7 @@ impl PupParser {
                     Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
                     
                     Expr::ContainerLiteral(kind, _) => match kind {
-                        ContainerKind::HashMap => Some(Type::Container(ContainerKind::HashMap, vec![Type::String, Type::Object])),
+                        ContainerKind::Map => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
                         ContainerKind::Array => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
                         _ => None, // or panic!("Unexpected kind for ContainerLiteral in infer_expr_type")
                     },
@@ -455,7 +454,7 @@ impl PupParser {
             // Handle empty map case
             if self.current_token == PupToken::GreaterThan {
                 self.next_token();
-                return Ok(Expr::ContainerLiteral(ContainerKind::HashMap, ContainerLiteralData::HashMap(vec![])))
+                return Ok(Expr::ContainerLiteral(ContainerKind::Map, ContainerLiteralData::Map(vec![])))
             }
 
             let mut pairs = Vec::new();
@@ -481,7 +480,7 @@ impl PupParser {
             }
 
             self.expect(PupToken::GreaterThan)?;
-            Ok(Expr::ContainerLiteral(ContainerKind::HashMap, ContainerLiteralData::HashMap(pairs)))
+            Ok(Expr::ContainerLiteral(ContainerKind::Map, ContainerLiteralData::Map(pairs)))
         }
             PupToken::LBracket => {
                 self.next_token();
@@ -521,36 +520,124 @@ impl PupParser {
                 self.expect(PupToken::RBrace)?;
                 Ok(Expr::ObjectLiteral(pairs))
             }
-            PupToken::New => {
-                self.next_token();
-                let api_name = match &self.current_token {
-                    PupToken::Ident(n) => n.clone(),
-                    _ => return Err("Expected identifier after 'new'".into()),
-                };
-                self.next_token();
-                self.expect(PupToken::LParen)?;
-                let mut args = Vec::new();
-                if self.current_token != PupToken::RParen {
+PupToken::New => {
+    self.next_token();
+
+    // --- Parse the type name after `new` ---
+    let type_name = match &self.current_token {
+        PupToken::Ident(n) => n.clone(),
+        _ => return Err("Expected identifier after 'new'".into()),
+    };
+    self.next_token();
+
+    // --- Check what comes next: '(' positional or '{' named ---
+    match &self.current_token {
+        PupToken::LParen => {
+            // -----------------------------
+            // new Struct(...positional...)
+            // -----------------------------
+            self.next_token();
+            let mut args = Vec::new();
+            if self.current_token != PupToken::RParen {
+                args.push(self.parse_expression(0)?);
+                while self.current_token == PupToken::Comma {
+                    self.next_token();
                     args.push(self.parse_expression(0)?);
-                    while self.current_token == PupToken::Comma {
-                        self.next_token();
-                        args.push(self.parse_expression(0)?);
+                }
+            }
+            self.expect(PupToken::RParen)?;
+
+            // 🧠 If this is a known struct type — convert positional args to matched field pairs
+            let is_custom_struct = self.parsed_structs.iter().any(|s| s.name == type_name);
+
+            if is_custom_struct {
+                // No args → default construct
+                if args.is_empty() {
+                    return Ok(Expr::StructNew(type_name, vec![]));
+                }
+
+                // Map args by field order
+                fn gather_flat_fields(def: &StructDef, all: &[StructDef], out: &mut Vec<String>) {
+                if let Some(ref base) = def.base {
+                    if let Some(base_def) = all.iter().find(|s| &s.name == base) {
+                        gather_flat_fields(base_def, all, out);
                     }
                 }
-                self.expect(PupToken::RParen)?;
-
-                if let Some(api) = PupAPI::resolve(&api_name, "new") {
-                    return Ok(Expr::ApiCall(api, args));
+                for f in &def.fields {
+                    out.push(f.name.clone());
                 }
-
-                Ok(Expr::Call(
-                    Box::new(Expr::MemberAccess(
-                        Box::new(Expr::Ident(api_name.clone())),
-                        "new".into(),
-                    )),
-                    args,
-                ))
             }
+
+            // Build full flattened field list
+            let mut matched_fields = Vec::new();
+            if let Some(def) = self.parsed_structs.iter().find(|s| s.name == type_name) {
+                gather_flat_fields(def, &self.parsed_structs, &mut matched_fields);
+            }
+
+                let mut pairs = Vec::new();
+                for (i, arg) in args.iter().enumerate() {
+                    let field_name = matched_fields
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| format!("_{}", i));
+                    pairs.push((field_name, arg.clone()));
+                }
+                return Ok(Expr::StructNew(type_name, pairs));
+            }
+
+            // Otherwise treat `new Something()` as an API call or method
+            if let Some(api) = PupAPI::resolve(&type_name, "new") {
+                return Ok(Expr::ApiCall(api, args));
+            }
+
+            Ok(Expr::Call(
+                Box::new(Expr::MemberAccess(
+                    Box::new(Expr::Ident(type_name.clone())),
+                    "new".into(),
+                )),
+                args,
+            ))
+        }
+
+        PupToken::LBrace => {
+            // -----------------------------
+            // new Struct { field: expr, ... }
+            // -----------------------------
+            self.next_token();
+            let mut pairs = Vec::new();
+
+            while self.current_token != PupToken::RBrace && self.current_token != PupToken::Eof {
+                // field name
+                let field_name = match &self.current_token {
+                    PupToken::Ident(n) | PupToken::String(n) => n.clone(),
+                    other => return Err(format!("Expected field name in struct init, got {:?}", other)),
+                };
+                self.next_token();
+                self.expect(PupToken::Colon)?;
+                let expr = self.parse_expression(0)?;
+                pairs.push((field_name, expr));
+
+                if self.current_token == PupToken::Comma {
+                    self.next_token();
+                } else {
+                    break;
+                }
+            }
+
+            self.expect(PupToken::RBrace)?;
+
+            // Emit it as a StructNew (so codegen path stays the same)
+            Ok(Expr::StructNew(type_name, pairs))
+        }
+
+        other => {
+            Err(format!(
+                "Expected '(' or '{{' after 'new <Type>', got {:?}",
+                other
+            ))
+        }
+    }
+}
             PupToken::SelfAccess => {
                 self.next_token();
                 Ok(Expr::SelfAccess)
@@ -654,16 +741,19 @@ impl PupParser {
                 }
                 Ok(Expr::Call(Box::new(left), args))
             }
-            PupToken::Dot => {
-                self.next_token();
-                let f = if let PupToken::Ident(n) = &self.current_token {
-                    n.clone()
-                } else {
-                    return Err("Expected field after '.'".into());
-                };
-                self.next_token();
-                Ok(Expr::MemberAccess(Box::new(left), f))
-            }
+           PupToken::Dot => {
+            self.next_token();
+
+            let field_name = match &self.current_token {
+                PupToken::Ident(n) => n.clone(),
+                PupToken::New      => "new".to_string(), // ✅ allow `.new` keyword
+                PupToken::Struct   => "struct".to_string(), // (optional future‑proof)
+                _ => return Err(format!("Expected field after '.', got {:?}", self.current_token)),
+            };
+
+            self.next_token();
+            Ok(Expr::MemberAccess(Box::new(left), field_name))
+        }
             PupToken::DoubleColon => {
                 self.next_token();
                 let f = if let PupToken::Ident(n) = &self.current_token {
@@ -753,7 +843,7 @@ impl PupParser {
             "bool" => Type::Bool,
             "string" => Type::String,
             "script" => Type::Script,
-            "Map" | "map" => Type::Container(ContainerKind::HashMap, vec![
+            "Map" | "map" => Type::Container(ContainerKind::Map, vec![
                 Type::String,
                 Type::Object
             ]),
