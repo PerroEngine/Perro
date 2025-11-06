@@ -217,9 +217,15 @@ impl TypesPupScript {
     fn test_structs_array_map_mixed(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("-- STRUCT CONTAINERS --"));
         let mut p = SuperPlayer { base: Player { name: String::from("Hero"), hp: 150i32, ..Default::default() }, energy: 20.5f32, ..Default::default() };
-        let mut dyn_arr = vec![json!(p).clone()];
-        let mut dyn_map = HashMap::from([(String::from("main"), json!(p).clone())]);
-        let mut p_name = serde_json::from_value::<SuperPlayer>(dyn_map.get(String::from("main").as_str()).cloned().unwrap_or_default().clone()).unwrap_or_default().name;
+        let mut stest = String::from("fart");
+        let mut btest = stest.clone();
+        let mut player3 = Player { name: String::from("Hero"), ..Default::default() };
+        let mut pname1 = player3.name.clone();
+        let mut penergy = p.energy;
+        let mut dyn_arr = vec![json!(p)];
+        let mut dyn_map = HashMap::from([(String::from("main"), json!(p))]);
+        let mut p_name = serde_json::from_value::<Player>(dyn_map.get(String::from("main").as_str()).cloned().unwrap_or_default().clone()).unwrap_or_default().name.clone();
+        let mut p_energy = serde_json::from_value::<SuperPlayer>(dyn_map.get(String::from("main").as_str()).cloned().unwrap_or_default().clone()).unwrap_or_default().energy;
         api.print(&format!("{} {}", String::from("dynamic struct name:"), p_name));
         let mut arr_typed = vec![p.clone()];
         arr_typed.push(SuperPlayer { base: Player { name: String::from("Sidekick"), hp: 75i32, ..Default::default() }, energy: 8.8f32, ..Default::default() });

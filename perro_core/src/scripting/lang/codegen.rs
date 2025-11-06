@@ -919,24 +919,36 @@ impl Stmt {
                 }
             }
 
-            Stmt::VariableDecl(var) => {
-                let expr_str = if let Some(expr) = &var.value {
-                    expr.to_rust(needs_self, script, current_func)
-                } else {
-                    if var.typ.is_some() {
-                        var.default_value()
+       Stmt::VariableDecl(var) => {
+    let expr_str = if let Some(expr) = &var.value {
+        let raw_expr = expr.to_rust(needs_self, script, current_func);
+
+        match &expr.expr {
+            Expr::Ident(_) | Expr::MemberAccess(..) => {
+                if let Some(ty) = script.infer_expr_type(&expr.expr, current_func) {
+                    if ty.requires_clone() {
+                        format!("{}.clone()", raw_expr)
                     } else {
-                        String::new()
+                        raw_expr
                     }
-                };
-                
-                if expr_str.is_empty() {
-                    format!("        let mut {};\n", var.name)
                 } else {
-                    format!("        let mut {} = {};\n", var.name, expr_str)
+                    raw_expr
                 }
             }
+            _ => raw_expr
+        }
+    } else if var.typ.is_some() {
+        var.default_value()
+    } else {
+        String::new()
+    };
 
+    if expr_str.is_empty() {
+        format!("        let mut {};\n", var.name)
+    } else {
+        format!("        let mut {} = {};\n", var.name, expr_str)
+    }
+}
             Stmt::Assign(name, expr) => {
             let target = if script.is_struct_field(name) && !name.starts_with("self.") {
                 format!("self.{}", name)
@@ -1299,19 +1311,42 @@ impl TypedExpr {
 }
 
 impl Expr {
-    fn clone_if_needed(
+fn clone_if_needed(
     expr_code: String,
     expr: &Expr,
     script: &Script,
     current_func: Option<&Function>,
 ) -> String {
-    let inferred = script.infer_expr_type(expr, current_func);
-    if inferred.as_ref().map_or(false, |t| t.requires_clone()) {
+    if Expr::should_clone_expr(&expr_code, expr, script, current_func) {
         format!("{}.clone()", expr_code)
     } else {
         expr_code
     }
 }
+
+fn should_clone_expr(expr_code: &str, expr: &Expr, script: &Script, current_func: Option<&Function>) -> bool {
+    if expr_code.starts_with("json!(")
+        || expr_code.starts_with("HashMap::from(")
+        || expr_code.starts_with("vec![")
+        || expr_code.contains("serde_json::from_value::<")
+        || expr_code.contains(".parse::<")
+        || expr_code.contains('{')  // struct literal produces an owned value
+    {
+        return false;
+    }
+
+    match expr {
+            Expr::Ident(_) | Expr::MemberAccess(..) => {
+                if let Some(ty) = script.infer_expr_type(expr, current_func) {
+                    ty.requires_clone()
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+}
+
 
 
     pub fn to_rust(&self, needs_self: bool, script: &Script, expected_type: Option<&Type>, current_func: Option<&Function>) -> String {
@@ -1550,51 +1585,29 @@ impl Expr {
                 _ => (&Type::String, &Type::Object),
             };
 
-            let entries: Vec<_> = pairs
-                .iter()
-                .map(|(k_expr, v_expr)| {
-                    // Render key/value
-                    let raw_k = k_expr.to_rust(
-                        needs_self,
-                        script,
-                        Some(expected_key_type),
-                        current_func,
-                    );
-                    let raw_v = v_expr.to_rust(
-                        needs_self,
-                        script,
-                        Some(expected_val_type),
-                        current_func,
-                    );
+           let entries: Vec<_> = pairs
+    .iter()
+    .map(|(k_expr, v_expr)| {
+        let raw_k = k_expr.to_rust(needs_self, script, Some(expected_key_type), current_func);
+        let raw_v = v_expr.to_rust(needs_self, script, Some(expected_val_type), current_func);
 
-                    // Only clone if expression is a variable or member access
-                    let k_final = match k_expr {
-                        Expr::Ident(_) | Expr::MemberAccess(..) => {
-                            let kt = script.infer_expr_type(k_expr, current_func);
-                            if kt.as_ref().map_or(false, |t| t.requires_clone()) {
-                                format!("{}.clone()", raw_k)
-                            } else {
-                                raw_k
-                            }
-                        }
-                        _ => raw_k,
-                    };
+        let k_final = if Expr::should_clone_expr(&raw_k, k_expr, script, current_func)
+        {
+            format!("{}.clone()", raw_k)
+        } else {
+            raw_k
+        };
 
-                    let v_final = match v_expr {
-                        Expr::Ident(_) | Expr::MemberAccess(..) => {
-                            let vt = script.infer_expr_type(v_expr, current_func);
-                            if vt.as_ref().map_or(false, |t| t.requires_clone()) {
-                                format!("{}.clone()", raw_v)
-                            } else {
-                                raw_v
-                            }
-                        }
-                        _ => raw_v,
-                    };
+        let v_final = if Expr::should_clone_expr(&raw_v, v_expr, script, current_func)
+        {
+            format!("{}.clone()", raw_v)
+        } else {
+            raw_v
+        };
 
-                    format!("({}, {})", k_final, v_final)
-                })
-                .collect();
+        format!("({}, {})", k_final, v_final)
+    })
+    .collect();
 
             format!("HashMap::from([{}])", entries.join(", "))
         };
@@ -1622,28 +1635,17 @@ impl Expr {
                 _ => &Type::Object,
             };
 
-            let elements: Vec<_> = elems
-                .iter()
-                .map(|e| {
-                    let rendered = e.to_rust(
-                        needs_self,
-                        script,
-                        Some(elem_ty),
-                        current_func,
-                    );
-                    match e {
-                        Expr::Ident(_) | Expr::MemberAccess(..) => {
-                            let ty = script.infer_expr_type(e, current_func);
-                            if ty.as_ref().map_or(false, |t| t.requires_clone()) {
-                                format!("{}.clone()", rendered)
-                            } else {
-                                rendered
-                            }
-                        }
-                        _ => rendered,
-                    }
-                })
-                .collect();
+           let elements: Vec<_> = elems
+    .iter()
+    .map(|e| {
+        let rendered = e.to_rust(needs_self, script, Some(elem_ty), current_func);
+        if Expr::should_clone_expr(&rendered, e, script, current_func) {
+            format!("{}.clone()", rendered)
+        } else {
+            rendered
+        }
+    })
+    .collect();
 
             format!("vec![{}]", elements.join(", "))
         };

@@ -114,10 +114,20 @@ fn test_structs_array_map_mixed() {
 
     var p = new SuperPlayer("Hero", 150, 20.5)
 
+    var stest ="fart"
+    var btest = stest
+
+var player3 = new Player("Hero")
+
+    var pname1 = player3.name
+
+    var penergy = p.energy
+
     // Dynamic containers
     var dyn_arr = [p]
     var dyn_map = <["main": p]>
-    var p_name = (dyn_map.get("main") as SuperPlayer).name
+    var p_name = (dyn_map.get("main") as Player).name
+    var p_energy = (dyn_map.get("main") as SuperPlayer).energy
     Console.log("dynamic struct name:", p_name)
 
     // Static containers
