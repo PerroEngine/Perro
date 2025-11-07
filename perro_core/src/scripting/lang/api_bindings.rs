@@ -541,29 +541,100 @@ impl ApiCodegen for ArrayApi {
         &self,
         args: &[Expr],
         args_strs: &[String],
-        _script: &Script,
-        _needs_self: bool,
-        _current_func: Option<&Function>,
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
     ) -> String {
         match self {
             ArrayApi::Push => {
-                // args: [vec, value]
-                format!("{}.push({})", args_strs[0], args_strs[1])
+                // args[0] is the array expression, args[1] is the value to push
+                let array_expr = &args[0];
+                let value_expr = &args[1]; // The raw AST expression for the value
+
+                // Infer the type of the array itself to get its inner type
+                let array_type = script.infer_expr_type(array_expr, current_func);
+
+                let inner_type = if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                    inner_types.get(0).cloned().unwrap_or(Type::Object)
+                } else {
+                    Type::Object // Fallback if array type couldn't be inferred
+                };
+
+                let mut value_code = value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
+
+                // If the value_code itself still indicates a JSON value AND the target is not Type::Object,
+                // we should attempt to deserialize it.
+                if value_code.starts_with("json!(") && inner_type != Type::Object {
+                    // Strip the json! and try to deserialize if possible
+                    let raw_json_content = value_code
+                        .strip_prefix("json!(")
+                        .and_then(|s| s.strip_suffix(")"))
+                        .unwrap_or(&value_code);
+                    value_code = format!("serde_json::from_value::<{}>({}).unwrap_or_default()", inner_type.to_rust_type(), raw_json_content);
+                } else if value_code.starts_with("json!(") && inner_type == Type::Object {
+                    // If target is Type::Object, json! is fine, just use the string directly
+                    // No change needed.
+                } else {
+                    // Perform implicit cast if needed and not already handled
+                    if let Some(actual_value_type) = script.infer_expr_type(value_expr, current_func) {
+                        if actual_value_type.can_implicitly_convert_to(&inner_type) && actual_value_type != inner_type {
+                            value_code = script.generate_implicit_cast_for_expr(&value_code, &actual_value_type, &inner_type);
+                        }
+                    }
+                    // Handle cloning if the type requires it (e.g., custom structs)
+                    if inner_type.requires_clone() && !value_code.contains(".clone()") && !value_code.starts_with("String::from") {
+                        // Prevent double cloning if value_code already implies it (e.g., "new Player(...)")
+                        let produces_owned_value = matches!(value_expr, Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..));
+                        if !produces_owned_value {
+                            value_code = format!("{}.clone()", value_code);
+                        }
+                    }
+                }
+                
+                format!("{}.push({})", args_strs[0], value_code)
             }
             ArrayApi::Pop => {
-                // args: [vec]
                 format!("{}.pop()", args_strs[0])
             }
             ArrayApi::Len => {
-                // args: [vec]
                 format!("{}.len()", args_strs[0])
             }
             ArrayApi::Insert => {
-                // args: [vec, index, value]
-                format!("{}.insert({} as usize, {})", args_strs[0], args_strs[1], args_strs[2])
+                let array_expr = &args[0];
+                let value_expr = &args[2]; // value is the third arg for insert
+                let array_type = script.infer_expr_type(array_expr, current_func);
+                let inner_type = if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                    inner_types.get(0).cloned().unwrap_or(Type::Object)
+                } else {
+                    Type::Object
+                };
+
+                let mut value_code = value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
+
+                 // Apply the same logic as Push for value_code conversion/cloning
+                if value_code.starts_with("json!(") && inner_type != Type::Object {
+                    let raw_json_content = value_code
+                        .strip_prefix("json!(")
+                        .and_then(|s| s.strip_suffix(")"))
+                        .unwrap_or(&value_code);
+                    value_code = format!("serde_json::from_value::<{}>({}).unwrap_or_default()", inner_type.to_rust_type(), raw_json_content);
+                } else if !value_code.starts_with("json!(") { // Only do this if it's not already a json! and needs conversion
+                    if let Some(actual_value_type) = script.infer_expr_type(value_expr, current_func) {
+                        if actual_value_type.can_implicitly_convert_to(&inner_type) && actual_value_type != inner_type {
+                            value_code = script.generate_implicit_cast_for_expr(&value_code, &actual_value_type, &inner_type);
+                        }
+                    }
+                     if inner_type.requires_clone() && !value_code.contains(".clone()") && !value_code.starts_with("String::from") {
+                        let produces_owned_value = matches!(value_expr, Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..));
+                        if !produces_owned_value {
+                            value_code = format!("{}.clone()", value_code);
+                        }
+                    }
+                }
+
+                format!("{}.insert({} as usize, {})", args_strs[0], args_strs[1], value_code)
             }
             ArrayApi::Remove => {
-                // args: [vec, index]
                 format!("{}.remove({} as usize)", args_strs[0], args_strs[1])
             }
             ArrayApi::New => {

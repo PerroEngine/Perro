@@ -107,12 +107,79 @@ pub fn json_access(&self) -> (&'static str, String) {
            ("as_u64", format!(" as u64")),
 
         // Containers
-        Type::Container(ContainerKind::Array, _) 
-        | Type::Container(ContainerKind::FixedArray(_), _) => {
-            ("as_array", ".clone()".into())
+      Type::Container(ContainerKind::Array, params) => {
+            let inner = params.get(0).unwrap_or(&Type::Object);
+            match inner {
+                Type::Object => ("as_array", ".clone()".into()),
+                inner => (
+                    "__CUSTOM__",
+                    format!(
+                        "v.as_array().map(|a| a.iter()
+                            .map(|x| serde_json::from_value::<{}>(x.clone()).unwrap_or_default())
+                            .collect::<Vec<{}>>()
+                        ).unwrap_or_default()",
+                        inner.to_rust_type(),
+                        inner.to_rust_type()
+                    )
+                ),
+            }
         }
-        Type::Container(ContainerKind::Map, _) => {
-            ("as_object", ".iter().map(|(k, v)| (k.clone(), v.clone())).collect()".into())
+
+        // ---- Fixed Array [T; N] ----
+        Type::Container(ContainerKind::FixedArray(size), params) => {
+            let inner = params.get(0).unwrap_or(&Type::Object);
+            match inner {
+                // dynamic fixed arrays (array of Value)
+                Type::Object => ("as_array", format!(
+                    ".as_array().map(|a| {{
+                        let mut out: [{}; {}] = [Default::default(); {}];
+                        for (i, val) in a.iter().enumerate().take({}) {{
+                            out[i] = val.clone();
+                        }}
+                        out
+                    }}).unwrap_or_default()",
+                    inner.to_rust_type(), size, size, size
+                )),
+                // typed fixed arrays
+                inner => (
+                    "__CUSTOM__",
+                    format!(
+                        "v.as_array().map(|a| {{
+                            let mut out: [{}; {}] = [Default::default(); {}];
+                            for (i, val) in a.iter().enumerate().take({}) {{
+                                out[i] = serde_json::from_value::<{}>(val.clone()).unwrap_or_default();
+                            }}
+                            out
+                        }}).unwrap_or_default()",
+                        inner.to_rust_type(),
+                        size,
+                        size,
+                        size,
+                        inner.to_rust_type()
+                    )
+                ),
+            }
+        }
+
+        // ---- Map ---
+        Type::Container(ContainerKind::Map, params) => {
+            let key_ty = params.get(0).unwrap_or(&Type::String);
+            let val_ty = params.get(1).unwrap_or(&Type::Object);
+            match val_ty {
+                Type::Object => ("as_object", ".iter().map(|(k, v)| (k.clone(), v.clone())).collect()".into()),
+                inner => (
+                    "__CUSTOM__",
+                    format!(
+                        "v.as_object().map(|obj| obj.iter()
+                            .map(|(k, v)| (k.clone(), serde_json::from_value::<{}>(v.clone()).unwrap_or_default()))
+                            .collect::<HashMap<{}, {}>>()
+                        ).unwrap_or_default()",
+                        inner.to_rust_type(),
+                        key_ty.to_rust_type(),
+                        inner.to_rust_type()
+                    )
+                ),
+            }
         }
         Type::Object => {
             ("as_object", ".clone().into()".into())

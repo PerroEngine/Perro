@@ -105,7 +105,7 @@ impl Script {
         None
     }
 
-   pub fn infer_expr_type(
+pub fn infer_expr_type(
     &self,
     expr: &Expr,
     current_func: Option<&Function>,
@@ -119,133 +119,130 @@ impl Script {
     }
 
     let result = match expr {
-        // -------------------------------------------------------------
-        // LITERALS
-        // -------------------------------------------------------------
         Expr::Literal(lit) => self.infer_literal_type(lit, None),
-
-        // -------------------------------------------------------------
-        // IDENTIFIERS (variables, parameters, fields)
-        // -------------------------------------------------------------
         Expr::Ident(name) => {
-            if let Some(func) = current_func {
-                // 1. Local variable
-                if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
-                    if let Some(t) = &local.typ {
-                        Some(t.clone())
-                    } else if let Some(val) = &local.value {
-                        self.infer_expr_type(&val.expr, current_func)
-                    } else {
-                        None
+                if let Some(func) = current_func {
+                    // 1. Local variable
+                    if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+                        if let Some(t) = &local.typ {
+                            Some(t.clone())
+                        } else if let Some(val) = &local.value {
+                            self.infer_expr_type(&val.expr, current_func)
+                        } else {
+                            None
+                        }
                     }
-                }
-                // 2. Function parameter
-                else if let Some(param) = func.params.iter().find(|p| p.name == *name) {
-                    Some(param.typ.clone())
-                }
-                // 3. Script-level variable or exposed field
-                else {
-                    self.get_variable_type(name).cloned()
-                }
-            } else {
-                self.get_variable_type(name).cloned()
-            }
-        }
-
-        // -------------------------------------------------------------
-        // BINARY OPERATOR (a + b, a * b, etc.)
-        // -------------------------------------------------------------
-        Expr::BinaryOp(left, _op, right) => {
-            let left_type = self.infer_expr_type(left, current_func);
-            let right_type = self.infer_expr_type(right, current_func);
-
-            match (&left_type, &right_type) {
-                (Some(l), Some(r)) if l == r => Some(l.clone()),
-                (Some(l), Some(r)) => self.promote_types(l, r),
-                (Some(l), None) => Some(l.clone()),
-                (None, Some(r)) => Some(r.clone()),
-                _ => Some(Number(NumberKind::Float(32))), // fallback type
-            }
-        }
-
-        // -------------------------------------------------------------
-        // MEMBER ACCESS (foo.bar)
-        // -------------------------------------------------------------
-        Expr::MemberAccess(base, field) => {
-            let base_type = self.infer_expr_type(base, current_func)?;
-            self.get_member_type(&base_type, field)
-        }
-
-        // -------------------------------------------------------------
-        // FUNCTION CALL
-        // -------------------------------------------------------------
-        Expr::Call(target, _args) => match &**target {
-            Expr::Ident(fname) => self.get_function_return_type(fname),
-            Expr::MemberAccess(base, method) => {
-                let base_type = self.infer_expr_type(base, current_func)?;
-                if let Type::Custom(type_name) = base_type {
-                    if type_name == self.node_type {
-                        self.get_function_return_type(method)
-                    } else {
-                        None
+                    // 2. Function parameter
+                    else if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+                        Some(param.typ.clone())
+                    }
+                    // 3. Script-level variable or exposed field
+                    else {
+                        self.get_variable_type(name).cloned()
                     }
                 } else {
-                    None
+                    self.get_variable_type(name).cloned()
                 }
             }
-            _ => None,
-        },
+        Expr::BinaryOp(left, _op, right) => {
+                let left_type = self.infer_expr_type(left, current_func);
+                let right_type = self.infer_expr_type(right, current_func);
 
-        // -------------------------------------------------------------
-        // CAST
-        // -------------------------------------------------------------
+                match (&left_type, &right_type) {
+                    (Some(l), Some(r)) if l == r => Some(l.clone()),
+                    (Some(l), Some(r)) => self.promote_types(l, r),
+                    (Some(l), None) => Some(l.clone()),
+                    (None, Some(r)) => Some(r.clone()),
+                    _ => Some(Number(NumberKind::Float(32))), // fallback type
+                }
+            }
+        Expr::MemberAccess(base, field) => {
+                let base_type = self.infer_expr_type(base, current_func)?;
+                self.get_member_type(&base_type, field)
+            }
+        Expr::Call(target, _args) => match &**target {
+                Expr::Ident(fname) => self.get_function_return_type(fname),
+                Expr::MemberAccess(base, method) => {
+                    let base_type = self.infer_expr_type(base, current_func)?;
+                    if let Type::Custom(type_name) = base_type {
+                        if type_name == self.node_type {
+                            self.get_function_return_type(method)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            },
         Expr::Cast(_, target_type) => Some(target_type.clone()),
-
-        // -------------------------------------------------------------
-        // API CALL (Time.get_delta() etc.)
-        // -------------------------------------------------------------
         Expr::ApiCall(api, args) => match api {
-        ApiModule::MapOp(MapApi::Get) => {
-            if let Some(Type::Container(ContainerKind::Map, ref params)) = self.infer_expr_type(&args[0], current_func) {
-                return params.get(1).cloned(); // value type
+            ApiModule::MapOp(MapApi::Get) => {
+                if let Some(Type::Container(ContainerKind::Map, ref params)) = self.infer_expr_type(&args[0], current_func) {
+                    return params.get(1).cloned(); // value type
+                }
+                Some(Type::Object)
             }
-            Some(Type::Object)
-        }
-        ApiModule::ArrayOp(ArrayApi::Pop) => {
-            if let Some(Type::Container(ContainerKind::Array, ref params)) = self.infer_expr_type(&args[0], current_func) {
-                return params.get(0).cloned(); // element type
+            ApiModule::ArrayOp(ArrayApi::Pop) => {
+                if let Some(Type::Container(ContainerKind::Array, ref params)) = self.infer_expr_type(&args[0], current_func) {
+                    return params.get(0).cloned(); // element type
+                }
+                Some(Type::Object)
             }
-            Some(Type::Object)
+            // ... other API cases ...
+            _ => api.return_type(),
         }
-        // ... other API cases ...
-        _ => api.return_type(),
-    }
-
-        // -------------------------------------------------------------
-        // STRUCT INITIALIZATION (new MyStruct(...) or literal form)
-        // -------------------------------------------------------------
         Expr::StructNew(ty_name, _fields) => {
-            // The result of `new Struct(...)` is `Type::Custom("Struct")`
-            Some(Custom(ty_name.clone()))
-        }
-
-        // -------------------------------------------------------------
-        // SELF ACCESS
-        // -------------------------------------------------------------
+                // The result of `new Struct(...)` is `Type::Custom("Struct")`
+                Some(Custom(ty_name.clone()))
+            }
         Expr::SelfAccess => Some(Custom(self.node_type.clone())),
-
-        // -------------------------------------------------------------
-        // ARRAY or OBJECT LITERAL (future extension)
-        // -------------------------------------------------------------
         Expr::ObjectLiteral(_) => Some(Type::Object),
-
         Expr::ContainerLiteral(kind, _) => match kind {
-            ContainerKind::Array    => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
-            ContainerKind::Map  => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
-            ContainerKind::FixedArray(_) => Some(Type::Container(kind.clone(), vec![Type::Object])),
-        },
+                ContainerKind::Array    => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
+                ContainerKind::Map  => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
+                ContainerKind::FixedArray(_) => Some(Type::Container(kind.clone(), vec![Type::Object])),
+            },
+        Expr::Index(base, _key) => {
+                let base_type = self.infer_expr_type(base, current_func)?;
 
-        _ => None,
+                match base_type {
+                    // Case 1: Base is a Container (Array, Map, FixedArray)
+                    Type::Container(container_kind, inner_types) => {
+                        match container_kind {
+                            ContainerKind::Array => {
+                                if inner_types.first() == Some(&Type::Object) {
+                                    Some(Type::Object) // Dynamic array, elements are Value
+                                } else {
+                                    inner_types.first().cloned() // Typed array, elements are the inner type
+                                }
+                            }
+                            ContainerKind::Map => {
+                                if inner_types.last() == Some(&Type::Object) {
+                                    Some(Type::Object) // Dynamic map, values are Value
+                                } else {
+                                    inner_types.last().cloned() // Typed map, values are the inner type
+                                }
+                            }
+                            ContainerKind::FixedArray(_) => { // Fixed size does not affect element type
+                                inner_types.first().cloned() // Fixed array, elements are the inner type
+                            }
+                        }
+                    }
+                    // Case 2: Base is a dynamic Object (serde_json::Value)
+                    Type::Object => Some(Type::Object),
+
+                    // Case 3: Any other type (e.g., custom struct that might deref, but no direct indexing support at this AST level)
+                    _ => None, // Or use self.infer_map_value_type(base, current_func) if you want to be very lenient
+                }
+            }, // <-- This comma is important.
+
+        // --- ADDED THIS LINE ---
+        Expr::BaseAccess => Some(Custom(self.node_type.clone())), // Assuming BaseAccess infers to the script's node type
+        // -----------------------
+
+        _ => None, // The final catch-all for any other unhandled Expr variants
     };
 
     // ✅ Cache the result
@@ -314,32 +311,51 @@ impl Script {
     }
     
     fn get_member_type(&self, base_type: &Type, member: &str) -> Option<Type> {
-        match base_type {
-            Type::Custom(type_name) if type_name == &self.node_type => {
-                if let Some(exposed) = self.exposed.iter().find(|v| v.name == member) {
-                    exposed.typ.clone()
-                } else if let Some(var) = self.variables.iter().find(|v| v.name == member) {
-                    var.typ.clone()
-                } else {
-                    None
-                }
-            }
-
-            Type::Custom(type_name) => {
-                if let Some(struct_def) = self.structs.iter().find(|s| &s.name == type_name) {
-                    struct_def
-                        .fields
-                        .iter()
-                        .find(|f| f.name == member)
-                        .map(|f| f.typ.clone())
-                } else {
-                    None
-                }
-            }
-
-            _ => None,
+    fn get_struct_field_type_recursive<'a>(
+        structs: &'a [StructDef],
+        struct_name: &str,
+        field_name: &str,
+    ) -> Option<Type> {
+        let struct_def = structs.iter().find(|s| s.name == struct_name)?;
+        
+        // (1) Check direct fields
+        if let Some(f) = struct_def.fields.iter().find(|f| f.name == field_name) {
+            return Some(f.typ.clone());
         }
+
+        // (2) If base exists, recurse upward
+        if let Some(ref base_name) = struct_def.base {
+            if let Some(found) =
+                get_struct_field_type_recursive(structs, base_name, field_name)
+            {
+                return Some(found);
+            }
+        }
+
+        None
     }
+
+    match base_type {
+        // --- For custom structs ---
+        Type::Custom(type_name) => {
+            if type_name == &self.node_type {
+                // script-level node fields (like `self.energy` if exposed)
+                if let Some(exposed) = self.exposed.iter().find(|v| v.name == member) {
+                    return exposed.typ.clone();
+                }
+                if let Some(var) = self.variables.iter().find(|v| v.name == member) {
+                    return var.typ.clone();
+                }
+            }
+
+            // Now: recursive base traversal for any struct
+            get_struct_field_type_recursive(&self.structs, type_name, member)
+        }
+
+        // Container/Primitive types don’t support `.member`
+        _ => None,
+    }
+}
 
     fn get_function_return_type(&self, func_name: &str) -> Option<Type> {
         self.functions
@@ -1214,6 +1230,7 @@ Stmt::IndexAssignOp(array_expr, index_expr, op, rhs_expr) => {
             (Number(Signed(_)), Number(Signed(to_w))) => format!("({} as i{})", expr, to_w),
             (Number(Signed(_)), Number(Unsigned(to_w))) => format!("({} as u{})", expr, to_w),
             (Number(Unsigned(_)), Number(Unsigned(to_w))) => format!("({} as u{})", expr, to_w),
+            (Number(Unsigned(_)), Number(NumberKind::BigInt)) => format!("BigInt::from({})", expr), // Added: Unsigned to BigInt
             (Number(Unsigned(_)), Number(Signed(to_w))) => format!("({} as i{})", expr, to_w),
             (Number(BigInt), Number(Signed(w))) => match w {
                 32 => format!("{}.to_i32().unwrap_or_default()", expr),
@@ -2044,46 +2061,46 @@ for (field_name, expr) in args {
                     // ==========================================================
                     // JSON Value (ContainerKind::Object) → Anything
                     // ==========================================================
-                    (Some(Type::Object), target) => {
-                        use NumberKind::*;
-                        match target {
-                            // --- To numbers ---
-                            Type::Number(Float(32)) => format!("{}.as_f64().unwrap_or_default() as f32", inner_code),
-                            Type::Number(Float(64)) => format!("{}.as_f64().unwrap_or_default()", inner_code),
-                            Type::Number(Signed(w)) => format!("{}.as_i64().unwrap_or_default() as i{}", inner_code, w),
-                            Type::Number(Unsigned(w)) => format!("{}.as_u64().unwrap_or_default() as u{}", inner_code, w),
-                            Type::Number(BigInt) => format!(
-                                "BigInt::from({}.as_i64().unwrap_or_default())",
-                                inner_code
-                            ),
-                            Type::Number(Decimal) => format!(
-                                "Decimal::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default()",
-                                inner_code
-                            ),
+                (Some(Type::Object), target) => {
+    use NumberKind::*;
+    match target {
+        Type::Number(Signed(w)) =>
+            format!("{}.as_i64().unwrap_or_default() as i{}", inner_code, w),
 
-                            // --- To bool ---
-                            Type::Bool => format!("{}.as_bool().unwrap_or_default()", inner_code),
+        Type::Number(Unsigned(w)) =>
+            format!("{}.as_u64().unwrap_or_default() as u{}", inner_code, w),
 
-                            // --- To string ---
-                            Type::String => format!(
-                                "{}.as_str().unwrap_or_default().to_string()",
-                                inner_code
-                            ),
-                            Type::StrRef => format!("{}.as_str().unwrap_or_default()", inner_code),
+        Type::Number(Float(w)) => match w {
+            32 => format!("{}.as_f64().unwrap_or_default() as f32", inner_code),
+            64 => format!("{}.as_f64().unwrap_or_default()", inner_code),
+            _ => format!("{}.as_f64().unwrap_or_default() as f64", inner_code),
+        },
 
-                            // --- To nested JSON/container values ---
-                            Type::Container(_, _) => format!("{}.clone()", inner_code),
+        Type::String =>
+            format!("{}.as_str().unwrap_or_default().to_string()", inner_code),
 
-                            // --- To custom/script types (try just deserializing) ---
-                            Type::Custom(name) => format!(
-                                "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
-                                name, inner_code
-                            ),
+        Type::Bool =>
+            format!("{}.as_bool().unwrap_or_default()", inner_code),
 
-                            // --- Fallback (no idea) ---
-                            _ => format!("{}.clone()", inner_code),
-                        }
-                    },
+        Type::Custom(name) =>
+            format!("serde_json::from_value::<{}>({}.clone()).unwrap_or_default()", name, inner_code),
+
+        Type::Container(ContainerKind::Array, inner) => format!(
+            "serde_json::from_value::<Vec<{}>>({}).unwrap_or_default()",
+            inner.get(0).map_or("Value".to_string(), |t| t.to_rust_type()),
+            inner_code
+        ),
+
+        Type::Container(ContainerKind::Map, inner) => format!(
+            "serde_json::from_value::<HashMap<{}, {}>>({}).unwrap_or_default()",
+            inner.get(0).map_or("String".to_string(), |k| k.to_rust_type()),
+            inner.get(1).map_or("Value".to_string(), |v| v.to_rust_type()),
+            inner_code
+        ),
+
+        _ => format!("{}.clone()", inner_code),
+    }
+}
 
                     _ => {
                         eprintln!("Warning: Unhandled cast from {:?} to {:?}", inner_type, target_type);
@@ -2091,42 +2108,76 @@ for (field_name, expr) in args {
                     }
                 }
             }
-            Expr::Index(base, key) => {
-                let base_type = script.infer_expr_type(base, current_func);
-                let base_code = base.to_rust(needs_self, script, None, current_func);
-                let key_code = key.to_rust(needs_self, script, Some(&Type::String), current_func);
+          Expr::Index(base, key) => {
+    let base_type = script.infer_expr_type(base, current_func);
+    let base_code = base.to_rust(needs_self, script, None, current_func);
+    // Key type inference for Map access should be specific, otherwise it defaults to String
+    let key_code = if let Some(Type::Container(ContainerKind::Map, inner_types)) = &base_type {
+        let key_ty = inner_types.get(0).unwrap_or(&Type::String);
+        key.to_rust(needs_self, script, Some(key_ty), current_func)
+    } else {
+        // For arrays or objects, assume string key for now (or other default)
+        key.to_rust(needs_self, script, Some(&Type::String), current_func)
+    };
 
-                match base_type {
-            // Strongly-typed HashMap (e.g. Map<int, float>, Map<string, Vec<MyStruct>>)
-            Some(Type::Container(ContainerKind::Map, _)) => {
-                format!("{}.get({}).cloned().unwrap_or_default()", base_code, key_code)
-            }
+    match base_type {
+        // ----------------------------------------------------------
+        // ✅ Typed HashMap<K,V>
+        // ----------------------------------------------------------
+        Some(Type::Container(ContainerKind::Map, ref inner_types)) => {
+            let key_ty = inner_types.get(0).unwrap_or(&Type::String);
+            // No need to re-infer key_code, already done above with correct type
+            let final_key_code = if *key_ty == Type::String {
+                format!("{}.as_str()", key_code)
+            } else {
+                format!("&{}", key_code)
+            };
+            format!("{}.get({}).cloned().unwrap_or_default()", base_code, final_key_code)
+        }
 
-            // Dynamic object/serde_json::Value -- always Type::Object!
-            Some(Type::Object) => {
-                format!("{}[{}].clone()", base_code, key_code)
-            }
+        // ----------------------------------------------------------
+        // ✅ Dynamic JSON object (serde_json::Value)
+        // ----------------------------------------------------------
+        Some(Type::Object) => {
+            // Produces a `Value`, good for later .as_* casts
+            format!("{}[{}].clone()", base_code, key_code)
+        }
 
-            // Arrays
-            Some(Type::Container(ContainerKind::Array, _))
-            | Some(Type::Container(ContainerKind::FixedArray(_), _)) => {
-                let index_code = key.to_rust(
-                    needs_self, script,
-                    Some(&Type::Number(NumberKind::Unsigned(32))),
-                    current_func
-                );
-                format!("{}.get({} as usize).cloned().unwrap_or_default()", base_code, index_code)
-            }
+        // ----------------------------------------------------------
+        // ✅ Arrays: differentiate typed Vec<T> vs. Vec<Value>
+        // ----------------------------------------------------------
+        Some(Type::Container(ContainerKind::Array, _)) => { // inner_types not needed for codegen here, inference does the heavy lifting
+            let index_code = key.to_rust(
+                needs_self,
+                script,
+                Some(&Type::Number(NumberKind::Unsigned(32))),
+                current_func,
+            );
+            // Result from .get() is cloned, so it's a T or Value, handled by infer_expr_type
+            format!("{}.get({} as usize).cloned().unwrap_or_default()", base_code, index_code)
+        }
 
-            Some(Type::Custom(_)) => {
-                "/* invalid index on struct */".to_string()
-            }
+        // ----------------------------------------------------------
+        // ✅ Fixed-size array: [T; N]
+        // ----------------------------------------------------------
+        Some(Type::Container(ContainerKind::FixedArray(_), _)) => { // inner_types not needed for codegen here
+            let index_code = key.to_rust(
+                needs_self,
+                script,
+                Some(&Type::Number(NumberKind::Unsigned(32))),
+                current_func,
+            );
+            // Result from .get() is cloned, so it's a T or Value, handled by infer_expr_type
+            format!("{}.get({} as usize).cloned().unwrap_or_default()", base_code, index_code)
+        }
 
-            _ => {
-                "/* unsupported index expression */".to_string()
-            }
-                }
-            }
+        // ----------------------------------------------------------
+        // Invalid or unsupported index base
+        // ----------------------------------------------------------
+        Some(Type::Custom(_)) => "/* invalid index on struct */".to_string(),
+        _ => "/* unsupported index expression */".to_string(),
+    }
+}
             Expr::ObjectLiteral(items) => {
                 let pairs: Vec<_> = items.iter()
                     .map(|(k, v)| format!(
@@ -2276,73 +2327,270 @@ pub fn implement_script_boilerplate(
         let var_id = string_to_u64(name);
         let (accessor, conv) = var.json_access();
 
-        // ---- GET ----
-        write!(
-            get_entries,
-            "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
-            Some(json!(script.{name}))
-        }});\n"
-        )
-        .unwrap();
+        // ------------------------------
+        // ✅ Special casing for Containers
+        // ------------------------------
+        if let Some(Type::Container(kind, elem_types)) = &var.typ {
+            match kind {
+                ContainerKind::Array => {
+                    let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
+                    let elem_rs = elem_ty.to_rust_type();
 
-        // ---- SET ----
+                    // GET
+                    writeln!(
+                        get_entries,
+                        "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                            Some(serde_json::to_value(&script.{name}).unwrap_or_default())
+                        }});"
+                    )
+                    .unwrap();
+
+                    // SET
+                    if *elem_ty != Type::Object {
+                        writeln!(
+                            set_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
+                                    script.{name} = vec_typed;
+                                    return Some(());
+                                }}
+                                None
+                            }});"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            set_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Some(v) = val.as_array() {{
+                                    script.{name} = v.clone();
+                                    return Some(());
+                                }}
+                                None
+                            }});"
+                        )
+                        .unwrap();
+                    }
+
+                    // APPLY
+                    if *elem_ty != Type::Object {
+                        writeln!(
+                            apply_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
+                                    script.{name} = vec_typed;
+                                }}
+                            }});"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            apply_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                if let Some(v) = val.as_array() {{
+                                    script.{name} = v.clone();
+                                }}
+                            }});"
+                        )
+                        .unwrap();
+                    }
+
+                    continue;
+                }
+
+                ContainerKind::FixedArray(size) => {
+                    let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
+                    let elem_rs = elem_ty.to_rust_type();
+
+                    // GET
+                    writeln!(
+                        get_entries,
+                        "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                            Some(serde_json::to_value(&script.{name}).unwrap_or_default())
+                        }});"
+                    )
+                    .unwrap();
+
+                    // SET
+                    if *elem_ty != Type::Object {
+                        writeln!(
+                            set_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val) {{
+                                    script.{name} = arr_typed;
+                                    return Some(());
+                                }}
+                                None
+                            }});"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            set_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Some(v) = val.as_array() {{
+                                    let mut out: [Value; {size}] = [Value::Null; {size}];
+                                    for (i, el) in v.iter().enumerate().take({size}) {{
+                                        out[i] = el.clone();
+                                    }}
+                                    script.{name} = out;
+                                    return Some(());
+                                }}
+                                None
+                            }});"
+                        )
+                        .unwrap();
+                    }
+
+                    // APPLY
+                    writeln!(
+                        apply_entries,
+                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                            if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val.clone()) {{
+                                script.{name} = arr_typed;
+                            }}
+                        }});"
+                    )
+                    .unwrap();
+
+                    continue;
+                }
+
+                ContainerKind::Map => {
+                    let key_ty = elem_types.get(0).unwrap_or(&Type::String);
+                    let val_ty = elem_types.get(1).unwrap_or(&Type::Object);
+                    let key_rs = key_ty.to_rust_type();
+                    let val_rs = val_ty.to_rust_type();
+
+                    // GET
+                    writeln!(
+                        get_entries,
+                        "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                            Some(serde_json::to_value(&script.{name}).unwrap_or_default())
+                        }});"
+                    )
+                    .unwrap();
+
+                    // SET
+                    if *val_ty != Type::Object {
+                        writeln!(
+                            set_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
+                                    script.{name} = map_typed;
+                                    return Some(());
+                                }}
+                                None
+                            }});"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            set_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Some(v) = val.as_object() {{
+                                    script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                    return Some(());
+                                }}
+                                None
+                            }});"
+                        )
+                        .unwrap();
+                    }
+
+                    // APPLY
+                    if *val_ty != Type::Object {
+                        writeln!(
+                            apply_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
+                                    script.{name} = map_typed;
+                                }}
+                            }});"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            apply_entries,
+                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                if let Some(v) = val.as_object() {{
+                                    script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                }}
+                            }});"
+                        )
+                        .unwrap();
+                    }
+
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        // ------------------------------
+        // Default fallback (non-container)
+        // ------------------------------
         if accessor == "__CUSTOM__" {
             let type_name = &conv;
-            write!(
+            writeln!(
                 set_entries,
                 "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-            if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
-                script.{name} = v;
-                return Some(());
-            }}
-            None
-        }});\n"
+                    if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
+                        script.{name} = v;
+                        return Some(());
+                    }}
+                    None
+                }});"
             )
             .unwrap();
         } else {
-            write!(
+            writeln!(
                 set_entries,
                 "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-            if let Some(v) = val.{accessor}() {{
-                script.{name} = v{conv};
-                return Some(());
-            }}
-            None
-        }});\n"
+                    if let Some(v) = val.{accessor}() {{
+                        script.{name} = v{conv};
+                        return Some(());
+                    }}
+                    None
+                }});"
             )
             .unwrap();
         }
-    }
 
-       for var in exposed {
-        let name = &var.name;
-        let var_id = string_to_u64(name);
-        let (accessor, conv) = var.json_access();
+        writeln!(
+            get_entries,
+            "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                Some(json!(script.{name}))
+            }});"
+        )
+        .unwrap();
 
         if accessor == "__CUSTOM__" {
             let type_name = &conv;
             writeln!(
                 apply_entries,
                 "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-            if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
-                script.{name} = v;
-            }}
-        }});"
-            ).unwrap();
+                    if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
+                        script.{name} = v;
+                    }}
+                }});"
+            )
+            .unwrap();
         } else {
             writeln!(
                 apply_entries,
                 "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-            if let Some(v) = val.{accessor}() {{
-                script.{name} = v{conv};
-            }}
-        }});"
-            ).unwrap();
+                    if let Some(v) = val.{accessor}() {{
+                        script.{name} = v{conv};
+                    }}
+                }});"
+            )
+            .unwrap();
         }
     }
 
     //----------------------------------------------------
-    // FUNCTION DISPATCH TABLE GENERATION
+    // FUNCTION DISPATCH TABLE GENERATION (unchanged)
     //----------------------------------------------------
     for func in functions {
         if func.is_trait_method {
@@ -2359,63 +2607,43 @@ pub fn implement_script_boilerplate(
             for (i, param) in func.params.iter().enumerate() {
                 let param_name = &param.name;
                 let parse_code = match &param.typ {
-                    Type::String => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_default();\n"
-                        )
-                    }
-                    Type::Number(NumberKind::Signed(w)) => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
-                .unwrap_or_default() as i{w};\n"
-                        )
-                    }
-                    Type::Number(NumberKind::Unsigned(w)) => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
-                .unwrap_or_default() as u{w};\n"
-                        )
-                    }
-                    Type::Number(NumberKind::Float(32)) => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
-                .unwrap_or_default() as f32;\n"
-                        )
-                    }
-                    Type::Number(NumberKind::Float(64)) => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
-                .unwrap_or_default();\n"
-                        )
-                    }
-                    Type::Bool => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_bool())
-                .unwrap_or_default();\n"
-                        )
-                    }
-                    Type::Custom(tn) if tn == "Signal" => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
-                .unwrap_or_default() as u64;\n"
-                        )
-                    }
-                    Type::Custom(tn) => {
-                        format!(
-                            "let {param_name} = params.get({i})
-                .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok())
-                .unwrap_or_default();\n"
-                        )
-                    }
+                    Type::String => format!(
+                        "let {param_name} = params.get({i})
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();\n"
+                    ),
+                    Type::Number(NumberKind::Signed(w)) =>
+                        format!("let {param_name} = params.get({i})
+                            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+                            .unwrap_or_default() as i{w};\n"),
+                    Type::Number(NumberKind::Unsigned(w)) =>
+                        format!("let {param_name} = params.get({i})
+                            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+                            .unwrap_or_default() as u{w};\n"),
+                    Type::Number(NumberKind::Float(32)) =>
+                        format!("let {param_name} = params.get({i})
+                            .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+                            .unwrap_or_default() as f32;\n"),
+                    Type::Number(NumberKind::Float(64)) =>
+                        format!("let {param_name} = params.get({i})
+                            .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
+                            .unwrap_or_default();\n"),
+                    Type::Bool => format!(
+                        "let {param_name} = params.get({i})
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or_default();\n"
+                    ),
+                    Type::Custom(tn) if tn == "Signal" => format!(
+                        "let {param_name} = params.get({i})
+                            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+                            .unwrap_or_default() as u64;\n"
+                    ),
+                    Type::Custom(tn) => format!(
+                        "let {param_name} = params.get({i})
+                            .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok())
+                            .unwrap_or_default();\n"
+                    ),
                     _ => format!("let {param_name} = Default::default();\n"),
                 };
                 param_parsing.push_str(&parse_code);
@@ -2517,8 +2745,7 @@ static DISPATCH_TABLE: once_cell::sync::Lazy<
         HashMap<u64, fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)> =
         HashMap::with_capacity({funcs});
 {dispatch_entries}    m
-}});
-"#,
+}});"#,
         struct_name = struct_name,
         var_count = variables.len(),
         get_entries = get_entries,
@@ -2531,7 +2758,6 @@ static DISPATCH_TABLE: once_cell::sync::Lazy<
 
     out
 }
-
 pub fn write_to_crate(
     project_path: &Path,
     contents: &str,

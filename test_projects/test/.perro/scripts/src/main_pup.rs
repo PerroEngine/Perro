@@ -261,11 +261,11 @@ static VAR_GET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&MainPupScript) -> Option<Value>> =
         HashMap::with_capacity(2);
         m.insert(16121189368928505687u64, |script: &MainPupScript| -> Option<Value> {
-            Some(json!(script.script_updates))
-        });
+                Some(json!(script.script_updates))
+            });
         m.insert(21748447695211092u64, |script: &MainPupScript| -> Option<Value> {
-            Some(json!(script.bob))
-        });
+                Some(json!(script.bob))
+            });
     m
 });
 
@@ -276,19 +276,19 @@ static VAR_SET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&mut MainPupScript, Value) -> Option<()>> =
         HashMap::with_capacity(2);
         m.insert(16121189368928505687u64, |script: &mut MainPupScript, val: Value| -> Option<()> {
-            if let Some(v) = val.as_i64() {
-                script.script_updates = v as i32;
-                return Some(());
-            }
-            None
-        });
+                    if let Some(v) = val.as_i64() {
+                        script.script_updates = v as i32;
+                        return Some(());
+                    }
+                    None
+                });
         m.insert(21748447695211092u64, |script: &mut MainPupScript, val: Value| -> Option<()> {
-            if let Some(v) = val.as_str() {
-                script.bob = v.to_string();
-                return Some(());
-            }
-            None
-        });
+                    if let Some(v) = val.as_str() {
+                        script.bob = v.to_string();
+                        return Some(());
+                    }
+                    None
+                });
     m
 });
 
@@ -298,11 +298,16 @@ static VAR_APPLY_TABLE: once_cell::sync::Lazy<
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut MainPupScript, &Value)> =
         HashMap::with_capacity(2);
+        m.insert(16121189368928505687u64, |script: &mut MainPupScript, val: &Value| {
+                    if let Some(v) = val.as_i64() {
+                        script.script_updates = v as i32;
+                    }
+                });
         m.insert(21748447695211092u64, |script: &mut MainPupScript, val: &Value| {
-            if let Some(v) = val.as_str() {
-                script.bob = v.to_string();
-            }
-        });
+                    if let Some(v) = val.as_str() {
+                        script.bob = v.to_string();
+                    }
+                });
     m
 });
 
@@ -318,211 +323,211 @@ static DISPATCH_TABLE: once_cell::sync::Lazy<
         m.insert(6114839014446982845u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_1(m, api, true);
         });
         m.insert(6114835715912098212u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_2(m, api, true);
         });
         m.insert(6114836815423726423u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_3(m, api, true);
         });
         m.insert(6114833516888841790u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_4(m, api, true);
         });
         m.insert(6114834616400470001u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_5(m, api, true);
         });
         m.insert(6114831317865585368u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_6(m, api, true);
         });
         m.insert(6114832417377213579u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_7(m, api, true);
         });
         m.insert(6114829118842328946u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_8(m, api, true);
         });
         m.insert(6114830218353957157u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_9(m, api, true);
         });
         m.insert(157896838186582423u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_10(m, api, true);
         });
         m.insert(157895738674954212u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_11(m, api, true);
         });
         m.insert(157899037209838845u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_12(m, api, true);
         });
         m.insert(157897937698210634u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_13(m, api, true);
         });
         m.insert(157892440140069579u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_14(m, api, true);
         });
         m.insert(157891340628441368u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_a_15(m, api, true);
         });
         m.insert(4878057757827333139u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_1(m, api, true);
         });
         m.insert(4878058857338961350u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_2(m, api, true);
         });
         m.insert(4878059956850589561u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_3(m, api, true);
         });
         m.insert(4878061056362217772u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_4(m, api, true);
         });
         m.insert(4878062155873845983u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_5(m, api, true);
         });
         m.insert(4878063255385474194u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_6(m, api, true);
         });
         m.insert(4878064354897102405u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_7(m, api, true);
         });
         m.insert(4878065454408730616u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_8(m, api, true);
         });
         m.insert(4878066553920358827u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_9(m, api, true);
         });
         m.insert(3100484552619093881u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_10(m, api, true);
         });
         m.insert(3100483453107465670u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_11(m, api, true);
         });
         m.insert(3100482353595837459u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_12(m, api, true);
         });
         m.insert(3100481254084209248u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_13(m, api, true);
         });
         m.insert(3100488950665606725u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_14(m, api, true);
         });
         m.insert(3100487851153978514u64,
             |this: &mut MainPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let m = params.get(0)
-                .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
-                .unwrap_or_default();
+                            .and_then(|v| serde_json::from_value::<String>(v.clone()).ok())
+                            .unwrap_or_default();
             this.on_from_c_15(m, api, true);
         });
     m

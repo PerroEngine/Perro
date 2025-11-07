@@ -101,19 +101,52 @@ impl PupLexer {
         }
     }
 
-     fn read_number(&mut self) -> PupToken {
-        let start = self.pos;
+    fn read_number(&mut self, is_negative: bool) -> PupToken {
+        let start_pos = self.pos;
+        let mut num_str = String::new();
 
+        if is_negative {
+            num_str.push('-');
+        }
+
+        // Consume leading digits
         while let Some(ch) = self.peek() {
-            if ch.is_ascii_digit() || ch == '.' {
-                self.advance();
+            if ch.is_ascii_digit() {
+                num_str.push(self.advance().unwrap());
             } else {
                 break;
             }
         }
 
-        let num: String = self.input[start..self.pos].iter().collect();
-        PupToken::Number(num)
+        // Consume a single decimal point
+        if self.peek() == Some('.') {
+            num_str.push(self.advance().unwrap());
+            // Consume digits after the decimal point
+            while let Some(ch) = self.peek() {
+                if ch.is_ascii_digit() {
+                    num_str.push(self.advance().unwrap());
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        // Handle thousands separators (like Rust's `1_000_000`)
+        // Keep them in the string; the parser or later stages will handle them.
+        while self.peek() == Some('_') {
+            num_str.push(self.advance().unwrap()); // Consume the underscore
+            while let Some(ch) = self.peek() {
+                if ch.is_ascii_digit() {
+                    num_str.push(self.advance().unwrap());
+                } else {
+                    break;
+                }
+            }
+        }
+
+
+        // After consuming all parts of the number, create the token
+        PupToken::Number(num_str)
     }
 
     fn read_ident(&mut self, first: char) -> PupToken {
@@ -151,9 +184,11 @@ impl PupLexer {
         let Some(ch) = self.peek() else { return PupToken::Eof; };
 
         // ---------- numbers -----------
-        if ch.is_ascii_digit() {
-            // do NOT consume the '(' that might precede it
-            return self.read_number();
+        if ch == '-' && self.input.get(self.pos + 1).map_or(false, |next_ch| next_ch.is_ascii_digit()) {
+            self.advance(); // Consume the '-'
+            return self.read_number(true); // Call read_number, indicating it's already negative
+        } else if ch.is_ascii_digit() {
+            return self.read_number(false); // Positive number
         }
 
         // ---------- everything else -----------

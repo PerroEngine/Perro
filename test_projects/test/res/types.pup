@@ -1,196 +1,358 @@
 extends Node2D
 
 // =====================================================
-// TOP-LEVEL: Dynamic (Value-based) vs Static (typed) containers
+// TOP-LEVEL EXPOSED & INTERNAL VARIABLES (DEPENDENCY ORDERED)
 // =====================================================
 
-// --- Dynamic, inferred containers (Vec<Value> / HashMap<String,Value>) ---
-@expose var arr_inferred = [1, 2.5, "three"]
-@expose var map_inferred = <["hp": 100], ["name": "dog"]>
+// --- Primitives: Default, Specific Widths, BigInt, Decimal ---
+@expose var untyped_num_default = 10
+@expose var typed_int_default: int = 20
+@expose var typed_int_8: int_8 = -120
+@expose var typed_int_64: int_64 = 1_000_000_000_000
+@expose var typed_uint_16: uint_16 = 60000
+@expose var typed_float_default: float = 30.5
+@expose var typed_float_64: float_64 = 123.456_789
+@expose var typed_big_int: big = 12345678901234567890
+@expose var typed_decimal: decimal = 987.6543210987654321
+@expose var typed_string: string = "HelloPerro"
 
-// --- Dynamic, annotated containers (identical runtime types) ---
-@expose var arr_dynamic: Array = ["mix", 123, true]
-@expose var map_dynamic: Map = <["flag": true], ["val": 55.5]>
+// Local Primitives (defined before custom structs that might use them)
+var local_int: int = 5
+var local_uint_8: uint_8 = 250
+var local_float: float = 2.5
+var local_string: string = "LocalString"
+var local_big_int: big = 1000000000000000000
+var local_decimal: decimal = 12.34567890123456789
 
-// --- Statically typed containers (Vec<i32>, HashMap<string,f32>) ---
-@expose var arr_static: Array[int] = [1, 2, 3, 4]
-@expose var map_static: Map<[string: float]> = <["x": 1.0], ["y": 2.5]>
-
-// --- Various scalar and object types for sanity ---
-var score: int = 42
-var player_meta: Object = { name: "Doggo", lvl: 3 }
-
-// =====================================================
-// STRUCT TYPES
-// =====================================================
-struct Player {
-    var name: string
-    var hp: int
+// --- Custom Struct Definitions (must precede their usage) ---
+struct TestVector {
+    var x: float
+    var y: float
+}
+struct GameEntity {
+    var entity_id: int
+    var entity_name: string
+    var entity_type: string
+}
+struct TestPlayer extends GameEntity { // TestPlayer inherits GameEntity fields directly
+    var pos: TestVector
+    var health: float
+    var mana: int_8
+}
+struct SuperTestPlayer extends TestPlayer { // SuperTestPlayer inherits TestPlayer (and GameEntity) fields directly
+    var special_ability: string
+    var energy_core: decimal
 }
 
-struct SuperPlayer extends Player {
-    var energy: float
+// --- Custom Struct Instances (DEFINED IN ORDER OF DEPENDENCY) ---
+
+@expose var my_base_entity: GameEntity = new GameEntity { entity_id: 100, entity_name: "NPC_Guard", entity_type: "NPC" }
+
+// CORRECTED: TestPlayer initializer is flat, setting all direct & inherited fields
+@expose var my_player: TestPlayer = new TestPlayer {
+    entity_id: 1,      // Inherited from GameEntity
+    entity_name: "Hero", // Inherited from GameEntity
+    entity_type: "Player", // Inherited from GameEntity
+    pos: new TestVector { x: 0.0, y: 0.0 }, // Direct field
+    health: 100.0,     // Direct field
+    mana: 50           // Direct field
 }
 
-struct SuperDuperPlayer extends SuperPlayer {
-    var farting: bool
+// Local Player Instance (defined before containers that use it)
+var other_player: TestPlayer = new TestPlayer {
+    entity_id: 2,
+    entity_name: "Sidekick",
+    entity_type: "Player",
+    pos: new TestVector { x: 5.0, y: 10.0 },
+    health: 80.0,
+    mana: 30
+}
+
+// CORRECTED: SuperTestPlayer initializer is flat, setting all direct & inherited fields
+@expose var my_derived_player: SuperTestPlayer = new SuperTestPlayer {
+    entity_id: 3,      // Inherited from GameEntity
+    entity_name: "SuperHero", // Inherited from GameEntity
+    entity_type: "SuperPlayer", // Inherited from GameEntity
+    pos: new TestVector { x: 10.0, y: 10.0 }, // Inherited from TestPlayer
+    health: 200.0,     // Inherited from TestPlayer
+    mana: 100,         // Inherited from TestPlayer
+    special_ability: "Flight", // Direct field
+    energy_core: 99.9  // Direct field
+}
+
+// Local SuperTestPlayer Instance (defined before containers that use it)
+var my_derived_player_var: SuperTestPlayer = new SuperTestPlayer {
+    entity_id: 4,
+    entity_name: "LocalHero",
+    entity_type: "LocalPlayer",
+    pos: new TestVector { x: 20.0, y: 20.0 },
+    health: 180.0,
+    mana: 80,
+    special_ability: "Speed",
+    energy_core: 80.0
+}
+
+
+// --- Dynamic Containers (always Vec<Value> / HashMap<String, Value> in Rust) ---
+@expose var dynamic_array_inferred = [1, "two", 3.0, untyped_num_default, typed_big_int, typed_decimal] // Mix of literals & var
+@expose var dynamic_map_inferred = <["alpha": 1], ["beta": typed_string], ["gamma": typed_big_int], ["delta": typed_decimal]> // Mix of literals & var
+
+// Annotated containers now correctly reference defined variables
+@expose var dynamic_array_annotated: Array = [typed_int_default, typed_float_64, my_derived_player_var, typed_big_int]
+@expose var dynamic_map_annotated: Map = <["char": "A"], ["num": typed_int_8], ["big_val": local_big_int]>
+
+// --- Statically Typed Arrays ---
+@expose var static_array_int: Array[int] = [10, 20, 30]
+@expose var static_array_uint_16: uint_16[] = [1000, 2000]
+@expose var static_array_string: string[] = ["one", "two", "three"]
+@expose var static_array_float_64: Array[float_64] = [1.11, 2.22, 3.33]
+@expose var static_array_big_int: Array[big] = [100, 200, typed_big_int]
+@expose var static_array_decimal: Array[decimal] = [5.5, 6.6, typed_decimal]
+
+// --- Statically Typed Maps ---
+@expose var static_map_string_int_64: Map<[string: int_64]> = <["level": 10_000_000_000], ["score": 1_000_000_000]>
+@expose var static_map_int_string: Map<[int: string]> = <[1: "gold"], [2: "silver"]>
+@expose var static_map_uint_8_float: Map<[uint_8: float]> = <[50: 0.5], [100: 1.5]>
+@expose var static_map_string_big: Map<[string: big]> = <["large_num": 9999999999999999999], ["another_large": 1000]>
+@expose var static_map_string_decimal: Map<[string: decimal]> = <["price": 19.99], ["tax": 1.50]>
+
+// --- Statically Typed Containers of Custom Structs (using correctly initialized instances) ---
+@expose var static_array_entities: Array[GameEntity] = [my_base_entity, my_player, my_derived_player] // All are GameEntity compatible
+@expose var static_array_players: Array[TestPlayer] = [my_player, other_player]
+@expose var static_map_players: Map<[string: TestPlayer]> = <["main": my_player], ["other": other_player]>
+@expose var static_map_super_players: Map<[string: SuperTestPlayer]> = <["super": my_derived_player], ["local_super": my_derived_player_var]>
+
+
+// =====================================================
+// TEST SUITE FUNCTIONS
+// =====================================================
+
+// --- Test 1: Primitive Operations (literals, variables, promotion) ---
+fn test_primitive_operations() {
+    Console.log("--- Test Primitive Operations ---")
+
+    // Variable + Literal
+    var res_int: int = typed_int_default + 10
+    var res_big: big = typed_big_int + 1000
+    var res_decimal: decimal = typed_decimal + 1.000001
+    Console.log("Var + Lit:", res_int, res_big, res_decimal)
+
+    // Variable + Variable
+    var res_big_var: big = typed_big_int + local_big_int
+    var res_decimal_var: decimal = typed_decimal + local_decimal
+    Console.log("Var + Var (Big/Dec):", res_big_var, res_decimal_var)
+
+    // Type Promotion with BigInt/Decimal
+    var prom_float_big: float_64 = typed_int_64 as float_64 + typed_big_int as float_64
+    var prom_float_decimal: float_64 = typed_float_64 + typed_decimal as float_64
+    var prom_big_int: big = typed_int_64 as big + typed_big_int
+    Console.log("Promotion (Big/Dec):", prom_float_big, prom_float_decimal, prom_big_int)
+}
+
+// --- Test 2: Explicit Type Casting ---
+fn test_explicit_casting() {
+    Console.log("--- Test Explicit Casting ---")
+
+    // Primitive Variable to Primitive Variable (various widths, Big/Decimal)
+    var int64_to_big: big = typed_int_64 as big
+    var big_to_int: int = typed_big_int as int
+    var float_to_decimal: decimal = typed_float_default as decimal
+    var decimal_to_float_64: float_64 = typed_decimal as float_64
+    var string_to_uint16: uint_16 = "65530" as uint_16
+    var big_to_string: string = typed_big_int as string
+    Console.log("Numeric Casts:", int64_to_big, big_to_int, float_to_decimal, decimal_to_float_64, string_to_uint16, big_to_string)
+
+    // Dynamic Value to Primitive (various widths, Big/Decimal)
+    var dyn_val_big: big = dynamic_array_inferred[4] as big
+    var dyn_val_decimal: decimal = dynamic_array_inferred[5] as decimal
+    Console.log("Dyn->Big/Dec Casts:", dyn_val_big, dyn_val_decimal)
+
+    // Cast chain and operations
+    var casted_and_op_big: big = (dynamic_array_inferred[0] as big) + typed_big_int
+    Console.log("Casted & Op (Big):", casted_and_op_big)
+}
+
+// --- Test 3: Assignments (Simple & Compound) ---
+fn test_assignments() {
+    Console.log("--- Test Assignments (Simple & Compound) ---")
+
+    // Simple Assignment (=)
+    var assign_big_lit: big = 999
+    var assign_decimal_var: decimal = typed_decimal
+    Console.log("Simple Assign (Big/Dec):", assign_big_lit, assign_decimal_var)
+
+    // Compound Assignment (+=, -=) with BigInt/Decimal
+    var comp_big: big = 100
+    comp_big += 50
+    Console.log("Comp Assign big +=", comp_big)
+
+    var comp_decimal: decimal = 20.0
+    comp_decimal -= 5.5
+    Console.log("Comp Assign decimal -=", comp_decimal)
+
+    // Assignments with Type Promotion/Casting
+    var assign_prom_decimal: decimal = typed_int_default as decimal
+    assign_prom_decimal += typed_float_default as decimal
+    Console.log("Assign Promo decimal:", assign_prom_decimal)
+
+    // Member Assignment with BigInt/Decimal (for existing float fields with casts)
+    my_player.pos.x = typed_big_int as float
+    my_player.health = typed_decimal as float
+    Console.log("Member Assign (Big/Dec to float):", my_player.pos.x, my_player.health)
+}
+
+
+// --- Test 4: Struct Inheritance, Member Access, Casting between Base/Derived ---
+fn test_struct_inheritance_and_casting() {
+    Console.log("--- Test Struct Inheritance & Casting ---")
+
+    // Direct Access to inherited fields (as Pup implies)
+    Console.log("Player name (via SuperTestPlayer):", my_derived_player.entity_name) // Correct, it's entity_name
+    Console.log("Entity ID (via SuperTestPlayer):", my_derived_player.entity_id)     // Correct, it's entity_id
+    Console.log("Player Health (via SuperTestPlayer):", my_derived_player.health)     // Correct, it's health
+
+    // Access to direct fields of derived struct
+    Console.log("SuperTestPlayer ability:", my_derived_player.special_ability)
+    Console.log("SuperTestPlayer energy_core:", my_derived_player.energy_core)
+
+    // Modification of inherited fields
+    my_derived_player.health = my_derived_player.health - 10.0 // health is a direct field for Pup
+    my_derived_player.pos.x = my_derived_player.pos.x + 1.0    // pos.x is direct
+    my_derived_player.entity_type = "ElitePlayer" // entity_type is direct
+    Console.log("Modified SuperTestPlayer health:", my_derived_player.health)
+    Console.log("Modified SuperTestPlayer pos.x:", my_derived_player.pos.x)
+    Console.log("Modified SuperTestPlayer entity_type:", my_derived_player.entity_type)
+
+    // Casting: Derived as Base (Upcasting - safe)
+    var player_as_entity: GameEntity = my_player as GameEntity
+    Console.log("TestPlayer as GameEntity name:", player_as_entity.entity_name)
+
+    var super_player_as_player: TestPlayer = my_derived_player as TestPlayer
+    Console.log("SuperTestPlayer as TestPlayer health:", super_player_as_player.health)
+
+    // Casting: Base as Derived (Downcasting - relies on serde_json conversion, expects default if source type is not compatible)
+    // Pup `my_player` is `TestPlayer`. Casting to `SuperTestPlayer` (its derived class) should result in default if type mismatch.
+    var player_to_super_player: SuperTestPlayer = my_player as SuperTestPlayer
+    Console.log("TestPlayer as SuperTestPlayer (entity_name should be Hero OR default):", player_to_super_player.entity_name)
+    Console.log("TestPlayer as SuperTestPlayer (ability should be default/empty):", player_to_super_player.special_ability)
+
+    // Here we cast an actual SuperTestPlayer to SuperTestPlayer, which should succeed
+    var super_player_roundtrip: SuperTestPlayer = my_derived_player as SuperTestPlayer
+    Console.log("SuperTestPlayer roundtrip ability (expect Flight):", super_player_roundtrip.special_ability)
+
+    // Member access on a casted variable
+    var entity_from_derived: GameEntity = my_derived_player as GameEntity
+    entity_from_derived.entity_name = "DerivedEntity"
+    Console.log("Entity from Derived, name changed (expect DerivedEntity):", entity_from_derived.entity_name)
+}
+
+
+// --- Test 5: Dynamic Container Access & Manipulation ---
+fn test_dynamic_containers_ops() {
+    Console.log("--- Test Dynamic Containers Ops ---")
+
+    // Array (Vec<Value>) - Retrieval & Casting for BigInt/Decimal
+    var arr_dyn_val_big: big = dynamic_array_inferred[4] as big
+    arr_dyn_val_big *= 2
+    Console.log("Dyn Array Elem Op (big):", arr_dyn_val_big)
+
+    var arr_dyn_val_decimal: decimal = dynamic_array_inferred[5] as decimal
+    arr_dyn_val_decimal += 0.05
+    Console.log("Dyn Array Elem Op (decimal):", arr_dyn_val_decimal)
+
+    // Array (Vec<Value>) - Set & Push BigInt/Decimal
+    dynamic_array_inferred[0] = typed_big_int
+    dynamic_array_inferred.push(local_decimal)
+    Console.log("Dyn Array Set (big):", dynamic_array_inferred[0] as big)
+    Console.log("Dyn Array Push (decimal):", dynamic_array_inferred[dynamic_array_inferred.len() - 1] as decimal)
+
+    // Map (HashMap<String, Value>) - Retrieval & Casting for BigInt/Decimal
+    var map_dyn_val_big: big = dynamic_map_inferred.get("gamma") as big
+    map_dyn_val_big -= 12345678901234567800
+    Console.log("Dyn Map Elem Op (big):", map_dyn_val_big)
+
+    var map_dyn_val_decimal: decimal = dynamic_map_inferred.get("delta") as decimal
+    map_dyn_val_decimal *= 2
+    Console.log("Dyn Map Elem Op (decimal):", map_dyn_val_decimal)
+
+    // Map (HashMap<String, Value>) - Set & Insert BigInt/Decimal
+    dynamic_map_inferred.insert("new_big", local_big_int)
+    dynamic_map_inferred.insert("new_decimal", typed_decimal)
+    Console.log("Dyn Map Set (new_big):", dynamic_map_inferred.get("new_big") as big)
+    Console.log("Dyn Map Set (new_decimal):", dynamic_map_inferred.get("new_decimal") as decimal)
+
+    // Map (HashMap<String, Value>) - Numeric Literal Keys (implicitly String)
+    var dyn_map_numeric_key_big: Map = <[typed_int_default: typed_big_int]> // Key "20"
+    Console.log("Dyn Map Num Key Big (20):", dyn_map_numeric_key_big.get("20") as big)
+
+    var dyn_map_numeric_key_decimal: Map = <[typed_float_default: typed_decimal]> // Key "30.5"
+    Console.log("Dyn Map Num Key Dec (30.5):", dyn_map_numeric_key_decimal.get("30.5") as decimal)
+}
+
+// --- Test 6: Static Container Access & Manipulation ---
+fn test_static_containers_ops() {
+    Console.log("--- Test Static Containers Ops ---")
+
+    // Array[big]
+    var arr_static_big_elem: big = static_array_big_int[0]
+    arr_static_big_elem += 50
+    Console.log("Static Array[big] Elem Op:", arr_static_big_elem)
+
+    // Array[decimal]
+    var arr_static_decimal_elem: decimal = static_array_decimal[0]
+    arr_static_decimal_elem -= 0.05
+    Console.log("Static Array[decimal] Elem Op:", arr_static_decimal_elem)
+
+    // Map<[string: big]>
+    var map_static_big_val: big = static_map_string_big.get("large_num")
+    map_static_big_val *= 2
+    Console.log("Static Map<string:big> Elem Op:", map_static_big_val)
+
+    // Map<[string: decimal]>
+    var map_static_decimal_val: decimal = static_map_string_decimal.get("price")
+    map_static_decimal_val += 0.01
+    Console.log("Static Map<string:decimal> Elem Op:", map_static_decimal_val)
+
+    // Map<[uint_8: float]> - Retrieval with `big` key (conversion!)
+    var big_to_uint8_key_float_val: float = static_map_uint_8_float.get(typed_big_int as uint_8) // big -> uint_8 key
+    Console.log("Static Map<uint_8:float> Get with big key:", big_to_uint8_key_float_val) // Expect 0.0 (if typed_big_int as u8 wraps/saturates to a key not present)
+
+    // Polymorphic access in Static Array[GameEntity]
+    var base_entity: GameEntity = static_array_entities[0] // GameEntity
+    Console.log("Static Array[Entity] base_entity name:", base_entity.entity_name)
+
+    var player_as_entity_from_array: GameEntity = static_array_entities[1] // TestPlayer as GameEntity
+    Console.log("Static Array[Entity] player_as_entity_from_array name:", player_as_entity_from_array.entity_name)
+
+    var super_player_as_entity_from_array: GameEntity = static_array_entities[2] // SuperTestPlayer as GameEntity
+    Console.log("Static Array[Entity] super_player_as_entity_from_array name:", super_player_as_entity_from_array.entity_name)
+
+    // Downcasting from Array[GameEntity] to derived types
+    var casted_player: TestPlayer = static_array_entities[1] as TestPlayer // Should succeed
+    Console.log("Static Array[Entity] Casted Player health:", casted_player.health)
+
+    var casted_super_player: SuperTestPlayer = static_array_entities[2] as SuperTestPlayer // Should succeed
+    Console.log("Static Array[Entity] Casted SuperPlayer ability:", casted_super_player.special_ability)
+
+    var incompatible_downcast: SuperTestPlayer = static_array_entities[0] as SuperTestPlayer // GameEntity as SuperTestPlayer (fail)
+    Console.log("Static Array[Entity] Incompatible Downcast name:", incompatible_downcast.entity_name) // entity_name is a field on SuperTestPlayer
 }
 
 // =====================================================
-// FUNCTION: test_dynamic_containers
-// Tests inferred & annotated Dynamic Map/Array (Value-based)
-// =====================================================
-fn test_dynamic_containers() {
-    Console.log("-- DYNAMIC CONTAINERS --")
-
-    var sdp = new SuperDuperPlayer("bob", 2, 3)
-    var sp = new SuperPlayer("b", 2, 3)
-
-    var spl = new SuperDuperPlayer { hp: 4, farting: true }
-    var spll = new SuperPlayer { name: "f", energy: 2 }
-
-    // Inferred array (Value[])
-    var dyn_arr = [10, 20, "thirty"]
-    dyn_arr.push(99)
-    var val = dyn_arr[0] as int
-    var strval = dyn_arr[2] as string
-    dyn_arr.remove(1)
-    Console.log("dyn_arr val:", val, "str:", strval)
-
-    // Annotated Array (still Value[])
-    var dyn_arr2: Array = ["mix", 55, true]
-    dyn_arr2.push("added")
-    var casted_val = dyn_arr2[1] as int
-    Console.log("dyn_arr2 casted_val:", casted_val)
-
-    // Inferred Map (HashMap<String, Value>)
-    var dyn_map = <["a": 10], ["b": 20]>
-    dyn_map.insert("c", 30)
-    var retrieved = dyn_map.get("a") as int
-    var has_c = dyn_map.contains("c")
-    Console.log("dyn_map get(a):", retrieved, "has c:", has_c)
-
-    // Annotated Map (still Value)
-    var dyn_map2: Map = <["num": 5.5], ["str": "hey"]>
-    dyn_map2.insert("extra", true)
-    var s = dyn_map2.get("str") as string
-    Console.log("dyn_map2 str:", s)
-}
-
-// =====================================================
-// FUNCTION: test_static_containers
-// Tests fully typed Map/Array with static inner type info
-// =====================================================
-fn test_static_containers() {
-    Console.log("-- STATIC CONTAINERS --")
-
-    // Static array
-    var arr: Array[int] = [1, 2, 3]
-    arr.push(4)
-    var first = arr[0]       // no cast needed
-    Console.log("arr[0]:", first)
-
-    // Static map
-    var map: Map<[string: float]> = <["x": 1.1], ["y": 2.2]>
-    map.insert("z", 3.3)
-    var val = map.get("x")   // no cast needed
-    Console.log("map get(x):", val)
-
-    // map of custom struct type
-    var p1 = new Player("Pup", 120)
-    var p2 = new Player("Dog", 99)
-    var players: Map<[string: Player]> = <["one": p1]>
-    players.insert("two", p2)
-    var second = players.get("two")
-    Console.log("players(two).hp =", second.hp)
-}
-
-// =====================================================
-// FUNCTION: test_structs_array_map_mixed
-// Tests storing custom structs in typed/untyped containers
-// =====================================================
-fn test_structs_array_map_mixed() {
-    Console.log("-- STRUCT CONTAINERS --")
-
-    var p = new SuperPlayer("Hero", 150, 20.5)
-
-    var stest ="fart"
-    var btest = stest
-
-var player3 = new Player("Hero")
-
-    var pname1 = player3.name
-
-    var penergy = p.energy
-
-    // Dynamic containers
-    var dyn_arr = [p]
-    var dyn_map = <["main": p]>
-    var p_name = (dyn_map.get("main") as Player).name
-    var p_energy = (dyn_map.get("main") as SuperPlayer).energy
-    Console.log("dynamic struct name:", p_name)
-
-    // Static containers
-    var arr_typed: Array[SuperPlayer] = [p]
-    arr_typed.push(new SuperPlayer("Sidekick", 75, 8.8))
-    var first = arr_typed[0]
-    Console.log("first static player:", first.name)
-
-    var map_typed: Map<[string: SuperPlayer]> = <["owner": p]>
-    var o = map_typed.get("owner")
-    Console.log("map_typed.owner.energy =", o.energy)
-}
-
-// =====================================================
-// FUNCTION: test_casting
-// Covers explicit & implicit conversions
-// =====================================================
-fn test_casting() {
-    Console.log("-- CASTING --")
-
-    var i: int = 12
-    var f: float = i          // implicit
-    var s: string = i as string
-    var back = "55" as int
-    var obj = { val: 10 }
-    var v = obj["val"] as int
-    Console.log("i:", i, "f:", f, "s:", s, "back:", back, "v:", v)
-}
-
-// =====================================================
-// FUNCTION: test_api
-// Basic PupAPI call coverage
-// =====================================================
-fn test_api() {
-    Console.log("-- API RUN --")
-    var platform = OS.get_platform_name()
-    Console.log("Platform:", platform)
-
-    var now = Time.get_unix_time_msec()
-    Time.sleep_msec(1)
-    var delta = Time.get_unix_time_msec() - now
-    Console.log("Delta:", delta)
-
-    var sig = Signal.new("hit")
-    Signal.emit(sig)
-
-    var js = JSON.stringify({ data: 1 })
-    var parsed = JSON.parse(js)
-    Console.log("JSON round=", js)
-}
-
-// =====================================================
-// INIT and UPDATE
+// FUNCTION: init & update
+// Orchestrates tests
 // =====================================================
 fn init() {
-    test_dynamic_containers()
-    test_static_containers()
-    test_structs_array_map_mixed()
-    test_casting()
-    test_api()
-    Console.log("-- INIT DONE --")
+    Console.log("--- START PUP MEGA TEST SUITE ---")
+    test_primitive_operations()
+    test_explicit_casting()
+    test_assignments()
+    test_struct_inheritance_and_casting()
+    test_dynamic_containers_ops()
+    test_static_containers_ops()
+    Console.log("--- ALL PUP TESTS COMPLETE ---")
 }
 
 fn update() {
-
+    // Empty for now
 }
