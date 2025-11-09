@@ -202,13 +202,24 @@ impl Compiler {
 
             println!("🔑 Compile-time AES key: {:02X?}", key);
 
+            // Time key file writing (usually very fast, but good for completeness)
+            let key_write_start = Instant::now();
             self.write_key_file(&key).map_err(|e| e.to_string())?;
+            let key_write_elapsed = key_write_start.elapsed();
+            println!("✔ Key file written (total {:.2?})", key_write_elapsed);
+
 
             let res_dir = self.project_root.join("res");
             let output = self.project_root.join("assets.brk");
 
+            // --- TIME THE BRK BUILD HERE ---
+            println!("📦 Building BRK archive from {}...", res_dir.display());
+            let brk_build_start = Instant::now();
             build_brk(&output, &res_dir, &self.project_root, &key)
                 .map_err(|e| e.to_string())?;
+            let brk_build_elapsed = brk_build_start.elapsed();
+            println!("✅ BRK archive built (total {:.2?})", brk_build_elapsed);
+            // --- END BRK TIMING ---
         }
 
         let toolchain_info = if self.from_source {
@@ -251,54 +262,59 @@ impl Compiler {
     }
 
     fn write_key_file(&self, key: &[u8; 32]) -> std::io::Result<()> {
-        // Split into 4 parts of 8 bytes
-        let mut parts: Vec<[u8; 8]> = Vec::new();
-        for chunk in key.chunks(8) {
-            let mut part = [0u8; 8];
-            part.copy_from_slice(chunk);
-            parts.push(part);
+        // Split into 4 parts of 8 bytes (fixed-size array instead of Vec)
+        let mut parts: [[u8; 8]; 4] = [[0; 8]; 4];
+        for (i, chunk) in key.chunks(8).enumerate() {
+            parts[i].copy_from_slice(chunk);
         }
 
-        // Generate 8 random constants
-        let consts: Vec<u32> = (0..8).map(|_| rand::random::<u32>()).collect();
+        // Generate 8 random constants (fixed-size array instead of Vec)
+        let mut consts: [u32; 8] = [0; 8];
+        for i in 0..8 {
+            consts[i] = rand::random::<u32>();
+        }
 
-        // Random operations
+        // Random operations (unchanged, as ops is a static array)
         let ops = ["^", "+", "-", ">>", "<<"];
 
-        // Build mask expressions (runtime code) and mask values (compile-time)
-        let mut mask_exprs: Vec<String> = Vec::new();
-        let mut mask_values: Vec<u8> = Vec::new();
+        // Build mask expressions (runtime code) and mask values (fixed-size arrays)
+        // Note: mask_exprs still needs heap allocation for String content,
+        // but the container itself is now fixed size.
+        let mut mask_exprs: [String; 4] = [
+            String::new(), String::new(), String::new(), String::new()
+        ];
+        let mut mask_values: [u8; 4] = [0; 4];
 
-        for _ in 0..4 {
+        for i in 0..4 { // Loop 4 times as there are 4 parts
             let c1 = rand::random::<usize>() % 8;
             let c2 = rand::random::<usize>() % 8;
             let op = ops.choose(&mut rand::thread_rng()).unwrap();
 
             let expr = match *op {
                 "^" => {
-                    mask_values.push((consts[c1] as u8) ^ (consts[c2] as u8));
+                    mask_values[i] = (consts[c1] as u8) ^ (consts[c2] as u8);
                     format!("((CONST{} as u8) ^ (CONST{} as u8))", c1 + 1, c2 + 1)
                 }
                 "+" => {
-                    mask_values.push((consts[c1] as u8).wrapping_add(consts[c2] as u8));
+                    mask_values[i] = (consts[c1] as u8).wrapping_add(consts[c2] as u8);
                     format!("((CONST{} as u8).wrapping_add(CONST{} as u8))", c1 + 1, c2 + 1)
                 }
                 "-" => {
-                    mask_values.push((consts[c1] as u8).wrapping_sub(consts[c2] as u8));
+                    mask_values[i] = (consts[c1] as u8).wrapping_sub(consts[c2] as u8);
                     format!("((CONST{} as u8).wrapping_sub(CONST{} as u8))", c1 + 1, c2 + 1)
                 }
                 ">>" => {
-                    mask_values.push(((consts[c1] >> 8) as u8) ^ (consts[c2] as u8));
+                    mask_values[i] = ((consts[c1] >> 8) as u8) ^ (consts[c2] as u8);
                     format!("((CONST{} >> 8) as u8) ^ (CONST{} as u8)", c1 + 1, c2 + 1)
                 }
                 "<<" => {
-                    mask_values.push(((consts[c1] << 3) as u8) ^ (consts[c2] as u8));
+                    mask_values[i] = ((consts[c1] << 3) as u8) ^ (consts[c2] as u8);
                     format!("(((CONST{} << 3) as u8) ^ (CONST{} as u8))", c1 + 1, c2 + 1)
                 }
                 _ => unreachable!(),
             };
 
-            mask_exprs.push(expr);
+            mask_exprs[i] = expr; // Assign to the fixed-size array
         }
 
         // Path to key.rs
@@ -325,7 +341,7 @@ impl Compiler {
                     write!(f, ", ")?;
                 }
                 // Apply mask at compile time
-                let masked = b ^ mask_values[i];
+                let masked = b ^ mask_values[i]; // mask_values access now matches part index
                 write!(f, "0x{:02X}", masked)?;
             }
             writeln!(f, "];")?;

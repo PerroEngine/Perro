@@ -97,10 +97,10 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
 
     // Define a ZSTD compression level (1-22, higher is more compression, slower)
     // 0 is default, negative numbers are fast. Higher numbers improve ratio.
-    const COMPRESSION_LEVEL: i32 = 10; 
+    const COMPRESSION_LEVEL: i32 = 12; 
 
     // Helper closure to process data (compress, then encrypt if needed)
-    let mut process_data = |mut data: Vec<u8>, should_encrypt: bool, should_compress: bool| -> io::Result<(Vec<u8>, u32, [u8; 12], [u8; 16], u64)> {
+    let process_data = |mut data: Vec<u8>, should_encrypt: bool, should_compress: bool| -> io::Result<(Vec<u8>, u32, [u8; 12], [u8; 16], u64)> {
         let original_data_len = data.len() as u64;
         let mut flags = 0;
         let mut nonce = [0u8; 12];
