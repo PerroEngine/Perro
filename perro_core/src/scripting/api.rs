@@ -5,7 +5,7 @@
 use smallvec::SmallVec;
 use uuid::Uuid;
 use std::{
-    cell::RefCell, env, ops::Deref, path::Path, process, rc::Rc, sync::mpsc::Sender, thread, time::{Duration, SystemTime, UNIX_EPOCH}
+    cell::RefCell, env, io, ops::Deref, path::Path, process, rc::Rc, sync::mpsc::Sender, thread, time::{Duration, SystemTime, UNIX_EPOCH}
 };
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
@@ -285,9 +285,9 @@ impl<'a> ScriptApi<'a> {
     pub fn load_asset(&mut self, path: &str) -> Option<Vec<u8>> {
         asset_io::load_asset(path).ok()
     }
-    pub fn save_asset<D>(&mut self, path: &str, data: D) -> Option<()>
+    pub fn save_asset<D>(&mut self, path: &str, data: D) -> io::Result<()>
     where D: AsRef<[u8]> {
-        asset_io::save_asset(path, data.as_ref()).ok()
+        asset_io::save_asset(path, data.as_ref())
     }
     pub fn resolve_path(&self, path: &str) -> Option<String> {
         match resolve_path(path) {

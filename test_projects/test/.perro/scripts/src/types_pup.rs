@@ -31,9 +31,17 @@ pub struct TypesPupScript {
     typed_big_int: BigInt,
     typed_decimal: Decimal,
     typed_string: String,
+    local_int: i32,
+    local_uint_8: u8,
+    local_float: f32,
+    local_string: String,
+    local_big_int: BigInt,
+    local_decimal: Decimal,
     my_base_entity: GameEntity,
     my_player: TestPlayer,
+    other_player: TestPlayer,
     my_derived_player: SuperTestPlayer,
+    my_derived_player_var: SuperTestPlayer,
     dynamic_array_inferred: Vec<Value>,
     dynamic_map_inferred: HashMap<String, Value>,
     dynamic_array_annotated: Vec<Value>,
@@ -53,14 +61,6 @@ pub struct TypesPupScript {
     static_array_players: Vec<TestPlayer>,
     static_map_players: HashMap<String, TestPlayer>,
     static_map_super_players: HashMap<String, SuperTestPlayer>,
-    local_int: i32,
-    local_uint_8: u8,
-    local_float: f32,
-    local_string: String,
-    local_big_int: BigInt,
-    local_decimal: Decimal,
-    other_player: TestPlayer,
-    my_derived_player_var: SuperTestPlayer,
 }
 
 // ========================================================================
@@ -80,9 +80,17 @@ pub extern "C" fn types_pup_create_script() -> *mut dyn ScriptObject {
     let typed_big_int = BigInt::from_str("12345678901234567890").unwrap();
     let typed_decimal = Decimal::from_str("987.6543210987654321").unwrap();
     let typed_string = String::from("HelloPerro");
+    let local_int = 5i32;
+    let local_uint_8 = 250u8;
+    let local_float = 2.5f32;
+    let local_string = String::from("LocalString");
+    let local_big_int = BigInt::from_str("1000000000000000000").unwrap();
+    let local_decimal = Decimal::from_str("12.34567890123456789").unwrap();
     let my_base_entity = GameEntity { entity_id: 100i32, entity_name: String::from("NPC_Guard"), entity_type: String::from("NPC"), ..Default::default() };
     let my_player = TestPlayer { base: GameEntity { entity_id: 1i32, entity_name: String::from("Hero"), entity_type: String::from("Player"), ..Default::default() }, pos: TestVector { x: 0.0f32, y: 0.0f32, ..Default::default() }, health: 100.0f32, mana: 50i8, ..Default::default() };
+    let other_player = TestPlayer { base: GameEntity { entity_id: 2i32, entity_name: String::from("Sidekick"), entity_type: String::from("Player"), ..Default::default() }, pos: TestVector { x: 5.0f32, y: 10.0f32, ..Default::default() }, health: 80.0f32, mana: 30i8, ..Default::default() };
     let my_derived_player = SuperTestPlayer { base: TestPlayer { base: GameEntity { entity_id: 3i32, entity_name: String::from("SuperHero"), entity_type: String::from("SuperPlayer"), ..Default::default() }, pos: TestVector { x: 10.0f32, y: 10.0f32, ..Default::default() }, health: 200.0f32, mana: 100i8, ..Default::default() }, special_ability: String::from("Flight"), energy_core: Decimal::from_str("99.9").unwrap(), ..Default::default() };
+    let my_derived_player_var = SuperTestPlayer { base: TestPlayer { base: GameEntity { entity_id: 4i32, entity_name: String::from("LocalHero"), entity_type: String::from("LocalPlayer"), ..Default::default() }, pos: TestVector { x: 20.0f32, y: 20.0f32, ..Default::default() }, health: 180.0f32, mana: 80i8, ..Default::default() }, special_ability: String::from("Speed"), energy_core: Decimal::from_str("80.0").unwrap(), ..Default::default() };
     let dynamic_array_inferred = vec![json!(1f32), json!(String::from("two")), json!(3.0f32), json!(untyped_num_default), json!(typed_big_int.clone()), json!(typed_decimal.clone())];
     let dynamic_map_inferred = HashMap::from([(String::from("alpha"), json!(1f32)), (String::from("beta"), json!(typed_string.clone())), (String::from("gamma"), json!(typed_big_int.clone())), (String::from("delta"), json!(typed_decimal.clone()))]);
     let dynamic_array_annotated = vec![json!(typed_int_default), json!(typed_float_64), json!(my_derived_player_var.clone()), json!(typed_big_int.clone())];
@@ -91,25 +99,17 @@ pub extern "C" fn types_pup_create_script() -> *mut dyn ScriptObject {
     let static_array_uint_16 = vec![1000u16, 2000u16];
     let static_array_string = vec![String::from("one"), String::from("two"), String::from("three")];
     let static_array_float_64 = vec![1.11f64, 2.22f64, 3.33f64];
-    let static_array_big_int = vec![BigInt::from_str("100").unwrap(), BigInt::from_str("200").unwrap(), typed_big_int.clone().clone()];
-    let static_array_decimal = vec![Decimal::from_str("5.5").unwrap(), Decimal::from_str("6.6").unwrap(), typed_decimal.clone().clone()];
+    let static_array_big_int = vec![BigInt::from_str("100").unwrap(), BigInt::from_str("200").unwrap(), typed_big_int.clone()];
+    let static_array_decimal = vec![Decimal::from_str("5.5").unwrap(), Decimal::from_str("6.6").unwrap(), typed_decimal.clone()];
     let static_map_string_int_64 = HashMap::from([(String::from("level"), 10_000_000_000i64), (String::from("score"), 1_000_000_000i64)]);
     let static_map_int_string = HashMap::from([(1i32, String::from("gold")), (2i32, String::from("silver"))]);
     let static_map_uint_8_float = HashMap::from([(50u8, 0.5f32), (100u8, 1.5f32)]);
     let static_map_string_big = HashMap::from([(String::from("large_num"), BigInt::from_str("9999999999999999999").unwrap()), (String::from("another_large"), BigInt::from_str("1000").unwrap())]);
     let static_map_string_decimal = HashMap::from([(String::from("price"), Decimal::from_str("19.99").unwrap()), (String::from("tax"), Decimal::from_str("1.50").unwrap())]);
-    let static_array_entities = vec![my_base_entity.clone().clone(), my_player.clone().clone(), my_derived_player.clone().clone()];
-    let static_array_players = vec![my_player.clone().clone(), other_player.clone().clone()];
-    let static_map_players = HashMap::from([(String::from("main"), my_player.clone().clone()), (String::from("other"), other_player.clone().clone())]);
-    let static_map_super_players = HashMap::from([(String::from("super"), my_derived_player.clone().clone()), (String::from("local_super"), my_derived_player_var.clone().clone())]);
-    let local_int = 5i32;
-    let local_uint_8 = 250u8;
-    let local_float = 2.5f32;
-    let local_string = String::from("LocalString");
-    let local_big_int = BigInt::from_str("1000000000000000000").unwrap();
-    let local_decimal = Decimal::from_str("12.34567890123456789").unwrap();
-    let other_player = TestPlayer { base: GameEntity { entity_id: 2i32, entity_name: String::from("Sidekick"), entity_type: String::from("Player"), ..Default::default() }, pos: TestVector { x: 5.0f32, y: 10.0f32, ..Default::default() }, health: 80.0f32, mana: 30i8, ..Default::default() };
-    let my_derived_player_var = SuperTestPlayer { base: TestPlayer { base: GameEntity { entity_id: 4i32, entity_name: String::from("LocalHero"), entity_type: String::from("LocalPlayer"), ..Default::default() }, pos: TestVector { x: 20.0f32, y: 20.0f32, ..Default::default() }, health: 180.0f32, mana: 80i8, ..Default::default() }, special_ability: String::from("Speed"), energy_core: Decimal::from_str("80.0").unwrap(), ..Default::default() };
+    let static_array_entities = vec![my_base_entity.clone(), my_player.clone(), my_derived_player.clone()];
+    let static_array_players = vec![my_player.clone(), other_player.clone()];
+    let static_map_players = HashMap::from([(String::from("main"), my_player.clone()), (String::from("other"), other_player.clone())]);
+    let static_map_super_players = HashMap::from([(String::from("super"), my_derived_player.clone()), (String::from("local_super"), my_derived_player_var.clone())]);
 
     Box::into_raw(Box::new(TypesPupScript {
         node,
@@ -123,9 +123,17 @@ pub extern "C" fn types_pup_create_script() -> *mut dyn ScriptObject {
         typed_big_int,
         typed_decimal,
         typed_string,
+        local_int,
+        local_uint_8,
+        local_float,
+        local_string,
+        local_big_int,
+        local_decimal,
         my_base_entity,
         my_player,
+        other_player,
         my_derived_player,
+        my_derived_player_var,
         dynamic_array_inferred,
         dynamic_map_inferred,
         dynamic_array_annotated,
@@ -145,14 +153,6 @@ pub extern "C" fn types_pup_create_script() -> *mut dyn ScriptObject {
         static_array_players,
         static_map_players,
         static_map_super_players,
-        local_int,
-        local_uint_8,
-        local_float,
-        local_string,
-        local_big_int,
-        local_decimal,
-        other_player,
-        my_derived_player_var,
     })) as *mut dyn ScriptObject
 }
 
@@ -296,7 +296,7 @@ impl TypesPupScript {
         api.print(&String::from("--- Test Primitive Operations ---"));
         let mut res_int = (self.typed_int_default + 10i32);
         let mut res_big = (self.typed_big_int + BigInt::from_str("1000").unwrap());
-        let mut res_decimal = (self.typed_decimal + Decimal::from_str("1.000001").unwrap());
+        let mut res_decimal = (self.typed_decimal + (Decimal::from_str("1.000001").unwrap() as Decimal));
         api.print(&format!("{} {} {} {}", String::from("Var + Lit:"), res_int, res_big, res_decimal));
         let mut res_big_var = (self.typed_big_int + self.local_big_int);
         let mut res_decimal_var = (self.typed_decimal + self.local_decimal);
@@ -471,125 +471,125 @@ static VAR_GET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&TypesPupScript) -> Option<Value>> =
         HashMap::with_capacity(40);
         m.insert(2485169244931714667u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.untyped_num_default))
-            });
+                        Some(json!(script.untyped_num_default))
+                    });
         m.insert(1504910378154860307u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_int_default))
-            });
+                        Some(json!(script.typed_int_default))
+                    });
         m.insert(658168785591864834u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_int_8))
-            });
+                        Some(json!(script.typed_int_8))
+                    });
         m.insert(17966784340007944020u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_int_64))
-            });
+                        Some(json!(script.typed_int_64))
+                    });
         m.insert(3252444866660192402u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_uint_16))
-            });
+                        Some(json!(script.typed_uint_16))
+                    });
         m.insert(5074350817013894852u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_float_default))
-            });
+                        Some(json!(script.typed_float_default))
+                    });
         m.insert(8575771357858329841u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_float_64))
-            });
+                        Some(json!(script.typed_float_64))
+                    });
         m.insert(8584268266216124416u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_big_int))
-            });
+                        Some(json!(script.typed_big_int))
+                    });
         m.insert(16018926697858484043u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_decimal))
-            });
+                        Some(json!(script.typed_decimal))
+                    });
         m.insert(2918741743342288797u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.typed_string))
-            });
+                        Some(json!(script.typed_string))
+                    });
         m.insert(8500958789799191182u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.local_int))
-            });
+                        Some(json!(script.local_int))
+                    });
         m.insert(99173539736040918u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.local_uint_8))
-            });
+                        Some(json!(script.local_uint_8))
+                    });
         m.insert(15330836304937290421u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.local_float))
-            });
+                        Some(json!(script.local_float))
+                    });
         m.insert(17238125180867109320u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.local_string))
-            });
+                        Some(json!(script.local_string))
+                    });
         m.insert(17472032820032879803u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.local_big_int))
-            });
+                        Some(json!(script.local_big_int))
+                    });
         m.insert(381633674885011772u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.local_decimal))
-            });
+                        Some(json!(script.local_decimal))
+                    });
         m.insert(6760292584569910041u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.my_base_entity))
-            });
+                        Some(json!(script.my_base_entity))
+                    });
         m.insert(15631901558265132697u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.my_player))
-            });
+                        Some(json!(script.my_player))
+                    });
         m.insert(4372286770362822343u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.other_player))
-            });
+                        Some(json!(script.other_player))
+                    });
         m.insert(1107408580180678471u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.my_derived_player))
-            });
+                        Some(json!(script.my_derived_player))
+                    });
         m.insert(11197902529099507753u64, |script: &TypesPupScript| -> Option<Value> {
-                Some(json!(script.my_derived_player_var))
-            });
+                        Some(json!(script.my_derived_player_var))
+                    });
         m.insert(397621861165125654u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.dynamic_array_inferred).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.dynamic_array_inferred).unwrap_or_default())
+                            });
         m.insert(7350485059281851515u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.dynamic_map_inferred).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.dynamic_map_inferred).unwrap_or_default())
+                            });
         m.insert(8275284063617525799u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.dynamic_array_annotated).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.dynamic_array_annotated).unwrap_or_default())
+                            });
         m.insert(5183367058847120760u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.dynamic_map_annotated).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.dynamic_map_annotated).unwrap_or_default())
+                            });
         m.insert(5337103969028899u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_int).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_int).unwrap_or_default())
+                            });
         m.insert(11147407808312781560u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_uint_16).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_uint_16).unwrap_or_default())
+                            });
         m.insert(11774070694902202195u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_string).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_string).unwrap_or_default())
+                            });
         m.insert(12618829247944308375u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_float_64).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_float_64).unwrap_or_default())
+                            });
         m.insert(11622495865823915786u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_big_int).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_big_int).unwrap_or_default())
+                            });
         m.insert(15605525470769910961u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_decimal).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_decimal).unwrap_or_default())
+                            });
         m.insert(10539066375271246519u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_string_int_64).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_string_int_64).unwrap_or_default())
+                            });
         m.insert(13676620148509593656u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_int_string).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_int_string).unwrap_or_default())
+                            });
         m.insert(15879637269458870541u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_uint_8_float).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_uint_8_float).unwrap_or_default())
+                            });
         m.insert(13381633098612637663u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_string_big).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_string_big).unwrap_or_default())
+                            });
         m.insert(2532243207680400902u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_string_decimal).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_string_decimal).unwrap_or_default())
+                            });
         m.insert(9044830729489509861u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_entities).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_entities).unwrap_or_default())
+                            });
         m.insert(1181354728222443296u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_array_players).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_array_players).unwrap_or_default())
+                            });
         m.insert(16255415596013162047u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_players).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_players).unwrap_or_default())
+                            });
         m.insert(937814722116048519u64, |script: &TypesPupScript| -> Option<Value> {
-                            Some(serde_json::to_value(&script.static_map_super_players).unwrap_or_default())
-                        });
+                                Some(serde_json::to_value(&script.static_map_super_players).unwrap_or_default())
+                            });
     m
 });
 
@@ -600,285 +600,285 @@ static VAR_SET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&mut TypesPupScript, Value) -> Option<()>> =
         HashMap::with_capacity(40);
         m.insert(2485169244931714667u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_f64() {
-                        script.untyped_num_default = v as f32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.untyped_num_default = v as f32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(1504910378154860307u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_i64() {
-                        script.typed_int_default = v as i32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.typed_int_default = v as i32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(658168785591864834u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_i64() {
-                        script.typed_int_8 = v as i8;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.typed_int_8 = v as i8;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(17966784340007944020u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_i64() {
-                        script.typed_int_64 = v as i64;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.typed_int_64 = v as i64;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(3252444866660192402u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_u64() {
-                        script.typed_uint_16 = v as u16;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_u64() {
+                                script.typed_uint_16 = v as u16;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(5074350817013894852u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_f64() {
-                        script.typed_float_default = v as f32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.typed_float_default = v as f32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(8575771357858329841u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_f64() {
-                        script.typed_float_64 = v as f64;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.typed_float_64 = v as f64;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(8584268266216124416u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.typed_big_int = v.parse::<BigInt>().unwrap();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.typed_big_int = v.parse::<BigInt>().unwrap();
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(16018926697858484043u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.typed_decimal = v.parse::<Decimal>().unwrap();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.typed_decimal = v.parse::<Decimal>().unwrap();
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(2918741743342288797u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.typed_string = v.to_string();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.typed_string = v.to_string();
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(8500958789799191182u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_i64() {
-                        script.local_int = v as i32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.local_int = v as i32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(99173539736040918u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_u64() {
-                        script.local_uint_8 = v as u8;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_u64() {
+                                script.local_uint_8 = v as u8;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(15330836304937290421u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_f64() {
-                        script.local_float = v as f32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.local_float = v as f32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(17238125180867109320u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.local_string = v.to_string();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.local_string = v.to_string();
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(17472032820032879803u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.local_big_int = v.parse::<BigInt>().unwrap();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.local_big_int = v.parse::<BigInt>().unwrap();
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(381633674885011772u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.local_decimal = v.parse::<Decimal>().unwrap();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.local_decimal = v.parse::<Decimal>().unwrap();
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(6760292584569910041u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Ok(v) = serde_json::from_value::<GameEntity>(val) {
-                        script.my_base_entity = v;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Ok(v) = serde_json::from_value::<GameEntity>(val) {
+                                script.my_base_entity = v;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(15631901558265132697u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Ok(v) = serde_json::from_value::<TestPlayer>(val) {
-                        script.my_player = v;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Ok(v) = serde_json::from_value::<TestPlayer>(val) {
+                                script.my_player = v;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(4372286770362822343u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Ok(v) = serde_json::from_value::<TestPlayer>(val) {
-                        script.other_player = v;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Ok(v) = serde_json::from_value::<TestPlayer>(val) {
+                                script.other_player = v;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(1107408580180678471u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val) {
-                        script.my_derived_player = v;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val) {
+                                script.my_derived_player = v;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(11197902529099507753u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                    if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val) {
-                        script.my_derived_player_var = v;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val) {
+                                script.my_derived_player_var = v;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(397621861165125654u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Some(v) = val.as_array() {
-                                    script.dynamic_array_inferred = v.clone();
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Some(v) = val.as_array() {
+                                        script.dynamic_array_inferred = v.clone();
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(7350485059281851515u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Some(v) = val.as_object() {
-                                    script.dynamic_map_inferred = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Some(v) = val.as_object() {
+                                        script.dynamic_map_inferred = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(8275284063617525799u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Some(v) = val.as_array() {
-                                    script.dynamic_array_annotated = v.clone();
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Some(v) = val.as_array() {
+                                        script.dynamic_array_annotated = v.clone();
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(5183367058847120760u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Some(v) = val.as_object() {
-                                    script.dynamic_map_annotated = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Some(v) = val.as_object() {
+                                        script.dynamic_map_annotated = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(5337103969028899u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<i32>>(val) {
-                                    script.static_array_int = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<i32>>(val) {
+                                        script.static_array_int = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(11147407808312781560u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<u16>>(val) {
-                                    script.static_array_uint_16 = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<u16>>(val) {
+                                        script.static_array_uint_16 = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(11774070694902202195u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<String>>(val) {
-                                    script.static_array_string = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<String>>(val) {
+                                        script.static_array_string = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(12618829247944308375u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<f64>>(val) {
-                                    script.static_array_float_64 = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<f64>>(val) {
+                                        script.static_array_float_64 = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(11622495865823915786u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<BigInt>>(val) {
-                                    script.static_array_big_int = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<BigInt>>(val) {
+                                        script.static_array_big_int = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(15605525470769910961u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<Decimal>>(val) {
-                                    script.static_array_decimal = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<Decimal>>(val) {
+                                        script.static_array_decimal = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(10539066375271246519u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, i64>>(val) {
-                                    script.static_map_string_int_64 = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, i64>>(val) {
+                                        script.static_map_string_int_64 = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(13676620148509593656u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<i32, String>>(val) {
-                                    script.static_map_int_string = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<i32, String>>(val) {
+                                        script.static_map_int_string = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(15879637269458870541u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<u8, f32>>(val) {
-                                    script.static_map_uint_8_float = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<u8, f32>>(val) {
+                                        script.static_map_uint_8_float = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(13381633098612637663u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, BigInt>>(val) {
-                                    script.static_map_string_big = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, BigInt>>(val) {
+                                        script.static_map_string_big = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(2532243207680400902u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, Decimal>>(val) {
-                                    script.static_map_string_decimal = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, Decimal>>(val) {
+                                        script.static_map_string_decimal = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(9044830729489509861u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<GameEntity>>(val) {
-                                    script.static_array_entities = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<GameEntity>>(val) {
+                                        script.static_array_entities = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(1181354728222443296u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<TestPlayer>>(val) {
-                                    script.static_array_players = vec_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<TestPlayer>>(val) {
+                                        script.static_array_players = vec_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(16255415596013162047u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, TestPlayer>>(val) {
-                                    script.static_map_players = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, TestPlayer>>(val) {
+                                        script.static_map_players = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
         m.insert(937814722116048519u64, |script: &mut TypesPupScript, val: Value| -> Option<()> {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, SuperTestPlayer>>(val) {
-                                    script.static_map_super_players = map_typed;
-                                    return Some(());
-                                }
-                                None
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, SuperTestPlayer>>(val) {
+                                        script.static_map_super_players = map_typed;
+                                        return Some(());
+                                    }
+                                    None
+                                });
     m
 });
 
@@ -887,207 +887,167 @@ static VAR_APPLY_TABLE: once_cell::sync::Lazy<
 > = once_cell::sync::Lazy::new(|| {
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut TypesPupScript, &Value)> =
-        HashMap::with_capacity(40);
+        HashMap::with_capacity(32);
         m.insert(2485169244931714667u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_f64() {
-                        script.untyped_num_default = v as f32;
-                    }
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.untyped_num_default = v as f32;
+                            }
+                        });
         m.insert(1504910378154860307u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_i64() {
-                        script.typed_int_default = v as i32;
-                    }
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.typed_int_default = v as i32;
+                            }
+                        });
         m.insert(658168785591864834u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_i64() {
-                        script.typed_int_8 = v as i8;
-                    }
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.typed_int_8 = v as i8;
+                            }
+                        });
         m.insert(17966784340007944020u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_i64() {
-                        script.typed_int_64 = v as i64;
-                    }
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.typed_int_64 = v as i64;
+                            }
+                        });
         m.insert(3252444866660192402u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_u64() {
-                        script.typed_uint_16 = v as u16;
-                    }
-                });
+                            if let Some(v) = val.as_u64() {
+                                script.typed_uint_16 = v as u16;
+                            }
+                        });
         m.insert(5074350817013894852u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_f64() {
-                        script.typed_float_default = v as f32;
-                    }
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.typed_float_default = v as f32;
+                            }
+                        });
         m.insert(8575771357858329841u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_f64() {
-                        script.typed_float_64 = v as f64;
-                    }
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.typed_float_64 = v as f64;
+                            }
+                        });
         m.insert(8584268266216124416u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.typed_big_int = v.parse::<BigInt>().unwrap();
-                    }
-                });
+                            if let Some(v) = val.as_str() {
+                                script.typed_big_int = v.parse::<BigInt>().unwrap();
+                            }
+                        });
         m.insert(16018926697858484043u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.typed_decimal = v.parse::<Decimal>().unwrap();
-                    }
-                });
+                            if let Some(v) = val.as_str() {
+                                script.typed_decimal = v.parse::<Decimal>().unwrap();
+                            }
+                        });
         m.insert(2918741743342288797u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.typed_string = v.to_string();
-                    }
-                });
-        m.insert(8500958789799191182u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_i64() {
-                        script.local_int = v as i32;
-                    }
-                });
-        m.insert(99173539736040918u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_u64() {
-                        script.local_uint_8 = v as u8;
-                    }
-                });
-        m.insert(15330836304937290421u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_f64() {
-                        script.local_float = v as f32;
-                    }
-                });
-        m.insert(17238125180867109320u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.local_string = v.to_string();
-                    }
-                });
-        m.insert(17472032820032879803u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.local_big_int = v.parse::<BigInt>().unwrap();
-                    }
-                });
-        m.insert(381633674885011772u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.local_decimal = v.parse::<Decimal>().unwrap();
-                    }
-                });
+                            if let Some(v) = val.as_str() {
+                                script.typed_string = v.to_string();
+                            }
+                        });
         m.insert(6760292584569910041u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Ok(v) = serde_json::from_value::<GameEntity>(val.clone()) {
-                        script.my_base_entity = v;
-                    }
-                });
+                            if let Ok(v) = serde_json::from_value::<GameEntity>(val.clone()) {
+                                script.my_base_entity = v;
+                            }
+                        });
         m.insert(15631901558265132697u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Ok(v) = serde_json::from_value::<TestPlayer>(val.clone()) {
-                        script.my_player = v;
-                    }
-                });
-        m.insert(4372286770362822343u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Ok(v) = serde_json::from_value::<TestPlayer>(val.clone()) {
-                        script.other_player = v;
-                    }
-                });
+                            if let Ok(v) = serde_json::from_value::<TestPlayer>(val.clone()) {
+                                script.my_player = v;
+                            }
+                        });
         m.insert(1107408580180678471u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val.clone()) {
-                        script.my_derived_player = v;
-                    }
-                });
-        m.insert(11197902529099507753u64, |script: &mut TypesPupScript, val: &Value| {
-                    if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val.clone()) {
-                        script.my_derived_player_var = v;
-                    }
-                });
+                            if let Ok(v) = serde_json::from_value::<SuperTestPlayer>(val.clone()) {
+                                script.my_derived_player = v;
+                            }
+                        });
         m.insert(397621861165125654u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Some(v) = val.as_array() {
-                                    script.dynamic_array_inferred = v.clone();
-                                }
-                            });
+                                    if let Some(v) = val.as_array() {
+                                        script.dynamic_array_inferred = v.clone();
+                                    }
+                                });
         m.insert(7350485059281851515u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Some(v) = val.as_object() {
-                                    script.dynamic_map_inferred = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                }
-                            });
+                                    if let Some(v) = val.as_object() {
+                                        script.dynamic_map_inferred = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                    }
+                                });
         m.insert(8275284063617525799u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Some(v) = val.as_array() {
-                                    script.dynamic_array_annotated = v.clone();
-                                }
-                            });
+                                    if let Some(v) = val.as_array() {
+                                        script.dynamic_array_annotated = v.clone();
+                                    }
+                                });
         m.insert(5183367058847120760u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Some(v) = val.as_object() {
-                                    script.dynamic_map_annotated = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                }
-                            });
+                                    if let Some(v) = val.as_object() {
+                                        script.dynamic_map_annotated = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                    }
+                                });
         m.insert(5337103969028899u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<i32>>(val.clone()) {
-                                    script.static_array_int = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<i32>>(val.clone()) {
+                                        script.static_array_int = vec_typed;
+                                    }
+                                });
         m.insert(11147407808312781560u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<u16>>(val.clone()) {
-                                    script.static_array_uint_16 = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<u16>>(val.clone()) {
+                                        script.static_array_uint_16 = vec_typed;
+                                    }
+                                });
         m.insert(11774070694902202195u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<String>>(val.clone()) {
-                                    script.static_array_string = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<String>>(val.clone()) {
+                                        script.static_array_string = vec_typed;
+                                    }
+                                });
         m.insert(12618829247944308375u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<f64>>(val.clone()) {
-                                    script.static_array_float_64 = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<f64>>(val.clone()) {
+                                        script.static_array_float_64 = vec_typed;
+                                    }
+                                });
         m.insert(11622495865823915786u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<BigInt>>(val.clone()) {
-                                    script.static_array_big_int = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<BigInt>>(val.clone()) {
+                                        script.static_array_big_int = vec_typed;
+                                    }
+                                });
         m.insert(15605525470769910961u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<Decimal>>(val.clone()) {
-                                    script.static_array_decimal = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<Decimal>>(val.clone()) {
+                                        script.static_array_decimal = vec_typed;
+                                    }
+                                });
         m.insert(10539066375271246519u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, i64>>(val.clone()) {
-                                    script.static_map_string_int_64 = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, i64>>(val.clone()) {
+                                        script.static_map_string_int_64 = map_typed;
+                                    }
+                                });
         m.insert(13676620148509593656u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<i32, String>>(val.clone()) {
-                                    script.static_map_int_string = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<i32, String>>(val.clone()) {
+                                        script.static_map_int_string = map_typed;
+                                    }
+                                });
         m.insert(15879637269458870541u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<u8, f32>>(val.clone()) {
-                                    script.static_map_uint_8_float = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<u8, f32>>(val.clone()) {
+                                        script.static_map_uint_8_float = map_typed;
+                                    }
+                                });
         m.insert(13381633098612637663u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, BigInt>>(val.clone()) {
-                                    script.static_map_string_big = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, BigInt>>(val.clone()) {
+                                        script.static_map_string_big = map_typed;
+                                    }
+                                });
         m.insert(2532243207680400902u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, Decimal>>(val.clone()) {
-                                    script.static_map_string_decimal = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, Decimal>>(val.clone()) {
+                                        script.static_map_string_decimal = map_typed;
+                                    }
+                                });
         m.insert(9044830729489509861u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<GameEntity>>(val.clone()) {
-                                    script.static_array_entities = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<GameEntity>>(val.clone()) {
+                                        script.static_array_entities = vec_typed;
+                                    }
+                                });
         m.insert(1181354728222443296u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<TestPlayer>>(val.clone()) {
-                                    script.static_array_players = vec_typed;
-                                }
-                            });
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<TestPlayer>>(val.clone()) {
+                                        script.static_array_players = vec_typed;
+                                    }
+                                });
         m.insert(16255415596013162047u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, TestPlayer>>(val.clone()) {
-                                    script.static_map_players = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, TestPlayer>>(val.clone()) {
+                                        script.static_map_players = map_typed;
+                                    }
+                                });
         m.insert(937814722116048519u64, |script: &mut TypesPupScript, val: &Value| {
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<String, SuperTestPlayer>>(val.clone()) {
-                                    script.static_map_super_players = map_typed;
-                                }
-                            });
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<String, SuperTestPlayer>>(val.clone()) {
+                                        script.static_map_super_players = map_typed;
+                                    }
+                                });
     m
 });
 

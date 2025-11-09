@@ -1,3 +1,6 @@
+ #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
+
+
 use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;

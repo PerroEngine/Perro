@@ -8,7 +8,7 @@ use crate::lang::pup::api::{PupAPI, PupNodeSugar, normalize_type_name};
 pub struct PupParser {
     lexer: PupLexer,
     current_token: PupToken,
-    /// Variable name → inferred type
+    /// Variable name → inferred type (for local scope/type inference during parsing)
     type_env: HashMap<String, Type>,
     pub parsed_structs: Vec<StructDef>,
 }
@@ -51,8 +51,7 @@ impl PupParser {
         };
         self.next_token();
 
-        let mut exposed = Vec::new();
-        let mut variables = Vec::new();
+        let mut script_vars = Vec::new(); // This is the unified, ordered list of all script-level variables
         let mut functions = Vec::new();
         let mut structs = Vec::new();
 
@@ -63,9 +62,10 @@ impl PupParser {
                     match &self.current_token {
                         PupToken::Expose => {
                             self.next_token();
-                            exposed.push(self.parse_expose()?);
-                            let last = exposed.last().unwrap().clone();
-                            variables.push(last);
+                            let mut var = self.parse_variable_decl()?; // Parse `var name: type = value` part
+                            var.is_exposed = true;  // Mark this variable as exposed
+                            var.is_public = true;   // All top-level Pup variables are public
+                            script_vars.push(var);  // Add to the unified list
                         }
                         PupToken::Ident(name) => {
                             return Err(format!("Unknown directive @{}", name));
@@ -80,7 +80,12 @@ impl PupParser {
                     self.parsed_structs.push(def.clone());
                     structs.push(def);
                 }
-                PupToken::Var => variables.push(self.parse_variable_decl()?),
+                PupToken::Var => {
+                    let mut var = self.parse_variable_decl()?; // Parse `var name: type = value` part
+                    var.is_exposed = false; // Mark this variable as NOT exposed
+                    var.is_public = true;   // All top-level Pup variables are public
+                    script_vars.push(var);  // Add to the unified list
+                }
                 PupToken::Fn => functions.push(self.parse_function()?),
                 other => {
                     return Err(format!("Unexpected top-level token {:?}", other));
@@ -90,8 +95,7 @@ impl PupParser {
 
         Ok(Script {
             node_type,
-            exposed,
-            variables,
+            variables: script_vars, // Pass the single, unified, and ordered list to the Script AST
             functions,
             structs,
             verbose: true,
@@ -128,6 +132,8 @@ impl PupParser {
             match &self.current_token {
                 PupToken::Fn => methods.push(self.parse_function()?),
                 PupToken::Ident(_) | PupToken::Var => {
+                    // Struct fields implicitly public, not exposed in this context.
+                    // This is for struct internal fields, not script-level vars.
                     if self.current_token == PupToken::Var {
                         self.next_token();
                     }
@@ -161,10 +167,6 @@ impl PupParser {
             name,
             typ: self.parse_type()?,
         })
-    }
-
-    fn parse_expose(&mut self) -> Result<Variable, String> {
-        self.parse_variable_decl()
     }
 
     fn parse_function(&mut self) -> Result<Function, String> {
@@ -432,7 +434,9 @@ impl PupParser {
             self.type_env.insert(name.clone(), t.clone());
         }
 
-        Ok(Variable { name, typ, value })
+        // Initialize is_exposed and is_public with defaults; these will be overwritten
+        // by the parse_script logic if it's an @expose var.
+        Ok(Variable { name, typ, value, is_exposed: false, is_public: false })
     }
 
     // ====================== EXPRESSIONS =========================

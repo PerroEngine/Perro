@@ -8,11 +8,18 @@ use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use memmap2::Mmap;
 
+use zstd::stream::{decode_all}; // Added for Zstandard decompression
+
+// Flags for BrkEntry (must match brk.rs)
+const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is ZSTD compressed
+const FLAG_ENCRYPTED: u32 = 2;  // Bit 1: Data is AES-GCM encrypted
+
 /// Entry metadata
 #[derive(Debug, Clone)]
 pub struct BrkEntry {
     pub offset: u64,
     pub size: u64,
+    pub original_size: u64, // Added original_size
     pub flags: u32,
     pub nonce: [u8; 12],
     pub tag: [u8; 16],
@@ -87,16 +94,21 @@ impl BrkArchive {
             cursor.read_exact(&mut path_buf)?;
             let path = String::from_utf8(path_buf).unwrap();
 
-            let mut buf8 = [0u8; 8];
-            cursor.read_exact(&mut buf8)?;
-            let offset = u64::from_le_bytes(buf8);
+            let mut buf8_offset = [0u8; 8]; // Renamed to avoid shadowing
+            cursor.read_exact(&mut buf8_offset)?;
+            let offset = u64::from_le_bytes(buf8_offset);
 
-            cursor.read_exact(&mut buf8)?;
-            let size = u64::from_le_bytes(buf8);
+            let mut buf8_size = [0u8; 8]; // Renamed to avoid shadowing
+            cursor.read_exact(&mut buf8_size)?;
+            let size = u64::from_le_bytes(buf8_size);
 
-            let mut buf4 = [0u8; 4];
-            cursor.read_exact(&mut buf4)?;
-            let flags = u32::from_le_bytes(buf4);
+            let mut buf8_original_size = [0u8; 8]; // NEW: Read original_size
+            cursor.read_exact(&mut buf8_original_size)?;
+            let original_size = u64::from_le_bytes(buf8_original_size);
+
+            let mut buf4_flags = [0u8; 4]; // Renamed to avoid shadowing
+            cursor.read_exact(&mut buf4_flags)?;
+            let flags = u32::from_le_bytes(buf4_flags);
 
             let mut nonce = [0u8; 12];
             cursor.read_exact(&mut nonce)?;
@@ -108,6 +120,7 @@ impl BrkArchive {
                 BrkEntry {
                     offset,
                     size,
+                    original_size, // Store original_size
                     flags,
                     nonce,
                     tag,
@@ -118,12 +131,12 @@ impl BrkArchive {
         Ok(index)
     }
 
-    /// Read a file fully into memory (for small/encrypted files)
+    /// Read a file fully into memory (for small/encrypted/compressed files)
     pub fn read_file(&self, path: &str, key: Option<&[u8; 32]>) -> io::Result<Vec<u8>> {
         let entry = self.index.get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
-        let buf = match &self.data {
+        let mut data_buf = match &self.data { // Make buf mutable, rename to data_buf for clarity
             BrkData::Bytes(bytes) => {
                 let start = entry.offset as usize;
                 let end = start + entry.size as usize;
@@ -136,30 +149,51 @@ impl BrkArchive {
             }
         };
 
-        if entry.flags & 2 != 0 {
+        // --- DECRYPTION STEP --- (Decrypt first if encrypted)
+        if entry.flags & FLAG_ENCRYPTED != 0 {
             let key = key.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Missing decryption key"))?;
             let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
             let nonce = Nonce::from_slice(&entry.nonce);
 
-            let mut combined = buf.clone();
-            combined.extend_from_slice(&entry.tag);
+            let mut combined_encrypted_data_with_tag = data_buf.clone();
+            combined_encrypted_data_with_tag.extend_from_slice(&entry.tag);
 
-            let decrypted = cipher.decrypt(nonce, combined.as_ref())
+            let decrypted = cipher.decrypt(nonce, combined_encrypted_data_with_tag.as_ref())
                 .map_err(|_| io::Error::new(io::ErrorKind::Other, "Decryption failed"))?;
-            Ok(decrypted)
-        } else {
-            Ok(buf)
+            data_buf = decrypted; // Update data_buf with decrypted data
         }
+
+        // --- DECOMPRESSION STEP --- (Decompress second if compressed)
+        if entry.flags & FLAG_COMPRESSED != 0 {
+             let decompressed = decode_all(&*data_buf)
+                 .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("ZSTD decompression failed: {}", e)))?;
+
+             // Verify decompressed size matches original_size for integrity
+             if decompressed.len() as u64 != entry.original_size {
+                 return Err(io::Error::new(io::ErrorKind::InvalidData,
+                                           format!("Decompressed size mismatch for '{}'. Expected {} bytes, got {} bytes.",
+                                                    path, entry.original_size, decompressed.len())));
+             }
+             data_buf = decompressed; // Update data_buf with decompressed data
+        }
+
+        Ok(data_buf)
     }
 
-    /// Open a file for streaming (for large unencrypted files like audio/video)
+    /// Open a file for streaming. Only works for unencrypted AND uncompressed files.
     pub fn stream_file(&self, path: &str) -> io::Result<BrkFile> {
         let entry = self.index.get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
-        if entry.flags & 2 != 0 {
+        // Streaming is not supported for encrypted or compressed files as BrkFile
+        // currently reads raw chunks and does not handle on-the-fly decryption/decompression.
+        if entry.flags & FLAG_ENCRYPTED != 0 {
             return Err(io::Error::new(io::ErrorKind::Other,
                 "Streaming encrypted files not supported (use read_file)"));
+        }
+        if entry.flags & FLAG_COMPRESSED != 0 {
+            return Err(io::Error::new(io::ErrorKind::Other,
+                "Streaming compressed files not supported (use read_file)"));
         }
 
         Ok(BrkFile {
@@ -209,6 +243,7 @@ impl Seek for BrkFile {
             SeekFrom::Current(n) => (self.pos as i64 + n) as u64,
         };
 
+        // Seeking beyond the actual content length is an error
         if new_pos > self.entry.size {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Seek out of bounds"));
         }

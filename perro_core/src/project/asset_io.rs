@@ -59,14 +59,30 @@ pub enum ResolvedPath {
 }
 
 pub fn resolve_path(path: &str) -> ResolvedPath {
+    // 1. Handle user:// paths first, as they always map to disk.
+    //    Use a consistent application name for the base directory, e.g., "Perro Engine"
+    if let Some(stripped) = path.strip_prefix("user://") {
+        let app_name = "Perro Engine"; // Use a fixed application name here for user data
+                                      // Or, if you want it specific to the project, you need
+                                      // to get the project name from the actual game project,
+                                      // not the editor's project root name. For now, a fixed name is safer.
+        let base = dirs::data_local_dir()
+            .unwrap_or_else(|| std::env::temp_dir())
+            .join(app_name); // Use the fixed app_name here
+        return ResolvedPath::Disk(base.join(stripped));
+    }
+
+    // 2. Handle explicit absolute filesystem paths (like C:\Users\...)
+    //    This is the CRUCIAL missing piece that was causing your error.
+    let path_buf = PathBuf::from(path);
+    if path_buf.is_absolute() {
+        return ResolvedPath::Disk(path_buf);
+    }
+
+    // 3. Now, match based on the current ProjectRoot for relative paths or res://
     match get_project_root() {
-        ProjectRoot::Disk { root, name } => {
-            if let Some(stripped) = path.strip_prefix("user://") {
-                let base = dirs::data_local_dir()
-                    .unwrap_or_else(|| std::env::temp_dir())
-                    .join(&name);
-                ResolvedPath::Disk(base.join(stripped))
-            } else if let Some(stripped) = path.strip_prefix("res://") {
+        ProjectRoot::Disk { root, name } => { // When the project is disk-based (e.g., game in dev)
+            if let Some(stripped) = path.strip_prefix("res://") {
                 let mut pb = root.clone();
                 pb.push("res");
                 pb.push(stripped);
@@ -77,15 +93,12 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 ResolvedPath::Disk(pb)
             }
         }
-        ProjectRoot::Brk { data: _, name } => {
-            if let Some(stripped) = path.strip_prefix("user://") {
-                let base = dirs::data_local_dir()
-                    .unwrap_or_else(|| std::env::temp_dir())
-                    .join(&name);
-                ResolvedPath::Disk(base.join(stripped))
-            } else if let Some(stripped) = path.strip_prefix("res://") {
+        ProjectRoot::Brk { data: _, name } => { // When the project is BRK-based (e.g., editor itself)
+            // (user:// already handled above)
+            if let Some(stripped) = path.strip_prefix("res://") {
                 ResolvedPath::Brk(format!("res/{}", stripped))
             } else {
+                // This branch now correctly means "this path is relative and should be in the BRK"
                 ResolvedPath::Brk(path.to_string())
             }
         }

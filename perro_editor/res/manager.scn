@@ -6,7 +6,6 @@
       "fur_path": "res://fur/manager.fur",
       "node": {
         "type": "Node",
-        "script_path":"res://scripts/editor.pup",
         "name": "Manager UI"
       }
     }

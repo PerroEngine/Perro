@@ -6,13 +6,12 @@ use crate::{engine_structs::EngineStruct, lang::api_modules::ApiModule, node_reg
 #[derive(Debug, Clone)]
 pub struct Script {
     pub node_type: String,
-    pub exposed: Vec<Variable>,
     pub variables: Vec<Variable>,
     pub functions: Vec<Function>,
 
     pub structs: Vec<StructDef>,
 
-    pub verbose: bool
+    pub verbose: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +19,8 @@ pub struct Variable {
     pub name: String,
     pub typ: Option<Type>, 
     pub value: Option<TypedExpr>, 
+    pub is_public: bool,
+    pub is_exposed: bool
 }
 
 

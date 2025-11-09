@@ -10,10 +10,19 @@ use aes_gcm::aead::Aead;
 use rand::RngCore;
 use serde_json::Value;
 
-/// File types to skip entirely
+use zstd::stream::{encode_all}; // Added for Zstandard compression
+
+/// File types to skip entirely from BRK packaging (e.g., source code, scripts that will be compiled)
 const SKIP_EXTENSIONS: &[&str] = &["pup", "rs", "cs", "ts", "go"];
-/// File types to encrypt
+/// File types to encrypt (e.g., sensitive game data, scenes)
 const ENCRYPT_EXTENSIONS: &[&str] = &["scn", "fur", "toml"];
+/// File types that are already efficiently compressed (e.g., JPG, PNG, OGG)
+/// These might not benefit much from Zstd and could even get larger or take longer.
+const ALREADY_COMPRESSED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "ogg", "mp3", "webp"];
+
+// Flags for BrkEntry
+const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is ZSTD compressed
+const FLAG_ENCRYPTED: u32 = 2;  // Bit 1: Data is AES-GCM encrypted
 
 /// Archive header
 pub struct BrkHeader {
@@ -24,10 +33,12 @@ pub struct BrkHeader {
 }
 
 /// Entry metadata written into the index
+#[derive(Debug, Clone)] // Derive Debug and Clone for convenience
 pub struct BrkEntry {
     pub path: String,
     pub offset: u64,
-    pub size: u64,
+    pub size: u64,          // This will be the *actual* size in the archive (compressed if FLAG_COMPRESSED)
+    pub original_size: u64, // The original size before any compression
     pub flags: u32,
     pub nonce: [u8; 12],
     pub tag: [u8; 16],
@@ -75,7 +86,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
     // Write placeholder header
     let header = BrkHeader {
         magic: *b"BRK1",
-        version: 1,
+        version: 1, // Archive version. Increment if metadata format changes!
         file_count: 0,
         index_offset: 0,
     };
@@ -84,31 +95,60 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
     let mut entries = Vec::new();
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
 
-    // 1. Explicitly add project.toml (always encrypted, no minification)
-    let project_toml = project_root.join("project.toml");
-    if project_toml.exists() {
-        let mut data = fs::read(&project_toml)?;
+    // Define a ZSTD compression level (1-22, higher is more compression, slower)
+    // 0 is default, negative numbers are fast. Higher numbers improve ratio.
+    const COMPRESSION_LEVEL: i32 = 10; 
+
+    // Helper closure to process data (compress, then encrypt if needed)
+    let mut process_data = |mut data: Vec<u8>, should_encrypt: bool, should_compress: bool| -> io::Result<(Vec<u8>, u32, [u8; 12], [u8; 16], u64)> {
+        let original_data_len = data.len() as u64;
+        let mut flags = 0;
         let mut nonce = [0u8; 12];
         let mut tag = [0u8; 16];
-        let mut flags = 0;
 
-        rand::thread_rng().fill_bytes(&mut nonce);
-        let nonce_obj = Nonce::from_slice(&nonce);
-        let encrypted = cipher.encrypt(nonce_obj, &*data)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
-        let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
-        data = ciphertext.to_vec();
-        tag.copy_from_slice(gcm_tag);
-        flags |= 2;
+        // --- COMPRESSION STEP ---
+        if should_compress && original_data_len > 0 { // Only compress if flagged and not empty
+            let compressed_data = encode_all(&*data, COMPRESSION_LEVEL)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("ZSTD compression failed: {}", e)))?;
+            
+            // Only use compressed data if it's actually smaller.
+            // Zstd has a header, so very tiny files might get slightly larger.
+            if compressed_data.len() < data.len() {
+                data = compressed_data;
+                flags |= FLAG_COMPRESSED;
+            }
+        }
+
+        // --- ENCRYPTION STEP ---
+        if should_encrypt {
+            rand::thread_rng().fill_bytes(&mut nonce);
+            let nonce_obj = Nonce::from_slice(&nonce);
+            let encrypted = cipher.encrypt(nonce_obj, &*data)
+                .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
+            let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
+            data = ciphertext.to_vec();
+            tag.copy_from_slice(gcm_tag);
+            flags |= FLAG_ENCRYPTED;
+        }
+
+        Ok((data, flags, nonce, tag, original_data_len))
+    };
+
+    // 1. Explicitly add project.toml (always encrypted, and compressed)
+    let project_toml = project_root.join("project.toml");
+    if project_toml.exists() {
+        let raw_data = fs::read(&project_toml)?;
+        let (processed_data, flags, nonce, tag, original_size) = process_data(raw_data, true, true)?; // Encrypt and Compress project.toml
 
         let offset = file.seek(SeekFrom::Current(0))?;
-        file.write_all(&data)?;
-        let size = data.len() as u64;
+        file.write_all(&processed_data)?;
+        let size = processed_data.len() as u64;
 
         entries.push(BrkEntry {
             path: "project.toml".to_string(),
             offset,
             size,
+            original_size,
             flags,
             nonce,
             tag,
@@ -121,7 +161,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
         if entry.file_type().is_file() {
             let path = entry.path();
 
-            // Skip unwanted extensions
+            // Skip unwanted extensions (scripts, source files)
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 if SKIP_EXTENSIONS.contains(&ext) {
                     continue;
@@ -141,32 +181,32 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
                 fs::read(path)?
             };
 
-            let mut flags = 0;
-            let mut nonce = [0u8; 12];
-            let mut tag = [0u8; 16];
+            // Determine if this file should be encrypted
+            let should_encrypt = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                ENCRYPT_EXTENSIONS.contains(&ext)
+            } else {
+                false
+            };
+            
+            // Determine if this file should be compressed
+            let should_compress = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                !ALREADY_COMPRESSED_EXTENSIONS.contains(&ext) // Don't re-compress if format is already compressed
+            } else {
+                true // Default to compressing unknown extensions
+            };
 
-            // Encrypt if extension matches
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ENCRYPT_EXTENSIONS.contains(&ext) {
-                    rand::thread_rng().fill_bytes(&mut nonce);
-                    let nonce_obj = Nonce::from_slice(&nonce);
-                    let encrypted = cipher.encrypt(nonce_obj, &*data)
-                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
-                    let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
-                    data = ciphertext.to_vec();
-                    tag.copy_from_slice(gcm_tag);
-                    flags |= 2;
-                }
-            }
+
+            let (processed_data, flags, nonce, tag, original_size) = process_data(data, should_encrypt, should_compress)?;
 
             let offset = file.seek(SeekFrom::Current(0))?;
-            file.write_all(&data)?;
-            let size = data.len() as u64;
+            file.write_all(&processed_data)?;
+            let size = processed_data.len() as u64;
 
             entries.push(BrkEntry {
                 path: format!("res/{}", rel.replace("\\", "/")),
                 offset,
                 size,
+                original_size,
                 flags,
                 nonce,
                 tag,
@@ -183,6 +223,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
         file.write_all(path_bytes)?;
         file.write_all(&e.offset.to_le_bytes())?;
         file.write_all(&e.size.to_le_bytes())?;
+        file.write_all(&e.original_size.to_le_bytes())?; // NEW: Write original_size
         file.write_all(&e.flags.to_le_bytes())?;
         file.write_all(&e.nonce)?;
         file.write_all(&e.tag)?;

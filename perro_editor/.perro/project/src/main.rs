@@ -1,4 +1,4 @@
-// #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
+ #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
 
 // ✅ Embed assets.brk built by compiler/packer in release/export
 static ASSETS_BRK: &[u8] = include_bytes!("../../../assets.brk");

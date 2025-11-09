@@ -46,6 +46,65 @@ pub struct F {
 }
 
 impl RootScript {
+
+ fn ensure_runtime_exe_in_version_dir(
+    &self,
+    api: &mut ScriptApi, // Ensure this is &mut ScriptApi
+    target_version: &str,
+    target_exe_name: &str, // e.g., "perro_runtime.exe"
+) -> Result<PathBuf, String> {
+    let version_editor_path_str = format!("user://versions/{}/editor/", target_version);
+    let resolved_version_dir_path = api
+        .resolve_path(&version_editor_path_str)
+        .ok_or_else(|| format!("Failed to resolve path for {}", version_editor_path_str))?;
+    let version_editor_dir = PathBuf::from(&resolved_version_dir_path);
+
+    // --- THIS IS THE CORRECTED LINE ---
+    let expected_runtime_path = version_editor_dir.join(target_exe_name);
+    // --- END CORRECTED LINE ---
+
+    // Step 1: Check if the file already exists on disk
+    if expected_runtime_path.exists() {
+        eprintln!(
+            "✅ Runtime executable found on disk: {}",
+            expected_runtime_path.display()
+        );
+        return Ok(expected_runtime_path);
+    }
+
+    eprintln!(
+        "⚠️  Runtime executable NOT found at {}. Attempting to extract from embedded resources...",
+        expected_runtime_path.display()
+    );
+
+    // Step 2: If not found, load it from the editor's embedded resources
+    let embedded_runtime_asset_path = format!("res://runtime/{target_exe_name}");
+    let runtime_bytes = api.load_asset(&embedded_runtime_asset_path)
+        .ok_or_else(|| {
+            format!(
+                "❌ Failed to load embedded runtime asset: {}",
+                embedded_runtime_asset_path
+            )
+        })?;
+
+    // --- CRITICAL DEBUGGING OUTPUT HERE ---
+    let path_to_save_str = expected_runtime_path.to_string_lossy();
+
+
+    // Step 4: Save the bytes to the expected location on disk
+    api.save_asset(&path_to_save_str, runtime_bytes) // Use the debug string here
+        .map_err(|e| { // Map the io::Error to a String error for the Result
+            format!(
+                "❌ Failed to save runtime executable to {}: {}", // Include the io::Error details here
+                expected_runtime_path.display(),
+                e // This `e` is the io::Error
+            )
+        })?;
+
+    // ... rest of the function
+    Ok(expected_runtime_path)
+}
+
     /// Find executable in directory
     fn find_exe_in_dir(&self, dir: &Path) -> Option<PathBuf> {
         std::fs::read_dir(dir)
@@ -171,23 +230,22 @@ impl RootScript {
 
 impl Script for RootScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        let my_version = api.project().version().to_string();
-        let exe_path = std::env::current_exe().expect("Could not get exe path");
+       let my_version = api.project().version().to_string();
+        let current_exe_path = std::env::current_exe().expect("Could not get exe path");
+        let current_exe_name = current_exe_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string(); // e.g., "perro_editor.exe"
 
         eprintln!("🎮 Perro Engine v{}", my_version);
 
-          let file = api.JSON.stringify(&json!({
+        let file = api.JSON.stringify(&json!({
             "name": "EXPORT MODE BITCH",
             "age": 20,
             "inventory": ["sword", "shield"]
         }));
-
-
-
-        // Save the stringified JSON
         api.save_asset("user://b.json", file).unwrap();
-
-        let mut script = api.instantiate_script("res://scripts/editor.pup").unwrap();
 
         // Skip version management in debug builds
         if cfg!(debug_assertions) {
@@ -195,8 +253,30 @@ impl Script for RootScript {
             return;
         }
 
+        // --- NEW LOGIC FOR RUNTIME.EXE EXTRACTION ---
+        // Ensure the perro_runtime.exe is available on disk at the *current* engine's version path
+        // before proceeding with any version checks.
+        let target_runtime_exe_name = "perro_runtime.exe"; // The actual name of the runtime binary
+        match self.ensure_runtime_exe_in_version_dir(
+            api,
+            &my_version,
+            target_runtime_exe_name,
+        ) {
+            Ok(runtime_on_disk_path) => {
+                eprintln!(
+                    "✅ perro_runtime.exe confirmed at: {}",
+                    runtime_on_disk_path.display()
+                );
+            }
+            Err(e) => {
+                // Now this `eprintln!` will be hit and show the full error from save_asset!
+                eprintln!("❌ CRITICAL ERROR: Failed to ensure perro_runtime.exe: {}", e);
+            }
+        }
+        // --- END NEW LOGIC ---
+
         // Step 1: Ensure we're in the correct location (fast filesystem check)
-        self.ensure_correct_location(api, &my_version, &exe_path);
+        self.ensure_correct_location(api, &my_version, &current_exe_path);
         eprintln!("✅ Running from correct location");
 
         // Step 2: Check if higher local version exists (fast filesystem check)
@@ -288,17 +368,17 @@ static VAR_GET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&RootScript) -> Option<Value>> =
         HashMap::with_capacity(4);
         m.insert(12638190499090526629u64, |script: &RootScript| -> Option<Value> {
-            Some(json!(script.b))
-        });
+                        Some(json!(script.b))
+                    });
         m.insert(12638187200555641996u64, |script: &RootScript| -> Option<Value> {
-            Some(json!(script.a))
-        });
+                        Some(json!(script.a))
+                    });
         m.insert(12638186101044013785u64, |script: &RootScript| -> Option<Value> {
-            Some(json!(script.f))
-        });
+                        Some(json!(script.f))
+                    });
         m.insert(12638197096160295895u64, |script: &RootScript| -> Option<Value> {
-            Some(json!(script.h))
-        });
+                        Some(json!(script.h))
+                    });
     m
 });
 
@@ -309,33 +389,33 @@ static VAR_SET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&mut RootScript, Value) -> Option<()>> =
         HashMap::with_capacity(4);
         m.insert(12638190499090526629u64, |script: &mut RootScript, val: Value| -> Option<()> {
-            if let Some(v) = val.as_f64() {
-                script.b = v as f32;
-                return Some(());
-            }
-            None
-        });
+                            if let Some(v) = val.as_f64() {
+                                script.b = v as f32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(12638187200555641996u64, |script: &mut RootScript, val: Value| -> Option<()> {
-            if let Some(v) = val.as_i64() {
-                script.a = v as i32;
-                return Some(());
-            }
-            None
-        });
+                            if let Some(v) = val.as_i64() {
+                                script.a = v as i32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(12638186101044013785u64, |script: &mut RootScript, val: Value| -> Option<()> {
-            if let Ok(v) = serde_json::from_value::<F>(val) {
-                script.f = v;
-                return Some(());
-            }
-            None
-        });
+                            if let Ok(v) = serde_json::from_value::<F>(val) {
+                                script.f = v;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(12638197096160295895u64, |script: &mut RootScript, val: Value| -> Option<()> {
-            if let Some(v) = val.as_i64() {
-                script.h = v as i64;
-                return Some(());
-            }
-            None
-        });
+                            if let Some(v) = val.as_i64() {
+                                script.h = v as i64;
+                                return Some(());
+                            }
+                            None
+                        });
     m
 });
 
@@ -344,32 +424,32 @@ static VAR_APPLY_TABLE: once_cell::sync::Lazy<
 > = once_cell::sync::Lazy::new(|| {
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut RootScript, &Value)> =
-        HashMap::with_capacity(4);
+        HashMap::with_capacity(5);
         m.insert(12638190499090526629u64, |script: &mut RootScript, val: &Value| {
-            if let Some(v) = val.as_f64() {
-                script.b = v as f32;
-            }
-        });
+                            if let Some(v) = val.as_f64() {
+                                script.b = v as f32;
+                            }
+                        });
         m.insert(12638187200555641996u64, |script: &mut RootScript, val: &Value| {
-            if let Some(v) = val.as_i64() {
-                script.a = v as i32;
-            }
-        });
+                            if let Some(v) = val.as_i64() {
+                                script.a = v as i32;
+                            }
+                        });
         m.insert(12638182802509129152u64, |script: &mut RootScript, val: &Value| {
-            if let Some(v) = val.as_str() {
-                script.e = v.to_string();
-            }
-        });
+                            if let Some(v) = val.as_str() {
+                                script.e = v.to_string();
+                            }
+                        });
         m.insert(12638186101044013785u64, |script: &mut RootScript, val: &Value| {
-            if let Ok(v) = serde_json::from_value::<F>(val.clone()) {
-                script.f = v;
-            }
-        });
+                            if let Ok(v) = serde_json::from_value::<F>(val.clone()) {
+                                script.f = v;
+                            }
+                        });
         m.insert(12638197096160295895u64, |script: &mut RootScript, val: &Value| {
-            if let Some(v) = val.as_i64() {
-                script.h = v as i64;
-            }
-        });
+                            if let Some(v) = val.as_i64() {
+                                script.h = v as i64;
+                            }
+                        });
     m
 });
 

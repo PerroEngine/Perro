@@ -96,11 +96,11 @@ static VAR_GET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&RustScript) -> Option<Value>> =
         HashMap::with_capacity(2);
         m.insert(12638216887369603693u64, |script: &RustScript| -> Option<Value> {
-                Some(json!(script.z))
-            });
+                        Some(json!(script.z))
+                    });
         m.insert(12638214688346347271u64, |script: &RustScript| -> Option<Value> {
-                Some(json!(script.x))
-            });
+                        Some(json!(script.x))
+                    });
     m
 });
 
@@ -111,19 +111,19 @@ static VAR_SET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&mut RustScript, Value) -> Option<()>> =
         HashMap::with_capacity(2);
         m.insert(12638216887369603693u64, |script: &mut RustScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_i64() {
-                        script.z = v as i32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.z = v as i32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(12638214688346347271u64, |script: &mut RustScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_f64() {
-                        script.x = v as f32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_f64() {
+                                script.x = v as f32;
+                                return Some(());
+                            }
+                            None
+                        });
     m
 });
 
@@ -133,16 +133,16 @@ static VAR_APPLY_TABLE: once_cell::sync::Lazy<
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut RustScript, &Value)> =
         HashMap::with_capacity(2);
+        m.insert(12638213588834719060u64, |script: &mut RustScript, val: &Value| {
+                            if let Some(v) = val.as_i64() {
+                                script.y = v as i32;
+                            }
+                        });
         m.insert(12638216887369603693u64, |script: &mut RustScript, val: &Value| {
-                    if let Some(v) = val.as_i64() {
-                        script.z = v as i32;
-                    }
-                });
-        m.insert(12638214688346347271u64, |script: &mut RustScript, val: &Value| {
-                    if let Some(v) = val.as_f64() {
-                        script.x = v as f32;
-                    }
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.z = v as i32;
+                            }
+                        });
     m
 });
 

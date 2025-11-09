@@ -27,6 +27,9 @@ fn clear_type_cache() {
 }
 
 fn to_pascal_case(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
     s.split('_')
         .filter(|part| !part.is_empty())
         .map(|part| {
@@ -82,27 +85,21 @@ impl Script {
             return expr.to_string();
         }
 
-        let to_ty = to.to_rust_type();
-        if expr.ends_with(&to_ty) {
-            return expr.to_string();
-        }
-
-        Stmt::generate_implicit_cast(expr, from, to)
+        // Create a temporary Cast expression and use its to_rust method
+        // to leverage the comprehensive casting logic in Expr::Cast.
+        let temp_expr = Expr::Cast(
+            Box::new(Expr::Ident(expr.to_string())), // Wrap original expr as an Ident for now
+            to.clone(),
+        );
+        temp_expr.to_rust(false, self, Some(to), None) // Assume no self/func context for these implicit casts
     }
 
     pub fn is_struct_field(&self, name: &str) -> bool {
         self.variables.iter().any(|v| v.name == name)
-            || self.exposed.iter().any(|v| v.name == name)
     }
 
     pub fn get_variable_type(&self, name: &str) -> Option<&Type> {
-        if let Some(v) = self.variables.iter().find(|v| v.name == name) {
-            return v.typ.as_ref();
-        }
-        if let Some(v) = self.exposed.iter().find(|v| v.name == name) {
-            return v.typ.as_ref();
-        }
-        None
+        self.variables.iter().find(|v| v.name == name).and_then(|v| v.typ.as_ref())
     }
 
 pub fn infer_expr_type(
@@ -238,11 +235,8 @@ pub fn infer_expr_type(
                 }
             }, // <-- This comma is important.
 
-        // --- ADDED THIS LINE ---
-        Expr::BaseAccess => Some(Custom(self.node_type.clone())), // Assuming BaseAccess infers to the script's node type
-        // -----------------------
-
-        _ => None, // The final catch-all for any other unhandled Expr variants
+        Expr::BaseAccess => Some(Custom(self.node_type.clone())),
+        _ => None,
     };
 
     // ✅ Cache the result
@@ -325,13 +319,10 @@ pub fn infer_expr_type(
 
         // (2) If base exists, recurse upward
         if let Some(ref base_name) = struct_def.base {
-            if let Some(found) =
-                get_struct_field_type_recursive(structs, base_name, field_name)
-            {
-                return Some(found);
+            if let Some(basedef) = structs.iter().find(|b| &b.name == base_name) {
+                return get_struct_field_type_recursive(structs, base_name, field_name);
             }
         }
-
         None
     }
 
@@ -340,9 +331,6 @@ pub fn infer_expr_type(
         Type::Custom(type_name) => {
             if type_name == &self.node_type {
                 // script-level node fields (like `self.energy` if exposed)
-                if let Some(exposed) = self.exposed.iter().find(|v| v.name == member) {
-                    return exposed.typ.clone();
-                }
                 if let Some(var) = self.variables.iter().find(|v| v.name == member) {
                     return var.typ.clone();
                 }
@@ -393,40 +381,9 @@ pub fn infer_expr_type(
         out.push_str("use std::{rc::Rc, cell::RefCell};\n\n");
         out.push_str("use perro_core::prelude::*;\n\n");
 
-        let exposed_fields: Vec<(&str, String, String)> = script.exposed.iter()
-            .map(|exposed| {
-                let name = exposed.name.as_str();
-                let rust_type = exposed.rust_type();
-                let default_val = exposed.default_value();
-                (name, rust_type, default_val)
-            })
-            .collect();
-
-        let variable_fields: Vec<(&str, String, String)> = script.variables.iter()
-            .map(|var| {
-                let name = var.name.as_str();
-                let rust_type = var.rust_type(); 
-                let default_val = var.default_value();
-                (name, rust_type, default_val)
-            })
-            .collect();
-
-        let mut merged_fields: HashMap<&str, (&String, &String, bool)> = HashMap::new();
-        let mut field_order: Vec<&str> = Vec::new(); // preserve output order
-
-        // Insert exposed first
-        for (name, rust_type, default_val) in &exposed_fields {
-            merged_fields.insert(name, (rust_type, default_val, true));
-            field_order.push(name);
-        }
-
-        // Then add variables only if not already present
-        for (name, rust_type, default_val) in &variable_fields {
-            if !merged_fields.contains_key(name) {
-                merged_fields.insert(name, (rust_type, default_val, false));
-                field_order.push(name);
-            }
-        }
+        // The `script.script_vars` is now the single, authoritative, and ordered list
+        // of all script-level variables as they appeared in the Pup source.
+        let all_script_vars = &script.variables; 
 
         // ========================================================================
         // {} - Main Script Structure
@@ -439,11 +396,10 @@ pub fn infer_expr_type(
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
         write!(out, "    node: {},\n", script.node_type).unwrap();
 
-        for name in &field_order {
-            let (rust_type, _, _) = merged_fields.get(name).unwrap();
-            write!(out, "    {}: {},\n", name, rust_type).unwrap();
+        // Use `all_script_vars` for defining struct fields to ensure the correct order
+        for var in all_script_vars {
+            write!(out, "    {}: {},\n", var.name, var.rust_type()).unwrap();
         }
-
 
         out.push_str("}\n\n");
 
@@ -484,65 +440,58 @@ pub fn infer_expr_type(
 
         // -----------------------------------------------------
         // 1. Emit local variable predefinitions for all fields
+        //    (Crucially, iterate in dependency order using `all_script_vars`)
         // -----------------------------------------------------
-        for name in &field_order {
-            let (_, _, is_exposed) = merged_fields.get(name).unwrap();
+        for var in all_script_vars { // Direct use of `all_script_vars`
+            let name = &var.name;
+            let mut init_code = var
+                .rust_initialization(&script, current_func);
 
-            let mut init_code = if *is_exposed {
-                script
-                    .exposed
-                    .iter()
-                    .find(|e| e.name == **name)
-                    .unwrap()
-                    .rust_initialization(&script, current_func)
-            } else {
-                script
-                    .variables
-                    .iter()
-                    .find(|v| v.name == **name)
-                    .unwrap()
-                    .rust_initialization(&script, current_func)
-            };
+            if init_code.contains("self.") {
+                init_code = init_code.replace("self.", "");
+            }
 
-                if init_code.contains("self.") {
-                    init_code = init_code.replace("self.", "");
+            let re_ident = Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\b").unwrap();
+
+            // track which other variables this initializer mentions
+            let mut referenced_vars = Vec::new();
+            for cap in re_ident.captures_iter(&init_code) {
+                let ref_name = cap[1].to_string();
+
+                // skip self-reference and Rust keywords and explicit types/constructors
+                // Ensure we only process variables that are *actual* variable references,
+                // not keywords or type names that happen to match part of the regex.
+                if ref_name == *name
+                   || !all_script_vars.iter().any(|v| v.name == ref_name) // Check against all_script_vars for proper dependency
+                    || !ref_name.chars().next().map_or(false, |c| c.is_lowercase()) // Simple heuristic: referenced variables are lowercase, types are PascalCase
+                    || ["let", "mut", "new", "HashMap", "vec", "json"].contains(&ref_name.as_str()) // Rust keywords/macros
+                {
+                    continue;
                 }
 
-                let re_ident = Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\b").unwrap();
-
-    // track which other variables this initializer mentions
-    let mut referenced_vars = Vec::new();
-    for cap in re_ident.captures_iter(&init_code) {
-        let ref_name = cap[1].to_string();
-
-        // skip self-reference and Rust keywords
-        if ref_name == *name
-            || !field_order.contains(&ref_name.as_str())
-            || ["let", "mut", "new", "HashMap", "vec", "json"].contains(&ref_name.as_str())
-        {
-            continue;
-        }
-
-        referenced_vars.push(ref_name);
-    }
-
-    // ------------------------------
-    // 3. If any referenced variable is non-Copy, ensure ".clone()"
-    // ------------------------------
-    for ref_name in referenced_vars {
-        if let Some(ref_type) = script.get_variable_type(&ref_name) {
-            if ref_type.requires_clone() {
-                // Replace *bare identifier* occurrences with `.clone()`
-                let re_replace =
-                    Regex::new(&format!(r"\b{}\b", regex::escape(&ref_name))).unwrap();
-                init_code = re_replace
-                    .replace_all(&init_code, format!("{}.clone()", ref_name))
-                    .to_string();
+                referenced_vars.push(ref_name);
             }
-        }
-    }
-                
 
+            // ------------------------------
+            // 3. If any referenced variable is non-Copy, ensure ".clone()"
+            // ------------------------------
+            for ref_name in referenced_vars {
+                if let Some(ref_type) = script.get_variable_type(&ref_name) {
+                    if ref_type.requires_clone() {
+                        // Replace *bare identifier* occurrences with `.clone()`
+                        let re_replace =
+                            Regex::new(&format!(r"\b{}\b", regex::escape(&ref_name))).unwrap();
+                        // Prevent double-cloning if `init_code` already has it (e.g., from `json!(var.clone())`)
+                        // This check is a heuristic; more robust would be to track expression types.
+                        if !init_code.contains(&format!("{}.clone()", ref_name)) {
+                             init_code = re_replace
+                                .replace_all(&init_code, format!("{}.clone()", ref_name))
+                                .to_string();
+                        }
+                    }
+                }
+            }
+                
             // Predeclare variable instead of inline it
             write!(out, "    let {} = {};\n", name, init_code).unwrap();
         }
@@ -559,8 +508,9 @@ pub fn infer_expr_type(
 
         // Fill in struct fields using locals (safe to reference one another now)
         write!(out, "        node,\n").unwrap();
-        for name in &field_order {
-            write!(out, "        {},\n", name).unwrap();
+        // Use `all_script_vars` here again for consistent ordering
+        for var in all_script_vars {
+            write!(out, "        {},\n", var.name).unwrap();
         }
 
         out.push_str("    })) as *mut dyn ScriptObject\n");
@@ -605,8 +555,7 @@ pub fn infer_expr_type(
 
         out.push_str(&implement_script_boilerplate(
             &format!("{}Script", pascal_struct_name),
-            &script.exposed,
-            &script.variables,
+            &script.variables, // Pass the unified list for exposed vars
             &script.functions
         ));
 
@@ -1378,8 +1327,8 @@ fn should_clone_expr(expr_code: &str, expr: &Expr, script: &Script, current_func
                     })
                     .unwrap_or(false);
 
-                let is_field = script.variables.iter().any(|v| v.name == *name)
-                    || script.exposed.iter().any(|v| v.name == *name);
+                // Check against `script_vars` to see if it's a field
+                let is_field = script.variables.iter().any(|v| v.name == *name);
 
                 let ident_code = if !is_local && is_field && !name.starts_with("self.") {
                     format!("self.{}", name)
@@ -2309,8 +2258,7 @@ impl Op {
 
 pub fn implement_script_boilerplate(
     struct_name: &str,
-    exposed: &[Variable],
-    variables: &[Variable],
+    script_vars: &[Variable], // This is the unified list of all script-level variables
     functions: &[Function],
 ) -> String {
     let mut out = String::with_capacity(8192);
@@ -2319,275 +2267,282 @@ pub fn implement_script_boilerplate(
     let mut apply_entries = String::with_capacity(512);
     let mut dispatch_entries = String::with_capacity(4096);
 
+    let mut public_var_count = 0;
+    let mut exposed_var_count = 0;
+
     //----------------------------------------------------
     // Generate VAR GET, SET, APPLY tables
     //----------------------------------------------------
-    for var in variables {
+    for var in script_vars {
         let name = &var.name;
         let var_id = string_to_u64(name);
         let (accessor, conv) = var.json_access();
 
-        // ------------------------------
-        // ✅ Special casing for Containers
-        // ------------------------------
-        if let Some(Type::Container(kind, elem_types)) = &var.typ {
-            match kind {
-                ContainerKind::Array => {
-                    let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
-                    let elem_rs = elem_ty.to_rust_type();
+        // If public, generate GET and SET entries
+        if var.is_public {
+            public_var_count += 1;
 
-                    // GET
-                    writeln!(
-                        get_entries,
-                        "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
-                            Some(serde_json::to_value(&script.{name}).unwrap_or_default())
-                        }});"
-                    )
-                    .unwrap();
-
-                    // SET
-                    if *elem_ty != Type::Object {
+            // ------------------------------
+            // Special casing for Containers (GET)
+            // ------------------------------
+            if let Some(Type::Container(kind, _elem_types)) = &var.typ { // Use _elem_types as we don't need to bind them all here
+                match kind {
+                    ContainerKind::Array | ContainerKind::FixedArray(_) | ContainerKind::Map => {
                         writeln!(
-                            set_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
-                                    script.{name} = vec_typed;
-                                    return Some(());
-                                }}
-                                None
+                            get_entries,
+                            "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                                Some(serde_json::to_value(&script.{name}).unwrap_or_default())
                             }});"
-                        )
-                        .unwrap();
-                    } else {
-                        writeln!(
-                            set_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                                if let Some(v) = val.as_array() {{
-                                    script.{name} = v.clone();
-                                    return Some(());
-                                }}
-                                None
-                            }});"
-                        )
-                        .unwrap();
+                        ).unwrap();
                     }
-
-                    // APPLY
-                    if *elem_ty != Type::Object {
-                        writeln!(
-                            apply_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                                if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
-                                    script.{name} = vec_typed;
-                                }}
-                            }});"
-                        )
-                        .unwrap();
-                    } else {
-                        writeln!(
-                            apply_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                                if let Some(v) = val.as_array() {{
-                                    script.{name} = v.clone();
-                                }}
-                            }});"
-                        )
-                        .unwrap();
-                    }
-
-                    continue;
                 }
+            } else {
+                 // Default GET for non-containers
+                 writeln!(
+                    get_entries,
+                    "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                        Some(json!(script.{name}))
+                    }});"
+                ).unwrap();
+            }
 
-                ContainerKind::FixedArray(size) => {
-                    let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
-                    let elem_rs = elem_ty.to_rust_type();
 
-                    // GET
-                    writeln!(
-                        get_entries,
-                        "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
-                            Some(serde_json::to_value(&script.{name}).unwrap_or_default())
-                        }});"
-                    )
-                    .unwrap();
-
-                    // SET
-                    if *elem_ty != Type::Object {
-                        writeln!(
-                            set_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                                if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val) {{
-                                    script.{name} = arr_typed;
-                                    return Some(());
-                                }}
-                                None
-                            }});"
-                        )
-                        .unwrap();
-                    } else {
-                        writeln!(
-                            set_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                                if let Some(v) = val.as_array() {{
-                                    let mut out: [Value; {size}] = [Value::Null; {size}];
-                                    for (i, el) in v.iter().enumerate().take({size}) {{
-                                        out[i] = el.clone();
+            // ------------------------------
+            // Special casing for Containers (SET)
+            // ------------------------------
+            if let Some(Type::Container(kind, elem_types)) = &var.typ {
+                match kind {
+                    ContainerKind::Array => {
+                        let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
+                        let elem_rs = elem_ty.to_rust_type();
+                        if *elem_ty != Type::Object {
+                            writeln!(
+                                set_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
+                                        script.{name} = vec_typed;
+                                        return Some(());
                                     }}
-                                    script.{name} = out;
-                                    return Some(());
-                                }}
-                                None
-                            }});"
-                        )
-                        .unwrap();
+                                    None
+                                }});"
+                            ).unwrap();
+                        } else {
+                            writeln!(
+                                set_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Some(v) = val.as_array() {{
+                                        script.{name} = v.clone();
+                                        return Some(());
+                                    }}
+                                    None
+                                }});"
+                            ).unwrap();
+                        }
                     }
+                    ContainerKind::FixedArray(size) => {
+                        let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
+                        let elem_rs = elem_ty.to_rust_type();
+                        if *elem_ty != Type::Object {
+                            writeln!(
+                                set_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val) {{
+                                        script.{name} = arr_typed;
+                                        return Some(());
+                                    }}
+                                    None
+                                }});"
+                            ).unwrap();
+                        } else {
+                            writeln!(
+                                set_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Some(v) = val.as_array() {{
+                                        let mut out: [{elem_rs}; {size}] = [Default::default(); {size}];
+                                        for (i, el) in v.iter().enumerate().take({size}) {{
+                                            out[i] = serde_json::from_value::<{elem_rs}>(el.clone()).unwrap_or_default();
+                                        }}
+                                        script.{name} = out;
+                                        return Some(());
+                                    }}
+                                    None
+                                }});"
+                            ).unwrap();
+                        }
+                    }
+                    ContainerKind::Map => {
+                        let key_ty = elem_types.get(0).unwrap_or(&Type::String);
+                        let val_ty = elem_types.get(1).unwrap_or(&Type::Object);
+                        let key_rs = key_ty.to_rust_type();
+                        let val_rs = val_ty.to_rust_type();
 
-                    // APPLY
+                        if *val_ty != Type::Object {
+                            writeln!(
+                                set_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
+                                        script.{name} = map_typed;
+                                        return Some(());
+                                    }}
+                                    None
+                                }});"
+                            ).unwrap();
+                        } else {
+                            writeln!(
+                                set_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Some(v) = val.as_object() {{
+                                        script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                        return Some(());
+                                    }}
+                                    None
+                                }});"
+                            ).unwrap();
+                        }
+                    }
+                }
+            } else {
+                 // Default SET for non-containers
+                if accessor == "__CUSTOM__" {
+                    let type_name = &conv;
+                    writeln!(
+                        set_entries,
+                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                            if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
+                                script.{name} = v;
+                                return Some(());
+                            }}
+                            None
+                        }});"
+                    ).unwrap();
+                } else {
+                    writeln!(
+                        set_entries,
+                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                            if let Some(v) = val.{accessor}() {{
+                                script.{name} = v{conv};
+                                return Some(());
+                            }}
+                            None
+                        }});"
+                    ).unwrap();
+                }
+            }
+        } // End of if var.is_public
+
+
+        // If exposed, generate APPLY entries
+        if var.is_exposed {
+            exposed_var_count += 1;
+
+            // ------------------------------
+            // Special casing for Containers (APPLY)
+            // ------------------------------
+            if let Some(Type::Container(kind, elem_types)) = &var.typ {
+                match kind {
+                    ContainerKind::Array => {
+                        let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
+                        let elem_rs = elem_ty.to_rust_type();
+                        if *elem_ty != Type::Object {
+                            writeln!(
+                                apply_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
+                                        script.{name} = vec_typed;
+                                    }}
+                                }});"
+                            ).unwrap();
+                        } else {
+                            writeln!(
+                                apply_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                    if let Some(v) = val.as_array() {{
+                                        script.{name} = v.clone();
+                                    }}
+                                }});"
+                            ).unwrap();
+                        }
+                    }
+                    ContainerKind::FixedArray(size) => {
+                        let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
+                        let elem_rs = elem_ty.to_rust_type();
+                        if *elem_ty != Type::Object {
+                            writeln!(
+                                apply_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                    if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val.clone()) {{
+                                        script.{name} = arr_typed;
+                                    }}
+                                }});"
+                            ).unwrap();
+                        } else {
+                            writeln!(
+                                apply_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                    if let Some(v) = val.as_array() {{
+                                        let mut out: [{elem_rs}; {size}] = [Default::default(); {size}];
+                                        for (i, el) in v.iter().enumerate().take({size}) {{
+                                            out[i] = serde_json::from_value::<{elem_rs}>(el.clone()).unwrap_or_default();
+                                        }}
+                                        script.{name} = out;
+                                    }}
+                                }});"
+                            ).unwrap();
+                        }
+                    }
+                    ContainerKind::Map => {
+                        let key_ty = elem_types.get(0).unwrap_or(&Type::String);
+                        let val_ty = elem_types.get(1).unwrap_or(&Type::Object);
+                        let key_rs = key_ty.to_rust_type();
+                        let val_rs = val_ty.to_rust_type();
+
+                        if *val_ty != Type::Object {
+                            writeln!(
+                                apply_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
+                                        script.{name} = map_typed;
+                                    }}
+                                }});"
+                            ).unwrap();
+                        } else {
+                            writeln!(
+                                apply_entries,
+                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                    if let Some(v) = val.as_object() {{
+                                        script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                    }}
+                                }});"
+                            ).unwrap();
+                        }
+                    }
+                }
+            } else {
+                 // Default APPLY for non-containers
+                if accessor == "__CUSTOM__" {
+                    let type_name = &conv;
                     writeln!(
                         apply_entries,
                         "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                            if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val.clone()) {{
-                                script.{name} = arr_typed;
+                            if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
+                                script.{name} = v;
                             }}
                         }});"
-                    )
-                    .unwrap();
-
-                    continue;
-                }
-
-                ContainerKind::Map => {
-                    let key_ty = elem_types.get(0).unwrap_or(&Type::String);
-                    let val_ty = elem_types.get(1).unwrap_or(&Type::Object);
-                    let key_rs = key_ty.to_rust_type();
-                    let val_rs = val_ty.to_rust_type();
-
-                    // GET
+                    ).unwrap();
+                } else {
                     writeln!(
-                        get_entries,
-                        "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
-                            Some(serde_json::to_value(&script.{name}).unwrap_or_default())
+                        apply_entries,
+                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                            if let Some(v) = val.{accessor}() {{
+                                script.{name} = v{conv};
+                            }}
                         }});"
-                    )
-                    .unwrap();
-
-                    // SET
-                    if *val_ty != Type::Object {
-                        writeln!(
-                            set_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
-                                    script.{name} = map_typed;
-                                    return Some(());
-                                }}
-                                None
-                            }});"
-                        )
-                        .unwrap();
-                    } else {
-                        writeln!(
-                            set_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                                if let Some(v) = val.as_object() {{
-                                    script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                    return Some(());
-                                }}
-                                None
-                            }});"
-                        )
-                        .unwrap();
-                    }
-
-                    // APPLY
-                    if *val_ty != Type::Object {
-                        writeln!(
-                            apply_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                                if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
-                                    script.{name} = map_typed;
-                                }}
-                            }});"
-                        )
-                        .unwrap();
-                    } else {
-                        writeln!(
-                            apply_entries,
-                            "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                                if let Some(v) = val.as_object() {{
-                                    script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                                }}
-                            }});"
-                        )
-                        .unwrap();
-                    }
-
-                    continue;
+                    ).unwrap();
                 }
-                _ => {}
             }
-        }
+        } // End of if var.is_exposed
+    } // End of for loop for script_vars
 
-        // ------------------------------
-        // Default fallback (non-container)
-        // ------------------------------
-        if accessor == "__CUSTOM__" {
-            let type_name = &conv;
-            writeln!(
-                set_entries,
-                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                    if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
-                        script.{name} = v;
-                        return Some(());
-                    }}
-                    None
-                }});"
-            )
-            .unwrap();
-        } else {
-            writeln!(
-                set_entries,
-                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                    if let Some(v) = val.{accessor}() {{
-                        script.{name} = v{conv};
-                        return Some(());
-                    }}
-                    None
-                }});"
-            )
-            .unwrap();
-        }
-
-        writeln!(
-            get_entries,
-            "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
-                Some(json!(script.{name}))
-            }});"
-        )
-        .unwrap();
-
-        if accessor == "__CUSTOM__" {
-            let type_name = &conv;
-            writeln!(
-                apply_entries,
-                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                    if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
-                        script.{name} = v;
-                    }}
-                }});"
-            )
-            .unwrap();
-        } else {
-            writeln!(
-                apply_entries,
-                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
-                    if let Some(v) = val.{accessor}() {{
-                        script.{name} = v{conv};
-                    }}
-                }});"
-            )
-            .unwrap();
-        }
-    }
 
     //----------------------------------------------------
     // FUNCTION DISPATCH TABLE GENERATION (unchanged)
@@ -2713,7 +2668,7 @@ static VAR_GET_TABLE: once_cell::sync::Lazy<
 > = once_cell::sync::Lazy::new(|| {{
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&{struct_name}) -> Option<Value>> =
-        HashMap::with_capacity({var_count});
+        HashMap::with_capacity({public_var_count});
 {get_entries}    m
 }});
 
@@ -2722,7 +2677,7 @@ static VAR_SET_TABLE: once_cell::sync::Lazy<
 > = once_cell::sync::Lazy::new(|| {{
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut {struct_name}, Value) -> Option<()>> =
-        HashMap::with_capacity({var_count});
+        HashMap::with_capacity({public_var_count});
 {set_entries}    m
 }});
 
@@ -2731,7 +2686,7 @@ static VAR_APPLY_TABLE: once_cell::sync::Lazy<
 > = once_cell::sync::Lazy::new(|| {{
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut {struct_name}, &Value)> =
-        HashMap::with_capacity({var_count});
+        HashMap::with_capacity({exposed_var_count});
 {apply_entries}    m
 }});
 
@@ -2747,7 +2702,8 @@ static DISPATCH_TABLE: once_cell::sync::Lazy<
 {dispatch_entries}    m
 }});"#,
         struct_name = struct_name,
-        var_count = variables.len(),
+        public_var_count = public_var_count, // Count of public variables
+        exposed_var_count = exposed_var_count, // Count of truly exposed variables
         get_entries = get_entries,
         set_entries = set_entries,
         apply_entries = apply_entries,
@@ -2844,30 +2800,31 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
     let actual_struct_name_from_struct = captures[1].to_string();
     let struct_body = captures[2].to_string();
 
-    let mut exposed = Vec::new();
-    let mut variables = Vec::new();
+    let mut variables = Vec::new(); // This variable is no longer needed but its usage is removed below
 
     let expose_re = Regex::new(r"///\s*@expose[^\n]*\n\s*(?:pub\s+)?(\w+)\s*:\s*([^,]+),?").unwrap();
     for cap in expose_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
         let typ = cap[2].trim().to_string();
-        exposed.push(Variable {
+        // This old way of populating 'exposed' and 'variables' is no longer used,
+        // as the parser now populates 'script_vars' directly with flags.
+        // Keeping it for now as a comment for context of removal in future refactors.
+        let mut is_pub = false;
+        if cap[0].contains("pub") {is_pub = true;}
+        variables.push(Variable {
             name: name.clone(),
             typ: Some(Variable::parse_type(&typ)),
             value: None,
+            is_exposed: true,
+            is_public: is_pub, 
         });
-        if cap[0].contains("pub") {
-            variables.push(Variable {
-                name,
-                typ: Some(Variable::parse_type(&typ)),
-                value: None,
-            });
-    }
     }
 
     let pub_re = Regex::new(r"pub\s+(\w+)\s*:\s*([^,\n}]+)").unwrap();
     for cap in pub_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
+        // This old way of populating 'variables' is no longer used.
+        // Its functionality is now absorbed by 'script_vars' in the parser.
         if name == "node" || variables.iter().any(|v| v.name == name) {
             continue;
         }
@@ -2876,7 +2833,9 @@ pub fn derive_rust_perro_script(project_path: &Path, code: &str, struct_name: &s
             name,
             typ: Some(Variable::parse_type(&typ)),
             value: None,
-        });
+            is_exposed: false, // Not explicitly exposed
+            is_public: true, // Explicitly pub
+        }); 
     }
 
     let lower_name = struct_name.to_lowercase();
@@ -2923,9 +2882,8 @@ if let Some(impl_cap) = impl_block_re.captures(&code) {
             let param = param.strip_prefix("mut ").unwrap_or(param).trim();
             
             // Split by ':' to get name and type
-            if let Some((name, typ)) = param.split_once(':') {
+            if let Some((name, typ_str)) = param.split_once(':') {
                 let name = name.trim().to_string();
-                let typ_str = typ.trim();
                 let typ = Variable::parse_type(typ_str);
                 
                 params.push(Param {
@@ -2961,7 +2919,7 @@ if let Some(impl_cap) = impl_block_re.captures(&code) {
         code.to_string()
     };
 
-    let boilerplate = implement_script_boilerplate(&actual_struct_name, &exposed, &variables, &functions);
+    let boilerplate = implement_script_boilerplate(&actual_struct_name,&variables, &functions);
     let combined = format!("{}\n\n{}", final_contents, boilerplate);
 
     write_to_crate(project_path, &combined, struct_name)

@@ -21,8 +21,8 @@ use perro_core::prelude::*;
 
 pub struct MainPupScript {
     node: UINode,
-    bob: String,
     script_updates: i32,
+    bob: String,
 }
 
 // ========================================================================
@@ -32,13 +32,13 @@ pub struct MainPupScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn main_pup_create_script() -> *mut dyn ScriptObject {
     let node = UINode::new("MainPup");
-    let bob = String::new();
     let script_updates = 0i32;
+    let bob = String::new();
 
     Box::into_raw(Box::new(MainPupScript {
         node,
-        bob,
         script_updates,
+        bob,
     })) as *mut dyn ScriptObject
 }
 
@@ -261,11 +261,11 @@ static VAR_GET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&MainPupScript) -> Option<Value>> =
         HashMap::with_capacity(2);
         m.insert(16121189368928505687u64, |script: &MainPupScript| -> Option<Value> {
-                Some(json!(script.script_updates))
-            });
+                        Some(json!(script.script_updates))
+                    });
         m.insert(21748447695211092u64, |script: &MainPupScript| -> Option<Value> {
-                Some(json!(script.bob))
-            });
+                        Some(json!(script.bob))
+                    });
     m
 });
 
@@ -276,19 +276,19 @@ static VAR_SET_TABLE: once_cell::sync::Lazy<
     let mut m: HashMap<u64, fn(&mut MainPupScript, Value) -> Option<()>> =
         HashMap::with_capacity(2);
         m.insert(16121189368928505687u64, |script: &mut MainPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_i64() {
-                        script.script_updates = v as i32;
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_i64() {
+                                script.script_updates = v as i32;
+                                return Some(());
+                            }
+                            None
+                        });
         m.insert(21748447695211092u64, |script: &mut MainPupScript, val: Value| -> Option<()> {
-                    if let Some(v) = val.as_str() {
-                        script.bob = v.to_string();
-                        return Some(());
-                    }
-                    None
-                });
+                            if let Some(v) = val.as_str() {
+                                script.bob = v.to_string();
+                                return Some(());
+                            }
+                            None
+                        });
     m
 });
 
@@ -297,17 +297,12 @@ static VAR_APPLY_TABLE: once_cell::sync::Lazy<
 > = once_cell::sync::Lazy::new(|| {
     use std::collections::HashMap;
     let mut m: HashMap<u64, fn(&mut MainPupScript, &Value)> =
-        HashMap::with_capacity(2);
-        m.insert(16121189368928505687u64, |script: &mut MainPupScript, val: &Value| {
-                    if let Some(v) = val.as_i64() {
-                        script.script_updates = v as i32;
-                    }
-                });
+        HashMap::with_capacity(1);
         m.insert(21748447695211092u64, |script: &mut MainPupScript, val: &Value| {
-                    if let Some(v) = val.as_str() {
-                        script.bob = v.to_string();
-                    }
-                });
+                            if let Some(v) = val.as_str() {
+                                script.bob = v.to_string();
+                            }
+                        });
     m
 });
 

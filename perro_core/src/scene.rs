@@ -166,6 +166,20 @@ impl<P: ScriptProvider> Scene<P> {
                 let root_id = *game_scene.get_root().get_id();
                 let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
                 game_scene.scripts.insert(root_id, handle);
+
+                let project_ref = game_scene.project.clone();
+                 let mut project_borrow = project_ref.borrow_mut();
+
+        let now = Instant::now();
+        let true_delta = match game_scene.last_scene_update {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            None => 0.0,
+        };
+
+
+        let mut api = ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow);
+        api.call_init(root_id);
+                
             }
         }
     }
@@ -669,6 +683,20 @@ impl Scene<DllScriptProvider> {
                     let root_id = *game_scene.get_root().get_id();
                     let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
                     game_scene.scripts.insert(root_id, handle);
+
+                    
+                let project_ref = game_scene.project.clone();
+                 let mut project_borrow = project_ref.borrow_mut();
+
+        let now = Instant::now();
+        let true_delta = match game_scene.last_scene_update {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            None => 0.0,
+        };
+
+
+        let mut api = ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow);
+        api.call_init(root_id);
                 }
                 else {
                     println!("❌ Could not find symbol for {}", identifier);

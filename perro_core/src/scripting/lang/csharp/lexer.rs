@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)] // ADD Clone to CsToken
 pub enum CsToken {
     Using,
     Namespace,
@@ -44,12 +44,15 @@ pub enum CsToken {
     Star,
     Slash,
     Eof,
+
+    True,
+    False
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone)] // ADD Clone to CsLexer
 pub struct CsLexer {
     input: Vec<char>,
-    pos: usize,
+    pub pos: usize,
 }
 
 impl CsLexer {
@@ -63,6 +66,15 @@ impl CsLexer {
     pub fn peek(&self) -> Option<char> {
         self.input.get(self.pos).copied()
     }
+
+    // --- NEW `peek_token` METHOD ---
+    pub fn peek_token(&self) -> CsToken {
+        let mut temp_lexer = self.clone(); // Create a temporary clone
+        temp_lexer.skip_whitespace_and_comments(); // Skip whitespace/comments for the peeked token
+        let token = temp_lexer.next_token(); // Get the next token
+        token
+    }
+    // -------------------------------
 
     fn advance(&mut self) -> Option<char> {
         let ch = self.peek();
@@ -206,6 +218,8 @@ impl CsLexer {
                         CsToken::AccessModifier(lower)
                     }
                     "base" => CsToken::Base,
+                    "true" => CsToken::True,
+                    "false" => CsToken::False,
                     "new" => CsToken::New,
                     "this" => CsToken::This,
                     "var" => CsToken::Var,

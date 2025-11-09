@@ -51,3 +51,5 @@ fontdue = "0.8"
 swash = "0.1"
 
 smallvec = "1.11"
+
+zstd = { version = "0.13", features = ["zstdmt"] }
