@@ -13,6 +13,7 @@ serde = { version = "1.0", features = ["derive","rc"] }
 serde_json = "1.0"
 bincode = "1.3"
 rand = "0.8"
+rayon = "1.8"
 
 winit = { version = "0.30.8" }
 env_logger = {version = "0.11.5"}

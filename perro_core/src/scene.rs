@@ -3,7 +3,7 @@ use crate::{
 };
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use smallvec::SmallVec;
 use wgpu::RenderPass;
@@ -11,16 +11,100 @@ use std::{
     any::Any, cell::RefCell, collections::HashMap, io, path::PathBuf, rc::Rc, str::FromStr, sync::mpsc::Sender, time::{Duration, Instant} // NEW import
 };
 use uuid::Uuid;
+use rayon::prelude::*;
 
 //
 // ---------------- SceneData ----------------
 //
 
 /// Pure serializable scene data (no runtime state)
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct SceneData {
     pub root_id: Uuid,
     pub nodes: IndexMap<Uuid, SceneNode>,
+}
+
+impl<'de> Deserialize<'de> for SceneData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawSceneData {
+            root_id: Uuid,
+            nodes: IndexMap<Uuid, SceneNode>,
+            #[serde(default)]
+            node_count: Option<usize>,
+        }
+        
+        let raw = RawSceneData::deserialize(deserializer)?;
+        let capacity = raw.node_count.unwrap_or(raw.nodes.len());
+        
+        // Only use parallel processing for large scenes
+        if raw.nodes.len() > 100 {
+            // Convert to Vec for parallel processing
+            let nodes_vec: Vec<(Uuid, SceneNode)> = raw.nodes.into_iter().collect();
+            
+            // Process nodes in parallel
+            let processed_nodes: Vec<(Uuid, SceneNode)> = nodes_vec
+                .into_par_iter()
+                .map(|(id, mut node)| {
+                    node.set_id(id);
+                    node.clear_children();
+                    (id, node)
+                })
+                .collect();
+            
+            // Convert back to IndexMap (sequential - preserves order)
+            let mut nodes = IndexMap::with_capacity(capacity);
+            let mut parent_children: IndexMap<Uuid, Vec<Uuid>> = IndexMap::with_capacity(capacity / 4);
+            
+            for (id, node) in processed_nodes {
+                if let Some(parent_id) = node.get_parent() {
+                    parent_children.entry(parent_id).or_default().push(id);
+                }
+                nodes.insert(id, node);
+            }
+            
+            // Apply relationships (sequential)
+            for (parent_id, children) in parent_children {
+                if let Some(parent) = nodes.get_mut(&parent_id) {
+                    for child_id in children {
+                        parent.add_child(child_id);
+                    }
+                }
+            }
+            
+            Ok(SceneData { root_id: raw.root_id, nodes })
+            
+        } else {
+            // Use sequential processing for smaller scenes
+            let mut nodes = IndexMap::with_capacity(capacity);
+            let mut parent_children: IndexMap<Uuid, Vec<Uuid>> = IndexMap::with_capacity(capacity / 4);
+            
+            for (id, mut node) in raw.nodes {
+                node.set_id(id);
+                node.clear_children();
+                
+                if let Some(parent_id) = node.get_parent() {
+                    parent_children.entry(parent_id).or_default().push(id);
+                }
+                
+                nodes.insert(id, node);
+            }
+            
+            // Apply relationships
+            for (parent_id, children) in parent_children {
+                if let Some(parent) = nodes.get_mut(&parent_id) {
+                    for child_id in children {
+                        parent.add_child(child_id);
+                    }
+                }
+            }
+            
+            Ok(SceneData { root_id: raw.root_id, nodes })
+        }
+    }
 }
 
 impl SceneData {
@@ -42,33 +126,34 @@ impl SceneData {
     /// Load scene data from disk or pak
     pub fn load(res_path: &str) -> io::Result<Self> {
         let bytes = load_asset(res_path)?;
-        let mut data: SceneData = serde_json::from_slice(&bytes)
+        let data: SceneData = serde_json::from_slice(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        Self::fix_relationships(&mut data);
         Ok(data)
     }
 
 
-
-    pub fn fix_relationships(data: &mut SceneData) {
-        // Fix IDs and parent/child relationships
-        for (&key, node) in data.nodes.iter_mut() {
-            node.set_id(key);
-            node.get_children_mut().clear();
+   pub fn fix_relationships(data: &mut SceneData) {
+    let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    
+    for (&node_id, node) in data.nodes.iter_mut() {
+        node.set_id(node_id);
+        node.get_children_mut().clear();
+        
+        // Collect relationships during same iteration
+        if let Some(parent_id) = node.get_parent() {
+            parent_children.entry(parent_id).or_default().push(node_id);
         }
-
-        let child_parent_pairs: Vec<(Uuid, Uuid)> = data
-            .nodes
-            .iter()
-            .filter_map(|(&child_id, node)| node.get_parent().map(|pid| (child_id, pid)))
-            .collect();
-
-        for (child_id, parent_id) in child_parent_pairs {
-            if let Some(parent) = data.nodes.get_mut(&parent_id) {
+    }
+    
+    // Apply batched relationships
+    for (parent_id, children) in parent_children {
+        if let Some(parent) = data.nodes.get_mut(&parent_id) {
+            for child_id in children {
                 parent.add_child(child_id);
             }
         }
     }
+}
 }
 
 //
