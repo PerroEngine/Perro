@@ -1,27 +1,59 @@
 use std::{collections::HashMap, time::Instant};
+use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::{
-    asset_io::load_asset, ast::{FurAnchor, FurElement, FurNode}, structs2d::{Color, Vector2}, ui_element::{BaseElement, BaseUIElement, UIElement}, ui_elements::{ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel}, ui_text::UIText}, ui_node::UINode
+    asset_io::load_asset,
+    ast::{FurAnchor, FurElement, FurNode},
+    structs2d::{Color, Vector2},
+    ui_element::{BaseElement, BaseUIElement, UIElement},
+    ui_elements::{
+        ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel},
+        ui_text::UIText,
+    },
+    ui_node::UINode,
 };
+
+// =================== UTILITIES ===================
+
+// OPT: Reuse static field names to avoid tiny heap allocs
+const SIZE_X: &str = "size.x";
+const SIZE_Y: &str = "size.y";
+const SCALE_X: &str = "transform.scale.x";
+const SCALE_Y: &str = "transform.scale.y";
+const POS_X: &str = "transform.position.x";
+const POS_Y: &str = "transform.position.y";
+const ROT: &str = "transform.rotation";
+
+// Small inline splitters for < 3 elements — avoid Vec allocs
+fn split2<'a>(val: &'a str, sep: char) -> (Option<&'a str>, Option<&'a str>) {
+    let mut iter = val.split(sep).map(str::trim);
+    (iter.next(), iter.next())
+}
+
+// Compact numeric parse with fallback and optional '%' handling
+fn parse_f32_percent(v: &str, default: f32) -> (f32, bool) {
+    let has_pct = v.ends_with('%');
+    let trimmed = v.trim_end_matches('%');
+    (trimmed.parse::<f32>().unwrap_or(default), has_pct)
+}
 
 // =================== FILE PARSING ===================
 
-/// Parses a `.fur` file into a `Vec<FurNode>` AST
 pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     let bytes = load_asset(path)
         .map_err(|e| format!("Failed to read .fur file {}: {}", path, e))?;
-    let code = String::from_utf8(bytes)
-        .map_err(|e| format!("Invalid UTF-8 in .fur file {}: {}", path, e))?;
 
-    let mut parser = crate::parser::FurParser::new(&code)
-        .map_err(|e| format!("Failed to init FurParser: {}", e))?;
+    let code = String::from_utf8_lossy(&bytes);
+    let mut parser =
+        crate::parser::FurParser::new(&code).map_err(|e| format!("Init parser: {}", e))?;
 
     let start = Instant::now();
-    let ast = parser
-        .parse()
-        .map_err(|e| format!("Failed to parse .fur file {}: {}", path, e))?;
-    println!("Parsing {} took: {:?}", path, start.elapsed());
+    let ast = parser.parse().map_err(|e| format!("Parse fail {}: {}", path, e))?;
+
+    if cfg!(debug_assertions) {
+        println!("Parsed {} in {:?}", path, start.elapsed());
+    }
 
     Ok(ast)
 }
@@ -29,23 +61,23 @@ pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
 // =================== COLOR PARSING ===================
 
 pub fn parse_color_with_opacity(value: &str) -> Result<Color, String> {
-    let mut parts = value.splitn(2, '_');
-    let base = parts.next().unwrap();
-    let opacity_part = parts.next();
+    let (base, opacity_part) = match value.split_once('_') {
+        Some((b, o)) => (b, Some(o)),
+        None => (value, None),
+    };
 
-    let mut color = if base.starts_with('#') {
-        Color::from_hex(base).map_err(|e| format!("Invalid hex color '{}': {}", base, e))?
+    let mut color = if let Some(hex) = base.strip_prefix('#') {
+        Color::from_hex(hex).map_err(|e| format!("Invalid hex '{}': {}", base, e))?
     } else {
         Color::from_preset(base).ok_or_else(|| format!("Unknown preset color '{}'", base))?
     };
 
-    if let Some(opacity_str) = opacity_part {
-        let opacity_percent = opacity_str.parse::<u8>()
-            .map_err(|_| format!("Invalid opacity '{}'", opacity_str))?;
-        if opacity_percent > 100 {
-            return Err(format!("Opacity '{}' out of range 0-100", opacity_percent));
+    if let Some(op) = opacity_part {
+        let p = op.parse::<u8>().map_err(|_| format!("Bad opacity '{}'", op))?;
+        if p > 100 {
+            return Err(format!("Opacity '{}' out of 0–100", p));
         }
-        color.a = (opacity_percent as f32 / 100.0 * 255.0).round() as u8;
+        color.a = ((p as f32 / 100.0) * 255.0) as u8;
     }
 
     Ok(color)
@@ -54,136 +86,125 @@ pub fn parse_color_with_opacity(value: &str) -> Result<Color, String> {
 // =================== BASE ATTRIBUTES ===================
 
 fn parse_compound(value: &str) -> (Option<&str>, Option<&str>) {
-    let parts: Vec<&str> = value.split(',').map(|p| p.trim()).collect();
-    match parts.len() {
-        0 => (None, None),
-        1 => (Some(parts[0]), Some(parts[0])),
-        _ => (Some(parts[0]), Some(parts[1])),
-    }
+    split2(value, ',')
 }
 
-fn apply_base_attributes(base: &mut BaseUIElement, attributes: &HashMap<String, String>) {
+fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<String, String>) {
     base.style_map.clear();
 
-    // Defaults
+    // OPT: static defaults cached in BaseUIElement::default() as well
     base.size = Vector2 { x: 32.0, y: 32.0 };
     base.transform.scale = Vector2 { x: 1.0, y: 1.0 };
     base.transform.position = Vector2 { x: 0.0, y: 0.0 };
     base.transform.rotation = 0.0;
     base.pivot = Vector2 { x: 0.5, y: 0.5 };
 
-    for (key, val) in attributes {
-        let val = val.trim();
-
+    for (key, val) in attrs.iter() {
+        let v = val.trim();
         match key.as_str() {
             // Pivot
             "pv" => {
-                let (x, y) = parse_compound(val);
-                if let Some(x_val) = x {
-                    base.pivot.x = match x_val {
-                        "tl" | "l" => 0.0, "t" | "c" => 0.5, "tr" | "r" => 1.0,
-                        "bl" => 0.0, "b" => 0.5, "br" => 1.0,
-                        _ => x_val.parse().unwrap_or(0.5)
+                let (x, y) = parse_compound(v);
+                if let Some(xv) = x {
+                    base.pivot.x = match xv {
+                        "tl" | "l" => 0.0,
+                        "t" | "c" => 0.5,
+                        "tr" | "r" => 1.0,
+                        "bl" => 0.0,
+                        "b" => 0.5,
+                        "br" => 1.0,
+                        _ => xv.parse().unwrap_or(0.5),
                     };
                 }
-                if let Some(y_val) = y {
-                    base.pivot.y = match y_val {
+                if let Some(yv) = y {
+                    base.pivot.y = match yv {
                         "tl" | "t" | "tr" => 1.0,
                         "l" | "c" | "r" => 0.5,
                         "bl" | "b" | "br" => 0.0,
-                        _ => y_val.parse().unwrap_or(0.5)
+                        _ => yv.parse().unwrap_or(0.5),
                     };
                 }
             }
-            "pv-x" => base.pivot.x = val.parse().unwrap_or(base.pivot.x),
-            "pv-y" => base.pivot.y = val.parse().unwrap_or(base.pivot.y),
+            "pv-x" => base.pivot.x = v.parse().unwrap_or(base.pivot.x),
+            "pv-y" => base.pivot.y = v.parse().unwrap_or(base.pivot.y),
 
-            // Translation
-            "tx" => if let Some(x_val) = parse_compound(val).0 {
-                let parsed = x_val.trim_end_matches('%').parse().unwrap_or(0.0);
-                if x_val.ends_with('%') { base.style_map.insert("transform.position.x".into(), parsed); }
-                else { base.transform.position.x = parsed; }
-            },
-            "ty" => if let Some(y_val) = parse_compound(val).1 {
-                let parsed = y_val.trim_end_matches('%').parse().unwrap_or(0.0);
-                if y_val.ends_with('%') { base.style_map.insert("transform.position.y".into(), parsed); }
-                else { base.transform.position.y = parsed; }
-            },
-
-            // Scale
+            "tx" => {
+                let (n, pct) = parse_f32_percent(v, 0.0);
+                if pct {
+                    base.style_map.insert(POS_X.into(), n);
+                } else {
+                    base.transform.position.x = n;
+                }
+            }
+            "ty" => {
+                let (n, pct) = parse_f32_percent(v, 0.0);
+                if pct {
+                    base.style_map.insert(POS_Y.into(), n);
+                } else {
+                    base.transform.position.y = n;
+                }
+            }
             "scl" => {
-                let (x_val, y_val) = parse_compound(val);
-                if let Some(xv) = x_val {
-                    let parsed = xv.trim_end_matches('%').parse().unwrap_or(1.0);
-                    if xv.ends_with('%') { base.style_map.insert("transform.scale.x".into(), parsed); }
-                    else { base.transform.scale.x = parsed; }
+                let (x, y) = parse_compound(v);
+                if let Some(xv) = x {
+                    let (f, pct) = parse_f32_percent(xv, 1.0);
+                    if pct {
+                        base.style_map.insert(SCALE_X.into(), f);
+                    } else {
+                        base.transform.scale.x = f;
+                    }
                 }
-                if let Some(yv) = y_val {
-                    let parsed = yv.trim_end_matches('%').parse().unwrap_or(1.0);
-                    if yv.ends_with('%') { base.style_map.insert("transform.scale.y".into(), parsed); }
-                    else { base.transform.scale.y = parsed; }
+                if let Some(yv) = y {
+                    let (f, pct) = parse_f32_percent(yv, 1.0);
+                    if pct {
+                        base.style_map.insert(SCALE_Y.into(), f);
+                    } else {
+                        base.transform.scale.y = f;
+                    }
                 }
-            }
-            "scl-x" => {
-                let parsed = val.trim_end_matches('%').parse().unwrap_or(base.transform.scale.x);
-                if val.ends_with('%') { base.style_map.insert("transform.scale.x".into(), parsed); }
-                else { base.transform.scale.x = parsed; }
-            }
-            "scl-y" => {
-                let parsed = val.trim_end_matches('%').parse().unwrap_or(base.transform.scale.y);
-                if val.ends_with('%') { base.style_map.insert("transform.scale.y".into(), parsed); }
-                else { base.transform.scale.y = parsed; }
             }
 
-            // Size
-            "sz" => {
-                let (x_val, y_val) = parse_compound(val);
-                if let Some(xv) = x_val {
-                    let parsed = xv.trim_end_matches('%').parse().unwrap_or(base.size.x);
-                    if xv.ends_with('%') { base.style_map.insert("size.x".into(), parsed); }
-                    else { base.size.x = parsed; }
-                }
-                if let Some(yv) = y_val {
-                    let parsed = yv.trim_end_matches('%').parse().unwrap_or(base.size.y);
-                    if yv.ends_with('%') { base.style_map.insert("size.y".into(), parsed); }
-                    else { base.size.y = parsed; }
-                }
-            }
             "w" | "sz-x" => {
-                let parsed = val.trim_end_matches('%').parse().unwrap_or(base.size.x);
-                if val.ends_with('%') { base.style_map.insert("size.x".into(), parsed); }
-                else { base.size.x = parsed; }
+                let (f, pct) = parse_f32_percent(v, base.size.x);
+                if pct {
+                    base.style_map.insert(SIZE_X.into(), f);
+                } else {
+                    base.size.x = f;
+                }
             }
             "h" | "sz-y" => {
-                let parsed = val.trim_end_matches('%').parse().unwrap_or(base.size.y);
-                if val.ends_with('%') { base.style_map.insert("size.y".into(), parsed); }
-                else { base.size.y = parsed; }
+                let (f, pct) = parse_f32_percent(v, base.size.y);
+                if pct {
+                    base.style_map.insert(SIZE_Y.into(), f);
+                } else {
+                    base.size.y = f;
+                }
             }
 
-            // Rotation
             "rot" => {
-                let parsed = val.trim_end_matches('%').parse().unwrap_or(base.transform.rotation);
-                if val.ends_with('%') { base.style_map.insert("transform.rotation".into(), parsed); }
-                else { base.transform.rotation = parsed; }
+                let (f, pct) = parse_f32_percent(v, base.transform.rotation);
+                if pct {
+                    base.style_map.insert(ROT.into(), f);
+                } else {
+                    base.transform.rotation = f;
+                }
             }
 
-            // Z-index
-            "z" => base.z_index = val.parse().unwrap_or(base.z_index),
-
-            // Anchor
-            "anchor" => base.anchor = match val {
-                "tl" => FurAnchor::TopLeft,
-                "t"  => FurAnchor::Top,
-                "tr" => FurAnchor::TopRight,
-                "l"  => FurAnchor::Left,
-                "c"  => FurAnchor::Center,
-                "r"  => FurAnchor::Right,
-                "bl" => FurAnchor::BottomLeft,
-                "b"  => FurAnchor::Bottom,
-                "br" => FurAnchor::BottomRight,
-                _    => FurAnchor::Center,
-            },
-
+            "z" => base.z_index = v.parse().unwrap_or(base.z_index),
+            "anchor" => {
+                base.anchor = match v {
+                    "tl" => FurAnchor::TopLeft,
+                    "t" => FurAnchor::Top,
+                    "tr" => FurAnchor::TopRight,
+                    "l" => FurAnchor::Left,
+                    "c" => FurAnchor::Center,
+                    "r" => FurAnchor::Right,
+                    "bl" => FurAnchor::BottomLeft,
+                    "b" => FurAnchor::Bottom,
+                    "br" => FurAnchor::BottomRight,
+                    _ => FurAnchor::Center,
+                }
+            }
             _ => {}
         }
     }
@@ -192,26 +213,33 @@ fn apply_base_attributes(base: &mut BaseUIElement, attributes: &HashMap<String, 
 // =================== ELEMENT CONVERSION ===================
 
 fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
-    match fur.tag_name.as_str() {
+    let tag = fur.tag_name.as_str();
+
+    macro_rules! make {
+        ($typ:expr) => {{
+            let mut el = $typ;
+            el.set_name(&fur.id);
+            apply_base_attributes(&mut el.base, &fur.attributes);
+            UIElement::$typ(el)
+        }};
+    }
+
+    match tag {
         "UI" => {
-            // UI is a full-size BoxContainer
-            let mut container = BoxContainer::default();
-            container.set_name(&fur.id);
-            apply_base_attributes(&mut container.base, &fur.attributes);
-
-            // Force 100% width and height
-            container.base.style_map.insert("size.x".into(), 100.0);
-            container.base.style_map.insert("size.y".into(), 100.0);
-
-            Some(UIElement::BoxContainer(container))
-        },
+            let mut ui = BoxContainer::default();
+            ui.set_name(&fur.id);
+            apply_base_attributes(&mut ui.base, &fur.attributes);
+            ui.base.style_map.insert(SIZE_X.into(), 100.0);
+            ui.base.style_map.insert(SIZE_Y.into(), 100.0);
+            Some(UIElement::BoxContainer(ui))
+        }
 
         "Box" => {
-            let mut container = BoxContainer::default();
-            container.set_name(&fur.id);
-            apply_base_attributes(&mut container.base, &fur.attributes);
-            Some(UIElement::BoxContainer(container))
-        },
+            let mut el = BoxContainer::default();
+            el.set_name(&fur.id);
+            apply_base_attributes(&mut el.base, &fur.attributes);
+            Some(UIElement::BoxContainer(el))
+        }
 
         "Panel" => {
             let mut panel = UIPanel::default();
@@ -219,194 +247,104 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             apply_base_attributes(&mut panel.base, &fur.attributes);
 
             if let Some(bg) = fur.attributes.get("bg") {
-                if let Ok(color) = parse_color_with_opacity(bg) { 
-                    panel.props.background_color = Some(color); 
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    panel.props.background_color = Some(c);
                 }
             }
-            if let Some(border_c) = fur.attributes.get("border-c") {
-                if let Ok(color) = parse_color_with_opacity(border_c) { 
-                    panel.props.border_color = Some(color); 
+            if let Some(c) = fur.attributes.get("border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    panel.props.border_color = Some(c);
                 }
             }
-            if let Some(border) = fur.attributes.get("border") {
-                panel.props.border_thickness = border.parse().unwrap_or(0.0);
+            if let Some(b) = fur.attributes.get("border") {
+                panel.props.border_thickness = b.parse().unwrap_or(0.0);
             }
 
-            // Corner radius
-            let mut corner = CornerRadius::default();
-            if let Some(rounding) = fur.attributes.get("rounding") {
-                let parts: Vec<f32> = rounding.split(',').map(|p| p.trim().parse().unwrap_or(0.0)).collect();
-                match parts.len() {
-                    1 => { 
-                        let r = parts[0]; 
-                        corner.top_left = r; 
-                        corner.top_right = r; 
-                        corner.bottom_left = r; 
-                        corner.bottom_right = r; 
+            // OPT: inline rounding parser, no temp Vec
+           let mut corner = CornerRadius::default();
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut parts = value.split(',').map(str::trim);
+                let mut vals = [0.0; 4];
+                for (i, v) in parts.by_ref().take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
+                let count = value.split(',').count(); // count number of commas + 1 safely
+
+                match count {
+                    0 | 1 => {
+                        // all corners same
+                        let r = vals[0];
+                        corner = CornerRadius::uniform(r);
                     }
-                    2 => { 
-                        let (t,b) = (parts[0], parts[1]); 
-                        corner.top_left = t; 
-                        corner.top_right = t; 
-                        corner.bottom_left = b; 
-                        corner.bottom_right = b; 
+                    2 => {
+                        // top and bottom groups
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
                     }
-                    3 => { 
-                        let (tl,tr_bl,br) = (parts[0], parts[1], parts[2]); 
-                        corner.top_left=tl; 
-                        corner.top_right=tr_bl; 
-                        corner.bottom_left=tr_bl; 
-                        corner.bottom_right=br; 
+                    3 => {
+                        // TL, TR/BL, BR style
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
                     }
-                    4 => { 
-                        corner.top_left=parts[0]; 
-                        corner.top_right=parts[1]; 
-                        corner.bottom_left=parts[2]; 
-                        corner.bottom_right=parts[3]; 
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
                     }
                     _ => {}
                 }
             }
-
-            // Individual corner overrides
-            if let Some(val) = fur.attributes.get("rounding-tl") { corner.top_left = val.parse().unwrap_or(corner.top_left); }
-            if let Some(val) = fur.attributes.get("rounding-tr") { corner.top_right = val.parse().unwrap_or(corner.top_right); }
-            if let Some(val) = fur.attributes.get("rounding-bl") { corner.bottom_left = val.parse().unwrap_or(corner.bottom_left); }
-            if let Some(val) = fur.attributes.get("rounding-br") { corner.bottom_right = val.parse().unwrap_or(corner.bottom_right); }
-            // Sides
-            if let Some(val) = fur.attributes.get("rounding-t") { let r = val.parse().unwrap_or(0.0); corner.top_left = r; corner.top_right = r; }
-            if let Some(val) = fur.attributes.get("rounding-b") { let r = val.parse().unwrap_or(0.0); corner.bottom_left = r; corner.bottom_right = r; }
-            if let Some(val) = fur.attributes.get("rounding-l") { let r = val.parse().unwrap_or(0.0); corner.top_left = r; corner.bottom_left = r; }
-            if let Some(val) = fur.attributes.get("rounding-r") { let r = val.parse().unwrap_or(0.0); corner.top_right = r; corner.bottom_right = r; }
-
             panel.props.corner_radius = corner;
             Some(UIElement::Panel(panel))
         }
 
-        "Layout" => {
-            // Check if mode is "g" for Grid
-            if let Some(mode_val) = fur.attributes.get("mode") {
-                if matches!(mode_val.as_str(), "g" | "G") {
-                    // Build a GridLayout instead
-                    let mut grid = GridLayout::default();
-                    grid.set_name(&fur.id);
-                    apply_base_attributes(&mut grid.base, &fur.attributes);
+        "Layout" | "HLayout" | "VLayout" | "Grid" => {
+          if tag == "Grid"
+                    || fur.attributes
+                        .get("mode")
+                        .map(|s| s.eq_ignore_ascii_case("g"))
+                        .unwrap_or(false)
+                {
+                    let mut g = GridLayout::default();
+                    g.set_name(&fur.id);
 
-                    if let Some(val) = fur.attributes.get("cols").or(fur.attributes.get("col")) {
-                        if let Ok(parsed) = val.parse::<usize>() { 
-                            grid.cols = parsed; 
-                        }
-                    }
 
-                    if let Some(val) = fur.attributes.get("gap") {
-                        let parts: Vec<&str> = val.split(',').map(|s| s.trim()).collect();
-                        match parts.len() {
-                            1 => {
-                                if let Ok(parsed) = parts[0].parse::<f32>() {
-                                    grid.container.gap.x = parsed;
-                                    grid.container.gap.y = parsed;
-                                }
-                            }
-                            2 => {
-                                if let (Ok(x), Ok(y)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                                    grid.container.gap.x = x;
-                                    grid.container.gap.y = y;
-                                }
-                            }
-                            _ => {} // ignore invalid formats
-                        }
-                    }
-
-                    return Some(UIElement::GridLayout(grid));
+                apply_base_attributes(&mut g.base, &fur.attributes);
+                if let Some(c) = fur.attributes.get("cols") {
+                    g.cols = c.parse().unwrap_or(1);
                 }
+                if let Some(gap) = fur.attributes.get("gap") {
+                    let (x, y) = parse_compound(gap);
+                    g.container.gap.x = x.and_then(|x| x.parse().ok()).unwrap_or(0.0);
+                    g.container.gap.y = y.and_then(|y| y.parse().ok()).unwrap_or(g.container.gap.x);
+                }
+                return Some(UIElement::GridLayout(g));
             }
 
-            // Otherwise, normal Layout (horizontal or vertical)
             let mut layout = Layout::default();
             layout.set_name(&fur.id);
             apply_base_attributes(&mut layout.base, &fur.attributes);
 
-            layout.container.mode = match fur.attributes.get("mode").map(|v| v.as_str()) {
-                Some("v") | Some("V") => ContainerMode::Vertical,
-                _ => ContainerMode::Horizontal, // default
+            layout.container.mode = match (tag, fur.attributes.get("mode").map(|v| v.as_str())) {
+                ("VLayout", _) | (_, Some("v") | Some("V")) => ContainerMode::Vertical,
+                _ => ContainerMode::Horizontal,
             };
 
-            if let Some(val) = fur.attributes.get("gap") {
-                if let Ok(parsed) = val.parse::<f32>() {
-                    match layout.container.mode {
-                        ContainerMode::Horizontal => layout.container.gap.x = parsed,
-                        ContainerMode::Vertical => layout.container.gap.y = parsed,
-                        _ => {}
-                    }
+            if let Some(g) = fur.attributes.get("gap") {
+                let parsed = g.parse::<f32>().unwrap_or(0.0);
+                match layout.container.mode {
+                    ContainerMode::Horizontal => layout.container.gap.x = parsed,
+                    ContainerMode::Vertical => layout.container.gap.y = parsed,
+                    _ => {}
                 }
             }
 
             Some(UIElement::Layout(layout))
-        }
-
-        // Convenience constructors
-        "HLayout" => {
-            let mut layout = Layout::default();
-            layout.set_name(&fur.id);
-            layout.container.mode = ContainerMode::Horizontal;
-            apply_base_attributes(&mut layout.base, &fur.attributes);
-
-            if let Some(val) = fur.attributes.get("gap") {
-                if let Ok(parsed) = val.parse::<f32>() { 
-                    layout.container.gap.x = parsed; 
-                }
-            }
-
-            Some(UIElement::Layout(layout))
-        }
-
-        "VLayout" => {
-            let mut layout = Layout::default();
-            layout.set_name(&fur.id);
-            layout.container.mode = ContainerMode::Vertical;
-            apply_base_attributes(&mut layout.base, &fur.attributes);
-
-            if let Some(val) = fur.attributes.get("gap") {
-                if let Ok(parsed) = val.parse::<f32>() { 
-                    layout.container.gap.y = parsed; 
-                }
-            }
-
-            Some(UIElement::Layout(layout))
-        }
-
-        // Explicit GridLayout node
-        "Grid" => {
-            let mut grid = GridLayout::default();
-            grid.set_name(&fur.id);
-            apply_base_attributes(&mut grid.base, &fur.attributes);
-
-            if let Some(val) = fur.attributes.get("cols").or(fur.attributes.get("col")) {
-                if let Ok(parsed) = val.parse::<usize>() { 
-                    grid.cols = parsed; 
-                }
-            }
-
-            if let Some(val) = fur.attributes.get("gap") {
-                let parts: Vec<&str> = val.split(',').map(|s| s.trim()).collect();
-                match parts.len() {
-                    1 => {
-                        if let Ok(parsed) = parts[0].parse::<f32>() {
-                            grid.container.gap.x = parsed;
-                            grid.container.gap.y = parsed;
-                        }
-                    }
-                    2 => {
-                        if let (Ok(x), Ok(y)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                            grid.container.gap.x = x;
-                            grid.container.gap.y = y;
-                        }
-                    }
-                    _ => {} // ignore invalid formats
-                }
-            }
-
-            Some(UIElement::GridLayout(grid))
         }
 
         "Text" => {
@@ -414,27 +352,22 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             text.set_name(&fur.id);
             apply_base_attributes(&mut text.base, &fur.attributes);
 
-            let mut content = String::new();
-            for child in &fur.children {
-                if let FurNode::Text(s) = child {
-                    content.push_str(&s);
-                }
-            }
+            text.props.content = fur
+                .children
+                .iter()
+                .filter_map(|n| if let FurNode::Text(s) = n { Some(s.as_str()) } else { None })
+                .collect::<Vec<&str>>()
+                .join("");
 
-
-            text.props.content = content;
-
-            if let Some(val) = fur.attributes.get("fsz").or(fur.attributes.get("font-size")) {
-                if let Ok(parsed) = val.parse::<f32>() { 
-                    text.props.font_size = parsed
-                }
+            if let Some(fs) = fur.attributes.get("fsz").or(fur.attributes.get("font-size")) {
+                text.props.font_size = fs.parse().unwrap_or(text.props.font_size);
             }
 
             Some(UIElement::Text(text))
         }
 
         _ => {
-            println!("Warning: Element type {} not supported", fur.tag_name);
+            println!("Warning: Unsupported element '{}'", tag);
             None
         }
     }
@@ -442,65 +375,63 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
 
 // =================== RECURSIVE CONVERSION ===================
 
-fn convert_fur_element_to_ui_elements(fur: &FurElement, parent_uuid: Option<Uuid>) -> Vec<(Uuid, UIElement)> {
-    let maybe_ui = convert_fur_element_to_ui_element(fur);
+fn convert_fur_element_to_ui_elements(
+    fur: &FurElement,
+    parent_uuid: Option<Uuid>,
+) -> Vec<(Uuid, UIElement)> {
+    let Some(mut ui) = convert_fur_element_to_ui_element(fur) else {
+        return fur
+            .children
+            .iter()
+            .filter_map(|n| {
+                if let FurNode::Element(e) = n {
+                    Some(convert_fur_element_to_ui_elements(e, parent_uuid))
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+    };
 
-    if maybe_ui.is_none() {
-        let mut results = Vec::new();
-        for child_node in &fur.children {
-            if let FurNode::Element(child) = child_node {
-                results.extend(convert_fur_element_to_ui_elements(child, parent_uuid));
+    let id = Uuid::new_v4();
+    ui.set_id(id);
+    ui.set_parent(parent_uuid);
+
+    let mut results = Vec::with_capacity(fur.children.len() + 1);
+    let mut children = Vec::with_capacity(fur.children.len());
+
+    for child in &fur.children {
+        if let FurNode::Element(e) = child {
+            let child_nodes = convert_fur_element_to_ui_elements(e, Some(id));
+            if let Some((cid, _)) = child_nodes.first() {
+                children.push(*cid);
             }
+            results.extend(child_nodes);
         }
-        return results;
     }
 
-    let current_uuid = Uuid::new_v4();
-    let mut ui_element = maybe_ui.unwrap();
-    ui_element.set_id(current_uuid);
-    ui_element.set_parent(parent_uuid);
-
-    // Process all children first and collect their UUIDs
-    let mut children_results = Vec::new();
-    let mut children_uuids = Vec::new();
-    
-    for child_node in &fur.children {
-        if let FurNode::Element(child) = child_node {
-            let child_elements = convert_fur_element_to_ui_elements(child, Some(current_uuid));
-            if let Some((first_child_uuid, _)) = child_elements.first() {
-                children_uuids.push(*first_child_uuid);
-            }
-            children_results.extend(child_elements);
-        }
-    }
-
-    // Set the children on the parent
-    ui_element.set_children(children_uuids);
-
-    // Build final results: parent first, then all children
-    let mut results = Vec::with_capacity(children_results.len() + 1);
-    results.push((current_uuid, ui_element));
-    results.extend(children_results);
-    
+    ui.set_children(children);
+    results.insert(0, (id, ui));
     results
 }
 
 // =================== BUILD UI ===================
 
-pub fn build_ui_elements_from_fur(ui: &mut UINode, fur_elements: &[FurElement]) {
-    ui.elements.clear();
-    ui.root_ids.clear();
+pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
+    let elements = ui.elements.get_or_insert_with(|| IndexMap::with_capacity(elems.len()));
+    elements.clear();
 
-    for fur_element in fur_elements {
-        let elements = convert_fur_element_to_ui_elements(fur_element, None);
-        for (uuid, ui_element) in elements {
-            ui.elements.insert(uuid, ui_element);
-        }
-    }
+    let root_ids = ui.root_ids.get_or_insert_with(|| Vec::with_capacity(elems.len()));
+    root_ids.clear();
 
-    for (uuid, element) in &ui.elements {
-        if element.get_parent().is_none() {
-            ui.root_ids.push(*uuid);
+    for el in elems {
+        let flat = convert_fur_element_to_ui_elements(el, None);
+        for (uuid, e) in flat {
+            if e.get_parent().is_none() {
+                root_ids.push(uuid);
+            }
+            elements.insert(uuid, e);
         }
     }
 }

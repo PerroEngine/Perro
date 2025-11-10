@@ -133,7 +133,7 @@ pub fn calculate_content_size(
                 }
             };
 
-            println!("Layout content size for {:?} (mode: {:?}): {:?}", parent_id, container_mode, content_size);
+          //  println!("Layout content size for {:?} (mode: {:?}): {:?}", parent_id, container_mode, content_size);
             return content_size;
         },
         UIElement::GridLayout(grid) => {
@@ -162,7 +162,7 @@ pub fn calculate_content_size(
             let total_height = max_cell_height * rows as f32 + 
                 if rows > 1 { gap.y * (rows - 1) as f32 } else { 0.0 };
             
-            println!("GridLayout content size for {:?}: {:?}", parent_id, Vector2::new(total_width, total_height));
+           // println!("GridLayout content size for {:?}: {:?}", parent_id, Vector2::new(total_width, total_height));
             return Vector2::new(total_width, total_height);
         },
         _ => return Vector2::new(0.0, 0.0), // Not a container
@@ -227,8 +227,8 @@ pub fn calculate_layout_positions(
     }
 
     let parent_size = *parent.get_size();
-    println!("Calculating layout positions for {:?} (mode: {:?}, size: {:?})", 
-             parent_id, container_mode, parent_size);
+    // println!("Calculating layout positions for {:?} (mode: {:?}, size: {:?})", 
+    //          parent_id, container_mode, parent_size);
 
     match container_mode {
         ContainerMode::Horizontal => calculate_horizontal_layout(&child_info, gap),
@@ -254,8 +254,8 @@ fn calculate_horizontal_layout(
     let total_gap_width = if children.len() > 1 { gap.x * (children.len() - 1) as f32 } else { 0.0 };
     let total_content_width = total_child_width + total_gap_width;
     
-    println!("Horizontal layout: total_width={}, gap_width={}, content_width={}", 
-             total_child_width, total_gap_width, total_content_width);
+    // println!("Horizontal layout: total_width={}, gap_width={}, content_width={}", 
+    //          total_child_width, total_gap_width, total_content_width);
     
     // Start from the left edge of the content area (which is centered in the parent)
     let start_x = -total_content_width * 0.5;
@@ -269,7 +269,7 @@ fn calculate_horizontal_layout(
         let child_y = 0.0; // Center vertically in parent
         
         positions.push((*child_id, Vector2::new(child_x, child_y)));
-        println!("  Child {:?} positioned at ({}, {})", child_id, child_x, child_y);
+      //  println!("  Child {:?} positioned at ({}, {})", child_id, child_x, child_y);
         
         // Move to next position
         current_x += child_size.x + gap.x;
@@ -289,8 +289,8 @@ fn calculate_vertical_layout(
     let total_gap_height = if children.len() > 1 { gap.y * (children.len() - 1) as f32 } else { 0.0 };
     let total_content_height = total_child_height + total_gap_height;
     
-    println!("Vertical layout: total_height={}, gap_height={}, content_height={}", 
-             total_child_height, total_gap_height, total_content_height);
+    // println!("Vertical layout: total_height={}, gap_height={}, content_height={}", 
+    //          total_child_height, total_gap_height, total_content_height);
     
     // Start from the top edge of the content area (which is centered in the parent)
     let start_y = total_content_height * 0.5;
@@ -304,7 +304,7 @@ fn calculate_vertical_layout(
         let child_x = 0.0; // Center horizontally in parent
         
         positions.push((*child_id, Vector2::new(child_x, child_y)));
-        println!("  Child {:?} positioned at ({}, {})", child_id, child_x, child_y);
+       // println!("  Child {:?} positioned at ({}, {})", child_id, child_x, child_y);
         
         // Move to next position (downward)
         current_y -= child_size.y + gap.y;
@@ -638,39 +638,42 @@ pub fn update_global_transforms_with_layout(
 pub fn update_ui_layout(ui_node: &mut UINode) {
     // println!("=== Starting UI Layout Update ===");
     
-    // First pass: Calculate all content sizes from leaves to roots
-    for root_id in &ui_node.root_ids {
-        calculate_all_content_sizes(&mut ui_node.elements, root_id);
+  if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
+    for root_id in root_ids {
+        calculate_all_content_sizes(elements, root_id);
     }
-    
-    // Second pass: Calculate positions and transforms
-    for root_id in &ui_node.root_ids {
-        let empty_layout_map = HashMap::new();
+
+    let empty_layout_map = HashMap::new();
+    for root_id in root_ids {
         update_global_transforms_with_layout(
-            &mut ui_node.elements, 
-            root_id, 
+            elements,
+            root_id,
             &Transform2D::default(),
             &empty_layout_map,
-            0
+            0,
         );
     }
+}
     // println!("=== Finished UI Layout Update ===");
 }
 
 pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     update_ui_layout(ui_node); // now works with layout system
-    for (_, element) in &ui_node.elements {
+    if let Some(elements) = &ui_node.elements {
+    for (_, element) in elements {
         if !element.get_visible() {
             continue;
         }
+
         match element {
             UIElement::BoxContainer(_) => { /* no-op */ },
             UIElement::Panel(panel) => render_panel(panel, gfx),
             UIElement::GridLayout(_) => { /* no-op */ },
             UIElement::Layout(_) => {},
-            UIElement::Text(text) => render_text(text, gfx)
+            UIElement::Text(text) => render_text(text, gfx),
         }
     }
+}
 }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
@@ -718,7 +721,7 @@ fn render_text(text: &UIText, gfx: &mut Graphics) {
     let font_size = text.props.font_size;
     let z_index = text.base.z_index;
     let text_id = text.id;
-    println!("{}", content);
+   // println!("{}", content);
 
     let font = Font::from_name("NotoSans", Weight::Regular, Style::Normal)
     .expect("Failed to load font");

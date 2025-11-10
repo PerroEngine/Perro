@@ -17,7 +17,7 @@ use uuid::Uuid;
 //
 
 /// Pure serializable scene data (no runtime state)
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SceneData {
     pub root_id: Uuid,
     pub nodes: IndexMap<Uuid, SceneNode>,
@@ -48,7 +48,9 @@ impl SceneData {
         Ok(data)
     }
 
-    fn fix_relationships(data: &mut SceneData) {
+
+
+    pub fn fix_relationships(data: &mut SceneData) {
         // Fix IDs and parent/child relationships
         for (&key, node) in data.nodes.iter_mut() {
             node.set_id(key);
@@ -164,7 +166,7 @@ impl<P: ScriptProvider> Scene<P> {
         if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
             if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
                 let root_id = *game_scene.get_root().get_id();
-                let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
+                let handle = game_scene.instantiate_script(ctor, root_id);
                 game_scene.scripts.insert(root_id, handle);
 
                 let project_ref = game_scene.project.clone();
@@ -186,31 +188,143 @@ impl<P: ScriptProvider> Scene<P> {
 
     println!("About to graft main scene...");
 
-    // ✅ main scene second
-    let main_scene_path: String = {
-        let proj_ref = game_scene.project.borrow();
-        proj_ref.main_scene().to_string()
-    };
+ // ✅ main scene second
+let main_scene_path: String = {
+    let proj_ref = game_scene.project.borrow();
+    proj_ref.main_scene().to_string()
+};
 
-    let loaded_data = SceneData::load(&main_scene_path)?;
-    let game_root = *game_scene.get_root().get_id();
-    game_scene.graft_data(loaded_data, game_root)?;
+// measure load
+let t_load_start = Instant::now();
+let loaded_data = game_scene.provider.load_scene_data(&main_scene_path)?;
+let load_time = t_load_start.elapsed();
+
+// measure merge/graft
+let t_graft_start = Instant::now();
+let game_root = *game_scene.get_root().get_id();
+game_scene.merge_scene_data(loaded_data, game_root)?; // <- was graft_data()
+let graft_time = t_graft_start.elapsed();
+
+println!(
+    "⏱ main scene load: {:>6.2} ms | graft: {:>6.2} ms | total: {:>6.2} ms",
+    load_time.as_secs_f64() * 1000.0,
+    graft_time.as_secs_f64() * 1000.0,
+    (load_time + graft_time).as_secs_f64() * 1000.0
+);
 
     Ok(game_scene)
 }
 
-
-    /// Graft a data scene into this runtime scene
-    pub fn graft_data(&mut self, other: SceneData, parent_id: Uuid) -> anyhow::Result<()> {
-        for (id, mut node) in other.nodes {
-            if id == other.root_id {
-                node.set_parent(Some(parent_id));
-                self.data.nodes.get_mut(&parent_id).unwrap().add_child(id);
+pub fn merge_scene_data(
+    &mut self,
+    mut other: SceneData,
+    parent_id: Uuid,
+) -> anyhow::Result<()> {
+    // ✅ Super optimized root handling with deferred insertion
+    let root_to_insert = {
+        let nodes = &mut self.data.nodes;
+        
+        if let Some(mut root) = other.nodes.remove(&other.root_id) {
+            if let Some(parent) = nodes.get_mut(&parent_id) {
+                root.set_parent(Some(parent_id));
+                parent.add_child(*root.get_id());
             }
-            self.create_node(node)?;
+            root.mark_dirty();
+            Some(root)
+        } else {
+            eprintln!("⚠️ Merge root missing");
+            None
         }
-        Ok(())
+    }; // ← Borrow scope ends here
+
+    // ✅ Include root in processing list
+    let mut new_ids: Vec<Uuid> = other.nodes.keys().copied().collect();
+    if let Some(ref root) = root_to_insert {
+        new_ids.push(*root.get_id());
     }
+
+    // ✅ Super optimized extend
+    self.data.nodes.reserve(other.nodes.len() + 1);
+    self.data.nodes.extend(other.nodes);
+    
+    // ✅ Insert root AFTER extend (critical for rendering)
+    if let Some(root) = root_to_insert {
+        self.data.nodes.insert(*root.get_id(), root);
+    }
+
+    // ✅ All your other super optimizations...
+    let provider = &self.provider;
+    for id in &new_ids {
+        if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(id) {
+            if let Some(fur_path) = &u.fur_path {
+                match provider.load_fur_data(fur_path) {
+                    Ok(fur_elements) => {
+                        build_ui_elements_from_fur(u, &fur_elements);
+                        println!(
+                            "✅ Loaded FUR for '{}': {} UI elements",
+                            u.node.get_name(),
+                            u.elements.as_ref().map(|e| e.len()).unwrap_or(0)
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!("⚠️ Error loading FUR {:?}: {}", fur_path, err);
+                    }
+                }
+            }
+        }
+    }
+
+    // ───────────────────────────────────────────────
+    // 5️⃣  Attach and initialize scripts for nodes with a script_path
+    // ───────────────────────────────────────────────
+    let script_targets: Vec<(Uuid, String)> = new_ids
+        .iter()
+        .filter_map(|id| {
+            self.data
+                .nodes
+                .get(id)
+                .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
+        })
+        .collect();
+
+    // ✅ Single borrow of project for all script initializations
+    let project_ref = self.project.clone();
+    let mut project_borrow = project_ref.borrow_mut();
+    let now = Instant::now();
+    let dt = self
+        .last_scene_update
+        .map(|prev| now.duration_since(prev).as_secs_f32())
+        .unwrap_or(0.0);
+
+    for (id, script_path) in script_targets {
+        let ident = script_path_to_identifier(&script_path)
+            .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+        let ctor = self.ctor(&ident)?;
+        let handle = Self::instantiate_script(ctor, id);
+        self.scripts.insert(id, handle);
+
+        // ✅ Reuse same ScriptApi instance across all initializations
+        let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
+        api.call_init(id);
+        println!("✅ Script initialized for node {:?}", id);
+    }
+
+    // ───────────────────────────────────────────────
+    // 6️⃣  Mark ONLY imported nodes as dirty (so renderer repaints them)
+    // ───────────────────────────────────────────────
+    for id in new_ids {
+        if let Some(node) = self.data.nodes.get_mut(&id) {
+            node.mark_dirty();
+        }
+    }
+
+    println!(
+        "📦 Merge complete: now have {} total nodes in scene",
+        self.data.nodes.len()
+    );
+
+    Ok(())
+}
 
     fn ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
         self.provider.load_ctor(short)
@@ -359,7 +473,6 @@ fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
    pub fn instantiate_script(
         ctor: CreateFn,
         node_id: Uuid,
-        scene: &mut Scene<P>,
     ) -> Rc<RefCell<Box<dyn ScriptObject>>> {
         let raw = ctor();
         let mut boxed: Box<dyn ScriptObject> = unsafe { Box::from_raw(raw) };
@@ -417,7 +530,7 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
         let ctor = self.ctor(&identifier)?;
 
         // Create the script
-        let handle = Scene::instantiate_script(ctor, id, self);
+        let handle = self.instantiate_script(ctor, id);
         self.scripts.insert(id, handle);
 
         // Initialize now that node exists
@@ -478,24 +591,26 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
         self.scripts.remove(&node_id);
     }
     
-    fn stop_rendering_recursive(&self, node_id: Uuid, gfx: &mut Graphics) {
-        if let Some(node) = self.data.nodes.get(&node_id) {
-            // Stop rendering this node
-            gfx.stop_rendering(node_id);
-            
-            // If it's a UI node, stop rendering all its elements
-            if let SceneNode::UINode(ui_node) = node {
-                for element in &ui_node.elements {
-                    gfx.stop_rendering(*element.0);
+   fn stop_rendering_recursive(&self, node_id: Uuid, gfx: &mut Graphics) {
+    if let Some(node) = self.data.nodes.get(&node_id) {
+        // Stop rendering this node itself
+        gfx.stop_rendering(node_id);
+
+        // If it's a UI node, stop rendering all of its UI elements
+        if let SceneNode::UINode(ui_node) = node {
+            if let Some(elements) = &ui_node.elements {
+                for (element_id, _) in elements {
+                    gfx.stop_rendering(*element_id);
                 }
             }
-            
-            // Recursively stop rendering children
-            for &child_id in node.get_children() {
-                self.stop_rendering_recursive(child_id, gfx);
-            }
+        }
+
+        // Recursively stop rendering children
+        for &child_id in node.get_children() {
+            self.stop_rendering_recursive(child_id, gfx);
         }
     }
+}
 
     // Get dirty nodes for rendering
     fn get_dirty_nodes(&self) -> Vec<Uuid> {
@@ -552,7 +667,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
      fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn ScriptObject>>> {
-        Self::instantiate_script(ctor, node_id, self)
+        Self::instantiate_script(ctor, node_id)
     }
 
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
@@ -666,9 +781,27 @@ impl Scene<DllScriptProvider> {
 
         println!("About to graft main scene...");
         let main_scene_path = game_scene.project.borrow().main_scene().to_string();
+ let t_load_begin = Instant::now();
         let loaded_data = SceneData::load(&main_scene_path)?;
+        let load_time = t_load_begin.elapsed();
+        println!(
+            "⏱  SceneData::load() completed in {:.03} sec ({} ms)",
+            load_time.as_secs_f32(),
+            load_time.as_millis()
+        );
+
+        // ────────────────────────────────────────────────
+        // ⏱  Benchmark: Scene graft
+        // ────────────────────────────────────────────────
+        let t_graft_begin = Instant::now();
         let game_root = *game_scene.get_root().get_id();
-        game_scene.graft_data(loaded_data, game_root)?;
+        game_scene.merge_scene_data(loaded_data, game_root)?;
+        let graft_time = t_graft_begin.elapsed();
+        println!(
+            "⏱  Scene grafting completed in {:.03} sec ({} ms)",
+            graft_time.as_secs_f32(),
+            graft_time.as_millis()
+        );
 
         println!("Building scene from project manifest...");
         // Borrow separately to avoid conflicts with mutable game_scene borrow
@@ -681,7 +814,7 @@ impl Scene<DllScriptProvider> {
             if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
                 if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
                     let root_id = *game_scene.get_root().get_id();
-                    let handle = Scene::instantiate_script(ctor, root_id, &mut game_scene);
+                    let handle = game_scene.instantiate_script(ctor, root_id);
                     game_scene.scripts.insert(root_id, handle);
 
                     

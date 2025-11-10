@@ -1,6 +1,6 @@
-use std::{collections::HashMap, ffi::CString, os::raw::c_char};
+use std::{collections::HashMap, ffi::CString, io, os::raw::c_char};
 use libloading::Library;
-use crate::{asset_io::ProjectRoot, script::{CreateFn, ScriptProvider}};
+use crate::{SceneData, apply_fur::parse_fur_file, asset_io::ProjectRoot, ast::{FurElement, FurNode}, script::{CreateFn, ScriptProvider}};
 
 
 /// Dynamic DLL-based provider (default for game projects)
@@ -54,4 +54,26 @@ impl ScriptProvider for DllScriptProvider {
         self.ctors.insert(short.to_owned(), fptr);
         Ok(fptr)
     }
+
+    fn load_scene_data(&self, path: &str) -> io::Result<SceneData> {
+        // DLL / editor mode always loads from disk
+        SceneData::load(path)
+    }
+
+fn load_fur_data(&self, path: &str) -> io::Result<Vec<FurElement>> {
+    match parse_fur_file(path) {
+        Ok(ast) => {
+            let fur_elements: Vec<FurElement> = ast
+                .into_iter()
+                .filter_map(|f| match f {
+                    FurNode::Element(el) => Some(el),
+                    _ => None,
+                })
+                .collect();
+
+            Ok(fur_elements)
+        }
+        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+    }
+}
 }

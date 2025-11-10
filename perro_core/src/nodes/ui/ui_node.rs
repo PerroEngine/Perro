@@ -21,12 +21,12 @@ pub struct UINode {
     pub fur_path: Option<String>,
 
     #[serde(skip)]
-    pub props: HashMap<String, Var>,
+    pub props: Option<HashMap<String, Var>>,
 
     #[serde(skip)]
-    pub elements: IndexMap<Uuid, UIElement>,
+    pub elements: Option<IndexMap<Uuid, UIElement>>,
     #[serde(skip)]
-    pub root_ids: Vec<Uuid>,
+    pub root_ids: Option<Vec<Uuid>>,
 
     #[serde(default = "default_visible", skip_serializing_if = "is_default_visible")]
     pub visible: bool,
@@ -43,9 +43,9 @@ impl UINode {
       // Parent
       node: Node::new(name, None),
       fur_path: None,
-      props: HashMap::new(),
-      elements: IndexMap::new(),
-      root_ids: Vec::new(),
+      props: None,
+      elements: None,
+      root_ids: None,
       }
     }
     pub fn get_visible(&self) -> bool {

@@ -25,13 +25,16 @@ pub struct Node {
     pub parent: Option<Uuid>,
 
     #[serde(skip)]
-    pub children: Vec<Uuid>,
+    pub children: Option<Vec<Uuid>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, Value>>,
 
     #[serde(skip)]
     pub dirty: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_root_of: Option<String>,
 }
 
 impl Node {
@@ -43,10 +46,12 @@ impl Node {
             script_path: None,
             script_exp_vars : None,
             parent,
-            children: Vec::new(),
+            children: None,
             metadata: None,
 
-            dirty: false
+            dirty: false,
+
+            is_root_of: None
         }
     }
 

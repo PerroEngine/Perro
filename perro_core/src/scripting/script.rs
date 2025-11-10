@@ -1,5 +1,5 @@
 #![allow(improper_ctypes_definitions)]
-use std::fmt;
+use std::{fmt, io};
 use std::{any::Any, collections::HashMap, cell::RefCell, rc::Rc};
 use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr};
 use std::sync::mpsc::{Sender};
@@ -8,12 +8,16 @@ use serde_json::Value;
 use smallvec::SmallVec;
 use uuid::Uuid;
 
+use crate::SceneData;
 use crate::api::ScriptApi;
 use crate::app_command::AppCommand;
+use crate::ast::FurElement;
 use crate::node_registry::SceneNode;
 
 pub trait ScriptProvider {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
+    fn load_scene_data(&self, path: &str) -> io::Result<SceneData>;
+    fn load_fur_data(&self, path: &str) -> io::Result<Vec<FurElement>>;
 }
 
 /// A dynamic variable type for script fields/exposed fields

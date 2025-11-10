@@ -1,4 +1,4 @@
- #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
+ // #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
 
 // ✅ Embed assets.brk built by compiler/packer in release/export
 static ASSETS_BRK: &[u8] = include_bytes!("../../../assets.brk");
@@ -20,6 +20,12 @@ use registry::StaticScriptProvider;
 
 mod key;
 use key::get_aes_key;
+
+mod scenes;
+mod fur;
+
+mod manifest;
+use manifest::PERRO_PROJECT;
 
 #[cfg(target_arch = "wasm32")]
 fn run_app(event_loop: EventLoop<Graphics>, app: App<StaticScriptProvider>) {
@@ -57,15 +63,13 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let mut key: Option<String> = None;
 
-
-
     // 1. Set project root depending on build mode
     #[cfg(not(debug_assertions))]
     {
         set_key(get_aes_key());
         set_project_root(ProjectRoot::Brk {
             data: ASSETS_BRK,
-            name: "unknown".into(),
+            name: PERRO_PROJECT.name().into(),
         });
     }
 
@@ -76,47 +80,15 @@ fn main() {
 
         set_project_root(ProjectRoot::Disk {
             root: project_root.clone(),
-            name: "unknown".into(),
+            name: PERRO_PROJECT.name().into(),
         });
     }
 
-    // 2. Load project manifest (works in both disk + packed brk)
-    #[cfg(not(debug_assertions))]
-    let project =
-        Project::load(None::<PathBuf>).expect("Failed to load project.toml from embedded data");
+    // 2. Clone the static project so we can add runtime params
+    let mut project = (*PERRO_PROJECT).clone();
 
-    #[cfg(debug_assertions)]
-    let project = {
-        let project_root: PathBuf = env::current_exe().unwrap().parent().unwrap().to_path_buf();
-        Project::load(Some(&project_root)).expect("Failed to load project.toml from disk")
-    };
-
-    // 3. Update project root with real name
-    match get_project_root() {
-        ProjectRoot::Disk { root, .. } => {
-            set_project_root(ProjectRoot::Disk {
-                root,
-                name: project.name().into(),
-            });
-        }
-        ProjectRoot::Brk { data, .. } => {
-            set_project_root(ProjectRoot::Brk {
-                data,
-                name: project.name().into(),
-            });
-        }
-    }
-
-    // 4. Create event loop
-    let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
-
-    // 5. Build runtime scene using StaticScriptProvider
-   let provider = StaticScriptProvider::new();
-
-    // ✅ wrap project in Rc<RefCell>
-    let project_rc = std::rc::Rc::new(std::cell::RefCell::new(project));
-
-        // Start from index 1 to skip executable path
+    // 3. Parse runtime arguments and add them to project
+    // Start from index 1 to skip executable path
     for arg in args.iter().skip(1) {
         if arg.starts_with("--") {
             // Strip the `--` prefix
@@ -124,9 +96,18 @@ fn main() {
             key = Some(clean_key);
         } else if let Some(k) = key.take() {
             // Treat next arg as the value for previous key
-            project_rc.borrow_mut().set_runtime_param(&k, arg);
+            project.set_runtime_param(&k, arg);
         }
     }
+
+    // 4. Create event loop
+    let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
+
+    // 5. Build runtime scene using StaticScriptProvider
+    let provider = StaticScriptProvider::new();
+
+    // ✅ wrap project in Rc<RefCell>
+    let project_rc = std::rc::Rc::new(std::cell::RefCell::new(project));
 
     let game_scene = match Scene::from_project_with_provider(project_rc.clone(), provider) {
         Ok(scene) => scene,

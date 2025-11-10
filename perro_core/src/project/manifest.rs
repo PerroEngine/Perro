@@ -1,11 +1,11 @@
-use std::path::{Path, PathBuf};
-use std::io;
 use std::collections::HashMap;
+use std::io;
+use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use crate::asset_io::load_asset;
 
 /// Root project manifest structure
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct ProjectSettings {
     project: ProjectSection,
     #[serde(default)]
@@ -17,17 +17,17 @@ struct ProjectSettings {
 }
 
 /// `[project]` section
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct ProjectSection {
     name: String,
-    version: String,               // NEW: semantic version e.g. "0.3.1"
+    version: String,
     main_scene: String,
     #[serde(default)]
     icon: Option<String>,
 }
 
 /// `[performance]` section
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 struct PerformanceSection {
     #[serde(default = "default_target_fps")]
     target_fps: f32,
@@ -36,37 +36,73 @@ struct PerformanceSection {
 }
 
 /// `[root]` section
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 struct RootSection {
     #[serde(default)]
-    script: Option<String>,  // e.g. "res://start.pup"
+    script: Option<String>, // e.g. "res://start.pup"
 }
 
-/// `[metadata]` section - acts as a key-value dictionary
-#[derive(Deserialize, Default)]
+/// `[metadata]` section
+#[derive(Deserialize, Default, Clone)]
 struct MetadataSection {
     #[serde(flatten)]
     data: HashMap<String, String>,
 }
 
+// Default constants
 fn default_target_fps() -> f32 { 144.0 }
 fn default_xps() -> f32 { 60.0 }
 
-/// Project handle — loaded from project.toml
+/// Project handle — represents either a loaded or statically defined project.
+#[derive(Clone)]
 pub struct Project {
-    root: Option<PathBuf>, // only meaningful in disk/dev mode
+    root: Option<PathBuf>, // only meaningful in dev/disk mode
     settings: ProjectSettings,
-    runtime_params: HashMap<String, String>, // new
+    runtime_params: HashMap<String, String>,
 }
 
-
 impl Project {
+    // ======================================================
+    // ==================== Constructors =====================
+    // ======================================================
+
+    /// Creates a static, embedded project (for compile-time manifests)
+    pub fn new_static(
+        name: impl Into<String>,
+        version: impl Into<String>,
+        main_scene: impl Into<String>,
+        icon: Option<String>,
+        target_fps: f32,
+        xps: f32,
+        root_script: Option<String>,
+    ) -> Self {
+        let settings = ProjectSettings {
+            project: ProjectSection {
+                name: name.into(),
+                version: version.into(),
+                main_scene: main_scene.into(),
+                icon,
+            },
+            performance: PerformanceSection { target_fps, xps },
+            root: RootSection { script: root_script },
+            meta: MetadataSection::default(),
+        };
+
+        Self {
+            root: None,
+            settings,
+            runtime_params: HashMap::new(),
+        }
+    }
+
+    /// Load project.toml from embedded or disk-based asset system.
     pub fn load(root: Option<impl AsRef<Path>>) -> io::Result<Self> {
         let bytes = load_asset("project.toml")?;
         let contents = std::str::from_utf8(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let settings: ProjectSettings = toml::from_str(contents)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let settings: ProjectSettings =
+            toml::from_str(contents).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
         Ok(Self {
             root: root.map(|r| r.as_ref().to_path_buf()),
             settings,
@@ -74,15 +110,14 @@ impl Project {
         })
     }
 
-    /// Load project from a specific project.toml file path
-    pub fn load_from_file<P: AsRef<Path>>(project_toml_path: P) -> io::Result<Self> {
-        let contents = std::fs::read_to_string(&project_toml_path)?;
-        let settings: ProjectSettings = toml::from_str(&contents)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        
-        // Extract root directory from project.toml path
-        let root = project_toml_path.as_ref().parent().map(|p| p.to_path_buf());
-        
+    /// Load project from a specified project.toml file path.
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let contents = std::fs::read_to_string(&path)?;
+        let settings: ProjectSettings =
+            toml::from_str(&contents).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        let root = path.as_ref().parent().map(|p| p.to_path_buf());
+
         Ok(Self {
             root,
             settings,
@@ -90,107 +125,133 @@ impl Project {
         })
     }
 
-    // ========== Getters ==========
-    
-    pub fn name(&self) -> &str { 
-        &self.settings.project.name 
+    // ======================================================
+    // ===================== Getters =========================
+    // ======================================================
+
+    #[inline]
+    pub fn name(&self) -> &str {
+        &self.settings.project.name
     }
-    
+
+    #[inline]
     pub fn version(&self) -> &str {
         &self.settings.project.version
     }
 
-    pub fn main_scene(&self) -> &str { 
-        &self.settings.project.main_scene 
+    #[inline]
+    pub fn main_scene(&self) -> &str {
+        &self.settings.project.main_scene
     }
-    
-    pub fn icon(&self) -> Option<String> { 
-        self.settings.project.icon.clone() 
+
+    #[inline]
+    pub fn icon(&self) -> Option<String> {
+        self.settings.project.icon.clone()
     }
-    
-    pub fn root(&self) -> Option<&Path> { 
-        self.root.as_deref() 
+
+    #[inline]
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
     }
-    
-    pub fn target_fps(&self) -> f32 { 
-        self.settings.performance.target_fps 
+
+    #[inline]
+    pub fn target_fps(&self) -> f32 {
+        self.settings.performance.target_fps
     }
-    
-    pub fn xps(&self) -> f32 { 
-        self.settings.performance.xps 
+
+    #[inline]
+    pub fn xps(&self) -> f32 {
+        self.settings.performance.xps
     }
-    
+
+    #[inline]
     pub fn root_script(&self) -> Option<&str> {
         self.settings.root.script.as_deref()
     }
 
-    // ========== Generic Metadata ==========
-    
-    /// Get metadata value by key
+    // ======================================================
+    // ================== Metadata Access ====================
+    // ======================================================
+
+    #[inline]
     pub fn get_meta(&self, key: &str) -> Option<&str> {
         self.settings.meta.data.get(key).map(|s| s.as_str())
     }
-    
-    /// Get all metadata as a HashMap reference
+
+    #[inline]
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.settings.meta.data
     }
-    
-    /// Check if metadata key exists
+
+    #[inline]
     pub fn has_meta(&self, key: &str) -> bool {
         self.settings.meta.data.contains_key(key)
     }
 
-    // ========== Setters ==========
-    
-    pub fn set_name(&mut self, name: String) {
-        self.settings.project.name = name;
-    }
-    
-    pub fn set_version(&mut self, version: String) {
-        self.settings.project.version = version;
+    // ======================================================
+    // ===================== Setters =========================
+    // ======================================================
+
+    #[inline]
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.settings.project.name = name.into();
     }
 
-    pub fn set_main_scene(&mut self, path: String) {
-        self.settings.project.main_scene = path;
+    #[inline]
+    pub fn set_version(&mut self, version: impl Into<String>) {
+        self.settings.project.version = version.into();
     }
-    
+
+    #[inline]
+    pub fn set_main_scene(&mut self, path: impl Into<String>) {
+        self.settings.project.main_scene = path.into();
+    }
+
+    #[inline]
     pub fn set_icon(&mut self, path: Option<String>) {
         self.settings.project.icon = path;
     }
-    
+
+    #[inline]
     pub fn set_target_fps(&mut self, fps: f32) {
         self.settings.performance.target_fps = fps;
     }
-    
+
+    #[inline]
     pub fn set_xps(&mut self, xps: f32) {
         self.settings.performance.xps = xps;
     }
-    
+
+    #[inline]
     pub fn set_root_script(&mut self, script: Option<String>) {
         self.settings.root.script = script;
     }
-    
-    /// Set metadata value
-    pub fn set_meta(&mut self, key: String, value: String) {
-        self.settings.meta.data.insert(key, value);
+
+    #[inline]
+    pub fn set_meta(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.settings.meta.data.insert(key.into(), value.into());
     }
-    
-    /// Remove metadata key
+
+    #[inline]
     pub fn remove_meta(&mut self, key: &str) -> Option<String> {
         self.settings.meta.data.remove(key)
     }
 
-    //Runtime
+    // ======================================================
+    // ================= Runtime Params ======================
+    // ======================================================
 
+    #[inline]
     pub fn set_runtime_param(&mut self, key: impl Into<String>, value: impl Into<String>) {
         self.runtime_params.insert(key.into(), value.into());
     }
 
+    #[inline]
     pub fn get_runtime_param(&self, key: &str) -> Option<&str> {
         self.runtime_params.get(key).map(|s| s.as_str())
     }
 
+    #[inline]
     pub fn runtime_params(&self) -> &HashMap<String, String> {
         &self.runtime_params
     }

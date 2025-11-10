@@ -1,6 +1,6 @@
 [project]
 name = "Perro Engine"
-main_scene = "res://manager.scn"
+main_scene = "res://editor.scn"
 icon = "res://perro-logo.png"
 version="1.0.0"
 

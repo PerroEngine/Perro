@@ -8,17 +8,30 @@ use walkdir::WalkDir;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
 use rand::RngCore;
-use serde_json::Value;
 
 use zstd::stream::{encode_all}; // Added for Zstandard compression
 
-/// File types to skip entirely from BRK packaging (e.g., source code, scripts that will be compiled)
-const SKIP_EXTENSIONS: &[&str] = &["pup", "rs", "cs", "ts", "go"];
-/// File types to encrypt (e.g., sensitive game data, scenes)
-const ENCRYPT_EXTENSIONS: &[&str] = &["scn", "fur", "toml"];
+/// File types to skip entirely from BRK packaging (statically compiled)
+
+// Scripting languages (compiled into binary)
+const SKIP_SCRIPTING: &[&str] = &["pup", "rs", "cs", "ts", "go"];
+
+// Scene and UI data (compiled into scenes.rs and fur.rs)
+const SKIP_SCENE_DATA: &[&str] = &["scn", "fur"];
+
+// Helper function to check if extension should be skipped
+fn should_skip_extension(ext: &str) -> bool {
+    SKIP_SCRIPTING.contains(&ext) 
+        || SKIP_SCENE_DATA.contains(&ext)
+}
+
+/// File types to ENCRYPT (sensitive data files that users might want to protect)
+/// Everything else is left unencrypted (media assets like images, audio, fonts)
+const ENCRYPT_EXTENSIONS: &[&str] = &["toml", "json", "xml", "yaml", "yml", "dat", "bin", "exe", "dll", "so", "dylib"];
+
 /// File types that are already efficiently compressed (e.g., JPG, PNG, OGG)
 /// These might not benefit much from Zstd and could even get larger or take longer.
-const ALREADY_COMPRESSED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "ogg", "mp3", "webp"];
+const ALREADY_COMPRESSED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "ogg", "mp3", "webp", "zip", "gz", "bz2"];
 
 // Flags for BrkEntry
 const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is ZSTD compressed
@@ -53,34 +66,8 @@ fn write_header(file: &mut File, header: &BrkHeader) -> io::Result<()> {
     Ok(())
 }
 
-/// Minify JSON (.scn) file in memory
-fn minify_json(path: &Path) -> io::Result<Vec<u8>> {
-    let data = fs::read_to_string(path)?;
-    let json: Value = serde_json::from_str(&data)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    let minified = serde_json::to_vec(&json)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    Ok(minified)
-}
-
-/// Minify FUR file in memory
-fn minify_fur(path: &Path) -> io::Result<Vec<u8>> {
-    let data = fs::read_to_string(path)?;
-    let mut output = String::with_capacity(data.len());
-
-    for line in data.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-            continue;
-        }
-        output.push_str(line);
-        output.push(' '); // single space to separate tokens
-    }
-    Ok(output.trim().as_bytes().to_vec())
-}
-
 /// Build a `.brk` archive
-pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 32]) -> io::Result<()> {
+pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8; 32]) -> io::Result<()> {
     let mut file = File::create(output)?;
 
     // Write placeholder header
@@ -135,10 +122,13 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
     };
 
     // 1. Explicitly add project.toml (always encrypted, and compressed)
+    // NOTE: This is now skipped since project.toml is compiled into manifest.rs
+    // Keeping this comment for reference - remove if no longer needed
+    /*
     let project_toml = project_root.join("project.toml");
     if project_toml.exists() {
         let raw_data = fs::read(&project_toml)?;
-        let (processed_data, flags, nonce, tag, original_size) = process_data(raw_data, true, true)?; // Encrypt and Compress project.toml
+        let (processed_data, flags, nonce, tag, original_size) = process_data(raw_data, true, true)?;
 
         let offset = file.seek(SeekFrom::Current(0))?;
         file.write_all(&processed_data)?;
@@ -154,6 +144,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
             tag,
         });
     }
+    */
 
     // 2. Walk res/ folder
     for entry in WalkDir::new(res_dir) {
@@ -161,27 +152,19 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
         if entry.file_type().is_file() {
             let path = entry.path();
 
-            // Skip unwanted extensions (scripts, source files)
+            // Skip extensions that are statically compiled
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if SKIP_EXTENSIONS.contains(&ext) {
+                if should_skip_extension(ext) {
                     continue;
                 }
             }
 
             let rel = path.strip_prefix(res_dir).unwrap().to_string_lossy().to_string();
 
-            // Minify .scn and .fur in memory
-            let mut data = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                match ext {
-                    "scn" => minify_json(path)?,
-                    "fur" => minify_fur(path)?,
-                    _ => fs::read(path)?,
-                }
-            } else {
-                fs::read(path)?
-            };
+            // Read file data (no more minification since .scn and .fur are skipped)
+            let data = fs::read(path)?;
 
-            // Determine if this file should be encrypted
+            // Determine if this file should be encrypted (only specific data file types)
             let should_encrypt = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 ENCRYPT_EXTENSIONS.contains(&ext)
             } else {
@@ -194,7 +177,6 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
             } else {
                 true // Default to compressing unknown extensions
             };
-
 
             let (processed_data, flags, nonce, tag, original_size) = process_data(data, should_encrypt, should_compress)?;
 
@@ -223,7 +205,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, project_root: &Path, key: &[u8; 
         file.write_all(path_bytes)?;
         file.write_all(&e.offset.to_le_bytes())?;
         file.write_all(&e.size.to_le_bytes())?;
-        file.write_all(&e.original_size.to_le_bytes())?; // NEW: Write original_size
+        file.write_all(&e.original_size.to_le_bytes())?;
         file.write_all(&e.flags.to_le_bytes())?;
         file.write_all(&e.nonce)?;
         file.write_all(&e.tag)?;

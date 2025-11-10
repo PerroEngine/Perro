@@ -1,12 +1,2063 @@
 {
   "root_id": "61bcc144-573f-49db-88a7-8faca16519d0",
   "nodes": {
-"61bcc144-573f-49db-88a7-8faca16519d0": {
-      "type": "UI",
+    "61bcc144-573f-49db-88a7-8faca16519d0": {
+      "type": "UINode",
       "fur_path": "res://fur/editor.fur",
+      "visible": true,
       "node": {
         "type": "Node",
         "name": "Editor UI"
+      }
+    },
+    "a3e71be4-dee7-47fd-a6f3-14f055f2c113": {
+      "type": "UINode",
+      "fur_path": "res://fur/mainpanel.fur",
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "MainPanel",
+        "parent": "61bcc144-573f-49db-88a7-8faca16519d0"
+      }
+    },
+    "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3": {
+      "type": "UINode",
+      "fur_path": "res://fur/sidebar.fur",
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "Sidebar",
+        "parent": "a3e71be4-dee7-47fd-a6f3-14f055f2c113"
+      }
+    },
+    "b2c2e5a7-0b80-43d2-87c9-9d2e308d54af": {
+      "type": "Sprite2D",
+      "texture_path": "res://textures/logo.png",
+      "region": [
+        0.0,
+        0.0,
+        128.0,
+        128.0
+      ],
+      "node2d": {
+        "type": "Node2D",
+        "transform": {
+          "position": [
+            16.0,
+            16.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true,
+        "node": {
+          "type": "Node",
+          "name": "LogoIcon",
+          "parent": "a3e71be4-dee7-47fd-a6f3-14f055f2c113"
+        }
+      }
+    },
+    "768a51c1-978a-4c4c-b7b8-29366d5c872e": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton1",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "df8dc7f4-6d61-43cc-b3d7-1f18ab4de338": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          32.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton2",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "b546cfaa-0c0c-4fd2-9adc-2435c461d4ed": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          64.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton3",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "ed2dc855-3ca7-4f2f-b420-ebea6b027ed1": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          96.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton4",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "f876666e-ace5-4700-a456-53b9c26e8880": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          128.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton5",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "60ea436e-90ec-4396-b062-29b42409f5ed": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          160.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton6",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "085f646e-5ffe-45d6-93e2-3cc490c5f2dc": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          192.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton7",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "25fd3a0f-c639-4326-a810-25be52e02cae": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          224.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton8",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "9bd40a23-1330-4e31-93fa-40f524b65ce4": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          256.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton9",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "a08250ed-c3b9-4197-af11-c3a951ab6665": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          288.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton10",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "672d7e2e-bc5a-44c4-9a47-22c63407baf0": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          320.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton11",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "67811120-0d7a-4bb4-9286-a802ee09e6d5": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          352.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton12",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "adf8a716-4c39-4993-aad6-b72a5069d543": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          384.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton13",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "a689a46b-5e3b-413f-ba03-eccf034ea086": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          416.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton14",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "75e44509-0be6-4e8c-ba41-09ae99205ef8": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          448.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton15",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "f3c50623-47cc-4ef8-af0d-da788cc0ece4": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          480.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton16",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "a580c824-926b-44f5-bd22-1287d545635d": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          512.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton17",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "c99f9c2a-d9d5-4a23-8968-863ba3a18444": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          544.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton18",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "2a07e490-0942-4837-bebe-96f872ae1cb6": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          576.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton19",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "ac711be5-cef9-4f78-9d32-4d5718102c21": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          608.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton20",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "f6b44d87-d435-4325-aa99-ae455a7cfed1": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          640.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton21",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "daeae99e-32d8-4b6f-8874-44adc80a0c31": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          672.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton22",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "63cb1db7-1c09-4b71-a3c8-edb826238cd0": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          704.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton23",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1a0c9b96-2de3-4fce-ba1b-0e326cf9c07d": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          736.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton24",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "2402de2d-9853-4561-8392-9226c8d89960": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          768.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton25",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "56d93399-53e1-41b3-a293-ba524964565e": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          800.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton26",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "49548d7d-6946-4c0d-a6d6-64a3529d58c5": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          832.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton27",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "3c98aa5b-7e5e-425a-8026-2e5886dc80ee": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          864.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton28",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "e7e9f96e-660e-4f48-8e71-a724afbeffcd": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          896.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton29",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1611e403-e31f-45d6-bdb8-d8b83e9e51d8": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          928.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton30",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "451c058d-acf3-494b-9b4c-5938c2940127": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          960.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton31",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "eb78909b-928d-40c2-86c6-5a4dd2f9836f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          992.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton32",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "4fb80161-51d2-4e98-b0a5-f73099385a23": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1024.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton33",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "f1235810-be40-4a37-89f9-3866acbe867d": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1056.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton34",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1c152c37-9108-4a52-a905-5cb9ddfd605a": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1088.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton35",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "bbcad7f8-a2ea-4584-a502-52c31a1114db": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1120.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton36",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "ed6964cc-d1ea-45c9-b1d1-52470c1d311f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1152.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton37",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "7ef40ca5-68c9-46a9-9795-7fbc4590e0b5": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1184.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton38",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "5aed397a-fe55-4ec6-b862-ad9a11cd717a": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1216.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton39",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "dea7e836-08cc-49c5-8984-129b63e3cf1f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1248.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton40",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "df56a4cf-a65c-4d53-a00a-5b2f228cf3f3": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1280.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton41",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1cc3bfbe-259a-4535-ace5-7e1c27f10138": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1312.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton42",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "7a3bdb78-4ee7-446c-97c9-4effe44adf60": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1344.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton43",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "2339f0df-c516-44cb-a064-5fb81d03ebae": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1376.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton44",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "6bf612e3-beb4-4527-8037-f805e810c983": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1408.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton45",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "4d95d979-39d7-400b-9a2e-9ab2c42085bb": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1440.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton46",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "151cf9cc-0fcb-4c93-bfbc-dc46e1517fe1": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1472.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton47",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1ec2b549-2292-4b72-900f-a1bfe57b8e43": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1504.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton48",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "80d56e58-7b51-48fc-bfd8-84a73515fc6a": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1536.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton49",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "5f1474d4-809c-4a68-af10-dd369d54af65": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1568.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton50",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "e3d93de6-e88e-4be4-a946-adaf46130ea9": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1600.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton51",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "708b8ab3-fe74-4590-8e0a-9e97d573ac37": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1632.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton52",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "6d623908-7081-4bcc-aa87-8e7e593d5137": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1664.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton53",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "d37484ca-4c49-4a2d-abc7-8daba2414eb6": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1696.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton54",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "8fb95434-58a9-464e-b7f4-590a8c7979ec": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1728.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton55",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "80ebf60a-f1f2-4915-8106-3a078e56f7c6": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1760.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton56",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "44949195-e7e9-4a33-ae11-c294eb8b5089": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1792.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton57",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "cafec359-aeb1-4455-a98f-1ca85bb78e12": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1824.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton58",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "87734b41-2975-4605-9c21-996862bc9c83": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1856.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton59",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "08396995-2190-4bdb-9e02-8a024d84d7e1": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1888.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton60",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "b30cdfa1-c331-45e7-8e79-be7419adc6c4": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1920.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton61",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "2f81bccd-fedd-4ef7-9012-fabeb9220cfe": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1952.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton62",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "607d9e45-f1a2-4e37-981c-1c11b141c442": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          1984.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton63",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "3523c600-44b5-4855-9ecc-c71856f9c937": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2016.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton64",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "5ffbf8c0-1583-4fdd-9730-c634720b791f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2048.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton65",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "bbc6a369-b96a-49f5-bb8d-7947e681d862": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2080.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton66",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "7ec6f2e0-a065-4b04-9770-8b1319f0dec9": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2112.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton67",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "6269771c-e147-45aa-9a54-4d79c388cba6": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2144.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton68",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "0be75ace-eb5d-4ad1-be4a-3e93882e0e6d": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2176.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton69",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "d020ad14-ea0b-4e62-8113-a48c190c6312": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2208.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton70",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "7bbfb7f7-75a8-47aa-a6c2-ab82ebd9d2f8": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2240.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton71",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "7f65588f-296f-4d94-8f29-494719b1950d": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2272.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton72",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "2a141b4d-08ab-4b73-a34b-6c4b10a66840": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2304.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton73",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "3c67c5be-4d57-450a-8884-857c3e308581": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2336.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton74",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "47079cc8-ae73-40ab-ae18-995c9301c570": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2368.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton75",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "e0019c56-1831-4579-ac5a-29818e139a21": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2400.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton76",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "b5a2968b-e3be-4965-b142-5a28578b485f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2432.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton77",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "94d38b7f-e9f2-41ab-9a2a-ce00464ee122": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2464.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton78",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "5bc50957-c24a-45d6-a6e4-32941872038c": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2496.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton79",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "bcdfa391-afa4-44fd-9f82-875f60760177": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2528.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton80",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "dfd255b3-0deb-4346-aa59-e5e07c4002ff": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2560.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton81",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1871c9af-e140-48a1-a22b-de4018547eb0": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2592.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton82",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1fea1b71-affe-43e9-990c-6687fe08852f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2624.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton83",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "8880a31d-d167-4722-b20b-a06f29c7cc64": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2656.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton84",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "d88f0c8f-a857-4c69-83ea-9bb20145d334": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2688.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton85",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "f2f5247b-a719-410f-9677-c7defd7ebb28": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2720.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton86",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "c9f41204-6b6b-4fae-a3a0-28d6985f6384": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2752.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton87",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "24c52254-9c46-4b1a-8735-29622c3cf7ea": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2784.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton88",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "7c9b085e-ba2a-4403-8e3e-e4f8ee61e1cb": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2816.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton89",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "1d102075-51ec-4bbc-9569-b61863d091af": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2848.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton90",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "b666f3b3-f86a-41a8-a9ed-aa03df0cb5d5": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2880.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton91",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "80f6a042-a162-4a42-be5a-12d5f4351f7f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2912.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton92",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "dbb574f0-f2bf-49fb-adc4-0cd215420f38": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2944.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton93",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "9be57c51-d9bc-4aaa-a0c3-b17ccc2ce8d0": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          2976.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton94",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "c32d269b-88a9-43c3-8673-5ba2fc9da3f3": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          3008.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton95",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "a09a9c07-1179-4982-8b0f-d827a4ac654c": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          3040.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton96",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "799e5e94-07e0-4561-934c-a9bf0d39343e": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          3072.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton97",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "4dba660c-e870-43d4-89de-6efa433d1734": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          3104.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton98",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "e585e456-12d1-4a69-8f06-4959c323ee8d": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          3136.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton99",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
+      }
+    },
+    "dadf1f5c-1324-4f68-a7fc-b946dfc4c08f": {
+      "type": "Node2D",
+      "transform": {
+        "position": [
+          64.0,
+          3168.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "SidebarButton100",
+        "parent": "3fcc24b0-6f9a-4b4e-b7a7-bb6f0fd4bbc3"
       }
     }
   },

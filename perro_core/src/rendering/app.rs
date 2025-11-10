@@ -323,29 +323,59 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut graphics: Graphics) {
+  fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut graphics: Graphics) {
+    // First clear pass
+    {
+        let (frame, view, mut encoder) = graphics.begin_frame();
+        let color_attachment = wgpu::RenderPassColorAttachment {
+            view: &view,
+            resolve_target: None,
+            ops: self.cached_operations,
+        };
         {
-            let (frame, view, mut encoder) = graphics.begin_frame();
-            let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: self.cached_operations,
-            };
-            {
-                let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("First Clear Pass"),
-                    color_attachments: &[Some(color_attachment)],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-            }
-            graphics.end_frame(frame, encoder);
-
-            graphics.window().set_visible(true);
-            graphics.window().request_redraw();
+            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("First Clear Pass"),
+                color_attachments: &[Some(color_attachment)],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
         }
-
-        self.state = State::Ready(graphics);
+        graphics.end_frame(frame, encoder);
     }
+
+    // ✨ NEW: Render the actual first game frame before showing window
+    if let Some(scene) = self.game_scene.as_mut() {
+        scene.update();
+        scene.render(&mut graphics);
+        
+        let (frame, view, mut encoder) = graphics.begin_frame();
+        let color_attachment = wgpu::RenderPassColorAttachment {
+            view: &view,
+            resolve_target: None,
+            ops: self.cached_operations,
+        };
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Initial Game Frame"),
+                color_attachments: &[Some(color_attachment)],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            graphics.draw_instances(&mut rpass);
+        }
+        graphics.end_frame(frame, encoder);
+        
+        // Mark that first frame is done
+        self.first_frame = false;
+        self.total_frames_rendered = 1;
+    }
+
+    // Now make window visible with content already rendered
+    graphics.window().set_visible(true);
+    graphics.window().request_redraw();
+
+    self.state = State::Ready(graphics);
+}
 }

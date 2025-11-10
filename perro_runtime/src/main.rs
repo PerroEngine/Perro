@@ -1,5 +1,4 @@
- #![cfg_attr(windows, windows_subsystem = "windows")] // no console on Windows
-
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use std::cell::RefCell;
 use std::env;
@@ -86,9 +85,12 @@ fn main() {
     // 6. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
+    println!("hello");
     // 7. Build runtime scene (now takes Rc<RefCell<Project>>)
     let game_scene = Scene::<DllScriptProvider>::from_project(project_rc.clone())
         .expect("Failed to build game scene");
+
+    println!("gmae");
 
     // 8. Run app (borrow project immutably for config values)
     let app = App::new(
