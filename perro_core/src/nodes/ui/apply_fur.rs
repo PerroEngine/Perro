@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Instant};
+use std::{borrow::Cow, collections::HashMap, time::Instant};
 use indexmap::IndexMap;
 use uuid::Uuid;
 
@@ -89,7 +89,7 @@ fn parse_compound(value: &str) -> (Option<&str>, Option<&str>) {
     split2(value, ',')
 }
 
-fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<String, String>) {
+fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<Cow<'static, str>, Cow<'static, str>>) {
     base.style_map.clear();
 
     // OPT: static defaults cached in BaseUIElement::default() as well
@@ -101,7 +101,7 @@ fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<String, Strin
 
     for (key, val) in attrs.iter() {
         let v = val.trim();
-        match key.as_str() {
+        match key.as_ref() {
             // Pivot
             "pv" => {
                 let (x, y) = parse_compound(v);
@@ -213,7 +213,7 @@ fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<String, Strin
 // =================== ELEMENT CONVERSION ===================
 
 fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
-    let tag = fur.tag_name.as_str();
+    let tag = fur.tag_name.as_ref();
 
     macro_rules! make {
         ($typ:expr) => {{
@@ -330,7 +330,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             layout.set_name(&fur.id);
             apply_base_attributes(&mut layout.base, &fur.attributes);
 
-            layout.container.mode = match (tag, fur.attributes.get("mode").map(|v| v.as_str())) {
+            layout.container.mode = match (tag, fur.attributes.get("mode").map(|v| v.as_ref())) {
                 ("VLayout", _) | (_, Some("v") | Some("V")) => ContainerMode::Vertical,
                 _ => ContainerMode::Horizontal,
             };
@@ -355,7 +355,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             text.props.content = fur
                 .children
                 .iter()
-                .filter_map(|n| if let FurNode::Text(s) = n { Some(s.as_str()) } else { None })
+                .filter_map(|n| if let FurNode::Text(s) = n { Some(s.as_ref()) } else { None })
                 .collect::<Vec<&str>>()
                 .join("");
 

@@ -1,23 +1,23 @@
-use std::{collections::HashMap, default};
+use std::{borrow::Cow, collections::HashMap};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub enum FurNode {
     Element(FurElement),
-    Text(String),
+    Text(Cow<'static, str>),
 }
 
 #[derive(Debug, Clone)]
 pub struct FurElement {
-    pub tag_name: String,                       
-    pub id: String,       
-    pub attributes: HashMap<String, String>,   
+    pub tag_name: Cow<'static, str>,                    
+    pub id: Cow<'static, str>,      
+    pub attributes: HashMap<Cow<'static, str>, Cow<'static, str>>,   
     pub children: Vec<FurNode>,                 
     pub self_closing: bool,                     
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Hash, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FurAnchor {
     TopLeft,
     Top,

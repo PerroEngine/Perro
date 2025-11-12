@@ -2,7 +2,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Node {
@@ -11,12 +12,13 @@ pub struct Node {
     pub id:    Uuid,
 
     #[serde(rename = "type")]
-    pub ty:    String,
+    pub ty: Cow<'static, str>,
 
-    pub name:  String,
+    pub name: Cow<'static, str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub script_path: Option<String>,
+    pub script_path: Option<Cow<'static, str>>,
+
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_exp_vars: Option<HashMap<String, Value>>,
@@ -34,22 +36,23 @@ pub struct Node {
     pub dirty: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_root_of: Option<String>,
+    pub is_root_of: Option<Cow<'static, str>>,
 }
 
 impl Node {
     pub fn new(name: &str, parent: Option<Uuid>) -> Self {
         Self {
             id:       Uuid::new_v4(),
-            ty:       "Node".into(),
-            name:     name.into(),
+            ty:       Cow::Borrowed("Node"),
+            name:     Cow::Owned(name.into()),
+
             script_path: None,
             script_exp_vars : None,
             parent,
             children: None,
             metadata: None,
 
-            dirty: false,
+            dirty: true,
 
             is_root_of: None
         }

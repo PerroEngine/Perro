@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 use uuid::Uuid;
 
 use crate::ast::{FurElement, FurNode};
@@ -215,7 +215,7 @@ impl<'a> FurParser<'a> {
             Token::Text(txt) => {
                 let t = txt.to_string();
                 self.next_token()?;
-                Ok(FurNode::Text(t))
+                Ok(FurNode::Text(Cow::Owned(t)))
             }
             other => Err(format!(
                 "Unexpected token when parsing node: {:?}",
@@ -263,7 +263,7 @@ impl<'a> FurParser<'a> {
     self.element_stack.push(tag_name.to_string());
 
     // ---- collect attributes
-    let mut attributes = HashMap::new();
+    let mut attributes: HashMap<Cow<'static, str>, Cow<'static, str>> = HashMap::new();
     while let Token::Identifier(attr_name) = &self.current_token {
         let key = *attr_name;
         self.next_token()?;
@@ -274,7 +274,10 @@ impl<'a> FurParser<'a> {
         match &self.current_token {
             Token::StringLiteral(val) | Token::Identifier(val) => {
                 let resolved_val = resolve_value(val, key.starts_with("rounding"));
-                attributes.insert(key.to_string(), resolved_val);
+                attributes.insert(
+                Cow::Owned(key.to_string()), 
+                Cow::Owned(resolved_val)
+            );
                 self.next_token()?;
             }
             other => {
@@ -322,9 +325,9 @@ impl<'a> FurParser<'a> {
         return Ok(FurNode::Element(FurElement {
             tag_name: "Text".into(),
             id: attributes.get("id").cloned()
-                .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4())),
+                .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into()).into(),
             attributes,
-            children: vec![FurNode::Text(content)],
+            children: vec![FurNode::Text(content.into())],
             self_closing: false,
         }));
     }
@@ -363,15 +366,15 @@ impl<'a> FurParser<'a> {
     self.element_stack.pop();
 
     let id = attributes.get("id").cloned()
-        .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()));
+        .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into());
 
-    Ok(FurNode::Element(FurElement {
-        tag_name: tag_name.to_string(),
-        id,
-        attributes,
-        children,
-        self_closing,
-    }))
+   Ok(FurNode::Element(FurElement {
+    tag_name: Cow::Owned(tag_name.to_string()),
+    id,
+    attributes,
+    children,
+    self_closing,
+}))
 }
 
     // NEW METHOD: Extract text content without any tokenization

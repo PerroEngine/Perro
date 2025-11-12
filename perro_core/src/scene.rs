@@ -1,5 +1,5 @@
 use crate::{
-    Graphics, Node, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui// NEW import
+    Graphics, Node, RenderLayer, Vector2, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, render_ui_optimized}// NEW import
 };
 
 use indexmap::IndexMap;
@@ -420,7 +420,7 @@ pub fn merge_scene_data(
         if dirty_nodes.is_empty() {
             return;
         }
-
+        println!("{} dirty nodes to be rendered", dirty_nodes.len());
         self.traverse_and_render(dirty_nodes, gfx);
     }
 
@@ -568,7 +568,7 @@ fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
         handle
     }
 
-    pub fn create_node(&mut self, mut node: SceneNode) -> anyhow::Result<()> {
+    pub fn add_node_to_scene(&mut self, mut node: SceneNode) -> anyhow::Result<()> {
         let id = *node.get_id();
 
         // Handle UI nodes with .fur files
@@ -595,19 +595,12 @@ fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
                 }
             }
         }
-
-     // Handle script attachment
-  // Handle script attachment
-// Handle script attachment
-
-
-    node.mark_dirty();
     self.data.nodes.insert(id, node);
-    println!("✅ Node {} fully created\n", id);
+    println!("✅ Node {} added\n", id);
 
    // node is moved already, so get it back immutably from scene
 if let Some(node_ref) = self.data.nodes.get(&id) {
-    if let Some(script_path) = node_ref.get_script_path().cloned() {
+    if let Some(script_path) = node_ref.get_script_path() {
         println!("   ✅ Found script_path: {}", script_path);
         
         let identifier = script_path_to_identifier(&script_path)
@@ -647,22 +640,7 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
         &self.data.nodes[&self.data.root_id]
     }
 
-    pub fn get_node<T: 'static>(&self, id: &Uuid) -> Option<&T> {
-        self.data
-            .nodes
-            .get(id)
-            .and_then(|node| node.as_any().downcast_ref::<T>())
-    }
-
-    pub fn get_node_mut<T: BaseNode + 'static>(&mut self, id: &Uuid) -> Option<&mut T> {
-        self.data
-            .nodes
-            .get_mut(id)
-            .and_then(|node| {
-                let typed = node.as_any_mut().downcast_mut::<T>()?;
-                Some(typed)
-            })
-    }
+  
 
     // Remove node and stop rendering
     pub fn remove_node(&mut self, node_id: Uuid, gfx: &mut Graphics) {
@@ -716,19 +694,21 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
     for node_id in dirty_nodes {
         if let Some(node) = self.data.nodes.get_mut(&node_id) {
             match node {
-                SceneNode::Sprite2D(sprite) => {
-                    if let Some(tex) = &sprite.texture_path {
-                        // gfx.draw_texture(
-                        //     node_id,
-                        //     tex,
-                        //     sprite.transform.clone(),
-                        //     Vector2::new(0.5, 0.5),
-                        // );
-                    }
-                }
+                // SceneNode::Sprite2D(sprite) => {
+                //     if let Some(tex) = &sprite.texture_path {
+                //         gfx.renderer_prim.queue_texture(
+                //             node_id,
+                //             RenderLayer::World2D,
+                //             tex,
+                //             sprite.transform.clone(),
+                //          sprite.pivot,
+                //             sprite.z_index
+                //          );
+                //     }
+                // }
                 SceneNode::UINode(ui_node) => {
                     // UI renderer handles layout + rendering internally
-                    render_ui(ui_node, gfx);
+                    render_ui_optimized(ui_node, gfx);
                 }
                 _ => {}
             }

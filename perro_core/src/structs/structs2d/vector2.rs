@@ -18,7 +18,19 @@ impl Vector2 {
     pub fn one() -> Self {
         Self { x: 1.0, y: 1.0 }
     }
+
+    
+    pub fn is_half_half(pivot: &Vector2) -> bool {
+    pivot.x == 0.5 && pivot.y == 0.5
+    }
+
+    pub fn default_pivot() -> Vector2 {
+        Vector2::new(0.5, 0.5)
+    }
+
 }
+
+
 
 // --- Add ---
 impl Add for Vector2 {

@@ -1,10 +1,126 @@
 use indexmap::IndexMap;
 use uuid::Uuid;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::{OnceLock, RwLock}};
+use rayon::prelude::*;
 
 use crate::{
-    ast::FurAnchor, font::{Font, FontAtlas, Style, Weight}, graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, ui_element::{BaseElement, UIElement}, ui_elements::{ui_container::{ContainerMode, UIPanel}, ui_text::UIText}, ui_node::UINode, Graphics, structs2d::{Transform2D, Vector2, Color}
+    Graphics, RenderLayer, ast::FurAnchor, 
+    font::{Font, FontAtlas, Style, Weight}, 
+    graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH}, 
+    structs2d::{Color, Transform2D, Vector2}, 
+    ui_element::{BaseElement, UIElement}, 
+    ui_elements::{ui_container::{ContainerMode, UIPanel}, ui_text::UIText}, 
+    ui_node::UINode
 };
+
+// Hash of layout-affecting properties for change detection
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct LayoutSignature {
+    size: (i32, i32), // Convert to int for hashing
+    anchor: FurAnchor,
+    children_count: usize,
+    children_order: Vec<Uuid>, // Order matters for layout
+    container_mode: Option<ContainerMode>,
+    gap: Option<(i32, i32)>,
+    cols: Option<usize>, // For grid layout
+    style_affecting_layout: Vec<(String, i32)>, // Only size/position styles as ints
+}
+
+impl LayoutSignature {
+    fn from_element(element: &UIElement) -> Self {
+        let size = element.get_size();
+        let size_int = ((size.x * 1000.0) as i32, (size.y * 1000.0) as i32);
+        
+        let children_order = element.get_children().to_vec();
+        
+        let (container_mode, gap, cols) = match element {
+            UIElement::Layout(layout) => (
+                Some(layout.container.mode),
+                Some(((layout.container.gap.x * 1000.0) as i32, (layout.container.gap.y * 1000.0) as i32)),
+                None
+            ),
+            UIElement::GridLayout(grid) => (
+                Some(grid.container.mode),
+                Some(((grid.container.gap.x * 1000.0) as i32, (grid.container.gap.y * 1000.0) as i32)),
+                Some(grid.cols)
+            ),
+            UIElement::BoxContainer(_) => (None, None, None),
+            _ => (None, None, None),
+        };
+        
+        // Only include style properties that affect layout
+        let mut style_affecting_layout = Vec::new();
+        let style_map = element.get_style_map();
+        for (key, value) in style_map {
+            if key.contains("size.") || key.contains("transform.position.") || key.contains("transform.scale.") {
+                style_affecting_layout.push((key.clone(), (*value * 1000.0) as i32));
+            }
+        }
+        style_affecting_layout.sort(); // Consistent ordering
+        
+        Self {
+            size: size_int,
+            anchor: *element.get_anchor(),
+            children_count: children_order.len(),
+            children_order,
+            container_mode,
+            gap,
+            cols,
+            style_affecting_layout,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LayoutCacheEntry {
+    signature: LayoutSignature,
+    content_size: Vector2,
+    layout_positions: Vec<(Uuid, Vector2)>,
+    percentage_reference: Vector2,
+}
+
+#[derive(Debug, Default)]
+pub struct LayoutCache {
+    entries: HashMap<Uuid, LayoutCacheEntry>,
+}
+
+impl LayoutCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+    
+    fn get_cached_content_size(&self, id: &Uuid, signature: &LayoutSignature) -> Option<Vector2> {
+        self.entries.get(id)
+            .filter(|entry| entry.signature == *signature)
+            .map(|entry| entry.content_size)
+    }
+    
+    fn get_cached_layout_positions(&self, id: &Uuid, signature: &LayoutSignature) -> Option<Vec<(Uuid, Vector2)>> {
+        self.entries.get(id)
+            .filter(|entry| entry.signature == *signature)
+            .map(|entry| entry.layout_positions.clone())
+    }
+    
+    fn get_cached_percentage_reference(&self, id: &Uuid, signature: &LayoutSignature) -> Option<Vector2> {
+        self.entries.get(id)
+            .filter(|entry| entry.signature == *signature)
+            .map(|entry| entry.percentage_reference)
+    }
+    
+    fn cache_results(&mut self, id: Uuid, signature: LayoutSignature, content_size: Vector2, 
+                     layout_positions: Vec<(Uuid, Vector2)>, percentage_reference: Vector2) {
+        self.entries.insert(id, LayoutCacheEntry {
+            signature,
+            content_size,
+            layout_positions,
+            percentage_reference,
+        });
+    }
+}
 
 /// Helper function to find the first non-layout ancestor for percentage calculations
 fn find_percentage_reference_ancestor(
@@ -37,6 +153,61 @@ fn find_percentage_reference_ancestor(
     Some(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT))
 }
 
+/// Optimized helper function with smart caching
+fn find_percentage_reference_ancestor_cached(
+    elements: &IndexMap<Uuid, UIElement>,
+    current_id: &Uuid,
+    cache: &RwLock<LayoutCache>,
+) -> Vector2 {
+    if let Some(element) = elements.get(current_id) {
+        let signature = LayoutSignature::from_element(element);
+        if let Ok(cache_ref) = cache.read() {
+            if let Some(cached) = cache_ref.get_cached_percentage_reference(current_id, &signature) {
+                return cached;
+            }
+        }
+    }
+
+    let mut current = match elements.get(current_id) {
+        Some(el) => el,
+        None => return Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT),
+    };
+    
+    // Walk up the parent chain
+    while let Some(parent_id) = current.get_parent() {
+        if let Some(parent) = elements.get(&parent_id) {
+            match parent {
+                UIElement::Layout(_) | UIElement::GridLayout(_) => {
+                    current = parent;
+                    continue;
+                }
+                _ => {
+                    let result = *parent.get_size();
+                    // Cache the result
+                    if let Some(element) = elements.get(current_id) {
+                        let signature = LayoutSignature::from_element(element);
+                        if let Ok(mut cache_ref) = cache.write() {
+                            cache_ref.cache_results(*current_id, signature, Vector2::new(0.0, 0.0), Vec::new(), result);
+                        }
+                    }
+                    return result;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    
+    let result = Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+    if let Some(element) = elements.get(current_id) {
+        let signature = LayoutSignature::from_element(element);
+        if let Ok(mut cache_ref) = cache.write() {
+            cache_ref.cache_results(*current_id, signature, Vector2::new(0.0, 0.0), Vec::new(), result);
+        }
+    }
+    result
+}
+
 /// Calculate the content size needed for ANY container based on its children
 pub fn calculate_content_size(
     elements: &IndexMap<Uuid, UIElement>,
@@ -52,29 +223,31 @@ pub fn calculate_content_size(
         return Vector2::new(0.0, 0.0);
     }
 
-    // Resolve child sizes with smart percentage calculation
-    let mut resolved_child_sizes: Vec<Vector2> = Vec::new();
-    
-    for &child_id in children_ids {
-        if let Some(child) = elements.get(&child_id) {
-            let mut child_size = *child.get_size();
-            
-            // Find the percentage reference for this child
-            let percentage_reference_size = find_percentage_reference_ancestor(elements, &child_id)
-                .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
-            
-            // Resolve percentages using the smart reference
-            let style_map = child.get_style_map();
-            if let Some(&pct) = style_map.get("size.x") {
-                child_size.x = percentage_reference_size.x * (pct / 100.0);
-            }
-            if let Some(&pct) = style_map.get("size.y") {
-                child_size.y = percentage_reference_size.y * (pct / 100.0);
-            }
-            
-            resolved_child_sizes.push(child_size);
-        }
-    }
+    // Convert to Vec for parallel processing
+    let children_vec: Vec<&Uuid> = children_ids.iter().collect();
+    let resolved_child_sizes: Vec<Vector2> = children_vec
+        .par_iter()
+        .filter_map(|&&child_id| {
+            elements.get(&child_id).map(|child| {
+                let mut child_size = *child.get_size();
+                
+                // Find the percentage reference for this child
+                let percentage_reference_size = find_percentage_reference_ancestor(elements, &child_id)
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                
+                // Resolve percentages using the smart reference
+                let style_map = child.get_style_map();
+                if let Some(&pct) = style_map.get("size.x") {
+                    child_size.x = percentage_reference_size.x * (pct / 100.0);
+                }
+                if let Some(&pct) = style_map.get("size.y") {
+                    child_size.y = percentage_reference_size.y * (pct / 100.0);
+                }
+                
+                child_size
+            })
+        })
+        .collect();
 
     if resolved_child_sizes.is_empty() {
         return Vector2::new(0.0, 0.0);
@@ -83,17 +256,10 @@ pub fn calculate_content_size(
     // Handle different container types using resolved sizes
     match parent {
         UIElement::BoxContainer(_) => {
-            // BoxContainer acts like a free-form container
-            // Size should be the bounding box of all children
-            if resolved_child_sizes.is_empty() {
-                return Vector2::new(0.0, 0.0);
-            }
+            // For BoxContainer, take the max of both dimensions using parallel processing
+            let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+            let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
             
-            // For BoxContainer, take the max of both dimensions
-            let max_width = resolved_child_sizes.iter().map(|size| size.x).fold(0.0, f32::max);
-            let max_height = resolved_child_sizes.iter().map(|size| size.y).fold(0.0, f32::max);
-            
-            // println!("BoxContainer content size for {:?}: {:?}", parent_id, Vector2::new(max_width, max_height));
             return Vector2::new(max_width, max_height);
         },
         UIElement::Layout(layout) => {
@@ -103,21 +269,21 @@ pub fn calculate_content_size(
             let content_size = match container_mode {
                 ContainerMode::Horizontal => {
                     // Width: sum of all children + gaps
-                    let total_width: f32 = resolved_child_sizes.iter().map(|size| size.x).sum();
+                    let total_width: f32 = resolved_child_sizes.par_iter().map(|size| size.x).sum();
                     let gap_width = if resolved_child_sizes.len() > 1 { 
                         gap.x * (resolved_child_sizes.len() - 1) as f32 
                     } else { 
                         0.0 
                     };
                     // Height: max of all children
-                    let max_height = resolved_child_sizes.iter().map(|size| size.y).fold(0.0, f32::max);
+                    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
                     Vector2::new(total_width + gap_width, max_height)
                 },
                 ContainerMode::Vertical => {
                     // Width: max of all children
-                    let max_width = resolved_child_sizes.iter().map(|size| size.x).fold(0.0, f32::max);
+                    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
                     // Height: sum of all children + gaps
-                    let total_height: f32 = resolved_child_sizes.iter().map(|size| size.y).sum();
+                    let total_height: f32 = resolved_child_sizes.par_iter().map(|size| size.y).sum();
                     let gap_height = if resolved_child_sizes.len() > 1 { 
                         gap.y * (resolved_child_sizes.len() - 1) as f32 
                     } else { 
@@ -127,13 +293,12 @@ pub fn calculate_content_size(
                 },
                 ContainerMode::Grid => {
                     // This shouldn't happen for Layout, but handle it anyway
-                    let max_width = resolved_child_sizes.iter().map(|size| size.x).fold(0.0, f32::max);
-                    let max_height = resolved_child_sizes.iter().map(|size| size.y).fold(0.0, f32::max);
+                    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+                    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
                     Vector2::new(max_width, max_height)
                 }
             };
 
-          //  println!("Layout content size for {:?} (mode: {:?}): {:?}", parent_id, container_mode, content_size);
             return content_size;
         },
         UIElement::GridLayout(grid) => {
@@ -150,9 +315,9 @@ pub fn calculate_content_size(
             
             let rows = (resolved_child_sizes.len() + cols - 1) / cols; // Ceiling division
             
-            // Find max dimensions for grid cells
-            let max_cell_width = resolved_child_sizes.iter().map(|size| size.x).fold(0.0, f32::max);
-            let max_cell_height = resolved_child_sizes.iter().map(|size| size.y).fold(0.0, f32::max);
+            // Find max dimensions for grid cells using parallel processing
+            let max_cell_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+            let max_cell_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
             
             // Total width: (cols × max_width) + gaps between columns
             let total_width = max_cell_width * cols as f32 + 
@@ -162,11 +327,134 @@ pub fn calculate_content_size(
             let total_height = max_cell_height * rows as f32 + 
                 if rows > 1 { gap.y * (rows - 1) as f32 } else { 0.0 };
             
-           // println!("GridLayout content size for {:?}: {:?}", parent_id, Vector2::new(total_width, total_height));
             return Vector2::new(total_width, total_height);
         },
         _ => return Vector2::new(0.0, 0.0), // Not a container
     }
+}
+
+/// Smart cached content size calculation with parallel processing
+pub fn calculate_content_size_smart_cached(
+    elements: &IndexMap<Uuid, UIElement>,
+    parent_id: &Uuid,
+    cache: &RwLock<LayoutCache>,
+) -> Vector2 {
+    let parent = match elements.get(parent_id) {
+        Some(p) => p,
+        None => return Vector2::new(0.0, 0.0),
+    };
+
+    let signature = LayoutSignature::from_element(parent);
+    
+    // Check cache first with read lock
+    if let Ok(cache_ref) = cache.read() {
+        if let Some(cached) = cache_ref.get_cached_content_size(parent_id, &signature) {
+            return cached;
+        }
+    }
+
+    let children_ids = parent.get_children();
+    if children_ids.is_empty() {
+        let result = Vector2::new(0.0, 0.0);
+        if let Ok(mut cache_ref) = cache.write() {
+            cache_ref.cache_results(*parent_id, signature, result, Vec::new(), Vector2::new(0.0, 0.0));
+        }
+        return result;
+    }
+
+    // Convert to Vec for parallel processing
+    let children_vec: Vec<&Uuid> = children_ids.iter().collect();
+    let resolved_child_sizes: Vec<Vector2> = children_vec
+        .par_iter()
+        .filter_map(|&&child_id| {
+            elements.get(&child_id).map(|child| {
+                let mut child_size = *child.get_size();
+                
+                let percentage_reference_size = find_percentage_reference_ancestor(elements, &child_id)
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                
+                let style_map = child.get_style_map();
+                if let Some(&pct) = style_map.get("size.x") {
+                    child_size.x = percentage_reference_size.x * (pct / 100.0);
+                }
+                if let Some(&pct) = style_map.get("size.y") {
+                    child_size.y = percentage_reference_size.y * (pct / 100.0);
+                }
+                
+                child_size
+            })
+        })
+        .collect();
+
+    if resolved_child_sizes.is_empty() {
+        let result = Vector2::new(0.0, 0.0);
+        if let Ok(mut cache_ref) = cache.write() {
+            cache_ref.cache_results(*parent_id, signature, result, Vec::new(), Vector2::new(0.0, 0.0));
+        }
+        return result;
+    }
+
+    let content_size = match parent {
+        UIElement::BoxContainer(_) => {
+            let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+            let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+            Vector2::new(max_width, max_height)
+        },
+        UIElement::Layout(layout) => {
+            let container_mode = &layout.container.mode;
+            let gap = layout.container.gap;
+
+            match container_mode {
+                ContainerMode::Horizontal => {
+                    let total_width: f32 = resolved_child_sizes.par_iter().map(|size| size.x).sum();
+                    let gap_width = if resolved_child_sizes.len() > 1 { 
+                        gap.x * (resolved_child_sizes.len() - 1) as f32 
+                    } else { 0.0 };
+                    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+                    Vector2::new(total_width + gap_width, max_height)
+                },
+                ContainerMode::Vertical => {
+                    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+                    let total_height: f32 = resolved_child_sizes.par_iter().map(|size| size.y).sum();
+                    let gap_height = if resolved_child_sizes.len() > 1 { 
+                        gap.y * (resolved_child_sizes.len() - 1) as f32 
+                    } else { 0.0 };
+                    Vector2::new(max_width, total_height + gap_height)
+                },
+                ContainerMode::Grid => {
+                    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+                    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+                    Vector2::new(max_width, max_height)
+                }
+            }
+        },
+        UIElement::GridLayout(grid) => {
+            let gap = grid.container.gap;
+            let cols = grid.cols;
+            
+            if cols == 0 {
+                Vector2::new(0.0, 0.0)
+            } else {
+                let rows = (resolved_child_sizes.len() + cols - 1) / cols;
+                let max_cell_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+                let max_cell_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+                
+                let total_width = max_cell_width * cols as f32 + 
+                    if cols > 1 { gap.x * (cols - 1) as f32 } else { 0.0 };
+                let total_height = max_cell_height * rows as f32 + 
+                    if rows > 1 { gap.y * (rows - 1) as f32 } else { 0.0 };
+                
+                Vector2::new(total_width, total_height)
+            }
+        },
+        _ => Vector2::new(0.0, 0.0),
+    };
+
+    // Cache the result with write lock
+    if let Ok(mut cache_ref) = cache.write() {
+        cache_ref.cache_results(*parent_id, signature, content_size, Vec::new(), Vector2::new(0.0, 0.0));
+    }
+    content_size
 }
 
 pub fn calculate_layout_positions(
@@ -200,35 +488,34 @@ pub fn calculate_layout_positions(
         _ => return Vec::new(), // Not a layout container
     };
 
-    // Collect child info with resolved sizes
-    let mut child_info: Vec<(Uuid, Vector2)> = Vec::new();
-    for &child_id in children_ids {
-        if let Some(child) = elements.get(&child_id) {
-            let mut child_size = *child.get_size();
-            
-            // Resolve percentages for layout positioning
-            let percentage_reference_size = find_percentage_reference_ancestor(elements, &child_id)
-                .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
-            
-            let style_map = child.get_style_map();
-            if let Some(&pct) = style_map.get("size.x") {
-                child_size.x = percentage_reference_size.x * (pct / 100.0);
-            }
-            if let Some(&pct) = style_map.get("size.y") {
-                child_size.y = percentage_reference_size.y * (pct / 100.0);
-            }
-            
-            child_info.push((child_id, child_size));
-        }
-    }
+    // Convert to Vec for parallel processing
+    let children_vec: Vec<&Uuid> = children_ids.iter().collect();
+    let child_info: Vec<(Uuid, Vector2)> = children_vec
+        .par_iter()
+        .filter_map(|&&child_id| {
+            elements.get(&child_id).map(|child| {
+                let mut child_size = *child.get_size();
+                
+                // Resolve percentages for layout positioning
+                let percentage_reference_size = find_percentage_reference_ancestor(elements, &child_id)
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                
+                let style_map = child.get_style_map();
+                if let Some(&pct) = style_map.get("size.x") {
+                    child_size.x = percentage_reference_size.x * (pct / 100.0);
+                }
+                if let Some(&pct) = style_map.get("size.y") {
+                    child_size.y = percentage_reference_size.y * (pct / 100.0);
+                }
+                
+                (child_id, child_size)
+            })
+        })
+        .collect();
 
     if child_info.is_empty() {
         return Vec::new();
     }
-
-    let parent_size = *parent.get_size();
-    // println!("Calculating layout positions for {:?} (mode: {:?}, size: {:?})", 
-    //          parent_id, container_mode, parent_size);
 
     match container_mode {
         ContainerMode::Horizontal => calculate_horizontal_layout(&child_info, gap),
@@ -243,19 +530,45 @@ pub fn calculate_layout_positions(
     }
 }
 
+pub fn calculate_layout_positions_cached(
+    elements: &IndexMap<Uuid, UIElement>,
+    parent_id: &Uuid,
+    cache: &RwLock<LayoutCache>,
+) -> Vec<(Uuid, Vector2)> {
+    let parent = match elements.get(parent_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    let signature = LayoutSignature::from_element(parent);
+    
+    // Check cache first with read lock
+    if let Ok(cache_ref) = cache.read() {
+        if let Some(cached) = cache_ref.get_cached_layout_positions(parent_id, &signature) {
+            return cached;
+        }
+    }
+
+    // Fall back to original calculate_layout_positions logic
+    let result = calculate_layout_positions(elements, parent_id);
+    
+    // Cache the result with write lock
+    if let Ok(mut cache_ref) = cache.write() {
+        cache_ref.cache_results(*parent_id, signature, Vector2::new(0.0, 0.0), result.clone(), Vector2::new(0.0, 0.0));
+    }
+    result
+}
+
 fn calculate_horizontal_layout(
     children: &[(Uuid, Vector2)],
     gap: Vector2,
 ) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
     
-    // Calculate total width needed
-    let total_child_width: f32 = children.iter().map(|(_, size)| size.x).sum();
+    // Calculate total width needed using parallel processing
+    let total_child_width: f32 = children.par_iter().map(|(_, size)| size.x).sum();
     let total_gap_width = if children.len() > 1 { gap.x * (children.len() - 1) as f32 } else { 0.0 };
     let total_content_width = total_child_width + total_gap_width;
-    
-    // println!("Horizontal layout: total_width={}, gap_width={}, content_width={}", 
-    //          total_child_width, total_gap_width, total_content_width);
     
     // Start from the left edge of the content area (which is centered in the parent)
     let start_x = -total_content_width * 0.5;
@@ -269,7 +582,6 @@ fn calculate_horizontal_layout(
         let child_y = 0.0; // Center vertically in parent
         
         positions.push((*child_id, Vector2::new(child_x, child_y)));
-      //  println!("  Child {:?} positioned at ({}, {})", child_id, child_x, child_y);
         
         // Move to next position
         current_x += child_size.x + gap.x;
@@ -284,13 +596,10 @@ fn calculate_vertical_layout(
 ) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
     
-    // Calculate total height needed
-    let total_child_height: f32 = children.iter().map(|(_, size)| size.y).sum();
+    // Calculate total height needed using parallel processing
+    let total_child_height: f32 = children.par_iter().map(|(_, size)| size.y).sum();
     let total_gap_height = if children.len() > 1 { gap.y * (children.len() - 1) as f32 } else { 0.0 };
     let total_content_height = total_child_height + total_gap_height;
-    
-    // println!("Vertical layout: total_height={}, gap_height={}, content_height={}", 
-    //          total_child_height, total_gap_height, total_content_height);
     
     // Start from the top edge of the content area (which is centered in the parent)
     let start_y = total_content_height * 0.5;
@@ -304,7 +613,6 @@ fn calculate_vertical_layout(
         let child_x = 0.0; // Center horizontally in parent
         
         positions.push((*child_id, Vector2::new(child_x, child_y)));
-       // println!("  Child {:?} positioned at ({}, {})", child_id, child_x, child_y);
         
         // Move to next position (downward)
         current_y -= child_size.y + gap.y;
@@ -326,9 +634,9 @@ fn calculate_grid_layout(
     
     let rows = (children.len() + cols - 1) / cols; // Ceiling division
     
-    // Find the maximum width and height for consistent grid cells
-    let max_width = children.iter().map(|(_, size)| size.x).fold(0.0, f32::max);
-    let max_height = children.iter().map(|(_, size)| size.y).fold(0.0, f32::max);
+    // Find the maximum width and height for consistent grid cells using parallel processing
+    let max_width = children.par_iter().map(|(_, size)| size.x).reduce(|| 0.0, f32::max);
+    let max_height = children.par_iter().map(|(_, size)| size.y).reduce(|| 0.0, f32::max);
     
     // Calculate total grid dimensions
     let total_width = max_width * cols as f32 + if cols > 1 { gap.x * (cols - 1) as f32 } else { 0.0 };
@@ -380,7 +688,37 @@ fn calculate_all_content_sizes(
         if is_container {
             let content_size = calculate_content_size(elements, current_id);
             if let Some(element) = elements.get_mut(current_id) {
-                // println!("Auto-sizing container {:?} to {:?}", current_id, content_size);
+                element.set_size(content_size);
+            }
+        }
+    }
+}
+
+fn calculate_all_content_sizes_cached(
+    elements: &mut IndexMap<Uuid, UIElement>,
+    current_id: &Uuid,
+    cache: &RwLock<LayoutCache>,
+) {
+    let children_ids = if let Some(element) = elements.get(current_id) {
+        element.get_children().to_vec()
+    } else {
+        return;
+    };
+    
+    for child_id in children_ids {
+        calculate_all_content_sizes_cached(elements, &child_id, cache);
+    }
+    
+    if let Some(element) = elements.get(current_id) {
+        let is_container = matches!(element, 
+            UIElement::Layout(_) | 
+            UIElement::GridLayout(_) | 
+            UIElement::BoxContainer(_)
+        );
+        
+        if is_container {
+            let content_size = calculate_content_size_smart_cached(elements, current_id, cache);
+            if let Some(element) = elements.get_mut(current_id) {
                 element.set_size(content_size);
             }
         }
@@ -394,7 +732,7 @@ pub fn update_global_transforms_with_layout(
     layout_positions: &HashMap<Uuid, Vector2>,
     parent_z: i32,
 ) {
-    // println!("Processing element: {:?}", current_id);
+    println!("Processing element: {:?}", current_id);
     
     // Get parent info
     let (parent_size, parent_z) = {
@@ -447,18 +785,12 @@ pub fn update_global_transforms_with_layout(
                             percentage_reference_size.x * fraction, 
                             element.get_size().y
                         ));
-                        // println!("Element {:?} size.x: {}% of reference size {:?} = {}", 
-                        //          current_id, pct, percentage_reference_size, 
-                        //          percentage_reference_size.x * fraction);
                     }
                     "size.y" => {
                         element.set_size(Vector2::new(
                             element.get_size().x, 
                             percentage_reference_size.y * fraction
                         ));
-                        // println!("Element {:?} size.y: {}% of reference size {:?} = {}", 
-                        //          current_id, pct, percentage_reference_size, 
-                        //          percentage_reference_size.y * fraction);
                     }
 
                     // Position percentages still use immediate parent
@@ -511,7 +843,6 @@ pub fn update_global_transforms_with_layout(
         if is_layout_container && !has_explicit_size {
             let content_size = calculate_content_size(elements, current_id);
             if let Some(element) = elements.get_mut(current_id) {
-                // println!("Auto-sizing layout container {:?} to {:?}", current_id, content_size);
                 element.set_size(content_size);
             }
         }
@@ -520,17 +851,13 @@ pub fn update_global_transforms_with_layout(
         if let Some(element) = elements.get_mut(current_id) {
             // Local transform
             let mut local = element.get_transform().clone();
-            let local_z = element.get_z_index();
             let child_size = *element.get_size();
             let pivot = *element.get_pivot();
-
-            // println!("Element {:?} final size before anchoring: {:?}", current_id, child_size);
 
             // STEP 1: Layout positioning (if this element is in a layout)
             let mut layout_offset = Vector2::new(0.0, 0.0);
             if let Some(&layout_pos) = layout_positions.get(current_id) {
                 layout_offset = layout_pos;
-                // println!("Element {:?} in layout, positioned at {:?}", current_id, layout_pos);
             } else {
                 // STEP 2: Anchor positioning (only if NOT in a layout)
                 // For anchoring, we want to use the immediate parent's size for positioning
@@ -600,8 +927,6 @@ pub fn update_global_transforms_with_layout(
                 };
                 layout_offset.x = anchor_x;
                 layout_offset.y = anchor_y;
-                // println!("Element {:?} using anchor {:?}, positioned at {:?} (parent size: {:?}, child size: {:?}, pivot: {:?})", 
-                //          current_id, element.get_anchor(), layout_offset, anchor_reference_size, child_size, pivot);
             }
 
             // STEP 3: Apply layout/anchor offset + user translation
@@ -619,10 +944,8 @@ pub fn update_global_transforms_with_layout(
             element.set_global_transform(global.clone());
 
             // Set inherited z-index: local z + parent z
-            let global_z = parent_z + 2; // deterministic “2 per depth step”
+            let global_z = parent_z + 2; // deterministic "2 per depth step"
             element.set_z_index(global_z);
-
-            // println!("Element {:?} final global position: {:?}", current_id, global.position);
 
             // Get children list before dropping the mutable borrow
             let children_ids = element.get_children().to_vec();
@@ -634,46 +957,101 @@ pub fn update_global_transforms_with_layout(
         }
     }
 }
+
 /// Updated layout function that uses the new layout system
 pub fn update_ui_layout(ui_node: &mut UINode) {
-    // println!("=== Starting UI Layout Update ===");
+    println!("=== Starting UI Layout Update ===");
     
-  if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
-    for root_id in root_ids {
-        calculate_all_content_sizes(elements, root_id);
-    }
+    if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
+        for root_id in root_ids {
+            calculate_all_content_sizes(elements, root_id);
+        }
 
-    let empty_layout_map = HashMap::new();
-    for root_id in root_ids {
-        update_global_transforms_with_layout(
-            elements,
-            root_id,
-            &Transform2D::default(),
-            &empty_layout_map,
-            0,
-        );
+        let empty_layout_map = HashMap::new();
+        for root_id in root_ids {
+            update_global_transforms_with_layout(
+                elements,
+                root_id,
+                &Transform2D::default(),
+                &empty_layout_map,
+                0,
+            );
+        }
+    }
+    println!("=== Finished UI Layout Update ===");
+}
+
+fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
+    if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
+        for root_id in root_ids {
+            calculate_all_content_sizes_cached(elements, root_id, cache);
+        }
+
+        let empty_layout_map = HashMap::new();
+        for root_id in root_ids {
+            update_global_transforms_with_layout(
+                elements,
+                root_id,
+                &Transform2D::default(),
+                &empty_layout_map,
+                0,
+            );
+        }
     }
 }
-    // println!("=== Finished UI Layout Update ===");
+
+// Updated cache to use RwLock instead of Mutex for better read performance
+static LAYOUT_CACHE: OnceLock<RwLock<LayoutCache>> = OnceLock::new();
+
+pub fn get_layout_cache() -> &'static RwLock<LayoutCache> {
+    LAYOUT_CACHE.get_or_init(|| RwLock::new(LayoutCache::new()))
 }
 
 pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     update_ui_layout(ui_node); // now works with layout system
     if let Some(elements) = &ui_node.elements {
-    for (_, element) in elements {
-        if !element.get_visible() {
-            continue;
-        }
+        // Convert IndexMap values to Vec for parallel processing
+        let elements_vec: Vec<_> = elements.iter().collect();
+        let visible_elements: Vec<_> = elements_vec
+            .par_iter()
+            .filter(|(_, element)| element.get_visible())
+            .collect();
 
-        match element {
-            UIElement::BoxContainer(_) => { /* no-op */ },
-            UIElement::Panel(panel) => render_panel(panel, gfx),
-            UIElement::GridLayout(_) => { /* no-op */ },
-            UIElement::Layout(_) => {},
-            UIElement::Text(text) => render_text(text, gfx),
+        for (_, element) in visible_elements {
+            match element {
+                UIElement::BoxContainer(_) => { /* no-op */ },
+                UIElement::Panel(panel) => render_panel(panel, gfx),
+                UIElement::GridLayout(_) => { /* no-op */ },
+                UIElement::Layout(_) => {},
+                UIElement::Text(text) => render_text(text, gfx),
+            }
         }
     }
 }
+
+// Updated render function with caching
+pub fn render_ui_optimized(ui_node: &mut UINode, gfx: &mut Graphics) {
+    let cache = get_layout_cache();
+    update_ui_layout_cached(ui_node, cache);
+    
+    if let Some(elements) = &ui_node.elements {
+        // Convert IndexMap values to Vec for parallel processing
+        let elements_vec: Vec<_> = elements.iter().collect();
+        let visible_elements: Vec<_> = elements_vec
+            .par_iter()
+            .filter(|(_, element)| element.get_visible())
+            .collect();
+
+        for (_, element) in visible_elements {
+            match element {
+                UIElement::BoxContainer(_) => { /* no-op */ },
+                UIElement::Panel(panel) => render_panel(panel, gfx),
+                UIElement::GridLayout(_) => { /* no-op */ },
+                UIElement::Layout(_) => {},
+                UIElement::Text(text) => render_text_optimized(text, gfx),
+            }
+        }
+    }
 }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
@@ -685,8 +1063,9 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
     let bg_id = panel.id;
     let border_id = Uuid::new_v5(&bg_id, b"border");
 
-    gfx.draw_rect(
+    gfx.renderer_prim.queue_rect(
         bg_id,
+        RenderLayer::UI,
         panel.base.global_transform.clone(),
         panel.base.size,
         panel.base.pivot,
@@ -699,8 +1078,9 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
 
     if border_thickness > 0.0 {
         if let Some(border_color) = border_color {
-            gfx.draw_rect(
+            gfx.renderer_prim.queue_rect(
                 border_id,
+                RenderLayer::UI,
                 panel.base.global_transform.clone(),
                 panel.base.size,
                 panel.base.pivot,
@@ -714,28 +1094,75 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
     }
 }
 
-
 fn render_text(text: &UIText, gfx: &mut Graphics) {
     let content = text.props.content.clone();
     let color = text.props.color.clone();
     let font_size = text.props.font_size;
     let z_index = text.base.z_index;
     let text_id = text.id;
-   // println!("{}", content);
 
     let font = Font::from_name("NotoSans", Weight::Regular, Style::Normal)
-    .expect("Failed to load font");
+        .expect("Failed to load font");
 
-let font_atlas = FontAtlas::new(font, 64.0); // 48.0 is the atlas generation size
+    let font_atlas = FontAtlas::new(font, 64.0); // 64.0 is the atlas generation size
 
-gfx.initialize_font_atlas(font_atlas);
+    gfx.initialize_font_atlas(font_atlas);
 
-    gfx.draw_text(
+    gfx.renderer_prim.queue_text(
         text_id,
+        RenderLayer::UI,
         &content,
         font_size,
         text.base.global_transform.clone(),
-        
+        text.base.pivot,
+        color,
+        z_index,
+    );
+}
+
+// Optimized text rendering - only regenerate atlas when font properties change
+fn render_text_optimized(text: &UIText, gfx: &mut Graphics) {
+    let content = &text.props.content;
+    let color = text.props.color.clone();
+    let font_size = text.props.font_size;
+    let z_index = text.base.z_index;
+    let text_id = text.id;
+
+    // Only initialize font atlas once per unique font/size combination
+    use std::sync::OnceLock;
+    use std::collections::HashSet;
+    
+    static FONT_ATLAS_INITIALIZED: OnceLock<RwLock<HashSet<(String, u32)>>> = OnceLock::new();
+    
+    let font_key = ("NotoSans".to_string(), 64);
+    
+    let initialized = FONT_ATLAS_INITIALIZED.get_or_init(|| RwLock::new(HashSet::new()));
+    
+    // Use read lock first to check if font is initialized
+    if let Ok(set) = initialized.read() {
+        if !set.contains(&font_key) {
+            drop(set); // Release read lock before acquiring write lock
+            
+            // Use write lock to initialize font
+            if let Ok(mut set) = initialized.write() {
+                // Double-check in case another thread initialized it
+                if !set.contains(&font_key) {
+                    if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
+                        let font_atlas = FontAtlas::new(font, 64.0);
+                        gfx.initialize_font_atlas(font_atlas);
+                        set.insert(font_key);
+                    }
+                }
+            }
+        }
+    }
+
+    gfx.renderer_prim.queue_text(
+        text_id,
+        RenderLayer::UI,
+        content,
+        font_size,
+        text.base.global_transform.clone(),
         text.base.pivot,
         color,
         z_index,

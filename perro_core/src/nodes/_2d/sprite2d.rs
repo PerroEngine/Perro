@@ -1,25 +1,29 @@
 use std::ops::{Deref, DerefMut};
 
 use serde::{Serialize, Deserialize};
-use wgpu::naga::Handle;
 use crate::{nodes::_2d::node2d::Node2D};
+
+use std::borrow::Cow;
 
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Sprite2D {
-  #[serde(rename="type")] pub ty:   String,
-  pub texture_path: Option<String>,
+  #[serde(rename="type")] pub ty: Cow<'static, str>,
 
-  pub region: Option<[f32;4]>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub texture_path: Option<Cow<'static, str>>,
+
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub region: Option<[f32; 4]>,
 
   pub node2d: Node2D,
 }
 
 impl Sprite2D {
-  pub fn new(name: &str, texture_path: Option<&str>) -> Self {
+  pub fn new(name: &str, texture_path: Cow<'static, str>) -> Self {
           Self {
-              ty: "Sprite2D".into(),
-              texture_path: texture_path.map(|s| s.to_string()),
+              ty: Cow::Borrowed("Sprite2D"),
+              texture_path: Some(texture_path),
               region: None,
               node2d: Node2D::new(name),
           }

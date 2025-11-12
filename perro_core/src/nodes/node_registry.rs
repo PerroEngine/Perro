@@ -18,7 +18,7 @@ pub trait BaseNode: Any + Debug + Send {
     fn get_children(&self) -> &Vec<Uuid>;
 
     fn get_type(&self) -> &str;
-    fn get_script_path(&self) -> Option<&String>;
+    fn get_script_path(&self) -> Option<&str>;
 
     fn set_parent(&mut self, parent: Option<Uuid>);
     fn add_child(&mut self, child: Uuid);
@@ -67,7 +67,9 @@ macro_rules! impl_scene_node {
 
             fn get_type(&self) -> &str { &self.ty }
 
-            fn get_script_path(&self) -> Option<&String> { self.script_path.as_ref() }
+            fn get_script_path(&self) -> Option<&str> {
+                self.script_path.as_deref() // This works for both Cow and Option<String>
+            }
 
             fn set_parent(&mut self, p: Option<uuid::Uuid>) { self.parent = p; }
 
@@ -82,7 +84,7 @@ macro_rules! impl_scene_node {
             }
 
             fn set_script_path(&mut self, path: &str) { 
-                self.script_path = Some(path.to_string()); 
+                self.script_path = Some(std::borrow::Cow::Owned(path.to_string()));
             }
 
             fn is_dirty(&self) -> bool { self.dirty }
@@ -128,10 +130,40 @@ macro_rules! define_nodes {
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub enum NodeType { $( $variant, )+ }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        #[serde(untagged)]
+        #[derive(Debug, Clone, Serialize)]
+        #[serde(tag = "type")]
         pub enum SceneNode {
             $( $variant($ty), )+
+        }
+
+        impl<'de> serde::Deserialize<'de> for SceneNode {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                use serde_json::Value;
+                use serde::de::Error;
+                
+                let value = Value::deserialize(deserializer)?;
+                
+                let type_str = value.get("type")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| D::Error::missing_field("type"))?;
+                    
+                match type_str {
+                    $(
+                        stringify!($variant) => {
+                            let inner: $ty = serde_json::from_value(value)
+                                .map_err(D::Error::custom)?;
+                            Ok(SceneNode::$variant(inner))
+                        },
+                    )+
+                    _ => Err(D::Error::unknown_variant(
+                        type_str, 
+                        &[$(stringify!($variant)),+]
+                    )),
+                }
+            }
         }
 
         impl crate::nodes::node_registry::BaseNode for SceneNode {
@@ -159,7 +191,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_type(), )+ }
             }
 
-            fn get_script_path(&self) -> Option<&String> {
+            fn get_script_path(&self) -> Option<&str> {
                 match self { $( SceneNode::$variant(n) => n.get_script_path(), )+ }
             }
 

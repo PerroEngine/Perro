@@ -17,7 +17,7 @@ use winit::{
 
 use crate::{
     app_command::AppCommand,
-    rendering::{create_graphics, Graphics},
+    graphics::{create_graphics, Graphics},
     scene::Scene,
     script::ScriptProvider,
 };
@@ -81,15 +81,14 @@ pub struct App<P: ScriptProvider> {
     window_icon_path: Option<String>,
     game_scene: Option<Scene<P>>,
 
-    // Timing
-    last_update: std::time::Instant,
+    // Render loop timing (capped to target FPS)
     start_time: std::time::Instant,
 
     // FPS tracking
     fps_frames: u32,
     fps_measurement_start: std::time::Instant,
 
-    // Frame pacing
+    // Frame pacing (limits rendering to target FPS)
     target_fps: f32,
     frame_debt: f64,
     total_frames_rendered: u64,
@@ -126,23 +125,30 @@ impl<P: ScriptProvider> App<P> {
             window_title,
             window_icon_path: icon_path,
             game_scene,
-            last_update: now,
+            
+            // Render loop timing
             start_time: now,
+            
+            // FPS tracking
             fps_frames: 0,
             fps_measurement_start: now,
+            
+            // Frame pacing (capped)
             target_fps,
             frame_debt: 0.0,
             total_frames_rendered: 0,
             first_frame: true,
+            
+            // Cached render state
             cached_operations: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                 store: wgpu::StoreOp::Store,
             },
+            
             command_rx: rx,
         }
     }
 
-    // Process all pending app commands, applying effects that need gfx (like title)
     #[inline]
     fn process_commands(&mut self, gfx: &Graphics) {
         for cmd in self.command_rx.try_iter() {
@@ -164,7 +170,6 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    /// Calculate frame debt for frame pacing
     #[inline]
     fn calculate_frame_debt(&mut self, now: std::time::Instant) {
         let elapsed = (now - self.start_time).as_secs_f64();
@@ -174,86 +179,71 @@ impl<P: ScriptProvider> App<P> {
         self.frame_debt = frame_debt;
     }
 
-    /// Decide whether to render this frame based on frame pacing
     #[inline]
     fn should_render_frame(&self) -> bool {
-        self.first_frame || self.frame_debt > -1.0
+        // Frame pacing: only render when we're behind by at least half a frame
+        self.first_frame || self.frame_debt >= 0.5
     }
 
-    /// Update FPS measurement and print if interval elapsed
     #[inline]
     fn update_fps_measurement(&mut self, now: std::time::Instant) {
         let measurement_interval = (now - self.fps_measurement_start).as_secs_f32();
         if measurement_interval >= FPS_MEASUREMENT_INTERVAL {
             let fps = self.fps_frames as f32 / measurement_interval;
-            println!("fps: {:.1}", fps);
+            println!("FPS: {:.1}", fps);
 
             self.fps_frames = 0;
             self.fps_measurement_start = now;
         }
     }
 
-    /// Main game loop - update and render
     #[inline(always)]
     fn process_game(&mut self) {
-        // Move Graphics out to avoid borrowing self and self.state at the same time
         let mut gfx = match std::mem::replace(&mut self.state, State::Init(None)) {
             State::Ready(g) => g,
             other => {
-                // Not ready; restore state and bail
                 self.state = other;
                 return;
             }
         };
 
-        // 1. Process app commands (safe: we own gfx locally)
+        let now = std::time::Instant::now();
+
+        // 1. Process app commands
         self.process_commands(&gfx);
 
-        // 2. Update timing
-        let now = std::time::Instant::now();
-        self.last_update = now;
-
-
-        // 3. Update scene logic
+        // 2. UNCAPPED UPDATE LOOP - Runs every single frame for maximum UPS
         if let Some(scene) = self.game_scene.as_mut() {
-            scene.update();
+            scene.update(); // Update runs EVERY frame (uncapped UPS)
         }
 
-        // 4. Calculate frame pacing
+        // 3. CAPPED RENDER LOOP - Frame pacing limits to target FPS
         self.calculate_frame_debt(now);
 
-        // 5. Render if we should
+        // Only render when frame pacing allows (capped FPS)
         if self.should_render_frame() {
             self.render_frame(&mut gfx);
 
-            // Update counters
             if self.first_frame {
                 self.first_frame = false;
             }
             self.total_frames_rendered += 1;
             self.fps_frames += 1;
 
-            // 6. FPS measurement
             self.update_fps_measurement(now);
         }
 
-        // 7. Request next frame
+        // 4. Request next frame (this drives the uncapped update loop)
         gfx.window().request_redraw();
 
         // Put Graphics back
         self.state = State::Ready(gfx);
     }
 
-    /// Render a single frame
-    ///
-    /// This is where you'll eventually add 3D rendering BEFORE 2D rendering.
-    /// The pattern will be:
-    /// 1. Render 3D scene (either to screen or to texture)
-    /// 2. Render 2D scene on top (with transparency support)
-    /// 3. Render UI on top of everything
+    /// Render a single frame (only called when frame pacing allows)
     #[inline]
     fn render_frame(&mut self, gfx: &mut Graphics) {
-        // Update scene render data
+        // Update scene render data (queues rendering commands)
         if let Some(scene) = self.game_scene.as_mut() {
             scene.render(gfx);
         }
@@ -277,20 +267,14 @@ impl<P: ScriptProvider> App<P> {
                 occlusion_query_set: None,
             });
 
-            // TODO: When you add 3D rendering, you'll do:
-            // 1. render_3d(&mut rpass, scene) // 3D world
-            // 2. gfx.draw_instances(&mut rpass) // 2D sprites on top
-            // 3. render_ui(&mut rpass, scene) // UI overlay
-
-            // For now, just 2D rendering
-            gfx.draw_instances(&mut rpass);
+            // Execute all batched draw calls
+            gfx.render(&mut rpass);
         }
 
         // End frame
         gfx.end_frame(frame, encoder);
     }
 
-    /// Handle window resize
     #[inline(always)]
     fn resized(&mut self, size: PhysicalSize<u32>) {
         if let State::Ready(gfx) = &mut self.state {
@@ -346,12 +330,14 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 }
 
                 #[cfg(target_arch = "wasm32")]
-                let window =
-                    Rc::new(event_loop.create_window(attrs).expect("create window"));
+                let window = std::rc::Rc::new(
+                    event_loop.create_window(attrs).expect("create window")
+                );
 
                 #[cfg(not(target_arch = "wasm32"))]
-                let window =
-                    Arc::new(event_loop.create_window(attrs).expect("create window"));
+                let window = std::sync::Arc::new(
+                    event_loop.create_window(attrs).expect("create window")
+                );
 
                 #[cfg(target_arch = "wasm32")]
                 wasm_bindgen_futures::spawn_local(create_graphics(window, proxy));
@@ -371,14 +357,14 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
     ) {
         match event {
             WindowEvent::Resized(size) => self.resized(size),
-            WindowEvent::RedrawRequested => self.process_game(),
+            WindowEvent::RedrawRequested => self.process_game(), // This drives uncapped updates
             WindowEvent::CloseRequested => process::exit(0),
             _ => {}
         }
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut graphics: Graphics) {
-        // First clear pass
+        // First clear pass to ensure clean buffer
         {
             let (frame, view, mut encoder) = graphics.begin_frame();
             let color_attachment = wgpu::RenderPassColorAttachment {
@@ -400,9 +386,13 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
 
         // Render the actual first game frame before showing window
         if let Some(scene) = self.game_scene.as_mut() {
+            // Do initial update
             scene.update();
+            
+            // Queue rendering
             scene.render(&mut graphics);
 
+            // Render the frame
             let (frame, view, mut encoder) = graphics.begin_frame();
             let color_attachment = wgpu::RenderPassColorAttachment {
                 view: &view,
@@ -417,18 +407,24 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-                graphics.draw_instances(&mut rpass);
+                graphics.render(&mut rpass);
             }
             graphics.end_frame(frame, encoder);
 
             // Mark that first frame is done
             self.first_frame = false;
             self.total_frames_rendered = 1;
+            self.fps_frames = 1;
         }
 
         // Now make window visible with content already rendered
         graphics.window().set_visible(true);
         graphics.window().request_redraw();
+
+        // Initialize timing systems
+        let now = std::time::Instant::now();
+        self.start_time = now;
+        self.fps_measurement_start = now;
 
         self.state = State::Ready(graphics);
     }

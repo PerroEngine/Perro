@@ -35,7 +35,7 @@ impl Default for Container {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Debug, Copy)]
 pub enum ContainerMode { Horizontal, Vertical, Grid }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

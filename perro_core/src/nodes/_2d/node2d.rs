@@ -1,33 +1,48 @@
 use serde::{Serialize, Deserialize};
+use crate::Vector2;
 use crate::structs2d::Transform2D;
 use crate::{nodes::node::Node};
 use std::ops::{Deref, DerefMut};
-
+use std::borrow::Cow;
 
 fn default_visible() -> bool { true }
 fn is_default_visible(v: &bool) -> bool { *v == default_visible() }
 
-
-
-#[derive(Default,Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Node2D {
-    #[serde(rename="type")] pub ty:   String,
+    #[serde(rename="type")] pub ty: Cow<'static, str>,
 
     pub transform: Transform2D,
+
+    #[serde(skip_serializing_if = "Vector2::is_half_half", default = "Vector2::default_pivot")]
+    pub pivot: Vector2,
+
+    #[serde(skip_serializing_if = "is_zero_i32", default)]
+    pub z_index: i32,
 
     #[serde(default = "default_visible", skip_serializing_if = "is_default_visible")]
     pub visible: bool,
 
     // Parent
-    pub node:    Node,
+    pub node: Node,
+}
+
+
+fn is_zero_i32(value: &i32) -> bool {
+    *value == 0
 }
 
 
 impl Node2D {
   pub fn new(name: &str) -> Self {
     Self {
-    ty:    "Node2D".into(),
+    ty:    Cow::Borrowed("Node2D"),
     transform: Transform2D::default(),
+
+    pivot: Vector2 { x: 0.5, y: 0.5 },
+
+    z_index: 0,
+
     visible: default_visible(),
     // Parent
     node: Node::new(name, None),

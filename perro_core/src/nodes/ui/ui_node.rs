@@ -1,11 +1,11 @@
 
-use std::{collections::HashMap, ops::{Deref, DerefMut}};
+use std::{borrow::Cow, collections::HashMap, ops::{Deref, DerefMut}};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{impl_scene_node, script::Var, ui_element::UIElement, Node};
+use crate::{script::Var, ui_element::UIElement, Node};
 
 
 fn default_visible() -> bool { true }
@@ -15,10 +15,10 @@ fn is_default_visible(v: &bool) -> bool { *v == default_visible() }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct UINode {
-    #[serde(rename="type")] pub ty:   String,
+    #[serde(rename="type")] pub ty: Cow<'static, str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fur_path: Option<String>,
+    pub fur_path: Option<Cow<'static, str>>,
 
     #[serde(skip)]
     pub props: Option<HashMap<String, Var>>,
@@ -38,7 +38,7 @@ pub struct UINode {
 impl UINode {
   pub fn new(name: &str) -> Self {
       Self {
-      ty:    "UI".into(),
+      ty:    Cow::Borrowed("UINode"),
       visible: default_visible(),
       // Parent
       node: Node::new(name, None),
