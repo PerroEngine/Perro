@@ -337,9 +337,9 @@ impl ScriptObject for RootScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
-
+    
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
@@ -359,108 +359,81 @@ impl ScriptObject for RootScript {
     }
 }
 
-// =========================== Static Dispatch Tables ===========================
+// =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&RootScript) -> Option<Value>>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&RootScript) -> Option<Value>> =
-        HashMap::with_capacity(4);
-        m.insert(12638190499090526629u64, |script: &RootScript| -> Option<Value> {
+static VAR_GET_TABLE: phf::Map<u64, fn(&RootScript) -> Option<Value>> = phf::phf_map! {
+        12638190499090526629u64 => |script: &RootScript| -> Option<Value> {
                         Some(json!(script.b))
-                    });
-        m.insert(12638187200555641996u64, |script: &RootScript| -> Option<Value> {
+                    },
+        12638187200555641996u64 => |script: &RootScript| -> Option<Value> {
                         Some(json!(script.a))
-                    });
-        m.insert(12638186101044013785u64, |script: &RootScript| -> Option<Value> {
+                    },
+        12638186101044013785u64 => |script: &RootScript| -> Option<Value> {
                         Some(json!(script.f))
-                    });
-        m.insert(12638197096160295895u64, |script: &RootScript| -> Option<Value> {
+                    },
+        12638197096160295895u64 => |script: &RootScript| -> Option<Value> {
                         Some(json!(script.h))
-                    });
-    m
-});
+                    },
+};
 
-static VAR_SET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut RootScript, Value) -> Option<()>>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut RootScript, Value) -> Option<()>> =
-        HashMap::with_capacity(4);
-        m.insert(12638190499090526629u64, |script: &mut RootScript, val: Value| -> Option<()> {
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut RootScript, Value) -> Option<()>> = phf::phf_map! {
+        12638190499090526629u64 => |script: &mut RootScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.b = v as f32;
                                 return Some(());
                             }
                             None
-                        });
-        m.insert(12638187200555641996u64, |script: &mut RootScript, val: Value| -> Option<()> {
+                        },
+        12638187200555641996u64 => |script: &mut RootScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.a = v as i32;
                                 return Some(());
                             }
                             None
-                        });
-        m.insert(12638186101044013785u64, |script: &mut RootScript, val: Value| -> Option<()> {
+                        },
+        12638186101044013785u64 => |script: &mut RootScript, val: Value| -> Option<()> {
                             if let Ok(v) = serde_json::from_value::<F>(val) {
                                 script.f = v;
                                 return Some(());
                             }
                             None
-                        });
-        m.insert(12638197096160295895u64, |script: &mut RootScript, val: Value| -> Option<()> {
+                        },
+        12638197096160295895u64 => |script: &mut RootScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.h = v as i64;
                                 return Some(());
                             }
                             None
-                        });
-    m
-});
+                        },
+};
 
-static VAR_APPLY_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut RootScript, &Value)>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut RootScript, &Value)> =
-        HashMap::with_capacity(5);
-        m.insert(12638190499090526629u64, |script: &mut RootScript, val: &Value| {
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut RootScript, &Value)> = phf::phf_map! {
+        12638190499090526629u64 => |script: &mut RootScript, val: &Value| {
                             if let Some(v) = val.as_f64() {
                                 script.b = v as f32;
                             }
-                        });
-        m.insert(12638187200555641996u64, |script: &mut RootScript, val: &Value| {
+                        },
+        12638187200555641996u64 => |script: &mut RootScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.a = v as i32;
                             }
-                        });
-        m.insert(12638182802509129152u64, |script: &mut RootScript, val: &Value| {
+                        },
+        12638182802509129152u64 => |script: &mut RootScript, val: &Value| {
                             if let Some(v) = val.as_str() {
                                 script.e = v.to_string();
                             }
-                        });
-        m.insert(12638186101044013785u64, |script: &mut RootScript, val: &Value| {
+                        },
+        12638186101044013785u64 => |script: &mut RootScript, val: &Value| {
                             if let Ok(v) = serde_json::from_value::<F>(val.clone()) {
                                 script.f = v;
                             }
-                        });
-        m.insert(12638197096160295895u64, |script: &mut RootScript, val: &Value| {
+                        },
+        12638197096160295895u64 => |script: &mut RootScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.h = v as i64;
                             }
-                        });
-    m
-});
+                        },
+};
 
-static DISPATCH_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64,
-        fn(&mut RootScript, &[Value], &mut ScriptApi<'_>)
-    >
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m:
-        HashMap<u64, fn(&mut RootScript, &[Value], &mut ScriptApi<'_>)> =
-        HashMap::with_capacity(0);
-    m
-});
+static DISPATCH_TABLE: phf::Map<u64, fn(&mut RootScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
+};

@@ -333,9 +333,9 @@ impl ScriptObject for RepairScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
-
+    
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
@@ -355,43 +355,16 @@ impl ScriptObject for RepairScript {
     }
 }
 
-// =========================== Static Dispatch Tables ===========================
+// =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&RepairScript) -> Option<Value>>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&RepairScript) -> Option<Value>> =
-        HashMap::with_capacity(0);
-    m
-});
+static VAR_GET_TABLE: phf::Map<u64, fn(&RepairScript) -> Option<Value>> = phf::phf_map! {
+};
 
-static VAR_SET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut RepairScript, Value) -> Option<()>>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut RepairScript, Value) -> Option<()>> =
-        HashMap::with_capacity(0);
-    m
-});
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut RepairScript, Value) -> Option<()>> = phf::phf_map! {
+};
 
-static VAR_APPLY_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut RepairScript, &Value)>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut RepairScript, &Value)> =
-        HashMap::with_capacity(0);
-    m
-});
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut RepairScript, &Value)> = phf::phf_map! {
+};
 
-static DISPATCH_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64,
-        fn(&mut RepairScript, &[Value], &mut ScriptApi<'_>)
-    >
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m:
-        HashMap<u64, fn(&mut RepairScript, &[Value], &mut ScriptApi<'_>)> =
-        HashMap::with_capacity(0);
-    m
-});
+static DISPATCH_TABLE: phf::Map<u64, fn(&mut RepairScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
+};

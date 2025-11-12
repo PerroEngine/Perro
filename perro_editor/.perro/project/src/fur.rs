@@ -12,12 +12,12 @@ use std::collections::HashMap;
 pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         FurElement {
         tag_name: "UI".to_string(),
-        id: "UI_416c165a-2006-4326-a679-82bf2ffd53cd".to_string(),
+        id: "UI_293ea795-d676-4dfd-b130-0c63b15d764c".to_string(),
         attributes: HashMap::new(),
         children: vec![
             FurNode::Element(FurElement {
                 tag_name: "Text".to_string(),
-                id: "Text_065a7803-e68d-4122-ba1e-570a1633536d".to_string(),
+                id: "Text_07a2057d-6f83-498c-8224-7f78d222c666".to_string(),
                 attributes: HashMap::from([
                     ("anchor".to_string(), "bl".to_string()),
                     ("fsz".to_string(), "150".to_string()),
@@ -29,41 +29,41 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: "Panel".to_string(),
-                id: "Panel_dba6ff5a-953c-4c25-b973-01d615263eff".to_string(),
+                id: "Panel_811143b0-62fa-41bb-9ed7-72f29da48ea0".to_string(),
                 attributes: HashMap::from([
                     ("w".to_string(), "100%".to_string()),
-                    ("bg".to_string(), "cinder-3".to_string()),
                     ("anchor".to_string(), "tl".to_string()),
                     ("h".to_string(), "3%".to_string()),
+                    ("bg".to_string(), "cinder-3".to_string()),
                 ]),
                 children: vec![],
                 self_closing: true,
             }),
             FurNode::Element(FurElement {
                 tag_name: "VLayout".to_string(),
-                id: "VLayout_2d595132-b2f6-4211-a7c1-77c4c62907cb".to_string(),
+                id: "VLayout_00c9d782-43ba-442b-9d88-5c294e90c950".to_string(),
                 attributes: HashMap::from([
-                    ("anchor".to_string(), "tl".to_string()),
                     ("ty".to_string(), "-3%".to_string()),
+                    ("anchor".to_string(), "tl".to_string()),
                 ]),
                 children: vec![
                     FurNode::Element(FurElement {
                         tag_name: "Panel".to_string(),
-                        id: "Panel_62d5d7df-24a5-428c-8216-d8e302518cb7".to_string(),
+                        id: "Panel_4e938f44-63d5-4245-aeff-459df8ac33aa".to_string(),
                         attributes: HashMap::from([
                             ("bg".to_string(), "cinder-8".to_string()),
-                            ("w".to_string(), "19%".to_string()),
                             ("h".to_string(), "50%".to_string()),
+                            ("w".to_string(), "19%".to_string()),
                         ]),
                         children: vec![],
                         self_closing: true,
                     }),
                     FurNode::Element(FurElement {
                         tag_name: "Panel".to_string(),
-                        id: "Panel_8e1c3d4e-1354-4f08-93f2-69a6567047d3".to_string(),
+                        id: "Panel_5b2984b0-7092-4e38-be7e-976d6df7858a".to_string(),
                         attributes: HashMap::from([
-                            ("bg".to_string(), "cinder-10".to_string()),
                             ("w".to_string(), "19%".to_string()),
+                            ("bg".to_string(), "cinder-10".to_string()),
                             ("h".to_string(), "50%".to_string()),
                         ]),
                         children: vec![],
@@ -74,32 +74,32 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: "VLayout".to_string(),
-                id: "VLayout_e8e1bf4c-06c3-496c-8098-8474c2c0dabb".to_string(),
+                id: "VLayout_425158a3-5c6a-4a71-8f0e-6b952be5f85e".to_string(),
                 attributes: HashMap::from([
                     ("anchor".to_string(), "b".to_string()),
                 ]),
                 children: vec![
                     FurNode::Element(FurElement {
                         tag_name: "Panel".to_string(),
-                        id: "Panel_3624946e-8c24-42e0-b840-6143055381ef".to_string(),
+                        id: "Panel_540c9b0f-9fb1-4cc2-802b-1e46ad0b33d7".to_string(),
                         attributes: HashMap::from([
-                            ("w".to_string(), "62%".to_string()),
                             ("bg".to_string(), "cinder-4".to_string()),
+                            ("w".to_string(), "62%".to_string()),
                             ("h".to_string(), "3%".to_string()),
                         ]),
                         children: vec![
                             FurNode::Element(FurElement {
                                 tag_name: "HLayout".to_string(),
-                                id: "HLayout_97e7aee4-9356-420d-88bf-497e0f9d8acf".to_string(),
+                                id: "HLayout_6aa4e0d1-7517-482c-b32d-2274c7c5957d".to_string(),
                                 attributes: HashMap::from([
-                                    ("gap".to_string(), "75".to_string()),
-                                    ("anchor".to_string(), "l".to_string()),
                                     ("ty".to_string(), "-35".to_string()),
+                                    ("anchor".to_string(), "l".to_string()),
+                                    ("gap".to_string(), "75".to_string()),
                                 ]),
                                 children: vec![
                                     FurNode::Element(FurElement {
                                         tag_name: "Text".to_string(),
-                                        id: "Text_4624b230-c721-44d4-8895-4cf8e91b229e".to_string(),
+                                        id: "Text_9c80943d-9127-4f2b-8272-d4d9c57c8845".to_string(),
                                         attributes: HashMap::from([
                                             ("fsz".to_string(), "24".to_string()),
                                         ]),
@@ -110,7 +110,7 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                                     }),
                                     FurNode::Element(FurElement {
                                         tag_name: "Text".to_string(),
-                                        id: "Text_8a3681a9-edc7-461a-a9d2-3d83e0439691".to_string(),
+                                        id: "Text_6ec22832-2013-451a-bc6c-4f0b2e306ac3".to_string(),
                                         attributes: HashMap::from([
                                             ("fsz".to_string(), "24".to_string()),
                                         ]),
@@ -121,7 +121,7 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                                     }),
                                     FurNode::Element(FurElement {
                                         tag_name: "Text".to_string(),
-                                        id: "Text_d81530a1-bb9b-48e6-b857-2f922a2f6924".to_string(),
+                                        id: "Text_fc6ae125-49bb-4df2-8c4c-bf955324719d".to_string(),
                                         attributes: HashMap::from([
                                             ("fsz".to_string(), "24".to_string()),
                                         ]),
@@ -138,20 +138,20 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                     }),
                     FurNode::Element(FurElement {
                         tag_name: "Panel".to_string(),
-                        id: "Panel_9837885d-5a64-40ce-895b-169a0658774d".to_string(),
+                        id: "Panel_58af240f-eaf3-4744-bb8e-909d0e08a9d0".to_string(),
                         attributes: HashMap::from([
+                            ("bg".to_string(), "cinder-6".to_string()),
                             ("h".to_string(), "17%".to_string()),
                             ("w".to_string(), "62%".to_string()),
-                            ("bg".to_string(), "cinder-6".to_string()),
                         ]),
                         children: vec![
                             FurNode::Element(FurElement {
                                 tag_name: "Panel".to_string(),
-                                id: "Panel_d99a4058-87e6-4158-8514-e903b1e58f43".to_string(),
+                                id: "Panel_addbc5b5-ebfe-4d61-a0c4-bc98f7f7becb".to_string(),
                                 attributes: HashMap::from([
-                                    ("bg".to_string(), "cinder-8".to_string()),
                                     ("w".to_string(), "98%".to_string()),
                                     ("h".to_string(), "88%".to_string()),
+                                    ("bg".to_string(), "cinder-8".to_string()),
                                 ]),
                                 children: vec![],
                                 self_closing: true,
@@ -164,19 +164,19 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: "VLayout".to_string(),
-                id: "VLayout_bfc2be0a-608d-4ca4-a779-fae3328928c1".to_string(),
+                id: "VLayout_6c181b61-1a3e-4507-9c7d-a358e96f1acb".to_string(),
                 attributes: HashMap::from([
-                    ("ty".to_string(), "-3%".to_string()),
                     ("anchor".to_string(), "tr".to_string()),
+                    ("ty".to_string(), "-3%".to_string()),
                 ]),
                 children: vec![
                     FurNode::Element(FurElement {
                         tag_name: "Panel".to_string(),
-                        id: "Panel_b0ec1aa4-417c-419a-8540-6db9c31a114f".to_string(),
+                        id: "Panel_012adf7c-988f-431e-98ee-1491c0dc5365".to_string(),
                         attributes: HashMap::from([
-                            ("h".to_string(), "100%".to_string()),
-                            ("w".to_string(), "19%".to_string()),
                             ("bg".to_string(), "cinder-8".to_string()),
+                            ("w".to_string(), "19%".to_string()),
+                            ("h".to_string(), "100%".to_string()),
                         ]),
                         children: vec![],
                         self_closing: true,
@@ -196,17 +196,17 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
 pub static FUR_MANAGER: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         FurElement {
         tag_name: "UI".to_string(),
-        id: "UI_0d3994d6-1686-4302-847f-b5112a0b4648".to_string(),
+        id: "UI_522544a2-471e-4d86-b095-d57a600fb0ec".to_string(),
         attributes: HashMap::new(),
         children: vec![
             FurNode::Element(FurElement {
                 tag_name: "Text".to_string(),
-                id: "Text_fd081e32-ed01-4b1b-a0ba-f6e664c06f23".to_string(),
+                id: "Text_d686a3e7-0a81-4474-be7e-e6134e7bb24a".to_string(),
                 attributes: HashMap::from([
-                    ("ty".to_string(), "250".to_string()),
+                    ("fsz".to_string(), "150".to_string()),
                     ("tx".to_string(), "-550".to_string()),
                     ("anchor".to_string(), "c".to_string()),
-                    ("fsz".to_string(), "150".to_string()),
+                    ("ty".to_string(), "250".to_string()),
                 ]),
                 children: vec![
                     FurNode::Text("Perro Manager".to_string()),
@@ -215,19 +215,19 @@ pub static FUR_MANAGER: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: "Panel".to_string(),
-                id: "Panel_819c23e2-a32b-41a2-afe4-db55959d9859".to_string(),
+                id: "Panel_1ba69357-292c-4399-a9a1-d4b760c992a0".to_string(),
                 attributes: HashMap::from([
-                    ("anchor".to_string(), "t".to_string()),
                     ("bg".to_string(), "cinder-3".to_string()),
                     ("w".to_string(), "100%".to_string()),
                     ("h".to_string(), "5%".to_string()),
+                    ("anchor".to_string(), "t".to_string()),
                 ]),
                 children: vec![],
                 self_closing: true,
             }),
             FurNode::Element(FurElement {
                 tag_name: "VLayout".to_string(),
-                id: "VLayout_b0d6ba19-7988-49ec-bc07-78ba0ec6ff77".to_string(),
+                id: "VLayout_08c94253-7eb7-4584-961c-31f55b74151d".to_string(),
                 attributes: HashMap::from([
                     ("anchor".to_string(), "t".to_string()),
                     ("gap".to_string(), "20".to_string()),

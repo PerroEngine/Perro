@@ -68,32 +68,40 @@ impl Project {
 
     /// Creates a static, embedded project (for compile-time manifests)
     pub fn new_static(
-        name: impl Into<String>,
-        version: impl Into<String>,
-        main_scene: impl Into<String>,
-        icon: Option<String>,
-        target_fps: f32,
-        xps: f32,
-        root_script: Option<String>,
-    ) -> Self {
-        let settings = ProjectSettings {
-            project: ProjectSection {
-                name: name.into(),
-                version: version.into(),
-                main_scene: main_scene.into(),
-                icon,
-            },
-            performance: PerformanceSection { target_fps, xps },
-            root: RootSection { script: root_script },
-            meta: MetadataSection::default(),
-        };
-
-        Self {
-            root: None,
-            settings,
-            runtime_params: HashMap::new(),
-        }
+    name: impl Into<String>,
+    version: impl Into<String>,
+    main_scene: impl Into<String>,
+    icon: Option<String>,
+    target_fps: f32,
+    xps: f32,
+    root_script: Option<String>,
+    metadata: &phf::Map<&'static str, &'static str>,
+) -> Self {
+    let mut meta = HashMap::new();
+    
+    // Copy PHF map entries into HashMap
+    for (key, value) in metadata.entries() {
+        meta.insert(key.to_string(), value.to_string());
     }
+
+    let settings = ProjectSettings {
+        project: ProjectSection {
+            name: name.into(),
+            version: version.into(),
+            main_scene: main_scene.into(),
+            icon,
+        },
+        performance: PerformanceSection { target_fps, xps },
+        root: RootSection { script: root_script },
+        meta: MetadataSection { data: meta },
+    };
+
+    Self {
+        root: None,
+        settings,
+        runtime_params: HashMap::new(),
+    }
+}
 
     /// Load project.toml from embedded or disk-based asset system.
     pub fn load(root: Option<impl AsRef<Path>>) -> io::Result<Self> {

@@ -2258,7 +2258,7 @@ impl Op {
 
 pub fn implement_script_boilerplate(
     struct_name: &str,
-    script_vars: &[Variable], // This is the unified list of all script-level variables
+    script_vars: &[Variable],
     functions: &[Function],
 ) -> String {
     let mut out = String::with_capacity(8192);
@@ -2285,27 +2285,25 @@ pub fn implement_script_boilerplate(
             // ------------------------------
             // Special casing for Containers (GET)
             // ------------------------------
-            if let Some(Type::Container(kind, _elem_types)) = &var.typ { // Use _elem_types as we don't need to bind them all here
+            if let Some(Type::Container(kind, _elem_types)) = &var.typ {
                 match kind {
                     ContainerKind::Array | ContainerKind::FixedArray(_) | ContainerKind::Map => {
                         writeln!(
                             get_entries,
-                            "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                            "        {var_id}u64 => |script: &{struct_name}| -> Option<Value> {{
                                 Some(serde_json::to_value(&script.{name}).unwrap_or_default())
-                            }});"
+                            }},"
                         ).unwrap();
                     }
                 }
             } else {
-                 // Default GET for non-containers
-                 writeln!(
+                writeln!(
                     get_entries,
-                    "        m.insert({var_id}u64, |script: &{struct_name}| -> Option<Value> {{
+                    "        {var_id}u64 => |script: &{struct_name}| -> Option<Value> {{
                         Some(json!(script.{name}))
-                    }});"
+                    }},"
                 ).unwrap();
             }
-
 
             // ------------------------------
             // Special casing for Containers (SET)
@@ -2318,24 +2316,24 @@ pub fn implement_script_boilerplate(
                         if *elem_ty != Type::Object {
                             writeln!(
                                 set_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
                                         script.{name} = vec_typed;
                                         return Some(());
                                     }}
                                     None
-                                }});"
+                                }},"
                             ).unwrap();
                         } else {
                             writeln!(
                                 set_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Some(v) = val.as_array() {{
                                         script.{name} = v.clone();
                                         return Some(());
                                     }}
                                     None
-                                }});"
+                                }},"
                             ).unwrap();
                         }
                     }
@@ -2345,18 +2343,18 @@ pub fn implement_script_boilerplate(
                         if *elem_ty != Type::Object {
                             writeln!(
                                 set_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val) {{
                                         script.{name} = arr_typed;
                                         return Some(());
                                     }}
                                     None
-                                }});"
+                                }},"
                             ).unwrap();
                         } else {
                             writeln!(
                                 set_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Some(v) = val.as_array() {{
                                         let mut out: [{elem_rs}; {size}] = [Default::default(); {size}];
                                         for (i, el) in v.iter().enumerate().take({size}) {{
@@ -2366,7 +2364,7 @@ pub fn implement_script_boilerplate(
                                         return Some(());
                                     }}
                                     None
-                                }});"
+                                }},"
                             ).unwrap();
                         }
                     }
@@ -2379,57 +2377,55 @@ pub fn implement_script_boilerplate(
                         if *val_ty != Type::Object {
                             writeln!(
                                 set_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
                                         script.{name} = map_typed;
                                         return Some(());
                                     }}
                                     None
-                                }});"
+                                }},"
                             ).unwrap();
                         } else {
                             writeln!(
                                 set_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Some(v) = val.as_object() {{
                                         script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                         return Some(());
                                     }}
                                     None
-                                }});"
+                                }},"
                             ).unwrap();
                         }
                     }
                 }
             } else {
-                 // Default SET for non-containers
                 if accessor == "__CUSTOM__" {
                     let type_name = &conv;
                     writeln!(
                         set_entries,
-                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                             if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
                                 script.{name} = v;
                                 return Some(());
                             }}
                             None
-                        }});"
+                        }},"
                     ).unwrap();
                 } else {
                     writeln!(
                         set_entries,
-                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                             if let Some(v) = val.{accessor}() {{
                                 script.{name} = v{conv};
                                 return Some(());
                             }}
                             None
-                        }});"
+                        }},"
                     ).unwrap();
                 }
             }
-        } // End of if var.is_public
-
+        }
 
         // If exposed, generate APPLY entries
         if var.is_exposed {
@@ -2446,20 +2442,20 @@ pub fn implement_script_boilerplate(
                         if *elem_ty != Type::Object {
                             writeln!(
                                 apply_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
                                         script.{name} = vec_typed;
                                     }}
-                                }});"
+                                }},"
                             ).unwrap();
                         } else {
                             writeln!(
                                 apply_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Some(v) = val.as_array() {{
                                         script.{name} = v.clone();
                                     }}
-                                }});"
+                                }},"
                             ).unwrap();
                         }
                     }
@@ -2469,16 +2465,16 @@ pub fn implement_script_boilerplate(
                         if *elem_ty != Type::Object {
                             writeln!(
                                 apply_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val.clone()) {{
                                         script.{name} = arr_typed;
                                     }}
-                                }});"
+                                }},"
                             ).unwrap();
                         } else {
                             writeln!(
                                 apply_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Some(v) = val.as_array() {{
                                         let mut out: [{elem_rs}; {size}] = [Default::default(); {size}];
                                         for (i, el) in v.iter().enumerate().take({size}) {{
@@ -2486,7 +2482,7 @@ pub fn implement_script_boilerplate(
                                         }}
                                         script.{name} = out;
                                     }}
-                                }});"
+                                }},"
                             ).unwrap();
                         }
                     }
@@ -2499,53 +2495,51 @@ pub fn implement_script_boilerplate(
                         if *val_ty != Type::Object {
                             writeln!(
                                 apply_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
                                         script.{name} = map_typed;
                                     }}
-                                }});"
+                                }},"
                             ).unwrap();
                         } else {
                             writeln!(
                                 apply_entries,
-                                "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Some(v) = val.as_object() {{
                                         script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                     }}
-                                }});"
+                                }},"
                             ).unwrap();
                         }
                     }
                 }
             } else {
-                 // Default APPLY for non-containers
                 if accessor == "__CUSTOM__" {
                     let type_name = &conv;
                     writeln!(
                         apply_entries,
-                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                             if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
                                 script.{name} = v;
                             }}
-                        }});"
+                        }},"
                     ).unwrap();
                 } else {
                     writeln!(
                         apply_entries,
-                        "        m.insert({var_id}u64, |script: &mut {struct_name}, val: &Value| {{
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                             if let Some(v) = val.{accessor}() {{
                                 script.{name} = v{conv};
                             }}
-                        }});"
+                        }},"
                     ).unwrap();
                 }
             }
-        } // End of if var.is_exposed
-    } // End of for loop for script_vars
-
+        }
+    }
 
     //----------------------------------------------------
-    // FUNCTION DISPATCH TABLE GENERATION (unchanged)
+    // FUNCTION DISPATCH TABLE GENERATION
     //----------------------------------------------------
     for func in functions {
         if func.is_trait_method {
@@ -2615,10 +2609,9 @@ pub fn implement_script_boilerplate(
 
         write!(
             dispatch_entries,
-            "        m.insert({func_id}u64,
-            |this: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
+            "        {func_id}u64 => |this: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
 {param_parsing}            this.{func_name}({param_list}api, true);
-        }});\n"
+        }},\n"
         )
         .unwrap();
     }
@@ -2639,9 +2632,9 @@ impl ScriptObject for {struct_name} {{
     }}
 
     fn get_var(&self, var_id: u64) -> Option<Value> {{
-        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }}
-
+    
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {{
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }}
@@ -2661,59 +2654,30 @@ impl ScriptObject for {struct_name} {{
     }}
 }}
 
-// =========================== Static Dispatch Tables ===========================
+// =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&{struct_name}) -> Option<Value>>
-> = once_cell::sync::Lazy::new(|| {{
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&{struct_name}) -> Option<Value>> =
-        HashMap::with_capacity({public_var_count});
-{get_entries}    m
-}});
+static VAR_GET_TABLE: phf::Map<u64, fn(&{struct_name}) -> Option<Value>> = phf::phf_map! {{
+{get_entries}}};
 
-static VAR_SET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut {struct_name}, Value) -> Option<()>>
-> = once_cell::sync::Lazy::new(|| {{
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut {struct_name}, Value) -> Option<()>> =
-        HashMap::with_capacity({public_var_count});
-{set_entries}    m
-}});
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut {struct_name}, Value) -> Option<()>> = phf::phf_map! {{
+{set_entries}}};
 
-static VAR_APPLY_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut {struct_name}, &Value)>
-> = once_cell::sync::Lazy::new(|| {{
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut {struct_name}, &Value)> =
-        HashMap::with_capacity({exposed_var_count});
-{apply_entries}    m
-}});
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut {struct_name}, &Value)> = phf::phf_map! {{
+{apply_entries}}};
 
-static DISPATCH_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64,
-        fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)
-    >
-> = once_cell::sync::Lazy::new(|| {{
-    use std::collections::HashMap;
-    let mut m:
-        HashMap<u64, fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)> =
-        HashMap::with_capacity({funcs});
-{dispatch_entries}    m
-}});"#,
+static DISPATCH_TABLE: phf::Map<u64, fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {{
+{dispatch_entries}}};"#,
         struct_name = struct_name,
-        public_var_count = public_var_count, // Count of public variables
-        exposed_var_count = exposed_var_count, // Count of truly exposed variables
         get_entries = get_entries,
         set_entries = set_entries,
         apply_entries = apply_entries,
         dispatch_entries = dispatch_entries,
-        funcs = functions.len()
     )
     .unwrap();
 
     out
 }
+
 pub fn write_to_crate(
     project_path: &Path,
     contents: &str,
