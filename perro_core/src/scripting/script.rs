@@ -14,7 +14,7 @@ use crate::app_command::AppCommand;
 use crate::ast::FurElement;
 use crate::node_registry::SceneNode;
 
-pub trait ScriptProvider {
+pub trait ScriptProvider: Sync {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn load_scene_data(&self, path: &str) -> io::Result<SceneData>;
     fn load_fur_data(&self, path: &str) -> io::Result<Vec<FurElement>>;

@@ -233,6 +233,8 @@ pub async fn create_graphics(
     queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
 
     // 6) Create renderers
+
+    let renderer_3d = Renderer3D::new(&device, &camera_bind_group_layout, surface_config.format);
     let renderer_prim = PrimitiveRenderer::new(
         &device, 
         &camera_bind_group_layout, 
@@ -240,7 +242,6 @@ pub async fn create_graphics(
     );
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
-    let renderer_3d = Renderer3D::new(&device, &camera_bind_group_layout, surface_config.format);
 
     let gfx = Graphics {
         window: window.clone(),

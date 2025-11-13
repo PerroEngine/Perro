@@ -163,6 +163,7 @@ pub struct PrimitiveRenderer {
 
 impl PrimitiveRenderer {
     pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
+        println!("🔳 Primitive Renderer initialized");
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture BGL"),
             entries: &[

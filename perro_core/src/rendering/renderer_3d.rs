@@ -8,7 +8,7 @@ pub struct Renderer3D {
 impl Renderer3D {
     pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
         // TODO: Initialize 3D rendering pipelines
-        println!("🏗️ 3D Renderer initialized (stub)");
+        println!("🟧 3D Renderer initialized (stub)");
         
         Self {
             _placeholder: true,

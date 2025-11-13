@@ -12,7 +12,7 @@ fn is_default_rotation(v: &f32) -> bool { *v == default_rotation() }
 fn default_scale() -> Vector2 { Vector2::one() }
 fn is_default_scale(v: &Vector2) -> bool { *v == default_scale() }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Copy)]
 pub struct Transform2D {
     #[serde(default = "default_position", skip_serializing_if = "is_default_position")]
     pub position: Vector2,

@@ -1,5 +1,5 @@
 use crate::{
-    Graphics, Node, RenderLayer, Vector2, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui, render_ui_optimized}// NEW import
+    Graphics, Node, RenderLayer, Vector2, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::{render_ui}// NEW import
 };
 
 use indexmap::IndexMap;
@@ -305,7 +305,7 @@ pub fn merge_scene_data(
     mut other: SceneData,
     parent_id: Uuid,
 ) -> anyhow::Result<()> {
-    // ✅ Super optimized root handling with deferred insertion
+    // ✅ Root handling (unchanged - needs sequential access)
     let root_to_insert = {
         let nodes = &mut self.data.nodes;
         
@@ -320,47 +320,77 @@ pub fn merge_scene_data(
             eprintln!("⚠️ Merge root missing");
             None
         }
-    }; // ← Borrow scope ends here
+    };
 
-    // ✅ Include root in processing list
     let mut new_ids: Vec<Uuid> = other.nodes.keys().copied().collect();
     if let Some(ref root) = root_to_insert {
         new_ids.push(*root.get_id());
     }
 
-    // ✅ Super optimized extend
     self.data.nodes.reserve(other.nodes.len() + 1);
     self.data.nodes.extend(other.nodes);
     
-    // ✅ Insert root AFTER extend (critical for rendering)
     if let Some(root) = root_to_insert {
         self.data.nodes.insert(*root.get_id(), root);
     }
 
-    // ✅ All your other super optimizations...
-    let provider = &self.provider;
-    for id in &new_ids {
-        if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(id) {
-            if let Some(fur_path) = &u.fur_path {
-                match provider.load_fur_data(fur_path) {
-                    Ok(fur_elements) => {
-                        build_ui_elements_from_fur(u, &fur_elements);
-                        println!(
-                            "✅ Loaded FUR for '{}': {} UI elements",
-                            u.node.get_name(),
-                            u.elements.as_ref().map(|e| e.len()).unwrap_or(0)
-                        );
+    // ───────────────────────────────────────────────
+    // 🚀 PARALLELIZED: FUR loading (I/O-bound work)
+    // ───────────────────────────────────────────────
+    const PARALLEL_THRESHOLD: usize = 5;
+    
+    let fur_loads: Vec<(Uuid, Result<Vec<FurElement>, _>)> = if new_ids.len() >= PARALLEL_THRESHOLD {
+        new_ids
+            .par_iter()
+            .filter_map(|id| {
+                self.data.nodes.get(id).and_then(|node| {
+                    if let SceneNode::UINode(u) = node {
+                        u.fur_path.as_ref().map(|path| (*id, path.clone()))
+                    } else {
+                        None
                     }
-                    Err(err) => {
-                        eprintln!("⚠️ Error loading FUR {:?}: {}", fur_path, err);
+                })
+            })
+            .map(|(id, fur_path)| {
+                let result = self.provider.load_fur_data(&fur_path);
+                (id, result)
+            })
+            .collect()
+    } else {
+        new_ids
+            .iter()
+            .filter_map(|id| {
+                self.data.nodes.get(id).and_then(|node| {
+                    if let SceneNode::UINode(u) = node {
+                        u.fur_path.as_ref().map(|path| (*id, path.clone()))
+                    } else {
+                        None
                     }
+                })
+            })
+            .map(|(id, fur_path)| {
+                let result = self.provider.load_fur_data(&fur_path);
+                (id, result)
+            })
+            .collect()
+    };
+
+    // Apply FUR results sequentially
+    for (id, result) in fur_loads {
+        if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(&id) {
+            match result {
+                Ok(fur_elements) => {
+                    build_ui_elements_from_fur(u, &fur_elements);
+                }
+                Err(err) => {
+                    eprintln!("⚠️ Error loading FUR: {}", err);
                 }
             }
         }
     }
 
     // ───────────────────────────────────────────────
-    // 5️⃣  Attach and initialize scripts for nodes with a script_path
+    // Script initialization (sequential - needs mutable state)
     // ───────────────────────────────────────────────
     let script_targets: Vec<(Uuid, String)> = new_ids
         .iter()
@@ -372,7 +402,6 @@ pub fn merge_scene_data(
         })
         .collect();
 
-    // ✅ Single borrow of project for all script initializations
     let project_ref = self.project.clone();
     let mut project_borrow = project_ref.borrow_mut();
     let now = Instant::now();
@@ -388,14 +417,13 @@ pub fn merge_scene_data(
         let handle = Self::instantiate_script(ctor, id);
         self.scripts.insert(id, handle);
 
-        // ✅ Reuse same ScriptApi instance across all initializations
         let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
         api.call_init(id);
         println!("✅ Script initialized for node {:?}", id);
     }
 
     // ───────────────────────────────────────────────
-    // 6️⃣  Mark ONLY imported nodes as dirty (so renderer repaints them)
+    // Mark nodes dirty (sequential - just a flag flip)
     // ───────────────────────────────────────────────
     for id in new_ids {
         if let Some(node) = self.data.nodes.get_mut(&id) {
@@ -708,7 +736,8 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
                 // }
                 SceneNode::UINode(ui_node) => {
                     // UI renderer handles layout + rendering internally
-                    render_ui_optimized(ui_node, gfx);
+                    render_ui(ui_node, gfx);
+
                 }
                 _ => {}
             }
@@ -735,24 +764,20 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         Self::instantiate_script(ctor, node_id)
     }
 
-    fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
-        for mut node in nodes {
-    
-            let id = *node.get_id();
-            node.mark_dirty();
+
+fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
+    for mut node in nodes {
+        let id = *node.get_id();
+        node.mark_dirty();
         
-           if let Some(existing_node) = self.data.nodes.get_mut(&id) {
-                *existing_node = node;
-            } else {
-                println!("Inserting new node with ID {}: {:?} during merge", id, node);
-                self.data.nodes.insert(id, node);
-            }
-
-
-
-
+        if let Some(existing_node) = self.data.nodes.get_mut(&id) {
+            *existing_node = node;
+        } else {
+            println!("Inserting new node with ID {}: {:?} during merge", id, node);
+            self.data.nodes.insert(id, node);
         }
     }
+}
 
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64) {

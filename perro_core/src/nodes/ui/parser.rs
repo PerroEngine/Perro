@@ -389,13 +389,11 @@ impl<'a> FurParser<'a> {
             // Extract the EXACT raw content - no processing yet
             let raw_content = &remaining_input[..closing_pos];
             
-            // DEBUG: Let's see what we're actually extracting
-            println!("DEBUG: Raw content between tags: {:?}", raw_content);
+       
             
             // Process the content to remove structural whitespace
             let processed_content = process_text_content(raw_content);
             
-            println!("DEBUG: Processed content: {:?}", processed_content);
             
             // Update lexer position past the closing tag
             self.lexer.pos = content_start + closing_pos + closing_tag.len();
@@ -518,6 +516,16 @@ pub fn resolve_value(val: &str, is_rounding: bool) -> String {
     val.split(',')
         .map(|p| p.trim())
         .map(|part| {
+            if is_rounding && part.ends_with('%') {
+                // remove the '%' and parse as f32
+                let number_str = &part[..part.len() - 1];
+                match number_str.parse::<f32>() {
+                    Ok(num) => return (num / 100.0).to_string(),
+                    Err(_) => return part.to_string(), // fallback if parse fails
+                }
+            }
+
+            // regular mapping
             let map = if is_rounding { &*ROUNDING_MAP } else { &*GENERAL_MAP };
             map.get(part).unwrap_or(&part).to_string()
         })

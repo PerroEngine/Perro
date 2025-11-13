@@ -10,6 +10,7 @@ pub struct Renderer2D {
 
 impl Renderer2D {
     pub fn new() -> Self {
+        println!("🟦 2D Renderer initialized");
         Self {}
     }
 

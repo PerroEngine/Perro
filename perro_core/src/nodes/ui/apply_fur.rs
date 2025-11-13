@@ -51,9 +51,6 @@ pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     let start = Instant::now();
     let ast = parser.parse().map_err(|e| format!("Parse fail {}: {}", path, e))?;
 
-    if cfg!(debug_assertions) {
-        println!("Parsed {} in {:?}", path, start.elapsed());
-    }
 
     Ok(ast)
 }
@@ -164,6 +161,27 @@ fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<Cow<'static, 
                 }
             }
 
+             "sz" => {
+                let (x, y) = parse_compound(v);
+                if let Some(xv) = x {
+                    let (f, pct) = parse_f32_percent(xv, 1.0);
+                    if pct {
+                        base.style_map.insert(SIZE_X.into(), f);
+                    } else {
+                        base.transform.scale.x = f;
+                    }
+                }
+                if let Some(yv) = y {
+                    let (f, pct) = parse_f32_percent(yv, 1.0);
+                    if pct {
+                        base.style_map.insert(SIZE_Y.into(), f);
+                    } else {
+                        base.transform.scale.y = f;
+                    }
+                }
+            }
+
+
             "w" | "sz-x" => {
                 let (f, pct) = parse_f32_percent(v, base.size.x);
                 if pct {
@@ -260,45 +278,68 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 panel.props.border_thickness = b.parse().unwrap_or(0.0);
             }
 
-            // OPT: inline rounding parser, no temp Vec
-           let mut corner = CornerRadius::default();
-            if let Some(value) = fur.attributes.get("rounding") {
-                let mut parts = value.split(',').map(str::trim);
-                let mut vals = [0.0; 4];
-                for (i, v) in parts.by_ref().take(4).enumerate() {
-                    vals[i] = v.parse().unwrap_or(0.0);
-                }
-                let count = value.split(',').count(); // count number of commas + 1 safely
+        let mut corner = CornerRadius::default();
 
-                match count {
-                    0 | 1 => {
-                        // all corners same
-                        let r = vals[0];
-                        corner = CornerRadius::uniform(r);
-                    }
-                    2 => {
-                        // top and bottom groups
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[0];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[1];
-                    }
-                    3 => {
-                        // TL, TR/BL, BR style
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[2];
-                    }
-                    4 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[2];
-                        corner.bottom_right = vals[3];
-                    }
-                    _ => {}
-                }
-            }
+// Helper to parse a single float value
+fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+    v.and_then(|s| s.trim().parse().ok())
+}
+
+// Step 1: base rounding list (like "rounding: 1,2,3,4")
+if let Some(value) = fur.attributes.get("rounding") {
+    let mut vals = [0.0; 4];
+    for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+        vals[i] = v.parse().unwrap_or(0.0);
+    }
+
+    match value.split(',').count() {
+        0 | 1 => corner = CornerRadius::uniform(vals[0]),
+        2 => {
+            corner.top_left = vals[0];
+            corner.top_right = vals[0];
+            corner.bottom_left = vals[1];
+            corner.bottom_right = vals[1];
+        }
+        3 => {
+            corner.top_left = vals[0];
+            corner.top_right = vals[1];
+            corner.bottom_left = vals[1];
+            corner.bottom_right = vals[2];
+        }
+        4 => {
+            corner.top_left = vals[0];
+            corner.top_right = vals[1];
+            corner.bottom_left = vals[2];
+            corner.bottom_right = vals[3];
+        }
+        _ => {}
+    }
+}
+
+// Step 2: directional overrides (t, b, l, r)
+if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+    corner.top_left = v;
+    corner.top_right = v;
+}
+if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+    corner.bottom_left = v;
+    corner.bottom_right = v;
+}
+if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+    corner.top_left = v;
+    corner.bottom_left = v;
+}
+if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+    corner.top_right = v;
+    corner.bottom_right = v;
+}
+
+// Step 3: individual corner overrides (tl, tr, bl, br) – highest priority
+if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) { corner.top_left = v; }
+if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) { corner.top_right = v; }
+if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) { corner.bottom_left = v; }
+if let Some(v) = parse_val(fur.attributes.get("rounding-br")) { corner.bottom_right = v; }
+
             panel.props.corner_radius = corner;
             Some(UIElement::Panel(panel))
         }

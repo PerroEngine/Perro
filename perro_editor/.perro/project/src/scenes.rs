@@ -50,7 +50,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f76c311e-2a91-4b0f-adc7-4d274b9e816b"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -414,7 +414,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7e5ee992-6b59-400d-a191-9d629d9bd8b3"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -559,7 +559,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0275a771-96eb-4eb5-99ce-d07cacf4c0bc"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -893,7 +893,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("631702e0-eb26-43e3-a881-379442656e29"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -1677,7 +1677,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("70875170-bf06-4ea9-a2e8-e90590ee0a67"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -2653,7 +2653,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("734ca3a4-be7b-45d0-83b8-02bc077cbb5e"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -3104,7 +3104,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5db41e2d-7e03-49d1-9049-7eeff65734e4"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -3683,7 +3683,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7e452106-e614-4abf-8106-269e285a63a0"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -4613,7 +4613,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f4f6757b-9498-4e07-b66a-7cccd0dc6652"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -4732,7 +4732,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0f3dd89f-49b5-459e-a272-301b88b7bcc4"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -4813,7 +4813,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b1da57db-341a-4f25-bcdb-b8ce0006b15c"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -5008,7 +5008,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ed40c430-bbce-4619-bcf3-be0f0870d79e"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -5361,7 +5361,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("33b91991-6d9c-4c63-abe4-98574d6036f5"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -5556,7 +5556,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f64bbd35-59b8-4ba0-8cb3-bac6d2d18976"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -5789,7 +5789,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("61d04d3e-6f73-40bd-bbb4-fb99a9c1077a"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -6138,7 +6138,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fbf29fe9-a056-46b2-83e2-f984cef43402"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -6587,7 +6587,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f57629fc-e82b-4ae7-b76f-01eb57b9afa4"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -8370,7 +8370,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("460f39dc-9950-4bb5-a33e-9672f9969d87"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -9001,7 +9001,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c0459ea8-f1aa-4cb1-90ff-071aa21d1743"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -10392,7 +10392,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("35451fec-0b96-4635-8cf1-9635fb1c71e7"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -10452,7 +10452,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b46e02b8-b8fb-4fa4-aaea-5dfda00c4eda"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -10655,7 +10655,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4601f170-b1d0-4e94-8dd8-c3f5b3d4bdae"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -10876,7 +10876,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a01effd6-c121-44b7-b634-44ab1835d075"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -11434,7 +11434,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d74806b8-8115-4048-a729-31ced8359b33"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -12448,7 +12448,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("978de85f-f66e-42bd-90b9-3057237629a4"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -13290,7 +13290,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e0f14beb-a83e-4cff-b180-489aacc39107"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -13811,7 +13811,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("058efd0d-d4f7-4a82-aae5-b01cd1443ffe"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -14969,7 +14969,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("94cf0b80-5724-43ea-a07b-1c04e3dd391d"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -14993,7 +14993,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7b2d77fe-35ef-454f-a337-b7e378d4d1d4"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -15499,7 +15499,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("99572f9e-d6ff-4101-96c1-29b08ba50089"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -16684,7 +16684,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e659d4ee-a01b-42bb-a822-f9e75eee987e"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -16901,7 +16901,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("522efec8-93f0-4d2d-9901-aa75d569e5be"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -18578,7 +18578,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ce4f9af4-3590-4c07-8bc6-c54a2418302d"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -18988,7 +18988,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("282f9b01-e769-4cda-8413-1d6c806b4724"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -19482,7 +19482,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("90debdfb-8c28-4288-899e-f31f14d7b42a"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -20755,7 +20755,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("872ba2d1-28f5-45cc-adc1-47e736d8fbf3"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -21655,7 +21655,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("48dccfda-c254-41b1-a0d5-3e854498ae98"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -22466,7 +22466,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6b0d286a-f02d-4826-9c8e-fabb5b8e58a0"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -22732,7 +22732,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("47d421e8-260e-4ab8-89ab-7e63477bf2c6"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -23232,7 +23232,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("999c9d08-8b0b-41e2-8db1-ddc828129772"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -23834,7 +23834,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("49b550ee-312d-48dc-b3ad-dbe934bc9df4"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -24245,7 +24245,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6da38911-fcf2-45b2-9854-94f3d37fc144"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -24677,7 +24677,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ece4d9c7-78c2-4eb5-be54-1891600bfe9f"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -24771,7 +24771,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1395e972-9750-44f9-8a1d-b22b5a5cdcd7"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -25028,7 +25028,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e81a21be-8de0-43c7-98d7-e47a3de947d3"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -26133,7 +26133,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5a748776-5129-41e8-87f6-f7b481ef1b9b"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -27146,7 +27146,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("23d00441-799c-4ad0-99ee-8b12fa0283c1"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -27399,7 +27399,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8ccbb420-2074-4a90-b9fa-70e57f12598e"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -27865,7 +27865,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ea655670-46a3-492c-9e97-98af31b9c59b"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -28561,7 +28561,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("36c8d378-2206-4a4c-a473-af86b143d27d"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -29381,7 +29381,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fdfe4a94-b344-4678-9dfb-5a9fbf4768f7"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -30479,7 +30479,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2a1c33e8-fb85-48e0-8df9-f523374eb6f2"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -30519,7 +30519,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c4b6526d-a432-4106-bd03-ceb1d67a8ce1"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
@@ -31160,7 +31160,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1aecada3-599f-47d8-82ca-e57b4a0bf72f"), SceneNode::UINode(
     UINode {
         ty: Cow::Borrowed("UINode"),
-        fur_path: Some(Cow::Borrowed("res://fur/editor.fur")),
+        fur_path: None,
         props: None,
         elements: None,
         root_ids: None,
