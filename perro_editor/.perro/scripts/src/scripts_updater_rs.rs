@@ -428,7 +428,7 @@ impl ScriptObject for UpdaterScript {
     fn get_var(&self, var_id: u64) -> Option<Value> {
             VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
-    
+
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }

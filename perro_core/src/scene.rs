@@ -307,56 +307,190 @@ println!(
 
     Ok(game_scene)
 }
+
+fn remap_uuids_in_json_value(value: &mut serde_json::Value, id_map: &HashMap<Uuid, Uuid>) {
+    match value {
+        serde_json::Value::String(s) => {
+            if let Ok(uuid) = Uuid::parse_str(s) {
+                if let Some(&new_uuid) = id_map.get(&uuid) {
+                    *s = new_uuid.to_string();
+                }
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            // Parallel processing for large objects
+            if obj.len() > 10 {
+                let mut entries: Vec<_> = obj.iter_mut().collect();
+                entries.par_iter_mut().for_each(|(_, v)| {
+                    Self::remap_uuids_in_json_value(v, id_map);
+                });
+            } else {
+                for (_, v) in obj.iter_mut() {
+                    Self::remap_uuids_in_json_value(v, id_map);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            // Parallel processing for large arrays
+            if arr.len() > 20 {
+                arr.par_iter_mut().for_each(|v| {
+                    Self::remap_uuids_in_json_value(v, id_map);
+                });
+            } else {
+                for v in arr.iter_mut() {
+                    Self::remap_uuids_in_json_value(v, id_map);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn remap_script_exp_vars_uuids(script_exp_vars: &mut HashMap<String, serde_json::Value>, id_map: &HashMap<Uuid, Uuid>) {
+    if script_exp_vars.len() > 5 {
+        let mut entries: Vec<_> = script_exp_vars.iter_mut().collect();
+        entries.par_iter_mut().for_each(|(_, value)| {
+            Self::remap_uuids_in_json_value(value, id_map);
+        });
+    } else {
+        for (_, value) in script_exp_vars.iter_mut() {
+            Self::remap_uuids_in_json_value(value, id_map);
+        }
+    }
+}
+
 pub fn merge_scene_data(
     &mut self,
     mut other: SceneData,
     parent_id: Uuid,
 ) -> anyhow::Result<()> {
-    use std::collections::HashMap;
-    use rayon::prelude::*;
+    use std::time::Instant;
+
+    let merge_start = Instant::now();
 
     // ───────────────────────────────────────────────
     // 1️⃣ BUILD LOCAL → NEW RUNTIME ID MAP
     // ───────────────────────────────────────────────
-    let mut id_map: HashMap<Uuid, Uuid> = HashMap::new();
+    let id_map_start = Instant::now();
+    let mut id_map: HashMap<Uuid, Uuid> = HashMap::with_capacity(other.nodes.len() + 1);
 
-    // Include all nodes from the subscene
-    for node in other.nodes.values() {
-        id_map.insert(node.get_local_id(), Uuid::new_v4());
+    // Parallel UUID generation for large scenes
+    const ID_MAP_PARALLEL_THRESHOLD: usize = 50;
+    
+    if other.nodes.len() >= ID_MAP_PARALLEL_THRESHOLD {
+        let local_ids: Vec<Uuid> = other.nodes.keys().copied().collect();
+        let new_ids: Vec<(Uuid, Uuid)> = local_ids
+            .par_iter()
+            .map(|&local_id| (local_id, Uuid::new_v4()))
+            .collect();
+        
+        id_map.extend(new_ids);
+    } else {
+        for node in other.nodes.values() {
+            id_map.insert(node.get_local_id(), Uuid::new_v4());
+        }
     }
-    // Ensure root is included (might have been removed from nodes map)
+
+    // Ensure root is included
     if let Some(root_node) = other.nodes.get(&other.root_id) {
         id_map.entry(root_node.get_local_id()).or_insert_with(Uuid::new_v4);
     }
 
-    // ───────────────────────────────────────────────
-    // 2️⃣ REMAP NODE IDS AND RELATIONSHIPS
-    // ───────────────────────────────────────────────
-    for node in other.nodes.values_mut() {
-        // Assign new runtime ID
-        let new_id = id_map[&node.get_local_id()];
-        node.set_id(new_id);
+    let id_map_time = id_map_start.elapsed();
+    println!("⏱ ID map creation: {:.2} ms", id_map_time.as_secs_f64() * 1000.0);
 
-        // Remap parent if it exists in the subscene
-        if let Some(parent) = node.get_parent() {
-            if let Some(&mapped_parent) = id_map.get(&parent) {
-                node.set_parent(Some(mapped_parent));
+    // ───────────────────────────────────────────────
+    // 2️⃣ PARALLEL NODE REMAPPING
+    // ───────────────────────────────────────────────
+    let remap_start = Instant::now();
+    const NODE_PARALLEL_THRESHOLD: usize = 20;
+    
+    if other.nodes.len() >= NODE_PARALLEL_THRESHOLD {
+        // Convert to Vec for parallel processing
+        let mut nodes_vec: Vec<(Uuid, SceneNode)> = other.nodes.into_iter().collect();
+        
+        // Phase 2a: Parallel basic property remapping
+        nodes_vec.par_iter_mut().for_each(|(local_id, node)| {
+            let new_id = id_map[local_id];
+            node.set_id(new_id);
+            node.clear_children(); // Will be rebuilt in phase 2b
+            
+            // Handle script_exp_vars in parallel
+            if let Some(mut script_vars) = node.get_script_exp_vars() {
+                Self::remap_script_exp_vars_uuids(&mut script_vars, &id_map);
+                node.set_script_exp_vars(Some(script_vars));
+            }
+        });
+        
+        // Phase 2b: Sequential relationship rebuilding
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        
+        for (local_id, node) in &mut nodes_vec {
+            // Remap parent if it exists in the subscene
+            if let Some(parent) = node.get_parent() {
+                if let Some(&mapped_parent) = id_map.get(&parent) {
+                    node.set_parent(Some(mapped_parent));
+                    parent_children
+                        .entry(mapped_parent)
+                        .or_default()
+                        .push(id_map[local_id]);
+                }
+            }
+        }
+        
+        // Apply parent-child relationships
+        for (local_id, node) in &mut nodes_vec {
+            let new_id = id_map[local_id];
+            if let Some(children) = parent_children.get(&new_id) {
+                node.get_children_mut().extend_from_slice(children);
+            }
+        }
+        
+        // Convert back to IndexMap
+        other.nodes = nodes_vec.into_iter().collect();
+        
+    } else {
+        // Sequential processing for small scenes
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        
+        for node in other.nodes.values_mut() {
+            let new_id = id_map[&node.get_local_id()];
+            node.set_id(new_id);
+            node.clear_children();
+
+            // Remap parent if it exists in the subscene
+            if let Some(parent) = node.get_parent() {
+                if let Some(&mapped_parent) = id_map.get(&parent) {
+                    node.set_parent(Some(mapped_parent));
+                    parent_children
+                        .entry(mapped_parent)
+                        .or_default()
+                        .push(new_id);
+                }
+            }
+
+            // Handle script_exp_vars
+            if let Some(mut script_vars) = node.get_script_exp_vars() {
+                Self::remap_script_exp_vars_uuids(&mut script_vars, &id_map);
+                node.set_script_exp_vars(Some(script_vars));
             }
         }
 
-        // Remap children
-        let new_children: Vec<Uuid> = node
-            .get_children()
-            .iter()
-            .filter_map(|cid| id_map.get(cid).copied())
-            .collect();
-        node.get_children_mut().clear();
-        node.get_children_mut().extend(new_children);
+        // Apply parent-child relationships
+        for (parent_id, children) in parent_children {
+            if let Some(parent) = other.nodes.get_mut(&parent_id) {
+                parent.get_children_mut().extend(children);
+            }
+        }
     }
+
+    let remap_time = remap_start.elapsed();
+    println!("⏱ Node remapping: {:.2} ms", remap_time.as_secs_f64() * 1000.0);
 
     // ───────────────────────────────────────────────
     // 3️⃣ HANDLE ROOT NODE
     // ───────────────────────────────────────────────
+    let root_start = Instant::now();
     let root_to_insert = if let Some(mut root) = other.nodes.remove(&other.root_id) {
         let new_root_id = id_map[&root.get_local_id()];
         root.set_id(new_root_id);
@@ -374,10 +508,14 @@ pub fn merge_scene_data(
         None
     };
 
+    let root_time = root_start.elapsed();
+
     // ───────────────────────────────────────────────
     // 4️⃣ INSERT ALL REMAPPED NODES INTO MAIN SCENE
     // ───────────────────────────────────────────────
+    let insert_start = Instant::now();
     self.data.nodes.reserve(other.nodes.len() + 1);
+    
     for mut node in other.nodes.into_values() {
         node.mark_dirty();
         self.data.nodes.insert(node.get_id(), node);
@@ -389,95 +527,144 @@ pub fn merge_scene_data(
 
     // Collect all new runtime IDs
     let new_ids: Vec<Uuid> = id_map.values().copied().collect();
+    let insert_time = insert_start.elapsed();
 
     // ───────────────────────────────────────────────
     // 5️⃣ PARALLELIZED FUR LOADING (UI FILES)
     // ───────────────────────────────────────────────
-    const PARALLEL_THRESHOLD: usize = 5;
+    let fur_start = Instant::now();
+    const FUR_PARALLEL_THRESHOLD: usize = 5;
 
-    let fur_loads: Vec<(Uuid, Result<Vec<FurElement>, _>)> = if new_ids.len() >= PARALLEL_THRESHOLD {
+// Parallel collection of FUR paths
+let fur_paths: Vec<(Uuid, String)> = if new_ids.len() >= FUR_PARALLEL_THRESHOLD {
+    new_ids
+        .par_iter()
+        .filter_map(|id| {
+            self.data.nodes.get(id).and_then(|node| {
+                if let SceneNode::UINode(u) = node {
+                    u.fur_path.as_ref().map(|path| (*id, path.to_string())) // Changed: .to_string() instead of .clone()
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+} else {
+    new_ids
+        .iter()
+        .filter_map(|id| {
+            self.data.nodes.get(id).and_then(|node| {
+                if let SceneNode::UINode(u) = node {
+                    u.fur_path.as_ref().map(|path| (*id, path.to_string())) // Changed: .to_string() instead of .clone()
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+};
+    // Parallel FUR data loading
+    let fur_loads: Vec<(Uuid, Result<Vec<FurElement>, _>)> = if fur_paths.len() >= FUR_PARALLEL_THRESHOLD {
+        fur_paths
+            .par_iter()
+            .map(|(id, fur_path)| {
+                let result = self.provider.load_fur_data(fur_path);
+                (*id, result)
+            })
+            .collect()
+    } else {
+        fur_paths
+            .iter()
+            .map(|(id, fur_path)| {
+                let result = self.provider.load_fur_data(fur_path);
+                (*id, result)
+            })
+            .collect()
+    };
+
+    // Apply FUR results sequentially (needs mutable access to nodes)
+    for (id, result) in fur_loads {
+        if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(&id) {
+            match result {
+                Ok(fur_elements) => build_ui_elements_from_fur(u, &fur_elements),
+                Err(err) => eprintln!("⚠️ Error loading FUR for {}: {}", id, err),
+            }
+        }
+    }
+
+    let fur_time = fur_start.elapsed();
+
+    // ───────────────────────────────────────────────
+    // 6️⃣ PARALLEL SCRIPT PATH COLLECTION + SEQUENTIAL INITIALIZATION
+    // ───────────────────────────────────────────────
+    let script_start = Instant::now();
+
+    // Parallel script path collection
+    let script_targets: Vec<(Uuid, String)> = if new_ids.len() > 10 {
         new_ids
             .par_iter()
             .filter_map(|id| {
-                self.data.nodes.get(id).and_then(|node| {
-                    if let SceneNode::UINode(u) = node {
-                        u.fur_path.as_ref().map(|path| (*id, path.clone()))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .map(|(id, fur_path)| {
-                let result = self.provider.load_fur_data(&fur_path);
-                (id, result)
+                self.data
+                    .nodes
+                    .get(id)
+                    .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
             })
             .collect()
     } else {
         new_ids
             .iter()
             .filter_map(|id| {
-                self.data.nodes.get(id).and_then(|node| {
-                    if let SceneNode::UINode(u) = node {
-                        u.fur_path.as_ref().map(|path| (*id, path.clone()))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .map(|(id, fur_path)| {
-                let result = self.provider.load_fur_data(&fur_path);
-                (id, result)
+                self.data
+                    .nodes
+                    .get(id)
+                    .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
             })
             .collect()
     };
 
-    // Apply FUR results sequentially
-    for (id, result) in fur_loads {
-        if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(&id) {
-            match result {
-                Ok(fur_elements) => build_ui_elements_from_fur(u, &fur_elements),
-                Err(err) => eprintln!("⚠️ Error loading FUR: {}", err),
-            }
+    // Sequential script initialization (needs mutable scene access)
+    if !script_targets.is_empty() {
+        let project_ref = self.project.clone();
+        let mut project_borrow = project_ref.borrow_mut();
+        let now = Instant::now();
+        let dt = self
+            .last_scene_update
+            .map(|prev| now.duration_since(prev).as_secs_f32())
+            .unwrap_or(0.0);
+
+        for (id, script_path) in script_targets {
+            let ident = script_path_to_identifier(&script_path)
+                .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+            let ctor = self.ctor(&ident)?;
+            let handle = Self::instantiate_script(ctor, id);
+            self.scripts.insert(id, handle);
+
+            let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
+            api.call_init(id);
         }
     }
 
+    let script_time = script_start.elapsed();
+    let total_time = merge_start.elapsed();
+
     // ───────────────────────────────────────────────
-    // 6️⃣ SCRIPT INITIALIZATION
+    // 7️⃣ PERFORMANCE SUMMARY
     // ───────────────────────────────────────────────
-    let script_targets: Vec<(Uuid, String)> = new_ids
-        .iter()
-        .filter_map(|id| {
-            self.data
-                .nodes
-                .get(id)
-                .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
-        })
-        .collect();
-
-    let project_ref = self.project.clone();
-    let mut project_borrow = project_ref.borrow_mut();
-    let now = Instant::now();
-    let dt = self
-        .last_scene_update
-        .map(|prev| now.duration_since(prev).as_secs_f32())
-        .unwrap_or(0.0);
-
-    for (id, script_path) in script_targets {
-        let ident = script_path_to_identifier(&script_path)
-            .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
-        let ctor = self.ctor(&ident)?;
-        let handle = Self::instantiate_script(ctor, id);
-        self.scripts.insert(id, handle);
-
-        let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
-        api.call_init(id);
-        println!("✅ Script initialized for node {:?}", id);
-    }
-
     println!(
-        "📦 Merge complete: now have {} total nodes in scene (added {})",
+        "📦 Merge complete: {} total nodes (+{} new)",
         self.data.nodes.len(),
         new_ids.len()
+    );
+    
+    println!(
+        "⏱ Timing breakdown: total={:.2}ms | id_map={:.2}ms | remap={:.2}ms | root={:.2}ms | insert={:.2}ms | fur={:.2}ms | scripts={:.2}ms",
+        total_time.as_secs_f64() * 1000.0,
+        id_map_time.as_secs_f64() * 1000.0,
+        remap_time.as_secs_f64() * 1000.0,
+        root_time.as_secs_f64() * 1000.0,
+        insert_time.as_secs_f64() * 1000.0,
+        fur_time.as_secs_f64() * 1000.0,
+        script_time.as_secs_f64() * 1000.0,
     );
 
     Ok(())
@@ -566,8 +753,7 @@ fn connect_signal(&mut self, signal: u64, target_id: Uuid, function_id: u64) {
         self.queued_signals.push((signal, params));
     }
     
-    // Process all queued signals
-       // ✅ OPTIMIZED: Use drain() to reuse Vec allocation
+        // ✅ OPTIMIZED: Use drain() to reuse Vec allocation
 fn process_queued_signals(&mut self) {
     use std::time::Instant;
 
@@ -626,7 +812,6 @@ fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
         }
     }
 }
-
 
    pub fn instantiate_script(
         ctor: CreateFn,
@@ -749,7 +934,22 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
 }
 
     // Get dirty nodes for rendering
-    fn get_dirty_nodes(&self) -> Vec<Uuid> {
+fn get_dirty_nodes(&self) -> Vec<Uuid> {
+    
+    const PARALLEL_THRESHOLD: usize = 50;
+    
+    if self.data.nodes.len() >= PARALLEL_THRESHOLD {
+        self.data.nodes
+            .par_iter()
+            .filter_map(|(id, node)| {
+                if node.is_dirty() {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
         self.data.nodes
             .iter()
             .filter_map(|(id, node)| {
@@ -761,6 +961,7 @@ if let Some(node_ref) = self.data.nodes.get(&id) {
             })
             .collect()
     }
+}
 
     
     fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {

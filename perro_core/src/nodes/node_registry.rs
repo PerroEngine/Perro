@@ -1,5 +1,6 @@
-use std::any::Any;
+use std::{any::Any, collections::HashMap};
 use std::fmt::Debug;
+use serde_json::Value;
 use uuid::Uuid;
 
 use serde::{Serialize, Deserialize};
@@ -26,6 +27,9 @@ pub trait BaseNode: Any + Debug + Send {
     fn add_child(&mut self, child: Uuid);
     fn remove_child(&mut self, c: &Uuid);
     fn set_script_path(&mut self, path: &str);
+
+    fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>>;
+    fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>);
 
     fn is_dirty(&self) -> bool;
     fn set_dirty(&mut self, dirty: bool);
@@ -68,6 +72,7 @@ macro_rules! impl_scene_node {
                     None => &EMPTY_CHILDREN,
                 }
             }
+            
 
             fn get_type(&self) -> &str { &self.ty }
 
@@ -96,6 +101,14 @@ macro_rules! impl_scene_node {
 
             fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
                 self.children.get_or_insert_with(Vec::new)
+            }
+
+            fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>> {
+                self.script_exp_vars.clone()
+            }
+
+            fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>) {
+                self.script_exp_vars = vars;
             }
 
             fn as_any(&self) -> &dyn std::any::Any { self }
@@ -221,6 +234,14 @@ macro_rules! define_nodes {
 
             fn set_script_path(&mut self, path: &str) {
                 match self { $( SceneNode::$variant(n) => n.set_script_path(path), )+ }
+            }
+
+            fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>> {
+                match self { $( SceneNode::$variant(n) => n.get_script_exp_vars(), )+ }
+            }
+
+            fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>) {
+                match self { $( SceneNode::$variant(n) => n.set_script_exp_vars(vars), )+ }
             }
 
             fn is_dirty(&self) -> bool {

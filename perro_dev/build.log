@@ -1,0 +1,13 @@
+Simple Build Log
+=================
+=== Simple Build Script Started ===
+Icon path: ./icon.png
+Converting ./icon.png → icon.ico
+✔ Added 16x16 size
+✔ Added 32x32 size
+✔ Added 48x48 size
+✔ Added 256x256 size
+✔ Saved ICO to icon.ico
+✔ Wrote RC with version 1.0.0.1763062252 (icon=icon.ico)
+✔ Embedded icon + version info successfully
+=== Simple Build Script Finished ===

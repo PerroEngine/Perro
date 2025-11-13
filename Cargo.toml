@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "perro_core",
-    "perro_runtime",
+    "perro_dev",
 ]
 
 resolver = "3"

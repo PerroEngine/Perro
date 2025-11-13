@@ -3,13 +3,11 @@
 version = 4
 
 [[package]]
-name = "Perro_Engine"
+name = "PerroEngine"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "chrono",
  "embed-resource",
- "env_logger",
  "ico",
  "image",
  "indexmap 1.9.3",
@@ -18,11 +16,8 @@ dependencies = [
  "phf",
  "resvg",
  "scripts",
- "serde",
- "serde_json",
  "toml",
  "uuid",
- "winit",
 ]
 
 [[package]]

@@ -256,7 +256,7 @@ impl Script for RootScript {
         // --- NEW LOGIC FOR RUNTIME.EXE EXTRACTION ---
         // Ensure the perro_runtime.exe is available on disk at the *current* engine's version path
         // before proceeding with any version checks.
-        let target_runtime_exe_name = "perro_runtime.exe"; // The actual name of the runtime binary
+        let target_runtime_exe_name = "PerroDevRuntime.exe"; // The actual name of the runtime binary
         match self.ensure_runtime_exe_in_version_dir(
             api,
             &my_version,
@@ -264,7 +264,7 @@ impl Script for RootScript {
         ) {
             Ok(runtime_on_disk_path) => {
                 eprintln!(
-                    "✅ perro_runtime.exe confirmed at: {}",
+                    "✅ Perro Dev Runtime confirmed at: {}",
                     runtime_on_disk_path.display()
                 );
             }

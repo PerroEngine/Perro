@@ -1,0 +1,35 @@
+[package]
+name = "perro_dev"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+perro_core = { path = "../perro_core" }
+
+
+[[bin]]
+name = "PerroDevRuntime"
+path = "src/main.rs"
+
+
+[build-dependencies]
+embed-resource = "2.4"
+image = "0.24"
+ico = "0.3"
+
+[profile.release]
+opt-level = 3            # max speed
+lto = "fat"              # full link-time optimization
+codegen-units = 1        # full cross-crate optimization
+panic = "abort"          # remove unwinding overhead
+debug = false            # no debug info
+strip = "symbols"        # strip symbols from final binary
+
+# Per-crate tweaks (only opt-level, debug, overflow-checks allowed here)
+[profile.release.package."*"]
+opt-level = 3
+debug = false
+overflow-checks = false
+
+[target.'cfg(windows)']
+rustflags = ["-C", "link-args=/SUBSYSTEM:WINDOWS"]
