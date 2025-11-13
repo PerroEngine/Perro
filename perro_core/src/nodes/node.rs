@@ -10,6 +10,8 @@ pub struct Node {
 
     #[serde(skip)]
     pub id:    Uuid,
+    #[serde(skip)]
+    pub local_id: Uuid,
 
     #[serde(rename = "type")]
     pub ty: Cow<'static, str>,
@@ -43,6 +45,7 @@ impl Node {
     pub fn new(name: &str, parent: Option<Uuid>) -> Self {
         Self {
             id:       Uuid::new_v4(),
+            local_id: Uuid::new_v4(),
             ty:       Cow::Borrowed("Node"),
             name:     Cow::Owned(name.into()),
 
@@ -58,10 +61,4 @@ impl Node {
         }
     }
 
-
-
-    // convenience for building dynamic scenes
-    pub fn into_value(self) -> Value {
-        serde_json::to_value(self).unwrap()
-    }
 }

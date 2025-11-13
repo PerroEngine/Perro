@@ -3,7 +3,7 @@ use crate::{
 };
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use serde_json::Value;
 use smallvec::SmallVec;
 use wgpu::RenderPass;
@@ -18,12 +18,30 @@ use rayon::prelude::*;
 //
 
 /// Pure serializable scene data (no runtime state)
-#[derive(Serialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SceneData {
     pub root_id: Uuid,
     pub nodes: IndexMap<Uuid, SceneNode>,
 }
 
+impl Serialize for SceneData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Create a plain serializable map of local_id → node
+        let mut node_map: IndexMap<Uuid, &SceneNode> = IndexMap::with_capacity(self.nodes.len());
+        for node in self.nodes.values() {
+            node_map.insert(node.get_local_id(), node);
+        }
+
+        // Begin the struct
+        let mut state = serializer.serialize_struct("SceneData", 2)?;
+        state.serialize_field("root_id", &self.root_id)?;
+        state.serialize_field("nodes", &node_map)?;
+        state.end()
+    }
+}
 impl<'de> Deserialize<'de> for SceneData {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -36,64 +54,33 @@ impl<'de> Deserialize<'de> for SceneData {
             #[serde(default)]
             node_count: Option<usize>,
         }
-        
+
         let raw = RawSceneData::deserialize(deserializer)?;
         let capacity = raw.node_count.unwrap_or(raw.nodes.len());
-        
-        // Only use parallel processing for large scenes
-        if raw.nodes.len() > 100 {
-            // Convert to Vec for parallel processing
-            let nodes_vec: Vec<(Uuid, SceneNode)> = raw.nodes.into_iter().collect();
-            
-            // Process nodes in parallel
-            let processed_nodes: Vec<(Uuid, SceneNode)> = nodes_vec
-                .into_par_iter()
-                .map(|(id, mut node)| {
-                    node.set_id(id);
-                    node.clear_children();
-                    (id, node)
-                })
-                .collect();
-            
-            // Convert back to IndexMap (sequential - preserves order)
+
+        // We’ll use this helper closure so the logic is consistent between small/large scenes
+        let process_nodes = |raw_nodes: IndexMap<Uuid, SceneNode>| -> IndexMap<Uuid, SceneNode> {
             let mut nodes = IndexMap::with_capacity(capacity);
-            let mut parent_children: IndexMap<Uuid, Vec<Uuid>> = IndexMap::with_capacity(capacity / 4);
-            
-            for (id, node) in processed_nodes {
-                if let Some(parent_id) = node.get_parent() {
-                    parent_children.entry(parent_id).or_default().push(id);
-                }
-                nodes.insert(id, node);
-            }
-            
-            // Apply relationships (sequential)
-            for (parent_id, children) in parent_children {
-                if let Some(parent) = nodes.get_mut(&parent_id) {
-                    for child_id in children {
-                        parent.add_child(child_id);
-                    }
-                }
-            }
-            
-            Ok(SceneData { root_id: raw.root_id, nodes })
-            
-        } else {
-            // Use sequential processing for smaller scenes
-            let mut nodes = IndexMap::with_capacity(capacity);
-            let mut parent_children: IndexMap<Uuid, Vec<Uuid>> = IndexMap::with_capacity(capacity / 4);
-            
-            for (id, mut node) in raw.nodes {
-                node.set_id(id);
+            let mut parent_children: IndexMap<Uuid, Vec<Uuid>> =
+                IndexMap::with_capacity(capacity / 4);
+
+            for (local_id, mut node) in raw_nodes {
+                // Treat map key (the serialized Uuid) as this node's *local id*,
+                // not its runtime UUID. This preserves deterministic structure.
+                node.set_local_id(local_id);
                 node.clear_children();
-                
-                if let Some(parent_id) = node.get_parent() {
-                    parent_children.entry(parent_id).or_default().push(id);
+
+                if let Some(parent_local) = node.get_parent() {
+                    parent_children
+                        .entry(parent_local)
+                        .or_default()
+                        .push(local_id);
                 }
-                
-                nodes.insert(id, node);
+
+                nodes.insert(local_id, node);
             }
-            
-            // Apply relationships
+
+            // Rebuild relationships deterministically
             for (parent_id, children) in parent_children {
                 if let Some(parent) = nodes.get_mut(&parent_id) {
                     for child_id in children {
@@ -101,16 +88,37 @@ impl<'de> Deserialize<'de> for SceneData {
                     }
                 }
             }
-            
-            Ok(SceneData { root_id: raw.root_id, nodes })
-        }
+
+            nodes
+        };
+
+        // If large enough, parallelize basic deserialization (not relationships)
+        let nodes = if raw.nodes.len() > 100 {
+            use rayon::prelude::*;
+            let nodes_vec: Vec<(Uuid, SceneNode)> = raw.nodes.into_par_iter().collect();
+            let mut nodes = IndexMap::with_capacity(capacity);
+            for (local_id, mut node) in nodes_vec {
+                node.set_local_id(local_id);
+                node.clear_children();
+                nodes.insert(local_id, node);
+            }
+            nodes
+        } else {
+            process_nodes(raw.nodes)
+        };
+
+        Ok(SceneData {
+            root_id: raw.root_id,
+            nodes,
+        })
     }
 }
+
 
 impl SceneData {
     /// Create a new data scene with a root node
     pub fn new(root: SceneNode) -> Self {
-        let root_id = *root.get_id();
+        let root_id = root.get_id();
         let mut nodes = IndexMap::new();
         nodes.insert(root_id, root);
         Self { root_id, nodes }
@@ -250,7 +258,7 @@ impl<P: ScriptProvider> Scene<P> {
     if let Some(root_script_path) = root_script_opt {
         if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
             if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
-                let root_id = *game_scene.get_root().get_id();
+                let root_id = game_scene.get_root().get_id();
                 let handle = game_scene.instantiate_script(ctor, root_id);
                 game_scene.scripts.insert(root_id, handle);
 
@@ -286,7 +294,7 @@ let load_time = t_load_start.elapsed();
 
 // measure merge/graft
 let t_graft_start = Instant::now();
-let game_root = *game_scene.get_root().get_id();
+let game_root = game_scene.get_root().get_id();
 game_scene.merge_scene_data(loaded_data, game_root)?; // <- was graft_data()
 let graft_time = t_graft_start.elapsed();
 
@@ -299,46 +307,94 @@ println!(
 
     Ok(game_scene)
 }
-
 pub fn merge_scene_data(
     &mut self,
     mut other: SceneData,
     parent_id: Uuid,
 ) -> anyhow::Result<()> {
-    // ✅ Root handling (unchanged - needs sequential access)
-    let root_to_insert = {
-        let nodes = &mut self.data.nodes;
-        
-        if let Some(mut root) = other.nodes.remove(&other.root_id) {
-            if let Some(parent) = nodes.get_mut(&parent_id) {
-                root.set_parent(Some(parent_id));
-                parent.add_child(*root.get_id());
+    use std::collections::HashMap;
+    use rayon::prelude::*;
+
+    // ───────────────────────────────────────────────
+    // 1️⃣ BUILD LOCAL → NEW RUNTIME ID MAP
+    // ───────────────────────────────────────────────
+    let mut id_map: HashMap<Uuid, Uuid> = HashMap::new();
+
+    // Include all nodes from the subscene
+    for node in other.nodes.values() {
+        id_map.insert(node.get_local_id(), Uuid::new_v4());
+    }
+    // Ensure root is included (might have been removed from nodes map)
+    if let Some(root_node) = other.nodes.get(&other.root_id) {
+        id_map.entry(root_node.get_local_id()).or_insert_with(Uuid::new_v4);
+    }
+
+    // ───────────────────────────────────────────────
+    // 2️⃣ REMAP NODE IDS AND RELATIONSHIPS
+    // ───────────────────────────────────────────────
+    for node in other.nodes.values_mut() {
+        // Assign new runtime ID
+        let new_id = id_map[&node.get_local_id()];
+        node.set_id(new_id);
+
+        // Remap parent if it exists in the subscene
+        if let Some(parent) = node.get_parent() {
+            if let Some(&mapped_parent) = id_map.get(&parent) {
+                node.set_parent(Some(mapped_parent));
             }
-            root.mark_dirty();
-            Some(root)
-        } else {
-            eprintln!("⚠️ Merge root missing");
-            None
         }
+
+        // Remap children
+        let new_children: Vec<Uuid> = node
+            .get_children()
+            .iter()
+            .filter_map(|cid| id_map.get(cid).copied())
+            .collect();
+        node.get_children_mut().clear();
+        node.get_children_mut().extend(new_children);
+    }
+
+    // ───────────────────────────────────────────────
+    // 3️⃣ HANDLE ROOT NODE
+    // ───────────────────────────────────────────────
+    let root_to_insert = if let Some(mut root) = other.nodes.remove(&other.root_id) {
+        let new_root_id = id_map[&root.get_local_id()];
+        root.set_id(new_root_id);
+        root.set_parent(Some(parent_id));
+
+        // Attach root to target parent
+        if let Some(parent) = self.data.nodes.get_mut(&parent_id) {
+            parent.add_child(new_root_id);
+        }
+
+        root.mark_dirty();
+        Some(root)
+    } else {
+        eprintln!("⚠️ Merge root missing");
+        None
     };
 
-    let mut new_ids: Vec<Uuid> = other.nodes.keys().copied().collect();
-    if let Some(ref root) = root_to_insert {
-        new_ids.push(*root.get_id());
+    // ───────────────────────────────────────────────
+    // 4️⃣ INSERT ALL REMAPPED NODES INTO MAIN SCENE
+    // ───────────────────────────────────────────────
+    self.data.nodes.reserve(other.nodes.len() + 1);
+    for mut node in other.nodes.into_values() {
+        node.mark_dirty();
+        self.data.nodes.insert(node.get_id(), node);
     }
 
-    self.data.nodes.reserve(other.nodes.len() + 1);
-    self.data.nodes.extend(other.nodes);
-    
     if let Some(root) = root_to_insert {
-        self.data.nodes.insert(*root.get_id(), root);
+        self.data.nodes.insert(root.get_id(), root);
     }
+
+    // Collect all new runtime IDs
+    let new_ids: Vec<Uuid> = id_map.values().copied().collect();
 
     // ───────────────────────────────────────────────
-    // 🚀 PARALLELIZED: FUR loading (I/O-bound work)
+    // 5️⃣ PARALLELIZED FUR LOADING (UI FILES)
     // ───────────────────────────────────────────────
     const PARALLEL_THRESHOLD: usize = 5;
-    
+
     let fur_loads: Vec<(Uuid, Result<Vec<FurElement>, _>)> = if new_ids.len() >= PARALLEL_THRESHOLD {
         new_ids
             .par_iter()
@@ -379,18 +435,14 @@ pub fn merge_scene_data(
     for (id, result) in fur_loads {
         if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(&id) {
             match result {
-                Ok(fur_elements) => {
-                    build_ui_elements_from_fur(u, &fur_elements);
-                }
-                Err(err) => {
-                    eprintln!("⚠️ Error loading FUR: {}", err);
-                }
+                Ok(fur_elements) => build_ui_elements_from_fur(u, &fur_elements),
+                Err(err) => eprintln!("⚠️ Error loading FUR: {}", err),
             }
         }
     }
 
     // ───────────────────────────────────────────────
-    // Script initialization (sequential - needs mutable state)
+    // 6️⃣ SCRIPT INITIALIZATION
     // ───────────────────────────────────────────────
     let script_targets: Vec<(Uuid, String)> = new_ids
         .iter()
@@ -422,22 +474,15 @@ pub fn merge_scene_data(
         println!("✅ Script initialized for node {:?}", id);
     }
 
-    // ───────────────────────────────────────────────
-    // Mark nodes dirty (sequential - just a flag flip)
-    // ───────────────────────────────────────────────
-    for id in new_ids {
-        if let Some(node) = self.data.nodes.get_mut(&id) {
-            node.mark_dirty();
-        }
-    }
-
     println!(
-        "📦 Merge complete: now have {} total nodes in scene",
-        self.data.nodes.len()
+        "📦 Merge complete: now have {} total nodes in scene (added {})",
+        self.data.nodes.len(),
+        new_ids.len()
     );
 
     Ok(())
 }
+
 
     fn ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
         self.provider.load_ctor(short)
@@ -597,7 +642,7 @@ fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
     }
 
     pub fn add_node_to_scene(&mut self, mut node: SceneNode) -> anyhow::Result<()> {
-        let id = *node.get_id();
+        let id = node.get_id();
 
         // Handle UI nodes with .fur files
         if let SceneNode::UINode(ref mut ui_node) = node {
@@ -767,7 +812,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
 
 fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
     for mut node in nodes {
-        let id = *node.get_id();
+        let id = node.get_id();
         node.mark_dirty();
         
         if let Some(existing_node) = self.data.nodes.get_mut(&id) {
@@ -884,7 +929,7 @@ impl Scene<DllScriptProvider> {
         // ⏱  Benchmark: Scene graft
         // ────────────────────────────────────────────────
         let t_graft_begin = Instant::now();
-        let game_root = *game_scene.get_root().get_id();
+        let game_root = game_scene.get_root().get_id();
         game_scene.merge_scene_data(loaded_data, game_root)?;
         let graft_time = t_graft_begin.elapsed();
         println!(
@@ -903,7 +948,7 @@ impl Scene<DllScriptProvider> {
         if let Some(root_script_path) = root_script_path_opt {
             if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
                 if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
-                    let root_id = *game_scene.get_root().get_id();
+                    let root_id = game_scene.get_root().get_id();
                     let handle = game_scene.instantiate_script(ctor, root_id);
                     game_scene.scripts.insert(root_id, handle);
 

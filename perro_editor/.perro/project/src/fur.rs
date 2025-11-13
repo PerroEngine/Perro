@@ -13,15 +13,16 @@ use std::borrow::Cow;
 pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             FurElement {
         tag_name: Cow::Borrowed("UI"),
-        id: Cow::Borrowed("UI_776a0100-2df0-409d-96b8-03174c15707e"),
+        id: Cow::Borrowed("UI_92bc66aa-fd94-4812-9564-c7f5e0397a9f"),
         attributes: HashMap::new(),
         children: vec![
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("Text"),
-                id: Cow::Borrowed("Text_7d6ff5f0-89a5-4025-bf5c-79cb1d70931b"),
+                id: Cow::Borrowed("Text_fecf60f3-738e-49bf-82d5-34ed0e6fcbdf"),
                 attributes: HashMap::from([
-                    (Cow::Borrowed("anchor"), Cow::Borrowed("bl")),
                     (Cow::Borrowed("fsz"), Cow::Borrowed("150")),
+                    (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
+                    (Cow::Borrowed("anchor"), Cow::Borrowed("bl")),
                 ]),
                 children: vec![
                     FurNode::Text(Cow::Borrowed("Hello         Perro😀")),
@@ -30,42 +31,61 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("Panel"),
-                id: Cow::Borrowed("Panel_074f7cc1-3314-4fe3-89c5-dd94d3f32af3"),
+                id: Cow::Borrowed("Panel_1189ffab-f6fa-406f-a313-8879cc0b5254"),
                 attributes: HashMap::from([
                     (Cow::Borrowed("w"), Cow::Borrowed("100%")),
                     (Cow::Borrowed("anchor"), Cow::Borrowed("tl")),
-                    (Cow::Borrowed("bg"), Cow::Borrowed("cinder-3")),
                     (Cow::Borrowed("h"), Cow::Borrowed("3%")),
+                    (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
+                    (Cow::Borrowed("bg"), Cow::Borrowed("#10141C")),
+                    (Cow::Borrowed("border"), Cow::Borrowed("2")),
+                    (Cow::Borrowed("z"), Cow::Borrowed("50")),
                 ]),
                 children: vec![],
                 self_closing: true,
             }),
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("VLayout"),
-                id: Cow::Borrowed("VLayout_69d76196-dfbf-443a-91b1-f2db869fc6c3"),
+                id: Cow::Borrowed("VLayout_c8dabb6f-c034-41e8-8552-e9d2cd597f77"),
                 attributes: HashMap::from([
-                    (Cow::Borrowed("anchor"), Cow::Borrowed("tl")),
                     (Cow::Borrowed("ty"), Cow::Borrowed("-3%")),
+                    (Cow::Borrowed("anchor"), Cow::Borrowed("tl")),
                 ]),
                 children: vec![
                     FurNode::Element(FurElement {
                         tag_name: Cow::Borrowed("Panel"),
-                        id: Cow::Borrowed("Panel_f5230088-7409-4772-83e1-7df9bd698415"),
+                        id: Cow::Borrowed("Panel_54027719-9287-4f58-9669-12673471a556"),
                         attributes: HashMap::from([
-                            (Cow::Borrowed("bg"), Cow::Borrowed("cinder-8")),
-                            (Cow::Borrowed("h"), Cow::Borrowed("50%")),
+                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                             (Cow::Borrowed("w"), Cow::Borrowed("19%")),
+                            (Cow::Borrowed("bg"), Cow::Borrowed("#181C26")),
+                            (Cow::Borrowed("border"), Cow::Borrowed("2")),
+                            (Cow::Borrowed("h"), Cow::Borrowed("49.5%")),
                         ]),
                         children: vec![],
                         self_closing: true,
                     }),
                     FurNode::Element(FurElement {
                         tag_name: Cow::Borrowed("Panel"),
-                        id: Cow::Borrowed("Panel_c3e9eec5-0b87-4992-8e2a-1b754ff28be6"),
+                        id: Cow::Borrowed("Panel_41efec80-1f33-4c1f-b3bc-feaea1212a60"),
                         attributes: HashMap::from([
-                            (Cow::Borrowed("h"), Cow::Borrowed("50%")),
+                            (Cow::Borrowed("h"), Cow::Borrowed("1%")),
+                            (Cow::Borrowed("border"), Cow::Borrowed("2")),
+                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                             (Cow::Borrowed("w"), Cow::Borrowed("19%")),
-                            (Cow::Borrowed("bg"), Cow::Borrowed("cinder-10")),
+                            (Cow::Borrowed("bg"), Cow::Borrowed("amber-6")),
+                            (Cow::Borrowed("rounding-r"), Cow::Borrowed("0.7")),
+                        ]),
+                        children: vec![],
+                        self_closing: true,
+                    }),
+                    FurNode::Element(FurElement {
+                        tag_name: Cow::Borrowed("Panel"),
+                        id: Cow::Borrowed("Panel_99d52945-772c-4c52-9999-170a949c11d4"),
+                        attributes: HashMap::from([
+                            (Cow::Borrowed("w"), Cow::Borrowed("19%")),
+                            (Cow::Borrowed("bg"), Cow::Borrowed("#10141C")),
+                            (Cow::Borrowed("h"), Cow::Borrowed("49.5%")),
                         ]),
                         children: vec![],
                         self_closing: true,
@@ -75,35 +95,38 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("VLayout"),
-                id: Cow::Borrowed("VLayout_f57572a5-cb0c-436a-bbad-e7632474bf15"),
+                id: Cow::Borrowed("VLayout_4851073d-afcf-41fd-aa5e-17fedb8c7391"),
                 attributes: HashMap::from([
                     (Cow::Borrowed("anchor"), Cow::Borrowed("b")),
                 ]),
                 children: vec![
                     FurNode::Element(FurElement {
                         tag_name: Cow::Borrowed("Panel"),
-                        id: Cow::Borrowed("Panel_5c131383-9d37-4c93-b330-69653e7dd585"),
+                        id: Cow::Borrowed("Panel_ab77371e-a2cd-4d38-a086-0a932e99f155"),
                         attributes: HashMap::from([
-                            (Cow::Borrowed("bg"), Cow::Borrowed("cinder-4")),
+                            (Cow::Borrowed("w"), Cow::Borrowed("62%")),
                             (Cow::Borrowed("h"), Cow::Borrowed("3%")),
                             (Cow::Borrowed("rounding-t"), Cow::Borrowed("0.25")),
-                            (Cow::Borrowed("w"), Cow::Borrowed("62%")),
+                            (Cow::Borrowed("bg"), Cow::Borrowed("#181C26")),
+                            (Cow::Borrowed("border"), Cow::Borrowed("2")),
+                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                         ]),
                         children: vec![
                             FurNode::Element(FurElement {
                                 tag_name: Cow::Borrowed("HLayout"),
-                                id: Cow::Borrowed("HLayout_c872c4c9-d294-42a3-8b90-249742eb80b8"),
+                                id: Cow::Borrowed("HLayout_f795c3d0-c5ea-4ba0-b074-fde7dea64f10"),
                                 attributes: HashMap::from([
-                                    (Cow::Borrowed("gap"), Cow::Borrowed("75")),
                                     (Cow::Borrowed("anchor"), Cow::Borrowed("l")),
+                                    (Cow::Borrowed("gap"), Cow::Borrowed("75")),
                                     (Cow::Borrowed("ty"), Cow::Borrowed("-35")),
                                 ]),
                                 children: vec![
                                     FurNode::Element(FurElement {
                                         tag_name: Cow::Borrowed("Text"),
-                                        id: Cow::Borrowed("Text_4b0bc999-aa28-45a2-8649-f052d8603c6a"),
+                                        id: Cow::Borrowed("Text_f526320d-62b9-44f5-9b63-811324b20c86"),
                                         attributes: HashMap::from([
                                             (Cow::Borrowed("fsz"), Cow::Borrowed("24")),
+                                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                                         ]),
                                         children: vec![
                                             FurNode::Text(Cow::Borrowed("Item b")),
@@ -112,9 +135,10 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                                     }),
                                     FurNode::Element(FurElement {
                                         tag_name: Cow::Borrowed("Text"),
-                                        id: Cow::Borrowed("Text_aa5fc255-0179-4c49-ab6d-c024621f3268"),
+                                        id: Cow::Borrowed("Text_6b4cd5e2-c671-4901-8958-3b78161cdb91"),
                                         attributes: HashMap::from([
                                             (Cow::Borrowed("fsz"), Cow::Borrowed("24")),
+                                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                                         ]),
                                         children: vec![
                                             FurNode::Text(Cow::Borrowed("Item b")),
@@ -123,8 +147,9 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                                     }),
                                     FurNode::Element(FurElement {
                                         tag_name: Cow::Borrowed("Text"),
-                                        id: Cow::Borrowed("Text_f1610950-6611-4a73-965e-3bca2b8cf840"),
+                                        id: Cow::Borrowed("Text_6ccc9779-8621-430c-98b1-6defb9d86669"),
                                         attributes: HashMap::from([
+                                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                                             (Cow::Borrowed("fsz"), Cow::Borrowed("24")),
                                         ]),
                                         children: vec![
@@ -140,21 +165,23 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                     }),
                     FurNode::Element(FurElement {
                         tag_name: Cow::Borrowed("Panel"),
-                        id: Cow::Borrowed("Panel_94b3f407-70d3-4945-a823-007609fe4aa1"),
+                        id: Cow::Borrowed("Panel_08dde6be-7951-4c45-baf0-b982a760c50c"),
                         attributes: HashMap::from([
+                            (Cow::Borrowed("bg"), Cow::Borrowed("#10141C")),
                             (Cow::Borrowed("h"), Cow::Borrowed("17%")),
+                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
+                            (Cow::Borrowed("border"), Cow::Borrowed("2")),
                             (Cow::Borrowed("w"), Cow::Borrowed("62%")),
-                            (Cow::Borrowed("bg"), Cow::Borrowed("cinder-6")),
                         ]),
                         children: vec![
                             FurNode::Element(FurElement {
                                 tag_name: Cow::Borrowed("Panel"),
-                                id: Cow::Borrowed("Panel_ac08eec4-190a-4b81-8174-288fa9ecaea6"),
+                                id: Cow::Borrowed("Panel_5c9c99d0-c423-465a-97aa-104a39a60312"),
                                 attributes: HashMap::from([
-                                    (Cow::Borrowed("rounding-t"), Cow::Borrowed("0.3")),
                                     (Cow::Borrowed("h"), Cow::Borrowed("88%")),
                                     (Cow::Borrowed("w"), Cow::Borrowed("98%")),
-                                    (Cow::Borrowed("bg"), Cow::Borrowed("cinder-8")),
+                                    (Cow::Borrowed("bg"), Cow::Borrowed("#181C26")),
+                                    (Cow::Borrowed("rounding"), Cow::Borrowed("0.1")),
                                 ]),
                                 children: vec![],
                                 self_closing: true,
@@ -167,25 +194,39 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("VLayout"),
-                id: Cow::Borrowed("VLayout_c762a42d-8d3a-4b39-a9cf-4498e1326440"),
+                id: Cow::Borrowed("VLayout_dd0c1878-7229-48b3-83aa-69328e5fcd19"),
                 attributes: HashMap::from([
                     (Cow::Borrowed("anchor"), Cow::Borrowed("tr")),
-                    (Cow::Borrowed("ty"), Cow::Borrowed("-3%")),
                 ]),
                 children: vec![
                     FurNode::Element(FurElement {
                         tag_name: Cow::Borrowed("Panel"),
-                        id: Cow::Borrowed("Panel_475f7897-0067-4a28-909d-2a47889de344"),
+                        id: Cow::Borrowed("Panel_2e0ab79f-0942-4125-93bf-84e5fdcb87ef"),
                         attributes: HashMap::from([
+                            (Cow::Borrowed("bg"), Cow::Borrowed("#181C26")),
                             (Cow::Borrowed("h"), Cow::Borrowed("100%")),
+                            (Cow::Borrowed("border"), Cow::Borrowed("2")),
+                            (Cow::Borrowed("color"), Cow::Borrowed("#FF9F42")),
                             (Cow::Borrowed("w"), Cow::Borrowed("19%")),
-                            (Cow::Borrowed("bg"), Cow::Borrowed("cinder-8")),
                         ]),
-                        children: vec![],
-                        self_closing: true,
+                        children: vec![
+                            FurNode::Element(FurElement {
+                                tag_name: Cow::Borrowed("Panel"),
+                                id: Cow::Borrowed("Panel_2056b18c-5c17-46ab-af19-26988ca51d81"),
+                                attributes: HashMap::from([
+                                    (Cow::Borrowed("ty"), Cow::Borrowed("1%")),
+                                    (Cow::Borrowed("anchor"), Cow::Borrowed("b")),
+                                    (Cow::Borrowed("h"), Cow::Borrowed("95%")),
+                                    (Cow::Borrowed("w"), Cow::Borrowed("95%")),
+                                    (Cow::Borrowed("rounding"), Cow::Borrowed("0.1")),
+                                    (Cow::Borrowed("bg"), Cow::Borrowed("#10141C")),
+                                ]),
+                                children: vec![],
+                                self_closing: true,
+                            }),
+                        ],
+                        self_closing: false,
                     }),
-                    FurNode::Text(Cow::Borrowed("; darker panel for right side
-      ")),
                 ],
                 self_closing: false,
             }),
@@ -199,17 +240,17 @@ pub static FUR_EDITOR: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
 pub static FUR_MANAGER: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             FurElement {
         tag_name: Cow::Borrowed("UI"),
-        id: Cow::Borrowed("UI_efc39130-2f7f-4944-bb81-c2698793e5d6"),
+        id: Cow::Borrowed("UI_e88891cc-dec9-48ce-a73d-b86c0e667337"),
         attributes: HashMap::new(),
         children: vec![
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("Text"),
-                id: Cow::Borrowed("Text_32427bf5-6d7b-4ac1-9d23-fb63f1c0b028"),
+                id: Cow::Borrowed("Text_ae39f9e3-d93c-4b69-abbc-a6a048dc7115"),
                 attributes: HashMap::from([
-                    (Cow::Borrowed("fsz"), Cow::Borrowed("150")),
                     (Cow::Borrowed("tx"), Cow::Borrowed("-550")),
                     (Cow::Borrowed("ty"), Cow::Borrowed("250")),
                     (Cow::Borrowed("anchor"), Cow::Borrowed("c")),
+                    (Cow::Borrowed("fsz"), Cow::Borrowed("150")),
                 ]),
                 children: vec![
                     FurNode::Text(Cow::Borrowed("Perro Manager")),
@@ -218,22 +259,22 @@ pub static FUR_MANAGER: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             }),
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("Panel"),
-                id: Cow::Borrowed("Panel_dfa98e65-0962-49c9-b027-59c078b9fd49"),
+                id: Cow::Borrowed("Panel_f93ab93a-38ce-47ff-a33b-4667f5f9d49b"),
                 attributes: HashMap::from([
+                    (Cow::Borrowed("bg"), Cow::Borrowed("cinder-3")),
+                    (Cow::Borrowed("anchor"), Cow::Borrowed("t")),
                     (Cow::Borrowed("w"), Cow::Borrowed("100%")),
                     (Cow::Borrowed("h"), Cow::Borrowed("5%")),
-                    (Cow::Borrowed("anchor"), Cow::Borrowed("t")),
-                    (Cow::Borrowed("bg"), Cow::Borrowed("cinder-3")),
                 ]),
                 children: vec![],
                 self_closing: true,
             }),
             FurNode::Element(FurElement {
                 tag_name: Cow::Borrowed("VLayout"),
-                id: Cow::Borrowed("VLayout_735252e6-f70d-4c58-a3d7-c251a74f27d7"),
+                id: Cow::Borrowed("VLayout_f46e8998-8cd4-4884-b769-4f217ea00699"),
                 attributes: HashMap::from([
-                    (Cow::Borrowed("anchor"), Cow::Borrowed("t")),
                     (Cow::Borrowed("gap"), Cow::Borrowed("20")),
+                    (Cow::Borrowed("anchor"), Cow::Borrowed("t")),
                 ]),
                 children: vec![],
                 self_closing: false,

@@ -26,6 +26,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2a9a6c8e-b575-4c48-97a6-3500a6ea3d0f"),
+            local_id: uuid!("2a9a6c8e-b575-4c48-97a6-3500a6ea3d0f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Root_UI"),
             script_path: None,
@@ -57,6 +58,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f76c311e-2a91-4b0f-adc7-4d274b9e816b"),
+            local_id: uuid!("f76c311e-2a91-4b0f-adc7-4d274b9e816b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UI_Child_1"),
             script_path: None,
@@ -101,6 +103,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ee05c7ef-db89-4dc9-9bc1-c47a812e20fc"),
+            local_id: uuid!("ee05c7ef-db89-4dc9-9bc1-c47a812e20fc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_1"),
             script_path: None,
@@ -142,6 +145,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8309dfd9-b8af-46f9-943f-02b08aff3f68"),
+            local_id: uuid!("8309dfd9-b8af-46f9-943f-02b08aff3f68"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_2"),
             script_path: None,
@@ -166,6 +170,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4e47f4a8-3a2a-42e2-b38e-13f9bbae9104"), SceneNode::Node(
     Node {
         id: uuid!("4e47f4a8-3a2a-42e2-b38e-13f9bbae9104"),
+        local_id: uuid!("4e47f4a8-3a2a-42e2-b38e-13f9bbae9104"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_1"),
         script_path: None,
@@ -187,6 +192,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6b737e63-06aa-44ba-9add-2cced58f1ce8"), SceneNode::Node(
     Node {
         id: uuid!("6b737e63-06aa-44ba-9add-2cced58f1ce8"),
+        local_id: uuid!("6b737e63-06aa-44ba-9add-2cced58f1ce8"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_2"),
         script_path: None,
@@ -209,6 +215,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8fee3ac0-7c9e-4649-b865-310fc945ca19"), SceneNode::Node(
     Node {
         id: uuid!("8fee3ac0-7c9e-4649-b865-310fc945ca19"),
+        local_id: uuid!("8fee3ac0-7c9e-4649-b865-310fc945ca19"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_3"),
         script_path: None,
@@ -251,6 +258,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("31cc4bdd-fb9b-4fba-be7c-70baaf4e5a3d"),
+                local_id: uuid!("31cc4bdd-fb9b-4fba-be7c-70baaf4e5a3d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_1_inner"),
                 script_path: None,
@@ -272,6 +280,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a0a0c108-88aa-40ae-ab90-5aef7771a216"), SceneNode::Node(
     Node {
         id: uuid!("a0a0c108-88aa-40ae-ab90-5aef7771a216"),
+        local_id: uuid!("a0a0c108-88aa-40ae-ab90-5aef7771a216"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_4"),
         script_path: None,
@@ -315,6 +324,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("87831735-7dfa-4b46-9e69-e20bad59927b"),
+            local_id: uuid!("87831735-7dfa-4b46-9e69-e20bad59927b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_3"),
             script_path: None,
@@ -355,6 +365,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("340c0a66-fa41-4926-9a8c-186f37d82893"),
+            local_id: uuid!("340c0a66-fa41-4926-9a8c-186f37d82893"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_4"),
             script_path: None,
@@ -375,6 +386,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("364c8be6-a0b4-47cf-a6fe-df66d81fca42"), SceneNode::Node(
     Node {
         id: uuid!("364c8be6-a0b4-47cf-a6fe-df66d81fca42"),
+        local_id: uuid!("364c8be6-a0b4-47cf-a6fe-df66d81fca42"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_5"),
         script_path: None,
@@ -395,6 +407,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1c966527-6755-486b-9c77-4b3a36c37809"), SceneNode::Node(
     Node {
         id: uuid!("1c966527-6755-486b-9c77-4b3a36c37809"),
+        local_id: uuid!("1c966527-6755-486b-9c77-4b3a36c37809"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_6"),
         script_path: None,
@@ -421,6 +434,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7e5ee992-6b59-400d-a191-9d629d9bd8b3"),
+            local_id: uuid!("7e5ee992-6b59-400d-a191-9d629d9bd8b3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_3"),
             script_path: None,
@@ -466,6 +480,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("69e9307f-30f9-4287-80a5-46539bbb3aad"),
+                local_id: uuid!("69e9307f-30f9-4287-80a5-46539bbb3aad"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_2_inner"),
                 script_path: None,
@@ -487,6 +502,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0aa83d06-32e2-4fd3-9571-406e27b6d07e"), SceneNode::Node(
     Node {
         id: uuid!("0aa83d06-32e2-4fd3-9571-406e27b6d07e"),
+        local_id: uuid!("0aa83d06-32e2-4fd3-9571-406e27b6d07e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_7"),
         script_path: None,
@@ -533,6 +549,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b35d72f7-4181-4383-8090-462714395498"),
+                local_id: uuid!("b35d72f7-4181-4383-8090-462714395498"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_3_inner"),
                 script_path: None,
@@ -566,6 +583,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0275a771-96eb-4eb5-99ce-d07cacf4c0bc"),
+            local_id: uuid!("0275a771-96eb-4eb5-99ce-d07cacf4c0bc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_4"),
             script_path: None,
@@ -608,6 +626,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("816792d0-9a3c-445e-a38e-c09be590a0ee"),
+                local_id: uuid!("816792d0-9a3c-445e-a38e-c09be590a0ee"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_4_inner"),
                 script_path: None,
@@ -653,6 +672,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1560c9ae-d367-44bb-b59d-8543b09ab827"),
+                local_id: uuid!("1560c9ae-d367-44bb-b59d-8543b09ab827"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_5_inner"),
                 script_path: None,
@@ -679,6 +699,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("aab43582-2ef0-4702-be1b-fc153ef7a08c"), SceneNode::Node(
     Node {
         id: uuid!("aab43582-2ef0-4702-be1b-fc153ef7a08c"),
+        local_id: uuid!("aab43582-2ef0-4702-be1b-fc153ef7a08c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_8"),
         script_path: None,
@@ -716,6 +737,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2e7f1e67-95b2-4d9f-a30f-5e96ea6d9e18"),
+            local_id: uuid!("2e7f1e67-95b2-4d9f-a30f-5e96ea6d9e18"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_5"),
             script_path: None,
@@ -760,6 +782,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7bc8aa26-8930-477c-8fa6-adea733eb3cb"),
+            local_id: uuid!("7bc8aa26-8930-477c-8fa6-adea733eb3cb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_6"),
             script_path: None,
@@ -801,6 +824,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("679814fc-4903-4d5b-a633-bc7b81b2e016"),
+            local_id: uuid!("679814fc-4903-4d5b-a633-bc7b81b2e016"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_7"),
             script_path: None,
@@ -846,6 +870,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cc669f4b-f011-4be7-a404-d2736b76e1b0"),
+                local_id: uuid!("cc669f4b-f011-4be7-a404-d2736b76e1b0"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_6_inner"),
                 script_path: None,
@@ -871,6 +896,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("da75176d-912e-4a8e-806d-1fee04831cf5"), SceneNode::Node(
     Node {
         id: uuid!("da75176d-912e-4a8e-806d-1fee04831cf5"),
+        local_id: uuid!("da75176d-912e-4a8e-806d-1fee04831cf5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_9"),
         script_path: None,
@@ -900,6 +926,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("631702e0-eb26-43e3-a881-379442656e29"),
+            local_id: uuid!("631702e0-eb26-43e3-a881-379442656e29"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_5"),
             script_path: None,
@@ -920,6 +947,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5bf4dc41-e256-4da9-8955-2e94c59886a9"), SceneNode::Node(
     Node {
         id: uuid!("5bf4dc41-e256-4da9-8955-2e94c59886a9"),
+        local_id: uuid!("5bf4dc41-e256-4da9-8955-2e94c59886a9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_10"),
         script_path: None,
@@ -964,6 +992,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f73f3393-45fc-49e6-9d5e-e8521acc5d94"),
+                local_id: uuid!("f73f3393-45fc-49e6-9d5e-e8521acc5d94"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_7_inner"),
                 script_path: None,
@@ -986,6 +1015,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2c08c7e5-7d6b-4ecb-ab5c-3a94dbf33a53"), SceneNode::Node(
     Node {
         id: uuid!("2c08c7e5-7d6b-4ecb-ab5c-3a94dbf33a53"),
+        local_id: uuid!("2c08c7e5-7d6b-4ecb-ab5c-3a94dbf33a53"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_11"),
         script_path: None,
@@ -1009,6 +1039,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("aa979530-a15a-44e6-ab5a-71039a0c46f4"), SceneNode::Node(
     Node {
         id: uuid!("aa979530-a15a-44e6-ab5a-71039a0c46f4"),
+        local_id: uuid!("aa979530-a15a-44e6-ab5a-71039a0c46f4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_12"),
         script_path: None,
@@ -1052,6 +1083,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ba745028-6dec-43ff-b480-c6ebcf289c03"),
+                local_id: uuid!("ba745028-6dec-43ff-b480-c6ebcf289c03"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_8_inner"),
                 script_path: None,
@@ -1102,6 +1134,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("70e41f9c-d012-4c57-aac3-e6f08141ef9f"),
+                local_id: uuid!("70e41f9c-d012-4c57-aac3-e6f08141ef9f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_9_inner"),
                 script_path: None,
@@ -1150,6 +1183,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f7a31cb9-84d8-49d1-bd65-65cef260d372"),
+                local_id: uuid!("f7a31cb9-84d8-49d1-bd65-65cef260d372"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_10_inner"),
                 script_path: None,
@@ -1192,6 +1226,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f9741671-8497-4561-b066-45fc9e564047"),
+            local_id: uuid!("f9741671-8497-4561-b066-45fc9e564047"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_8"),
             script_path: None,
@@ -1236,6 +1271,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("56d78441-490f-43e9-ab90-691c3af5c105"),
+                local_id: uuid!("56d78441-490f-43e9-ab90-691c3af5c105"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_11_inner"),
                 script_path: None,
@@ -1279,6 +1315,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ddb5a714-be40-49ae-9f53-f8f9e90e3f5f"),
+            local_id: uuid!("ddb5a714-be40-49ae-9f53-f8f9e90e3f5f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_9"),
             script_path: None,
@@ -1299,6 +1336,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5bfe282e-2865-4387-95fc-c2ea83895c99"), SceneNode::Node(
     Node {
         id: uuid!("5bfe282e-2865-4387-95fc-c2ea83895c99"),
+        local_id: uuid!("5bfe282e-2865-4387-95fc-c2ea83895c99"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_13"),
         script_path: None,
@@ -1322,6 +1360,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("64154292-9daa-48b8-ad7e-96cdfcb86457"), SceneNode::Node(
     Node {
         id: uuid!("64154292-9daa-48b8-ad7e-96cdfcb86457"),
+        local_id: uuid!("64154292-9daa-48b8-ad7e-96cdfcb86457"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_14"),
         script_path: None,
@@ -1340,6 +1379,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("931b9094-f228-4b3e-987d-303fc9959b8c"), SceneNode::Node(
     Node {
         id: uuid!("931b9094-f228-4b3e-987d-303fc9959b8c"),
+        local_id: uuid!("931b9094-f228-4b3e-987d-303fc9959b8c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_15"),
         script_path: None,
@@ -1360,6 +1400,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0ae17d83-cdd0-419e-8021-2833d8636f86"), SceneNode::Node(
     Node {
         id: uuid!("0ae17d83-cdd0-419e-8021-2833d8636f86"),
+        local_id: uuid!("0ae17d83-cdd0-419e-8021-2833d8636f86"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_16"),
         script_path: None,
@@ -1404,6 +1445,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("fec87d8c-fc90-4adb-ab66-3be05110f374"),
+                local_id: uuid!("fec87d8c-fc90-4adb-ab66-3be05110f374"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_12_inner"),
                 script_path: None,
@@ -1448,6 +1490,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a4324b1c-e6db-4260-9479-54c38a3dde63"),
+                local_id: uuid!("a4324b1c-e6db-4260-9479-54c38a3dde63"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_13_inner"),
                 script_path: None,
@@ -1469,6 +1512,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("29c6030d-e02b-49f3-8411-f730f2348d6c"), SceneNode::Node(
     Node {
         id: uuid!("29c6030d-e02b-49f3-8411-f730f2348d6c"),
+        local_id: uuid!("29c6030d-e02b-49f3-8411-f730f2348d6c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_17"),
         script_path: None,
@@ -1512,6 +1556,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("012ae90f-ddae-44a4-969c-3b5b7aa5a706"),
+                local_id: uuid!("012ae90f-ddae-44a4-969c-3b5b7aa5a706"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_14_inner"),
                 script_path: None,
@@ -1532,6 +1577,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a23fc8c9-df6d-47db-b263-e28c1d65da60"), SceneNode::Node(
     Node {
         id: uuid!("a23fc8c9-df6d-47db-b263-e28c1d65da60"),
+        local_id: uuid!("a23fc8c9-df6d-47db-b263-e28c1d65da60"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_18"),
         script_path: None,
@@ -1571,6 +1617,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7fe9c1df-4e7e-4408-bec7-378f35bb5cc5"),
+            local_id: uuid!("7fe9c1df-4e7e-4408-bec7-378f35bb5cc5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_10"),
             script_path: None,
@@ -1614,6 +1661,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("bb85e5dc-b740-4ecb-92d1-7c765eee1c85"),
+                local_id: uuid!("bb85e5dc-b740-4ecb-92d1-7c765eee1c85"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_15_inner"),
                 script_path: None,
@@ -1656,6 +1704,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("01e99ba4-5ecc-48bf-b496-e51e6bd3d452"),
+            local_id: uuid!("01e99ba4-5ecc-48bf-b496-e51e6bd3d452"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_11"),
             script_path: None,
@@ -1684,6 +1733,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("70875170-bf06-4ea9-a2e8-e90590ee0a67"),
+            local_id: uuid!("70875170-bf06-4ea9-a2e8-e90590ee0a67"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_6"),
             script_path: None,
@@ -1727,6 +1777,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("bc51b75f-36e8-4601-bbc2-40bc8fc497c3"),
+                local_id: uuid!("bc51b75f-36e8-4601-bbc2-40bc8fc497c3"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_16_inner"),
                 script_path: None,
@@ -1771,6 +1822,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6004782c-96d2-49cc-83c9-e944813153db"),
+                local_id: uuid!("6004782c-96d2-49cc-83c9-e944813153db"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_17_inner"),
                 script_path: None,
@@ -1810,6 +1862,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2ce6d7e4-fa34-4d67-a206-febaddae5d47"),
+            local_id: uuid!("2ce6d7e4-fa34-4d67-a206-febaddae5d47"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_12"),
             script_path: None,
@@ -1850,6 +1903,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("cb7d38f3-f04e-4006-9672-ce2580faa4ea"),
+            local_id: uuid!("cb7d38f3-f04e-4006-9672-ce2580faa4ea"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_13"),
             script_path: None,
@@ -1894,6 +1948,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("efb27e78-3822-405f-b4ab-681707cbde7b"),
+                local_id: uuid!("efb27e78-3822-405f-b4ab-681707cbde7b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_18_inner"),
                 script_path: None,
@@ -1935,6 +1990,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a0d3fd23-b680-4451-9dd6-46d607ab0f67"),
+            local_id: uuid!("a0d3fd23-b680-4451-9dd6-46d607ab0f67"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_14"),
             script_path: None,
@@ -1978,6 +2034,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a9c90139-d60c-4aae-bed3-057c06c0d823"),
+            local_id: uuid!("a9c90139-d60c-4aae-bed3-057c06c0d823"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_15"),
             script_path: None,
@@ -1998,6 +2055,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f47b2ee3-df62-45c1-9da2-c25cd6fd7339"), SceneNode::Node(
     Node {
         id: uuid!("f47b2ee3-df62-45c1-9da2-c25cd6fd7339"),
+        local_id: uuid!("f47b2ee3-df62-45c1-9da2-c25cd6fd7339"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_19"),
         script_path: None,
@@ -2038,6 +2096,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0501f277-dc61-470d-8283-d463e196503a"),
+            local_id: uuid!("0501f277-dc61-470d-8283-d463e196503a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_16"),
             script_path: None,
@@ -2060,6 +2119,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4102fd33-f923-474e-8cd9-661178010bb8"), SceneNode::Node(
     Node {
         id: uuid!("4102fd33-f923-474e-8cd9-661178010bb8"),
+        local_id: uuid!("4102fd33-f923-474e-8cd9-661178010bb8"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_20"),
         script_path: None,
@@ -2081,6 +2141,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e017ab5b-c8b3-4816-8868-42c85c4c87fa"), SceneNode::Node(
     Node {
         id: uuid!("e017ab5b-c8b3-4816-8868-42c85c4c87fa"),
+        local_id: uuid!("e017ab5b-c8b3-4816-8868-42c85c4c87fa"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_21"),
         script_path: None,
@@ -2101,6 +2162,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("428043f9-b8a5-417c-ac37-b3f626e7b62b"), SceneNode::Node(
     Node {
         id: uuid!("428043f9-b8a5-417c-ac37-b3f626e7b62b"),
+        local_id: uuid!("428043f9-b8a5-417c-ac37-b3f626e7b62b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_22"),
         script_path: None,
@@ -2144,6 +2206,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c027e3e8-8c02-485f-b3d9-93db9261ecc4"),
+                local_id: uuid!("c027e3e8-8c02-485f-b3d9-93db9261ecc4"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_19_inner"),
                 script_path: None,
@@ -2185,6 +2248,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("13bf7a85-9f91-4960-bf0b-87edd6440298"),
+            local_id: uuid!("13bf7a85-9f91-4960-bf0b-87edd6440298"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_17"),
             script_path: None,
@@ -2229,6 +2293,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("30d6fbf7-7d97-453d-ba0b-672a20882f94"),
+                local_id: uuid!("30d6fbf7-7d97-453d-ba0b-672a20882f94"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_20_inner"),
                 script_path: None,
@@ -2269,6 +2334,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e64a39b9-55d2-48b1-9127-95d25d2ccf8b"),
+            local_id: uuid!("e64a39b9-55d2-48b1-9127-95d25d2ccf8b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_18"),
             script_path: None,
@@ -2288,6 +2354,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b2e2a44f-d9ef-4233-a595-32f6948727d2"), SceneNode::Node(
     Node {
         id: uuid!("b2e2a44f-d9ef-4233-a595-32f6948727d2"),
+        local_id: uuid!("b2e2a44f-d9ef-4233-a595-32f6948727d2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_23"),
         script_path: None,
@@ -2323,6 +2390,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9bf12f45-41d9-4cc8-bb5f-5ecca1d627e9"),
+            local_id: uuid!("9bf12f45-41d9-4cc8-bb5f-5ecca1d627e9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_19"),
             script_path: None,
@@ -2342,6 +2410,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ebbd850b-afd5-42ad-b6a3-971aa77bf1c7"), SceneNode::Node(
     Node {
         id: uuid!("ebbd850b-afd5-42ad-b6a3-971aa77bf1c7"),
+        local_id: uuid!("ebbd850b-afd5-42ad-b6a3-971aa77bf1c7"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_24"),
         script_path: None,
@@ -2368,6 +2437,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fb5943ad-9a18-46a9-bf3e-985e51bbbdf5"), SceneNode::Node(
     Node {
         id: uuid!("fb5943ad-9a18-46a9-bf3e-985e51bbbdf5"),
+        local_id: uuid!("fb5943ad-9a18-46a9-bf3e-985e51bbbdf5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_25"),
         script_path: None,
@@ -2413,6 +2483,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("85704a60-84c5-453a-8221-1f85b7ea797b"),
+                local_id: uuid!("85704a60-84c5-453a-8221-1f85b7ea797b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_21_inner"),
                 script_path: None,
@@ -2461,6 +2532,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2dce30de-e7e9-42b4-bc41-347edc9247f7"),
+                local_id: uuid!("2dce30de-e7e9-42b4-bc41-347edc9247f7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_22_inner"),
                 script_path: None,
@@ -2483,6 +2555,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("57d3e1db-ceee-4ee5-a9fe-13915203949a"), SceneNode::Node(
     Node {
         id: uuid!("57d3e1db-ceee-4ee5-a9fe-13915203949a"),
+        local_id: uuid!("57d3e1db-ceee-4ee5-a9fe-13915203949a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_26"),
         script_path: None,
@@ -2528,6 +2601,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4705ea19-63ce-4a15-9575-876625c5f96b"),
+                local_id: uuid!("4705ea19-63ce-4a15-9575-876625c5f96b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_23_inner"),
                 script_path: None,
@@ -2554,6 +2628,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5a04328c-c31a-4f6f-a042-06eae9a18288"), SceneNode::Node(
     Node {
         id: uuid!("5a04328c-c31a-4f6f-a042-06eae9a18288"),
+        local_id: uuid!("5a04328c-c31a-4f6f-a042-06eae9a18288"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_27"),
         script_path: None,
@@ -2576,6 +2651,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d41d9821-eb77-4cb2-a156-bc5258737a03"), SceneNode::Node(
     Node {
         id: uuid!("d41d9821-eb77-4cb2-a156-bc5258737a03"),
+        local_id: uuid!("d41d9821-eb77-4cb2-a156-bc5258737a03"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_28"),
         script_path: None,
@@ -2594,6 +2670,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("11251dc4-344c-4e08-a7b1-d03e96254d9f"), SceneNode::Node(
     Node {
         id: uuid!("11251dc4-344c-4e08-a7b1-d03e96254d9f"),
+        local_id: uuid!("11251dc4-344c-4e08-a7b1-d03e96254d9f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_29"),
         script_path: None,
@@ -2632,6 +2709,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("23909a23-f359-47ac-9310-e0313899429f"),
+            local_id: uuid!("23909a23-f359-47ac-9310-e0313899429f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_20"),
             script_path: None,
@@ -2660,6 +2738,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("734ca3a4-be7b-45d0-83b8-02bc077cbb5e"),
+            local_id: uuid!("734ca3a4-be7b-45d0-83b8-02bc077cbb5e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_7"),
             script_path: None,
@@ -2677,6 +2756,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("bb93ab77-e7d9-4463-8bae-6b4809e01908"), SceneNode::Node(
     Node {
         id: uuid!("bb93ab77-e7d9-4463-8bae-6b4809e01908"),
+        local_id: uuid!("bb93ab77-e7d9-4463-8bae-6b4809e01908"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_30"),
         script_path: None,
@@ -2697,6 +2777,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("796cf202-42dd-45fe-bff4-24fdd936d4a9"), SceneNode::Node(
     Node {
         id: uuid!("796cf202-42dd-45fe-bff4-24fdd936d4a9"),
+        local_id: uuid!("796cf202-42dd-45fe-bff4-24fdd936d4a9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_31"),
         script_path: None,
@@ -2717,6 +2798,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b76459b2-b705-4d6c-b02f-7eab1ab9cec0"), SceneNode::Node(
     Node {
         id: uuid!("b76459b2-b705-4d6c-b02f-7eab1ab9cec0"),
+        local_id: uuid!("b76459b2-b705-4d6c-b02f-7eab1ab9cec0"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_32"),
         script_path: None,
@@ -2736,6 +2818,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("819ec66d-aa98-48e6-a8f0-7c6d5ed142eb"), SceneNode::Node(
     Node {
         id: uuid!("819ec66d-aa98-48e6-a8f0-7c6d5ed142eb"),
+        local_id: uuid!("819ec66d-aa98-48e6-a8f0-7c6d5ed142eb"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_33"),
         script_path: None,
@@ -2774,6 +2857,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("381cf7e9-19ae-49f0-94f3-9ca928624caa"),
+            local_id: uuid!("381cf7e9-19ae-49f0-94f3-9ca928624caa"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_21"),
             script_path: None,
@@ -2793,6 +2877,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("426d3e3b-8bf3-4ecc-a2ac-450ef7ee876a"), SceneNode::Node(
     Node {
         id: uuid!("426d3e3b-8bf3-4ecc-a2ac-450ef7ee876a"),
+        local_id: uuid!("426d3e3b-8bf3-4ecc-a2ac-450ef7ee876a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_34"),
         script_path: None,
@@ -2813,6 +2898,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ef3f194d-3712-4f1e-9d69-7f23382f7201"), SceneNode::Node(
     Node {
         id: uuid!("ef3f194d-3712-4f1e-9d69-7f23382f7201"),
+        local_id: uuid!("ef3f194d-3712-4f1e-9d69-7f23382f7201"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_35"),
         script_path: None,
@@ -2856,6 +2942,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8ccb931b-a07a-4d02-8cb1-973c16e305bf"),
+                local_id: uuid!("8ccb931b-a07a-4d02-8cb1-973c16e305bf"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_24_inner"),
                 script_path: None,
@@ -2900,6 +2987,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cbcf4254-9793-4898-8b48-05f425d140e9"),
+                local_id: uuid!("cbcf4254-9793-4898-8b48-05f425d140e9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_25_inner"),
                 script_path: None,
@@ -2918,6 +3006,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6453c62f-868e-43ec-8d44-c38ae88c6948"), SceneNode::Node(
     Node {
         id: uuid!("6453c62f-868e-43ec-8d44-c38ae88c6948"),
+        local_id: uuid!("6453c62f-868e-43ec-8d44-c38ae88c6948"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_36"),
         script_path: None,
@@ -2939,6 +3028,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cc11d7a0-6669-46bd-be56-0e2da3072eb5"), SceneNode::Node(
     Node {
         id: uuid!("cc11d7a0-6669-46bd-be56-0e2da3072eb5"),
+        local_id: uuid!("cc11d7a0-6669-46bd-be56-0e2da3072eb5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_37"),
         script_path: None,
@@ -2980,6 +3070,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3980e1b9-c09f-4106-a377-6c5c6c4570a5"),
+                local_id: uuid!("3980e1b9-c09f-4106-a377-6c5c6c4570a5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_26_inner"),
                 script_path: None,
@@ -3001,6 +3092,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("19366c7f-0c68-4ce6-a37a-99de465e515c"), SceneNode::Node(
     Node {
         id: uuid!("19366c7f-0c68-4ce6-a37a-99de465e515c"),
+        local_id: uuid!("19366c7f-0c68-4ce6-a37a-99de465e515c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_38"),
         script_path: None,
@@ -3040,6 +3132,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("52fed0bc-9eca-4a70-bbf7-f551faa03e4a"),
+            local_id: uuid!("52fed0bc-9eca-4a70-bbf7-f551faa03e4a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_22"),
             script_path: None,
@@ -3083,6 +3176,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8f1e6734-1783-4a6c-9927-ef4b46491c21"),
+                local_id: uuid!("8f1e6734-1783-4a6c-9927-ef4b46491c21"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_27_inner"),
                 script_path: None,
@@ -3111,6 +3205,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5db41e2d-7e03-49d1-9049-7eeff65734e4"),
+            local_id: uuid!("5db41e2d-7e03-49d1-9049-7eeff65734e4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_8"),
             script_path: None,
@@ -3156,6 +3251,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("032c2630-3dd5-49d6-9c79-22ad2ad6a416"),
+                local_id: uuid!("032c2630-3dd5-49d6-9c79-22ad2ad6a416"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_28_inner"),
                 script_path: None,
@@ -3202,6 +3298,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b46e1988-6824-4e74-a2b2-0335fdf3c0ac"),
+                local_id: uuid!("b46e1988-6824-4e74-a2b2-0335fdf3c0ac"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_29_inner"),
                 script_path: None,
@@ -3224,6 +3321,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ca92f62b-8bd8-4c72-9920-06ffedcf41cc"), SceneNode::Node(
     Node {
         id: uuid!("ca92f62b-8bd8-4c72-9920-06ffedcf41cc"),
+        local_id: uuid!("ca92f62b-8bd8-4c72-9920-06ffedcf41cc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_39"),
         script_path: None,
@@ -3269,6 +3367,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("28ac2e98-83a4-4f79-906d-d45fffb78487"),
+                local_id: uuid!("28ac2e98-83a4-4f79-906d-d45fffb78487"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_30_inner"),
                 script_path: None,
@@ -3314,6 +3413,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ad9f8add-1c7e-41ae-bf9a-b684a986be41"),
+                local_id: uuid!("ad9f8add-1c7e-41ae-bf9a-b684a986be41"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_31_inner"),
                 script_path: None,
@@ -3360,6 +3460,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f0d81984-f40a-4e55-b5ac-eb659e06e5db"),
+                local_id: uuid!("f0d81984-f40a-4e55-b5ac-eb659e06e5db"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_32_inner"),
                 script_path: None,
@@ -3399,6 +3500,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7bc93af6-b4cd-4165-83f1-4eb13cec9f0d"),
+            local_id: uuid!("7bc93af6-b4cd-4165-83f1-4eb13cec9f0d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_23"),
             script_path: None,
@@ -3442,6 +3544,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cf48c609-13c6-4cbf-8a26-84817e83a2c5"),
+                local_id: uuid!("cf48c609-13c6-4cbf-8a26-84817e83a2c5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_33_inner"),
                 script_path: None,
@@ -3467,6 +3570,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1ce30dd1-9cd6-4ed0-b08f-aade428c536a"), SceneNode::Node(
     Node {
         id: uuid!("1ce30dd1-9cd6-4ed0-b08f-aade428c536a"),
+        local_id: uuid!("1ce30dd1-9cd6-4ed0-b08f-aade428c536a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_40"),
         script_path: None,
@@ -3487,6 +3591,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c72098a5-94bc-4e13-b766-26a1aa4edd20"), SceneNode::Node(
     Node {
         id: uuid!("c72098a5-94bc-4e13-b766-26a1aa4edd20"),
+        local_id: uuid!("c72098a5-94bc-4e13-b766-26a1aa4edd20"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_41"),
         script_path: None,
@@ -3506,6 +3611,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("67639a7b-e4c0-46b6-baef-c31ce8d31675"), SceneNode::Node(
     Node {
         id: uuid!("67639a7b-e4c0-46b6-baef-c31ce8d31675"),
+        local_id: uuid!("67639a7b-e4c0-46b6-baef-c31ce8d31675"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_42"),
         script_path: None,
@@ -3526,6 +3632,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("015267e4-9ddc-4190-80af-f3c1490bff5f"), SceneNode::Node(
     Node {
         id: uuid!("015267e4-9ddc-4190-80af-f3c1490bff5f"),
+        local_id: uuid!("015267e4-9ddc-4190-80af-f3c1490bff5f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_43"),
         script_path: None,
@@ -3545,6 +3652,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0e81718f-5557-419a-a7ed-0d322d3b4fe3"), SceneNode::Node(
     Node {
         id: uuid!("0e81718f-5557-419a-a7ed-0d322d3b4fe3"),
+        local_id: uuid!("0e81718f-5557-419a-a7ed-0d322d3b4fe3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_44"),
         script_path: None,
@@ -3563,6 +3671,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("20f753a2-95ff-4241-967d-87e8cba99cb7"), SceneNode::Node(
     Node {
         id: uuid!("20f753a2-95ff-4241-967d-87e8cba99cb7"),
+        local_id: uuid!("20f753a2-95ff-4241-967d-87e8cba99cb7"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_45"),
         script_path: None,
@@ -3585,6 +3694,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("427624dc-727a-4112-bdf9-ec4ad9f55524"), SceneNode::Node(
     Node {
         id: uuid!("427624dc-727a-4112-bdf9-ec4ad9f55524"),
+        local_id: uuid!("427624dc-727a-4112-bdf9-ec4ad9f55524"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_46"),
         script_path: None,
@@ -3620,6 +3730,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("46b589d5-9003-442e-83ca-9c0e3b2589da"),
+            local_id: uuid!("46b589d5-9003-442e-83ca-9c0e3b2589da"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_24"),
             script_path: None,
@@ -3662,6 +3773,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c74d72f5-b81f-4598-8d3e-57f9f35946e7"),
+                local_id: uuid!("c74d72f5-b81f-4598-8d3e-57f9f35946e7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_34_inner"),
                 script_path: None,
@@ -3690,6 +3802,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7e452106-e614-4abf-8106-269e285a63a0"),
+            local_id: uuid!("7e452106-e614-4abf-8106-269e285a63a0"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_9"),
             script_path: None,
@@ -3729,6 +3842,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("73bd0d8b-e5ce-4a9e-b0e0-5a216ca72ed7"),
+            local_id: uuid!("73bd0d8b-e5ce-4a9e-b0e0-5a216ca72ed7"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_25"),
             script_path: None,
@@ -3751,6 +3865,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8fdf25ab-4564-4076-80d7-7fe05a731c9d"), SceneNode::Node(
     Node {
         id: uuid!("8fdf25ab-4564-4076-80d7-7fe05a731c9d"),
+        local_id: uuid!("8fdf25ab-4564-4076-80d7-7fe05a731c9d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_47"),
         script_path: None,
@@ -3790,6 +3905,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("665112ab-eb40-4eb9-b50e-a350131040ab"),
+                local_id: uuid!("665112ab-eb40-4eb9-b50e-a350131040ab"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_35_inner"),
                 script_path: None,
@@ -3810,6 +3926,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cfb63d9c-6135-4550-9874-9ae3037c0613"), SceneNode::Node(
     Node {
         id: uuid!("cfb63d9c-6135-4550-9874-9ae3037c0613"),
+        local_id: uuid!("cfb63d9c-6135-4550-9874-9ae3037c0613"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_48"),
         script_path: None,
@@ -3849,6 +3966,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6523b186-cdcf-40d0-9849-0e5da18825da"),
+            local_id: uuid!("6523b186-cdcf-40d0-9849-0e5da18825da"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_26"),
             script_path: None,
@@ -3887,6 +4005,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e52001eb-497e-4dce-8521-e102e238c203"),
+            local_id: uuid!("e52001eb-497e-4dce-8521-e102e238c203"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_27"),
             script_path: None,
@@ -3925,6 +4044,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8a079abf-c73b-4860-865d-d833d0f3c35a"),
+            local_id: uuid!("8a079abf-c73b-4860-865d-d833d0f3c35a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_28"),
             script_path: None,
@@ -3968,6 +4088,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("162708e0-f2f0-4e8e-8732-92f274ae282a"),
+                local_id: uuid!("162708e0-f2f0-4e8e-8732-92f274ae282a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_36_inner"),
                 script_path: None,
@@ -4005,6 +4126,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e4a83a89-bd33-4c63-af6b-0ba6301c6903"),
+            local_id: uuid!("e4a83a89-bd33-4c63-af6b-0ba6301c6903"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_29"),
             script_path: None,
@@ -4045,6 +4167,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("5e23bbb1-1efb-42f3-a4f1-2173fdfb42e4"),
+                local_id: uuid!("5e23bbb1-1efb-42f3-a4f1-2173fdfb42e4"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_37_inner"),
                 script_path: None,
@@ -4066,6 +4189,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d0305cd4-7889-4e39-9532-c56fed2bf093"), SceneNode::Node(
     Node {
         id: uuid!("d0305cd4-7889-4e39-9532-c56fed2bf093"),
+        local_id: uuid!("d0305cd4-7889-4e39-9532-c56fed2bf093"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_49"),
         script_path: None,
@@ -4087,6 +4211,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ba244fbc-e14d-432d-84f8-96ac5a6a3552"), SceneNode::Node(
     Node {
         id: uuid!("ba244fbc-e14d-432d-84f8-96ac5a6a3552"),
+        local_id: uuid!("ba244fbc-e14d-432d-84f8-96ac5a6a3552"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_50"),
         script_path: None,
@@ -4125,6 +4250,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("de244337-e1c9-4fa3-9ed0-3cf668336db9"),
+            local_id: uuid!("de244337-e1c9-4fa3-9ed0-3cf668336db9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_30"),
             script_path: None,
@@ -4165,6 +4291,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("47549540-d8ca-44c3-8a9e-fe8c4363e3b8"),
+            local_id: uuid!("47549540-d8ca-44c3-8a9e-fe8c4363e3b8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_31"),
             script_path: None,
@@ -4201,6 +4328,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d3a28008-7b2f-4bb0-b786-fe52f214efd2"),
+            local_id: uuid!("d3a28008-7b2f-4bb0-b786-fe52f214efd2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_32"),
             script_path: None,
@@ -4241,6 +4369,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b8d9efff-75ec-422a-b2ae-ac401998a23b"),
+                local_id: uuid!("b8d9efff-75ec-422a-b2ae-ac401998a23b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_38_inner"),
                 script_path: None,
@@ -4280,6 +4409,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d550eb92-851d-4673-9882-0ab8b1bee7b6"),
+            local_id: uuid!("d550eb92-851d-4673-9882-0ab8b1bee7b6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_33"),
             script_path: None,
@@ -4320,6 +4450,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e345fc0c-6c9d-4af6-aace-0c93d60a2202"),
+            local_id: uuid!("e345fc0c-6c9d-4af6-aace-0c93d60a2202"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_34"),
             script_path: None,
@@ -4356,6 +4487,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("70bb3c7c-2d59-4c80-bcb8-3eba5dc411b1"),
+            local_id: uuid!("70bb3c7c-2d59-4c80-bcb8-3eba5dc411b1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_35"),
             script_path: None,
@@ -4377,6 +4509,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1806174c-7669-48b4-aea9-f41c7c3ba9cc"), SceneNode::Node(
     Node {
         id: uuid!("1806174c-7669-48b4-aea9-f41c7c3ba9cc"),
+        local_id: uuid!("1806174c-7669-48b4-aea9-f41c7c3ba9cc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_51"),
         script_path: None,
@@ -4418,6 +4551,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ab21e7d9-a6f1-426f-a32d-d4d343c1b867"),
+                local_id: uuid!("ab21e7d9-a6f1-426f-a32d-d4d343c1b867"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_39_inner"),
                 script_path: None,
@@ -4460,6 +4594,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b0e2455c-5712-4d2d-b00e-d4da956ae8fc"),
+            local_id: uuid!("b0e2455c-5712-4d2d-b00e-d4da956ae8fc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_36"),
             script_path: None,
@@ -4480,6 +4615,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a3a68fa0-2f97-458f-bbdd-c6d7c7cc0ca3"), SceneNode::Node(
     Node {
         id: uuid!("a3a68fa0-2f97-458f-bbdd-c6d7c7cc0ca3"),
+        local_id: uuid!("a3a68fa0-2f97-458f-bbdd-c6d7c7cc0ca3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_52"),
         script_path: None,
@@ -4500,6 +4636,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a47d9986-2b9d-4d3f-8e0d-875931fd26dd"), SceneNode::Node(
     Node {
         id: uuid!("a47d9986-2b9d-4d3f-8e0d-875931fd26dd"),
+        local_id: uuid!("a47d9986-2b9d-4d3f-8e0d-875931fd26dd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_53"),
         script_path: None,
@@ -4537,6 +4674,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e51fe156-bef9-4830-8e1a-0881ae404951"),
+            local_id: uuid!("e51fe156-bef9-4830-8e1a-0881ae404951"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_37"),
             script_path: None,
@@ -4556,6 +4694,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b4592422-07be-4423-8ee0-c04716d61fd5"), SceneNode::Node(
     Node {
         id: uuid!("b4592422-07be-4423-8ee0-c04716d61fd5"),
+        local_id: uuid!("b4592422-07be-4423-8ee0-c04716d61fd5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_54"),
         script_path: None,
@@ -4574,6 +4713,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d28a956d-0b00-4e42-b5bb-1a9c2a234120"), SceneNode::Node(
     Node {
         id: uuid!("d28a956d-0b00-4e42-b5bb-1a9c2a234120"),
+        local_id: uuid!("d28a956d-0b00-4e42-b5bb-1a9c2a234120"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_55"),
         script_path: None,
@@ -4593,6 +4733,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ddb4adca-0ff9-4c2f-a9b6-3f283b57175d"), SceneNode::Node(
     Node {
         id: uuid!("ddb4adca-0ff9-4c2f-a9b6-3f283b57175d"),
+        local_id: uuid!("ddb4adca-0ff9-4c2f-a9b6-3f283b57175d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_56"),
         script_path: None,
@@ -4620,6 +4761,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f4f6757b-9498-4e07-b66a-7cccd0dc6652"),
+            local_id: uuid!("f4f6757b-9498-4e07-b66a-7cccd0dc6652"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_10"),
             script_path: None,
@@ -4641,6 +4783,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("74070f32-70bd-4383-910e-94987345f6f2"), SceneNode::Node(
     Node {
         id: uuid!("74070f32-70bd-4383-910e-94987345f6f2"),
+        local_id: uuid!("74070f32-70bd-4383-910e-94987345f6f2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_57"),
         script_path: None,
@@ -4659,6 +4802,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7a53b8d2-ebf0-45be-b522-4ed9a52a60d4"), SceneNode::Node(
     Node {
         id: uuid!("7a53b8d2-ebf0-45be-b522-4ed9a52a60d4"),
+        local_id: uuid!("7a53b8d2-ebf0-45be-b522-4ed9a52a60d4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_58"),
         script_path: None,
@@ -4694,6 +4838,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a238429f-a127-463f-b583-fd1eba7807f8"),
+            local_id: uuid!("a238429f-a127-463f-b583-fd1eba7807f8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_38"),
             script_path: None,
@@ -4714,6 +4859,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3fbc1417-ed53-460c-aa97-808d74f65f02"), SceneNode::Node(
     Node {
         id: uuid!("3fbc1417-ed53-460c-aa97-808d74f65f02"),
+        local_id: uuid!("3fbc1417-ed53-460c-aa97-808d74f65f02"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_59"),
         script_path: None,
@@ -4739,6 +4885,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0f3dd89f-49b5-459e-a272-301b88b7bcc4"),
+            local_id: uuid!("0f3dd89f-49b5-459e-a272-301b88b7bcc4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_11"),
             script_path: None,
@@ -4758,6 +4905,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3917fcf5-0aa7-440e-a38f-29df0c6a1269"), SceneNode::Node(
     Node {
         id: uuid!("3917fcf5-0aa7-440e-a38f-29df0c6a1269"),
+        local_id: uuid!("3917fcf5-0aa7-440e-a38f-29df0c6a1269"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_60"),
         script_path: None,
@@ -4793,6 +4941,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("bedd13b1-44c0-4def-92e3-9ea1ea97a52f"),
+            local_id: uuid!("bedd13b1-44c0-4def-92e3-9ea1ea97a52f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_39"),
             script_path: None,
@@ -4820,6 +4969,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b1da57db-341a-4f25-bcdb-b8ce0006b15c"),
+            local_id: uuid!("b1da57db-341a-4f25-bcdb-b8ce0006b15c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_12"),
             script_path: None,
@@ -4864,6 +5014,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1c35a300-6596-46ba-93d9-f7b1f3012f27"),
+                local_id: uuid!("1c35a300-6596-46ba-93d9-f7b1f3012f27"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_40_inner"),
                 script_path: None,
@@ -4887,6 +5038,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d295027f-5d0c-4668-97d9-2b7e58074a4c"), SceneNode::Node(
     Node {
         id: uuid!("d295027f-5d0c-4668-97d9-2b7e58074a4c"),
+        local_id: uuid!("d295027f-5d0c-4668-97d9-2b7e58074a4c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_61"),
         script_path: None,
@@ -4928,6 +5080,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a4360ec4-110f-4c59-9e5f-5c9bcbfa7e52"),
+                local_id: uuid!("a4360ec4-110f-4c59-9e5f-5c9bcbfa7e52"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_41_inner"),
                 script_path: None,
@@ -4950,6 +5103,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("77a32c78-0d3f-4404-8bf2-4ceee21ba153"), SceneNode::Node(
     Node {
         id: uuid!("77a32c78-0d3f-4404-8bf2-4ceee21ba153"),
+        local_id: uuid!("77a32c78-0d3f-4404-8bf2-4ceee21ba153"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_62"),
         script_path: None,
@@ -4988,6 +5142,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3cb99f30-7cab-45d9-bf55-91c002325499"),
+            local_id: uuid!("3cb99f30-7cab-45d9-bf55-91c002325499"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_40"),
             script_path: None,
@@ -5015,6 +5170,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ed40c430-bbce-4619-bcf3-be0f0870d79e"),
+            local_id: uuid!("ed40c430-bbce-4619-bcf3-be0f0870d79e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_13"),
             script_path: None,
@@ -5058,6 +5214,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b6c6dc62-ed07-4ad4-9c71-4e5193c600f7"),
+                local_id: uuid!("b6c6dc62-ed07-4ad4-9c71-4e5193c600f7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_42_inner"),
                 script_path: None,
@@ -5078,6 +5235,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2c5b73a3-56a8-4f55-a3d8-0d8cd644c991"), SceneNode::Node(
     Node {
         id: uuid!("2c5b73a3-56a8-4f55-a3d8-0d8cd644c991"),
+        local_id: uuid!("2c5b73a3-56a8-4f55-a3d8-0d8cd644c991"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_63"),
         script_path: None,
@@ -5116,6 +5274,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("46d9f9dc-9279-4c34-9766-de4302ba2d3b"),
+            local_id: uuid!("46d9f9dc-9279-4c34-9766-de4302ba2d3b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_41"),
             script_path: None,
@@ -5139,6 +5298,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b123e73b-dcd0-4522-999c-08f671e121b3"), SceneNode::Node(
     Node {
         id: uuid!("b123e73b-dcd0-4522-999c-08f671e121b3"),
+        local_id: uuid!("b123e73b-dcd0-4522-999c-08f671e121b3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_64"),
         script_path: None,
@@ -5178,6 +5338,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b819dd08-942a-4951-9da5-cf0f9567c255"),
+                local_id: uuid!("b819dd08-942a-4951-9da5-cf0f9567c255"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_43_inner"),
                 script_path: None,
@@ -5221,6 +5382,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3b0d99a4-73f4-4176-ad97-0292c0fb9711"),
+                local_id: uuid!("3b0d99a4-73f4-4176-ad97-0292c0fb9711"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_44_inner"),
                 script_path: None,
@@ -5239,6 +5401,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("348681c2-62df-40ac-a258-3293d31859ac"), SceneNode::Node(
     Node {
         id: uuid!("348681c2-62df-40ac-a258-3293d31859ac"),
+        local_id: uuid!("348681c2-62df-40ac-a258-3293d31859ac"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_65"),
         script_path: None,
@@ -5278,6 +5441,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2eaae881-e0ef-4ffd-b756-81681bc5441f"),
+            local_id: uuid!("2eaae881-e0ef-4ffd-b756-81681bc5441f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_42"),
             script_path: None,
@@ -5298,6 +5462,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0f0c1f2e-70e0-43ed-8c92-9bf969946624"), SceneNode::Node(
     Node {
         id: uuid!("0f0c1f2e-70e0-43ed-8c92-9bf969946624"),
+        local_id: uuid!("0f0c1f2e-70e0-43ed-8c92-9bf969946624"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_66"),
         script_path: None,
@@ -5340,6 +5505,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("91b1531e-1cfb-4111-8c35-26386bdb47eb"),
+                local_id: uuid!("91b1531e-1cfb-4111-8c35-26386bdb47eb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_45_inner"),
                 script_path: None,
@@ -5368,6 +5534,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("33b91991-6d9c-4c63-abe4-98574d6036f5"),
+            local_id: uuid!("33b91991-6d9c-4c63-abe4-98574d6036f5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_14"),
             script_path: None,
@@ -5406,6 +5573,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("eb789c88-68bf-428e-a76b-944bd9dc214f"),
+            local_id: uuid!("eb789c88-68bf-428e-a76b-944bd9dc214f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_43"),
             script_path: None,
@@ -5447,6 +5615,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2dd0c37c-92b1-40a7-9b4f-8ed018622333"),
+            local_id: uuid!("2dd0c37c-92b1-40a7-9b4f-8ed018622333"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_44"),
             script_path: None,
@@ -5469,6 +5638,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("65d03600-7536-40a0-9bcd-79b62aaeb022"), SceneNode::Node(
     Node {
         id: uuid!("65d03600-7536-40a0-9bcd-79b62aaeb022"),
+        local_id: uuid!("65d03600-7536-40a0-9bcd-79b62aaeb022"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_67"),
         script_path: None,
@@ -5512,6 +5682,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("adfc754d-241c-4a1c-b1bb-ddf0201a378f"),
+                local_id: uuid!("adfc754d-241c-4a1c-b1bb-ddf0201a378f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_46_inner"),
                 script_path: None,
@@ -5536,6 +5707,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d649677d-2d0d-4628-ad79-5f3c58eef694"), SceneNode::Node(
     Node {
         id: uuid!("d649677d-2d0d-4628-ad79-5f3c58eef694"),
+        local_id: uuid!("d649677d-2d0d-4628-ad79-5f3c58eef694"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_68"),
         script_path: None,
@@ -5563,6 +5735,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f64bbd35-59b8-4ba0-8cb3-bac6d2d18976"),
+            local_id: uuid!("f64bbd35-59b8-4ba0-8cb3-bac6d2d18976"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_15"),
             script_path: None,
@@ -5605,6 +5778,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("fa5e34d0-9f82-4b31-a25c-c029e2057aff"),
+                local_id: uuid!("fa5e34d0-9f82-4b31-a25c-c029e2057aff"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_47_inner"),
                 script_path: None,
@@ -5648,6 +5822,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("953c9315-d325-4c35-8e50-82883b34a7f8"),
+                local_id: uuid!("953c9315-d325-4c35-8e50-82883b34a7f8"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_48_inner"),
                 script_path: None,
@@ -5691,6 +5866,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("24354611-9166-49f4-9d92-e3ad6de786f7"),
+                local_id: uuid!("24354611-9166-49f4-9d92-e3ad6de786f7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_49_inner"),
                 script_path: None,
@@ -5731,6 +5907,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8aaa110f-55dc-4711-b909-483d9dd079b8"),
+            local_id: uuid!("8aaa110f-55dc-4711-b909-483d9dd079b8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_45"),
             script_path: None,
@@ -5770,6 +5947,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ac751e20-21b0-473d-8c37-f388e605746b"),
+            local_id: uuid!("ac751e20-21b0-473d-8c37-f388e605746b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_46"),
             script_path: None,
@@ -5796,6 +5974,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("61d04d3e-6f73-40bd-bbb4-fb99a9c1077a"),
+            local_id: uuid!("61d04d3e-6f73-40bd-bbb4-fb99a9c1077a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_16"),
             script_path: None,
@@ -5835,6 +6014,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("46907cdf-a094-4658-8012-2a3f68c2c7ed"),
+            local_id: uuid!("46907cdf-a094-4658-8012-2a3f68c2c7ed"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_47"),
             script_path: None,
@@ -5855,6 +6035,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0d07e5af-90a7-41c3-9a40-ed002c3a9e49"), SceneNode::Node(
     Node {
         id: uuid!("0d07e5af-90a7-41c3-9a40-ed002c3a9e49"),
+        local_id: uuid!("0d07e5af-90a7-41c3-9a40-ed002c3a9e49"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_69"),
         script_path: None,
@@ -5873,6 +6054,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1cc181a1-eb34-4eef-831d-f5ee83ca953e"), SceneNode::Node(
     Node {
         id: uuid!("1cc181a1-eb34-4eef-831d-f5ee83ca953e"),
+        local_id: uuid!("1cc181a1-eb34-4eef-831d-f5ee83ca953e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_70"),
         script_path: None,
@@ -5894,6 +6076,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7b5de07b-b73f-4c3e-8abc-7dfbf962818c"), SceneNode::Node(
     Node {
         id: uuid!("7b5de07b-b73f-4c3e-8abc-7dfbf962818c"),
+        local_id: uuid!("7b5de07b-b73f-4c3e-8abc-7dfbf962818c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_71"),
         script_path: None,
@@ -5912,6 +6095,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5364805e-55e2-4445-a174-0065e587e2ad"), SceneNode::Node(
     Node {
         id: uuid!("5364805e-55e2-4445-a174-0065e587e2ad"),
+        local_id: uuid!("5364805e-55e2-4445-a174-0065e587e2ad"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_72"),
         script_path: None,
@@ -5953,6 +6137,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("75ff65e2-4656-4ad7-8649-e8c5b41b0fac"),
+                local_id: uuid!("75ff65e2-4656-4ad7-8649-e8c5b41b0fac"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_50_inner"),
                 script_path: None,
@@ -5992,6 +6177,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("523a4e47-f2bd-4ca7-8f89-3500d44658df"),
+            local_id: uuid!("523a4e47-f2bd-4ca7-8f89-3500d44658df"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_48"),
             script_path: None,
@@ -6031,6 +6217,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("08e5498e-e1f1-4b52-8697-d8f534309a1e"),
+            local_id: uuid!("08e5498e-e1f1-4b52-8697-d8f534309a1e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_49"),
             script_path: None,
@@ -6073,6 +6260,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b60f9a27-58f1-4443-948d-2cec7dadc5cf"),
+                local_id: uuid!("b60f9a27-58f1-4443-948d-2cec7dadc5cf"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_51_inner"),
                 script_path: None,
@@ -6118,6 +6306,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("06200146-6a66-4d5f-a626-ab21c299d4f9"),
+                local_id: uuid!("06200146-6a66-4d5f-a626-ab21c299d4f9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_52_inner"),
                 script_path: None,
@@ -6145,6 +6334,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("fbf29fe9-a056-46b2-83e2-f984cef43402"),
+            local_id: uuid!("fbf29fe9-a056-46b2-83e2-f984cef43402"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_17"),
             script_path: None,
@@ -6183,6 +6373,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8ebf6d9a-fe62-4113-88c0-3cb124b92738"),
+            local_id: uuid!("8ebf6d9a-fe62-4113-88c0-3cb124b92738"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_50"),
             script_path: None,
@@ -6227,6 +6418,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("15e05c93-e707-4b83-aac8-e9f19e1ac449"),
+                local_id: uuid!("15e05c93-e707-4b83-aac8-e9f19e1ac449"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_53_inner"),
                 script_path: None,
@@ -6267,6 +6459,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d94714f9-9ee6-44f2-bc8e-c232000ec68a"),
+            local_id: uuid!("d94714f9-9ee6-44f2-bc8e-c232000ec68a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_51"),
             script_path: None,
@@ -6289,6 +6482,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("34cb3d74-6983-4d90-8ca0-3dc20a793729"), SceneNode::Node(
     Node {
         id: uuid!("34cb3d74-6983-4d90-8ca0-3dc20a793729"),
+        local_id: uuid!("34cb3d74-6983-4d90-8ca0-3dc20a793729"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_73"),
         script_path: None,
@@ -6331,6 +6525,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("5d4a0b70-bd18-453e-88b3-6cae486a9636"),
+                local_id: uuid!("5d4a0b70-bd18-453e-88b3-6cae486a9636"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_54_inner"),
                 script_path: None,
@@ -6351,6 +6546,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a6441a52-6eb4-4271-adbb-4532ba64c51f"), SceneNode::Node(
     Node {
         id: uuid!("a6441a52-6eb4-4271-adbb-4532ba64c51f"),
+        local_id: uuid!("a6441a52-6eb4-4271-adbb-4532ba64c51f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_74"),
         script_path: None,
@@ -6386,6 +6582,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6ba2ec96-12a2-464c-a273-072b02af3d0a"),
+            local_id: uuid!("6ba2ec96-12a2-464c-a273-072b02af3d0a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_52"),
             script_path: None,
@@ -6428,6 +6625,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("dc20bf5f-42a4-4875-813a-132df8da2493"),
+                local_id: uuid!("dc20bf5f-42a4-4875-813a-132df8da2493"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_55_inner"),
                 script_path: None,
@@ -6468,6 +6666,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a5214749-062e-4509-8d6e-16918718c661"),
+            local_id: uuid!("a5214749-062e-4509-8d6e-16918718c661"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_53"),
             script_path: None,
@@ -6506,6 +6705,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("05ee9b7d-7a4d-4370-89da-879a7ca33170"),
+            local_id: uuid!("05ee9b7d-7a4d-4370-89da-879a7ca33170"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_54"),
             script_path: None,
@@ -6525,6 +6725,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("addaadac-786b-4c15-b45b-fa1b5bdf374b"), SceneNode::Node(
     Node {
         id: uuid!("addaadac-786b-4c15-b45b-fa1b5bdf374b"),
+        local_id: uuid!("addaadac-786b-4c15-b45b-fa1b5bdf374b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_75"),
         script_path: None,
@@ -6567,6 +6768,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9b335df6-ebd3-4816-a064-34aaae6aead7"),
+                local_id: uuid!("9b335df6-ebd3-4816-a064-34aaae6aead7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_56_inner"),
                 script_path: None,
@@ -6594,6 +6796,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f57629fc-e82b-4ae7-b76f-01eb57b9afa4"),
+            local_id: uuid!("f57629fc-e82b-4ae7-b76f-01eb57b9afa4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_18"),
             script_path: None,
@@ -6633,6 +6836,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ab45702f-04fd-47bf-96f3-8f0f06cb0d7c"),
+            local_id: uuid!("ab45702f-04fd-47bf-96f3-8f0f06cb0d7c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_55"),
             script_path: None,
@@ -6673,6 +6877,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("20a0b7b4-1c4a-47a5-8688-25ad2d163936"),
+            local_id: uuid!("20a0b7b4-1c4a-47a5-8688-25ad2d163936"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_56"),
             script_path: None,
@@ -6693,6 +6898,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("74fbce21-6a5e-490f-a824-0702e82329ee"), SceneNode::Node(
     Node {
         id: uuid!("74fbce21-6a5e-490f-a824-0702e82329ee"),
+        local_id: uuid!("74fbce21-6a5e-490f-a824-0702e82329ee"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_76"),
         script_path: None,
@@ -6732,6 +6938,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("463af7f7-1e93-48cd-ac09-5e4476a8d632"),
+                local_id: uuid!("463af7f7-1e93-48cd-ac09-5e4476a8d632"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_57_inner"),
                 script_path: None,
@@ -6778,6 +6985,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("fc75408d-c92d-4025-bd3b-07bddbe3199c"),
+                local_id: uuid!("fc75408d-c92d-4025-bd3b-07bddbe3199c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_58_inner"),
                 script_path: None,
@@ -6798,6 +7006,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("65f735d0-a90e-4f21-a5e0-7f14371d72fc"), SceneNode::Node(
     Node {
         id: uuid!("65f735d0-a90e-4f21-a5e0-7f14371d72fc"),
+        local_id: uuid!("65f735d0-a90e-4f21-a5e0-7f14371d72fc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_77"),
         script_path: None,
@@ -6837,6 +7046,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("00894b7f-3217-4743-8c04-5dffb56dace3"),
+                local_id: uuid!("00894b7f-3217-4743-8c04-5dffb56dace3"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_59_inner"),
                 script_path: None,
@@ -6877,6 +7087,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("425af22f-ee69-4e07-b2ec-dd6762570127"),
+            local_id: uuid!("425af22f-ee69-4e07-b2ec-dd6762570127"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_57"),
             script_path: None,
@@ -6919,6 +7130,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2a6f9e89-5619-49bb-948c-06fb07801f90"),
+                local_id: uuid!("2a6f9e89-5619-49bb-948c-06fb07801f90"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_60_inner"),
                 script_path: None,
@@ -6959,6 +7171,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ed64ed1f-791d-4e66-996d-8ad5f251db7c"),
+            local_id: uuid!("ed64ed1f-791d-4e66-996d-8ad5f251db7c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_58"),
             script_path: None,
@@ -6978,6 +7191,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("61a524d1-0de1-48b1-82d5-59c47c8cad38"), SceneNode::Node(
     Node {
         id: uuid!("61a524d1-0de1-48b1-82d5-59c47c8cad38"),
+        local_id: uuid!("61a524d1-0de1-48b1-82d5-59c47c8cad38"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_78"),
         script_path: None,
@@ -7021,6 +7235,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("698d605c-c7ee-44b7-9c4e-1d02266ad7bb"),
+                local_id: uuid!("698d605c-c7ee-44b7-9c4e-1d02266ad7bb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_61_inner"),
                 script_path: None,
@@ -7066,6 +7281,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("41b45fa8-76b8-4695-a4c0-2d25429fea8b"),
+                local_id: uuid!("41b45fa8-76b8-4695-a4c0-2d25429fea8b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_62_inner"),
                 script_path: None,
@@ -7084,6 +7300,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9fa43a06-197e-4614-b331-384bb23e1ad6"), SceneNode::Node(
     Node {
         id: uuid!("9fa43a06-197e-4614-b331-384bb23e1ad6"),
+        local_id: uuid!("9fa43a06-197e-4614-b331-384bb23e1ad6"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_79"),
         script_path: None,
@@ -7128,6 +7345,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4dc93365-ceee-4608-8fd2-8cc65b61158e"),
+                local_id: uuid!("4dc93365-ceee-4608-8fd2-8cc65b61158e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_63_inner"),
                 script_path: None,
@@ -7165,6 +7383,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4427e70c-5886-474b-a52a-222666f098cb"),
+            local_id: uuid!("4427e70c-5886-474b-a52a-222666f098cb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_59"),
             script_path: None,
@@ -7207,6 +7426,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c6d4de2a-c2a8-423c-9d91-794b82531f5a"),
+                local_id: uuid!("c6d4de2a-c2a8-423c-9d91-794b82531f5a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_64_inner"),
                 script_path: None,
@@ -7247,6 +7467,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ac1eb84b-863e-4929-85c4-c4f7b017402e"),
+            local_id: uuid!("ac1eb84b-863e-4929-85c4-c4f7b017402e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_60"),
             script_path: None,
@@ -7285,6 +7506,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("602538fd-a60f-4ec7-83bf-19f0976f0beb"),
+            local_id: uuid!("602538fd-a60f-4ec7-83bf-19f0976f0beb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_61"),
             script_path: None,
@@ -7304,6 +7526,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c1e81fe9-4f78-4c9b-ad11-ba803b690287"), SceneNode::Node(
     Node {
         id: uuid!("c1e81fe9-4f78-4c9b-ad11-ba803b690287"),
+        local_id: uuid!("c1e81fe9-4f78-4c9b-ad11-ba803b690287"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_80"),
         script_path: None,
@@ -7339,6 +7562,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("61c1a585-2651-4404-8660-f23cd24a4e72"),
+            local_id: uuid!("61c1a585-2651-4404-8660-f23cd24a4e72"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_62"),
             script_path: None,
@@ -7379,6 +7603,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e3047a8e-23db-4c8c-b462-0bda51ab1b63"),
+                local_id: uuid!("e3047a8e-23db-4c8c-b462-0bda51ab1b63"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_65_inner"),
                 script_path: None,
@@ -7424,6 +7649,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ccf761a1-5a95-4810-911f-d7576c1e345d"),
+                local_id: uuid!("ccf761a1-5a95-4810-911f-d7576c1e345d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_66_inner"),
                 script_path: None,
@@ -7444,6 +7670,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8663f66f-2c4d-4ab3-ab78-3266edd083ee"), SceneNode::Node(
     Node {
         id: uuid!("8663f66f-2c4d-4ab3-ab78-3266edd083ee"),
+        local_id: uuid!("8663f66f-2c4d-4ab3-ab78-3266edd083ee"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_81"),
         script_path: None,
@@ -7463,6 +7690,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8af114d1-c89b-43e4-902a-de3257f89137"), SceneNode::Node(
     Node {
         id: uuid!("8af114d1-c89b-43e4-902a-de3257f89137"),
+        local_id: uuid!("8af114d1-c89b-43e4-902a-de3257f89137"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_82"),
         script_path: None,
@@ -7503,6 +7731,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("23ff090a-17c7-4bfa-94f6-66d4457d03e3"),
+            local_id: uuid!("23ff090a-17c7-4bfa-94f6-66d4457d03e3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_63"),
             script_path: None,
@@ -7542,6 +7771,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9081cc6c-13ed-42a0-ab1a-790886742775"),
+            local_id: uuid!("9081cc6c-13ed-42a0-ab1a-790886742775"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_64"),
             script_path: None,
@@ -7563,6 +7793,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("11fb7ce4-d126-40a3-a090-a3a86e179e24"), SceneNode::Node(
     Node {
         id: uuid!("11fb7ce4-d126-40a3-a090-a3a86e179e24"),
+        local_id: uuid!("11fb7ce4-d126-40a3-a090-a3a86e179e24"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_83"),
         script_path: None,
@@ -7583,6 +7814,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0a5008a0-022e-46f8-aa65-4dd697e2d2cf"), SceneNode::Node(
     Node {
         id: uuid!("0a5008a0-022e-46f8-aa65-4dd697e2d2cf"),
+        local_id: uuid!("0a5008a0-022e-46f8-aa65-4dd697e2d2cf"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_84"),
         script_path: None,
@@ -7624,6 +7856,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("36403099-40d5-41f9-a36b-20a4995e2ff1"),
+                local_id: uuid!("36403099-40d5-41f9-a36b-20a4995e2ff1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_67_inner"),
                 script_path: None,
@@ -7663,6 +7896,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("11d77d20-6495-4e19-baeb-1fa463a44358"),
+            local_id: uuid!("11d77d20-6495-4e19-baeb-1fa463a44358"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_65"),
             script_path: None,
@@ -7680,6 +7914,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c9b92963-a772-410f-9bad-dd5e38f93445"), SceneNode::Node(
     Node {
         id: uuid!("c9b92963-a772-410f-9bad-dd5e38f93445"),
+        local_id: uuid!("c9b92963-a772-410f-9bad-dd5e38f93445"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_85"),
         script_path: None,
@@ -7699,6 +7934,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("05802808-5b14-4228-b60d-3b631ec45daa"), SceneNode::Node(
     Node {
         id: uuid!("05802808-5b14-4228-b60d-3b631ec45daa"),
+        local_id: uuid!("05802808-5b14-4228-b60d-3b631ec45daa"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_86"),
         script_path: None,
@@ -7737,6 +7973,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("170e90c6-32fe-4027-b4ee-69d0581feeb5"),
+            local_id: uuid!("170e90c6-32fe-4027-b4ee-69d0581feeb5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_66"),
             script_path: None,
@@ -7757,6 +7994,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ccc34cd9-456c-44ce-8e29-2cc072d87c24"), SceneNode::Node(
     Node {
         id: uuid!("ccc34cd9-456c-44ce-8e29-2cc072d87c24"),
+        local_id: uuid!("ccc34cd9-456c-44ce-8e29-2cc072d87c24"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_87"),
         script_path: None,
@@ -7773,6 +8011,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("940657ea-354f-40f5-8277-b357e977641b"), SceneNode::Node(
     Node {
         id: uuid!("940657ea-354f-40f5-8277-b357e977641b"),
+        local_id: uuid!("940657ea-354f-40f5-8277-b357e977641b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_88"),
         script_path: None,
@@ -7815,6 +8054,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c4871e4a-a9af-4889-bc1c-dcd1cdb1eed1"),
+                local_id: uuid!("c4871e4a-a9af-4889-bc1c-dcd1cdb1eed1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_68_inner"),
                 script_path: None,
@@ -7859,6 +8099,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e5ccea17-4388-48fa-bd86-b9823576c422"),
+                local_id: uuid!("e5ccea17-4388-48fa-bd86-b9823576c422"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_69_inner"),
                 script_path: None,
@@ -7879,6 +8120,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("97d09b3d-ed8d-41b2-9632-3adf6a4b17d0"), SceneNode::Node(
     Node {
         id: uuid!("97d09b3d-ed8d-41b2-9632-3adf6a4b17d0"),
+        local_id: uuid!("97d09b3d-ed8d-41b2-9632-3adf6a4b17d0"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_89"),
         script_path: None,
@@ -7917,6 +8159,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7498bf4a-92c3-4c53-8f44-5e3ee5663083"),
+            local_id: uuid!("7498bf4a-92c3-4c53-8f44-5e3ee5663083"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_67"),
             script_path: None,
@@ -7955,6 +8198,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("076c5673-f6da-4486-9471-4384fb56dd8c"),
+            local_id: uuid!("076c5673-f6da-4486-9471-4384fb56dd8c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_68"),
             script_path: None,
@@ -7997,6 +8241,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("97b97f41-fe0a-4fd1-9711-81610b299493"),
+                local_id: uuid!("97b97f41-fe0a-4fd1-9711-81610b299493"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_70_inner"),
                 script_path: None,
@@ -8036,6 +8281,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("65c27b56-f020-4d82-a72f-f917c1ee4bc1"),
+            local_id: uuid!("65c27b56-f020-4d82-a72f-f917c1ee4bc1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_69"),
             script_path: None,
@@ -8056,6 +8302,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("af24ef2f-aa7f-448b-8cf6-b849cf4bb119"), SceneNode::Node(
     Node {
         id: uuid!("af24ef2f-aa7f-448b-8cf6-b849cf4bb119"),
+        local_id: uuid!("af24ef2f-aa7f-448b-8cf6-b849cf4bb119"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_90"),
         script_path: None,
@@ -8093,6 +8340,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("501090ad-0a29-4c27-8b52-87787d2dd7de"),
+            local_id: uuid!("501090ad-0a29-4c27-8b52-87787d2dd7de"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_70"),
             script_path: None,
@@ -8129,6 +8377,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5796bedd-c223-4b52-b115-ddcb24748df0"),
+            local_id: uuid!("5796bedd-c223-4b52-b115-ddcb24748df0"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_71"),
             script_path: None,
@@ -8146,6 +8395,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5e9ccc49-9a26-408a-a654-8c29c4e58bc3"), SceneNode::Node(
     Node {
         id: uuid!("5e9ccc49-9a26-408a-a654-8c29c4e58bc3"),
+        local_id: uuid!("5e9ccc49-9a26-408a-a654-8c29c4e58bc3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_91"),
         script_path: None,
@@ -8181,6 +8431,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d4cd8f20-51ef-46d3-8aa8-70474cf58dfb"),
+            local_id: uuid!("d4cd8f20-51ef-46d3-8aa8-70474cf58dfb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_72"),
             script_path: None,
@@ -8200,6 +8451,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("57dcefad-13a9-470e-a70c-200bafde93a3"), SceneNode::Node(
     Node {
         id: uuid!("57dcefad-13a9-470e-a70c-200bafde93a3"),
+        local_id: uuid!("57dcefad-13a9-470e-a70c-200bafde93a3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_92"),
         script_path: None,
@@ -8235,6 +8487,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ef7cd6ab-770c-458a-94d2-a6b177935ec5"),
+            local_id: uuid!("ef7cd6ab-770c-458a-94d2-a6b177935ec5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_73"),
             script_path: None,
@@ -8274,6 +8527,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d70923a9-6e53-4c49-83cc-d0db48b0f681"),
+            local_id: uuid!("d70923a9-6e53-4c49-83cc-d0db48b0f681"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_74"),
             script_path: None,
@@ -8312,6 +8566,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a480010f-8b72-4428-90e8-d416ff7826c8"),
+            local_id: uuid!("a480010f-8b72-4428-90e8-d416ff7826c8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_75"),
             script_path: None,
@@ -8351,6 +8606,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a0c94d6d-b436-4f85-8508-de04921d0699"),
+            local_id: uuid!("a0c94d6d-b436-4f85-8508-de04921d0699"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_76"),
             script_path: None,
@@ -8377,6 +8633,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("460f39dc-9950-4bb5-a33e-9672f9969d87"),
+            local_id: uuid!("460f39dc-9950-4bb5-a33e-9672f9969d87"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_19"),
             script_path: None,
@@ -8396,6 +8653,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3cf36e6b-948f-4c42-b1c7-d867acfdb078"), SceneNode::Node(
     Node {
         id: uuid!("3cf36e6b-948f-4c42-b1c7-d867acfdb078"),
+        local_id: uuid!("3cf36e6b-948f-4c42-b1c7-d867acfdb078"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_93"),
         script_path: None,
@@ -8440,6 +8698,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("29e403b8-1473-4b77-a2f5-712b21215ede"),
+                local_id: uuid!("29e403b8-1473-4b77-a2f5-712b21215ede"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_71_inner"),
                 script_path: None,
@@ -8460,6 +8719,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("20439d62-1454-48a5-a94a-2dd2a34cc1c0"), SceneNode::Node(
     Node {
         id: uuid!("20439d62-1454-48a5-a94a-2dd2a34cc1c0"),
+        local_id: uuid!("20439d62-1454-48a5-a94a-2dd2a34cc1c0"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_94"),
         script_path: None,
@@ -8497,6 +8757,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b7c58bcf-72e0-4d30-853c-32916ae8dd83"),
+            local_id: uuid!("b7c58bcf-72e0-4d30-853c-32916ae8dd83"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_77"),
             script_path: None,
@@ -8537,6 +8798,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("09e54dec-8d24-4679-80cd-99f27bf3c013"),
+                local_id: uuid!("09e54dec-8d24-4679-80cd-99f27bf3c013"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_72_inner"),
                 script_path: None,
@@ -8555,6 +8817,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f2ef9bf3-f0c7-4638-9c22-cc76a5eab06d"), SceneNode::Node(
     Node {
         id: uuid!("f2ef9bf3-f0c7-4638-9c22-cc76a5eab06d"),
+        local_id: uuid!("f2ef9bf3-f0c7-4638-9c22-cc76a5eab06d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_95"),
         script_path: None,
@@ -8594,6 +8857,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0ac7fd70-1d82-440d-be82-a052ce4c9714"),
+                local_id: uuid!("0ac7fd70-1d82-440d-be82-a052ce4c9714"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_73_inner"),
                 script_path: None,
@@ -8633,6 +8897,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f7e944cf-0d17-4f9d-8f7b-19ff99bb2f8f"),
+            local_id: uuid!("f7e944cf-0d17-4f9d-8f7b-19ff99bb2f8f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_78"),
             script_path: None,
@@ -8669,6 +8934,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("985da5e6-e80f-4874-a396-db7477682a44"),
+            local_id: uuid!("985da5e6-e80f-4874-a396-db7477682a44"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_79"),
             script_path: None,
@@ -8692,6 +8958,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a216ef78-a01a-4d73-a8b2-40b2a31c0ed6"), SceneNode::Node(
     Node {
         id: uuid!("a216ef78-a01a-4d73-a8b2-40b2a31c0ed6"),
+        local_id: uuid!("a216ef78-a01a-4d73-a8b2-40b2a31c0ed6"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_96"),
         script_path: None,
@@ -8708,6 +8975,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d6b09578-db05-4a88-be2c-5deff5f7928b"), SceneNode::Node(
     Node {
         id: uuid!("d6b09578-db05-4a88-be2c-5deff5f7928b"),
+        local_id: uuid!("d6b09578-db05-4a88-be2c-5deff5f7928b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_97"),
         script_path: None,
@@ -8743,6 +9011,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0457938d-44c2-4e50-810f-b85ed623a364"),
+            local_id: uuid!("0457938d-44c2-4e50-810f-b85ed623a364"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_80"),
             script_path: None,
@@ -8782,6 +9051,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f87cde01-81ba-4ce8-9c0c-0bf955f7ef75"),
+            local_id: uuid!("f87cde01-81ba-4ce8-9c0c-0bf955f7ef75"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_81"),
             script_path: None,
@@ -8803,6 +9073,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("baf88908-158f-4a6c-9c28-783897340dd4"), SceneNode::Node(
     Node {
         id: uuid!("baf88908-158f-4a6c-9c28-783897340dd4"),
+        local_id: uuid!("baf88908-158f-4a6c-9c28-783897340dd4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_98"),
         script_path: None,
@@ -8842,6 +9113,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1fb9bd76-f22c-49b1-9b7d-38c62f07111d"),
+            local_id: uuid!("1fb9bd76-f22c-49b1-9b7d-38c62f07111d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_82"),
             script_path: None,
@@ -8863,6 +9135,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7384c537-8477-4eb9-a726-c84a743e463e"), SceneNode::Node(
     Node {
         id: uuid!("7384c537-8477-4eb9-a726-c84a743e463e"),
+        local_id: uuid!("7384c537-8477-4eb9-a726-c84a743e463e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_99"),
         script_path: None,
@@ -8898,6 +9171,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8db997fc-4fe9-4ce9-b75a-65745aeb3f2b"),
+            local_id: uuid!("8db997fc-4fe9-4ce9-b75a-65745aeb3f2b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_83"),
             script_path: None,
@@ -8938,6 +9212,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e7732b59-8e67-453d-9c84-b86f407003ea"),
+                local_id: uuid!("e7732b59-8e67-453d-9c84-b86f407003ea"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_74_inner"),
                 script_path: None,
@@ -8979,6 +9254,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("fef52faa-2c6d-4a9b-8d1d-128522c60ad4"),
+                local_id: uuid!("fef52faa-2c6d-4a9b-8d1d-128522c60ad4"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_75_inner"),
                 script_path: None,
@@ -9008,6 +9284,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c0459ea8-f1aa-4cb1-90ff-071aa21d1743"),
+            local_id: uuid!("c0459ea8-f1aa-4cb1-90ff-071aa21d1743"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_20"),
             script_path: None,
@@ -9046,6 +9323,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8b0e73cc-7f4d-41f7-8e3a-6a6304de242b"),
+            local_id: uuid!("8b0e73cc-7f4d-41f7-8e3a-6a6304de242b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_84"),
             script_path: None,
@@ -9065,6 +9343,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("eeb2fccc-ae3b-45b9-ae3d-ff8b0c7026a5"), SceneNode::Node(
     Node {
         id: uuid!("eeb2fccc-ae3b-45b9-ae3d-ff8b0c7026a5"),
+        local_id: uuid!("eeb2fccc-ae3b-45b9-ae3d-ff8b0c7026a5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_100"),
         script_path: None,
@@ -9085,6 +9364,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1d2864b2-534e-48f8-8c6c-21fa731f66b3"), SceneNode::Node(
     Node {
         id: uuid!("1d2864b2-534e-48f8-8c6c-21fa731f66b3"),
+        local_id: uuid!("1d2864b2-534e-48f8-8c6c-21fa731f66b3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_101"),
         script_path: None,
@@ -9122,6 +9402,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e845d167-f0d5-4451-ba09-ffac2ebb9d81"),
+            local_id: uuid!("e845d167-f0d5-4451-ba09-ffac2ebb9d81"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_85"),
             script_path: None,
@@ -9139,6 +9420,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5da4d6bc-3151-4f07-96c8-58aa3435a326"), SceneNode::Node(
     Node {
         id: uuid!("5da4d6bc-3151-4f07-96c8-58aa3435a326"),
+        local_id: uuid!("5da4d6bc-3151-4f07-96c8-58aa3435a326"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_102"),
         script_path: None,
@@ -9181,6 +9463,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6982a54b-fc7f-4973-b72e-355a2d1ae601"),
+                local_id: uuid!("6982a54b-fc7f-4973-b72e-355a2d1ae601"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_76_inner"),
                 script_path: None,
@@ -9202,6 +9485,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f7c423ab-968b-4b76-b23d-ebc44fbc4437"), SceneNode::Node(
     Node {
         id: uuid!("f7c423ab-968b-4b76-b23d-ebc44fbc4437"),
+        local_id: uuid!("f7c423ab-968b-4b76-b23d-ebc44fbc4437"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_103"),
         script_path: None,
@@ -9242,6 +9526,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d48abe33-6c69-411b-a96d-7d54c86e020b"),
+            local_id: uuid!("d48abe33-6c69-411b-a96d-7d54c86e020b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_86"),
             script_path: None,
@@ -9278,6 +9563,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2a2d2c79-7132-4259-83be-02473ad0bfc5"),
+            local_id: uuid!("2a2d2c79-7132-4259-83be-02473ad0bfc5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_87"),
             script_path: None,
@@ -9318,6 +9604,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("dec78066-0e4a-422b-90d4-9c044e2983fb"),
+                local_id: uuid!("dec78066-0e4a-422b-90d4-9c044e2983fb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_77_inner"),
                 script_path: None,
@@ -9359,6 +9646,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a49a1821-9d86-463b-8a8c-772416ac5e2c"),
+                local_id: uuid!("a49a1821-9d86-463b-8a8c-772416ac5e2c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_78_inner"),
                 script_path: None,
@@ -9381,6 +9669,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6a484845-9873-426f-97be-bed26f53439a"), SceneNode::Node(
     Node {
         id: uuid!("6a484845-9873-426f-97be-bed26f53439a"),
+        local_id: uuid!("6a484845-9873-426f-97be-bed26f53439a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_104"),
         script_path: None,
@@ -9420,6 +9709,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("afea28ba-501f-4ee8-a94c-aef41b6df1af"),
+                local_id: uuid!("afea28ba-501f-4ee8-a94c-aef41b6df1af"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_79_inner"),
                 script_path: None,
@@ -9461,6 +9751,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("7d0f6369-9503-48c4-a6d1-a5bac0b7d033"),
+                local_id: uuid!("7d0f6369-9503-48c4-a6d1-a5bac0b7d033"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_80_inner"),
                 script_path: None,
@@ -9482,6 +9773,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a2c71501-71ee-4e73-9301-27e5464e027c"), SceneNode::Node(
     Node {
         id: uuid!("a2c71501-71ee-4e73-9301-27e5464e027c"),
+        local_id: uuid!("a2c71501-71ee-4e73-9301-27e5464e027c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_105"),
         script_path: None,
@@ -9520,6 +9812,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5db83a70-5172-4ed3-9f09-6e89909c04bb"),
+            local_id: uuid!("5db83a70-5172-4ed3-9f09-6e89909c04bb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_88"),
             script_path: None,
@@ -9556,6 +9849,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5a96e42d-ce40-45fa-8d49-aa021c5e165c"),
+            local_id: uuid!("5a96e42d-ce40-45fa-8d49-aa021c5e165c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_89"),
             script_path: None,
@@ -9596,6 +9890,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2aa8e1ed-2062-4acb-a96a-1f0851f5b698"),
+            local_id: uuid!("2aa8e1ed-2062-4acb-a96a-1f0851f5b698"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_90"),
             script_path: None,
@@ -9634,6 +9929,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f8dc9ccd-cec0-4eaa-a05c-dde468b24e01"),
+            local_id: uuid!("f8dc9ccd-cec0-4eaa-a05c-dde468b24e01"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_91"),
             script_path: None,
@@ -9672,6 +9968,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("40ac7464-2bcb-45b1-98f5-ecbe9f2433e8"),
+            local_id: uuid!("40ac7464-2bcb-45b1-98f5-ecbe9f2433e8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_92"),
             script_path: None,
@@ -9708,6 +10005,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c7c5bb9f-fde6-4310-8a47-3c3a77570635"),
+            local_id: uuid!("c7c5bb9f-fde6-4310-8a47-3c3a77570635"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_93"),
             script_path: None,
@@ -9752,6 +10050,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d6c4fc01-c8f6-4eec-847b-000f9d1f31af"),
+                local_id: uuid!("d6c4fc01-c8f6-4eec-847b-000f9d1f31af"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_81_inner"),
                 script_path: None,
@@ -9795,6 +10094,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("932f5421-6bc1-40b8-8447-f587f3848cdb"),
+                local_id: uuid!("932f5421-6bc1-40b8-8447-f587f3848cdb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_82_inner"),
                 script_path: None,
@@ -9832,6 +10132,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("22c239d2-b49d-402d-888e-9b0811422a2c"),
+            local_id: uuid!("22c239d2-b49d-402d-888e-9b0811422a2c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_94"),
             script_path: None,
@@ -9868,6 +10169,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7d06739e-15d6-41be-a1a6-7056aa1df097"),
+            local_id: uuid!("7d06739e-15d6-41be-a1a6-7056aa1df097"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_95"),
             script_path: None,
@@ -9908,6 +10210,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("302d9479-1221-4460-9e35-609b181aaee1"),
+                local_id: uuid!("302d9479-1221-4460-9e35-609b181aaee1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_83_inner"),
                 script_path: None,
@@ -9949,6 +10252,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5d026611-1679-4772-8b61-293de84a9275"),
+            local_id: uuid!("5d026611-1679-4772-8b61-293de84a9275"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_96"),
             script_path: None,
@@ -9985,6 +10289,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f8cbbda2-504a-42b6-b8c5-cbee6aedfe75"),
+            local_id: uuid!("f8cbbda2-504a-42b6-b8c5-cbee6aedfe75"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_97"),
             script_path: None,
@@ -10002,6 +10307,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2fa29cab-7cb0-404b-a235-3199ded18a64"), SceneNode::Node(
     Node {
         id: uuid!("2fa29cab-7cb0-404b-a235-3199ded18a64"),
+        local_id: uuid!("2fa29cab-7cb0-404b-a235-3199ded18a64"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_106"),
         script_path: None,
@@ -10039,6 +10345,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e2d3736a-011b-46a6-9a8b-8dd0198c4d84"),
+            local_id: uuid!("e2d3736a-011b-46a6-9a8b-8dd0198c4d84"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_98"),
             script_path: None,
@@ -10079,6 +10386,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a3e573f9-7e72-417a-84db-4452e05135af"),
+            local_id: uuid!("a3e573f9-7e72-417a-84db-4452e05135af"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_99"),
             script_path: None,
@@ -10096,6 +10404,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c689feab-1aa1-4d83-aa90-d2e2526ae7e0"), SceneNode::Node(
     Node {
         id: uuid!("c689feab-1aa1-4d83-aa90-d2e2526ae7e0"),
+        local_id: uuid!("c689feab-1aa1-4d83-aa90-d2e2526ae7e0"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_107"),
         script_path: None,
@@ -10114,6 +10423,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fe930d6a-0768-4b65-99b2-6f1f4697539b"), SceneNode::Node(
     Node {
         id: uuid!("fe930d6a-0768-4b65-99b2-6f1f4697539b"),
+        local_id: uuid!("fe930d6a-0768-4b65-99b2-6f1f4697539b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_108"),
         script_path: None,
@@ -10153,6 +10463,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6e72c3c5-e1c6-41c2-ac5a-32954361930d"),
+            local_id: uuid!("6e72c3c5-e1c6-41c2-ac5a-32954361930d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_100"),
             script_path: None,
@@ -10172,6 +10483,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9a3c08ff-763c-4d2b-8b5e-1c3488e0771d"), SceneNode::Node(
     Node {
         id: uuid!("9a3c08ff-763c-4d2b-8b5e-1c3488e0771d"),
+        local_id: uuid!("9a3c08ff-763c-4d2b-8b5e-1c3488e0771d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_109"),
         script_path: None,
@@ -10188,6 +10500,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a48ce855-ed8d-4dc1-a759-d2dd83b095b3"), SceneNode::Node(
     Node {
         id: uuid!("a48ce855-ed8d-4dc1-a759-d2dd83b095b3"),
+        local_id: uuid!("a48ce855-ed8d-4dc1-a759-d2dd83b095b3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_110"),
         script_path: None,
@@ -10226,6 +10539,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a687a525-4e40-4dae-bbe1-26f8e060c7fc"),
+            local_id: uuid!("a687a525-4e40-4dae-bbe1-26f8e060c7fc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_101"),
             script_path: None,
@@ -10262,6 +10576,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3c44357d-c76c-4fc0-8c0a-083b8d2baa70"),
+            local_id: uuid!("3c44357d-c76c-4fc0-8c0a-083b8d2baa70"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_102"),
             script_path: None,
@@ -10282,6 +10597,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("776c5656-4704-4914-95db-7cd3887d2551"), SceneNode::Node(
     Node {
         id: uuid!("776c5656-4704-4914-95db-7cd3887d2551"),
+        local_id: uuid!("776c5656-4704-4914-95db-7cd3887d2551"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_111"),
         script_path: None,
@@ -10300,6 +10616,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("620f3eaf-70c1-43cc-9e03-c1d213f4dc33"), SceneNode::Node(
     Node {
         id: uuid!("620f3eaf-70c1-43cc-9e03-c1d213f4dc33"),
+        local_id: uuid!("620f3eaf-70c1-43cc-9e03-c1d213f4dc33"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_112"),
         script_path: None,
@@ -10316,6 +10633,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c7c9987d-9af3-4252-9166-a3b62124f1f4"), SceneNode::Node(
     Node {
         id: uuid!("c7c9987d-9af3-4252-9166-a3b62124f1f4"),
+        local_id: uuid!("c7c9987d-9af3-4252-9166-a3b62124f1f4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_113"),
         script_path: None,
@@ -10332,6 +10650,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a16c79ab-cd9d-4940-aa5c-bbe30e72d3ab"), SceneNode::Node(
     Node {
         id: uuid!("a16c79ab-cd9d-4940-aa5c-bbe30e72d3ab"),
+        local_id: uuid!("a16c79ab-cd9d-4940-aa5c-bbe30e72d3ab"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_114"),
         script_path: None,
@@ -10371,6 +10690,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f9364522-dfa3-46f9-9501-2d59fb48bc13"),
+                local_id: uuid!("f9364522-dfa3-46f9-9501-2d59fb48bc13"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_84_inner"),
                 script_path: None,
@@ -10399,6 +10719,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("35451fec-0b96-4635-8cf1-9635fb1c71e7"),
+            local_id: uuid!("35451fec-0b96-4635-8cf1-9635fb1c71e7"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_21"),
             script_path: None,
@@ -10435,6 +10756,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0e549ab4-4382-4be7-9474-b86cae90d8b3"),
+            local_id: uuid!("0e549ab4-4382-4be7-9474-b86cae90d8b3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_103"),
             script_path: None,
@@ -10459,6 +10781,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b46e02b8-b8fb-4fa4-aaea-5dfda00c4eda"),
+            local_id: uuid!("b46e02b8-b8fb-4fa4-aaea-5dfda00c4eda"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_22"),
             script_path: None,
@@ -10502,6 +10825,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("891ff2a0-3e76-41ff-960c-97797c584cee"),
+                local_id: uuid!("891ff2a0-3e76-41ff-960c-97797c584cee"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_85_inner"),
                 script_path: None,
@@ -10542,6 +10866,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5f5ac1bd-7cd3-40e8-becc-0c733cb3fca4"),
+            local_id: uuid!("5f5ac1bd-7cd3-40e8-becc-0c733cb3fca4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_104"),
             script_path: None,
@@ -10561,6 +10886,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("01f09eea-adcd-4351-a186-1f00294fa393"), SceneNode::Node(
     Node {
         id: uuid!("01f09eea-adcd-4351-a186-1f00294fa393"),
+        local_id: uuid!("01f09eea-adcd-4351-a186-1f00294fa393"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_115"),
         script_path: None,
@@ -10598,6 +10924,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d2a1a954-759b-4d85-8a51-c535988956b4"),
+            local_id: uuid!("d2a1a954-759b-4d85-8a51-c535988956b4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_105"),
             script_path: None,
@@ -10636,6 +10963,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("fde351bf-4b16-4270-8264-50b06ec48c68"),
+            local_id: uuid!("fde351bf-4b16-4270-8264-50b06ec48c68"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_106"),
             script_path: None,
@@ -10662,6 +10990,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4601f170-b1d0-4e94-8dd8-c3f5b3d4bdae"),
+            local_id: uuid!("4601f170-b1d0-4e94-8dd8-c3f5b3d4bdae"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_23"),
             script_path: None,
@@ -10681,6 +11010,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("92987b7b-a636-4f92-bf78-aaf591a819bb"), SceneNode::Node(
     Node {
         id: uuid!("92987b7b-a636-4f92-bf78-aaf591a819bb"),
+        local_id: uuid!("92987b7b-a636-4f92-bf78-aaf591a819bb"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_116"),
         script_path: None,
@@ -10718,6 +11048,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f62e2ef6-5d52-4508-9605-d7a91e802db3"),
+            local_id: uuid!("f62e2ef6-5d52-4508-9605-d7a91e802db3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_107"),
             script_path: None,
@@ -10761,6 +11092,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e7e4d971-89fc-4349-9db2-ad14a8fd2ddb"),
+                local_id: uuid!("e7e4d971-89fc-4349-9db2-ad14a8fd2ddb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_86_inner"),
                 script_path: None,
@@ -10800,6 +11132,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("abe43a72-cde2-4de1-859e-7b9763f604b5"),
+            local_id: uuid!("abe43a72-cde2-4de1-859e-7b9763f604b5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_108"),
             script_path: None,
@@ -10819,6 +11152,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5ecb7e9b-f7db-4761-bf82-cd32cb1b277f"), SceneNode::Node(
     Node {
         id: uuid!("5ecb7e9b-f7db-4761-bf82-cd32cb1b277f"),
+        local_id: uuid!("5ecb7e9b-f7db-4761-bf82-cd32cb1b277f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_117"),
         script_path: None,
@@ -10857,6 +11191,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("df2db987-5d64-453e-878a-bccaa70873f2"),
+            local_id: uuid!("df2db987-5d64-453e-878a-bccaa70873f2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_109"),
             script_path: None,
@@ -10883,6 +11218,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a01effd6-c121-44b7-b634-44ab1835d075"),
+            local_id: uuid!("a01effd6-c121-44b7-b634-44ab1835d075"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_24"),
             script_path: None,
@@ -10922,6 +11258,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c2f5dc38-6de4-472f-8e24-ae2974d1c02d"),
+            local_id: uuid!("c2f5dc38-6de4-472f-8e24-ae2974d1c02d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_110"),
             script_path: None,
@@ -10962,6 +11299,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("39729acd-a9fb-41da-9105-55863d2f61f6"),
+                local_id: uuid!("39729acd-a9fb-41da-9105-55863d2f61f6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_87_inner"),
                 script_path: None,
@@ -10980,6 +11318,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cdc412bd-193f-443e-8022-66228e5c8373"), SceneNode::Node(
     Node {
         id: uuid!("cdc412bd-193f-443e-8022-66228e5c8373"),
+        local_id: uuid!("cdc412bd-193f-443e-8022-66228e5c8373"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_118"),
         script_path: None,
@@ -11021,6 +11360,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4fe4690d-7c9d-4e84-b726-92f7dbc6c0fd"),
+                local_id: uuid!("4fe4690d-7c9d-4e84-b726-92f7dbc6c0fd"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_88_inner"),
                 script_path: None,
@@ -11041,6 +11381,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("46bf4139-330b-4a6c-bc6e-9748681447c9"), SceneNode::Node(
     Node {
         id: uuid!("46bf4139-330b-4a6c-bc6e-9748681447c9"),
+        local_id: uuid!("46bf4139-330b-4a6c-bc6e-9748681447c9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_119"),
         script_path: None,
@@ -11083,6 +11424,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cbcf61be-4795-4ad8-b6c0-b14f682404ec"),
+                local_id: uuid!("cbcf61be-4795-4ad8-b6c0-b14f682404ec"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_89_inner"),
                 script_path: None,
@@ -11120,6 +11462,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7a11b524-6e31-4432-8feb-b2926f8a0f54"),
+            local_id: uuid!("7a11b524-6e31-4432-8feb-b2926f8a0f54"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_111"),
             script_path: None,
@@ -11160,6 +11503,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9734e46b-9096-4e18-9aaa-305943bd6e5c"),
+                local_id: uuid!("9734e46b-9096-4e18-9aaa-305943bd6e5c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_90_inner"),
                 script_path: None,
@@ -11200,6 +11544,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5094e240-0868-4cdc-a98b-2becd3c1efd6"),
+            local_id: uuid!("5094e240-0868-4cdc-a98b-2becd3c1efd6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_112"),
             script_path: None,
@@ -11242,6 +11587,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cbc45c2d-a745-4c3a-946d-7665ab0ca403"),
+                local_id: uuid!("cbc45c2d-a745-4c3a-946d-7665ab0ca403"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_91_inner"),
                 script_path: None,
@@ -11260,6 +11606,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1a991087-cd35-4f07-b362-df5cbc40a1d1"), SceneNode::Node(
     Node {
         id: uuid!("1a991087-cd35-4f07-b362-df5cbc40a1d1"),
+        local_id: uuid!("1a991087-cd35-4f07-b362-df5cbc40a1d1"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_120"),
         script_path: None,
@@ -11299,6 +11646,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9ce8a586-4855-4cb3-be25-7878592516d5"),
+                local_id: uuid!("9ce8a586-4855-4cb3-be25-7878592516d5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_92_inner"),
                 script_path: None,
@@ -11340,6 +11688,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("bf0e3e21-d4d8-4b76-99bc-d6382e45a1e9"),
+                local_id: uuid!("bf0e3e21-d4d8-4b76-99bc-d6382e45a1e9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_93_inner"),
                 script_path: None,
@@ -11379,6 +11728,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4fcbe30b-7643-4bd5-9986-fc54c28844e2"),
+            local_id: uuid!("4fcbe30b-7643-4bd5-9986-fc54c28844e2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_113"),
             script_path: None,
@@ -11415,6 +11765,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4fee468b-adf2-482d-b8be-a0401b6af690"),
+            local_id: uuid!("4fee468b-adf2-482d-b8be-a0401b6af690"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_114"),
             script_path: None,
@@ -11441,6 +11792,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d74806b8-8115-4048-a729-31ced8359b33"),
+            local_id: uuid!("d74806b8-8115-4048-a729-31ced8359b33"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_25"),
             script_path: None,
@@ -11481,6 +11833,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1fd219c8-fcec-4175-8672-7775e4efceea"),
+            local_id: uuid!("1fd219c8-fcec-4175-8672-7775e4efceea"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_115"),
             script_path: None,
@@ -11520,6 +11873,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b0a9f861-ac3e-4ac8-a3b2-bea784e5ea2f"),
+            local_id: uuid!("b0a9f861-ac3e-4ac8-a3b2-bea784e5ea2f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_116"),
             script_path: None,
@@ -11556,6 +11910,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("19aa9bf5-1733-4f7f-a96f-cbb6ba74d649"),
+            local_id: uuid!("19aa9bf5-1733-4f7f-a96f-cbb6ba74d649"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_117"),
             script_path: None,
@@ -11594,6 +11949,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("85b574ca-cdcf-4b22-866d-6d949a482cb9"),
+            local_id: uuid!("85b574ca-cdcf-4b22-866d-6d949a482cb9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_118"),
             script_path: None,
@@ -11632,6 +11988,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4be57bdd-f2c5-4816-ad39-7bb157088ec5"),
+            local_id: uuid!("4be57bdd-f2c5-4816-ad39-7bb157088ec5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_119"),
             script_path: None,
@@ -11654,6 +12011,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6bfe8ab7-cc20-4eca-aebe-d97bc8dc83f2"), SceneNode::Node(
     Node {
         id: uuid!("6bfe8ab7-cc20-4eca-aebe-d97bc8dc83f2"),
+        local_id: uuid!("6bfe8ab7-cc20-4eca-aebe-d97bc8dc83f2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_121"),
         script_path: None,
@@ -11693,6 +12051,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1eb765ed-415c-4a0a-b1aa-cfe99e33ced5"),
+                local_id: uuid!("1eb765ed-415c-4a0a-b1aa-cfe99e33ced5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_94_inner"),
                 script_path: None,
@@ -11734,6 +12093,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("dd7953db-0dfb-4b13-a191-bbb200cba8a2"),
+                local_id: uuid!("dd7953db-0dfb-4b13-a191-bbb200cba8a2"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_95_inner"),
                 script_path: None,
@@ -11754,6 +12114,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("901f42cb-e725-4a81-a6c5-407d259cc02f"), SceneNode::Node(
     Node {
         id: uuid!("901f42cb-e725-4a81-a6c5-407d259cc02f"),
+        local_id: uuid!("901f42cb-e725-4a81-a6c5-407d259cc02f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_122"),
         script_path: None,
@@ -11795,6 +12156,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d53d7a49-47a2-479a-b26d-763b380bf586"),
+                local_id: uuid!("d53d7a49-47a2-479a-b26d-763b380bf586"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_96_inner"),
                 script_path: None,
@@ -11835,6 +12197,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("31c22a41-362d-4b98-8b95-0e71bb856dd6"),
+            local_id: uuid!("31c22a41-362d-4b98-8b95-0e71bb856dd6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_120"),
             script_path: None,
@@ -11877,6 +12240,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("45d7edb6-a3c9-44bb-ae9a-297976a59033"),
+                local_id: uuid!("45d7edb6-a3c9-44bb-ae9a-297976a59033"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_97_inner"),
                 script_path: None,
@@ -11914,6 +12278,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("efa41b8a-5495-48c9-91c0-797111512096"),
+            local_id: uuid!("efa41b8a-5495-48c9-91c0-797111512096"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_121"),
             script_path: None,
@@ -11956,6 +12321,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("78d5f73d-0718-4ce1-ad01-74a8f267ac2b"),
+                local_id: uuid!("78d5f73d-0718-4ce1-ad01-74a8f267ac2b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_98_inner"),
                 script_path: None,
@@ -11993,6 +12359,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("67d4f758-6731-450c-961f-5669b4dc84f1"),
+            local_id: uuid!("67d4f758-6731-450c-961f-5669b4dc84f1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_122"),
             script_path: None,
@@ -12037,6 +12404,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("af943855-bd5f-4be4-93ef-742698c5af0b"),
+                local_id: uuid!("af943855-bd5f-4be4-93ef-742698c5af0b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_99_inner"),
                 script_path: None,
@@ -12077,6 +12445,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("fc8f1a68-4f28-453f-b07b-31c67b0a88e5"),
+            local_id: uuid!("fc8f1a68-4f28-453f-b07b-31c67b0a88e5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_123"),
             script_path: None,
@@ -12119,6 +12488,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d19afdf9-665d-49df-b1da-c0b71b0f9272"),
+                local_id: uuid!("d19afdf9-665d-49df-b1da-c0b71b0f9272"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_100_inner"),
                 script_path: None,
@@ -12164,6 +12534,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("11bfd7c2-6805-420c-b4d5-b7e28eaaa7be"),
+                local_id: uuid!("11bfd7c2-6805-420c-b4d5-b7e28eaaa7be"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_101_inner"),
                 script_path: None,
@@ -12203,6 +12574,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1d2e955a-9973-4cb0-b9a8-d52ff7870160"),
+            local_id: uuid!("1d2e955a-9973-4cb0-b9a8-d52ff7870160"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_124"),
             script_path: None,
@@ -12245,6 +12617,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("87c276e5-2014-4c05-9838-ffe3abac5dd1"),
+                local_id: uuid!("87c276e5-2014-4c05-9838-ffe3abac5dd1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_102_inner"),
                 script_path: None,
@@ -12266,6 +12639,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c7bf550d-7956-4c1c-8fa0-87b06e9cd740"), SceneNode::Node(
     Node {
         id: uuid!("c7bf550d-7956-4c1c-8fa0-87b06e9cd740"),
+        local_id: uuid!("c7bf550d-7956-4c1c-8fa0-87b06e9cd740"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_123"),
         script_path: None,
@@ -12285,6 +12659,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("930b214b-dc46-46cc-b8f7-5b3ead353808"), SceneNode::Node(
     Node {
         id: uuid!("930b214b-dc46-46cc-b8f7-5b3ead353808"),
+        local_id: uuid!("930b214b-dc46-46cc-b8f7-5b3ead353808"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_124"),
         script_path: None,
@@ -12305,6 +12680,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d884ef92-6181-4606-a118-7fe80c9c4e8d"), SceneNode::Node(
     Node {
         id: uuid!("d884ef92-6181-4606-a118-7fe80c9c4e8d"),
+        local_id: uuid!("d884ef92-6181-4606-a118-7fe80c9c4e8d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_125"),
         script_path: None,
@@ -12344,6 +12720,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e3afbdc7-9bce-4f72-b08b-6e9625232dc6"),
+                local_id: uuid!("e3afbdc7-9bce-4f72-b08b-6e9625232dc6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_103_inner"),
                 script_path: None,
@@ -12362,6 +12739,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ed1e78b7-e043-4d43-bca5-0b17c11156e4"), SceneNode::Node(
     Node {
         id: uuid!("ed1e78b7-e043-4d43-bca5-0b17c11156e4"),
+        local_id: uuid!("ed1e78b7-e043-4d43-bca5-0b17c11156e4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_126"),
         script_path: None,
@@ -12380,6 +12758,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("065fa1b9-b9f2-4d0a-a90f-d0ccb8ec2ab3"), SceneNode::Node(
     Node {
         id: uuid!("065fa1b9-b9f2-4d0a-a90f-d0ccb8ec2ab3"),
+        local_id: uuid!("065fa1b9-b9f2-4d0a-a90f-d0ccb8ec2ab3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_127"),
         script_path: None,
@@ -12398,6 +12777,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fd21b6de-11b4-4ea3-a201-f62d690f07a4"), SceneNode::Node(
     Node {
         id: uuid!("fd21b6de-11b4-4ea3-a201-f62d690f07a4"),
+        local_id: uuid!("fd21b6de-11b4-4ea3-a201-f62d690f07a4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_128"),
         script_path: None,
@@ -12414,6 +12794,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("348eea08-7f8c-4a70-a8aa-f57cac1470dc"), SceneNode::Node(
     Node {
         id: uuid!("348eea08-7f8c-4a70-a8aa-f57cac1470dc"),
+        local_id: uuid!("348eea08-7f8c-4a70-a8aa-f57cac1470dc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_129"),
         script_path: None,
@@ -12430,6 +12811,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a770a093-9786-4957-81a3-4996216481f3"), SceneNode::Node(
     Node {
         id: uuid!("a770a093-9786-4957-81a3-4996216481f3"),
+        local_id: uuid!("a770a093-9786-4957-81a3-4996216481f3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_130"),
         script_path: None,
@@ -12455,6 +12837,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("978de85f-f66e-42bd-90b9-3057237629a4"),
+            local_id: uuid!("978de85f-f66e-42bd-90b9-3057237629a4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_26"),
             script_path: None,
@@ -12493,6 +12876,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("378af395-e4cf-4282-a2cb-06752e3837a7"),
+            local_id: uuid!("378af395-e4cf-4282-a2cb-06752e3837a7"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_125"),
             script_path: None,
@@ -12536,6 +12920,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b6966a0d-02db-476f-a82e-4912df364d74"),
+                local_id: uuid!("b6966a0d-02db-476f-a82e-4912df364d74"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_104_inner"),
                 script_path: None,
@@ -12577,6 +12962,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("241536cc-0870-4360-941d-af3b7b56f51a"),
+                local_id: uuid!("241536cc-0870-4360-941d-af3b7b56f51a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_105_inner"),
                 script_path: None,
@@ -12617,6 +13003,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3dd5e28c-79c0-434a-bf61-9da33cfc1bc2"),
+            local_id: uuid!("3dd5e28c-79c0-434a-bf61-9da33cfc1bc2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_126"),
             script_path: None,
@@ -12636,6 +13023,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("47b6bfd9-c866-4f7c-a51f-d0712077bd6a"), SceneNode::Node(
     Node {
         id: uuid!("47b6bfd9-c866-4f7c-a51f-d0712077bd6a"),
+        local_id: uuid!("47b6bfd9-c866-4f7c-a51f-d0712077bd6a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_131"),
         script_path: None,
@@ -12652,6 +13040,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("96d24724-a70a-4602-ac98-3b66178402cc"), SceneNode::Node(
     Node {
         id: uuid!("96d24724-a70a-4602-ac98-3b66178402cc"),
+        local_id: uuid!("96d24724-a70a-4602-ac98-3b66178402cc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_132"),
         script_path: None,
@@ -12687,6 +13076,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("be2a8351-3ef1-4b0e-98a9-29be5bad3d02"),
+            local_id: uuid!("be2a8351-3ef1-4b0e-98a9-29be5bad3d02"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_127"),
             script_path: None,
@@ -12706,6 +13096,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("897fe104-5867-4821-81db-109226ab05ce"), SceneNode::Node(
     Node {
         id: uuid!("897fe104-5867-4821-81db-109226ab05ce"),
+        local_id: uuid!("897fe104-5867-4821-81db-109226ab05ce"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_133"),
         script_path: None,
@@ -12743,6 +13134,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3b9afceb-71e7-48af-a04a-7d6205edda36"),
+            local_id: uuid!("3b9afceb-71e7-48af-a04a-7d6205edda36"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_128"),
             script_path: None,
@@ -12760,6 +13152,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4a27ca5f-2dda-4d76-95ee-580ddddac8b8"), SceneNode::Node(
     Node {
         id: uuid!("4a27ca5f-2dda-4d76-95ee-580ddddac8b8"),
+        local_id: uuid!("4a27ca5f-2dda-4d76-95ee-580ddddac8b8"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_134"),
         script_path: None,
@@ -12801,6 +13194,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("aef6a9c4-dd25-4534-8df9-dd8df44ce53a"),
+                local_id: uuid!("aef6a9c4-dd25-4534-8df9-dd8df44ce53a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_106_inner"),
                 script_path: None,
@@ -12819,6 +13213,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b556d21d-d465-40b2-8906-74d7b2a016dd"), SceneNode::Node(
     Node {
         id: uuid!("b556d21d-d465-40b2-8906-74d7b2a016dd"),
+        local_id: uuid!("b556d21d-d465-40b2-8906-74d7b2a016dd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_135"),
         script_path: None,
@@ -12858,6 +13253,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3bc106a2-b5bc-4e7d-b5d2-782ea2d6882c"),
+                local_id: uuid!("3bc106a2-b5bc-4e7d-b5d2-782ea2d6882c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_107_inner"),
                 script_path: None,
@@ -12902,6 +13298,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2043ee7e-375b-4ffc-bb19-91e1121a1f89"),
+                local_id: uuid!("2043ee7e-375b-4ffc-bb19-91e1121a1f89"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_108_inner"),
                 script_path: None,
@@ -12922,6 +13319,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5aac9c78-21a4-499c-b102-d780a7d454e5"), SceneNode::Node(
     Node {
         id: uuid!("5aac9c78-21a4-499c-b102-d780a7d454e5"),
+        local_id: uuid!("5aac9c78-21a4-499c-b102-d780a7d454e5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_136"),
         script_path: None,
@@ -12960,6 +13358,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9a595756-ff5c-41ff-9856-653e447b8793"),
+            local_id: uuid!("9a595756-ff5c-41ff-9856-653e447b8793"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_129"),
             script_path: None,
@@ -12979,6 +13378,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c0fe4836-1e5e-4cd5-9ca7-d18c3e5e3086"), SceneNode::Node(
     Node {
         id: uuid!("c0fe4836-1e5e-4cd5-9ca7-d18c3e5e3086"),
+        local_id: uuid!("c0fe4836-1e5e-4cd5-9ca7-d18c3e5e3086"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_137"),
         script_path: None,
@@ -13016,6 +13416,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2e12405c-7a3e-49d0-a3f5-b4a9b7611558"),
+            local_id: uuid!("2e12405c-7a3e-49d0-a3f5-b4a9b7611558"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_130"),
             script_path: None,
@@ -13054,6 +13455,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("65407ff4-e8d8-4575-b132-58385a783e18"),
+            local_id: uuid!("65407ff4-e8d8-4575-b132-58385a783e18"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_131"),
             script_path: None,
@@ -13093,6 +13495,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("85308215-5506-4e28-a510-e3810519e54e"),
+            local_id: uuid!("85308215-5506-4e28-a510-e3810519e54e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_132"),
             script_path: None,
@@ -13133,6 +13536,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3cb808a9-5555-4ea4-96bc-cbe7f5861ac7"),
+            local_id: uuid!("3cb808a9-5555-4ea4-96bc-cbe7f5861ac7"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_133"),
             script_path: None,
@@ -13175,6 +13579,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0769f38d-24dd-46e6-bc56-b86a02464051"),
+                local_id: uuid!("0769f38d-24dd-46e6-bc56-b86a02464051"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_109_inner"),
                 script_path: None,
@@ -13215,6 +13620,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9590f983-5bf1-4230-8e5e-e59b6e9f20c3"),
+            local_id: uuid!("9590f983-5bf1-4230-8e5e-e59b6e9f20c3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_134"),
             script_path: None,
@@ -13235,6 +13641,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("152ca0da-291e-46d8-af46-f14d3e381887"), SceneNode::Node(
     Node {
         id: uuid!("152ca0da-291e-46d8-af46-f14d3e381887"),
+        local_id: uuid!("152ca0da-291e-46d8-af46-f14d3e381887"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_138"),
         script_path: None,
@@ -13270,6 +13677,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d5cba279-9c26-45b2-a9e9-ff67d2034f15"),
+            local_id: uuid!("d5cba279-9c26-45b2-a9e9-ff67d2034f15"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_135"),
             script_path: None,
@@ -13297,6 +13705,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e0f14beb-a83e-4cff-b180-489aacc39107"),
+            local_id: uuid!("e0f14beb-a83e-4cff-b180-489aacc39107"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_27"),
             script_path: None,
@@ -13314,6 +13723,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("947da6b8-a2b5-4242-830e-dd4d6cd60e9d"), SceneNode::Node(
     Node {
         id: uuid!("947da6b8-a2b5-4242-830e-dd4d6cd60e9d"),
+        local_id: uuid!("947da6b8-a2b5-4242-830e-dd4d6cd60e9d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_139"),
         script_path: None,
@@ -13330,6 +13740,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("17220149-492a-44f7-8753-2080e657d4a2"), SceneNode::Node(
     Node {
         id: uuid!("17220149-492a-44f7-8753-2080e657d4a2"),
+        local_id: uuid!("17220149-492a-44f7-8753-2080e657d4a2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_140"),
         script_path: None,
@@ -13369,6 +13780,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9d1c8ed8-28b3-4c75-9e1a-8d3b64ea1136"),
+                local_id: uuid!("9d1c8ed8-28b3-4c75-9e1a-8d3b64ea1136"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_110_inner"),
                 script_path: None,
@@ -13410,6 +13822,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("47060141-caa6-433a-ba25-9049873cd2e1"),
+                local_id: uuid!("47060141-caa6-433a-ba25-9049873cd2e1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_111_inner"),
                 script_path: None,
@@ -13430,6 +13843,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0c424ce2-820d-4b6c-9f53-85869c90d4de"), SceneNode::Node(
     Node {
         id: uuid!("0c424ce2-820d-4b6c-9f53-85869c90d4de"),
+        local_id: uuid!("0c424ce2-820d-4b6c-9f53-85869c90d4de"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_141"),
         script_path: None,
@@ -13465,6 +13879,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2c2059ce-074b-4e47-8ef6-c85838f24004"),
+            local_id: uuid!("2c2059ce-074b-4e47-8ef6-c85838f24004"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_136"),
             script_path: None,
@@ -13505,6 +13920,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("07e6a164-6dec-4b14-bb25-c3d710c99092"),
+                local_id: uuid!("07e6a164-6dec-4b14-bb25-c3d710c99092"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_112_inner"),
                 script_path: None,
@@ -13523,6 +13939,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4b5c4bce-b483-4112-b458-c8c0879ec8a9"), SceneNode::Node(
     Node {
         id: uuid!("4b5c4bce-b483-4112-b458-c8c0879ec8a9"),
+        local_id: uuid!("4b5c4bce-b483-4112-b458-c8c0879ec8a9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_142"),
         script_path: None,
@@ -13562,6 +13979,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d34a07de-830c-4151-9d91-18959282e90c"),
+                local_id: uuid!("d34a07de-830c-4151-9d91-18959282e90c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_113_inner"),
                 script_path: None,
@@ -13580,6 +13998,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("31aff3a8-cb76-49ba-9609-30ab4148b282"), SceneNode::Node(
     Node {
         id: uuid!("31aff3a8-cb76-49ba-9609-30ab4148b282"),
+        local_id: uuid!("31aff3a8-cb76-49ba-9609-30ab4148b282"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_143"),
         script_path: None,
@@ -13615,6 +14034,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("563d8a72-972b-4851-a5a2-42e36a05eea8"),
+            local_id: uuid!("563d8a72-972b-4851-a5a2-42e36a05eea8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_137"),
             script_path: None,
@@ -13634,6 +14054,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("874f274c-15b0-42d2-b2c0-d91555023822"), SceneNode::Node(
     Node {
         id: uuid!("874f274c-15b0-42d2-b2c0-d91555023822"),
+        local_id: uuid!("874f274c-15b0-42d2-b2c0-d91555023822"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_144"),
         script_path: None,
@@ -13675,6 +14096,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6799772c-b127-42a6-b55b-70a18e79f506"),
+                local_id: uuid!("6799772c-b127-42a6-b55b-70a18e79f506"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_114_inner"),
                 script_path: None,
@@ -13696,6 +14118,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3f1a7a9d-a9e9-44c8-b6ab-7dacb74f4338"), SceneNode::Node(
     Node {
         id: uuid!("3f1a7a9d-a9e9-44c8-b6ab-7dacb74f4338"),
+        local_id: uuid!("3f1a7a9d-a9e9-44c8-b6ab-7dacb74f4338"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_145"),
         script_path: None,
@@ -13738,6 +14161,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8d94c065-6c96-473e-a4d1-a9473810fe03"),
+                local_id: uuid!("8d94c065-6c96-473e-a4d1-a9473810fe03"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_115_inner"),
                 script_path: None,
@@ -13759,6 +14183,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8186fd5b-4352-4087-8d9d-2f7205c94948"), SceneNode::Node(
     Node {
         id: uuid!("8186fd5b-4352-4087-8d9d-2f7205c94948"),
+        local_id: uuid!("8186fd5b-4352-4087-8d9d-2f7205c94948"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_146"),
         script_path: None,
@@ -13794,6 +14219,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1cc7e536-f6e2-4693-8436-0c564f7d53fb"),
+            local_id: uuid!("1cc7e536-f6e2-4693-8436-0c564f7d53fb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_138"),
             script_path: None,
@@ -13818,6 +14244,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("058efd0d-d4f7-4a82-aae5-b01cd1443ffe"),
+            local_id: uuid!("058efd0d-d4f7-4a82-aae5-b01cd1443ffe"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_28"),
             script_path: None,
@@ -13860,6 +14287,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("5b1201ba-fc47-41ac-ad55-cb02cb2742c5"),
+                local_id: uuid!("5b1201ba-fc47-41ac-ad55-cb02cb2742c5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_116_inner"),
                 script_path: None,
@@ -13897,6 +14325,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("dc411af7-b5df-4c81-a0a8-64d397b28668"),
+            local_id: uuid!("dc411af7-b5df-4c81-a0a8-64d397b28668"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_139"),
             script_path: None,
@@ -13933,6 +14362,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("45e03f08-7b13-48f1-8113-3543d54cd449"),
+            local_id: uuid!("45e03f08-7b13-48f1-8113-3543d54cd449"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_140"),
             script_path: None,
@@ -13976,6 +14406,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3d50f353-e73a-4209-9573-9208364f9b8c"),
+                local_id: uuid!("3d50f353-e73a-4209-9573-9208364f9b8c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_117_inner"),
                 script_path: None,
@@ -14016,6 +14447,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("14a925fa-aab9-40e2-b371-d79de52214b0"),
+            local_id: uuid!("14a925fa-aab9-40e2-b371-d79de52214b0"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_141"),
             script_path: None,
@@ -14059,6 +14491,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ebeaaeed-ca41-4562-8ebb-631ddfc142ba"),
+                local_id: uuid!("ebeaaeed-ca41-4562-8ebb-631ddfc142ba"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_118_inner"),
                 script_path: None,
@@ -14102,6 +14535,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b6e833bb-587a-4326-9cda-79dfc668711e"),
+                local_id: uuid!("b6e833bb-587a-4326-9cda-79dfc668711e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_119_inner"),
                 script_path: None,
@@ -14139,6 +14573,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2b8072f0-9429-4005-bce5-9bd89f8e1cc6"),
+            local_id: uuid!("2b8072f0-9429-4005-bce5-9bd89f8e1cc6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_142"),
             script_path: None,
@@ -14181,6 +14616,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0630892d-4207-4240-b69a-1c5f241ffa2e"),
+                local_id: uuid!("0630892d-4207-4240-b69a-1c5f241ffa2e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_120_inner"),
                 script_path: None,
@@ -14218,6 +14654,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7262ae32-7c02-4d9a-8680-3b25eb9d3cf6"),
+            local_id: uuid!("7262ae32-7c02-4d9a-8680-3b25eb9d3cf6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_143"),
             script_path: None,
@@ -14254,6 +14691,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2c54c72e-92a6-4946-9d02-a719ee8e086d"),
+            local_id: uuid!("2c54c72e-92a6-4946-9d02-a719ee8e086d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_144"),
             script_path: None,
@@ -14290,6 +14728,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("dae0b3db-64f4-44f3-9521-76e266272adc"),
+            local_id: uuid!("dae0b3db-64f4-44f3-9521-76e266272adc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_145"),
             script_path: None,
@@ -14332,6 +14771,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a90291c0-9bd8-4251-b002-2d50946713fb"),
+                local_id: uuid!("a90291c0-9bd8-4251-b002-2d50946713fb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_121_inner"),
                 script_path: None,
@@ -14375,6 +14815,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("31839fb2-c686-4201-8c58-6b7ef6f6e2b5"),
+                local_id: uuid!("31839fb2-c686-4201-8c58-6b7ef6f6e2b5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_122_inner"),
                 script_path: None,
@@ -14416,6 +14857,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("01378352-16b9-43fe-822e-5c3f360648cb"),
+                local_id: uuid!("01378352-16b9-43fe-822e-5c3f360648cb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_123_inner"),
                 script_path: None,
@@ -14434,6 +14876,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("653e2a0f-1506-4d19-8ac1-ea2662a8b632"), SceneNode::Node(
     Node {
         id: uuid!("653e2a0f-1506-4d19-8ac1-ea2662a8b632"),
+        local_id: uuid!("653e2a0f-1506-4d19-8ac1-ea2662a8b632"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_147"),
         script_path: None,
@@ -14469,6 +14912,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6f647391-0540-4087-9724-f1968ab0fa91"),
+            local_id: uuid!("6f647391-0540-4087-9724-f1968ab0fa91"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_146"),
             script_path: None,
@@ -14486,6 +14930,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ef039d44-df83-4e44-894c-13864ab666ee"), SceneNode::Node(
     Node {
         id: uuid!("ef039d44-df83-4e44-894c-13864ab666ee"),
+        local_id: uuid!("ef039d44-df83-4e44-894c-13864ab666ee"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_148"),
         script_path: None,
@@ -14523,6 +14968,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2e2130cd-be64-40bc-b796-438ef58b1a28"),
+            local_id: uuid!("2e2130cd-be64-40bc-b796-438ef58b1a28"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_147"),
             script_path: None,
@@ -14565,6 +15011,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c6aab124-4f78-4329-a00c-39e4598102f2"),
+                local_id: uuid!("c6aab124-4f78-4329-a00c-39e4598102f2"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_124_inner"),
                 script_path: None,
@@ -14602,6 +15049,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e19880f0-436c-4002-89c7-673448a5555a"),
+            local_id: uuid!("e19880f0-436c-4002-89c7-673448a5555a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_148"),
             script_path: None,
@@ -14638,6 +15086,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d25dda69-8339-4e77-bda3-b8b72caa9633"),
+            local_id: uuid!("d25dda69-8339-4e77-bda3-b8b72caa9633"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_149"),
             script_path: None,
@@ -14682,6 +15131,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("040e974b-c5e0-4589-a061-56377e8aff3b"),
+                local_id: uuid!("040e974b-c5e0-4589-a061-56377e8aff3b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_125_inner"),
                 script_path: None,
@@ -14700,6 +15150,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3b15211e-6810-4303-b45e-7d78761fea9f"), SceneNode::Node(
     Node {
         id: uuid!("3b15211e-6810-4303-b45e-7d78761fea9f"),
+        local_id: uuid!("3b15211e-6810-4303-b45e-7d78761fea9f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_149"),
         script_path: None,
@@ -14735,6 +15186,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f8138999-ffe5-4779-893d-c85583371310"),
+            local_id: uuid!("f8138999-ffe5-4779-893d-c85583371310"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_150"),
             script_path: None,
@@ -14755,6 +15207,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f9992489-b8ce-4573-887c-5271e4c1e6a9"), SceneNode::Node(
     Node {
         id: uuid!("f9992489-b8ce-4573-887c-5271e4c1e6a9"),
+        local_id: uuid!("f9992489-b8ce-4573-887c-5271e4c1e6a9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_150"),
         script_path: None,
@@ -14796,6 +15249,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f04204d0-9db6-4701-a1fa-55999e56ff81"),
+                local_id: uuid!("f04204d0-9db6-4701-a1fa-55999e56ff81"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_126_inner"),
                 script_path: None,
@@ -14835,6 +15289,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("824d2913-7ee7-4d3a-931b-dac7f0c69212"),
+            local_id: uuid!("824d2913-7ee7-4d3a-931b-dac7f0c69212"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_151"),
             script_path: None,
@@ -14875,6 +15330,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("25f30ed3-c56a-4f55-8eab-2bddf7ad9635"),
+                local_id: uuid!("25f30ed3-c56a-4f55-8eab-2bddf7ad9635"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_127_inner"),
                 script_path: None,
@@ -14914,6 +15370,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("496e2cdc-8b3f-4c8a-bc6e-9b5e02c50e55"),
+            local_id: uuid!("496e2cdc-8b3f-4c8a-bc6e-9b5e02c50e55"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_152"),
             script_path: None,
@@ -14952,6 +15409,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("506444cd-1393-4c46-90d3-112a8f440e07"),
+            local_id: uuid!("506444cd-1393-4c46-90d3-112a8f440e07"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_153"),
             script_path: None,
@@ -14976,6 +15434,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("94cf0b80-5724-43ea-a07b-1c04e3dd391d"),
+            local_id: uuid!("94cf0b80-5724-43ea-a07b-1c04e3dd391d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_29"),
             script_path: None,
@@ -15000,6 +15459,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7b2d77fe-35ef-454f-a337-b7e378d4d1d4"),
+            local_id: uuid!("7b2d77fe-35ef-454f-a337-b7e378d4d1d4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_30"),
             script_path: None,
@@ -15017,6 +15477,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("591918a0-186f-44a7-b1a7-7ab0bceb540f"), SceneNode::Node(
     Node {
         id: uuid!("591918a0-186f-44a7-b1a7-7ab0bceb540f"),
+        local_id: uuid!("591918a0-186f-44a7-b1a7-7ab0bceb540f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_151"),
         script_path: None,
@@ -15058,6 +15519,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("28a2edc0-fbe3-4f80-b31a-c48882613a2b"),
+                local_id: uuid!("28a2edc0-fbe3-4f80-b31a-c48882613a2b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_128_inner"),
                 script_path: None,
@@ -15102,6 +15564,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c201a7ee-038a-42c7-8730-c67579639072"),
+                local_id: uuid!("c201a7ee-038a-42c7-8730-c67579639072"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_129_inner"),
                 script_path: None,
@@ -15139,6 +15602,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f108f9a5-13b0-4fc2-bc62-4bfc96650a43"),
+            local_id: uuid!("f108f9a5-13b0-4fc2-bc62-4bfc96650a43"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_154"),
             script_path: None,
@@ -15158,6 +15622,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e86806cf-97df-490a-9ce1-5e38a2b4f114"), SceneNode::Node(
     Node {
         id: uuid!("e86806cf-97df-490a-9ce1-5e38a2b4f114"),
+        local_id: uuid!("e86806cf-97df-490a-9ce1-5e38a2b4f114"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_152"),
         script_path: None,
@@ -15197,6 +15662,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("506d0e27-8c38-40a2-b245-1ed46d54cf0d"),
+                local_id: uuid!("506d0e27-8c38-40a2-b245-1ed46d54cf0d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_130_inner"),
                 script_path: None,
@@ -15218,6 +15684,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("959cc286-6615-4791-a538-abec9eda7119"), SceneNode::Node(
     Node {
         id: uuid!("959cc286-6615-4791-a538-abec9eda7119"),
+        local_id: uuid!("959cc286-6615-4791-a538-abec9eda7119"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_153"),
         script_path: None,
@@ -15253,6 +15720,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("896b0ad9-adf3-4f53-959f-6cf03f40834e"),
+            local_id: uuid!("896b0ad9-adf3-4f53-959f-6cf03f40834e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_155"),
             script_path: None,
@@ -15270,6 +15738,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("86408689-a9ec-4f6e-aaa0-1091b5acab2a"), SceneNode::Node(
     Node {
         id: uuid!("86408689-a9ec-4f6e-aaa0-1091b5acab2a"),
+        local_id: uuid!("86408689-a9ec-4f6e-aaa0-1091b5acab2a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_154"),
         script_path: None,
@@ -15305,6 +15774,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a953ecaf-540a-4020-bd66-f84176443788"),
+            local_id: uuid!("a953ecaf-540a-4020-bd66-f84176443788"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_156"),
             script_path: None,
@@ -15341,6 +15811,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f10cbbce-cdb8-4560-8a12-95f3301964db"),
+            local_id: uuid!("f10cbbce-cdb8-4560-8a12-95f3301964db"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_157"),
             script_path: None,
@@ -15383,6 +15854,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("de1045fc-ebc8-46bb-94d4-9cccc58ca319"),
+                local_id: uuid!("de1045fc-ebc8-46bb-94d4-9cccc58ca319"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_131_inner"),
                 script_path: None,
@@ -15424,6 +15896,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("60ca2926-7895-403d-a76f-eb10ff79b808"),
+                local_id: uuid!("60ca2926-7895-403d-a76f-eb10ff79b808"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_132_inner"),
                 script_path: None,
@@ -15465,6 +15938,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6f878fc7-ad72-475b-8b73-87e0b057bbc5"),
+                local_id: uuid!("6f878fc7-ad72-475b-8b73-87e0b057bbc5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_133_inner"),
                 script_path: None,
@@ -15483,6 +15957,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1b2df450-2cf4-41e3-9063-a0e82a7bf724"), SceneNode::Node(
     Node {
         id: uuid!("1b2df450-2cf4-41e3-9063-a0e82a7bf724"),
+        local_id: uuid!("1b2df450-2cf4-41e3-9063-a0e82a7bf724"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_155"),
         script_path: None,
@@ -15506,6 +15981,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("99572f9e-d6ff-4101-96c1-29b08ba50089"),
+            local_id: uuid!("99572f9e-d6ff-4101-96c1-29b08ba50089"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_31"),
             script_path: None,
@@ -15546,6 +16022,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8b293e5e-987b-4582-9358-12e7639ad93a"),
+                local_id: uuid!("8b293e5e-987b-4582-9358-12e7639ad93a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_134_inner"),
                 script_path: None,
@@ -15585,6 +16062,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("91866a8e-af23-4292-b14c-c7bbd82d31d4"),
+            local_id: uuid!("91866a8e-af23-4292-b14c-c7bbd82d31d4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_158"),
             script_path: None,
@@ -15604,6 +16082,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b36ed85e-63f8-4ee1-a749-9da4f805a698"), SceneNode::Node(
     Node {
         id: uuid!("b36ed85e-63f8-4ee1-a749-9da4f805a698"),
+        local_id: uuid!("b36ed85e-63f8-4ee1-a749-9da4f805a698"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_156"),
         script_path: None,
@@ -15639,6 +16118,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("01214142-73ed-4c60-8364-9db1169c556a"),
+            local_id: uuid!("01214142-73ed-4c60-8364-9db1169c556a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_159"),
             script_path: None,
@@ -15679,6 +16159,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c105d0f0-fc76-4ca1-a42d-97894a32a7a2"),
+                local_id: uuid!("c105d0f0-fc76-4ca1-a42d-97894a32a7a2"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_135_inner"),
                 script_path: None,
@@ -15723,6 +16204,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9763544c-402f-4381-b031-07209d2f735d"),
+                local_id: uuid!("9763544c-402f-4381-b031-07209d2f735d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_136_inner"),
                 script_path: None,
@@ -15766,6 +16248,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("394707d5-72fb-4586-8e0e-33d2604099a7"),
+                local_id: uuid!("394707d5-72fb-4586-8e0e-33d2604099a7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_137_inner"),
                 script_path: None,
@@ -15805,6 +16288,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7320b28d-2894-4af5-803d-686e38447c8b"),
+            local_id: uuid!("7320b28d-2894-4af5-803d-686e38447c8b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_160"),
             script_path: None,
@@ -15843,6 +16327,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8d46ed1a-9813-4d04-a0c9-ea25d141d82f"),
+            local_id: uuid!("8d46ed1a-9813-4d04-a0c9-ea25d141d82f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_161"),
             script_path: None,
@@ -15860,6 +16345,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3e287643-4bd2-432c-83dd-7bbf9cf751d3"), SceneNode::Node(
     Node {
         id: uuid!("3e287643-4bd2-432c-83dd-7bbf9cf751d3"),
+        local_id: uuid!("3e287643-4bd2-432c-83dd-7bbf9cf751d3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_157"),
         script_path: None,
@@ -15876,6 +16362,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ae544c9e-5fde-4406-8625-ffd759b629db"), SceneNode::Node(
     Node {
         id: uuid!("ae544c9e-5fde-4406-8625-ffd759b629db"),
+        local_id: uuid!("ae544c9e-5fde-4406-8625-ffd759b629db"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_158"),
         script_path: None,
@@ -15911,6 +16398,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f97da99e-b931-4109-b65d-3d3744bdba2f"),
+            local_id: uuid!("f97da99e-b931-4109-b65d-3d3744bdba2f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_162"),
             script_path: None,
@@ -15953,6 +16441,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("451498af-1105-494a-bafc-dfeb70ddaa9e"),
+                local_id: uuid!("451498af-1105-494a-bafc-dfeb70ddaa9e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_138_inner"),
                 script_path: None,
@@ -15974,6 +16463,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("473e16cc-399d-49f1-8780-f7bd3d0bbc97"), SceneNode::Node(
     Node {
         id: uuid!("473e16cc-399d-49f1-8780-f7bd3d0bbc97"),
+        local_id: uuid!("473e16cc-399d-49f1-8780-f7bd3d0bbc97"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_159"),
         script_path: None,
@@ -16015,6 +16505,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d7afeb6b-c077-40b0-bffc-13bc327097df"),
+                local_id: uuid!("d7afeb6b-c077-40b0-bffc-13bc327097df"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_139_inner"),
                 script_path: None,
@@ -16052,6 +16543,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("33dfea76-8d90-4cb7-9fa1-7554f480498a"),
+            local_id: uuid!("33dfea76-8d90-4cb7-9fa1-7554f480498a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_163"),
             script_path: None,
@@ -16069,6 +16561,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6230f605-66e6-4e5f-aa58-0b69019d060f"), SceneNode::Node(
     Node {
         id: uuid!("6230f605-66e6-4e5f-aa58-0b69019d060f"),
+        local_id: uuid!("6230f605-66e6-4e5f-aa58-0b69019d060f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_160"),
         script_path: None,
@@ -16111,6 +16604,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f6d6bb3b-52e9-4fb2-a2f8-e6fd6774dec9"),
+                local_id: uuid!("f6d6bb3b-52e9-4fb2-a2f8-e6fd6774dec9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_140_inner"),
                 script_path: None,
@@ -16150,6 +16644,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4553b81e-e2ef-443a-ab36-099c96301b35"),
+            local_id: uuid!("4553b81e-e2ef-443a-ab36-099c96301b35"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_164"),
             script_path: None,
@@ -16169,6 +16664,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("25a10bad-1a3d-486e-9395-624fac8fbbf7"), SceneNode::Node(
     Node {
         id: uuid!("25a10bad-1a3d-486e-9395-624fac8fbbf7"),
+        local_id: uuid!("25a10bad-1a3d-486e-9395-624fac8fbbf7"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_161"),
         script_path: None,
@@ -16208,6 +16704,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4b9b05f5-f938-4473-ba84-cd9a3b276d9b"),
+                local_id: uuid!("4b9b05f5-f938-4473-ba84-cd9a3b276d9b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_141_inner"),
                 script_path: None,
@@ -16251,6 +16748,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("50dd9acf-4953-4c66-a41d-cf4d0936d7b6"),
+                local_id: uuid!("50dd9acf-4953-4c66-a41d-cf4d0936d7b6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_142_inner"),
                 script_path: None,
@@ -16269,6 +16767,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f5529134-5fcb-4ced-af4a-9c8a594a9aa4"), SceneNode::Node(
     Node {
         id: uuid!("f5529134-5fcb-4ced-af4a-9c8a594a9aa4"),
+        local_id: uuid!("f5529134-5fcb-4ced-af4a-9c8a594a9aa4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_162"),
         script_path: None,
@@ -16312,6 +16811,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("83c4abb0-b9e1-4771-9955-ae60dfb7da1a"),
+                local_id: uuid!("83c4abb0-b9e1-4771-9955-ae60dfb7da1a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_143_inner"),
                 script_path: None,
@@ -16349,6 +16849,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4483b910-d51f-4d63-9ffe-01cbc2214432"),
+            local_id: uuid!("4483b910-d51f-4d63-9ffe-01cbc2214432"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_165"),
             script_path: None,
@@ -16368,6 +16869,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("eda367a4-0f1a-405a-ab84-e23119d5d41c"), SceneNode::Node(
     Node {
         id: uuid!("eda367a4-0f1a-405a-ab84-e23119d5d41c"),
+        local_id: uuid!("eda367a4-0f1a-405a-ab84-e23119d5d41c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_163"),
         script_path: None,
@@ -16384,6 +16886,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("66bb5810-76a0-4b2c-86c7-be63edc09a5c"), SceneNode::Node(
     Node {
         id: uuid!("66bb5810-76a0-4b2c-86c7-be63edc09a5c"),
+        local_id: uuid!("66bb5810-76a0-4b2c-86c7-be63edc09a5c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_164"),
         script_path: None,
@@ -16403,6 +16906,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("83b63a62-e0c8-4ee4-a22c-4a2d5a4d8153"), SceneNode::Node(
     Node {
         id: uuid!("83b63a62-e0c8-4ee4-a22c-4a2d5a4d8153"),
+        local_id: uuid!("83b63a62-e0c8-4ee4-a22c-4a2d5a4d8153"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_165"),
         script_path: None,
@@ -16441,6 +16945,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("82e120c0-cfb3-4d3b-bbf4-11f7e3743e13"),
+            local_id: uuid!("82e120c0-cfb3-4d3b-bbf4-11f7e3743e13"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_166"),
             script_path: None,
@@ -16477,6 +16982,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4e28ebab-2b63-4732-a1b7-37a5c7b06073"),
+            local_id: uuid!("4e28ebab-2b63-4732-a1b7-37a5c7b06073"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_167"),
             script_path: None,
@@ -16494,6 +17000,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d79cf2b7-540d-4f63-9c17-f2bb061cbdf9"), SceneNode::Node(
     Node {
         id: uuid!("d79cf2b7-540d-4f63-9c17-f2bb061cbdf9"),
+        local_id: uuid!("d79cf2b7-540d-4f63-9c17-f2bb061cbdf9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_166"),
         script_path: None,
@@ -16529,6 +17036,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f1163426-b50e-4955-b0a4-6513971d7189"),
+            local_id: uuid!("f1163426-b50e-4955-b0a4-6513971d7189"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_168"),
             script_path: None,
@@ -16565,6 +17073,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0ef7db5e-6b38-4712-8349-b2795a158bb9"),
+            local_id: uuid!("0ef7db5e-6b38-4712-8349-b2795a158bb9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_169"),
             script_path: None,
@@ -16582,6 +17091,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("660d9e3c-1ae9-492c-ab95-5c36372ddc15"), SceneNode::Node(
     Node {
         id: uuid!("660d9e3c-1ae9-492c-ab95-5c36372ddc15"),
+        local_id: uuid!("660d9e3c-1ae9-492c-ab95-5c36372ddc15"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_167"),
         script_path: None,
@@ -16623,6 +17133,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0821ae55-fac7-4c3e-a7e4-465478fa7200"),
+                local_id: uuid!("0821ae55-fac7-4c3e-a7e4-465478fa7200"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_144_inner"),
                 script_path: None,
@@ -16664,6 +17175,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f5ca7f2c-d5e5-4b26-a767-15de6ff34823"),
+                local_id: uuid!("f5ca7f2c-d5e5-4b26-a767-15de6ff34823"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_145_inner"),
                 script_path: None,
@@ -16691,6 +17203,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e659d4ee-a01b-42bb-a822-f9e75eee987e"),
+            local_id: uuid!("e659d4ee-a01b-42bb-a822-f9e75eee987e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_32"),
             script_path: None,
@@ -16731,6 +17244,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("7383b0f8-a536-4911-8f11-7d0e9c6fa9fd"),
+                local_id: uuid!("7383b0f8-a536-4911-8f11-7d0e9c6fa9fd"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_146_inner"),
                 script_path: None,
@@ -16749,6 +17263,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("97bf93eb-c7f2-4db5-ad4f-503be70137df"), SceneNode::Node(
     Node {
         id: uuid!("97bf93eb-c7f2-4db5-ad4f-503be70137df"),
+        local_id: uuid!("97bf93eb-c7f2-4db5-ad4f-503be70137df"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_168"),
         script_path: None,
@@ -16786,6 +17301,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ab2cadca-12ac-4388-8d95-233b777b2c06"),
+            local_id: uuid!("ab2cadca-12ac-4388-8d95-233b777b2c06"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_170"),
             script_path: None,
@@ -16803,6 +17319,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f4e61798-05a5-4e6d-85a6-086de7b977f4"), SceneNode::Node(
     Node {
         id: uuid!("f4e61798-05a5-4e6d-85a6-086de7b977f4"),
+        local_id: uuid!("f4e61798-05a5-4e6d-85a6-086de7b977f4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_169"),
         script_path: None,
@@ -16845,6 +17362,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4f3f62e5-eeb5-4bdf-8798-a340b02dc94a"),
+                local_id: uuid!("4f3f62e5-eeb5-4bdf-8798-a340b02dc94a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_147_inner"),
                 script_path: None,
@@ -16884,6 +17402,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("73ca6582-ccb1-4f0d-aaa0-23eded170e4d"),
+            local_id: uuid!("73ca6582-ccb1-4f0d-aaa0-23eded170e4d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_171"),
             script_path: None,
@@ -16908,6 +17427,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("522efec8-93f0-4d2d-9901-aa75d569e5be"),
+            local_id: uuid!("522efec8-93f0-4d2d-9901-aa75d569e5be"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_33"),
             script_path: None,
@@ -16925,6 +17445,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("518519b6-d6ef-49c2-9e8b-aeb9a0ecc6ab"), SceneNode::Node(
     Node {
         id: uuid!("518519b6-d6ef-49c2-9e8b-aeb9a0ecc6ab"),
+        local_id: uuid!("518519b6-d6ef-49c2-9e8b-aeb9a0ecc6ab"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_170"),
         script_path: None,
@@ -16966,6 +17487,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("83273f5f-30b7-4dbd-91d3-a65fcea1b4b4"),
+                local_id: uuid!("83273f5f-30b7-4dbd-91d3-a65fcea1b4b4"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_148_inner"),
                 script_path: None,
@@ -17010,6 +17532,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3e19eabc-99fd-44ca-8e93-bc50fbeb9123"),
+                local_id: uuid!("3e19eabc-99fd-44ca-8e93-bc50fbeb9123"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_149_inner"),
                 script_path: None,
@@ -17047,6 +17570,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("fc2f4389-c450-4dba-a4b0-7b0a5215d743"),
+            local_id: uuid!("fc2f4389-c450-4dba-a4b0-7b0a5215d743"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_172"),
             script_path: None,
@@ -17086,6 +17610,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0b5072a6-a33f-4208-9cfd-1310067e1d44"),
+            local_id: uuid!("0b5072a6-a33f-4208-9cfd-1310067e1d44"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_173"),
             script_path: None,
@@ -17126,6 +17651,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b83cc504-eae3-4115-af32-03ea23282443"),
+                local_id: uuid!("b83cc504-eae3-4115-af32-03ea23282443"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_150_inner"),
                 script_path: None,
@@ -17144,6 +17670,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2e2873b4-6061-4b6c-969c-5c6baff8f61c"), SceneNode::Node(
     Node {
         id: uuid!("2e2873b4-6061-4b6c-969c-5c6baff8f61c"),
+        local_id: uuid!("2e2873b4-6061-4b6c-969c-5c6baff8f61c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_171"),
         script_path: None,
@@ -17163,6 +17690,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e598a85c-9acf-4e4b-86ce-1524d385ec2e"), SceneNode::Node(
     Node {
         id: uuid!("e598a85c-9acf-4e4b-86ce-1524d385ec2e"),
+        local_id: uuid!("e598a85c-9acf-4e4b-86ce-1524d385ec2e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_172"),
         script_path: None,
@@ -17198,6 +17726,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5c36b3a1-0d30-425d-937a-63a3d8abbda1"),
+            local_id: uuid!("5c36b3a1-0d30-425d-937a-63a3d8abbda1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_174"),
             script_path: None,
@@ -17238,6 +17767,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cef22a15-3367-4628-bfef-c23dfb65434a"),
+                local_id: uuid!("cef22a15-3367-4628-bfef-c23dfb65434a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_151_inner"),
                 script_path: None,
@@ -17258,6 +17788,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d3101758-b1f5-45ef-9319-6c53ca57ceec"), SceneNode::Node(
     Node {
         id: uuid!("d3101758-b1f5-45ef-9319-6c53ca57ceec"),
+        local_id: uuid!("d3101758-b1f5-45ef-9319-6c53ca57ceec"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_173"),
         script_path: None,
@@ -17297,6 +17828,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a4b8cc10-9f02-4009-a981-b547a043f12b"),
+                local_id: uuid!("a4b8cc10-9f02-4009-a981-b547a043f12b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_152_inner"),
                 script_path: None,
@@ -17336,6 +17868,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5974b768-9e74-4722-bbb4-beaf192ca14f"),
+            local_id: uuid!("5974b768-9e74-4722-bbb4-beaf192ca14f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_175"),
             script_path: None,
@@ -17353,6 +17886,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("31c3e734-cf67-4427-8c35-b0dd29e00c9a"), SceneNode::Node(
     Node {
         id: uuid!("31c3e734-cf67-4427-8c35-b0dd29e00c9a"),
+        local_id: uuid!("31c3e734-cf67-4427-8c35-b0dd29e00c9a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_174"),
         script_path: None,
@@ -17371,6 +17905,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6ea52cba-e4f6-4170-94f1-1d2378bfcf51"), SceneNode::Node(
     Node {
         id: uuid!("6ea52cba-e4f6-4170-94f1-1d2378bfcf51"),
+        local_id: uuid!("6ea52cba-e4f6-4170-94f1-1d2378bfcf51"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_175"),
         script_path: None,
@@ -17389,6 +17924,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b87464d1-5a8d-46ed-8122-38d4141a8321"), SceneNode::Node(
     Node {
         id: uuid!("b87464d1-5a8d-46ed-8122-38d4141a8321"),
+        local_id: uuid!("b87464d1-5a8d-46ed-8122-38d4141a8321"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_176"),
         script_path: None,
@@ -17426,6 +17962,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c07b81cf-7a7f-4915-9209-9b9c9c33ace1"),
+            local_id: uuid!("c07b81cf-7a7f-4915-9209-9b9c9c33ace1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_176"),
             script_path: None,
@@ -17446,6 +17983,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4291fb13-e286-4d71-916e-7be6b50b430f"), SceneNode::Node(
     Node {
         id: uuid!("4291fb13-e286-4d71-916e-7be6b50b430f"),
+        local_id: uuid!("4291fb13-e286-4d71-916e-7be6b50b430f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_177"),
         script_path: None,
@@ -17462,6 +18000,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7f149057-4131-4a62-a1d4-2c1738cda6dc"), SceneNode::Node(
     Node {
         id: uuid!("7f149057-4131-4a62-a1d4-2c1738cda6dc"),
+        local_id: uuid!("7f149057-4131-4a62-a1d4-2c1738cda6dc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_178"),
         script_path: None,
@@ -17503,6 +18042,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("68a285f8-8988-4d8d-b888-06e4cb6d4e13"),
+                local_id: uuid!("68a285f8-8988-4d8d-b888-06e4cb6d4e13"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_153_inner"),
                 script_path: None,
@@ -17546,6 +18086,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("13a9c0f5-2496-47e7-a0a0-665fc7c5ce1a"),
+                local_id: uuid!("13a9c0f5-2496-47e7-a0a0-665fc7c5ce1a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_154_inner"),
                 script_path: None,
@@ -17564,6 +18105,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("dd1846ea-0faa-47f8-a091-538b9b6d56da"), SceneNode::Node(
     Node {
         id: uuid!("dd1846ea-0faa-47f8-a091-538b9b6d56da"),
+        local_id: uuid!("dd1846ea-0faa-47f8-a091-538b9b6d56da"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_179"),
         script_path: None,
@@ -17603,6 +18145,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("658e147d-602b-45a9-84b9-d7eb606c348a"),
+                local_id: uuid!("658e147d-602b-45a9-84b9-d7eb606c348a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_155_inner"),
                 script_path: None,
@@ -17642,6 +18185,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("bfd76b5e-a1ec-413c-a487-975ded4ec0b1"),
+            local_id: uuid!("bfd76b5e-a1ec-413c-a487-975ded4ec0b1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_177"),
             script_path: None,
@@ -17680,6 +18224,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7e30376e-49d2-4b9a-ad4f-4eb8eaf41fb9"),
+            local_id: uuid!("7e30376e-49d2-4b9a-ad4f-4eb8eaf41fb9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_178"),
             script_path: None,
@@ -17718,6 +18263,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("adafe568-d94b-4d11-9629-e261f409c394"),
+            local_id: uuid!("adafe568-d94b-4d11-9629-e261f409c394"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_179"),
             script_path: None,
@@ -17735,6 +18281,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("711e8376-7a4f-4b73-9dd4-8e5185a0c3d5"), SceneNode::Node(
     Node {
         id: uuid!("711e8376-7a4f-4b73-9dd4-8e5185a0c3d5"),
+        local_id: uuid!("711e8376-7a4f-4b73-9dd4-8e5185a0c3d5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_180"),
         script_path: None,
@@ -17751,6 +18298,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("64dd99e0-bb91-4004-9c5d-1e90c7e09c97"), SceneNode::Node(
     Node {
         id: uuid!("64dd99e0-bb91-4004-9c5d-1e90c7e09c97"),
+        local_id: uuid!("64dd99e0-bb91-4004-9c5d-1e90c7e09c97"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_181"),
         script_path: None,
@@ -17789,6 +18337,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("37f09c2f-ce28-450f-bdb4-fad687431814"),
+            local_id: uuid!("37f09c2f-ce28-450f-bdb4-fad687431814"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_180"),
             script_path: None,
@@ -17831,6 +18380,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d0c744ff-e614-4544-a563-c37849b997a7"),
+                local_id: uuid!("d0c744ff-e614-4544-a563-c37849b997a7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_156_inner"),
                 script_path: None,
@@ -17851,6 +18401,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("adc712ab-e245-433a-9268-9242dcb06b8c"), SceneNode::Node(
     Node {
         id: uuid!("adc712ab-e245-433a-9268-9242dcb06b8c"),
+        local_id: uuid!("adc712ab-e245-433a-9268-9242dcb06b8c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_182"),
         script_path: None,
@@ -17867,6 +18418,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("880a5429-c6fe-48c6-9f5f-4b8bf59b8d7e"), SceneNode::Node(
     Node {
         id: uuid!("880a5429-c6fe-48c6-9f5f-4b8bf59b8d7e"),
+        local_id: uuid!("880a5429-c6fe-48c6-9f5f-4b8bf59b8d7e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_183"),
         script_path: None,
@@ -17885,6 +18437,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4ae8baf9-b1f7-49fb-833d-239b63f7ab75"), SceneNode::Node(
     Node {
         id: uuid!("4ae8baf9-b1f7-49fb-833d-239b63f7ab75"),
+        local_id: uuid!("4ae8baf9-b1f7-49fb-833d-239b63f7ab75"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_184"),
         script_path: None,
@@ -17926,6 +18479,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9643da89-1275-442f-aaf0-8a723993da43"),
+                local_id: uuid!("9643da89-1275-442f-aaf0-8a723993da43"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_157_inner"),
                 script_path: None,
@@ -17944,6 +18498,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0c054687-eca9-407c-a6b9-933427da19eb"), SceneNode::Node(
     Node {
         id: uuid!("0c054687-eca9-407c-a6b9-933427da19eb"),
+        local_id: uuid!("0c054687-eca9-407c-a6b9-933427da19eb"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_185"),
         script_path: None,
@@ -17981,6 +18536,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("aaf870cb-4f36-4e56-936c-4972657313c0"),
+            local_id: uuid!("aaf870cb-4f36-4e56-936c-4972657313c0"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_181"),
             script_path: None,
@@ -18019,6 +18575,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ed9cc6d2-eac8-4465-89cb-03658e9f48d2"),
+            local_id: uuid!("ed9cc6d2-eac8-4465-89cb-03658e9f48d2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_182"),
             script_path: None,
@@ -18060,6 +18617,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9d5d86e1-5789-496c-a806-b804e683d4aa"),
+            local_id: uuid!("9d5d86e1-5789-496c-a806-b804e683d4aa"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_183"),
             script_path: None,
@@ -18077,6 +18635,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("38432cea-014a-4e04-8001-fc060a8e7f90"), SceneNode::Node(
     Node {
         id: uuid!("38432cea-014a-4e04-8001-fc060a8e7f90"),
+        local_id: uuid!("38432cea-014a-4e04-8001-fc060a8e7f90"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_186"),
         script_path: None,
@@ -18095,6 +18654,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("885ac846-496d-4ffd-8eb4-a6690b1c337b"), SceneNode::Node(
     Node {
         id: uuid!("885ac846-496d-4ffd-8eb4-a6690b1c337b"),
+        local_id: uuid!("885ac846-496d-4ffd-8eb4-a6690b1c337b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_187"),
         script_path: None,
@@ -18134,6 +18694,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("57948ae1-c1fe-4fc9-a5ac-ff8905d3ea0c"),
+                local_id: uuid!("57948ae1-c1fe-4fc9-a5ac-ff8905d3ea0c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_158_inner"),
                 script_path: None,
@@ -18173,6 +18734,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c28cfd7a-779b-4946-99e7-26774c6a5771"),
+            local_id: uuid!("c28cfd7a-779b-4946-99e7-26774c6a5771"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_184"),
             script_path: None,
@@ -18209,6 +18771,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("aee95d81-a657-43c4-a7cc-314490df12df"),
+            local_id: uuid!("aee95d81-a657-43c4-a7cc-314490df12df"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_185"),
             script_path: None,
@@ -18247,6 +18810,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("233c0c2d-c02f-4eea-b52c-413b60aebf96"),
+            local_id: uuid!("233c0c2d-c02f-4eea-b52c-413b60aebf96"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_186"),
             script_path: None,
@@ -18264,6 +18828,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ec3e57ed-aee6-47bd-9540-f3c3a4b323b5"), SceneNode::Node(
     Node {
         id: uuid!("ec3e57ed-aee6-47bd-9540-f3c3a4b323b5"),
+        local_id: uuid!("ec3e57ed-aee6-47bd-9540-f3c3a4b323b5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_188"),
         script_path: None,
@@ -18280,6 +18845,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("16b7e22e-6b85-45c4-adb6-477ab4094509"), SceneNode::Node(
     Node {
         id: uuid!("16b7e22e-6b85-45c4-adb6-477ab4094509"),
+        local_id: uuid!("16b7e22e-6b85-45c4-adb6-477ab4094509"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_189"),
         script_path: None,
@@ -18298,6 +18864,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("69d1b71a-7a3d-4e4f-aba4-7ab38b9e9774"), SceneNode::Node(
     Node {
         id: uuid!("69d1b71a-7a3d-4e4f-aba4-7ab38b9e9774"),
+        local_id: uuid!("69d1b71a-7a3d-4e4f-aba4-7ab38b9e9774"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_190"),
         script_path: None,
@@ -18333,6 +18900,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d79259c3-8e79-4676-82eb-2ea362cd96ee"),
+            local_id: uuid!("d79259c3-8e79-4676-82eb-2ea362cd96ee"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_187"),
             script_path: None,
@@ -18375,6 +18943,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("04bd543b-9786-4c53-80fa-6a4628d6d81b"),
+                local_id: uuid!("04bd543b-9786-4c53-80fa-6a4628d6d81b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_159_inner"),
                 script_path: None,
@@ -18412,6 +18981,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("77970f91-6dae-42dc-a6db-895ffc0c26e8"),
+            local_id: uuid!("77970f91-6dae-42dc-a6db-895ffc0c26e8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_188"),
             script_path: None,
@@ -18451,6 +19021,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3efd1aee-104c-42cd-9bcb-423d0828451d"),
+            local_id: uuid!("3efd1aee-104c-42cd-9bcb-423d0828451d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_189"),
             script_path: None,
@@ -18487,6 +19058,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d03cc296-d134-4cd7-a6e9-77d739777db8"),
+            local_id: uuid!("d03cc296-d134-4cd7-a6e9-77d739777db8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_190"),
             script_path: None,
@@ -18525,6 +19097,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3b8f1ddf-2bdd-42b0-9417-a0bb1f5783b5"),
+            local_id: uuid!("3b8f1ddf-2bdd-42b0-9417-a0bb1f5783b5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_191"),
             script_path: None,
@@ -18544,6 +19117,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e9f1b845-7585-430c-99da-2abee7b64449"), SceneNode::Node(
     Node {
         id: uuid!("e9f1b845-7585-430c-99da-2abee7b64449"),
+        local_id: uuid!("e9f1b845-7585-430c-99da-2abee7b64449"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_191"),
         script_path: None,
@@ -18560,6 +19134,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("bbc96221-98fb-4a29-98c9-f6d139b80e51"), SceneNode::Node(
     Node {
         id: uuid!("bbc96221-98fb-4a29-98c9-f6d139b80e51"),
+        local_id: uuid!("bbc96221-98fb-4a29-98c9-f6d139b80e51"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_192"),
         script_path: None,
@@ -18585,6 +19160,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ce4f9af4-3590-4c07-8bc6-c54a2418302d"),
+            local_id: uuid!("ce4f9af4-3590-4c07-8bc6-c54a2418302d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_34"),
             script_path: None,
@@ -18627,6 +19203,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4e6ad020-7073-4a41-8048-709cd606ebb1"),
+                local_id: uuid!("4e6ad020-7073-4a41-8048-709cd606ebb1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_160_inner"),
                 script_path: None,
@@ -18664,6 +19241,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("63f98b97-a734-40ce-b5c9-c3e24d19a59e"),
+            local_id: uuid!("63f98b97-a734-40ce-b5c9-c3e24d19a59e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_192"),
             script_path: None,
@@ -18704,6 +19282,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("768f1160-50ca-4ff5-a896-34f0a8fb3f6e"),
+                local_id: uuid!("768f1160-50ca-4ff5-a896-34f0a8fb3f6e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_161_inner"),
                 script_path: None,
@@ -18722,6 +19301,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("695822da-6b74-4c61-b45f-c0f827e2c97f"), SceneNode::Node(
     Node {
         id: uuid!("695822da-6b74-4c61-b45f-c0f827e2c97f"),
+        local_id: uuid!("695822da-6b74-4c61-b45f-c0f827e2c97f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_193"),
         script_path: None,
@@ -18741,6 +19321,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fd23bf13-9cfd-469b-be8c-d2e6bde276f9"), SceneNode::Node(
     Node {
         id: uuid!("fd23bf13-9cfd-469b-be8c-d2e6bde276f9"),
+        local_id: uuid!("fd23bf13-9cfd-469b-be8c-d2e6bde276f9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_194"),
         script_path: None,
@@ -18778,6 +19359,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a3ec0c93-c095-4ac7-8553-26aa6026f3f5"),
+            local_id: uuid!("a3ec0c93-c095-4ac7-8553-26aa6026f3f5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_193"),
             script_path: None,
@@ -18818,6 +19400,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("69b3ad12-311c-43ad-86a0-0f41acd9637a"),
+                local_id: uuid!("69b3ad12-311c-43ad-86a0-0f41acd9637a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_162_inner"),
                 script_path: None,
@@ -18838,6 +19421,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("aa328dfa-bfda-4fa8-94b8-081b312472ca"), SceneNode::Node(
     Node {
         id: uuid!("aa328dfa-bfda-4fa8-94b8-081b312472ca"),
+        local_id: uuid!("aa328dfa-bfda-4fa8-94b8-081b312472ca"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_195"),
         script_path: None,
@@ -18857,6 +19441,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fce3f9e7-a043-4fec-91b5-122da78ebeae"), SceneNode::Node(
     Node {
         id: uuid!("fce3f9e7-a043-4fec-91b5-122da78ebeae"),
+        local_id: uuid!("fce3f9e7-a043-4fec-91b5-122da78ebeae"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_196"),
         script_path: None,
@@ -18873,6 +19458,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5534db67-4c9e-408b-905b-ef5dc6ee3d83"), SceneNode::Node(
     Node {
         id: uuid!("5534db67-4c9e-408b-905b-ef5dc6ee3d83"),
+        local_id: uuid!("5534db67-4c9e-408b-905b-ef5dc6ee3d83"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_197"),
         script_path: None,
@@ -18914,6 +19500,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("72e534c6-14e3-4a67-926c-8162454dc13e"),
+            local_id: uuid!("72e534c6-14e3-4a67-926c-8162454dc13e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_194"),
             script_path: None,
@@ -18933,6 +19520,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d64a8483-ff93-4e7a-abe5-52a19919ff10"), SceneNode::Node(
     Node {
         id: uuid!("d64a8483-ff93-4e7a-abe5-52a19919ff10"),
+        local_id: uuid!("d64a8483-ff93-4e7a-abe5-52a19919ff10"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_198"),
         script_path: None,
@@ -18951,6 +19539,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ee596e0f-6d09-422e-82fe-678a67bde0b5"), SceneNode::Node(
     Node {
         id: uuid!("ee596e0f-6d09-422e-82fe-678a67bde0b5"),
+        local_id: uuid!("ee596e0f-6d09-422e-82fe-678a67bde0b5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_199"),
         script_path: None,
@@ -18970,6 +19559,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d4ddacaa-65e9-4d6a-ae0a-bb9416399426"), SceneNode::Node(
     Node {
         id: uuid!("d4ddacaa-65e9-4d6a-ae0a-bb9416399426"),
+        local_id: uuid!("d4ddacaa-65e9-4d6a-ae0a-bb9416399426"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_200"),
         script_path: None,
@@ -18995,6 +19585,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("282f9b01-e769-4cda-8413-1d6c806b4724"),
+            local_id: uuid!("282f9b01-e769-4cda-8413-1d6c806b4724"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_35"),
             script_path: None,
@@ -19031,6 +19622,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6655af41-ed5e-459e-8b7c-5faeab2ba986"),
+            local_id: uuid!("6655af41-ed5e-459e-8b7c-5faeab2ba986"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_195"),
             script_path: None,
@@ -19073,6 +19665,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9d19b395-9be5-46be-aa7d-1892accef219"),
+                local_id: uuid!("9d19b395-9be5-46be-aa7d-1892accef219"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_163_inner"),
                 script_path: None,
@@ -19114,6 +19707,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cbbab700-87ed-46fe-bc68-e3b424bbd323"),
+                local_id: uuid!("cbbab700-87ed-46fe-bc68-e3b424bbd323"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_164_inner"),
                 script_path: None,
@@ -19151,6 +19745,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c6406082-9bea-414d-b03d-baafaef3b2f4"),
+            local_id: uuid!("c6406082-9bea-414d-b03d-baafaef3b2f4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_196"),
             script_path: None,
@@ -19193,6 +19788,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9bae2ca6-ce09-4a39-ae48-00b2a50c3708"),
+                local_id: uuid!("9bae2ca6-ce09-4a39-ae48-00b2a50c3708"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_165_inner"),
                 script_path: None,
@@ -19211,6 +19807,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d042b90e-17ae-4351-8066-e50abfc90a0a"), SceneNode::Node(
     Node {
         id: uuid!("d042b90e-17ae-4351-8066-e50abfc90a0a"),
+        local_id: uuid!("d042b90e-17ae-4351-8066-e50abfc90a0a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_201"),
         script_path: None,
@@ -19249,6 +19846,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a4269661-bdec-4a23-acfd-c9a4bfa569bf"),
+            local_id: uuid!("a4269661-bdec-4a23-acfd-c9a4bfa569bf"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_197"),
             script_path: None,
@@ -19268,6 +19866,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("173600f1-c6eb-41e1-bb4f-ca7231290f57"), SceneNode::Node(
     Node {
         id: uuid!("173600f1-c6eb-41e1-bb4f-ca7231290f57"),
+        local_id: uuid!("173600f1-c6eb-41e1-bb4f-ca7231290f57"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_202"),
         script_path: None,
@@ -19309,6 +19908,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("48270022-7562-443c-8a44-4cf1d069f1f6"),
+                local_id: uuid!("48270022-7562-443c-8a44-4cf1d069f1f6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_166_inner"),
                 script_path: None,
@@ -19346,6 +19946,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2f1419c9-bbaa-411a-bfb4-240d1fe1d829"),
+            local_id: uuid!("2f1419c9-bbaa-411a-bfb4-240d1fe1d829"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_198"),
             script_path: None,
@@ -19382,6 +19983,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("51d4f04e-f58f-4312-934b-f63ec23435cb"),
+            local_id: uuid!("51d4f04e-f58f-4312-934b-f63ec23435cb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_199"),
             script_path: None,
@@ -19418,6 +20020,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("52f76f17-1af9-46ae-babd-b9ce7843ae58"),
+            local_id: uuid!("52f76f17-1af9-46ae-babd-b9ce7843ae58"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_200"),
             script_path: None,
@@ -19461,6 +20064,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("4a0d3bb9-7fca-4ae0-907f-d9e3413d87b5"),
+                local_id: uuid!("4a0d3bb9-7fca-4ae0-907f-d9e3413d87b5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_167_inner"),
                 script_path: None,
@@ -19489,6 +20093,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("90debdfb-8c28-4288-899e-f31f14d7b42a"),
+            local_id: uuid!("90debdfb-8c28-4288-899e-f31f14d7b42a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_36"),
             script_path: None,
@@ -19506,6 +20111,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7adc58ad-21c0-4243-84a7-bd78b521d827"), SceneNode::Node(
     Node {
         id: uuid!("7adc58ad-21c0-4243-84a7-bd78b521d827"),
+        local_id: uuid!("7adc58ad-21c0-4243-84a7-bd78b521d827"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_203"),
         script_path: None,
@@ -19522,6 +20128,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4254cd0d-5d03-498d-b7dc-ea79f40b0d0a"), SceneNode::Node(
     Node {
         id: uuid!("4254cd0d-5d03-498d-b7dc-ea79f40b0d0a"),
+        local_id: uuid!("4254cd0d-5d03-498d-b7dc-ea79f40b0d0a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_204"),
         script_path: None,
@@ -19561,6 +20168,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e722b4d0-8840-48d8-900d-5f5faa1309fe"),
+                local_id: uuid!("e722b4d0-8840-48d8-900d-5f5faa1309fe"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_168_inner"),
                 script_path: None,
@@ -19579,6 +20187,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("50103e8d-497b-42ab-98dd-d1ff61f244b7"), SceneNode::Node(
     Node {
         id: uuid!("50103e8d-497b-42ab-98dd-d1ff61f244b7"),
+        local_id: uuid!("50103e8d-497b-42ab-98dd-d1ff61f244b7"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_205"),
         script_path: None,
@@ -19616,6 +20225,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("eda290dd-95d7-4ba5-af06-9bb794c50cba"),
+            local_id: uuid!("eda290dd-95d7-4ba5-af06-9bb794c50cba"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_201"),
             script_path: None,
@@ -19654,6 +20264,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a0a341ac-d359-4ef6-93ed-7aaf36ba6af6"),
+            local_id: uuid!("a0a341ac-d359-4ef6-93ed-7aaf36ba6af6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_202"),
             script_path: None,
@@ -19674,6 +20285,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f98a23bf-f2ce-4104-aad4-8b2ebdce1d00"), SceneNode::Node(
     Node {
         id: uuid!("f98a23bf-f2ce-4104-aad4-8b2ebdce1d00"),
+        local_id: uuid!("f98a23bf-f2ce-4104-aad4-8b2ebdce1d00"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_206"),
         script_path: None,
@@ -19692,6 +20304,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6b9ab17d-19ac-4724-924b-35ca6be908bf"), SceneNode::Node(
     Node {
         id: uuid!("6b9ab17d-19ac-4724-924b-35ca6be908bf"),
+        local_id: uuid!("6b9ab17d-19ac-4724-924b-35ca6be908bf"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_207"),
         script_path: None,
@@ -19708,6 +20321,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("86d65ac3-f476-4036-94b0-89b60bb67b29"), SceneNode::Node(
     Node {
         id: uuid!("86d65ac3-f476-4036-94b0-89b60bb67b29"),
+        local_id: uuid!("86d65ac3-f476-4036-94b0-89b60bb67b29"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_208"),
         script_path: None,
@@ -19724,6 +20338,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("81f4882f-ab0a-4f16-9472-313d02448ed0"), SceneNode::Node(
     Node {
         id: uuid!("81f4882f-ab0a-4f16-9472-313d02448ed0"),
+        local_id: uuid!("81f4882f-ab0a-4f16-9472-313d02448ed0"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_209"),
         script_path: None,
@@ -19763,6 +20378,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8cfb2d8e-fd1d-4254-9ce4-cbbd1f6c7790"),
+                local_id: uuid!("8cfb2d8e-fd1d-4254-9ce4-cbbd1f6c7790"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_169_inner"),
                 script_path: None,
@@ -19800,6 +20416,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("72e20d21-5961-4c72-9715-8a2274df20f3"),
+            local_id: uuid!("72e20d21-5961-4c72-9715-8a2274df20f3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_203"),
             script_path: None,
@@ -19840,6 +20457,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("902b583c-6bb2-4a87-aaff-e0913a89f991"),
+                local_id: uuid!("902b583c-6bb2-4a87-aaff-e0913a89f991"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_170_inner"),
                 script_path: None,
@@ -19877,6 +20495,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d9c4b06a-6e83-49a1-839b-e8c64834c385"),
+            local_id: uuid!("d9c4b06a-6e83-49a1-839b-e8c64834c385"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_204"),
             script_path: None,
@@ -19917,6 +20536,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("447216e9-c314-49fa-9b17-eb81dad3e1fa"),
+                local_id: uuid!("447216e9-c314-49fa-9b17-eb81dad3e1fa"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_171_inner"),
                 script_path: None,
@@ -19935,6 +20555,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("85321938-3863-41b4-a133-bd3d4b7d06e8"), SceneNode::Node(
     Node {
         id: uuid!("85321938-3863-41b4-a133-bd3d4b7d06e8"),
+        local_id: uuid!("85321938-3863-41b4-a133-bd3d4b7d06e8"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_210"),
         script_path: None,
@@ -19977,6 +20598,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c46b93f5-61ae-4a13-b3f9-82c9e51a4101"),
+                local_id: uuid!("c46b93f5-61ae-4a13-b3f9-82c9e51a4101"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_172_inner"),
                 script_path: None,
@@ -20018,6 +20640,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3c1c2dd6-e3c6-41a0-86a3-9eadb72f8aad"),
+                local_id: uuid!("3c1c2dd6-e3c6-41a0-86a3-9eadb72f8aad"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_173_inner"),
                 script_path: None,
@@ -20036,6 +20659,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("469fdb68-4447-4e80-a1cb-52a6c5901602"), SceneNode::Node(
     Node {
         id: uuid!("469fdb68-4447-4e80-a1cb-52a6c5901602"),
+        local_id: uuid!("469fdb68-4447-4e80-a1cb-52a6c5901602"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_211"),
         script_path: None,
@@ -20052,6 +20676,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5d1759d3-8175-4290-a859-7bffc9d87fb4"), SceneNode::Node(
     Node {
         id: uuid!("5d1759d3-8175-4290-a859-7bffc9d87fb4"),
+        local_id: uuid!("5d1759d3-8175-4290-a859-7bffc9d87fb4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_212"),
         script_path: None,
@@ -20091,6 +20716,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("7e2a384a-ba06-4d4e-b511-ecce3f1bb71c"),
+                local_id: uuid!("7e2a384a-ba06-4d4e-b511-ecce3f1bb71c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_174_inner"),
                 script_path: None,
@@ -20111,6 +20737,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("998fb66a-1ee8-4a31-bc7e-551216b606c9"), SceneNode::Node(
     Node {
         id: uuid!("998fb66a-1ee8-4a31-bc7e-551216b606c9"),
+        local_id: uuid!("998fb66a-1ee8-4a31-bc7e-551216b606c9"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_213"),
         script_path: None,
@@ -20127,6 +20754,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("222eb7c5-83f9-4b91-abf6-f624b4a2680f"), SceneNode::Node(
     Node {
         id: uuid!("222eb7c5-83f9-4b91-abf6-f624b4a2680f"),
+        local_id: uuid!("222eb7c5-83f9-4b91-abf6-f624b4a2680f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_214"),
         script_path: None,
@@ -20166,6 +20794,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2c6d0160-e1ce-48c1-b251-e60d7b29bae0"),
+                local_id: uuid!("2c6d0160-e1ce-48c1-b251-e60d7b29bae0"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_175_inner"),
                 script_path: None,
@@ -20206,6 +20835,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("53f3da2d-233a-4da3-9892-a82e43653350"),
+            local_id: uuid!("53f3da2d-233a-4da3-9892-a82e43653350"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_205"),
             script_path: None,
@@ -20223,6 +20853,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("31ceecb4-52ff-4bdc-b982-9d689db7e588"), SceneNode::Node(
     Node {
         id: uuid!("31ceecb4-52ff-4bdc-b982-9d689db7e588"),
+        local_id: uuid!("31ceecb4-52ff-4bdc-b982-9d689db7e588"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_215"),
         script_path: None,
@@ -20239,6 +20870,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("968d6c90-19c6-49c1-99b9-668c0c728af7"), SceneNode::Node(
     Node {
         id: uuid!("968d6c90-19c6-49c1-99b9-668c0c728af7"),
+        local_id: uuid!("968d6c90-19c6-49c1-99b9-668c0c728af7"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_216"),
         script_path: None,
@@ -20255,6 +20887,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("be9d5809-4aa1-4382-a399-e9d17faa7e9d"), SceneNode::Node(
     Node {
         id: uuid!("be9d5809-4aa1-4382-a399-e9d17faa7e9d"),
+        local_id: uuid!("be9d5809-4aa1-4382-a399-e9d17faa7e9d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_217"),
         script_path: None,
@@ -20296,6 +20929,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6b336d99-c366-4fb9-bd02-7ba48c339d1b"),
+                local_id: uuid!("6b336d99-c366-4fb9-bd02-7ba48c339d1b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_176_inner"),
                 script_path: None,
@@ -20336,6 +20970,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0ad139cb-9230-4213-b1a3-794de4ce9c28"),
+            local_id: uuid!("0ad139cb-9230-4213-b1a3-794de4ce9c28"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_206"),
             script_path: None,
@@ -20353,6 +20988,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8b455058-2134-4e9e-b1af-4e6b035e47d4"), SceneNode::Node(
     Node {
         id: uuid!("8b455058-2134-4e9e-b1af-4e6b035e47d4"),
+        local_id: uuid!("8b455058-2134-4e9e-b1af-4e6b035e47d4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_218"),
         script_path: None,
@@ -20369,6 +21005,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("1a7dd367-90a7-4b78-a0d2-396729e3e289"), SceneNode::Node(
     Node {
         id: uuid!("1a7dd367-90a7-4b78-a0d2-396729e3e289"),
+        local_id: uuid!("1a7dd367-90a7-4b78-a0d2-396729e3e289"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_219"),
         script_path: None,
@@ -20404,6 +21041,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("23a607d2-71fd-4da3-b50f-e38517397b8a"),
+            local_id: uuid!("23a607d2-71fd-4da3-b50f-e38517397b8a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_207"),
             script_path: None,
@@ -20421,6 +21059,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("24165972-b940-4fb0-8439-01486dd4b2e5"), SceneNode::Node(
     Node {
         id: uuid!("24165972-b940-4fb0-8439-01486dd4b2e5"),
+        local_id: uuid!("24165972-b940-4fb0-8439-01486dd4b2e5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_220"),
         script_path: None,
@@ -20456,6 +21095,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("926d1168-eded-4a2d-ae1f-2e48972abb6b"),
+            local_id: uuid!("926d1168-eded-4a2d-ae1f-2e48972abb6b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_208"),
             script_path: None,
@@ -20492,6 +21132,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("098358dc-f232-4b35-8d98-feebc6ced0de"),
+            local_id: uuid!("098358dc-f232-4b35-8d98-feebc6ced0de"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_209"),
             script_path: None,
@@ -20509,6 +21150,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9a59954e-fa67-4c42-9a37-cd052a3798ea"), SceneNode::Node(
     Node {
         id: uuid!("9a59954e-fa67-4c42-9a37-cd052a3798ea"),
+        local_id: uuid!("9a59954e-fa67-4c42-9a37-cd052a3798ea"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_221"),
         script_path: None,
@@ -20544,6 +21186,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("55b573f8-9e82-4d7d-9d45-3e9cd29bd258"),
+            local_id: uuid!("55b573f8-9e82-4d7d-9d45-3e9cd29bd258"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_210"),
             script_path: None,
@@ -20580,6 +21223,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7e9da440-d3f9-48c6-addc-67390c82528b"),
+            local_id: uuid!("7e9da440-d3f9-48c6-addc-67390c82528b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_211"),
             script_path: None,
@@ -20620,6 +21264,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f1c5b559-8c74-49b6-8964-a7734dc8bc6e"),
+                local_id: uuid!("f1c5b559-8c74-49b6-8964-a7734dc8bc6e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_177_inner"),
                 script_path: None,
@@ -20657,6 +21302,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("841fae55-d5f5-44ee-b4a3-b1d0d67063a8"),
+            local_id: uuid!("841fae55-d5f5-44ee-b4a3-b1d0d67063a8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_212"),
             script_path: None,
@@ -20697,6 +21343,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f1e1f63b-5afe-48c9-a538-165720b55e3b"),
+                local_id: uuid!("f1e1f63b-5afe-48c9-a538-165720b55e3b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_178_inner"),
                 script_path: None,
@@ -20736,6 +21383,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("186ec25a-e79e-4565-b2a5-652933277923"),
+            local_id: uuid!("186ec25a-e79e-4565-b2a5-652933277923"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_213"),
             script_path: None,
@@ -20762,6 +21410,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("872ba2d1-28f5-45cc-adc1-47e736d8fbf3"),
+            local_id: uuid!("872ba2d1-28f5-45cc-adc1-47e736d8fbf3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_37"),
             script_path: None,
@@ -20805,6 +21454,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("effbf3a3-d393-4e0f-9b7d-bb46d09c2a12"),
+                local_id: uuid!("effbf3a3-d393-4e0f-9b7d-bb46d09c2a12"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_179_inner"),
                 script_path: None,
@@ -20823,6 +21473,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("845d19ab-af87-4250-989e-8cab6912a698"), SceneNode::Node(
     Node {
         id: uuid!("845d19ab-af87-4250-989e-8cab6912a698"),
+        local_id: uuid!("845d19ab-af87-4250-989e-8cab6912a698"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_222"),
         script_path: None,
@@ -20839,6 +21490,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("bf925e4d-3b0f-42eb-8f70-dd6f911e9529"), SceneNode::Node(
     Node {
         id: uuid!("bf925e4d-3b0f-42eb-8f70-dd6f911e9529"),
+        local_id: uuid!("bf925e4d-3b0f-42eb-8f70-dd6f911e9529"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_223"),
         script_path: None,
@@ -20855,6 +21507,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6d41f9da-f1e9-4c15-a095-8fa697279cc3"), SceneNode::Node(
     Node {
         id: uuid!("6d41f9da-f1e9-4c15-a095-8fa697279cc3"),
+        local_id: uuid!("6d41f9da-f1e9-4c15-a095-8fa697279cc3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_224"),
         script_path: None,
@@ -20890,6 +21543,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0934013a-6982-4b84-b6fa-043f6ce64906"),
+            local_id: uuid!("0934013a-6982-4b84-b6fa-043f6ce64906"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_214"),
             script_path: None,
@@ -20926,6 +21580,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("179473b7-6a90-4da3-9c74-0edc0995756c"),
+            local_id: uuid!("179473b7-6a90-4da3-9c74-0edc0995756c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_215"),
             script_path: None,
@@ -20943,6 +21598,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("049a67ae-919d-45c5-bb61-6205130b1385"), SceneNode::Node(
     Node {
         id: uuid!("049a67ae-919d-45c5-bb61-6205130b1385"),
+        local_id: uuid!("049a67ae-919d-45c5-bb61-6205130b1385"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_225"),
         script_path: None,
@@ -20978,6 +21634,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a9e282ed-8310-4f5f-bc95-95c86a30f88e"),
+            local_id: uuid!("a9e282ed-8310-4f5f-bc95-95c86a30f88e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_216"),
             script_path: None,
@@ -21018,6 +21675,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("7dab70c6-f447-4992-8077-06d8b0be7bcd"),
+                local_id: uuid!("7dab70c6-f447-4992-8077-06d8b0be7bcd"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_180_inner"),
                 script_path: None,
@@ -21061,6 +21719,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("bb59790c-6a94-4a31-9f32-cd9849617294"),
+                local_id: uuid!("bb59790c-6a94-4a31-9f32-cd9849617294"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_181_inner"),
                 script_path: None,
@@ -21082,6 +21741,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a5075dfb-2747-4dfb-b517-651884e0e68e"), SceneNode::Node(
     Node {
         id: uuid!("a5075dfb-2747-4dfb-b517-651884e0e68e"),
+        local_id: uuid!("a5075dfb-2747-4dfb-b517-651884e0e68e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_226"),
         script_path: None,
@@ -21098,6 +21758,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("652b0ef6-5302-490f-9090-4098c0629c73"), SceneNode::Node(
     Node {
         id: uuid!("652b0ef6-5302-490f-9090-4098c0629c73"),
+        local_id: uuid!("652b0ef6-5302-490f-9090-4098c0629c73"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_227"),
         script_path: None,
@@ -21114,6 +21775,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f0e759ce-6ff7-4395-93af-c1232cf9192b"), SceneNode::Node(
     Node {
         id: uuid!("f0e759ce-6ff7-4395-93af-c1232cf9192b"),
+        local_id: uuid!("f0e759ce-6ff7-4395-93af-c1232cf9192b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_228"),
         script_path: None,
@@ -21155,6 +21817,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b65792d6-c093-4f62-b644-4bbe201c64e3"),
+                local_id: uuid!("b65792d6-c093-4f62-b644-4bbe201c64e3"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_182_inner"),
                 script_path: None,
@@ -21173,6 +21836,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9a19a1b6-823e-4667-8e61-b331aa30e500"), SceneNode::Node(
     Node {
         id: uuid!("9a19a1b6-823e-4667-8e61-b331aa30e500"),
+        local_id: uuid!("9a19a1b6-823e-4667-8e61-b331aa30e500"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_229"),
         script_path: None,
@@ -21210,6 +21874,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4f1354e8-5e2d-443e-9a07-85bf68f79b35"),
+            local_id: uuid!("4f1354e8-5e2d-443e-9a07-85bf68f79b35"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_217"),
             script_path: None,
@@ -21250,6 +21915,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b783133c-4dd9-4104-884c-6d05fda19aa9"),
+                local_id: uuid!("b783133c-4dd9-4104-884c-6d05fda19aa9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_183_inner"),
                 script_path: None,
@@ -21291,6 +21957,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1e4f427a-f5e3-4647-8e0f-59f41979aba8"),
+                local_id: uuid!("1e4f427a-f5e3-4647-8e0f-59f41979aba8"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_184_inner"),
                 script_path: None,
@@ -21328,6 +21995,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("63a180d2-01fd-4d88-9450-348debe22177"),
+            local_id: uuid!("63a180d2-01fd-4d88-9450-348debe22177"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_218"),
             script_path: None,
@@ -21345,6 +22013,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("13643437-5a9d-4c0a-b33e-9e2c4f34e122"), SceneNode::Node(
     Node {
         id: uuid!("13643437-5a9d-4c0a-b33e-9e2c4f34e122"),
+        local_id: uuid!("13643437-5a9d-4c0a-b33e-9e2c4f34e122"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_230"),
         script_path: None,
@@ -21361,6 +22030,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("89a6f380-853d-4d2f-9f49-d878d3e3e67d"), SceneNode::Node(
     Node {
         id: uuid!("89a6f380-853d-4d2f-9f49-d878d3e3e67d"),
+        local_id: uuid!("89a6f380-853d-4d2f-9f49-d878d3e3e67d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_231"),
         script_path: None,
@@ -21396,6 +22066,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("192f8086-e3ff-4f36-934f-5b224a2a1c22"),
+            local_id: uuid!("192f8086-e3ff-4f36-934f-5b224a2a1c22"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_219"),
             script_path: None,
@@ -21416,6 +22087,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3deea0d0-adfc-45ef-8a72-e4be63a06c07"), SceneNode::Node(
     Node {
         id: uuid!("3deea0d0-adfc-45ef-8a72-e4be63a06c07"),
+        local_id: uuid!("3deea0d0-adfc-45ef-8a72-e4be63a06c07"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_232"),
         script_path: None,
@@ -21434,6 +22106,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("521ca190-0eeb-454f-9352-9fab28ce5513"), SceneNode::Node(
     Node {
         id: uuid!("521ca190-0eeb-454f-9352-9fab28ce5513"),
+        local_id: uuid!("521ca190-0eeb-454f-9352-9fab28ce5513"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_233"),
         script_path: None,
@@ -21450,6 +22123,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f6655ccb-8704-4404-acce-77a370ceeeee"), SceneNode::Node(
     Node {
         id: uuid!("f6655ccb-8704-4404-acce-77a370ceeeee"),
+        local_id: uuid!("f6655ccb-8704-4404-acce-77a370ceeeee"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_234"),
         script_path: None,
@@ -21489,6 +22163,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e3246d79-a6b7-4386-a884-ba9dc3cb4c74"),
+                local_id: uuid!("e3246d79-a6b7-4386-a884-ba9dc3cb4c74"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_185_inner"),
                 script_path: None,
@@ -21507,6 +22182,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("49e1d818-423f-4715-8415-d336821ef38a"), SceneNode::Node(
     Node {
         id: uuid!("49e1d818-423f-4715-8415-d336821ef38a"),
+        local_id: uuid!("49e1d818-423f-4715-8415-d336821ef38a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_235"),
         script_path: None,
@@ -21544,6 +22220,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("06f87718-bb03-4c5b-b172-308a80b754f8"),
+            local_id: uuid!("06f87718-bb03-4c5b-b172-308a80b754f8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_220"),
             script_path: None,
@@ -21561,6 +22238,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("59697e24-558b-4c06-a615-b1a8d05366c6"), SceneNode::Node(
     Node {
         id: uuid!("59697e24-558b-4c06-a615-b1a8d05366c6"),
+        local_id: uuid!("59697e24-558b-4c06-a615-b1a8d05366c6"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_236"),
         script_path: None,
@@ -21577,6 +22255,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("52d62dd3-649b-44db-be99-e75d17379e08"), SceneNode::Node(
     Node {
         id: uuid!("52d62dd3-649b-44db-be99-e75d17379e08"),
+        local_id: uuid!("52d62dd3-649b-44db-be99-e75d17379e08"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_237"),
         script_path: None,
@@ -21619,6 +22298,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("476fb17f-bdfb-4610-8ec0-2bd981a6e364"),
+                local_id: uuid!("476fb17f-bdfb-4610-8ec0-2bd981a6e364"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_186_inner"),
                 script_path: None,
@@ -21639,6 +22319,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9cf2d6c6-0d45-401b-a180-d501ee110130"), SceneNode::Node(
     Node {
         id: uuid!("9cf2d6c6-0d45-401b-a180-d501ee110130"),
+        local_id: uuid!("9cf2d6c6-0d45-401b-a180-d501ee110130"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_238"),
         script_path: None,
@@ -21662,6 +22343,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("48dccfda-c254-41b1-a0d5-3e854498ae98"),
+            local_id: uuid!("48dccfda-c254-41b1-a0d5-3e854498ae98"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_38"),
             script_path: None,
@@ -21698,6 +22380,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b21836a8-429b-46b0-9184-aef4b1140b11"),
+            local_id: uuid!("b21836a8-429b-46b0-9184-aef4b1140b11"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_221"),
             script_path: None,
@@ -21734,6 +22417,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("019d1177-7211-41c6-934e-328c7dabbf3e"),
+            local_id: uuid!("019d1177-7211-41c6-934e-328c7dabbf3e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_222"),
             script_path: None,
@@ -21774,6 +22458,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("944e5628-5db6-48f6-ae6f-ddf6bc81f9fb"),
+                local_id: uuid!("944e5628-5db6-48f6-ae6f-ddf6bc81f9fb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_187_inner"),
                 script_path: None,
@@ -21817,6 +22502,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f790a194-90db-434a-a344-ea55ca6114fb"),
+                local_id: uuid!("f790a194-90db-434a-a344-ea55ca6114fb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_188_inner"),
                 script_path: None,
@@ -21856,6 +22542,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("460d94f1-cd92-45fc-bac3-d29f83453bad"),
+            local_id: uuid!("460d94f1-cd92-45fc-bac3-d29f83453bad"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_223"),
             script_path: None,
@@ -21892,6 +22579,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d4cb7e66-e092-40d1-b408-c2af569f1884"),
+            local_id: uuid!("d4cb7e66-e092-40d1-b408-c2af569f1884"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_224"),
             script_path: None,
@@ -21911,6 +22599,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("080cf8bf-61ac-46bd-8f29-2106f2ff8dcf"), SceneNode::Node(
     Node {
         id: uuid!("080cf8bf-61ac-46bd-8f29-2106f2ff8dcf"),
+        local_id: uuid!("080cf8bf-61ac-46bd-8f29-2106f2ff8dcf"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_239"),
         script_path: None,
@@ -21950,6 +22639,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6815aca8-74fb-4441-8aaa-861398f084e1"),
+                local_id: uuid!("6815aca8-74fb-4441-8aaa-861398f084e1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_189_inner"),
                 script_path: None,
@@ -21989,6 +22679,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("02ef2855-d734-4a40-9c8d-e5286685d230"),
+            local_id: uuid!("02ef2855-d734-4a40-9c8d-e5286685d230"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_225"),
             script_path: None,
@@ -22009,6 +22700,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("398cf71c-80f0-447c-b3fa-4e610b870a49"), SceneNode::Node(
     Node {
         id: uuid!("398cf71c-80f0-447c-b3fa-4e610b870a49"),
+        local_id: uuid!("398cf71c-80f0-447c-b3fa-4e610b870a49"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_240"),
         script_path: None,
@@ -22048,6 +22740,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1c4a7e3d-1686-4f23-b77e-085b1da21b5d"),
+                local_id: uuid!("1c4a7e3d-1686-4f23-b77e-085b1da21b5d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_190_inner"),
                 script_path: None,
@@ -22092,6 +22785,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c52ad977-8f05-46d3-97d1-a93664ca7134"),
+                local_id: uuid!("c52ad977-8f05-46d3-97d1-a93664ca7134"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_191_inner"),
                 script_path: None,
@@ -22129,6 +22823,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b5427b29-64d5-4073-8fe2-adc4bb1e8ae4"),
+            local_id: uuid!("b5427b29-64d5-4073-8fe2-adc4bb1e8ae4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_226"),
             script_path: None,
@@ -22146,6 +22841,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d7384a31-fdd5-4387-a100-2c75c8f6cdb8"), SceneNode::Node(
     Node {
         id: uuid!("d7384a31-fdd5-4387-a100-2c75c8f6cdb8"),
+        local_id: uuid!("d7384a31-fdd5-4387-a100-2c75c8f6cdb8"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_241"),
         script_path: None,
@@ -22181,6 +22877,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("36353796-d2f7-4a89-ad25-9063d6378788"),
+            local_id: uuid!("36353796-d2f7-4a89-ad25-9063d6378788"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_227"),
             script_path: None,
@@ -22217,6 +22914,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b3a37c98-56eb-4c46-9c23-f32025b6fd98"),
+            local_id: uuid!("b3a37c98-56eb-4c46-9c23-f32025b6fd98"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_228"),
             script_path: None,
@@ -22253,6 +22951,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7e085d99-ad20-4274-b756-e566646b697f"),
+            local_id: uuid!("7e085d99-ad20-4274-b756-e566646b697f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_229"),
             script_path: None,
@@ -22270,6 +22969,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("26156fb2-d150-4006-b7fc-ac0b90068f6e"), SceneNode::Node(
     Node {
         id: uuid!("26156fb2-d150-4006-b7fc-ac0b90068f6e"),
+        local_id: uuid!("26156fb2-d150-4006-b7fc-ac0b90068f6e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_242"),
         script_path: None,
@@ -22288,6 +22988,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c6136cca-8c07-4ae3-830e-b71ad9730e34"), SceneNode::Node(
     Node {
         id: uuid!("c6136cca-8c07-4ae3-830e-b71ad9730e34"),
+        local_id: uuid!("c6136cca-8c07-4ae3-830e-b71ad9730e34"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_243"),
         script_path: None,
@@ -22304,6 +23005,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("560eb773-eed6-41ef-9848-62eff26ed985"), SceneNode::Node(
     Node {
         id: uuid!("560eb773-eed6-41ef-9848-62eff26ed985"),
+        local_id: uuid!("560eb773-eed6-41ef-9848-62eff26ed985"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_244"),
         script_path: None,
@@ -22320,6 +23022,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fa047865-7d7e-4d24-9c68-db4d124287ea"), SceneNode::Node(
     Node {
         id: uuid!("fa047865-7d7e-4d24-9c68-db4d124287ea"),
+        local_id: uuid!("fa047865-7d7e-4d24-9c68-db4d124287ea"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_245"),
         script_path: None,
@@ -22338,6 +23041,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6488662a-3d73-4646-90f3-136a86dfc228"), SceneNode::Node(
     Node {
         id: uuid!("6488662a-3d73-4646-90f3-136a86dfc228"),
+        local_id: uuid!("6488662a-3d73-4646-90f3-136a86dfc228"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_246"),
         script_path: None,
@@ -22373,6 +23077,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("844e9a28-f239-4718-ab80-c8aeca686173"),
+            local_id: uuid!("844e9a28-f239-4718-ab80-c8aeca686173"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_230"),
             script_path: None,
@@ -22411,6 +23116,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6f2616be-a234-47a0-9fc7-25c77569308d"),
+            local_id: uuid!("6f2616be-a234-47a0-9fc7-25c77569308d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_231"),
             script_path: None,
@@ -22447,6 +23153,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9d7ffdc5-5644-46c9-8f1e-b72beab78c6d"),
+            local_id: uuid!("9d7ffdc5-5644-46c9-8f1e-b72beab78c6d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_232"),
             script_path: None,
@@ -22473,6 +23180,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6b0d286a-f02d-4826-9c8e-fabb5b8e58a0"),
+            local_id: uuid!("6b0d286a-f02d-4826-9c8e-fabb5b8e58a0"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_39"),
             script_path: None,
@@ -22513,6 +23221,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("97471266-ead0-409f-8227-077ea86bf747"),
+                local_id: uuid!("97471266-ead0-409f-8227-077ea86bf747"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_192_inner"),
                 script_path: None,
@@ -22552,6 +23261,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3206ea09-96ad-47bd-967d-ad496a59f2df"),
+            local_id: uuid!("3206ea09-96ad-47bd-967d-ad496a59f2df"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_233"),
             script_path: None,
@@ -22569,6 +23279,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a5428687-5bae-4c67-81f8-be191ba327fc"), SceneNode::Node(
     Node {
         id: uuid!("a5428687-5bae-4c67-81f8-be191ba327fc"),
+        local_id: uuid!("a5428687-5bae-4c67-81f8-be191ba327fc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_247"),
         script_path: None,
@@ -22604,6 +23315,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ad0ae47a-0ede-4396-9a20-15bbcbb1cd46"),
+            local_id: uuid!("ad0ae47a-0ede-4396-9a20-15bbcbb1cd46"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_234"),
             script_path: None,
@@ -22621,6 +23333,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("5289617d-b341-48fc-8b31-38526d4656a3"), SceneNode::Node(
     Node {
         id: uuid!("5289617d-b341-48fc-8b31-38526d4656a3"),
+        local_id: uuid!("5289617d-b341-48fc-8b31-38526d4656a3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_248"),
         script_path: None,
@@ -22660,6 +23373,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("5607649d-af7b-40c3-b47b-ff62de834822"),
+                local_id: uuid!("5607649d-af7b-40c3-b47b-ff62de834822"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_193_inner"),
                 script_path: None,
@@ -22697,6 +23411,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("52f66af2-1566-4ada-98a7-446961f74e94"),
+            local_id: uuid!("52f66af2-1566-4ada-98a7-446961f74e94"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_235"),
             script_path: None,
@@ -22714,6 +23429,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("45fb2ef1-2f76-47fd-92b0-aba524645d67"), SceneNode::Node(
     Node {
         id: uuid!("45fb2ef1-2f76-47fd-92b0-aba524645d67"),
+        local_id: uuid!("45fb2ef1-2f76-47fd-92b0-aba524645d67"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_249"),
         script_path: None,
@@ -22739,6 +23455,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("47d421e8-260e-4ab8-89ab-7e63477bf2c6"),
+            local_id: uuid!("47d421e8-260e-4ab8-89ab-7e63477bf2c6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_40"),
             script_path: None,
@@ -22779,6 +23496,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f7c62a66-1f70-41fe-8481-7bcea44bc750"),
+                local_id: uuid!("f7c62a66-1f70-41fe-8481-7bcea44bc750"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_194_inner"),
                 script_path: None,
@@ -22800,6 +23518,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ec2fe224-719e-4056-a446-36dd39b31bb0"), SceneNode::Node(
     Node {
         id: uuid!("ec2fe224-719e-4056-a446-36dd39b31bb0"),
+        local_id: uuid!("ec2fe224-719e-4056-a446-36dd39b31bb0"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_250"),
         script_path: None,
@@ -22839,6 +23558,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6aac092f-ad58-4114-967c-1a83c2199a9f"),
+                local_id: uuid!("6aac092f-ad58-4114-967c-1a83c2199a9f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_195_inner"),
                 script_path: None,
@@ -22880,6 +23600,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f3d1743f-15c2-4158-bda4-3de1b0304ac6"),
+                local_id: uuid!("f3d1743f-15c2-4158-bda4-3de1b0304ac6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_196_inner"),
                 script_path: None,
@@ -22898,6 +23619,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0cfa588c-2bfe-4193-8471-cfb930b5548c"), SceneNode::Node(
     Node {
         id: uuid!("0cfa588c-2bfe-4193-8471-cfb930b5548c"),
+        local_id: uuid!("0cfa588c-2bfe-4193-8471-cfb930b5548c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_251"),
         script_path: None,
@@ -22937,6 +23659,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("17ff00a9-ea84-478c-8882-a11a3d742c5d"),
+                local_id: uuid!("17ff00a9-ea84-478c-8882-a11a3d742c5d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_197_inner"),
                 script_path: None,
@@ -22978,6 +23701,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("27d7d7b2-16b1-41a9-986b-1b207d16b988"),
+                local_id: uuid!("27d7d7b2-16b1-41a9-986b-1b207d16b988"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_198_inner"),
                 script_path: None,
@@ -23015,6 +23739,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b0c1a6b3-2055-4682-88de-b01a34d5d7bd"),
+            local_id: uuid!("b0c1a6b3-2055-4682-88de-b01a34d5d7bd"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_236"),
             script_path: None,
@@ -23055,6 +23780,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ce886175-3227-4b36-8913-d4ba049e7fcb"),
+                local_id: uuid!("ce886175-3227-4b36-8913-d4ba049e7fcb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_199_inner"),
                 script_path: None,
@@ -23096,6 +23822,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c97cd358-6436-45c7-b470-6205159252b7"),
+                local_id: uuid!("c97cd358-6436-45c7-b470-6205159252b7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_200_inner"),
                 script_path: None,
@@ -23133,6 +23860,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3030fde7-a6f7-4682-b97d-7cc5cecb961d"),
+            local_id: uuid!("3030fde7-a6f7-4682-b97d-7cc5cecb961d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_237"),
             script_path: None,
@@ -23173,6 +23901,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ce7086c5-7c09-41a8-b1a3-42b07e362cab"),
+                local_id: uuid!("ce7086c5-7c09-41a8-b1a3-42b07e362cab"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_201_inner"),
                 script_path: None,
@@ -23214,6 +23943,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3738a39e-5310-4a3b-8333-8a6befa1d2e7"),
+                local_id: uuid!("3738a39e-5310-4a3b-8333-8a6befa1d2e7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_202_inner"),
                 script_path: None,
@@ -23239,6 +23969,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("999c9d08-8b0b-41e2-8db1-ddc828129772"),
+            local_id: uuid!("999c9d08-8b0b-41e2-8db1-ddc828129772"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_41"),
             script_path: None,
@@ -23279,6 +24010,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("253cd640-6f61-4cd2-9b44-f2458518050a"),
+                local_id: uuid!("253cd640-6f61-4cd2-9b44-f2458518050a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_203_inner"),
                 script_path: None,
@@ -23297,6 +24029,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("772c3eaa-1dbf-4e2c-86ff-cb2516d8ba26"), SceneNode::Node(
     Node {
         id: uuid!("772c3eaa-1dbf-4e2c-86ff-cb2516d8ba26"),
+        local_id: uuid!("772c3eaa-1dbf-4e2c-86ff-cb2516d8ba26"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_252"),
         script_path: None,
@@ -23332,6 +24065,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ebac2963-3bfc-4d51-aa86-a1fbad931751"),
+            local_id: uuid!("ebac2963-3bfc-4d51-aa86-a1fbad931751"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_238"),
             script_path: None,
@@ -23349,6 +24083,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9984868b-513d-428e-b901-5a789bc5cff7"), SceneNode::Node(
     Node {
         id: uuid!("9984868b-513d-428e-b901-5a789bc5cff7"),
+        local_id: uuid!("9984868b-513d-428e-b901-5a789bc5cff7"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_253"),
         script_path: None,
@@ -23388,6 +24123,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a35535de-4841-48e6-8ad1-1ea12b243f43"),
+                local_id: uuid!("a35535de-4841-48e6-8ad1-1ea12b243f43"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_204_inner"),
                 script_path: None,
@@ -23408,6 +24144,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7dd32e28-61b1-4213-90b6-4f52abb27622"), SceneNode::Node(
     Node {
         id: uuid!("7dd32e28-61b1-4213-90b6-4f52abb27622"),
+        local_id: uuid!("7dd32e28-61b1-4213-90b6-4f52abb27622"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_254"),
         script_path: None,
@@ -23443,6 +24180,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8b743653-20cc-430f-8bcb-cdcdd2cd8c16"),
+            local_id: uuid!("8b743653-20cc-430f-8bcb-cdcdd2cd8c16"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_239"),
             script_path: None,
@@ -23460,6 +24198,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("04f3e9d5-a012-4ade-952b-19775423e091"), SceneNode::Node(
     Node {
         id: uuid!("04f3e9d5-a012-4ade-952b-19775423e091"),
+        local_id: uuid!("04f3e9d5-a012-4ade-952b-19775423e091"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_255"),
         script_path: None,
@@ -23499,6 +24238,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("40c50388-8ff9-45f4-9dd2-e8c8045efd38"),
+                local_id: uuid!("40c50388-8ff9-45f4-9dd2-e8c8045efd38"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_205_inner"),
                 script_path: None,
@@ -23536,6 +24276,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5219ab3c-e792-4a66-862e-9dec8404b088"),
+            local_id: uuid!("5219ab3c-e792-4a66-862e-9dec8404b088"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_240"),
             script_path: None,
@@ -23553,6 +24294,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("91b88286-9713-4c1c-af66-ba0d9ba52228"), SceneNode::Node(
     Node {
         id: uuid!("91b88286-9713-4c1c-af66-ba0d9ba52228"),
+        local_id: uuid!("91b88286-9713-4c1c-af66-ba0d9ba52228"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_256"),
         script_path: None,
@@ -23592,6 +24334,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d7f1858c-755a-45c9-8603-708f381c0277"),
+                local_id: uuid!("d7f1858c-755a-45c9-8603-708f381c0277"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_206_inner"),
                 script_path: None,
@@ -23631,6 +24374,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f753422d-e12a-425f-9866-00aec197a498"),
+            local_id: uuid!("f753422d-e12a-425f-9866-00aec197a498"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_241"),
             script_path: None,
@@ -23648,6 +24392,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9d7227c6-bcfa-460a-b1d0-e758598d679a"), SceneNode::Node(
     Node {
         id: uuid!("9d7227c6-bcfa-460a-b1d0-e758598d679a"),
+        local_id: uuid!("9d7227c6-bcfa-460a-b1d0-e758598d679a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_257"),
         script_path: None,
@@ -23683,6 +24428,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6ecc86bc-f46d-4635-ad19-2eda78f1f553"),
+            local_id: uuid!("6ecc86bc-f46d-4635-ad19-2eda78f1f553"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_242"),
             script_path: None,
@@ -23702,6 +24448,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("de29007c-2d02-479b-bc4a-e12fd6d9452e"), SceneNode::Node(
     Node {
         id: uuid!("de29007c-2d02-479b-bc4a-e12fd6d9452e"),
+        local_id: uuid!("de29007c-2d02-479b-bc4a-e12fd6d9452e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_258"),
         script_path: None,
@@ -23718,6 +24465,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("49f8cc8f-4472-485f-916b-a19ef9e80b59"), SceneNode::Node(
     Node {
         id: uuid!("49f8cc8f-4472-485f-916b-a19ef9e80b59"),
+        local_id: uuid!("49f8cc8f-4472-485f-916b-a19ef9e80b59"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_259"),
         script_path: None,
@@ -23757,6 +24505,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("3b36047e-18dc-4969-832d-bfe597dccf90"),
+                local_id: uuid!("3b36047e-18dc-4969-832d-bfe597dccf90"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_207_inner"),
                 script_path: None,
@@ -23777,6 +24526,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cf04bcee-fcee-4ec6-865d-3952283f61f2"), SceneNode::Node(
     Node {
         id: uuid!("cf04bcee-fcee-4ec6-865d-3952283f61f2"),
+        local_id: uuid!("cf04bcee-fcee-4ec6-865d-3952283f61f2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_260"),
         script_path: None,
@@ -23816,6 +24566,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("05e4826b-c0d2-4ddb-881a-94bcbbef5b75"),
+                local_id: uuid!("05e4826b-c0d2-4ddb-881a-94bcbbef5b75"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_208_inner"),
                 script_path: None,
@@ -23841,6 +24592,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("49b550ee-312d-48dc-b3ad-dbe934bc9df4"),
+            local_id: uuid!("49b550ee-312d-48dc-b3ad-dbe934bc9df4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_42"),
             script_path: None,
@@ -23877,6 +24629,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("dd762f14-3017-4b78-b010-70d67b90f14e"),
+            local_id: uuid!("dd762f14-3017-4b78-b010-70d67b90f14e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_243"),
             script_path: None,
@@ -23917,6 +24670,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("990422ac-0125-4c70-ab54-212a316e6ff0"),
+                local_id: uuid!("990422ac-0125-4c70-ab54-212a316e6ff0"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_209_inner"),
                 script_path: None,
@@ -23960,6 +24714,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1f431b4a-0788-4e08-b0a8-4231d0f50952"),
+                local_id: uuid!("1f431b4a-0788-4e08-b0a8-4231d0f50952"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_210_inner"),
                 script_path: None,
@@ -23997,6 +24752,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2ab3fcc0-eadd-4cb6-9bb0-1f07ebde96df"),
+            local_id: uuid!("2ab3fcc0-eadd-4cb6-9bb0-1f07ebde96df"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_244"),
             script_path: None,
@@ -24037,6 +24793,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e8a883b5-5caa-4764-a8f5-e9f70484fb1b"),
+                local_id: uuid!("e8a883b5-5caa-4764-a8f5-e9f70484fb1b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_211_inner"),
                 script_path: None,
@@ -24055,6 +24812,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b9dd5815-4835-4885-97df-092b66ae1139"), SceneNode::Node(
     Node {
         id: uuid!("b9dd5815-4835-4885-97df-092b66ae1139"),
+        local_id: uuid!("b9dd5815-4835-4885-97df-092b66ae1139"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_261"),
         script_path: None,
@@ -24090,6 +24848,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a9796f28-3309-400f-9e86-6d78865602c5"),
+            local_id: uuid!("a9796f28-3309-400f-9e86-6d78865602c5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_245"),
             script_path: None,
@@ -24107,6 +24866,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9e946457-1ddc-445b-a059-11650d7cc081"), SceneNode::Node(
     Node {
         id: uuid!("9e946457-1ddc-445b-a059-11650d7cc081"),
+        local_id: uuid!("9e946457-1ddc-445b-a059-11650d7cc081"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_262"),
         script_path: None,
@@ -24148,6 +24908,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c1af7a80-0f2a-434b-94b8-03ca9637ec2d"),
+                local_id: uuid!("c1af7a80-0f2a-434b-94b8-03ca9637ec2d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_212_inner"),
                 script_path: None,
@@ -24189,6 +24950,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("262233b7-d9a4-4203-9275-e443b66d5156"),
+                local_id: uuid!("262233b7-d9a4-4203-9275-e443b66d5156"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_213_inner"),
                 script_path: None,
@@ -24226,6 +24988,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("18dc4e90-e3df-4fef-87bc-0121c3bf7fc5"),
+            local_id: uuid!("18dc4e90-e3df-4fef-87bc-0121c3bf7fc5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_246"),
             script_path: None,
@@ -24252,6 +25015,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6da38911-fcf2-45b2-9854-94f3d37fc144"),
+            local_id: uuid!("6da38911-fcf2-45b2-9854-94f3d37fc144"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_43"),
             script_path: None,
@@ -24269,6 +25033,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6fadb38a-01f6-4e91-b500-355105f621b8"), SceneNode::Node(
     Node {
         id: uuid!("6fadb38a-01f6-4e91-b500-355105f621b8"),
+        local_id: uuid!("6fadb38a-01f6-4e91-b500-355105f621b8"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_263"),
         script_path: None,
@@ -24308,6 +25073,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("40339ea9-2f13-4848-86e0-2368f03c4574"),
+                local_id: uuid!("40339ea9-2f13-4848-86e0-2368f03c4574"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_214_inner"),
                 script_path: None,
@@ -24349,6 +25115,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0774f8b9-a8e8-42bc-8099-5ac3f1c8bbfe"),
+                local_id: uuid!("0774f8b9-a8e8-42bc-8099-5ac3f1c8bbfe"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_215_inner"),
                 script_path: None,
@@ -24392,6 +25159,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("5d4d49fa-654f-485a-afdd-579be4bc9558"),
+                local_id: uuid!("5d4d49fa-654f-485a-afdd-579be4bc9558"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_216_inner"),
                 script_path: None,
@@ -24433,6 +25201,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("06bbea4e-5a95-4a56-87ac-d35b3826e618"),
+                local_id: uuid!("06bbea4e-5a95-4a56-87ac-d35b3826e618"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_217_inner"),
                 script_path: None,
@@ -24472,6 +25241,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("234d47fe-7bc0-4dd6-b794-21aa91b1b351"),
+            local_id: uuid!("234d47fe-7bc0-4dd6-b794-21aa91b1b351"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_247"),
             script_path: None,
@@ -24508,6 +25278,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("771eedf5-3a2a-410c-9a55-7a945aa0e937"),
+            local_id: uuid!("771eedf5-3a2a-410c-9a55-7a945aa0e937"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_248"),
             script_path: None,
@@ -24525,6 +25296,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4d3106cd-2c28-456a-9eae-c0b602eb5f72"), SceneNode::Node(
     Node {
         id: uuid!("4d3106cd-2c28-456a-9eae-c0b602eb5f72"),
+        local_id: uuid!("4d3106cd-2c28-456a-9eae-c0b602eb5f72"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_264"),
         script_path: None,
@@ -24541,6 +25313,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("850aef37-a2b5-434d-9980-c302be530413"), SceneNode::Node(
     Node {
         id: uuid!("850aef37-a2b5-434d-9980-c302be530413"),
+        local_id: uuid!("850aef37-a2b5-434d-9980-c302be530413"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_265"),
         script_path: None,
@@ -24576,6 +25349,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("93b1c9e3-bf11-4222-9271-494bd235b60d"),
+            local_id: uuid!("93b1c9e3-bf11-4222-9271-494bd235b60d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_249"),
             script_path: None,
@@ -24616,6 +25390,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2647e3df-02a9-4579-8b75-93f95b236d41"),
+                local_id: uuid!("2647e3df-02a9-4579-8b75-93f95b236d41"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_218_inner"),
                 script_path: None,
@@ -24659,6 +25434,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0e8a7109-57a4-4abd-896a-a3144a80c0cc"),
+                local_id: uuid!("0e8a7109-57a4-4abd-896a-a3144a80c0cc"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_219_inner"),
                 script_path: None,
@@ -24684,6 +25460,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ece4d9c7-78c2-4eb5-be54-1891600bfe9f"),
+            local_id: uuid!("ece4d9c7-78c2-4eb5-be54-1891600bfe9f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_44"),
             script_path: None,
@@ -24701,6 +25478,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("85e809a2-cbbb-40bd-b837-7d5070233647"), SceneNode::Node(
     Node {
         id: uuid!("85e809a2-cbbb-40bd-b837-7d5070233647"),
+        local_id: uuid!("85e809a2-cbbb-40bd-b837-7d5070233647"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_266"),
         script_path: None,
@@ -24719,6 +25497,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ebc9ee2e-bbff-42cb-a431-d02fe3cda9bd"), SceneNode::Node(
     Node {
         id: uuid!("ebc9ee2e-bbff-42cb-a431-d02fe3cda9bd"),
+        local_id: uuid!("ebc9ee2e-bbff-42cb-a431-d02fe3cda9bd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_267"),
         script_path: None,
@@ -24754,6 +25533,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("546b893d-8cc2-4d8c-a13c-2eb62dca1275"),
+            local_id: uuid!("546b893d-8cc2-4d8c-a13c-2eb62dca1275"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_250"),
             script_path: None,
@@ -24778,6 +25558,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1395e972-9750-44f9-8a1d-b22b5a5cdcd7"),
+            local_id: uuid!("1395e972-9750-44f9-8a1d-b22b5a5cdcd7"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_45"),
             script_path: None,
@@ -24814,6 +25595,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c7088bb4-4e1b-4185-8a60-ff4af1cdb604"),
+            local_id: uuid!("c7088bb4-4e1b-4185-8a60-ff4af1cdb604"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_251"),
             script_path: None,
@@ -24854,6 +25636,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("dbf856fa-aae1-4a58-ab29-c0e85b184929"),
+                local_id: uuid!("dbf856fa-aae1-4a58-ab29-c0e85b184929"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_220_inner"),
                 script_path: None,
@@ -24895,6 +25678,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e388cfec-f81f-4434-8ce2-0c17ea484c8a"),
+                local_id: uuid!("e388cfec-f81f-4434-8ce2-0c17ea484c8a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_221_inner"),
                 script_path: None,
@@ -24932,6 +25716,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("7ab25b8b-138e-4fa5-bb89-4418228ae77b"),
+            local_id: uuid!("7ab25b8b-138e-4fa5-bb89-4418228ae77b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_252"),
             script_path: None,
@@ -24974,6 +25759,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("69684f6d-d175-4fe0-b802-5cde18c15692"),
+                local_id: uuid!("69684f6d-d175-4fe0-b802-5cde18c15692"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_222_inner"),
                 script_path: None,
@@ -25011,6 +25797,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4e90d7fc-7eeb-42c0-9775-49bf3d22ee10"),
+            local_id: uuid!("4e90d7fc-7eeb-42c0-9775-49bf3d22ee10"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_253"),
             script_path: None,
@@ -25035,6 +25822,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e81a21be-8de0-43c7-98d7-e47a3de947d3"),
+            local_id: uuid!("e81a21be-8de0-43c7-98d7-e47a3de947d3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_46"),
             script_path: None,
@@ -25071,6 +25859,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("62d20767-cb5e-4ceb-86e9-d9d0707caea3"),
+            local_id: uuid!("62d20767-cb5e-4ceb-86e9-d9d0707caea3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_254"),
             script_path: None,
@@ -25090,6 +25879,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4dabb549-0824-48af-a9eb-8d7c0873a52b"), SceneNode::Node(
     Node {
         id: uuid!("4dabb549-0824-48af-a9eb-8d7c0873a52b"),
+        local_id: uuid!("4dabb549-0824-48af-a9eb-8d7c0873a52b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_268"),
         script_path: None,
@@ -25125,6 +25915,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a4b233d8-5744-4bda-a510-44415745b6d9"),
+            local_id: uuid!("a4b233d8-5744-4bda-a510-44415745b6d9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_255"),
             script_path: None,
@@ -25142,6 +25933,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fd061413-9895-489d-bd47-2c1f51a62b15"), SceneNode::Node(
     Node {
         id: uuid!("fd061413-9895-489d-bd47-2c1f51a62b15"),
+        local_id: uuid!("fd061413-9895-489d-bd47-2c1f51a62b15"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_269"),
         script_path: None,
@@ -25181,6 +25973,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("09c846c4-794f-476e-aff3-4a8392de5a7e"),
+                local_id: uuid!("09c846c4-794f-476e-aff3-4a8392de5a7e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_223_inner"),
                 script_path: None,
@@ -25222,6 +26015,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("af06cfcc-91e2-499b-968b-570bdf9a418f"),
+                local_id: uuid!("af06cfcc-91e2-499b-968b-570bdf9a418f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_224_inner"),
                 script_path: None,
@@ -25265,6 +26059,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("258d73f3-edda-41f7-a0ba-6651dab06a54"),
+                local_id: uuid!("258d73f3-edda-41f7-a0ba-6651dab06a54"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_225_inner"),
                 script_path: None,
@@ -25306,6 +26101,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("7be2c395-9c70-4a0c-945d-5347fae5f268"),
+                local_id: uuid!("7be2c395-9c70-4a0c-945d-5347fae5f268"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_226_inner"),
                 script_path: None,
@@ -25347,6 +26143,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8b1b3fce-a1c7-465c-b2a2-9291addae379"),
+                local_id: uuid!("8b1b3fce-a1c7-465c-b2a2-9291addae379"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_227_inner"),
                 script_path: None,
@@ -25365,6 +26162,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("22051661-b536-419b-acd7-e108191de060"), SceneNode::Node(
     Node {
         id: uuid!("22051661-b536-419b-acd7-e108191de060"),
+        local_id: uuid!("22051661-b536-419b-acd7-e108191de060"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_270"),
         script_path: None,
@@ -25400,6 +26198,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("dcfcb157-9a04-4ab6-b61f-0643ee1b9115"),
+            local_id: uuid!("dcfcb157-9a04-4ab6-b61f-0643ee1b9115"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_256"),
             script_path: None,
@@ -25436,6 +26235,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d1247bde-29c1-4335-b10d-e8cbdf3b9ce8"),
+            local_id: uuid!("d1247bde-29c1-4335-b10d-e8cbdf3b9ce8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_257"),
             script_path: None,
@@ -25453,6 +26253,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2a1af594-9fee-4aa2-afb6-2475b43a8b82"), SceneNode::Node(
     Node {
         id: uuid!("2a1af594-9fee-4aa2-afb6-2475b43a8b82"),
+        local_id: uuid!("2a1af594-9fee-4aa2-afb6-2475b43a8b82"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_271"),
         script_path: None,
@@ -25492,6 +26293,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ddb0753e-277c-4275-8c65-8b9c787af035"),
+                local_id: uuid!("ddb0753e-277c-4275-8c65-8b9c787af035"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_228_inner"),
                 script_path: None,
@@ -25510,6 +26312,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8db7e404-9b03-4c5c-aa54-e23c1099fc9d"), SceneNode::Node(
     Node {
         id: uuid!("8db7e404-9b03-4c5c-aa54-e23c1099fc9d"),
+        local_id: uuid!("8db7e404-9b03-4c5c-aa54-e23c1099fc9d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_272"),
         script_path: None,
@@ -25528,6 +26331,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("50b24c41-5b43-4e69-8c99-f13b6fe85d9e"), SceneNode::Node(
     Node {
         id: uuid!("50b24c41-5b43-4e69-8c99-f13b6fe85d9e"),
+        local_id: uuid!("50b24c41-5b43-4e69-8c99-f13b6fe85d9e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_273"),
         script_path: None,
@@ -25567,6 +26371,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("127f910a-e466-423a-92a8-cfee90688548"),
+                local_id: uuid!("127f910a-e466-423a-92a8-cfee90688548"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_229_inner"),
                 script_path: None,
@@ -25585,6 +26390,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("48d178bb-3ab6-4443-97fe-4628a9c7bbae"), SceneNode::Node(
     Node {
         id: uuid!("48d178bb-3ab6-4443-97fe-4628a9c7bbae"),
+        local_id: uuid!("48d178bb-3ab6-4443-97fe-4628a9c7bbae"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_274"),
         script_path: None,
@@ -25601,6 +26407,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a3293987-cef7-4abf-8953-ba67d09068bd"), SceneNode::Node(
     Node {
         id: uuid!("a3293987-cef7-4abf-8953-ba67d09068bd"),
+        local_id: uuid!("a3293987-cef7-4abf-8953-ba67d09068bd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_275"),
         script_path: None,
@@ -25617,6 +26424,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cda1fa2e-ecc8-4769-b3fd-6e85e028a36b"), SceneNode::Node(
     Node {
         id: uuid!("cda1fa2e-ecc8-4769-b3fd-6e85e028a36b"),
+        local_id: uuid!("cda1fa2e-ecc8-4769-b3fd-6e85e028a36b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_276"),
         script_path: None,
@@ -25633,6 +26441,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2b90b129-da31-4a9f-ac34-015498b959ac"), SceneNode::Node(
     Node {
         id: uuid!("2b90b129-da31-4a9f-ac34-015498b959ac"),
+        local_id: uuid!("2b90b129-da31-4a9f-ac34-015498b959ac"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_277"),
         script_path: None,
@@ -25649,6 +26458,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ab2ea9d0-b388-4fda-8f39-461fd6bbdb3b"), SceneNode::Node(
     Node {
         id: uuid!("ab2ea9d0-b388-4fda-8f39-461fd6bbdb3b"),
+        local_id: uuid!("ab2ea9d0-b388-4fda-8f39-461fd6bbdb3b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_278"),
         script_path: None,
@@ -25684,6 +26494,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5b1190a5-baed-4ff0-8141-78c712d21be9"),
+            local_id: uuid!("5b1190a5-baed-4ff0-8141-78c712d21be9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_258"),
             script_path: None,
@@ -25722,6 +26533,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("aa093161-05ac-491b-9486-25b069392e97"),
+            local_id: uuid!("aa093161-05ac-491b-9486-25b069392e97"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_259"),
             script_path: None,
@@ -25760,6 +26572,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("11b8d66c-7b8b-42e7-95bc-3dbfe3446ab1"),
+            local_id: uuid!("11b8d66c-7b8b-42e7-95bc-3dbfe3446ab1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_260"),
             script_path: None,
@@ -25800,6 +26613,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("af0b6a1a-c70a-4c1e-90be-c74d488a02e6"),
+                local_id: uuid!("af0b6a1a-c70a-4c1e-90be-c74d488a02e6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_230_inner"),
                 script_path: None,
@@ -25841,6 +26655,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("13212e3f-4079-4082-a00e-bd7bed33782d"),
+                local_id: uuid!("13212e3f-4079-4082-a00e-bd7bed33782d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_231_inner"),
                 script_path: None,
@@ -25878,6 +26693,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("259578a7-2759-4f5d-bd55-df9406a2ca61"),
+            local_id: uuid!("259578a7-2759-4f5d-bd55-df9406a2ca61"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_261"),
             script_path: None,
@@ -25918,6 +26734,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("52895b64-4d14-44af-a145-56381ff653ae"),
+                local_id: uuid!("52895b64-4d14-44af-a145-56381ff653ae"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_232_inner"),
                 script_path: None,
@@ -25955,6 +26772,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("979e69dd-3261-4415-ba94-85124f777676"),
+            local_id: uuid!("979e69dd-3261-4415-ba94-85124f777676"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_262"),
             script_path: None,
@@ -25972,6 +26790,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("928743cd-818a-43f9-8e11-c6aa245dde6b"), SceneNode::Node(
     Node {
         id: uuid!("928743cd-818a-43f9-8e11-c6aa245dde6b"),
+        local_id: uuid!("928743cd-818a-43f9-8e11-c6aa245dde6b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_279"),
         script_path: None,
@@ -25988,6 +26807,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("83aa3af1-91e4-42ea-b5b7-4c2113714155"), SceneNode::Node(
     Node {
         id: uuid!("83aa3af1-91e4-42ea-b5b7-4c2113714155"),
+        local_id: uuid!("83aa3af1-91e4-42ea-b5b7-4c2113714155"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_280"),
         script_path: None,
@@ -26027,6 +26847,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8a050fbd-3271-4a67-a127-4b48f158084d"),
+                local_id: uuid!("8a050fbd-3271-4a67-a127-4b48f158084d"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_233_inner"),
                 script_path: None,
@@ -26045,6 +26866,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("d2e273d5-44e6-4874-a0b0-71bed1a7a411"), SceneNode::Node(
     Node {
         id: uuid!("d2e273d5-44e6-4874-a0b0-71bed1a7a411"),
+        local_id: uuid!("d2e273d5-44e6-4874-a0b0-71bed1a7a411"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_281"),
         script_path: None,
@@ -26063,6 +26885,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("86238fb8-e118-421b-9e66-7a7855c5253d"), SceneNode::Node(
     Node {
         id: uuid!("86238fb8-e118-421b-9e66-7a7855c5253d"),
+        local_id: uuid!("86238fb8-e118-421b-9e66-7a7855c5253d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_282"),
         script_path: None,
@@ -26079,6 +26902,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c382f234-8a8b-4dbf-8b24-738bc8d7aba1"), SceneNode::Node(
     Node {
         id: uuid!("c382f234-8a8b-4dbf-8b24-738bc8d7aba1"),
+        local_id: uuid!("c382f234-8a8b-4dbf-8b24-738bc8d7aba1"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_283"),
         script_path: None,
@@ -26116,6 +26940,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e5133ca2-66ce-43bf-99bd-ed6e4db6074e"),
+            local_id: uuid!("e5133ca2-66ce-43bf-99bd-ed6e4db6074e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_263"),
             script_path: None,
@@ -26140,6 +26965,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5a748776-5129-41e8-87f6-f7b481ef1b9b"),
+            local_id: uuid!("5a748776-5129-41e8-87f6-f7b481ef1b9b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_47"),
             script_path: None,
@@ -26182,6 +27008,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("01e79413-8219-417a-afe5-310b39e25f4f"),
+                local_id: uuid!("01e79413-8219-417a-afe5-310b39e25f4f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_234_inner"),
                 script_path: None,
@@ -26223,6 +27050,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c83dc7ea-2748-4155-bbd6-dd36496fb6b6"),
+                local_id: uuid!("c83dc7ea-2748-4155-bbd6-dd36496fb6b6"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_235_inner"),
                 script_path: None,
@@ -26264,6 +27092,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("aaedbb09-4696-4217-a0c5-fc95b1875c14"),
+                local_id: uuid!("aaedbb09-4696-4217-a0c5-fc95b1875c14"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_236_inner"),
                 script_path: None,
@@ -26284,6 +27113,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("f5e405ad-b432-480b-bd13-926e3f2cba66"), SceneNode::Node(
     Node {
         id: uuid!("f5e405ad-b432-480b-bd13-926e3f2cba66"),
+        local_id: uuid!("f5e405ad-b432-480b-bd13-926e3f2cba66"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_284"),
         script_path: None,
@@ -26319,6 +27149,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("308bf563-426c-41b7-ac09-d37d16b702a9"),
+            local_id: uuid!("308bf563-426c-41b7-ac09-d37d16b702a9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_264"),
             script_path: None,
@@ -26355,6 +27186,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c88884b1-1b03-4fa9-8fa8-d5e2250ef4d9"),
+            local_id: uuid!("c88884b1-1b03-4fa9-8fa8-d5e2250ef4d9"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_265"),
             script_path: None,
@@ -26395,6 +27227,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("39238102-e4b3-4843-af48-cdd0607ca557"),
+                local_id: uuid!("39238102-e4b3-4843-af48-cdd0607ca557"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_237_inner"),
                 script_path: None,
@@ -26436,6 +27269,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("19f928db-0d9f-472c-8ffa-8f1f07f1052a"),
+                local_id: uuid!("19f928db-0d9f-472c-8ffa-8f1f07f1052a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_238_inner"),
                 script_path: None,
@@ -26473,6 +27307,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("3b4e92f8-8299-4eed-a9f8-05f512e645d4"),
+            local_id: uuid!("3b4e92f8-8299-4eed-a9f8-05f512e645d4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_266"),
             script_path: None,
@@ -26509,6 +27344,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("27dd7c39-4838-4d4b-b368-b1b82fb57683"),
+            local_id: uuid!("27dd7c39-4838-4d4b-b368-b1b82fb57683"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_267"),
             script_path: None,
@@ -26549,6 +27385,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2f1254c0-075a-4b39-a2a4-01359132885b"),
+                local_id: uuid!("2f1254c0-075a-4b39-a2a4-01359132885b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_239_inner"),
                 script_path: None,
@@ -26588,6 +27425,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a5c1ff59-a811-45a0-8f8e-231ae4a6e716"),
+            local_id: uuid!("a5c1ff59-a811-45a0-8f8e-231ae4a6e716"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_268"),
             script_path: None,
@@ -26624,6 +27462,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("bf0145a7-56ed-435a-8180-868bdc2c35e3"),
+            local_id: uuid!("bf0145a7-56ed-435a-8180-868bdc2c35e3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_269"),
             script_path: None,
@@ -26664,6 +27503,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("cb581631-c8d2-4652-94c1-69ae32bd33c9"),
+                local_id: uuid!("cb581631-c8d2-4652-94c1-69ae32bd33c9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_240_inner"),
                 script_path: None,
@@ -26707,6 +27547,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("1ea7ef55-37db-4cbc-b7ae-ff895bfd9344"),
+                local_id: uuid!("1ea7ef55-37db-4cbc-b7ae-ff895bfd9344"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_241_inner"),
                 script_path: None,
@@ -26746,6 +27587,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0f94b443-6731-41cb-9268-c2757858a96e"),
+            local_id: uuid!("0f94b443-6731-41cb-9268-c2757858a96e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_270"),
             script_path: None,
@@ -26789,6 +27631,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a515067d-6232-401a-afc9-21cb9d1b2700"),
+                local_id: uuid!("a515067d-6232-401a-afc9-21cb9d1b2700"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_242_inner"),
                 script_path: None,
@@ -26809,6 +27652,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3e67b026-d7d8-4b37-9f35-92fa8c9dbb6f"), SceneNode::Node(
     Node {
         id: uuid!("3e67b026-d7d8-4b37-9f35-92fa8c9dbb6f"),
+        local_id: uuid!("3e67b026-d7d8-4b37-9f35-92fa8c9dbb6f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_285"),
         script_path: None,
@@ -26844,6 +27688,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1f9c2eaf-4a3e-447a-bdeb-e17347464eea"),
+            local_id: uuid!("1f9c2eaf-4a3e-447a-bdeb-e17347464eea"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_271"),
             script_path: None,
@@ -26880,6 +27725,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("51411a2a-c80c-476d-be6c-b2e3f63a399a"),
+            local_id: uuid!("51411a2a-c80c-476d-be6c-b2e3f63a399a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_272"),
             script_path: None,
@@ -26897,6 +27743,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("009ab20c-56f8-4c09-b887-27c407341ff2"), SceneNode::Node(
     Node {
         id: uuid!("009ab20c-56f8-4c09-b887-27c407341ff2"),
+        local_id: uuid!("009ab20c-56f8-4c09-b887-27c407341ff2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_286"),
         script_path: None,
@@ -26932,6 +27779,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("08a8da2c-8a23-4323-9dcc-f1de2727b3b3"),
+            local_id: uuid!("08a8da2c-8a23-4323-9dcc-f1de2727b3b3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_273"),
             script_path: None,
@@ -26968,6 +27816,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("934c8a62-8f89-4bdc-b757-80ecd0168b30"),
+            local_id: uuid!("934c8a62-8f89-4bdc-b757-80ecd0168b30"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_274"),
             script_path: None,
@@ -27008,6 +27857,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("92579ca8-bb36-48b7-9950-0a0c7394dbfc"),
+                local_id: uuid!("92579ca8-bb36-48b7-9950-0a0c7394dbfc"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_243_inner"),
                 script_path: None,
@@ -27049,6 +27899,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("56e6dc52-cf9b-4767-bbfb-01f5ae9a23fe"),
+                local_id: uuid!("56e6dc52-cf9b-4767-bbfb-01f5ae9a23fe"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_244_inner"),
                 script_path: None,
@@ -27090,6 +27941,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f9dd09a5-1e55-40a5-bed6-914f6bdba913"),
+                local_id: uuid!("f9dd09a5-1e55-40a5-bed6-914f6bdba913"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_245_inner"),
                 script_path: None,
@@ -27127,6 +27979,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d6dd86fc-db79-4bfb-ab5d-80e6ac8862d0"),
+            local_id: uuid!("d6dd86fc-db79-4bfb-ab5d-80e6ac8862d0"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_275"),
             script_path: None,
@@ -27153,6 +28006,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("23d00441-799c-4ad0-99ee-8b12fa0283c1"),
+            local_id: uuid!("23d00441-799c-4ad0-99ee-8b12fa0283c1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_48"),
             script_path: None,
@@ -27193,6 +28047,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2e691e4d-b05c-4538-a47f-20a50e5965e2"),
+                local_id: uuid!("2e691e4d-b05c-4538-a47f-20a50e5965e2"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_246_inner"),
                 script_path: None,
@@ -27230,6 +28085,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("d9219719-1e3f-4f5e-965f-2ef0da858b7e"),
+            local_id: uuid!("d9219719-1e3f-4f5e-965f-2ef0da858b7e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_276"),
             script_path: None,
@@ -27266,6 +28122,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c722228d-31cc-426b-adad-222a96236ebd"),
+            local_id: uuid!("c722228d-31cc-426b-adad-222a96236ebd"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_277"),
             script_path: None,
@@ -27285,6 +28142,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7d18f360-fcaf-4768-afcb-0033db87d238"), SceneNode::Node(
     Node {
         id: uuid!("7d18f360-fcaf-4768-afcb-0033db87d238"),
+        local_id: uuid!("7d18f360-fcaf-4768-afcb-0033db87d238"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_287"),
         script_path: None,
@@ -27324,6 +28182,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("250a60a9-e710-4b8d-8127-bb8956531b11"),
+                local_id: uuid!("250a60a9-e710-4b8d-8127-bb8956531b11"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_247_inner"),
                 script_path: None,
@@ -27365,6 +28224,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e3858e69-6cd4-466b-98aa-ad23398f162a"),
+                local_id: uuid!("e3858e69-6cd4-466b-98aa-ad23398f162a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_248_inner"),
                 script_path: None,
@@ -27383,6 +28243,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("63975404-fd6f-4e52-b4da-dd1aec84ea32"), SceneNode::Node(
     Node {
         id: uuid!("63975404-fd6f-4e52-b4da-dd1aec84ea32"),
+        local_id: uuid!("63975404-fd6f-4e52-b4da-dd1aec84ea32"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_288"),
         script_path: None,
@@ -27406,6 +28267,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8ccbb420-2074-4a90-b9fa-70e57f12598e"),
+            local_id: uuid!("8ccbb420-2074-4a90-b9fa-70e57f12598e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_49"),
             script_path: None,
@@ -27446,6 +28308,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2571f2b5-49c4-49eb-8348-b0998df83198"),
+                local_id: uuid!("2571f2b5-49c4-49eb-8348-b0998df83198"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_249_inner"),
                 script_path: None,
@@ -27464,6 +28327,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e4e7a1e4-fd7f-4e32-8850-6eb15fbf1c8c"), SceneNode::Node(
     Node {
         id: uuid!("e4e7a1e4-fd7f-4e32-8850-6eb15fbf1c8c"),
+        local_id: uuid!("e4e7a1e4-fd7f-4e32-8850-6eb15fbf1c8c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_289"),
         script_path: None,
@@ -27503,6 +28367,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("868469ae-01be-4873-b6fa-2f0889cdbe73"),
+                local_id: uuid!("868469ae-01be-4873-b6fa-2f0889cdbe73"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_250_inner"),
                 script_path: None,
@@ -27540,6 +28405,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("0041d495-0023-461d-bc2d-2f56e02bb320"),
+            local_id: uuid!("0041d495-0023-461d-bc2d-2f56e02bb320"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_278"),
             script_path: None,
@@ -27580,6 +28446,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6143a117-3671-4b4b-a5a6-53b66e885385"),
+                local_id: uuid!("6143a117-3671-4b4b-a5a6-53b66e885385"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_251_inner"),
                 script_path: None,
@@ -27598,6 +28465,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("aae19b3b-e6d5-49f6-ba7c-8a2e89f72f04"), SceneNode::Node(
     Node {
         id: uuid!("aae19b3b-e6d5-49f6-ba7c-8a2e89f72f04"),
+        local_id: uuid!("aae19b3b-e6d5-49f6-ba7c-8a2e89f72f04"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_290"),
         script_path: None,
@@ -27633,6 +28501,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f27a9473-1229-4ac7-a9d3-1b8386daa2ab"),
+            local_id: uuid!("f27a9473-1229-4ac7-a9d3-1b8386daa2ab"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_279"),
             script_path: None,
@@ -27673,6 +28542,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c303602f-9791-4a63-888f-73d8514c5989"),
+                local_id: uuid!("c303602f-9791-4a63-888f-73d8514c5989"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_252_inner"),
                 script_path: None,
@@ -27712,6 +28582,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("07f51cf9-4d85-4b0f-be68-454053c5b7a4"),
+            local_id: uuid!("07f51cf9-4d85-4b0f-be68-454053c5b7a4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_280"),
             script_path: None,
@@ -27752,6 +28623,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("80c37fde-7e34-4d38-a228-35ede39adca7"),
+                local_id: uuid!("80c37fde-7e34-4d38-a228-35ede39adca7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_253_inner"),
                 script_path: None,
@@ -27770,6 +28642,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("310db598-11e3-4934-893f-43757cfa8c1e"), SceneNode::Node(
     Node {
         id: uuid!("310db598-11e3-4934-893f-43757cfa8c1e"),
+        local_id: uuid!("310db598-11e3-4934-893f-43757cfa8c1e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_291"),
         script_path: None,
@@ -27809,6 +28682,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("65a804d9-3b4c-4aeb-9900-86706bea9eb7"),
+                local_id: uuid!("65a804d9-3b4c-4aeb-9900-86706bea9eb7"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_254_inner"),
                 script_path: None,
@@ -27846,6 +28720,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("dc939caf-4bbe-4717-babb-c62f437c5fad"),
+            local_id: uuid!("dc939caf-4bbe-4717-babb-c62f437c5fad"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_281"),
             script_path: None,
@@ -27872,6 +28747,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("ea655670-46a3-492c-9e97-98af31b9c59b"),
+            local_id: uuid!("ea655670-46a3-492c-9e97-98af31b9c59b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_50"),
             script_path: None,
@@ -27889,6 +28765,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0c1bfb44-100d-4d9a-bf84-97505a115d53"), SceneNode::Node(
     Node {
         id: uuid!("0c1bfb44-100d-4d9a-bf84-97505a115d53"),
+        local_id: uuid!("0c1bfb44-100d-4d9a-bf84-97505a115d53"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_292"),
         script_path: None,
@@ -27928,6 +28805,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("a407e698-ca1b-4994-8a88-7ebfe4c7900f"),
+                local_id: uuid!("a407e698-ca1b-4994-8a88-7ebfe4c7900f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_255_inner"),
                 script_path: None,
@@ -27965,6 +28843,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("10058db9-60ca-4a29-bfac-971edf92c7da"),
+            local_id: uuid!("10058db9-60ca-4a29-bfac-971edf92c7da"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_282"),
             script_path: None,
@@ -27982,6 +28861,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a33e1aeb-966e-42cd-981f-2f05679a718f"), SceneNode::Node(
     Node {
         id: uuid!("a33e1aeb-966e-42cd-981f-2f05679a718f"),
+        local_id: uuid!("a33e1aeb-966e-42cd-981f-2f05679a718f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_293"),
         script_path: None,
@@ -27998,6 +28878,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("438d5b5e-caf3-40a5-8c1b-d934f19e0fbb"), SceneNode::Node(
     Node {
         id: uuid!("438d5b5e-caf3-40a5-8c1b-d934f19e0fbb"),
+        local_id: uuid!("438d5b5e-caf3-40a5-8c1b-d934f19e0fbb"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_294"),
         script_path: None,
@@ -28014,6 +28895,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("07a5b4ee-57f4-4de4-afe4-18af68fcfb2b"), SceneNode::Node(
     Node {
         id: uuid!("07a5b4ee-57f4-4de4-afe4-18af68fcfb2b"),
+        local_id: uuid!("07a5b4ee-57f4-4de4-afe4-18af68fcfb2b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_295"),
         script_path: None,
@@ -28049,6 +28931,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("9e49656c-eee9-4cd5-ad3f-49c1c094a36f"),
+            local_id: uuid!("9e49656c-eee9-4cd5-ad3f-49c1c094a36f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_283"),
             script_path: None,
@@ -28066,6 +28949,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("137a5f03-3e42-478d-9918-f946c27fe838"), SceneNode::Node(
     Node {
         id: uuid!("137a5f03-3e42-478d-9918-f946c27fe838"),
+        local_id: uuid!("137a5f03-3e42-478d-9918-f946c27fe838"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_296"),
         script_path: None,
@@ -28082,6 +28966,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e0e506d6-5b34-49cd-bd41-7087e9f6a7cd"), SceneNode::Node(
     Node {
         id: uuid!("e0e506d6-5b34-49cd-bd41-7087e9f6a7cd"),
+        local_id: uuid!("e0e506d6-5b34-49cd-bd41-7087e9f6a7cd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_297"),
         script_path: None,
@@ -28121,6 +29006,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c2d887f2-d8d4-480e-97d9-0374089f7166"),
+                local_id: uuid!("c2d887f2-d8d4-480e-97d9-0374089f7166"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_256_inner"),
                 script_path: None,
@@ -28139,6 +29025,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("45a6b180-13e0-4974-8ce7-9f5a4effea4b"), SceneNode::Node(
     Node {
         id: uuid!("45a6b180-13e0-4974-8ce7-9f5a4effea4b"),
+        local_id: uuid!("45a6b180-13e0-4974-8ce7-9f5a4effea4b"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_298"),
         script_path: None,
@@ -28178,6 +29065,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("eec92fdf-586c-4cd8-9dc2-858998067ff1"),
+                local_id: uuid!("eec92fdf-586c-4cd8-9dc2-858998067ff1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_257_inner"),
                 script_path: None,
@@ -28196,6 +29084,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8cef5afe-7c61-48e1-8911-027fea729433"), SceneNode::Node(
     Node {
         id: uuid!("8cef5afe-7c61-48e1-8911-027fea729433"),
+        local_id: uuid!("8cef5afe-7c61-48e1-8911-027fea729433"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_299"),
         script_path: None,
@@ -28215,6 +29104,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cc48c9df-fef4-446f-be24-891ce9c56607"), SceneNode::Node(
     Node {
         id: uuid!("cc48c9df-fef4-446f-be24-891ce9c56607"),
+        local_id: uuid!("cc48c9df-fef4-446f-be24-891ce9c56607"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_300"),
         script_path: None,
@@ -28250,6 +29140,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("03cf0b7e-b758-4213-8cdf-fe00d591effd"),
+            local_id: uuid!("03cf0b7e-b758-4213-8cdf-fe00d591effd"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_284"),
             script_path: None,
@@ -28290,6 +29181,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d248a96f-7c90-4cd2-85a0-17545c335a6a"),
+                local_id: uuid!("d248a96f-7c90-4cd2-85a0-17545c335a6a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_258_inner"),
                 script_path: None,
@@ -28327,6 +29219,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("808aa42d-e6a5-4cb2-8df4-5075866e659a"),
+            local_id: uuid!("808aa42d-e6a5-4cb2-8df4-5075866e659a"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_285"),
             script_path: None,
@@ -28344,6 +29237,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c723536f-2927-48c5-9e10-50c38d1bfff1"), SceneNode::Node(
     Node {
         id: uuid!("c723536f-2927-48c5-9e10-50c38d1bfff1"),
+        local_id: uuid!("c723536f-2927-48c5-9e10-50c38d1bfff1"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_301"),
         script_path: None,
@@ -28360,6 +29254,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e4dae043-85e3-42f0-9b61-493348ded7bf"), SceneNode::Node(
     Node {
         id: uuid!("e4dae043-85e3-42f0-9b61-493348ded7bf"),
+        local_id: uuid!("e4dae043-85e3-42f0-9b61-493348ded7bf"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_302"),
         script_path: None,
@@ -28399,6 +29294,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("166b1ffc-681d-434f-856e-c51015a1460b"),
+                local_id: uuid!("166b1ffc-681d-434f-856e-c51015a1460b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_259_inner"),
                 script_path: None,
@@ -28436,6 +29332,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2dff2bb5-e0bf-45be-a3d8-7584c0e1ee2b"),
+            local_id: uuid!("2dff2bb5-e0bf-45be-a3d8-7584c0e1ee2b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_286"),
             script_path: None,
@@ -28472,6 +29369,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e6fc51df-b7e2-4342-b42b-55c39f0d2ce8"),
+            local_id: uuid!("e6fc51df-b7e2-4342-b42b-55c39f0d2ce8"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_287"),
             script_path: None,
@@ -28508,6 +29406,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("51941c0b-1d21-4448-9937-3695fd1b457b"),
+            local_id: uuid!("51941c0b-1d21-4448-9937-3695fd1b457b"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_288"),
             script_path: None,
@@ -28544,6 +29443,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1cdb9451-9644-4dce-8ea4-662d65327f2f"),
+            local_id: uuid!("1cdb9451-9644-4dce-8ea4-662d65327f2f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_289"),
             script_path: None,
@@ -28568,6 +29468,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("36c8d378-2206-4a4c-a473-af86b143d27d"),
+            local_id: uuid!("36c8d378-2206-4a4c-a473-af86b143d27d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_51"),
             script_path: None,
@@ -28585,6 +29486,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fd720018-a5ea-49e4-8dbf-efa75fe58d79"), SceneNode::Node(
     Node {
         id: uuid!("fd720018-a5ea-49e4-8dbf-efa75fe58d79"),
+        local_id: uuid!("fd720018-a5ea-49e4-8dbf-efa75fe58d79"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_303"),
         script_path: None,
@@ -28601,6 +29503,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a5e4646b-094e-448c-ac15-3b68a11b70ca"), SceneNode::Node(
     Node {
         id: uuid!("a5e4646b-094e-448c-ac15-3b68a11b70ca"),
+        local_id: uuid!("a5e4646b-094e-448c-ac15-3b68a11b70ca"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_304"),
         script_path: None,
@@ -28617,6 +29520,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("dfd7a953-449d-4ec5-a108-b4c155053559"), SceneNode::Node(
     Node {
         id: uuid!("dfd7a953-449d-4ec5-a108-b4c155053559"),
+        local_id: uuid!("dfd7a953-449d-4ec5-a108-b4c155053559"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_305"),
         script_path: None,
@@ -28656,6 +29560,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("973e17fa-f39d-45cf-ae92-300cfdfac2a2"),
+                local_id: uuid!("973e17fa-f39d-45cf-ae92-300cfdfac2a2"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_260_inner"),
                 script_path: None,
@@ -28693,6 +29598,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("927bea4e-59b0-4431-9040-5e1f14bacf58"),
+            local_id: uuid!("927bea4e-59b0-4431-9040-5e1f14bacf58"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_290"),
             script_path: None,
@@ -28710,6 +29616,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("7313fbd6-9694-48a8-9bb0-b483f814140d"), SceneNode::Node(
     Node {
         id: uuid!("7313fbd6-9694-48a8-9bb0-b483f814140d"),
+        local_id: uuid!("7313fbd6-9694-48a8-9bb0-b483f814140d"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_306"),
         script_path: None,
@@ -28749,6 +29656,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ea8c73d7-dfdd-48df-a7cd-4d90bfcbf37c"),
+                local_id: uuid!("ea8c73d7-dfdd-48df-a7cd-4d90bfcbf37c"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_261_inner"),
                 script_path: None,
@@ -28790,6 +29698,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("169b8af6-1eba-4e52-ab7e-2cf33b2030f8"),
+                local_id: uuid!("169b8af6-1eba-4e52-ab7e-2cf33b2030f8"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_262_inner"),
                 script_path: None,
@@ -28831,6 +29740,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("45072522-6ca1-4b38-a7d8-e4b8a7672ad1"),
+                local_id: uuid!("45072522-6ca1-4b38-a7d8-e4b8a7672ad1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_263_inner"),
                 script_path: None,
@@ -28868,6 +29778,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("35af4492-7ac6-447c-ac1c-132ba09906de"),
+            local_id: uuid!("35af4492-7ac6-447c-ac1c-132ba09906de"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_291"),
             script_path: None,
@@ -28885,6 +29796,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2ba97ee3-1c1f-4dbe-b623-30ffe88feca4"), SceneNode::Node(
     Node {
         id: uuid!("2ba97ee3-1c1f-4dbe-b623-30ffe88feca4"),
+        local_id: uuid!("2ba97ee3-1c1f-4dbe-b623-30ffe88feca4"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_307"),
         script_path: None,
@@ -28901,6 +29813,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0e5ae79e-ffb9-47e4-924d-3be12f0f330e"), SceneNode::Node(
     Node {
         id: uuid!("0e5ae79e-ffb9-47e4-924d-3be12f0f330e"),
+        local_id: uuid!("0e5ae79e-ffb9-47e4-924d-3be12f0f330e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_308"),
         script_path: None,
@@ -28936,6 +29849,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("55f03208-fc6e-4c4c-82a6-2c49722e56b3"),
+            local_id: uuid!("55f03208-fc6e-4c4c-82a6-2c49722e56b3"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_292"),
             script_path: None,
@@ -28953,6 +29867,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("11a0dac3-1576-4f20-a444-6b81a30eb6af"), SceneNode::Node(
     Node {
         id: uuid!("11a0dac3-1576-4f20-a444-6b81a30eb6af"),
+        local_id: uuid!("11a0dac3-1576-4f20-a444-6b81a30eb6af"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_309"),
         script_path: None,
@@ -28988,6 +29903,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("cfdc740e-9fd3-4b21-947e-3b1c109eaf5d"),
+            local_id: uuid!("cfdc740e-9fd3-4b21-947e-3b1c109eaf5d"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_293"),
             script_path: None,
@@ -29028,6 +29944,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("2eeb298a-6dc5-48e1-bd65-53a8d451e7fb"),
+                local_id: uuid!("2eeb298a-6dc5-48e1-bd65-53a8d451e7fb"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_264_inner"),
                 script_path: None,
@@ -29065,6 +29982,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6db68336-24cc-48e2-ab26-6fca92f94cdd"),
+            local_id: uuid!("6db68336-24cc-48e2-ab26-6fca92f94cdd"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_294"),
             script_path: None,
@@ -29101,6 +30019,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("6b80efaa-7df3-4539-a29e-2ca31c31609c"),
+            local_id: uuid!("6b80efaa-7df3-4539-a29e-2ca31c31609c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_295"),
             script_path: None,
@@ -29141,6 +30060,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c79e0e52-ca61-4a78-ab7a-d5a4f9344217"),
+                local_id: uuid!("c79e0e52-ca61-4a78-ab7a-d5a4f9344217"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_265_inner"),
                 script_path: None,
@@ -29178,6 +30098,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("12f4c719-94f4-4236-9b3a-da9cbb91dcf6"),
+            local_id: uuid!("12f4c719-94f4-4236-9b3a-da9cbb91dcf6"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_296"),
             script_path: None,
@@ -29214,6 +30135,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("aca9362f-ce96-4eab-bbdc-d5682a424ebc"),
+            local_id: uuid!("aca9362f-ce96-4eab-bbdc-d5682a424ebc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_297"),
             script_path: None,
@@ -29231,6 +30153,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2ecbe006-e91f-4f42-b416-7dff20727dc3"), SceneNode::Node(
     Node {
         id: uuid!("2ecbe006-e91f-4f42-b416-7dff20727dc3"),
+        local_id: uuid!("2ecbe006-e91f-4f42-b416-7dff20727dc3"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_310"),
         script_path: None,
@@ -29266,6 +30189,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("78414247-9b8f-4d7f-a798-9103c2b3d6f5"),
+            local_id: uuid!("78414247-9b8f-4d7f-a798-9103c2b3d6f5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_298"),
             script_path: None,
@@ -29283,6 +30207,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("31a40698-2fd3-4ff8-8d27-150eafeed131"), SceneNode::Node(
     Node {
         id: uuid!("31a40698-2fd3-4ff8-8d27-150eafeed131"),
+        local_id: uuid!("31a40698-2fd3-4ff8-8d27-150eafeed131"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_311"),
         script_path: None,
@@ -29322,6 +30247,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("5a30a06d-8710-484b-8aa8-88ccb8e2af02"),
+                local_id: uuid!("5a30a06d-8710-484b-8aa8-88ccb8e2af02"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_266_inner"),
                 script_path: None,
@@ -29363,6 +30289,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ff460edd-73d7-4f66-9cd6-69937f3fd48a"),
+                local_id: uuid!("ff460edd-73d7-4f66-9cd6-69937f3fd48a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_267_inner"),
                 script_path: None,
@@ -29388,6 +30315,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("fdfe4a94-b344-4678-9dfb-5a9fbf4768f7"),
+            local_id: uuid!("fdfe4a94-b344-4678-9dfb-5a9fbf4768f7"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_52"),
             script_path: None,
@@ -29428,6 +30356,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b2f7c531-fd52-4c7e-9569-1a033a25fc6f"),
+                local_id: uuid!("b2f7c531-fd52-4c7e-9569-1a033a25fc6f"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_268_inner"),
                 script_path: None,
@@ -29465,6 +30394,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("87f60056-7cf2-4d43-9721-d8def880da9c"),
+            local_id: uuid!("87f60056-7cf2-4d43-9721-d8def880da9c"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_299"),
             script_path: None,
@@ -29482,6 +30412,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c2eb0fe9-8b5a-4d6e-ad9a-ab8eefe033fd"), SceneNode::Node(
     Node {
         id: uuid!("c2eb0fe9-8b5a-4d6e-ad9a-ab8eefe033fd"),
+        local_id: uuid!("c2eb0fe9-8b5a-4d6e-ad9a-ab8eefe033fd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_312"),
         script_path: None,
@@ -29517,6 +30448,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b0460141-abcc-4581-8adc-26cef20c5244"),
+            local_id: uuid!("b0460141-abcc-4581-8adc-26cef20c5244"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_300"),
             script_path: None,
@@ -29553,6 +30485,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8f991c78-29c2-4227-8912-b00c7d4fb1fa"),
+            local_id: uuid!("8f991c78-29c2-4227-8912-b00c7d4fb1fa"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_301"),
             script_path: None,
@@ -29570,6 +30503,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("381ba06c-3020-4f05-8443-df9fca608a95"), SceneNode::Node(
     Node {
         id: uuid!("381ba06c-3020-4f05-8443-df9fca608a95"),
+        local_id: uuid!("381ba06c-3020-4f05-8443-df9fca608a95"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_313"),
         script_path: None,
@@ -29609,6 +30543,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f6c50d3d-6778-4284-b37e-bf63a49dd1d1"),
+                local_id: uuid!("f6c50d3d-6778-4284-b37e-bf63a49dd1d1"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_269_inner"),
                 script_path: None,
@@ -29646,6 +30581,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("05fc3800-afda-468e-a862-d63e6e71c6d5"),
+            local_id: uuid!("05fc3800-afda-468e-a862-d63e6e71c6d5"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_302"),
             script_path: None,
@@ -29663,6 +30599,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b47cbe06-35a0-445e-9a63-f69c8973ba7e"), SceneNode::Node(
     Node {
         id: uuid!("b47cbe06-35a0-445e-9a63-f69c8973ba7e"),
+        local_id: uuid!("b47cbe06-35a0-445e-9a63-f69c8973ba7e"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_314"),
         script_path: None,
@@ -29679,6 +30616,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b33b55c1-19eb-459c-9575-2768aa24ff92"), SceneNode::Node(
     Node {
         id: uuid!("b33b55c1-19eb-459c-9575-2768aa24ff92"),
+        local_id: uuid!("b33b55c1-19eb-459c-9575-2768aa24ff92"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_315"),
         script_path: None,
@@ -29718,6 +30656,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("55fe6207-bf90-4f39-9d19-393402ca980a"),
+                local_id: uuid!("55fe6207-bf90-4f39-9d19-393402ca980a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_270_inner"),
                 script_path: None,
@@ -29759,6 +30698,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("658a79a1-bc34-4418-8af2-09a4285600df"),
+                local_id: uuid!("658a79a1-bc34-4418-8af2-09a4285600df"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_271_inner"),
                 script_path: None,
@@ -29777,6 +30717,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("fefbbef9-0a93-4c63-992a-c76f9bbc68b1"), SceneNode::Node(
     Node {
         id: uuid!("fefbbef9-0a93-4c63-992a-c76f9bbc68b1"),
+        local_id: uuid!("fefbbef9-0a93-4c63-992a-c76f9bbc68b1"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_316"),
         script_path: None,
@@ -29812,6 +30753,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("8df6c266-01c6-43f9-a6f3-579928708e52"),
+            local_id: uuid!("8df6c266-01c6-43f9-a6f3-579928708e52"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_303"),
             script_path: None,
@@ -29829,6 +30771,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("264a0f60-f6ea-4bdd-a608-cdd8f74a7cce"), SceneNode::Node(
     Node {
         id: uuid!("264a0f60-f6ea-4bdd-a608-cdd8f74a7cce"),
+        local_id: uuid!("264a0f60-f6ea-4bdd-a608-cdd8f74a7cce"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_317"),
         script_path: None,
@@ -29864,6 +30807,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b03056cd-80bb-4069-ae7b-4567544512f1"),
+            local_id: uuid!("b03056cd-80bb-4069-ae7b-4567544512f1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_304"),
             script_path: None,
@@ -29883,6 +30827,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("2b369073-785e-40ec-845b-10be43df2a87"), SceneNode::Node(
     Node {
         id: uuid!("2b369073-785e-40ec-845b-10be43df2a87"),
+        local_id: uuid!("2b369073-785e-40ec-845b-10be43df2a87"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_318"),
         script_path: None,
@@ -29918,6 +30863,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("db3c6f9b-7eac-4294-bd6f-232f052e1a2e"),
+            local_id: uuid!("db3c6f9b-7eac-4294-bd6f-232f052e1a2e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_305"),
             script_path: None,
@@ -29954,6 +30900,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("e35a98f4-f8bf-421c-a252-e6d975ee44ae"),
+            local_id: uuid!("e35a98f4-f8bf-421c-a252-e6d975ee44ae"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_306"),
             script_path: None,
@@ -29971,6 +30918,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("cf54c35f-772f-414b-a287-b10ee1865b36"), SceneNode::Node(
     Node {
         id: uuid!("cf54c35f-772f-414b-a287-b10ee1865b36"),
+        local_id: uuid!("cf54c35f-772f-414b-a287-b10ee1865b36"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_319"),
         script_path: None,
@@ -30006,6 +30954,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("bc49f316-12e1-491e-8c96-6d6edd3d6c67"),
+            local_id: uuid!("bc49f316-12e1-491e-8c96-6d6edd3d6c67"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_307"),
             script_path: None,
@@ -30023,6 +30972,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e59bf977-1b64-4960-a86b-f7027094bed5"), SceneNode::Node(
     Node {
         id: uuid!("e59bf977-1b64-4960-a86b-f7027094bed5"),
+        local_id: uuid!("e59bf977-1b64-4960-a86b-f7027094bed5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_320"),
         script_path: None,
@@ -30058,6 +31008,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("318aec4d-61c2-40f9-8866-355ca5b70d92"),
+            local_id: uuid!("318aec4d-61c2-40f9-8866-355ca5b70d92"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_308"),
             script_path: None,
@@ -30075,6 +31026,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("277d0a00-8276-4a94-a3f9-3204b2a66c10"), SceneNode::Node(
     Node {
         id: uuid!("277d0a00-8276-4a94-a3f9-3204b2a66c10"),
+        local_id: uuid!("277d0a00-8276-4a94-a3f9-3204b2a66c10"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_321"),
         script_path: None,
@@ -30091,6 +31043,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("57cb06c4-677e-462d-9c31-792162e89666"), SceneNode::Node(
     Node {
         id: uuid!("57cb06c4-677e-462d-9c31-792162e89666"),
+        local_id: uuid!("57cb06c4-677e-462d-9c31-792162e89666"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_322"),
         script_path: None,
@@ -30107,6 +31060,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("8ce80029-2bce-420e-bb9c-023de4309421"), SceneNode::Node(
     Node {
         id: uuid!("8ce80029-2bce-420e-bb9c-023de4309421"),
+        local_id: uuid!("8ce80029-2bce-420e-bb9c-023de4309421"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_323"),
         script_path: None,
@@ -30146,6 +31100,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("d90cbdc7-faa0-423d-9f7b-90829936d696"),
+                local_id: uuid!("d90cbdc7-faa0-423d-9f7b-90829936d696"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_272_inner"),
                 script_path: None,
@@ -30183,6 +31138,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("5f2eff3b-02af-404a-a079-fe2954fd4ade"),
+            local_id: uuid!("5f2eff3b-02af-404a-a079-fe2954fd4ade"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_309"),
             script_path: None,
@@ -30223,6 +31179,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9ee7f264-3cc7-4fb4-b187-43c88b6b9e6e"),
+                local_id: uuid!("9ee7f264-3cc7-4fb4-b187-43c88b6b9e6e"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_273_inner"),
                 script_path: None,
@@ -30241,6 +31198,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("68eecec4-0451-41b7-8464-24d0ceda0303"), SceneNode::Node(
     Node {
         id: uuid!("68eecec4-0451-41b7-8464-24d0ceda0303"),
+        local_id: uuid!("68eecec4-0451-41b7-8464-24d0ceda0303"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_324"),
         script_path: None,
@@ -30280,6 +31238,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("6235d9a0-f7fa-4c25-9a24-9409b7fe34cf"),
+                local_id: uuid!("6235d9a0-f7fa-4c25-9a24-9409b7fe34cf"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_274_inner"),
                 script_path: None,
@@ -30317,6 +31276,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("392fe185-437e-4600-8642-6849d79bd224"),
+            local_id: uuid!("392fe185-437e-4600-8642-6849d79bd224"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_310"),
             script_path: None,
@@ -30353,6 +31313,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("78a8a338-080c-4d97-ae71-8937cb205214"),
+            local_id: uuid!("78a8a338-080c-4d97-ae71-8937cb205214"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_311"),
             script_path: None,
@@ -30370,6 +31331,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a997063f-4d2c-4ff1-91b5-8da18f76c94c"), SceneNode::Node(
     Node {
         id: uuid!("a997063f-4d2c-4ff1-91b5-8da18f76c94c"),
+        local_id: uuid!("a997063f-4d2c-4ff1-91b5-8da18f76c94c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_325"),
         script_path: None,
@@ -30409,6 +31371,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("f7934b54-c548-4bb8-af4e-f495ef4cd248"),
+                local_id: uuid!("f7934b54-c548-4bb8-af4e-f495ef4cd248"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_275_inner"),
                 script_path: None,
@@ -30427,6 +31390,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("a541dd4d-8788-47fa-bcbe-c022bf2cd08f"), SceneNode::Node(
     Node {
         id: uuid!("a541dd4d-8788-47fa-bcbe-c022bf2cd08f"),
+        local_id: uuid!("a541dd4d-8788-47fa-bcbe-c022bf2cd08f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_326"),
         script_path: None,
@@ -30462,6 +31426,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f2da51cd-41a5-40aa-904c-e977ea397507"),
+            local_id: uuid!("f2da51cd-41a5-40aa-904c-e977ea397507"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_312"),
             script_path: None,
@@ -30486,6 +31451,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2a1c33e8-fb85-48e0-8df9-f523374eb6f2"),
+            local_id: uuid!("2a1c33e8-fb85-48e0-8df9-f523374eb6f2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_53"),
             script_path: None,
@@ -30503,6 +31469,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e71b6061-1b31-4d19-8f25-ef32a4ee55ad"), SceneNode::Node(
     Node {
         id: uuid!("e71b6061-1b31-4d19-8f25-ef32a4ee55ad"),
+        local_id: uuid!("e71b6061-1b31-4d19-8f25-ef32a4ee55ad"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_327"),
         script_path: None,
@@ -30526,6 +31493,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c4b6526d-a432-4106-bd03-ceb1d67a8ce1"),
+            local_id: uuid!("c4b6526d-a432-4106-bd03-ceb1d67a8ce1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_54"),
             script_path: None,
@@ -30543,6 +31511,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("49d9f271-abc6-4cb8-ae61-be5e2d1493eb"), SceneNode::Node(
     Node {
         id: uuid!("49d9f271-abc6-4cb8-ae61-be5e2d1493eb"),
+        local_id: uuid!("49d9f271-abc6-4cb8-ae61-be5e2d1493eb"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_328"),
         script_path: None,
@@ -30559,6 +31528,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("c7f1bddd-7942-4e97-8230-2573ccf6f974"), SceneNode::Node(
     Node {
         id: uuid!("c7f1bddd-7942-4e97-8230-2573ccf6f974"),
+        local_id: uuid!("c7f1bddd-7942-4e97-8230-2573ccf6f974"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_329"),
         script_path: None,
@@ -30575,6 +31545,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("3ba0b37e-cc83-48cb-bfa8-1c24467cbdfd"), SceneNode::Node(
     Node {
         id: uuid!("3ba0b37e-cc83-48cb-bfa8-1c24467cbdfd"),
+        local_id: uuid!("3ba0b37e-cc83-48cb-bfa8-1c24467cbdfd"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_330"),
         script_path: None,
@@ -30614,6 +31585,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("b312e7b2-d7d3-4e2c-8363-50b7702cb7b4"),
+                local_id: uuid!("b312e7b2-d7d3-4e2c-8363-50b7702cb7b4"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_276_inner"),
                 script_path: None,
@@ -30632,6 +31604,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("6e7f5209-2baa-4c7f-b318-530ae1945350"), SceneNode::Node(
     Node {
         id: uuid!("6e7f5209-2baa-4c7f-b318-530ae1945350"),
+        local_id: uuid!("6e7f5209-2baa-4c7f-b318-530ae1945350"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_331"),
         script_path: None,
@@ -30648,6 +31621,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("135f2fcc-996e-4724-991f-6fd0548f725a"), SceneNode::Node(
     Node {
         id: uuid!("135f2fcc-996e-4724-991f-6fd0548f725a"),
+        local_id: uuid!("135f2fcc-996e-4724-991f-6fd0548f725a"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_332"),
         script_path: None,
@@ -30683,6 +31657,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("2ee90bca-bc83-4754-8249-df3e1966fad2"),
+            local_id: uuid!("2ee90bca-bc83-4754-8249-df3e1966fad2"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_313"),
             script_path: None,
@@ -30700,6 +31675,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("ae42119b-946a-43ae-8eac-5b58314e0924"), SceneNode::Node(
     Node {
         id: uuid!("ae42119b-946a-43ae-8eac-5b58314e0924"),
+        local_id: uuid!("ae42119b-946a-43ae-8eac-5b58314e0924"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_333"),
         script_path: None,
@@ -30739,6 +31715,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e77bfe15-7119-46a7-848e-608ff1045a4a"),
+                local_id: uuid!("e77bfe15-7119-46a7-848e-608ff1045a4a"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_277_inner"),
                 script_path: None,
@@ -30757,6 +31734,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("e5700f80-3d35-46df-8c2d-30be8ec34750"), SceneNode::Node(
     Node {
         id: uuid!("e5700f80-3d35-46df-8c2d-30be8ec34750"),
+        local_id: uuid!("e5700f80-3d35-46df-8c2d-30be8ec34750"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_334"),
         script_path: None,
@@ -30773,6 +31751,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("11f4b567-e529-4f18-b416-bb5464a36330"), SceneNode::Node(
     Node {
         id: uuid!("11f4b567-e529-4f18-b416-bb5464a36330"),
+        local_id: uuid!("11f4b567-e529-4f18-b416-bb5464a36330"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_335"),
         script_path: None,
@@ -30812,6 +31791,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("e673249c-5101-4218-a2e3-9c890ba807a5"),
+                local_id: uuid!("e673249c-5101-4218-a2e3-9c890ba807a5"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_278_inner"),
                 script_path: None,
@@ -30849,6 +31829,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("113e6883-26da-4931-a2af-9493ecca4e15"),
+            local_id: uuid!("113e6883-26da-4931-a2af-9493ecca4e15"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_314"),
             script_path: None,
@@ -30885,6 +31866,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("db29a679-89f1-4c24-81c7-82e6da781cef"),
+            local_id: uuid!("db29a679-89f1-4c24-81c7-82e6da781cef"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_315"),
             script_path: None,
@@ -30921,6 +31903,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f3b8ea72-b710-4049-b7f4-a41ee3fd71e1"),
+            local_id: uuid!("f3b8ea72-b710-4049-b7f4-a41ee3fd71e1"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_316"),
             script_path: None,
@@ -30957,6 +31940,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("af82a4cc-bbf3-4867-9eb4-ebc8072b19bc"),
+            local_id: uuid!("af82a4cc-bbf3-4867-9eb4-ebc8072b19bc"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_317"),
             script_path: None,
@@ -30993,6 +31977,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("f3de2c74-84f9-4b77-8a8f-fbae38db9e36"),
+            local_id: uuid!("f3de2c74-84f9-4b77-8a8f-fbae38db9e36"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_318"),
             script_path: None,
@@ -31033,6 +32018,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("8ac43cb7-f7de-4453-86d4-ddcbc48b544b"),
+                local_id: uuid!("8ac43cb7-f7de-4453-86d4-ddcbc48b544b"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_279_inner"),
                 script_path: None,
@@ -31074,6 +32060,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("9503df04-d40c-4077-b06e-043181d49d60"),
+                local_id: uuid!("9503df04-d40c-4077-b06e-043181d49d60"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_280_inner"),
                 script_path: None,
@@ -31092,6 +32079,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("9d5b5fc1-1eff-4d71-8d64-a6153192664f"), SceneNode::Node(
     Node {
         id: uuid!("9d5b5fc1-1eff-4d71-8d64-a6153192664f"),
+        local_id: uuid!("9d5b5fc1-1eff-4d71-8d64-a6153192664f"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_336"),
         script_path: None,
@@ -31127,6 +32115,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("c5400d3e-2bfd-48d8-b8bd-71288016019e"),
+            local_id: uuid!("c5400d3e-2bfd-48d8-b8bd-71288016019e"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_319"),
             script_path: None,
@@ -31144,6 +32133,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("b5b5233d-262a-485d-8228-19f8d994875c"), SceneNode::Node(
     Node {
         id: uuid!("b5b5233d-262a-485d-8228-19f8d994875c"),
+        local_id: uuid!("b5b5233d-262a-485d-8228-19f8d994875c"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_337"),
         script_path: None,
@@ -31167,6 +32157,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("1aecada3-599f-47d8-82ca-e57b4a0bf72f"),
+            local_id: uuid!("1aecada3-599f-47d8-82ca-e57b4a0bf72f"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("UINode_55"),
             script_path: None,
@@ -31203,6 +32194,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("b584f259-a4e2-42f2-865b-3af6750afdfb"),
+            local_id: uuid!("b584f259-a4e2-42f2-865b-3af6750afdfb"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_320"),
             script_path: None,
@@ -31243,6 +32235,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("ba990a3f-eda8-4e8d-8342-21d859d175d9"),
+                local_id: uuid!("ba990a3f-eda8-4e8d-8342-21d859d175d9"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_281_inner"),
                 script_path: None,
@@ -31261,6 +32254,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("68af7eda-eb5d-46b6-aed3-43a7a33fa8d5"), SceneNode::Node(
     Node {
         id: uuid!("68af7eda-eb5d-46b6-aed3-43a7a33fa8d5"),
+        local_id: uuid!("68af7eda-eb5d-46b6-aed3-43a7a33fa8d5"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_338"),
         script_path: None,
@@ -31300,6 +32294,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("c0c3d76b-8666-432f-8d29-a2bcad4b1b37"),
+                local_id: uuid!("c0c3d76b-8666-432f-8d29-a2bcad4b1b37"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_282_inner"),
                 script_path: None,
@@ -31337,6 +32332,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("a844e552-1c73-42f2-8319-dae6ebc209e4"),
+            local_id: uuid!("a844e552-1c73-42f2-8319-dae6ebc209e4"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Node2D_321"),
             script_path: None,
@@ -31354,6 +32350,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("0f95d169-081c-48ea-95bd-765d403d65cc"), SceneNode::Node(
     Node {
         id: uuid!("0f95d169-081c-48ea-95bd-765d403d65cc"),
+        local_id: uuid!("0f95d169-081c-48ea-95bd-765d403d65cc"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_339"),
         script_path: None,
@@ -31393,6 +32390,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("0b2f790f-4027-476c-b3f2-1c2921d04111"),
+                local_id: uuid!("0b2f790f-4027-476c-b3f2-1c2921d04111"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_283_inner"),
                 script_path: None,
@@ -31411,6 +32409,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
         (uuid!("4b385c29-479f-4bbe-8a90-5212018451c2"), SceneNode::Node(
     Node {
         id: uuid!("4b385c29-479f-4bbe-8a90-5212018451c2"),
+        local_id: uuid!("4b385c29-479f-4bbe-8a90-5212018451c2"),
         ty: Cow::Borrowed("Node"),
         name: Cow::Borrowed("Node_340"),
         script_path: None,
@@ -31450,6 +32449,7 @@ static EDITOR: Lazy<SceneData> = Lazy::new(|| SceneData {
             visible: true,
             node: Node {
                 id: uuid!("fe6f60e7-aab1-44de-95c2-b274e564a652"),
+                local_id: uuid!("fe6f60e7-aab1-44de-95c2-b274e564a652"),
                 ty: Cow::Borrowed("Node"),
                 name: Cow::Borrowed("Sprite2D_284_inner"),
                 script_path: None,
@@ -31483,6 +32483,7 @@ static MANAGER: Lazy<SceneData> = Lazy::new(|| SceneData {
         visible: true,
         node: Node {
             id: uuid!("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48"),
+            local_id: uuid!("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48"),
             ty: Cow::Borrowed("Node"),
             name: Cow::Borrowed("Manager UI"),
             script_path: None,
