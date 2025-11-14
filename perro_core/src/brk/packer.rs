@@ -14,7 +14,7 @@ use zstd::stream::{encode_all}; // Added for Zstandard compression
 /// File types to skip entirely from BRK packaging (statically compiled)
 
 // Scripting languages (compiled into binary)
-const SKIP_SCRIPTING: &[&str] = &["pup", "rs", "cs", "ts", "go"];
+const SKIP_SCRIPTING: &[&str] = &["pup", "rs", "cs", "ts"];
 
 // Scene and UI data (compiled into scenes.rs and fur.rs)
 const SKIP_SCENE_DATA: &[&str] = &["scn", "fur"];

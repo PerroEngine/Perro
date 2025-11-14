@@ -1,0 +1,11 @@
+extends Node2D
+
+fn init() {
+    bob(2)
+}
+
+fn update() {}
+
+fn bob(i: int) {
+    Console.log(i)
+}
