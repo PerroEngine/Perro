@@ -1,17 +1,21 @@
 #![allow(improper_ctypes_definitions)]
 #![allow(unused)]
 
-use std::any::Any;
-use std::collections::HashMap;
-use smallvec::{SmallVec, smallvec};
-use serde_json::{Value, json};
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
-use std::ops::{Deref, DerefMut};
-use rust_decimal::{Decimal, prelude::*};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    str::FromStr,
+};
+
 use num_bigint::BigInt;
-use std::str::FromStr;
-use std::{rc::Rc, cell::RefCell};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use smallvec::{smallvec, SmallVec};
+use uuid::Uuid;
 
 use perro_core::prelude::*;
 
@@ -46,7 +50,7 @@ pub extern "C" fn scripts_test_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for ScriptsTestPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        self.bob(2f32, api, false);
+        self.bob(2i32, api, false);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {

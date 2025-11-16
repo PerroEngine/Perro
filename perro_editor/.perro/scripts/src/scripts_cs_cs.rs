@@ -1,17 +1,21 @@
 #![allow(improper_ctypes_definitions)]
 #![allow(unused)]
 
-use std::any::Any;
-use std::collections::HashMap;
-use smallvec::{SmallVec, smallvec};
-use serde_json::{Value, json};
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
-use std::ops::{Deref, DerefMut};
-use rust_decimal::{Decimal, prelude::*};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    str::FromStr,
+};
+
 use num_bigint::BigInt;
-use std::str::FromStr;
-use std::{rc::Rc, cell::RefCell};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use smallvec::{smallvec, SmallVec};
+use uuid::Uuid;
 
 use perro_core::prelude::*;
 
@@ -24,10 +28,11 @@ use perro_core::prelude::*;
 // ========================================================================
 
 pub struct ScriptsCsCsScript {
-    node: Node3D,
+    node: Node2D,
     speed: f32,
     health: i32,
     playerName: String,
+    james: i64,
 }
 
 // ========================================================================
@@ -36,18 +41,41 @@ pub struct ScriptsCsCsScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
-    let node = Node3D::new("ScriptsCsCs");
+    let node = Node2D::new("ScriptsCsCs");
     let speed = 0.0f32;
     let health = 0i32;
     let playerName = String::new();
+    let james = 0i64;
 
     Box::into_raw(Box::new(ScriptsCsCsScript {
         node,
         speed,
         health,
         playerName,
+        james,
     })) as *mut dyn ScriptObject
 }
+
+// ========================================================================
+// Supporting Struct Definitions
+// ========================================================================
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct TestClass {
+    pub b: i32,
+    pub f: f32,
+}
+
+impl std::fmt::Display for TestClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
+        write!(f, "b: {:?}, ", self.b)?;
+        write!(f, "f: {:?} ", self.f)?;
+        write!(f, "}}")
+    }
+}
+
+
 
 // ========================================================================
 // ScriptsCsCs - Script Init & Update Implementation
@@ -56,12 +84,12 @@ pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
 impl Script for ScriptsCsCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         self.health = 100i32;
-        self.speed = 200.0ff32;
+        self.speed = 200.0f32;
         api.print(&String::from("Player initialized!"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.TakeDamage(2f32, api, false);
+        self.TakeDamage(2i32, api, false);
     }
 
 }

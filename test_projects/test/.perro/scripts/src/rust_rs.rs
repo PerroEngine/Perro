@@ -65,7 +65,7 @@ impl ScriptObject for RustScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -87,73 +87,46 @@ impl ScriptObject for RustScript {
     }
 }
 
-// =========================== Static Dispatch Tables ===========================
+// =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&RustScript) -> Option<Value>>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&RustScript) -> Option<Value>> =
-        HashMap::with_capacity(2);
-        m.insert(12638216887369603693u64, |script: &RustScript| -> Option<Value> {
+static VAR_GET_TABLE: phf::Map<u64, fn(&RustScript) -> Option<Value>> = phf::phf_map! {
+        12638216887369603693u64 => |script: &RustScript| -> Option<Value> {
                         Some(json!(script.z))
-                    });
-        m.insert(12638214688346347271u64, |script: &RustScript| -> Option<Value> {
+                    },
+        12638214688346347271u64 => |script: &RustScript| -> Option<Value> {
                         Some(json!(script.x))
-                    });
-    m
-});
+                    },
+};
 
-static VAR_SET_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut RustScript, Value) -> Option<()>>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut RustScript, Value) -> Option<()>> =
-        HashMap::with_capacity(2);
-        m.insert(12638216887369603693u64, |script: &mut RustScript, val: Value| -> Option<()> {
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut RustScript, Value) -> Option<()>> = phf::phf_map! {
+        12638216887369603693u64 => |script: &mut RustScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.z = v as i32;
                                 return Some(());
                             }
                             None
-                        });
-        m.insert(12638214688346347271u64, |script: &mut RustScript, val: Value| -> Option<()> {
+                        },
+        12638214688346347271u64 => |script: &mut RustScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.x = v as f32;
                                 return Some(());
                             }
                             None
-                        });
-    m
-});
+                        },
+};
 
-static VAR_APPLY_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64, fn(&mut RustScript, &Value)>
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m: HashMap<u64, fn(&mut RustScript, &Value)> =
-        HashMap::with_capacity(2);
-        m.insert(12638213588834719060u64, |script: &mut RustScript, val: &Value| {
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut RustScript, &Value)> = phf::phf_map! {
+        12638213588834719060u64 => |script: &mut RustScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.y = v as i32;
                             }
-                        });
-        m.insert(12638216887369603693u64, |script: &mut RustScript, val: &Value| {
+                        },
+        12638216887369603693u64 => |script: &mut RustScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.z = v as i32;
                             }
-                        });
-    m
-});
+                        },
+};
 
-static DISPATCH_TABLE: once_cell::sync::Lazy<
-    std::collections::HashMap<u64,
-        fn(&mut RustScript, &[Value], &mut ScriptApi<'_>)
-    >
-> = once_cell::sync::Lazy::new(|| {
-    use std::collections::HashMap;
-    let mut m:
-        HashMap<u64, fn(&mut RustScript, &[Value], &mut ScriptApi<'_>)> =
-        HashMap::with_capacity(0);
-    m
-});
+static DISPATCH_TABLE: phf::Map<u64, fn(&mut RustScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
+};

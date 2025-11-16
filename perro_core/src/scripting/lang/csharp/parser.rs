@@ -25,7 +25,7 @@ impl CsParser {
             source: input.to_string(),
             parser,
             parsed_structs: Vec::new(),
-            debug_enabled: true, // Initialize debug flag
+            debug_enabled: false, // Initialize debug flag
         }
     }
 

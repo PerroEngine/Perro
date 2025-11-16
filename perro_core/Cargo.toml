@@ -32,9 +32,9 @@ enum_dispatch = "0.3"
 indexmap = { version = "1.9", features = ["serde", "rayon"] }
 
 libloading = "0.8"
-anyhow      = "1"
+anyhow = "1"
 
-eyre    = "0.6"
+eyre = "0.6"
 
 toml = "0.8"
 

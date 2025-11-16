@@ -62,6 +62,16 @@ impl Platform {
     }
 }
 
+pub fn script_dylib_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "scripts.dll"
+    } else if cfg!(target_os = "macos") {
+        "scripts.dylib"
+    } else {
+        "scripts.so"
+    }
+}
+
 pub struct Compiler {
     pub crate_manifest_path: PathBuf,
     target: CompileTarget,
@@ -142,7 +152,114 @@ impl Compiler {
         })
     }
 
-    fn build_command(&self, profile: BuildProfile) -> Result<Command, String> {
+    /// Returns the build cache directory when using toolchain cargo
+    fn toolchain_build_cache(&self) -> Option<PathBuf> {
+        if self.from_source {
+            return None;
+        }
+
+        let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
+        let toolchain_name = self.platform.toolchain_name(version);
+
+        match resolve_path("user://build-cache") {
+            ResolvedPath::Disk(root) => Some(root.join(toolchain_name)),
+            ResolvedPath::Brk(_) => None,
+        }
+    }
+
+    /// Returns the cargo target directory based on whether we're using toolchain or system cargo
+    fn get_cargo_target_dir(&self) -> Option<PathBuf> {
+        if self.from_source {
+            // When using system cargo, force it to use the parent workspace's target
+            // even though .perro/scripts is its own workspace (for development purposes)
+            self.find_parent_workspace_target_dir()
+        } else {
+            // When using toolchain cargo, use the build cache
+            self.toolchain_build_cache()
+        }
+    }
+
+    /// Find the parent workspace root's target directory, skipping the immediate workspace
+    fn find_parent_workspace_target_dir(&self) -> Option<PathBuf> {
+        // The manifest is at: C:\Users\super\perro\perro_editor\.perro\scripts\Cargo.toml
+        // Start from .perro (parent of scripts) and walk up from there
+        
+        let scripts_dir = self.crate_manifest_path.parent()?; // .perro/scripts
+        let perro_dir = scripts_dir.parent()?; // .perro
+        let mut current = perro_dir.to_path_buf();
+        
+        loop {
+            // Move up to parent
+            if let Some(parent) = current.parent() {
+                current = parent.to_path_buf();
+            } else {
+                // Hit filesystem root
+                break;
+            }
+            
+            // Look for Cargo.toml that defines a workspace
+            let workspace_manifest = current.join("Cargo.toml");
+            if workspace_manifest.exists() {
+                // Check if it's a workspace by reading the file
+                if let Ok(contents) = std::fs::read_to_string(&workspace_manifest) {
+                    if contents.contains("[workspace]") {
+                        let target_dir = current.join("target");
+                        eprintln!("📂 Found parent workspace at: {} (target: {})", 
+                            current.display(), target_dir.display());
+                        return Some(target_dir);
+                    }
+                }
+            }
+        }
+        
+        eprintln!("⚠️  Could not find parent workspace root");
+        None
+    }
+
+    /// Get the source path of the built DLL
+    fn get_built_dll_path(&self, profile: &str) -> PathBuf {
+        let crate_name = match self.target {
+            CompileTarget::Scripts => "scripts",
+            _ => "project",
+        };
+
+        // Get the target directory (either build cache or workspace target)
+        let target_base = self.get_cargo_target_dir()
+            .expect("Could not determine target directory for build");
+
+        let profile_dir = target_base.join(profile);
+
+        // Platform-specific library naming
+        let dll_path = if cfg!(target_os = "windows") {
+            profile_dir.join(format!("{}.dll", crate_name))
+        } else if cfg!(target_os = "macos") {
+            profile_dir.join(format!("lib{}.dylib", crate_name))
+        } else {
+            profile_dir.join(format!("lib{}.so", crate_name))
+        };
+
+        eprintln!("🔍 Looking for built DLL at: {}", dll_path.display());
+        dll_path
+    }
+
+    /// Copy the built DLL to the project's build output directory
+    fn copy_script_dll(&self, profile: &str) -> std::io::Result<()> {
+        let src_file = self.get_built_dll_path(profile);
+        
+        // Output to .perro/scripts/builds/ in the project directory
+        let output_dir = self.project_root.join(".perro/scripts/builds");
+        fs::create_dir_all(&output_dir)?;
+
+        let final_dylib_name = script_dylib_name();
+        let dest_file = output_dir.join(final_dylib_name);
+
+        eprintln!("📦 Copying {} -> {}", src_file.display(), dest_file.display());
+        fs::copy(&src_file, &dest_file)?;
+
+        Ok(())
+    }
+
+    fn build_command(&self, profile: &BuildProfile) -> Result<Command, String> {
         let mut cmd = if self.from_source {
             eprintln!("🔧 Using system cargo (source code mode)");
             Command::new("cargo")
@@ -178,9 +295,21 @@ impl Compiler {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
 
+        // Set CARGO_TARGET_DIR to control where cargo builds
+        if let Some(target_dir) = self.get_cargo_target_dir() {
+            if self.from_source {
+                eprintln!("📁 Using workspace target directory: {}", target_dir.display());
+            } else {
+                eprintln!("📁 Using build cache: {}", target_dir.display());
+            }
+            cmd.env("CARGO_TARGET_DIR", target_dir);
+        } else {
+            eprintln!("⚠️  Could not determine target directory, using cargo default");
+        }
+
         match self.target {
             CompileTarget::Scripts => {
-                cmd.arg("--profile").arg("hotreload");
+                cmd.arg("--profile").arg("dev");
             }
             CompileTarget::Project | CompileTarget::VerboseProject => {
                 match profile {
@@ -200,9 +329,8 @@ impl Compiler {
         Ok(cmd)
     }
 
+    /// Build and copy the output to the final location
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
-       
-        
         if matches!(self.target, CompileTarget::Project) {
             let mut key = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
@@ -215,7 +343,7 @@ impl Compiler {
             let key_write_elapsed = key_write_start.elapsed();
             println!("✔ Key file written (total {:.2?})", key_write_elapsed);
 
-              // Generate scenes in the project crate instead of scripts crate
+            // Generate scenes in the project crate instead of scripts crate
             let project_manifest = self.project_root.join(".perro/project/Cargo.toml");
             if project_manifest.exists() {
                 let project_crate_root = project_manifest
@@ -244,10 +372,8 @@ impl Compiler {
                 );
             }
 
-
             let res_dir = self.project_root.join("res");
             let output = self.project_root.join("assets.brk");
-
 
             // --- TIME THE BRK BUILD HERE ---
             println!("📦 Building BRK archive from {}...", res_dir.display());
@@ -259,12 +385,10 @@ impl Compiler {
             // --- END BRK TIMING ---
         }
 
-
-
         let toolchain_info = if self.from_source {
             "system (local development)".to_string()
         } else {
-            let version = self.toolchain_version.as_deref().unwrap_or("1.83.0");
+            let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
             let toolchain_name = self.platform.toolchain_name(version);
             
             self.get_toolchain_dir()
@@ -279,19 +403,33 @@ impl Compiler {
         );
         
         let start = Instant::now();
-        let mut cmd = self.build_command(profile)?;
+        let mut cmd = self.build_command(&profile)?;
         let status = cmd
             .status()
             .map_err(|e| format!("Failed to run cargo: {e}"))?;
         let elapsed = start.elapsed();
 
-        if status.success() {
-            println!("✅ Compilation successful! (total {:.2?})", elapsed);
-            Ok(())
-        } else {
-            Err(format!("❌ Compilation failed after {:.2?}", elapsed))
+        if !status.success() {
+            return Err(format!("❌ Compilation failed after {:.2?}", elapsed));
         }
+
+        println!("✅ Compilation successful! (total {:.2?})", elapsed);
+
+        // Copy the built DLL to the output location
+        if matches!(self.target, CompileTarget::Scripts) {
+            let profile_str = match profile {
+                BuildProfile::Dev => "debug",
+                BuildProfile::Release => "release",
+                BuildProfile::Check => return Ok(()), // No copy needed for check
+            };
+
+            self.copy_script_dll(profile_str)
+                .map_err(|e| format!("Failed to copy DLL: {}", e))?;
+        }
+
+        Ok(())
     }
+
 
     fn target_name(&self) -> &'static str {
         match self.target {

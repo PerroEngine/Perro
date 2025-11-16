@@ -1054,13 +1054,11 @@ use crate::registry::DllScriptProvider;
 pub fn default_perro_rust_path() -> io::Result<PathBuf> {
     match get_project_root() {
         ProjectRoot::Disk { root, .. } => {
-            let profile = "hotreload";
 
             let mut path = root;
             path.push(".perro");
             path.push("scripts");
-            path.push("target");
-            path.push(profile);
+            path.push("builds");
 
             let filename = if cfg!(target_os = "windows") {
                 "scripts.dll"

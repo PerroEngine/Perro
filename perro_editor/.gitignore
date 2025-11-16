@@ -1,5 +1,5 @@
 # Ignore Perro build artifacts
-target/
+builds/
 
 /.perro/project/src/static_assets/
 
