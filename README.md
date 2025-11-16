@@ -1,194 +1,219 @@
 # 🐕 Perro Game Engine
 
-**Perro** is an experimental, open-source game engine written in **Rust**, designed  
-as a modern alternative to engines like Godot and Unity.  
+**Perro** is an experimental, open-source game engine written in **Rust**, designed as a modern alternative to engines like Unreal, Godot, and Unity.
 
-It focuses on **performance, flexibility, and developer freedom**, while introducing  
-unique ideas that make game development faster and more enjoyable:
+It focuses on **performance, flexibility, and ease of use** with a unique multi-language scripting system:
 
-- ⚡ **Managed Runtime** – no Rust installation required. Just download Perro and start making games.  
-- 🐶 **Pup DSL** – a lightweight scripting language that compiles to Rust, giving you native performance with a clean, approachable syntax.  
-- 🎨 **FUR (Flexible UI Rules)** – a declarative UI system inspired by XAML/JSX, with Tailwind-style utility classes for styling.  
-- 🏎 **Static Release Builds** – game scripts are compiled away into optimized machine code, giving you a **10–25% performance uplift** and extra protection in final builds.  
-- 🛠 **Rust-first core** – safe, fast, and modern systems programming under the hood, but hidden from game developers.
+- 🐶 **Pup DSL** – a beginner-friendly, lightweight scripting language that compiles to Rust for native performance.
+- 🎨 **FUR (Flexible UI Rules)** – a declarative UI system with layouts, panels, and boxing for easy UI design.
+- 🌐 **Multi-Language Scripts** – write gameplay in **Pup**, **C#**, **TypeScript**, or **pure Rust** — everything transpiles to Rust under the hood.
+- 📦 **Type-Safe Transpilation** – full type checking and casting during code generation.
+- ⚡ **Optimized Release Builds** – scripts and assets statically link into your final binary.
+- 🔗 **Cross-Script Communication** – global signal system + accessing functions and variables on scripts attached to other nodes.
 
 ---
 
 ## 👩‍💻 For Game Developers
 
-Game developers never need to install Rust or manage compilers.  
-Perro provides a **managed runtime** that handles everything automatically.
-
 ### Quick Start
 
-1. **Download Perro**  
-2. **Open the Editor**  
-   Run `Perro.exe` (or the platform equivalent).  
-   - You’ll see the **Project Manager**.  
-   - Create or open a project to start editing.  
-3. **Make a Game**  
-   - Write gameplay in **Pup DSL**, **C#**, **TypeScript**, or **pure Rust**.  
-   - Design UI with **FUR**.  
-   - Hit **Play** in the editor — Perro automatically:
-     1. Transpiles your scripts (Pup/C#/TS/Rust) → Rust  
-     2. Compiles Rust → DEV DLL  
-     3. Hot-loads the DLL into the running game  
+**Clone the repository and build from source:**
 
-👉 **You never need Rust installed.** The editor and runtime handle everything for you.
+```bash
+git clone https://github.com/PerroEngine/Perro.git
+cd perro
+cargo run -p perro_dev
+```
+
+This launches the **Perro Editor** in dev mode.
+
+### Making Your First Game
+
+1. **Create a new project** via the Project Manager
+2. **Write scripts** in Pup, C#, TypeScript, or Rust
+3. **Design UI** with FUR
+4. **Hit Play** — Perro automatically:
+   - Transpiles your scripts → Rust
+   - Compiles Rust → DLL (dev mode)
+   - Hot-loads the DLL into the running game
+5. **Make changes** → recompile (~1–3s on decent hardware) → see updates instantly
 
 ---
 
 ## 🐶 Pup DSL
 
-**Pup** is Perro’s built-in scripting language.  
-It is concise and readable, but ultimately compiles to **Rust** and then into your build.
+**Pup** is Perro's built-in scripting language — simple, readable, and compiles to Rust.
+
+Currently supports **variables, functions, and cross-script communication**:
 
 ```pup
-extends Sprite2D
-    let speed = 7.5
+@script Player extends Sprite2D
+    var speed = 7.5
+    var is_moving = false
 
     fn init() {
         print("Player is ready!")
     }
 
-    fn update(delta: float) {
-        if input.is_key_down("Left") {
-          self.position.x -= speed * delta
-        }
-        if input.is_key_down("Right") {
-          self.position.x += speed * delta
-        }
+    fn set_speed(new_speed: float) {
+        speed = new_speed
+    }
+
+    fn update() {
+        var delta = Time.get_delta()
+        self.position.x += speed * delta
     }
 ```
 
 ---
 
+## 🌐 Multi-Language Scripting
+
+You can write scripts in multiple languages. Languages using **Tree Sitter** for parsing have their full syntax supported:
+
+- **Pup** (native DSL, hand-written parser)
+- **C#** (full syntax via Tree Sitter CST → Perro AST; not all AST bindings implemented yet)
+- **TypeScript** (planned, same Tree Sitter pipeline)
+- **Rust** (direct, no transpilation)
+
+The transpilation pipeline:
+
+1. **Parse** – Tree Sitter CST → Perro AST (or native parser for Pup)
+2. **Codegen** – AST → type-checked Rust
+3. **Compile** – Rust → DLL (Dev) or static binary (Release)
+4. **Load** – DLL hot-load (Dev) or direct calls (Release)
+
+---
+
 ## 🎨 FUR (Flexible UI Rules)
 
-**FUR** is Perro’s declarative UI system, inspired by XAML and JSX.
+**FUR** is Perro's declarative UI system for building layouts and UI panels.
 
 ```fur
 [UI]
     [Panel bg=sea-5 padding=4]
         [Text font-weight=bold text-color=white text-size=xl]
-          Hello Perro!
+            Hello Perro!
         [/Text]
     [/Panel]
 [/UI]
 ```
 
----
+**Current Features:**
 
-## ⚡ Fast Iteration
+- Layouts and child layouts
+- Panels and boxing
+- Styling and padding
 
-Perro is designed for **rapid iteration**:
-
-- Script compilation → game start in **1–3 seconds** (DEV)  
-- Change gameplay or UI → hit **Play** → see updates instantly  
-- No scripts changed? **Startup is literally instantaneous** due to aggressive caching
+See `perro_editor/res/fur` for real examples of FUR in use.
 
 ---
 
-## 🔄 Dev vs ⚡ Release
+## 🔄 Dev vs Release
 
-### 1. Dev Mode (Hot-Reload via DLL)
-- Your game scripts (Pup, C#, TS, Rust) are **transpiled** to Rust, then compiled into a **DLL**.
-- The engine **loads** this DLL at runtime so you can:
-  - Make changes
-  - Recompile in ~1–3 s
-  - See changes immediately without restarting the whole editor
+### Dev Mode (Hot-Reload via DLL)
 
-### 2. Release Mode (Static Linking for Maximum Performance)
-- When you build for **Release**, Perro:
-  1. Transpiles all scripts → Rust modules  
-  2. Runs the Rust compiler with **–release**  
-  3. **Statically links** every script function into the final binary via a generated registry  
+- Scripts are transpiled to Rust, compiled into a **DLL**
+- Engine loads the DLL at runtime
+- Make changes → recompile (~1–3s) → see updates instantly without restarting
 
-```rust
-// Auto-generated script registry in Release
-use perro_core::script::{CreateFn, Script};
-use std::collections::HashMap;
+### Release Mode (Static Linking)
 
-pub mod player;
-pub mod enemy;
-pub mod ui_mainmenu;
+- All scripts transpile → Rust
+- Statically linked into final binary
+- **Result:**
+  - Single executable (no DLLs, no source included)
+  - Optimized machine code from LLVM
+  - Your source scripts are protected
 
-use player::player_create_script;
-use enemy::enemy_create_script;
-use ui_mainmenu::ui_mainmenu_create_script;
+---
 
-pub fn get_script_registry() -> HashMap<String, CreateFn> {
-    let mut map = HashMap::new();
-    map.insert("Player".to_string(), player_create_script as CreateFn);
-    map.insert("Enemy".to_string(), enemy_create_script as CreateFn);
-    map.insert("MainMenuUI".to_string(), ui_mainmenu_create_script as CreateFn);
-    map
-}
+## 🛠️ For Engine Contributors & Development
+
+This repository contains the **Perro engine source code**. To build and work on the engine itself:
+
+### Prerequisites
+
+- **Rust** (GNU preferred as that's what ships with the editor binary for compilation)
+- **Cargo**
+
+### Repository Structure
+
+```
+perro/
+├── perro_core/          # Core engine (structs, scene, render graph)
+├── perro_dev/           # Dev wrapper binary (loads DLLs, runs projects with --path)
+├── perro_editor/        # Editor game project
+│   ├── .perro/
+│   │   ├── project/     # Editor project crate
+│   │   └── scripts/     # Editor scripts crate (contains transpiled rust + builds DLL)
+│   └── res/             # Resources (FUR files, scenes, assets, scripts)
+└── examples/            # Example game projects
 ```
 
-- **Result:**
-  - One single executable (no DLLs, no scripts shipped).  
-  - **10–25% performance uplift** thanks to inlining and LLVM optimizations.  
-  - Your source scripts are **not** distributed—only optimized machine code lives in the binary.
+### Building & Running
 
----
+**Open the Editor in Dev Mode:**
 
-## 🌐 Multi-Language Scripting
+```bash
+cargo run -p perro_dev
+```
 
-Perro’s **Transpiler System** isn’t limited to Pup! You can write gameplay logic in:
+This:
 
-- Pup (our DSL)  
-- C#  
-- TypeScript  
-- Pure Rust  
+1. Compiles `perro_core`
+2. Compiles `perro_editor/scripts` → DLL
+3. Runs the editor with hot-loadable scripts
 
-The pipeline is always:
+**Build the Core Alone:**
 
-1. **Transpile** (C#/TS/Pup → Rust)  
-2. **Compile** (Rust → DLL in Dev, Rust → static binary in Release)  
-3. **Load** (DLL hot-reload in Dev, direct function calls in Release)
+```bash
+cargo build -p perro_core
+```
 
-You get the freedom to pick your favorite language, with the performance of Rust under the hood.
+All projects share a build cache (the main workspace target/ in source mode), so the core only compiles once.
 
----
+### Toolchain & Versioning
 
-## 🛠️ For Engine Contributors
+The editors are pinned to specific versions of the toolchain, (eg. 1.0 => 1.90.0), toolchains will not be updated each engine update, as to not clog the end user's system with multiple toolchains they don't need. (1.0 and 1.1 could support the same toolchain, even if users update it only is installed once)
 
-To work on **Perro itself** (the engine/editor):
+**Project Compatibility:**
 
-- Install **Rust** (GNU toolchain preferred)  
-- Have **Cargo** available  
+- Old projects use their original editor version by default
+- The Project Manager auto-updates to the latest version
+- You can manually upgrade a project to a newer editor version if desired
+- Older editor versions remain available for projects that haven't upgraded
 
-### Building from Source
+### Stabilized Features
 
-- **Runtime** (editor + game runner):  
-  ```bash
-  cargo run -p perro_runtime ./examples/hello_world
-  ```
-- **Core** (editor UI, windowing, build system):  
-  ```bash
-  cargo run -p perro_core
-  ```
+- ✅ Scripting system (Pup, C# via Tree Sitter CST)
+- ✅ Signal system & cross-script communication
+- ✅ Type checking and casting during Rust codegen
+- ✅ C# → Rust transpilation (Tree Sitter → AST → codegen)
+- ✅ DLL loading & dynamic script loading
+- ✅ FUR layouts, panels, child layouts, and boxing
 
----
+### In Progress / Planned
 
-## 🛠 Roadmap
-
-- [x] Core engine loop  
-- [x] FUR MVP (UI files referenced in scene files)  
-- [x] Pup DSL transpiler (basic)  
-- [ ] Complete Pup transpiler + full Rust API coverage  
-- [ ] Pup API polish  
-- [ ] Scene editor (dogfooding in progress)  
-- [ ] Asset pipeline  
-- [ ] Plugin System as self-contained Rust crates  
-- [ ] Additional language support (C#, TypeScript, etc…)
+- 🔄 Pup DSL expansion (control flow, standard library)
+- 🔄 C# AST bindings completion
+- 🔄 TypeScript support (Tree Sitter pipeline)
+- 🔄 FUR runtime editing & editor viewer
+- 📋 Scene editor
+- 📋 Asset pipeline
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) and join the discussions.
+Contributions are welcome! You can work on:
+
+- **Engine** – `perro_core` (rendering, scene, runtime)
+- **Editor** – Edit the source code and UI of the editor at `perro_editor/res`
+- **Scripting** – Pup DSL expansion, transpiler improvements, new language support as needed
+- **Tooling** – build system, asset pipeline
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
@@ -198,6 +223,6 @@ Perro is licensed under the **Apache 2.0 License**. See [LICENSE](LICENSE) for d
 
 ---
 
-## 🐾 Why “Perro”?
+## 🐾 Why "Perro"?
 
-Every developer needs a loyal partner, just like a dog, and that's what Perro means in Spanish.
+Every developer needs a loyal partner, just like a dog — and that's what Perro means in Spanish.
