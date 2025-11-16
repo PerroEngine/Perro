@@ -124,7 +124,6 @@ fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Res
     rebuild_lib_rs(project_root, &active_ids)?;
     Ok(())
 }
-
 pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Result<(), String> {
     let lib_rs_path = project_root.join(".perro/scripts/src/lib.rs");
 
@@ -144,8 +143,12 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
         map\n}\n\n"
     );
 
+    // Sort IDs for deterministic ordering
+    let mut sorted_ids: Vec<_> = active_ids.iter().collect();
+    sorted_ids.sort();
+
     // Modules
-    for id in active_ids {
+    for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_MODULES__",
             &format!("pub mod {};\n// __PERRO_MODULES__", id)
@@ -153,7 +156,7 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
     }
 
     // Imports
-    for id in active_ids {
+    for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_IMPORTS__",
             &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id)
@@ -161,7 +164,7 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
     }
 
     // Registry entries
-    for id in active_ids {
+    for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_REGISTRY__",
             &format!("    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n    // __PERRO_REGISTRY__", id, id)
