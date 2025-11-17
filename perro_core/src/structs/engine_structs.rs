@@ -5,5 +5,4 @@ pub enum EngineStruct {
     Rect,
     Color,
     ImageTexture,
-
 }

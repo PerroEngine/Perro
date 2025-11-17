@@ -1,21 +1,26 @@
-
-use std::{borrow::Cow, collections::HashMap, ops::{Deref, DerefMut}};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{script::Var, ui_element::UIElement, Node};
+use crate::{Node, script::Var, ui_element::UIElement};
 
-
-fn default_visible() -> bool { true }
-fn is_default_visible(v: &bool) -> bool { *v == default_visible() }
-
-
+fn default_visible() -> bool {
+    true
+}
+fn is_default_visible(v: &bool) -> bool {
+    *v == default_visible()
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct UINode {
-    #[serde(rename="type")] pub ty: Cow<'static, str>,
+    #[serde(rename = "type")]
+    pub ty: Cow<'static, str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fur_path: Option<Cow<'static, str>>,
@@ -28,48 +33,48 @@ pub struct UINode {
     #[serde(skip)]
     pub root_ids: Option<Vec<Uuid>>,
 
-    #[serde(default = "default_visible", skip_serializing_if = "is_default_visible")]
+    #[serde(
+        default = "default_visible",
+        skip_serializing_if = "is_default_visible"
+    )]
     pub visible: bool,
 
     // Parent
-    pub node:    Node,
+    pub node: Node,
 }
 
 impl UINode {
-  pub fn new(name: &str) -> Self {
-      Self {
-      ty:    Cow::Borrowed("UINode"),
-      visible: default_visible(),
-      // Parent
-      node: Node::new(name, None),
-      fur_path: None,
-      props: None,
-      elements: None,
-      root_ids: None,
-      }
+    pub fn new(name: &str) -> Self {
+        Self {
+            ty: Cow::Borrowed("UINode"),
+            visible: default_visible(),
+            // Parent
+            node: Node::new(name, None),
+            fur_path: None,
+            props: None,
+            elements: None,
+            root_ids: None,
+        }
     }
     pub fn get_visible(&self) -> bool {
-      self.visible
+        self.visible
     }
-    
+
     pub fn set_visible(&mut self, visible: bool) {
-      self.visible = visible;
+        self.visible = visible;
     }
-    
 }
 
-
 impl Deref for UINode {
-  type Target = Node;
+    type Target = Node;
 
-  fn deref(&self) -> &Self::Target {
-      &self.node
-  }
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
 }
 
 impl DerefMut for UINode {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-      &mut self.node
-  }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.node
+    }
 }
-

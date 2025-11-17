@@ -1,21 +1,21 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::cell::RefCell;
 
-use crate::asset_io::{set_project_root, ProjectRoot};
-use crate::manifest::Project;
-use crate::scene::{Scene, SceneData};
+use crate::asset_io::set_key;
+use crate::asset_io::{ProjectRoot, set_project_root};
 use crate::graphics::Graphics;
+use crate::manifest::Project;
 use crate::rendering::app::App;
-use crate::script::{ScriptProvider, CreateFn};
+use crate::scene::{Scene, SceneData};
+use crate::script::{CreateFn, ScriptProvider};
 use crate::ui::ast::FurElement;
 use once_cell::sync::Lazy;
 use winit::event_loop::EventLoop;
-use crate::asset_io::set_key;
 
 /// Static assets that are bundled with the binary
 pub struct StaticAssets {
@@ -188,9 +188,9 @@ pub fn run_game(data: RuntimeData) {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_dev() {
     use crate::registry::DllScriptProvider;
-    
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
-    
+
     let args: Vec<String> = env::args().collect();
     let mut key: Option<String> = None;
 
@@ -200,11 +200,25 @@ pub fn run_dev() {
     } else if args.contains(&"--editor".to_string()) {
         // Dev-only: hardcoded editor project path (relative to workspace root)
         let exe_dir = env::current_exe().unwrap();
-        exe_dir.parent().unwrap().parent().unwrap().parent().unwrap().join("perro_editor")
+        exe_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("perro_editor")
     } else {
         // Dev mode: default to editor project
         let exe_dir = env::current_exe().unwrap();
-        exe_dir.parent().unwrap().parent().unwrap().parent().unwrap().join("perro_editor")
+        exe_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("perro_editor")
     };
 
     println!("Running project at {:?}", project_root);
@@ -250,9 +264,9 @@ pub fn run_dev() {
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
-        project_rc.borrow().target_fps()
+        project_rc.borrow().target_fps(),
     );
-    
+
     let mut app = app;
     let _ = event_loop.run_app(&mut app);
 }

@@ -1,4 +1,5 @@
-#![allow(unused)]#![allow(dead_code)]
+#![allow(unused)]
+#![allow(dead_code)]
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -22,10 +23,28 @@ impl Vertex {
 
 // A simple quad covering [-0.5, -0.5] to [0.5, 0.5] with UV coords
 const QUAD_VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
-    Vertex { position: [0.5, -0.5], uv: [1.0, 1.0] },
-    Vertex { position: [0.5, 0.5], uv: [1.0, 0.0] },
-    Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
-    Vertex { position: [0.5, 0.5], uv: [1.0, 0.0] },
-    Vertex { position: [-0.5, 0.5], uv: [0.0, 0.0] },
+    Vertex {
+        position: [-0.5, -0.5],
+        uv: [0.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, -0.5],
+        uv: [1.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5],
+        uv: [1.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5],
+        uv: [0.0, 1.0],
+    },
+    Vertex {
+        position: [0.5, 0.5],
+        uv: [1.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, 0.5],
+        uv: [0.0, 0.0],
+    },
 ];

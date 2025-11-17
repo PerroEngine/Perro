@@ -27,13 +27,13 @@ pub trait ApiCodegen {
     /// Rust code strings for each argument. This trait's implementors are purely
     /// responsible for constructing the final call string from these prepared arguments.
     fn to_rust_prepared(
-            &self,
-            args: &[Expr],             // <--- ADD THIS so you have access to the typed AST
-            args_strs: &[String],      // Keep: for easy code plug-in
-            script: &Script,
-            needs_self: bool,
-            current_func: Option<&Function>,
-        ) -> String;
+        &self,
+        args: &[Expr],        // <--- ADD THIS so you have access to the typed AST
+        args_strs: &[String], // Keep: for easy code plug-in
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String;
 }
 
 // ===========================================================
@@ -55,27 +55,49 @@ impl ApiModule {
         // This call dispatches to the correct `ApiTypes` implementation (e.g., `ArrayApi`'s `param_types`).
         let expected_arg_types = self.param_types();
 
-
         // 2. Process the raw AST arguments into Rust code strings.
         // This `generate_rust_args` helper handles:
         //    - Converting `Expr` to basic Rust code string.
         //    - Applying `self.` prefixing for script fields.
         //    - Applying implicit type casts based on `expected_arg_types`.
-        let rust_args_strings =
-            generate_rust_args(args, script, needs_self, current_func, expected_arg_types.as_ref());
+        let rust_args_strings = generate_rust_args(
+            args,
+            script,
+            needs_self,
+            current_func,
+            expected_arg_types.as_ref(),
+        );
 
         // 3. Delegate to the specific `ApiCodegen` implementation to build the final Rust call string.
         // This `match self` ensures the correct `to_rust_prepared` method is called based on the `ApiModule` variant.
         match self {
-            ApiModule::JSON(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::Time(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::OS(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::Console(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::ScriptType(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::NodeSugar(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::Signal(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::ArrayOp(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func),
-            ApiModule::MapOp(api) => api.to_rust_prepared(args,&rust_args_strings, script, needs_self, current_func)
+            ApiModule::JSON(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::Time(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::OS(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::Console(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::ScriptType(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::NodeSugar(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::Signal(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::ArrayOp(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ApiModule::MapOp(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
         }
     }
 
@@ -95,7 +117,7 @@ impl ApiModule {
     }
 
     /// Dispatches the `param_types` call to the appropriate `ApiTypes` implementation for this module variant.
-     pub fn param_types(&self) -> Option<Vec<Type>> {
+    pub fn param_types(&self) -> Option<Vec<Type>> {
         let result = match self {
             ApiModule::JSON(api) => api.param_types(),
             ApiModule::Time(api) => api.param_types(),
@@ -105,7 +127,7 @@ impl ApiModule {
             ApiModule::NodeSugar(api) => api.param_types(),
             ApiModule::Signal(api) => api.param_types(),
             ApiModule::ArrayOp(api) => api.param_types(),
-            ApiModule::MapOp(api) => api.param_types()
+            ApiModule::MapOp(api) => api.param_types(),
         };
         // Add this line:
         result
@@ -127,8 +149,7 @@ fn generate_rust_args(
         .map(|(i, a)| {
             // 1. Convert the raw AST expression `a` into its basic Rust code string.
             //    This `code_raw` is the *uncasted*, *unprefixed* base string.
-            let expected_ty_hint = expected_arg_types
-                .and_then(|v| v.get(i));
+            let expected_ty_hint = expected_arg_types.and_then(|v| v.get(i));
             let mut code_raw = a.to_rust(needs_self, script, expected_ty_hint, current_func);
 
             // 2. Determine if a cast is needed and apply it to `code_raw`.
@@ -136,13 +157,11 @@ fn generate_rust_args(
             if let Some(expected_types) = expected_arg_types {
                 if let Some(expect_ty) = expected_types.get(i) {
                     if let Some(actual_ty) = script.infer_expr_type(a, current_func) {
-                        if actual_ty.can_implicitly_convert_to(expect_ty)
-                            && actual_ty != *expect_ty
+                        if actual_ty.can_implicitly_convert_to(expect_ty) && actual_ty != *expect_ty
                         {
                             code_raw = script.generate_implicit_cast_for_expr(
                                 &code_raw, // Use code_raw here!
-                                &actual_ty,
-                                expect_ty,
+                                &actual_ty, expect_ty,
                             );
                         }
                     }
@@ -171,8 +190,8 @@ impl ApiCodegen for JSONApi {
         &self,
         args: &[Expr],
         args_strs: &[String],
-        _script: &Script, // script not usually needed here
-        _needs_self: bool, // needs_self not usually needed here
+        _script: &Script,                 // script not usually needed here
+        _needs_self: bool,                // needs_self not usually needed here
         _current_func: Option<&Function>, // current_func not usually needed here
     ) -> String {
         match self {
@@ -181,7 +200,10 @@ impl ApiCodegen for JSONApi {
                 format!("api.JSON.parse(&{})", arg)
             }
             JSONApi::Stringify => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "json!({})".into());
+                let arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "json!({})".into());
                 format!("api.JSON.stringify(&{})", arg)
             }
         }
@@ -195,15 +217,11 @@ impl ApiTypes for JSONApi {
             JSONApi::Stringify => Some(Type::String),
         }
     }
-    
+
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
-            JSONApi::Parse => Some(vec![
-                Type::String
-            ]),
-            JSONApi::Stringify => Some(vec![
-                Type::Object
-            ])
+            JSONApi::Parse => Some(vec![Type::String]),
+            JSONApi::Stringify => Some(vec![Type::Object]),
         }
     }
 }
@@ -243,10 +261,8 @@ impl ApiTypes for TimeApi {
 
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
-            TimeApi::SleepMsec => Some(vec![
-                Type::Number(NumberKind::Unsigned(64))
-            ]),
-            _ => None
+            TimeApi::SleepMsec => Some(vec![Type::Number(NumberKind::Unsigned(64))]),
+            _ => None,
         }
     }
     // No specific param_types for Time APIs needed by default, uses None.
@@ -285,10 +301,8 @@ impl ApiTypes for OSApi {
 
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
-            OSApi::GetEnv => Some(vec![
-                Type::String
-            ]),
-            _ => None
+            OSApi::GetEnv => Some(vec![Type::String]),
+            _ => None,
         }
     }
     // No specific param_types for OS APIs needed by default, uses None.
@@ -466,7 +480,7 @@ impl ApiCodegen for SignalApi {
                 let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 prehash_if_literal(&signal)
             }
-           SignalApi::Connect | SignalApi::Emit => {
+            SignalApi::Connect | SignalApi::Emit => {
                 // -- Fix: Accept both u64 and Type::Custom("Signal") as passthrough variables
                 let arg_expr = args.get(0).unwrap();
                 let arg_type = script.infer_expr_type(arg_expr, current_func);
@@ -479,7 +493,10 @@ impl ApiCodegen for SignalApi {
 
                 match self {
                     SignalApi::Connect => {
-                        let mut node = args_strs.get(1).cloned().unwrap_or_else(|| "self.node".into());
+                        let mut node = args_strs
+                            .get(1)
+                            .cloned()
+                            .unwrap_or_else(|| "self.node".into());
                         if node == "self" {
                             node = "self.node".into()
                         }
@@ -493,7 +510,10 @@ impl ApiCodegen for SignalApi {
                                 .iter()
                                 .map(|a| format!("json!({a})"))
                                 .collect();
-                            format!("api.emit_signal_id({signal}, smallvec![{}])", params.join(", "))
+                            format!(
+                                "api.emit_signal_id({signal}, smallvec![{}])",
+                                params.join(", ")
+                            )
                         } else {
                             format!("api.emit_signal_id({signal}, smallvec![])")
                         }
@@ -515,22 +535,13 @@ impl ApiTypes for SignalApi {
 
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
-            SignalApi::New => Some(vec![
-                Type::String
-            ]),
-            SignalApi::Emit => Some(vec![
-                Type::Custom("Signal".to_string()),
-                Type::Object
-            ]),
-            SignalApi::Connect => Some(vec![
-                 Type::Custom("Signal".to_string()),
-            ])
-
+            SignalApi::New => Some(vec![Type::String]),
+            SignalApi::Emit => Some(vec![Type::Custom("Signal".to_string()), Type::Object]),
+            SignalApi::Connect => Some(vec![Type::Custom("Signal".to_string())]),
         }
     }
     // No specific param_types for Signal APIs needed by default, uses None.
 }
-
 
 // ===========================================================
 // ArrayOp API Implementations
@@ -554,13 +565,15 @@ impl ApiCodegen for ArrayApi {
                 // Infer the type of the array itself to get its inner type
                 let array_type = script.infer_expr_type(array_expr, current_func);
 
-                let inner_type = if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
-                    inner_types.get(0).cloned().unwrap_or(Type::Object)
-                } else {
-                    Type::Object // Fallback if array type couldn't be inferred
-                };
+                let inner_type =
+                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                        inner_types.get(0).cloned().unwrap_or(Type::Object)
+                    } else {
+                        Type::Object // Fallback if array type couldn't be inferred
+                    };
 
-                let mut value_code = value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
+                let mut value_code =
+                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
 
                 // If the value_code itself still indicates a JSON value AND the target is not Type::Object,
                 // we should attempt to deserialize it.
@@ -570,27 +583,45 @@ impl ApiCodegen for ArrayApi {
                         .strip_prefix("json!(")
                         .and_then(|s| s.strip_suffix(")"))
                         .unwrap_or(&value_code);
-                    value_code = format!("serde_json::from_value::<{}>({}).unwrap_or_default()", inner_type.to_rust_type(), raw_json_content);
+                    value_code = format!(
+                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
+                        inner_type.to_rust_type(),
+                        raw_json_content
+                    );
                 } else if value_code.starts_with("json!(") && inner_type == Type::Object {
                     // If target is Type::Object, json! is fine, just use the string directly
                     // No change needed.
                 } else {
                     // Perform implicit cast if needed and not already handled
-                    if let Some(actual_value_type) = script.infer_expr_type(value_expr, current_func) {
-                        if actual_value_type.can_implicitly_convert_to(&inner_type) && actual_value_type != inner_type {
-                            value_code = script.generate_implicit_cast_for_expr(&value_code, &actual_value_type, &inner_type);
+                    if let Some(actual_value_type) =
+                        script.infer_expr_type(value_expr, current_func)
+                    {
+                        if actual_value_type.can_implicitly_convert_to(&inner_type)
+                            && actual_value_type != inner_type
+                        {
+                            value_code = script.generate_implicit_cast_for_expr(
+                                &value_code,
+                                &actual_value_type,
+                                &inner_type,
+                            );
                         }
                     }
                     // Handle cloning if the type requires it (e.g., custom structs)
-                    if inner_type.requires_clone() && !value_code.contains(".clone()") && !value_code.starts_with("String::from") {
+                    if inner_type.requires_clone()
+                        && !value_code.contains(".clone()")
+                        && !value_code.starts_with("String::from")
+                    {
                         // Prevent double cloning if value_code already implies it (e.g., "new Player(...)")
-                        let produces_owned_value = matches!(value_expr, Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..));
+                        let produces_owned_value = matches!(
+                            value_expr,
+                            Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..)
+                        );
                         if !produces_owned_value {
                             value_code = format!("{}.clone()", value_code);
                         }
                     }
                 }
-                
+
                 format!("{}.push({})", args_strs[0], value_code)
             }
             ArrayApi::Pop => {
@@ -603,36 +634,60 @@ impl ApiCodegen for ArrayApi {
                 let array_expr = &args[0];
                 let value_expr = &args[2]; // value is the third arg for insert
                 let array_type = script.infer_expr_type(array_expr, current_func);
-                let inner_type = if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
-                    inner_types.get(0).cloned().unwrap_or(Type::Object)
-                } else {
-                    Type::Object
-                };
+                let inner_type =
+                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                        inner_types.get(0).cloned().unwrap_or(Type::Object)
+                    } else {
+                        Type::Object
+                    };
 
-                let mut value_code = value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
+                let mut value_code =
+                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
 
-                 // Apply the same logic as Push for value_code conversion/cloning
+                // Apply the same logic as Push for value_code conversion/cloning
                 if value_code.starts_with("json!(") && inner_type != Type::Object {
                     let raw_json_content = value_code
                         .strip_prefix("json!(")
                         .and_then(|s| s.strip_suffix(")"))
                         .unwrap_or(&value_code);
-                    value_code = format!("serde_json::from_value::<{}>({}).unwrap_or_default()", inner_type.to_rust_type(), raw_json_content);
-                } else if !value_code.starts_with("json!(") { // Only do this if it's not already a json! and needs conversion
-                    if let Some(actual_value_type) = script.infer_expr_type(value_expr, current_func) {
-                        if actual_value_type.can_implicitly_convert_to(&inner_type) && actual_value_type != inner_type {
-                            value_code = script.generate_implicit_cast_for_expr(&value_code, &actual_value_type, &inner_type);
+                    value_code = format!(
+                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
+                        inner_type.to_rust_type(),
+                        raw_json_content
+                    );
+                } else if !value_code.starts_with("json!(") {
+                    // Only do this if it's not already a json! and needs conversion
+                    if let Some(actual_value_type) =
+                        script.infer_expr_type(value_expr, current_func)
+                    {
+                        if actual_value_type.can_implicitly_convert_to(&inner_type)
+                            && actual_value_type != inner_type
+                        {
+                            value_code = script.generate_implicit_cast_for_expr(
+                                &value_code,
+                                &actual_value_type,
+                                &inner_type,
+                            );
                         }
                     }
-                     if inner_type.requires_clone() && !value_code.contains(".clone()") && !value_code.starts_with("String::from") {
-                        let produces_owned_value = matches!(value_expr, Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..));
+                    if inner_type.requires_clone()
+                        && !value_code.contains(".clone()")
+                        && !value_code.starts_with("String::from")
+                    {
+                        let produces_owned_value = matches!(
+                            value_expr,
+                            Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..)
+                        );
                         if !produces_owned_value {
                             value_code = format!("{}.clone()", value_code);
                         }
                     }
                 }
 
-                format!("{}.insert({} as usize, {})", args_strs[0], args_strs[1], value_code)
+                format!(
+                    "{}.insert({} as usize, {})",
+                    args_strs[0], args_strs[1], value_code
+                )
             }
             ArrayApi::Remove => {
                 format!("{}.remove({} as usize)", args_strs[0], args_strs[1])
@@ -647,12 +702,12 @@ impl ApiCodegen for ArrayApi {
 impl ApiTypes for ArrayApi {
     fn return_type(&self) -> Option<Type> {
         match self {
-            ArrayApi::Push   => Some(Type::Void),
-            ArrayApi::Pop    => Some(Type::Object),
+            ArrayApi::Push => Some(Type::Void),
+            ArrayApi::Pop => Some(Type::Object),
             ArrayApi::Insert => Some(Type::Void),
             ArrayApi::Remove => Some(Type::Object),
-            ArrayApi::Len    => Some(Type::Number(NumberKind::Unsigned(32))),
-            ArrayApi::New    => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
+            ArrayApi::Len => Some(Type::Number(NumberKind::Unsigned(32))),
+            ArrayApi::New => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
         }
     }
 
@@ -667,18 +722,17 @@ impl ApiTypes for ArrayApi {
             ]),
             ArrayApi::Insert => Some(vec![
                 Type::Container(Array, vec![Type::Object]),
-                Type::Number(Unsigned(32)),       // index
-                Type::Object,                     // value
+                Type::Number(Unsigned(32)), // index
+                Type::Object,               // value
             ]),
             ArrayApi::Remove => Some(vec![
                 Type::Container(Array, vec![Type::Object]),
-                Type::Number(Unsigned(32)),       // index expected
+                Type::Number(Unsigned(32)), // index expected
             ]),
             ArrayApi::Len | ArrayApi::Pop | ArrayApi::New => None,
         }
     }
 }
-
 
 impl ApiCodegen for MapApi {
     fn to_rust_prepared(
@@ -691,8 +745,7 @@ impl ApiCodegen for MapApi {
     ) -> String {
         match self {
             // args: [map, key (string), value]
-
-         MapApi::Insert => {
+            MapApi::Insert => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let val_type = script.infer_map_value_type(&args[0], current_func);
                 let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
@@ -701,7 +754,7 @@ impl ApiCodegen for MapApi {
             }
 
             // args: [map, key]
-          MapApi::Remove => {
+            MapApi::Remove => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
                 if let Some(Type::String) = key_type.as_ref() {
@@ -712,7 +765,7 @@ impl ApiCodegen for MapApi {
             }
 
             // args: [map, key]
-          MapApi::Get => {
+            MapApi::Get => {
                 // 1. Infer key type from map
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 // 2. Render the key argument with the right type hint
@@ -767,7 +820,10 @@ impl ApiTypes for MapApi {
             MapApi::Remove | MapApi::Get => Some(Type::Object),
             MapApi::Contains => Some(Type::Bool),
             MapApi::Len => Some(Type::Number(NumberKind::Unsigned(32))),
-            MapApi::New => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
+            MapApi::New => Some(Type::Container(
+                ContainerKind::Map,
+                vec![Type::String, Type::Object],
+            )),
         }
     }
 

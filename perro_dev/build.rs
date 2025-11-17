@@ -33,8 +33,7 @@ fn main() {
             .unwrap()
             .as_secs() as u32;
 
-        let version_display =
-            format!("{}.{}.{}.{}", major, minor, patch, build_number);
+        let version_display = format!("{}.{}.{}.{}", major, minor, patch, build_number);
 
         let out_dir = std::env::var("OUT_DIR").unwrap();
         let rc_path = PathBuf::from(&out_dir).join("icon.rc");
@@ -65,8 +64,14 @@ BEGIN
 END
 "#,
             icon_str,
-            major, minor, patch, build_number,
-            major, minor, patch, build_number,
+            major,
+            minor,
+            patch,
+            build_number,
+            major,
+            minor,
+            patch,
+            build_number,
             name,
             version_display,
             name,
@@ -159,15 +164,12 @@ fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path)
     for size in sizes {
         let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
         let rgba = resized.into_rgba8();
-        let icon_image =
-            IconImage::from_rgba_data(size as u32, size as u32, rgba.into_raw());
+        let icon_image = IconImage::from_rgba_data(size as u32, size as u32, rgba.into_raw());
         icon_dir.add_entry(IconDirEntry::encode(&icon_image).unwrap());
         log(log_path, &format!("✔ Added {}x{} size", size, size));
     }
 
     let mut file = File::create(ico_path).expect("Failed to create ICO file");
-    icon_dir
-        .write(&mut file)
-        .expect("Failed to write ICO file");
+    icon_dir.write(&mut file).expect("Failed to write ICO file");
     log(log_path, &format!("✔ Saved ICO to {}", ico_path.display()));
 }

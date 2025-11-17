@@ -1,20 +1,23 @@
-use std::{collections::HashMap, ops::Range, time::{Duration, Instant}};
 use bytemuck::cast_slice;
-use wgpu::{
-    BindGroupLayout, BufferDescriptor, BufferUsages, Device, Queue, RenderPass, 
-    RenderPipeline, TextureFormat, VertexAttribute, VertexBufferLayout, 
-    VertexFormat, VertexState, VertexStepMode, FragmentState, ColorTargetState,
-    BlendState, ColorWrites, PipelineLayoutDescriptor, RenderPipelineDescriptor,
-    ShaderModuleDescriptor, ShaderSource
-};
 use std::borrow::Cow;
+use std::{
+    collections::HashMap,
+    ops::Range,
+    time::{Duration, Instant},
+};
+use wgpu::{
+    BindGroupLayout, BlendState, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
+    Device, FragmentState, PipelineLayoutDescriptor, Queue, RenderPass, RenderPipeline,
+    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat, VertexAttribute,
+    VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+};
 
 use crate::{
     font::FontAtlas,
+    rendering::TextureManager,
+    structs2d::{Transform2D, Vector2},
     ui_elements::ui_container::CornerRadius,
     vertex::Vertex,
-    structs2d::{Transform2D, Vector2},
-    rendering::TextureManager,
 };
 
 const MAX_INSTANCES: usize = 10000;
@@ -107,11 +110,11 @@ pub struct PrimitiveRenderer {
     rect_instance_buffer: wgpu::Buffer,
     texture_instance_buffer: wgpu::Buffer,
     font_instance_buffer: wgpu::Buffer,
-    
+
     rect_instanced_pipeline: RenderPipeline,
     texture_instanced_pipeline: RenderPipeline,
     font_instanced_pipeline: RenderPipeline,
-    
+
     texture_bind_group_layout: BindGroupLayout,
     font_bind_group_layout: BindGroupLayout,
 
@@ -123,16 +126,16 @@ pub struct PrimitiveRenderer {
     rect_uuid_to_slot: HashMap<uuid::Uuid, usize>,
     free_rect_slots: Vec<usize>,
     rect_dirty_ranges: Vec<Range<usize>>,
-    
+
     // Optimized texture storage
     texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String)>>,
     texture_uuid_to_slot: HashMap<uuid::Uuid, usize>,
     free_texture_slots: Vec<usize>,
     texture_dirty_ranges: Vec<Range<usize>>,
-    
+
     // Text storage (less critical to optimize since text changes more frequently)
     cached_text: HashMap<uuid::Uuid, (RenderLayer, Vec<FontInstance>)>,
-    
+
     // Rendered instances (built from slots when needed)
     world_rect_instances: Vec<RectInstance>,
     ui_rect_instances: Vec<RectInstance>,
@@ -140,23 +143,23 @@ pub struct PrimitiveRenderer {
     ui_texture_groups: Vec<(String, Vec<TextureInstance>)>,
     world_text_instances: Vec<FontInstance>,
     ui_text_instances: Vec<FontInstance>,
-    
+
     world_texture_group_offsets: Vec<(usize, usize)>,
     ui_texture_group_offsets: Vec<(usize, usize)>,
     world_texture_buffer_ranges: Vec<Range<u64>>,
     ui_texture_buffer_ranges: Vec<Range<u64>>,
-    
+
     temp_texture_map: HashMap<String, Vec<TextureInstance>>,
     temp_sorted_groups: Vec<(String, Vec<TextureInstance>)>,
     temp_all_texture_instances: Vec<TextureInstance>,
     temp_all_font_instances: Vec<FontInstance>,
-    
+
     // Batching optimization fields
     last_rebuild_time: Instant,
     dirty_count: usize,
     max_rebuild_interval: Duration,
     dirty_threshold: usize,
-    
+
     instances_need_rebuild: bool,
     text_instances_need_rebuild: bool,
 }
@@ -164,49 +167,51 @@ pub struct PrimitiveRenderer {
 impl PrimitiveRenderer {
     pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
         println!("🔳 Primitive Renderer initialized");
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Texture BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Texture BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                ],
+            });
 
-        let font_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Font BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        let font_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Font BGL"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
         let rect_instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Rect Instance Buffer"),
@@ -230,12 +235,10 @@ impl PrimitiveRenderer {
         });
 
         let rect_instanced_pipeline = Self::create_rect_pipeline(device, camera_bgl, format);
-        let texture_instanced_pipeline = Self::create_texture_pipeline(
-            device, &texture_bind_group_layout, camera_bgl, format
-        );
-        let font_instanced_pipeline = Self::create_font_pipeline(
-            device, &font_bind_group_layout, camera_bgl, format
-        );
+        let texture_instanced_pipeline =
+            Self::create_texture_pipeline(device, &texture_bind_group_layout, camera_bgl, format);
+        let font_instanced_pipeline =
+            Self::create_font_pipeline(device, &font_bind_group_layout, camera_bgl, format);
 
         Self {
             rect_instance_buffer,
@@ -248,20 +251,20 @@ impl PrimitiveRenderer {
             font_bind_group_layout,
             font_atlas: None,
             font_bind_group: None,
-            
+
             // Optimized storage
             rect_instance_slots: Vec::with_capacity(MAX_INSTANCES),
             rect_uuid_to_slot: HashMap::new(),
             free_rect_slots: Vec::new(),
             rect_dirty_ranges: Vec::new(),
-            
+
             texture_instance_slots: Vec::with_capacity(MAX_INSTANCES),
             texture_uuid_to_slot: HashMap::new(),
             free_texture_slots: Vec::new(),
             texture_dirty_ranges: Vec::new(),
-            
+
             cached_text: HashMap::new(),
-            
+
             world_rect_instances: Vec::new(),
             ui_rect_instances: Vec::new(),
             world_texture_groups: Vec::new(),
@@ -276,34 +279,42 @@ impl PrimitiveRenderer {
             temp_sorted_groups: Vec::new(),
             temp_all_texture_instances: Vec::new(),
             temp_all_font_instances: Vec::new(),
-            
+
             // Batching optimization
             last_rebuild_time: Instant::now(),
             dirty_count: 0,
             max_rebuild_interval: Duration::from_millis(16), // ~60 FPS max
-            dirty_threshold: 32, // Rebuild when 32+ elements are dirty
-            
+            dirty_threshold: 32,                             // Rebuild when 32+ elements are dirty
+
             instances_need_rebuild: false,
             text_instances_need_rebuild: false,
         }
     }
 
-    pub fn queue_rect(&mut self, 
-                      uuid: uuid::Uuid, 
-                      layer: RenderLayer,
-                      transform: Transform2D,
-                      size: Vector2,
-                      pivot: Vector2,
-                      color: crate::structs2d::Color,
-                      corner_radius: Option<CornerRadius>,
-                      border_thickness: f32,
-                      is_border: bool,
-                      z_index: i32) {
-        
+    pub fn queue_rect(
+        &mut self,
+        uuid: uuid::Uuid,
+        layer: RenderLayer,
+        transform: Transform2D,
+        size: Vector2,
+        pivot: Vector2,
+        color: crate::structs2d::Color,
+        corner_radius: Option<CornerRadius>,
+        border_thickness: f32,
+        is_border: bool,
+        z_index: i32,
+    ) {
         let new_instance = self.create_rect_instance(
-            transform, size, pivot, color, corner_radius, border_thickness, is_border, z_index
+            transform,
+            size,
+            pivot,
+            color,
+            corner_radius,
+            border_thickness,
+            is_border,
+            z_index,
         );
-        
+
         // Check if this rect already exists
         if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
             // Update existing slot if changed
@@ -325,7 +336,7 @@ impl PrimitiveRenderer {
                 self.rect_instance_slots.push(None);
                 new_slot
             };
-            
+
             self.rect_instance_slots[slot] = Some((layer, new_instance));
             self.rect_uuid_to_slot.insert(uuid, slot);
             self.mark_rect_slot_dirty(slot);
@@ -334,17 +345,18 @@ impl PrimitiveRenderer {
         }
     }
 
-    pub fn queue_texture(&mut self, 
-                        uuid: uuid::Uuid,
-                        layer: RenderLayer, 
-                        texture_path: &str,
-                        transform: Transform2D,
-                        pivot: Vector2,
-                        z_index: i32) {
-        
+    pub fn queue_texture(
+        &mut self,
+        uuid: uuid::Uuid,
+        layer: RenderLayer,
+        texture_path: &str,
+        transform: Transform2D,
+        pivot: Vector2,
+        z_index: i32,
+    ) {
         let new_instance = self.create_texture_instance(transform, pivot, z_index);
         let texture_path = texture_path.to_string();
-        
+
         // Check if this texture already exists
         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
             // Update existing slot if changed
@@ -367,7 +379,7 @@ impl PrimitiveRenderer {
                 self.texture_instance_slots.push(None);
                 new_slot
             };
-            
+
             self.texture_instance_slots[slot] = Some((layer, new_instance, texture_path));
             self.texture_uuid_to_slot.insert(uuid, slot);
             self.mark_texture_slot_dirty(slot);
@@ -376,16 +388,17 @@ impl PrimitiveRenderer {
         }
     }
 
-    pub fn queue_text(&mut self, 
-                      uuid: uuid::Uuid,
-                      layer: RenderLayer,
-                      text: &str,
-                      font_size: f32,
-                      transform: Transform2D,
-                      _pivot: Vector2,
-                      color: crate::structs2d::Color,
-                      z_index: i32) {
-        
+    pub fn queue_text(
+        &mut self,
+        uuid: uuid::Uuid,
+        layer: RenderLayer,
+        text: &str,
+        font_size: f32,
+        transform: Transform2D,
+        _pivot: Vector2,
+        color: crate::structs2d::Color,
+        z_index: i32,
+    ) {
         if let Some(ref atlas) = self.font_atlas {
             let mut cursor_x = transform.position.x;
             let baseline_y = transform.position.y;
@@ -464,7 +477,7 @@ impl PrimitiveRenderer {
     // OPTIMIZED: Proper range tracking with merging
     fn mark_rect_slot_dirty(&mut self, slot: usize) {
         let new_range = slot..(slot + 1);
-        
+
         // Try to merge with existing ranges
         let mut merged = false;
         for existing_range in &mut self.rect_dirty_ranges {
@@ -476,20 +489,20 @@ impl PrimitiveRenderer {
                 break;
             }
         }
-        
+
         if !merged {
             self.rect_dirty_ranges.push(new_range);
         }
-        
+
         // Keep ranges list small by periodically consolidating
         if self.rect_dirty_ranges.len() > 16 {
             self.consolidate_dirty_ranges();
         }
     }
-    
+
     fn mark_texture_slot_dirty(&mut self, slot: usize) {
         let new_range = slot..(slot + 1);
-        
+
         // Try to merge with existing ranges
         let mut merged = false;
         for existing_range in &mut self.texture_dirty_ranges {
@@ -500,11 +513,11 @@ impl PrimitiveRenderer {
                 break;
             }
         }
-        
+
         if !merged {
             self.texture_dirty_ranges.push(new_range);
         }
-        
+
         if self.texture_dirty_ranges.len() > 16 {
             self.consolidate_texture_dirty_ranges();
         }
@@ -515,10 +528,10 @@ impl PrimitiveRenderer {
         if self.rect_dirty_ranges.len() <= 1 {
             return;
         }
-        
+
         self.rect_dirty_ranges.sort_by_key(|r| r.start);
         let mut consolidated = Vec::with_capacity(self.rect_dirty_ranges.len());
-        
+
         let mut current = self.rect_dirty_ranges[0].clone();
         for range in self.rect_dirty_ranges.iter().skip(1) {
             if range.start <= current.end {
@@ -529,7 +542,7 @@ impl PrimitiveRenderer {
             }
         }
         consolidated.push(current);
-        
+
         self.rect_dirty_ranges = consolidated;
     }
 
@@ -537,10 +550,10 @@ impl PrimitiveRenderer {
         if self.texture_dirty_ranges.len() <= 1 {
             return;
         }
-        
+
         self.texture_dirty_ranges.sort_by_key(|r| r.start);
         let mut consolidated = Vec::with_capacity(self.texture_dirty_ranges.len());
-        
+
         let mut current = self.texture_dirty_ranges[0].clone();
         for range in self.texture_dirty_ranges.iter().skip(1) {
             if range.start <= current.end {
@@ -551,7 +564,7 @@ impl PrimitiveRenderer {
             }
         }
         consolidated.push(current);
-        
+
         self.texture_dirty_ranges = consolidated;
     }
 
@@ -631,7 +644,7 @@ impl PrimitiveRenderer {
             self.dirty_count += 1;
             self.instances_need_rebuild = true;
         }
-        
+
         // Remove from texture slots
         if let Some(slot) = self.texture_uuid_to_slot.remove(&uuid) {
             self.texture_instance_slots[slot] = None;
@@ -640,7 +653,7 @@ impl PrimitiveRenderer {
             self.dirty_count += 1;
             self.instances_need_rebuild = true;
         }
-        
+
         // Remove from text cache
         if self.cached_text.remove(&uuid).is_some() {
             self.text_instances_need_rebuild = true;
@@ -648,21 +661,24 @@ impl PrimitiveRenderer {
     }
 
     // OPTIMIZED: Smart batching with time and dirty count thresholds
-    pub fn render_layer(&mut self,
-                       layer: RenderLayer,
-                       rpass: &mut RenderPass<'_>, 
-                       texture_manager: &mut TextureManager,
-                       device: &Device,
-                       queue: &Queue,
-                       camera_bind_group: &wgpu::BindGroup,
-                       vertex_buffer: &wgpu::Buffer) {
-        
+    pub fn render_layer(
+        &mut self,
+        layer: RenderLayer,
+        rpass: &mut RenderPass<'_>,
+        texture_manager: &mut TextureManager,
+        device: &Device,
+        queue: &Queue,
+        camera_bind_group: &wgpu::BindGroup,
+        vertex_buffer: &wgpu::Buffer,
+    ) {
         let now = Instant::now();
         let time_since_rebuild = now.duration_since(self.last_rebuild_time);
-        
+
         // Smart batching: only rebuild when threshold is met OR max interval passed
-        if self.instances_need_rebuild && 
-           (self.dirty_count >= self.dirty_threshold || time_since_rebuild >= self.max_rebuild_interval) {
+        if self.instances_need_rebuild
+            && (self.dirty_count >= self.dirty_threshold
+                || time_since_rebuild >= self.max_rebuild_interval)
+        {
             self.rebuild_instances(queue);
             self.instances_need_rebuild = false;
             self.dirty_count = 0;
@@ -676,34 +692,75 @@ impl PrimitiveRenderer {
 
         match layer {
             RenderLayer::World2D => {
-                self.render_rects(&self.world_rect_instances, rpass, camera_bind_group, vertex_buffer);
-                self.render_textures(&self.world_texture_groups, &self.world_texture_group_offsets, 
-                                   &self.world_texture_buffer_ranges, rpass, texture_manager, 
-                                   device, queue, camera_bind_group, vertex_buffer);
-                self.render_text(&self.world_text_instances, rpass, camera_bind_group, vertex_buffer);
-            },
+                self.render_rects(
+                    &self.world_rect_instances,
+                    rpass,
+                    camera_bind_group,
+                    vertex_buffer,
+                );
+                self.render_textures(
+                    &self.world_texture_groups,
+                    &self.world_texture_group_offsets,
+                    &self.world_texture_buffer_ranges,
+                    rpass,
+                    texture_manager,
+                    device,
+                    queue,
+                    camera_bind_group,
+                    vertex_buffer,
+                );
+                self.render_text(
+                    &self.world_text_instances,
+                    rpass,
+                    camera_bind_group,
+                    vertex_buffer,
+                );
+            }
             RenderLayer::UI => {
-                self.render_rects(&self.ui_rect_instances, rpass, camera_bind_group, vertex_buffer);
-                self.render_textures(&self.ui_texture_groups, &self.ui_texture_group_offsets,
-                                   &self.ui_texture_buffer_ranges, rpass, texture_manager,
-                                   device, queue, camera_bind_group, vertex_buffer);
-                self.render_text(&self.ui_text_instances, rpass, camera_bind_group, vertex_buffer);
+                self.render_rects(
+                    &self.ui_rect_instances,
+                    rpass,
+                    camera_bind_group,
+                    vertex_buffer,
+                );
+                self.render_textures(
+                    &self.ui_texture_groups,
+                    &self.ui_texture_group_offsets,
+                    &self.ui_texture_buffer_ranges,
+                    rpass,
+                    texture_manager,
+                    device,
+                    queue,
+                    camera_bind_group,
+                    vertex_buffer,
+                );
+                self.render_text(
+                    &self.ui_text_instances,
+                    rpass,
+                    camera_bind_group,
+                    vertex_buffer,
+                );
             }
         }
     }
 
-    fn create_rect_instance(&self,
-                           transform: Transform2D,
-                           size: Vector2,
-                           pivot: Vector2,
-                           color: crate::structs2d::Color,
-                           corner_radius: Option<CornerRadius>,
-                           border_thickness: f32,
-                           is_border: bool,
-                           z_index: i32) -> RectInstance {
-        
+    fn create_rect_instance(
+        &self,
+        transform: Transform2D,
+        size: Vector2,
+        pivot: Vector2,
+        color: crate::structs2d::Color,
+        corner_radius: Option<CornerRadius>,
+        border_thickness: f32,
+        is_border: bool,
+        z_index: i32,
+    ) -> RectInstance {
         fn srgb_to_linear(c: f32) -> f32 {
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
         }
 
         let color_lin = [
@@ -719,7 +776,7 @@ impl PrimitiveRenderer {
         let scaled_size_x = size.x * sx;
         let scaled_size_y = size.y * sy;
         let max_radius = (scaled_size_x.min(scaled_size_y)) * 0.5;
-        
+
         let corner_radius_xy = [
             cr.top_left * max_radius,
             cr.top_left * max_radius,
@@ -738,10 +795,30 @@ impl PrimitiveRenderer {
         let transform_array = xf_no_scale.to_mat4().to_cols_array();
 
         RectInstance {
-            transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
-            transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
-            transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
-            transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+            transform_0: [
+                transform_array[0],
+                transform_array[1],
+                transform_array[2],
+                transform_array[3],
+            ],
+            transform_1: [
+                transform_array[4],
+                transform_array[5],
+                transform_array[6],
+                transform_array[7],
+            ],
+            transform_2: [
+                transform_array[8],
+                transform_array[9],
+                transform_array[10],
+                transform_array[11],
+            ],
+            transform_3: [
+                transform_array[12],
+                transform_array[13],
+                transform_array[14],
+                transform_array[15],
+            ],
             color: color_lin,
             size: [scaled_size_x, scaled_size_y],
             pivot: [pivot.x, pivot.y],
@@ -754,13 +831,38 @@ impl PrimitiveRenderer {
         }
     }
 
-    fn create_texture_instance(&self, transform: Transform2D, pivot: Vector2, z_index: i32) -> TextureInstance {
+    fn create_texture_instance(
+        &self,
+        transform: Transform2D,
+        pivot: Vector2,
+        z_index: i32,
+    ) -> TextureInstance {
         let transform_array = transform.to_mat4().to_cols_array();
         TextureInstance {
-            transform_0: [transform_array[0], transform_array[1], transform_array[2], transform_array[3]],
-            transform_1: [transform_array[4], transform_array[5], transform_array[6], transform_array[7]],
-            transform_2: [transform_array[8], transform_array[9], transform_array[10], transform_array[11]],
-            transform_3: [transform_array[12], transform_array[13], transform_array[14], transform_array[15]],
+            transform_0: [
+                transform_array[0],
+                transform_array[1],
+                transform_array[2],
+                transform_array[3],
+            ],
+            transform_1: [
+                transform_array[4],
+                transform_array[5],
+                transform_array[6],
+                transform_array[7],
+            ],
+            transform_2: [
+                transform_array[8],
+                transform_array[9],
+                transform_array[10],
+                transform_array[11],
+            ],
+            transform_3: [
+                transform_array[12],
+                transform_array[13],
+                transform_array[14],
+                transform_array[15],
+            ],
             pivot: [pivot.x, pivot.y],
             z_index,
             _pad: 0.0,
@@ -772,7 +874,7 @@ impl PrimitiveRenderer {
         // Rebuild from slots
         self.world_rect_instances.clear();
         self.ui_rect_instances.clear();
-        
+
         for slot in &self.rect_instance_slots {
             if let Some((layer, instance)) = slot {
                 match layer {
@@ -781,13 +883,15 @@ impl PrimitiveRenderer {
                 }
             }
         }
-        
-        self.world_rect_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        self.ui_rect_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        
+
+        self.world_rect_instances
+            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        self.ui_rect_instances
+            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+
         self.rebuild_texture_groups_by_layer();
         self.upload_instances_to_gpu(queue);
-        
+
         // Clear dirty ranges after upload
         self.rect_dirty_ranges.clear();
         self.texture_dirty_ranges.clear();
@@ -796,25 +900,28 @@ impl PrimitiveRenderer {
     fn rebuild_text_instances(&mut self, queue: &Queue) {
         self.world_text_instances.clear();
         self.ui_text_instances.clear();
-        
+
         for (layer, instances) in self.cached_text.values() {
             match layer {
                 RenderLayer::World2D => {
                     self.world_text_instances.extend(instances.iter().cloned());
-                },
+                }
                 RenderLayer::UI => {
                     self.ui_text_instances.extend(instances.iter().cloned());
                 }
             }
         }
-        
-        self.world_text_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        self.ui_text_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+
+        self.world_text_instances
+            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        self.ui_text_instances
+            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
 
         self.temp_all_font_instances.clear();
-        self.temp_all_font_instances.extend(&self.world_text_instances);
+        self.temp_all_font_instances
+            .extend(&self.world_text_instances);
         self.temp_all_font_instances.extend(&self.ui_text_instances);
-        
+
         if !self.temp_all_font_instances.is_empty() {
             queue.write_buffer(
                 &self.font_instance_buffer,
@@ -831,20 +938,22 @@ impl PrimitiveRenderer {
         self.ui_texture_group_offsets.clear();
         self.world_texture_buffer_ranges.clear();
         self.ui_texture_buffer_ranges.clear();
-        
+
         let mut world_texture_map: HashMap<String, Vec<TextureInstance>> = HashMap::new();
         let mut ui_texture_map: HashMap<String, Vec<TextureInstance>> = HashMap::new();
-        
+
         for slot in &self.texture_instance_slots {
             if let Some((layer, instance, texture_path)) = slot {
                 match layer {
                     RenderLayer::World2D => {
-                        world_texture_map.entry(texture_path.clone())
+                        world_texture_map
+                            .entry(texture_path.clone())
                             .or_default()
                             .push(*instance);
-                    },
+                    }
                     RenderLayer::UI => {
-                        ui_texture_map.entry(texture_path.clone())
+                        ui_texture_map
+                            .entry(texture_path.clone())
                             .or_default()
                             .push(*instance);
                     }
@@ -854,19 +963,21 @@ impl PrimitiveRenderer {
 
         // Build world texture groups first
         Self::build_texture_groups(
-            world_texture_map, 
+            world_texture_map,
             &mut self.world_texture_groups,
             &mut self.world_texture_group_offsets,
             &mut self.world_texture_buffer_ranges,
             0,
-            &mut self.temp_sorted_groups
+            &mut self.temp_sorted_groups,
         );
 
         // Calculate the offset AFTER the first call completes
-        let world_total_instances: usize = self.world_texture_groups.iter()
+        let world_total_instances: usize = self
+            .world_texture_groups
+            .iter()
             .map(|(_, instances)| instances.len())
             .sum();
-            
+
         // Now build UI texture groups with the calculated offset
         Self::build_texture_groups(
             ui_texture_map,
@@ -874,7 +985,7 @@ impl PrimitiveRenderer {
             &mut self.ui_texture_group_offsets,
             &mut self.ui_texture_buffer_ranges,
             world_total_instances,
-            &mut self.temp_sorted_groups
+            &mut self.temp_sorted_groups,
         );
     }
 
@@ -883,7 +994,7 @@ impl PrimitiveRenderer {
         let mut all_rect_instances: Vec<RectInstance> = Vec::new();
         all_rect_instances.extend(&self.world_rect_instances);
         all_rect_instances.extend(&self.ui_rect_instances);
-        
+
         if !all_rect_instances.is_empty() {
             queue.write_buffer(
                 &self.rect_instance_buffer,
@@ -900,7 +1011,7 @@ impl PrimitiveRenderer {
         for (_, instances) in &self.ui_texture_groups {
             self.temp_all_texture_instances.extend(instances);
         }
-        
+
         if !self.temp_all_texture_instances.is_empty() {
             queue.write_buffer(
                 &self.texture_instance_buffer,
@@ -910,13 +1021,14 @@ impl PrimitiveRenderer {
         }
     }
 
-    fn build_texture_groups(mut texture_map: HashMap<String, Vec<TextureInstance>>,
-                           groups: &mut Vec<(String, Vec<TextureInstance>)>,
-                           offsets: &mut Vec<(usize, usize)>,
-                           ranges: &mut Vec<Range<u64>>,
-                           buffer_offset: usize,
-                           temp_sorted_groups: &mut Vec<(String, Vec<TextureInstance>)>) {
-        
+    fn build_texture_groups(
+        mut texture_map: HashMap<String, Vec<TextureInstance>>,
+        groups: &mut Vec<(String, Vec<TextureInstance>)>,
+        offsets: &mut Vec<(usize, usize)>,
+        ranges: &mut Vec<Range<u64>>,
+        buffer_offset: usize,
+        temp_sorted_groups: &mut Vec<(String, Vec<TextureInstance>)>,
+    ) {
         temp_sorted_groups.clear();
         temp_sorted_groups.extend(texture_map.drain());
         temp_sorted_groups.sort_by(|a, b| {
@@ -926,27 +1038,30 @@ impl PrimitiveRenderer {
         });
 
         let mut current_offset = buffer_offset;
-        
+
         for (path, mut instances) in temp_sorted_groups.drain(..) {
             instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
-            
+
             let count = instances.len();
             let start_byte = current_offset * std::mem::size_of::<TextureInstance>();
             let size_bytes = count * std::mem::size_of::<TextureInstance>();
             let range = (start_byte as u64)..((start_byte + size_bytes) as u64);
-            
+
             groups.push((path, instances));
             offsets.push((current_offset, count));
             ranges.push(range);
-            
+
             current_offset += count;
         }
     }
 
-    fn render_rects(&self, instances: &[RectInstance], 
-                   rpass: &mut RenderPass<'_>,
-                   camera_bind_group: &wgpu::BindGroup,
-                   vertex_buffer: &wgpu::Buffer) {
+    fn render_rects(
+        &self,
+        instances: &[RectInstance],
+        rpass: &mut RenderPass<'_>,
+        camera_bind_group: &wgpu::BindGroup,
+        vertex_buffer: &wgpu::Buffer,
+    ) {
         if !instances.is_empty() {
             rpass.set_pipeline(&self.rect_instanced_pipeline);
             rpass.set_bind_group(0, camera_bind_group, &[]);
@@ -956,20 +1071,21 @@ impl PrimitiveRenderer {
         }
     }
 
-    fn render_textures(&self,
-                      texture_groups: &[(String, Vec<TextureInstance>)],
-                      group_offsets: &[(usize, usize)],
-                      buffer_ranges: &[Range<u64>],
-                      rpass: &mut RenderPass<'_>,
-                      texture_manager: &mut TextureManager,
-                      device: &Device,
-                      queue: &Queue,
-                      camera_bind_group: &wgpu::BindGroup,
-                      vertex_buffer: &wgpu::Buffer) {
-        
+    fn render_textures(
+        &self,
+        texture_groups: &[(String, Vec<TextureInstance>)],
+        group_offsets: &[(usize, usize)],
+        buffer_ranges: &[Range<u64>],
+        rpass: &mut RenderPass<'_>,
+        texture_manager: &mut TextureManager,
+        device: &Device,
+        queue: &Queue,
+        camera_bind_group: &wgpu::BindGroup,
+        vertex_buffer: &wgpu::Buffer,
+    ) {
         for (i, (texture_path, _)) in texture_groups.iter().enumerate() {
             let (_, count) = group_offsets[i];
-            
+
             if count > 0 {
                 let tex_bg = texture_manager.get_or_create_bind_group(
                     texture_path,
@@ -982,18 +1098,22 @@ impl PrimitiveRenderer {
                 rpass.set_bind_group(0, tex_bg, &[]);
                 rpass.set_bind_group(1, camera_bind_group, &[]);
                 rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                rpass.set_vertex_buffer(1, self.texture_instance_buffer.slice(buffer_ranges[i].clone()));
+                rpass.set_vertex_buffer(
+                    1,
+                    self.texture_instance_buffer.slice(buffer_ranges[i].clone()),
+                );
                 rpass.draw(0..6, 0..count as u32);
             }
         }
     }
 
-    fn render_text(&self, 
-                   instances: &[FontInstance],
-                   rpass: &mut RenderPass<'_>,
-                   camera_bind_group: &wgpu::BindGroup,
-                   vertex_buffer: &wgpu::Buffer) {
-        
+    fn render_text(
+        &self,
+        instances: &[FontInstance],
+        rpass: &mut RenderPass<'_>,
+        camera_bind_group: &wgpu::BindGroup,
+        vertex_buffer: &wgpu::Buffer,
+    ) {
         if !instances.is_empty() && self.font_bind_group.is_some() {
             rpass.set_pipeline(&self.font_instanced_pipeline);
             rpass.set_bind_group(0, self.font_bind_group.as_ref().unwrap(), &[]);
@@ -1005,7 +1125,11 @@ impl PrimitiveRenderer {
     }
 
     // [Pipeline creation methods remain the same - keeping them for completeness but truncating for space]
-    fn create_rect_pipeline(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> RenderPipeline {
+    fn create_rect_pipeline(
+        device: &Device,
+        camera_bgl: &BindGroupLayout,
+        format: TextureFormat,
+    ) -> RenderPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Rect Instanced Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect_instanced.wgsl"))),
@@ -1044,18 +1168,66 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<RectInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 16, shader_location: 3, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 32, shader_location: 4, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 48, shader_location: 5, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 64, shader_location: 6, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 80, shader_location: 7, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 88, shader_location: 8, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 96, shader_location: 9, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 112, shader_location: 10, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 128, shader_location: 11, format: VertexFormat::Float32 },
-                            VertexAttribute { offset: 132, shader_location: 12, format: VertexFormat::Uint32 },
-                            VertexAttribute { offset: 136, shader_location: 13, format: VertexFormat::Sint32 },
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 16,
+                                shader_location: 3,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 32,
+                                shader_location: 4,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 48,
+                                shader_location: 5,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 64,
+                                shader_location: 6,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 80,
+                                shader_location: 7,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 88,
+                                shader_location: 8,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 96,
+                                shader_location: 9,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 112,
+                                shader_location: 10,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 128,
+                                shader_location: 11,
+                                format: VertexFormat::Float32,
+                            },
+                            VertexAttribute {
+                                offset: 132,
+                                shader_location: 12,
+                                format: VertexFormat::Uint32,
+                            },
+                            VertexAttribute {
+                                offset: 136,
+                                shader_location: 13,
+                                format: VertexFormat::Sint32,
+                            },
                         ],
                     },
                 ],
@@ -1079,10 +1251,17 @@ impl PrimitiveRenderer {
         })
     }
 
-    fn create_texture_pipeline(device: &Device, texture_bgl: &BindGroupLayout, camera_bgl: &BindGroupLayout, format: TextureFormat) -> RenderPipeline {
+    fn create_texture_pipeline(
+        device: &Device,
+        texture_bgl: &BindGroupLayout,
+        camera_bgl: &BindGroupLayout,
+        format: TextureFormat,
+    ) -> RenderPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Sprite Instanced Shader"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/sprite_instanced.wgsl"))),
+            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/sprite_instanced.wgsl"
+            ))),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1118,12 +1297,36 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<TextureInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 16, shader_location: 3, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 32, shader_location: 4, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 48, shader_location: 5, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 64, shader_location: 6, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 72, shader_location: 7, format: VertexFormat::Sint32 },
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 16,
+                                shader_location: 3,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 32,
+                                shader_location: 4,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 48,
+                                shader_location: 5,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 64,
+                                shader_location: 6,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 72,
+                                shader_location: 7,
+                                format: VertexFormat::Sint32,
+                            },
                         ],
                     },
                 ],
@@ -1175,22 +1378,62 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<Vertex>() as _,
                         step_mode: VertexStepMode::Vertex,
                         attributes: &[
-                            VertexAttribute { offset: 0, shader_location: 0, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 8, shader_location: 1, format: VertexFormat::Float32x2 },
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 0,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 8,
+                                shader_location: 1,
+                                format: VertexFormat::Float32x2,
+                            },
                         ],
                     },
                     VertexBufferLayout {
                         array_stride: std::mem::size_of::<FontInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute { offset: 0, shader_location: 2, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 16, shader_location: 3, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 32, shader_location: 4, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 48, shader_location: 5, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 64, shader_location: 6, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 80, shader_location: 7, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 88, shader_location: 8, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 96, shader_location: 9, format: VertexFormat::Sint32 },
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 16,
+                                shader_location: 3,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 32,
+                                shader_location: 4,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 48,
+                                shader_location: 5,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 64,
+                                shader_location: 6,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 80,
+                                shader_location: 7,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 88,
+                                shader_location: 8,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 96,
+                                shader_location: 9,
+                                format: VertexFormat::Sint32,
+                            },
                         ],
                     },
                 ],

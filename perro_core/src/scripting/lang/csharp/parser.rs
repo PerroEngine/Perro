@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use tree_sitter::Parser;
 
 // Assuming these are defined in your crate
-use crate::lang::ast::*;
 use crate::lang::api_modules::{ApiModule, NodeSugarApi};
+use crate::lang::ast::*;
 use crate::lang::csharp::api::CSharpAPI;
 
 pub struct CsParser {
@@ -15,12 +15,13 @@ pub struct CsParser {
 }
 
 impl CsParser {
-    pub fn new(input: &str) -> Self { // Modified 'new' to accept debug flag
+    pub fn new(input: &str) -> Self {
+        // Modified 'new' to accept debug flag
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
             .expect("Error loading C# grammar");
-        
+
         Self {
             source: input.to_string(),
             parser,
@@ -46,30 +47,31 @@ impl CsParser {
     }
 
     pub fn parse_script(&mut self) -> Result<Script, String> {
-       let source_ref = &self.source;
+        let source_ref = &self.source;
 
-// 2. Perform the parsing operation. The result (the root node) is saved.
-// This is where 'self.parser' is borrowed immutably.
-let binding = self.parser.parse(source_ref, None).unwrap();
-let root_node = binding.root_node();
+        // 2. Perform the parsing operation. The result (the root node) is saved.
+        // This is where 'self.parser' is borrowed immutably.
+        let binding = self.parser.parse(source_ref, None).unwrap();
+        let root_node = binding.root_node();
 
-// 3. Now that the borrows of 'self.parser' and 'self.source' are complete
-// (or held as simple references by the result), we can call the function 
-// that requires a potentially MUTABLE borrow of 'self'.
-self.debug_node("PARSE_SCRIPT", root_node);
+        // 3. Now that the borrows of 'self.parser' and 'self.source' are complete
+        // (or held as simple references by the result), we can call the function
+        // that requires a potentially MUTABLE borrow of 'self'.
+        self.debug_node("PARSE_SCRIPT", root_node);
 
-        let tree = self.parser
+        let tree = self
+            .parser
             .parse(&self.source, None)
             .ok_or("Failed to parse C# source")?;
-        
+
         let root = tree.root_node();
-        
+
         // Find the class declaration
-        let class_node = Self::find_class_declaration_helper(root)
-            .ok_or("No class declaration found")?;
-        
+        let class_node =
+            Self::find_class_declaration_helper(root).ok_or("No class declaration found")?;
+
         self.debug_node("CLASS_FOUND", class_node);
-        
+
         self.parse_class_as_script(class_node)
     }
 
@@ -77,14 +79,14 @@ self.debug_node("PARSE_SCRIPT", root_node);
         if node.kind() == "class_declaration" {
             return Some(node);
         }
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if let Some(found) = Self::find_class_declaration_helper(child) {
                 return Some(found);
             }
         }
-        
+
         None
     }
 
@@ -94,28 +96,27 @@ self.debug_node("PARSE_SCRIPT", root_node);
         let mut script_vars = Vec::new();
         let mut functions = Vec::new();
         let mut structs = Vec::new();
-        
+
         // Get base class if present
-   if let Some(base_list) = self.get_child_by_kind(class_node, "base_list") {
-        let mut cursor = base_list.walk();
-        
-        // Iterate children to find the base type identifier (Node2D)
-        for child in base_list.children(&mut cursor) {
-            
-            // Your debug output showed that "Node2D" is represented by a 
-            // direct child of kind "identifier" under "base_list".
-            if child.kind() == "identifier" {
-                node_type = self.get_node_text(child);
-                // At this point, node_type should be "Node2D"
-                break; 
+        if let Some(base_list) = self.get_child_by_kind(class_node, "base_list") {
+            let mut cursor = base_list.walk();
+
+            // Iterate children to find the base type identifier (Node2D)
+            for child in base_list.children(&mut cursor) {
+                // Your debug output showed that "Node2D" is represented by a
+                // direct child of kind "identifier" under "base_list".
+                if child.kind() == "identifier" {
+                    node_type = self.get_node_text(child);
+                    // At this point, node_type should be "Node2D"
+                    break;
+                }
             }
         }
-    }
-        
+
         // Find the declaration list (body of the class)
         if let Some(body) = self.get_child_by_kind(class_node, "declaration_list") {
             let mut cursor = body.walk();
-            
+
             for member in body.children(&mut cursor) {
                 self.debug_node("CLASS_MEMBER", member); // Debug each member
                 match member.kind() {
@@ -138,7 +139,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 }
             }
         }
-        println!{"AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH I AM THE NODE TYPE:  {}", node_type};
+        println! {"AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH I AM THE NODE TYPE:  {}", node_type};
 
         Ok(Script {
             node_type,
@@ -156,7 +157,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
         let mut typ = None;
         let mut name = String::new();
         let mut value = None;
-        
+
         // Check for modifiers and attributes
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -174,21 +175,28 @@ self.debug_node("PARSE_SCRIPT", root_node);
                     // Get type
                     if let Some(type_node) = self.get_child_by_kind(child, "type") {
                         typ = Some(self.parse_type(type_node));
-                    } else if let Some(type_node) = self.get_child_by_kind(child, "predefined_type") {
+                    } else if let Some(type_node) = self.get_child_by_kind(child, "predefined_type")
+                    {
                         typ = Some(self.parse_type(type_node));
                     }
-                    
+
                     // Get variable declarator
                     if let Some(declarator) = self.get_child_by_kind(child, "variable_declarator") {
                         if let Some(id) = self.get_child_by_kind(declarator, "identifier") {
                             name = self.get_node_text(id);
                         }
-                        
+
                         // Check for initialization
-                        if let Some(init) = self.get_child_by_kind(declarator, "equals_value_clause") {
-                            if let Some(expr_node) = init.child(1) { // Skip the '=' token
+                        if let Some(init) =
+                            self.get_child_by_kind(declarator, "equals_value_clause")
+                        {
+                            if let Some(expr_node) = init.child(1) {
+                                // Skip the '=' token
                                 if let Ok(expr) = self.parse_expression(expr_node) {
-                                    value = Some(TypedExpr { expr, inferred_type: None });
+                                    value = Some(TypedExpr {
+                                        expr,
+                                        inferred_type: None,
+                                    });
                                 }
                             }
                         }
@@ -197,14 +205,14 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         // If no explicit type was found but we have an initializer, infer from the initializer
         if typ.is_none() && value.is_some() {
             typ = self.infer_type_from_expr(&value.as_ref().unwrap().expr);
         }
-        
+
         self.debug_node("FIELD_DECL_END", node);
-        
+
         Ok(Variable {
             name,
             typ,
@@ -213,7 +221,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
             is_public,
         })
     }
-    
+
     // ... (infer_type_from_expr is unchanged)
 
     fn infer_type_from_expr(&self, expr: &Expr) -> Option<Type> {
@@ -230,9 +238,17 @@ self.debug_node("PARSE_SCRIPT", root_node);
             Expr::Literal(Literal::String(_)) => Some(Type::String),
             Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
             Expr::ContainerLiteral(kind, _) => match kind {
-                ContainerKind::Array => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
-                ContainerKind::Map => Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])),
-                ContainerKind::FixedArray(sz) => Some(Type::Container(ContainerKind::FixedArray(*sz), vec![Type::Object])),
+                ContainerKind::Array => {
+                    Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
+                }
+                ContainerKind::Map => Some(Type::Container(
+                    ContainerKind::Map,
+                    vec![Type::String, Type::Object],
+                )),
+                ContainerKind::FixedArray(sz) => Some(Type::Container(
+                    ContainerKind::FixedArray(*sz),
+                    vec![Type::Object],
+                )),
             },
             _ => None,
         }
@@ -245,7 +261,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
         let mut name = String::new();
         let mut params = Vec::new();
         let mut body = Vec::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             self.debug_node("METHOD_CHILD", child); // Debug method children
@@ -270,12 +286,12 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         let is_trait_method = name.to_lowercase() == "init" || name.to_lowercase() == "update";
         let locals = self.collect_locals(&body);
-        
+
         self.debug_node("METHOD_DECL_END", node);
-        
+
         Ok(Function {
             name,
             params,
@@ -288,14 +304,14 @@ self.debug_node("PARSE_SCRIPT", root_node);
     }
 
     // ... (parse_nested_class is unchanged, but you could add debug_node calls there too)
-    
+
     fn parse_nested_class(&self, node: tree_sitter::Node) -> Result<StructDef, String> {
         self.debug_node("NESTED_CLASS_START", node);
         let mut name = String::new();
         let mut base = None;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
@@ -331,9 +347,14 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         self.debug_node("NESTED_CLASS_END", node);
-        Ok(StructDef { name, fields, methods, base })
+        Ok(StructDef {
+            name,
+            fields,
+            methods,
+            base,
+        })
     }
 
     // ... (parse_parameter_list is unchanged)
@@ -341,7 +362,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_parameter_list(&self, node: tree_sitter::Node) -> Result<Vec<Param>, String> {
         let mut params = Vec::new();
         let mut cursor = node.walk();
-        
+
         for child in node.children(&mut cursor) {
             if child.kind() == "parameter" {
                 if let Ok(param) = self.parse_parameter(child) {
@@ -349,7 +370,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 }
             }
         }
-        
+
         Ok(params)
     }
 
@@ -358,7 +379,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_parameter(&self, node: tree_sitter::Node) -> Result<Param, String> {
         let mut typ = Type::Object;
         let mut name = String::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
@@ -371,7 +392,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         Ok(Param { name, typ })
     }
 
@@ -379,13 +400,13 @@ self.debug_node("PARSE_SCRIPT", root_node);
         self.debug_node("BLOCK_START", node); // Debug block start
         let mut statements = Vec::new();
         let mut cursor = node.walk();
-        
+
         for child in node.children(&mut cursor) {
             if let Ok(stmt) = self.parse_statement(child) {
                 statements.push(stmt);
             }
         }
-        
+
         self.debug_node("BLOCK_END", node);
         Ok(statements)
     }
@@ -393,9 +414,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_statement(&self, node: tree_sitter::Node) -> Result<Stmt, String> {
         self.debug_node("STMT_START", node); // Debug statement being parsed
         let result = match node.kind() {
-            "local_declaration_statement" => {
-                self.parse_local_declaration(node)
-            }
+            "local_declaration_statement" => self.parse_local_declaration(node),
             "expression_statement" => {
                 if let Some(expr_node) = node.child(0) {
                     self.parse_expression_statement(expr_node)
@@ -414,7 +433,10 @@ self.debug_node("PARSE_SCRIPT", root_node);
             _ => {
                 // Try to parse as expression
                 if let Ok(expr) = self.parse_expression(node) {
-                    Ok(Stmt::Expr(TypedExpr { expr, inferred_type: None }))
+                    Ok(Stmt::Expr(TypedExpr {
+                        expr,
+                        inferred_type: None,
+                    }))
                 } else {
                     // Don't error on unknown nodes, just skip them
                     Ok(Stmt::Pass)
@@ -437,7 +459,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
         let mut typ = None;
         let mut name = String::new();
         let mut value = None;
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == "variable_declaration" {
@@ -454,11 +476,16 @@ self.debug_node("PARSE_SCRIPT", root_node);
                             if let Some(id) = self.get_child_by_kind(decl_child, "identifier") {
                                 name = self.get_node_text(id);
                             }
-                            
-                            if let Some(init) = self.get_child_by_kind(decl_child, "equals_value_clause") {
+
+                            if let Some(init) =
+                                self.get_child_by_kind(decl_child, "equals_value_clause")
+                            {
                                 if let Some(expr_node) = init.child(1) {
                                     if let Ok(expr) = self.parse_expression(expr_node) {
-                                        value = Some(TypedExpr { expr, inferred_type: None });
+                                        value = Some(TypedExpr {
+                                            expr,
+                                            inferred_type: None,
+                                        });
                                     }
                                 }
                             }
@@ -468,14 +495,14 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 }
             }
         }
-        
+
         // If no explicit type and we have an initializer, infer from it
         if typ.is_none() && value.is_some() {
             typ = self.infer_type_from_expr(&value.as_ref().unwrap().expr);
         }
-        
+
         self.debug_node("LOCAL_DECL_END", node);
-        
+
         Ok(Stmt::VariableDecl(Variable {
             name,
             typ,
@@ -485,16 +512,16 @@ self.debug_node("PARSE_SCRIPT", root_node);
         }))
     }
 
-
     fn parse_expression_statement(&self, node: tree_sitter::Node) -> Result<Stmt, String> {
         self.debug_node("EXPR_STMT_START", node);
         let result = match node.kind() {
-            "assignment_expression" => {
-                self.parse_assignment(node)
-            }
+            "assignment_expression" => self.parse_assignment(node),
             _ => {
                 let expr = self.parse_expression(node)?;
-                Ok(Stmt::Expr(TypedExpr { expr, inferred_type: None }))
+                Ok(Stmt::Expr(TypedExpr {
+                    expr,
+                    inferred_type: None,
+                }))
             }
         };
         self.debug_node("EXPR_STMT_END", node);
@@ -502,18 +529,18 @@ self.debug_node("PARSE_SCRIPT", root_node);
     }
 
     // ... (parse_assignment is unchanged)
-    
+
     fn parse_assignment(&self, node: tree_sitter::Node) -> Result<Stmt, String> {
         let mut lhs = None;
         let mut op = None;
         let mut rhs = None;
-        
+
         let mut cursor = node.walk();
         let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
-        
+
         if children.len() >= 3 {
             lhs = Some(self.parse_expression(children[0])?);
-            
+
             // Parse operator
             let op_text = self.get_node_text(children[1]);
             op = match op_text.as_str() {
@@ -524,10 +551,10 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 "/=" => Some(Some(Op::Div)),
                 _ => None,
             };
-            
+
             rhs = Some(self.parse_expression(children[2])?);
         }
-        
+
         if let (Some(lhs_expr), Some(op_val), Some(rhs_expr)) = (lhs, op, rhs) {
             self.make_assign_stmt(lhs_expr, op_val, rhs_expr)
         } else {
@@ -538,17 +565,20 @@ self.debug_node("PARSE_SCRIPT", root_node);
     // ... (make_assign_stmt is unchanged)
 
     fn make_assign_stmt(&self, lhs: Expr, op: Option<Op>, rhs: Expr) -> Result<Stmt, String> {
-        let typed_rhs = TypedExpr { expr: rhs, inferred_type: None };
-        
+        let typed_rhs = TypedExpr {
+            expr: rhs,
+            inferred_type: None,
+        };
+
         match lhs {
             Expr::Ident(name) => Ok(match op {
                 None => Stmt::Assign(name, typed_rhs),
                 Some(op) => Stmt::AssignOp(name, op, typed_rhs),
             }),
             Expr::MemberAccess(obj, field) => {
-                let typed_lhs = TypedExpr { 
-                    expr: Expr::MemberAccess(obj, field), 
-                    inferred_type: None 
+                let typed_lhs = TypedExpr {
+                    expr: Expr::MemberAccess(obj, field),
+                    inferred_type: None,
                 };
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),
@@ -567,25 +597,25 @@ self.debug_node("PARSE_SCRIPT", root_node);
         self.debug_node("EXPR_START", node); // Debug expression being parsed
         let result = match node.kind() {
             "identifier" => Ok(Expr::Ident(self.get_node_text(node))),
-            
+
             "this_expression" => Ok(Expr::SelfAccess),
-            
+
             "base_expression" => Ok(Expr::BaseAccess),
-            
+
             "integer_literal" | "real_literal" => {
                 Ok(Expr::Literal(Literal::Number(self.get_node_text(node))))
             }
-            
+
             "string_literal" => {
                 let text = self.get_node_text(node);
                 let unquoted = text.trim_matches('"');
                 Ok(Expr::Literal(Literal::String(unquoted.to_string())))
             }
-            
+
             "true_literal" => Ok(Expr::Literal(Literal::Bool(true))),
-            
+
             "false_literal" => Ok(Expr::Literal(Literal::Bool(false))),
-            
+
             "parenthesized_expression" => {
                 if let Some(inner) = node.child(1) {
                     self.parse_expression(inner)
@@ -593,24 +623,24 @@ self.debug_node("PARSE_SCRIPT", root_node);
                     Err("Empty parenthesized expression".into())
                 }
             }
-            
+
             "binary_expression" => self.parse_binary_expression(node),
-            
+
             "invocation_expression" => self.parse_invocation(node),
-            
+
             "member_access_expression" => self.parse_member_access(node),
-            
+
             "element_access_expression" => self.parse_element_access(node),
-            
+
             "object_creation_expression" => self.parse_object_creation(node),
-            
+
             "array_creation_expression" => self.parse_array_creation(node),
-            
+
             "anonymous_object_creation_expression" => self.parse_anonymous_object(node),
-            
-            _ => Err(format!("Unsupported expression kind: {}", node.kind()))
+
+            _ => Err(format!("Unsupported expression kind: {}", node.kind())),
         };
-        
+
         if result.is_ok() {
             self.debug_node("EXPR_END", node);
         } else {
@@ -625,12 +655,12 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_binary_expression(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut cursor = node.walk();
         let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
-        
+
         if children.len() >= 3 {
             let left = self.parse_expression(children[0])?;
             let op_text = self.get_node_text(children[1]);
             let right = self.parse_expression(children[2])?;
-            
+
             let op = match op_text.as_str() {
                 "+" => Op::Add,
                 "-" => Op::Sub,
@@ -638,7 +668,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 "/" => Op::Div,
                 _ => return Err(format!("Unsupported binary operator: {}", op_text)),
             };
-            
+
             Ok(Expr::BinaryOp(Box::new(left), op, Box::new(right)))
         } else {
             Err("Invalid binary expression".into())
@@ -648,7 +678,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_invocation(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut func_expr = None;
         let mut args = Vec::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
@@ -663,7 +693,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         if let Some(expr) = func_expr {
             // Check if this is an API call
             if let Expr::MemberAccess(obj, method) = &expr {
@@ -673,7 +703,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                     }
                 }
             }
-            
+
             Ok(Expr::Call(Box::new(expr), args))
         } else {
             Err("Invalid invocation".into())
@@ -683,7 +713,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_argument_list(&self, node: tree_sitter::Node) -> Result<Vec<Expr>, String> {
         let mut args = Vec::new();
         let mut cursor = node.walk();
-        
+
         for child in node.children(&mut cursor) {
             if child.kind() == "argument" {
                 if let Some(expr_node) = child.child(0) {
@@ -691,18 +721,18 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 }
             }
         }
-        
+
         Ok(args)
     }
 
     fn parse_member_access(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut cursor = node.walk();
         let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
-        
+
         if children.len() >= 2 {
             // First child is the object, last is the member name
             let obj = self.parse_expression(children[0])?;
-            
+
             // The member name might be in a "simple_name" or directly as "identifier"
             let last_child = &children[children.len() - 1];
             let member = if last_child.kind() == "simple_name" {
@@ -714,7 +744,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
             } else {
                 self.get_node_text(*last_child)
             };
-            
+
             Ok(Expr::MemberAccess(Box::new(obj), member))
         } else {
             Err("Invalid member access".into())
@@ -724,12 +754,13 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_element_access(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut obj = None;
         let mut index = None;
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
                 "bracketed_argument_list" => {
-                    if let Some(arg_node) = child.child(1) { // Skip '['
+                    if let Some(arg_node) = child.child(1) {
+                        // Skip '['
                         if let Some(expr_node) = arg_node.child(0) {
                             index = Some(self.parse_expression(expr_node)?);
                         }
@@ -740,7 +771,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 }
             }
         }
-        
+
         if let (Some(o), Some(i)) = (obj, index) {
             Ok(Expr::Index(Box::new(o), Box::new(i)))
         } else {
@@ -751,7 +782,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_object_creation(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut type_name = String::new();
         let mut args = Vec::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
@@ -764,17 +795,17 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         // Determine container type
         if type_name.starts_with("Dictionary") {
             Ok(Expr::ContainerLiteral(
                 ContainerKind::Map,
-                ContainerLiteralData::Map(vec![])
+                ContainerLiteralData::Map(vec![]),
             ))
         } else if type_name.starts_with("List") {
             Ok(Expr::ContainerLiteral(
                 ContainerKind::Array,
-                ContainerLiteralData::Array(vec![])
+                ContainerLiteralData::Array(vec![]),
             ))
         } else {
             // StructNew expects Vec<(String, Expr)> for named arguments
@@ -786,13 +817,15 @@ self.debug_node("PARSE_SCRIPT", root_node);
     fn parse_array_creation(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut size = None;
         let mut initializers = Vec::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
                 "array_rank_specifier" => {
                     if let Some(size_node) = child.child(1) {
-                        if let Ok(Expr::Literal(Literal::Number(n))) = self.parse_expression(size_node) {
+                        if let Ok(Expr::Literal(Literal::Number(n))) =
+                            self.parse_expression(size_node)
+                        {
                             size = n.parse::<usize>().ok();
                         }
                     }
@@ -808,29 +841,29 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 _ => {}
             }
         }
-        
+
         if !initializers.is_empty() {
             let len = initializers.len();
             Ok(Expr::ContainerLiteral(
                 ContainerKind::FixedArray(len),
-                ContainerLiteralData::FixedArray(len, initializers)
+                ContainerLiteralData::FixedArray(len, initializers),
             ))
         } else if let Some(sz) = size {
             Ok(Expr::ContainerLiteral(
                 ContainerKind::FixedArray(sz),
-                ContainerLiteralData::FixedArray(sz, vec![])
+                ContainerLiteralData::FixedArray(sz, vec![]),
             ))
         } else {
             Ok(Expr::ContainerLiteral(
                 ContainerKind::Array,
-                ContainerLiteralData::Array(vec![])
+                ContainerLiteralData::Array(vec![]),
             ))
         }
     }
 
     fn parse_anonymous_object(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut pairs = Vec::new();
-        
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == "initializer_expression" {
@@ -838,8 +871,9 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 for init_child in child.children(&mut init_cursor) {
                     if init_child.kind() == "assignment_expression" {
                         let mut assign_cursor = init_child.walk();
-                        let assign_children: Vec<tree_sitter::Node> = init_child.children(&mut assign_cursor).collect();
-                        
+                        let assign_children: Vec<tree_sitter::Node> =
+                            init_child.children(&mut assign_cursor).collect();
+
                         if assign_children.len() >= 3 {
                             let key = self.get_node_text(assign_children[0]);
                             let value = self.parse_expression(assign_children[2])?;
@@ -849,7 +883,7 @@ self.debug_node("PARSE_SCRIPT", root_node);
                 }
             }
         }
-        
+
         Ok(Expr::ObjectLiteral(pairs))
     }
 
@@ -913,7 +947,11 @@ self.debug_node("PARSE_SCRIPT", root_node);
         false
     }
 
-    fn get_child_by_kind<'a>(&self, node: tree_sitter::Node<'a>, kind: &str) -> Option<tree_sitter::Node<'a>> {
+    fn get_child_by_kind<'a>(
+        &self,
+        node: tree_sitter::Node<'a>,
+        kind: &str,
+    ) -> Option<tree_sitter::Node<'a>> {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == kind {

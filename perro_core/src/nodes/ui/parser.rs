@@ -97,15 +97,9 @@ impl<'a> Lexer<'a> {
     fn is_ident_start(c: char) -> bool {
         c.is_alphabetic() || c == '_' || c == '-' || c == '#' || c.is_numeric()
     }
-    
+
     fn is_ident_char(c: char) -> bool {
-        c.is_alphanumeric()
-            || c == '_'
-            || c == '-'
-            || c == '%'
-            || c == '.'
-            || c == ','
-            || c == '#'
+        c.is_alphanumeric() || c == '_' || c == '-' || c == '%' || c == '.' || c == ',' || c == '#'
     }
 
     fn skip_whitespace_and_comments(&mut self) -> Result<(), String> {
@@ -154,19 +148,19 @@ impl<'a> Lexer<'a> {
     pub fn peek_char(&self) -> Option<char> {
         self.input[self.pos..].chars().next()
     }
-    
+
     fn peek_next_char(&self) -> Option<char> {
         let mut iter = self.input[self.pos..].chars();
         iter.next();
         iter.next()
     }
-    
+
     pub fn advance(&mut self) {
         if let Some(c) = self.peek_char() {
             self.pos += c.len_utf8();
         }
     }
-    
+
     fn expect_char(&mut self, expected: char) -> Result<(), String> {
         if self.peek_char() == Some(expected) {
             self.advance();
@@ -217,194 +211,188 @@ impl<'a> FurParser<'a> {
                 self.next_token()?;
                 Ok(FurNode::Text(Cow::Owned(t)))
             }
-            other => Err(format!(
-                "Unexpected token when parsing node: {:?}",
-                other
-            )),
+            other => Err(format!("Unexpected token when parsing node: {:?}", other)),
         }
     }
 
-   fn parse_element(&mut self) -> Result<FurNode, String> {
-    if self.current_token != Token::LBracket {
-        return Err(format!("Expected LBracket, found {:?}", self.current_token));
-    }
-    self.next_token()?; // consume '['
+    fn parse_element(&mut self) -> Result<FurNode, String> {
+        if self.current_token != Token::LBracket {
+            return Err(format!("Expected LBracket, found {:?}", self.current_token));
+        }
+        self.next_token()?; // consume '['
 
-    let is_closing = if self.current_token == Token::Slash {
-        self.next_token()?;
-        true
-    } else {
-        false
-    };
-
-    let tag_name = match &self.current_token {
-        Token::Identifier(name) => {
-            let n = *name;
+        let is_closing = if self.current_token == Token::Slash {
             self.next_token()?;
-            n
-        }
-        _ => return Err(format!("Expected tag name, found {:?}", self.current_token)),
-    };
+            true
+        } else {
+            false
+        };
 
-    if is_closing {
-        if self.current_token != Token::RBracket {
-            return Err(format!(
-                "Expected RBracket after closing tag, found {:?}",
-                self.current_token
-            ));
-        }
-        self.next_token()?;
-        return Err(format!(
-            "Unexpected closing tag without matching opening: {}",
-            tag_name
-        ));
-    }
-
-    self.element_stack.push(tag_name.to_string());
-
-    // ---- collect attributes
-    let mut attributes: HashMap<Cow<'static, str>, Cow<'static, str>> = HashMap::new();
-    while let Token::Identifier(attr_name) = &self.current_token {
-        let key = *attr_name;
-        self.next_token()?;
-        if self.current_token != Token::Equals {
-            return Err(format!("Expected '=', found {:?}", self.current_token));
-        }
-        self.next_token()?;
-        match &self.current_token {
-            Token::StringLiteral(val) | Token::Identifier(val) => {
-                let resolved_val = resolve_value(val, key.starts_with("rounding"));
-                attributes.insert(
-                Cow::Owned(key.to_string()), 
-                Cow::Owned(resolved_val)
-            );
+        let tag_name = match &self.current_token {
+            Token::Identifier(name) => {
+                let n = *name;
                 self.next_token()?;
+                n
             }
-            other => {
+            _ => return Err(format!("Expected tag name, found {:?}", self.current_token)),
+        };
+
+        if is_closing {
+            if self.current_token != Token::RBracket {
                 return Err(format!(
-                    "Expected string literal or identifier for attribute value, found {:?}",
-                    other
-                ))
+                    "Expected RBracket after closing tag, found {:?}",
+                    self.current_token
+                ));
+            }
+            self.next_token()?;
+            return Err(format!(
+                "Unexpected closing tag without matching opening: {}",
+                tag_name
+            ));
+        }
+
+        self.element_stack.push(tag_name.to_string());
+
+        // ---- collect attributes
+        let mut attributes: HashMap<Cow<'static, str>, Cow<'static, str>> = HashMap::new();
+        while let Token::Identifier(attr_name) = &self.current_token {
+            let key = *attr_name;
+            self.next_token()?;
+            if self.current_token != Token::Equals {
+                return Err(format!("Expected '=', found {:?}", self.current_token));
+            }
+            self.next_token()?;
+            match &self.current_token {
+                Token::StringLiteral(val) | Token::Identifier(val) => {
+                    let resolved_val = resolve_value(val, key.starts_with("rounding"));
+                    attributes.insert(Cow::Owned(key.to_string()), Cow::Owned(resolved_val));
+                    self.next_token()?;
+                }
+                other => {
+                    return Err(format!(
+                        "Expected string literal or identifier for attribute value, found {:?}",
+                        other
+                    ));
+                }
             }
         }
-    }
 
-    // ---- self-closing?
-    let self_closing = if self.current_token == Token::Slash {
-        self.next_token()?;
-        if self.current_token != Token::RBracket {
-            return Err(format!(
-                "Expected RBracket after self-closing '/', found {:?}",
-                self.current_token
-            ));
-        }
-        self.next_token()?;
-        true
-    } else {
-        if self.current_token != Token::RBracket {
-            return Err(format!(
-                "Expected RBracket, found {:?}", self.current_token
-            ));
-        }
-        // DON'T consume ']' yet for Text elements!
-        if tag_name != "Text" {
-            self.next_token()?; // consume ']'
-        }
-        false
-    };
+        // ---- self-closing?
+        let self_closing = if self.current_token == Token::Slash {
+            self.next_token()?;
+            if self.current_token != Token::RBracket {
+                return Err(format!(
+                    "Expected RBracket after self-closing '/', found {:?}",
+                    self.current_token
+                ));
+            }
+            self.next_token()?;
+            true
+        } else {
+            if self.current_token != Token::RBracket {
+                return Err(format!("Expected RBracket, found {:?}", self.current_token));
+            }
+            // DON'T consume ']' yet for Text elements!
+            if tag_name != "Text" {
+                self.next_token()?; // consume ']'
+            }
+            false
+        };
 
-    // ---- RAW TEXT HANDLING - COMPLETELY BYPASS TOKENIZATION
-    if tag_name == "Text" && !self_closing {
-        // NOW consume the ']' manually in the lexer
-        self.lexer.advance(); // consume ']'
-        
-        let content = self.extract_raw_text_content(tag_name)?;
-        
-        self.element_stack.pop();
-        
-        return Ok(FurNode::Element(FurElement {
-            tag_name: "Text".into(),
-            id: attributes.get("id").cloned()
-                .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into()).into(),
-            attributes,
-            children: vec![FurNode::Text(content.into())],
-            self_closing: false,
-        }));
-    }
+        // ---- RAW TEXT HANDLING - COMPLETELY BYPASS TOKENIZATION
+        if tag_name == "Text" && !self_closing {
+            // NOW consume the ']' manually in the lexer
+            self.lexer.advance(); // consume ']'
 
-    // ---- normal children (for non-Text elements)
-    let mut children = Vec::new();
-    if !self_closing {
-        loop {
-            if self.current_token == Token::LBracket {
-                let saved_pos = self.lexer.pos;
-                let saved_token = self.current_token.clone();
-                self.next_token()?;
-                if self.current_token == Token::Slash {
+            let content = self.extract_raw_text_content(tag_name)?;
+
+            self.element_stack.pop();
+
+            return Ok(FurNode::Element(FurElement {
+                tag_name: "Text".into(),
+                id: attributes
+                    .get("id")
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into())
+                    .into(),
+                attributes,
+                children: vec![FurNode::Text(content.into())],
+                self_closing: false,
+            }));
+        }
+
+        // ---- normal children (for non-Text elements)
+        let mut children = Vec::new();
+        if !self_closing {
+            loop {
+                if self.current_token == Token::LBracket {
+                    let saved_pos = self.lexer.pos;
+                    let saved_token = self.current_token.clone();
                     self.next_token()?;
-                    if let Token::Identifier(close_name) = &self.current_token {
-                        if *close_name == tag_name {
-                            self.next_token()?;
-                            if self.current_token != Token::RBracket {
-                                return Err(format!(
-                                    "Expected RBracket after closing tag, found {:?}",
-                                    self.current_token
-                                ));
+                    if self.current_token == Token::Slash {
+                        self.next_token()?;
+                        if let Token::Identifier(close_name) = &self.current_token {
+                            if *close_name == tag_name {
+                                self.next_token()?;
+                                if self.current_token != Token::RBracket {
+                                    return Err(format!(
+                                        "Expected RBracket after closing tag, found {:?}",
+                                        self.current_token
+                                    ));
+                                }
+                                self.next_token()?;
+                                break;
                             }
-                            self.next_token()?;
-                            break;
                         }
                     }
+                    self.lexer.pos = saved_pos;
+                    self.current_token = saved_token;
                 }
-                self.lexer.pos = saved_pos;
-                self.current_token = saved_token;
+                children.push(self.parse_node()?);
             }
-            children.push(self.parse_node()?);
         }
+
+        self.element_stack.pop();
+
+        let id = attributes
+            .get("id")
+            .cloned()
+            .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into());
+
+        Ok(FurNode::Element(FurElement {
+            tag_name: Cow::Owned(tag_name.to_string()),
+            id,
+            attributes,
+            children,
+            self_closing,
+        }))
     }
-
-    self.element_stack.pop();
-
-    let id = attributes.get("id").cloned()
-        .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into());
-
-   Ok(FurNode::Element(FurElement {
-    tag_name: Cow::Owned(tag_name.to_string()),
-    id,
-    attributes,
-    children,
-    self_closing,
-}))
-}
 
     // NEW METHOD: Extract text content without any tokenization
     fn extract_raw_text_content(&mut self, tag_name: &str) -> Result<String, String> {
         let content_start = self.lexer.pos;
         let closing_tag = format!("[/{}]", tag_name);
-        
+
         // Find the closing tag position in the remaining input
         let remaining_input = &self.lexer.input[content_start..];
-        
+
         if let Some(closing_pos) = remaining_input.find(&closing_tag) {
             // Extract the EXACT raw content - no processing yet
             let raw_content = &remaining_input[..closing_pos];
-            
-       
-            
+
             // Process the content to remove structural whitespace
             let processed_content = process_text_content(raw_content);
-            
-            
+
             // Update lexer position past the closing tag
             self.lexer.pos = content_start + closing_pos + closing_tag.len();
-            
+
             // Update current token
             self.current_token = if self.lexer.pos >= self.lexer.len {
                 Token::Eof
             } else {
                 self.lexer.next_token()?
             };
-            
+
             Ok(processed_content)
         } else {
             Err(format!("Missing closing tag [/{}]", tag_name))
@@ -419,41 +407,45 @@ fn process_text_content(raw_content: &str) -> String {
     if raw_content.trim().is_empty() {
         return String::new();
     }
-    
+
     // Split into lines
     let lines: Vec<&str> = raw_content.split('\n').collect();
-    
+
     // Find first and last non-empty lines
-    let first_content = lines.iter()
+    let first_content = lines
+        .iter()
         .position(|line| !line.trim().is_empty())
         .unwrap_or(0);
-    
-    let last_content = lines.iter()
+
+    let last_content = lines
+        .iter()
         .rposition(|line| !line.trim().is_empty())
         .map(|i| i + 1)
         .unwrap_or(lines.len());
-    
+
     if first_content >= last_content {
         return String::new();
     }
-    
+
     // Get the content lines
     let content_lines = &lines[first_content..last_content];
-    
+
     // If only one line, just trim and return
     if content_lines.len() == 1 {
         return content_lines[0].trim().to_string();
     }
-    
+
     // For multi-line, find common indentation
-    let min_indent = content_lines.iter()
+    let min_indent = content_lines
+        .iter()
         .filter(|line| !line.trim().is_empty())
         .map(|line| line.len() - line.trim_start().len())
         .min()
         .unwrap_or(0);
-    
+
     // Remove common indentation
-    let processed_lines: Vec<String> = content_lines.iter()
+    let processed_lines: Vec<String> = content_lines
+        .iter()
         .map(|line| {
             if line.trim().is_empty() {
                 String::new()
@@ -464,7 +456,7 @@ fn process_text_content(raw_content: &str) -> String {
             }
         })
         .collect();
-    
+
     processed_lines.join("\n")
 }
 
@@ -526,7 +518,11 @@ pub fn resolve_value(val: &str, is_rounding: bool) -> String {
             }
 
             // regular mapping
-            let map = if is_rounding { &*ROUNDING_MAP } else { &*GENERAL_MAP };
+            let map = if is_rounding {
+                &*ROUNDING_MAP
+            } else {
+                &*GENERAL_MAP
+            };
             map.get(part).unwrap_or(&part).to_string()
         })
         .collect::<Vec<_>>()

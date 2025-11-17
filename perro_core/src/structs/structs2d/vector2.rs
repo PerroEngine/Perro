@@ -1,6 +1,5 @@
-use serde::{Serialize, Deserialize};
-use std::ops::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
-
+use serde::{Deserialize, Serialize};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
 pub struct Vector2 {
@@ -19,18 +18,14 @@ impl Vector2 {
         Self { x: 1.0, y: 1.0 }
     }
 
-    
     pub fn is_half_half(pivot: &Vector2) -> bool {
-    pivot.x == 0.5 && pivot.y == 0.5
+        pivot.x == 0.5 && pivot.y == 0.5
     }
 
     pub fn default_pivot() -> Vector2 {
         Vector2::new(0.5, 0.5)
     }
-
 }
-
-
 
 // --- Add ---
 impl Add for Vector2 {

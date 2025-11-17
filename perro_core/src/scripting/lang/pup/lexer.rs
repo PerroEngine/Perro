@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use crate::lang::ast::*;
 use crate::lang::api_modules::{ApiModule, NodeSugarApi};
+use crate::lang::ast::*;
 use crate::lang::pup::api::{PupAPI, PupNodeSugar};
+use std::collections::HashMap;
 
 // =========================================================
 // TOKENS & LEXER
@@ -130,7 +130,7 @@ impl PupLexer {
                 }
             }
         }
-        
+
         // Handle thousands separators (like Rust's `1_000_000`)
         // Keep them in the string; the parser or later stages will handle them.
         while self.peek() == Some('_') {
@@ -143,7 +143,6 @@ impl PupLexer {
                 }
             }
         }
-
 
         // After consuming all parts of the number, create the token
         PupToken::Number(num_str)
@@ -177,14 +176,21 @@ impl PupLexer {
         }
     }
 
-     pub fn next_token(&mut self) -> PupToken {
+    pub fn next_token(&mut self) -> PupToken {
         self.skip_whitespace();
 
         // peek first so we can decide before consuming
-        let Some(ch) = self.peek() else { return PupToken::Eof; };
+        let Some(ch) = self.peek() else {
+            return PupToken::Eof;
+        };
 
         // ---------- numbers -----------
-        if ch == '-' && self.input.get(self.pos + 1).map_or(false, |next_ch| next_ch.is_ascii_digit()) {
+        if ch == '-'
+            && self
+                .input
+                .get(self.pos + 1)
+                .map_or(false, |next_ch| next_ch.is_ascii_digit())
+        {
             self.advance(); // Consume the '-'
             return self.read_number(true); // Call read_number, indicating it's already negative
         } else if ch.is_ascii_digit() {

@@ -1,15 +1,15 @@
 //! 🐾 BaRK Format (Binary Resource pacK)
 
 use std::fs::{self, File};
-use std::io::{self, Write, Seek, SeekFrom};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 use walkdir::WalkDir;
 
-use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use rand::RngCore;
 
-use zstd::stream::{encode_all}; // Added for Zstandard compression
+use zstd::stream::encode_all; // Added for Zstandard compression
 
 /// File types to skip entirely from BRK packaging (statically compiled)
 
@@ -21,21 +21,24 @@ const SKIP_SCENE_DATA: &[&str] = &["scn", "fur"];
 
 // Helper function to check if extension should be skipped
 fn should_skip_extension(ext: &str) -> bool {
-    SKIP_SCRIPTING.contains(&ext) 
-        || SKIP_SCENE_DATA.contains(&ext)
+    SKIP_SCRIPTING.contains(&ext) || SKIP_SCENE_DATA.contains(&ext)
 }
 
 /// File types to ENCRYPT (sensitive data files that users might want to protect)
 /// Everything else is left unencrypted (media assets like images, audio, fonts)
-const ENCRYPT_EXTENSIONS: &[&str] = &["toml", "json", "xml", "yaml", "yml", "dat", "bin", "exe", "dll", "so", "dylib"];
+const ENCRYPT_EXTENSIONS: &[&str] = &[
+    "toml", "json", "xml", "yaml", "yml", "dat", "bin", "exe", "dll", "so", "dylib",
+];
 
 /// File types that are already efficiently compressed (e.g., JPG, PNG, OGG)
 /// These might not benefit much from Zstd and could even get larger or take longer.
-const ALREADY_COMPRESSED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "ogg", "mp3", "webp", "zip", "gz", "bz2"];
+const ALREADY_COMPRESSED_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "ogg", "mp3", "webp", "zip", "gz", "bz2",
+];
 
 // Flags for BrkEntry
 const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is ZSTD compressed
-const FLAG_ENCRYPTED: u32 = 2;  // Bit 1: Data is AES-GCM encrypted
+const FLAG_ENCRYPTED: u32 = 2; // Bit 1: Data is AES-GCM encrypted
 
 /// Archive header
 pub struct BrkHeader {
@@ -50,7 +53,7 @@ pub struct BrkHeader {
 pub struct BrkEntry {
     pub path: String,
     pub offset: u64,
-    pub size: u64,          // This will be the *actual* size in the archive (compressed if FLAG_COMPRESSED)
+    pub size: u64, // This will be the *actual* size in the archive (compressed if FLAG_COMPRESSED)
     pub original_size: u64, // The original size before any compression
     pub flags: u32,
     pub nonce: [u8; 12],
@@ -67,7 +70,12 @@ fn write_header(file: &mut File, header: &BrkHeader) -> io::Result<()> {
 }
 
 /// Build a `.brk` archive
-pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8; 32]) -> io::Result<()> {
+pub fn build_brk(
+    output: &Path,
+    res_dir: &Path,
+    _project_root: &Path,
+    key: &[u8; 32],
+) -> io::Result<()> {
     let mut file = File::create(output)?;
 
     // Write placeholder header
@@ -84,20 +92,28 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8;
 
     // Define a ZSTD compression level (1-22, higher is more compression, slower)
     // 0 is default, negative numbers are fast. Higher numbers improve ratio.
-    const COMPRESSION_LEVEL: i32 = 12; 
+    const COMPRESSION_LEVEL: i32 = 12;
 
     // Helper closure to process data (compress, then encrypt if needed)
-    let process_data = |mut data: Vec<u8>, should_encrypt: bool, should_compress: bool| -> io::Result<(Vec<u8>, u32, [u8; 12], [u8; 16], u64)> {
+    let process_data = |mut data: Vec<u8>,
+                        should_encrypt: bool,
+                        should_compress: bool|
+     -> io::Result<(Vec<u8>, u32, [u8; 12], [u8; 16], u64)> {
         let original_data_len = data.len() as u64;
         let mut flags = 0;
         let mut nonce = [0u8; 12];
         let mut tag = [0u8; 16];
 
         // --- COMPRESSION STEP ---
-        if should_compress && original_data_len > 0 { // Only compress if flagged and not empty
-            let compressed_data = encode_all(&*data, COMPRESSION_LEVEL)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("ZSTD compression failed: {}", e)))?;
-            
+        if should_compress && original_data_len > 0 {
+            // Only compress if flagged and not empty
+            let compressed_data = encode_all(&*data, COMPRESSION_LEVEL).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("ZSTD compression failed: {}", e),
+                )
+            })?;
+
             // Only use compressed data if it's actually smaller.
             // Zstd has a header, so very tiny files might get slightly larger.
             if compressed_data.len() < data.len() {
@@ -110,7 +126,8 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8;
         if should_encrypt {
             rand::thread_rng().fill_bytes(&mut nonce);
             let nonce_obj = Nonce::from_slice(&nonce);
-            let encrypted = cipher.encrypt(nonce_obj, &*data)
+            let encrypted = cipher
+                .encrypt(nonce_obj, &*data)
                 .map_err(|_| io::Error::new(io::ErrorKind::Other, "Encryption failed"))?;
             let (ciphertext, gcm_tag) = encrypted.split_at(encrypted.len() - 16);
             data = ciphertext.to_vec();
@@ -159,7 +176,11 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8;
                 }
             }
 
-            let rel = path.strip_prefix(res_dir).unwrap().to_string_lossy().to_string();
+            let rel = path
+                .strip_prefix(res_dir)
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
 
             // Read file data (no more minification since .scn and .fur are skipped)
             let data = fs::read(path)?;
@@ -170,7 +191,7 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8;
             } else {
                 false
             };
-            
+
             // Determine if this file should be compressed
             let should_compress = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 !ALREADY_COMPRESSED_EXTENSIONS.contains(&ext) // Don't re-compress if format is already compressed
@@ -178,7 +199,8 @@ pub fn build_brk(output: &Path, res_dir: &Path, _project_root: &Path, key: &[u8;
                 true // Default to compressing unknown extensions
             };
 
-            let (processed_data, flags, nonce, tag, original_size) = process_data(data, should_encrypt, should_compress)?;
+            let (processed_data, flags, nonce, tag, original_size) =
+                process_data(data, should_encrypt, should_compress)?;
 
             let offset = file.seek(SeekFrom::Current(0))?;
             file.write_all(&processed_data)?;

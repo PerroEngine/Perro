@@ -1,7 +1,12 @@
-use std::{collections::HashMap, ffi::CString, io, os::raw::c_char};
+use crate::{
+    SceneData,
+    apply_fur::parse_fur_file,
+    asset_io::ProjectRoot,
+    ast::{FurElement, FurNode},
+    script::{CreateFn, ScriptProvider},
+};
 use libloading::Library;
-use crate::{SceneData, apply_fur::parse_fur_file, asset_io::ProjectRoot, ast::{FurElement, FurNode}, script::{CreateFn, ScriptProvider}};
-
+use std::{collections::HashMap, ffi::CString, io, os::raw::c_char};
 
 /// Dynamic DLL-based provider (default for game projects)
 pub struct DllScriptProvider {
@@ -17,28 +22,34 @@ impl DllScriptProvider {
         }
     }
 
-pub fn inject_project_root(&self, root: &ProjectRoot) -> anyhow::Result<()> {
-    let lib = self.lib.as_ref().ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
+    pub fn inject_project_root(&self, root: &ProjectRoot) -> anyhow::Result<()> {
+        let lib = self
+            .lib
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
 
-    unsafe {
-        let set_root_fn: libloading::Symbol<unsafe extern "C" fn(*const c_char, *const c_char)> =
-            lib.get(b"perro_set_project_root\0")?;
+        unsafe {
+            let set_root_fn: libloading::Symbol<
+                unsafe extern "C" fn(*const c_char, *const c_char),
+            > = lib.get(b"perro_set_project_root\0")?;
 
-        // Match to extract disk path and name
-        if let ProjectRoot::Disk { root: path_buf, name } = root {
-            let path_c = CString::new(path_buf.to_string_lossy().as_ref())?;
-            let name_c = CString::new(name.as_str())?;
+            // Match to extract disk path and name
+            if let ProjectRoot::Disk {
+                root: path_buf,
+                name,
+            } = root
+            {
+                let path_c = CString::new(path_buf.to_string_lossy().as_ref())?;
+                let name_c = CString::new(name.as_str())?;
 
-            set_root_fn(path_c.as_ptr(), name_c.as_ptr());
-        } else {
-            anyhow::bail!("inject_project_root only supports ProjectRoot::Disk for now");
+                set_root_fn(path_c.as_ptr(), name_c.as_ptr());
+            } else {
+                anyhow::bail!("inject_project_root only supports ProjectRoot::Disk for now");
+            }
         }
+
+        Ok(())
     }
-
-    Ok(())
-}
-
-    
 }
 
 impl ScriptProvider for DllScriptProvider {
@@ -47,7 +58,10 @@ impl ScriptProvider for DllScriptProvider {
             return Ok(f);
         }
 
-        let lib = self.lib.as_ref().ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
+        let lib = self
+            .lib
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
         let symbol = format!("{short}_create_script\0");
         let sym: libloading::Symbol<CreateFn> = unsafe { lib.get(symbol.as_bytes())? };
         let fptr = *sym;
@@ -60,20 +74,20 @@ impl ScriptProvider for DllScriptProvider {
         SceneData::load(path)
     }
 
-fn load_fur_data(&self, path: &str) -> io::Result<Vec<FurElement>> {
-    match parse_fur_file(path) {
-        Ok(ast) => {
-            let fur_elements: Vec<FurElement> = ast
-                .into_iter()
-                .filter_map(|f| match f {
-                    FurNode::Element(el) => Some(el),
-                    _ => None,
-                })
-                .collect();
+    fn load_fur_data(&self, path: &str) -> io::Result<Vec<FurElement>> {
+        match parse_fur_file(path) {
+            Ok(ast) => {
+                let fur_elements: Vec<FurElement> = ast
+                    .into_iter()
+                    .filter_map(|f| match f {
+                        FurNode::Element(el) => Some(el),
+                        _ => None,
+                    })
+                    .collect();
 
-            Ok(fur_elements)
+                Ok(fur_elements)
+            }
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
         }
-        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
     }
-}
 }

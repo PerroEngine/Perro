@@ -1,6 +1,5 @@
 use crate::lang::api_modules::*;
 
-
 // ---------------------------------------------------------------------
 // Central router: maps *C# syntax tokens* to engine semantic API calls
 // ---------------------------------------------------------------------
@@ -11,7 +10,7 @@ impl CSharpAPI {
         match module {
             CSharpJSON::NAME => CSharpJSON::resolve_method(func),
             CSharpTime::NAME => CSharpTime::resolve_method(func),
-            CSharpOS::NAME   => CSharpOS::resolve_method(func),
+            CSharpOS::NAME => CSharpOS::resolve_method(func),
             CSharpConsole::NAME => CSharpConsole::resolve_method(func),
             _ => None,
         }
@@ -30,7 +29,7 @@ impl CSharpJSON {
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
             "DeserializeObject" => Some(ApiModule::JSON(JSONApi::Parse)),
-            "SerializeObject"   => Some(ApiModule::JSON(JSONApi::Stringify)),
+            "SerializeObject" => Some(ApiModule::JSON(JSONApi::Stringify)),
             _ => None,
         }
     }
@@ -44,7 +43,7 @@ impl CSharpTime {
         match method {
             "GetDeltaTime" => Some(ApiModule::Time(TimeApi::DeltaTime)),
             "Sleep" => Some(ApiModule::Time(TimeApi::SleepMsec)),
-            "Now"   => Some(ApiModule::Time(TimeApi::GetUnixMsec)),
+            "Now" => Some(ApiModule::Time(TimeApi::GetUnixMsec)),
             _ => None,
         }
     }
@@ -58,7 +57,7 @@ impl CSharpOS {
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
             "GetEnvironmentVariable" => Some(ApiModule::OS(OSApi::GetEnv)),
-            "GetPlatform"              => Some(ApiModule::OS(OSApi::GetPlatformName)),
+            "GetPlatform" => Some(ApiModule::OS(OSApi::GetPlatformName)),
             _ => None,
         }
     }
@@ -70,10 +69,10 @@ impl CSharpConsole {
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
-            "WriteLine"      => Some(ApiModule::Console(ConsoleApi::Log)),
-            "Warn"   => Some(ApiModule::Console(ConsoleApi::Warn)),
-            "Error"     => Some(ApiModule::Console(ConsoleApi::Error)),
-            "WriteInfo"      => Some(ApiModule::Console(ConsoleApi::Info)),
+            "WriteLine" => Some(ApiModule::Console(ConsoleApi::Log)),
+            "Warn" => Some(ApiModule::Console(ConsoleApi::Warn)),
+            "Error" => Some(ApiModule::Console(ConsoleApi::Error)),
+            "WriteInfo" => Some(ApiModule::Console(ConsoleApi::Info)),
             _ => None,
         }
     }

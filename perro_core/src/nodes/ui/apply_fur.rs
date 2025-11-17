@@ -1,5 +1,5 @@
-use std::{borrow::Cow, collections::HashMap, time::Instant};
 use indexmap::IndexMap;
+use std::{borrow::Cow, collections::HashMap, time::Instant};
 use uuid::Uuid;
 
 use crate::{
@@ -41,16 +41,17 @@ fn parse_f32_percent(v: &str, default: f32) -> (f32, bool) {
 // =================== FILE PARSING ===================
 
 pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
-    let bytes = load_asset(path)
-        .map_err(|e| format!("Failed to read .fur file {}: {}", path, e))?;
+    let bytes =
+        load_asset(path).map_err(|e| format!("Failed to read .fur file {}: {}", path, e))?;
 
     let code = String::from_utf8_lossy(&bytes);
     let mut parser =
         crate::parser::FurParser::new(&code).map_err(|e| format!("Init parser: {}", e))?;
 
     let start = Instant::now();
-    let ast = parser.parse().map_err(|e| format!("Parse fail {}: {}", path, e))?;
-
+    let ast = parser
+        .parse()
+        .map_err(|e| format!("Parse fail {}: {}", path, e))?;
 
     Ok(ast)
 }
@@ -70,7 +71,9 @@ pub fn parse_color_with_opacity(value: &str) -> Result<Color, String> {
     };
 
     if let Some(op) = opacity_part {
-        let p = op.parse::<u8>().map_err(|_| format!("Bad opacity '{}'", op))?;
+        let p = op
+            .parse::<u8>()
+            .map_err(|_| format!("Bad opacity '{}'", op))?;
         if p > 100 {
             return Err(format!("Opacity '{}' out of 0–100", p));
         }
@@ -86,7 +89,10 @@ fn parse_compound(value: &str) -> (Option<&str>, Option<&str>) {
     split2(value, ',')
 }
 
-fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<Cow<'static, str>, Cow<'static, str>>) {
+fn apply_base_attributes(
+    base: &mut BaseUIElement,
+    attrs: &HashMap<Cow<'static, str>, Cow<'static, str>>,
+) {
     base.style_map.clear();
 
     // OPT: static defaults cached in BaseUIElement::default() as well
@@ -161,7 +167,7 @@ fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<Cow<'static, 
                 }
             }
 
-             "sz" => {
+            "sz" => {
                 let (x, y) = parse_compound(v);
                 if let Some(xv) = x {
                     let (f, pct) = parse_f32_percent(xv, 1.0);
@@ -180,7 +186,6 @@ fn apply_base_attributes(base: &mut BaseUIElement, attrs: &HashMap<Cow<'static, 
                     }
                 }
             }
-
 
             "w" | "sz-x" => {
                 let (f, pct) = parse_f32_percent(v, base.size.x);
@@ -278,82 +283,90 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 panel.props.border_thickness = b.parse().unwrap_or(0.0);
             }
 
-        let mut corner = CornerRadius::default();
+            let mut corner = CornerRadius::default();
 
-// Helper to parse a single float value
-fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
-    v.and_then(|s| s.trim().parse().ok())
-}
+            // Helper to parse a single float value
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
 
-// Step 1: base rounding list (like "rounding: 1,2,3,4")
-if let Some(value) = fur.attributes.get("rounding") {
-    let mut vals = [0.0; 4];
-    for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-        vals[i] = v.parse().unwrap_or(0.0);
-    }
+            // Step 1: base rounding list (like "rounding: 1,2,3,4")
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut vals = [0.0; 4];
+                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
 
-    match value.split(',').count() {
-        0 | 1 => corner = CornerRadius::uniform(vals[0]),
-        2 => {
-            corner.top_left = vals[0];
-            corner.top_right = vals[0];
-            corner.bottom_left = vals[1];
-            corner.bottom_right = vals[1];
-        }
-        3 => {
-            corner.top_left = vals[0];
-            corner.top_right = vals[1];
-            corner.bottom_left = vals[1];
-            corner.bottom_right = vals[2];
-        }
-        4 => {
-            corner.top_left = vals[0];
-            corner.top_right = vals[1];
-            corner.bottom_left = vals[2];
-            corner.bottom_right = vals[3];
-        }
-        _ => {}
-    }
-}
+                match value.split(',').count() {
+                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
+                    2 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
+                    }
+                    3 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
+                    }
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
+                    }
+                    _ => {}
+                }
+            }
 
-// Step 2: directional overrides (t, b, l, r)
-if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
-    corner.top_left = v;
-    corner.top_right = v;
-}
-if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
-    corner.bottom_left = v;
-    corner.bottom_right = v;
-}
-if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
-    corner.top_left = v;
-    corner.bottom_left = v;
-}
-if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
-    corner.top_right = v;
-    corner.bottom_right = v;
-}
+            // Step 2: directional overrides (t, b, l, r)
+            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+                corner.top_left = v;
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+                corner.bottom_left = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+                corner.top_left = v;
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+                corner.top_right = v;
+                corner.bottom_right = v;
+            }
 
-// Step 3: individual corner overrides (tl, tr, bl, br) – highest priority
-if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) { corner.top_left = v; }
-if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) { corner.top_right = v; }
-if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) { corner.bottom_left = v; }
-if let Some(v) = parse_val(fur.attributes.get("rounding-br")) { corner.bottom_right = v; }
+            // Step 3: individual corner overrides (tl, tr, bl, br) – highest priority
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
+                corner.top_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
+                corner.bottom_right = v;
+            }
 
             panel.props.corner_radius = corner;
             Some(UIElement::Panel(panel))
         }
 
         "Layout" | "HLayout" | "VLayout" | "Grid" => {
-          if tag == "Grid"
-                    || fur.attributes
-                        .get("mode")
-                        .map(|s| s.eq_ignore_ascii_case("g"))
-                        .unwrap_or(false)
-                {
-                    let mut g = GridLayout::default();
-                    g.set_name(&fur.id);
-
+            if tag == "Grid"
+                || fur
+                    .attributes
+                    .get("mode")
+                    .map(|s| s.eq_ignore_ascii_case("g"))
+                    .unwrap_or(false)
+            {
+                let mut g = GridLayout::default();
+                g.set_name(&fur.id);
 
                 apply_base_attributes(&mut g.base, &fur.attributes);
                 if let Some(c) = fur.attributes.get("cols") {
@@ -396,11 +409,21 @@ if let Some(v) = parse_val(fur.attributes.get("rounding-br")) { corner.bottom_ri
             text.props.content = fur
                 .children
                 .iter()
-                .filter_map(|n| if let FurNode::Text(s) = n { Some(s.as_ref()) } else { None })
+                .filter_map(|n| {
+                    if let FurNode::Text(s) = n {
+                        Some(s.as_ref())
+                    } else {
+                        None
+                    }
+                })
                 .collect::<Vec<&str>>()
                 .join("");
 
-            if let Some(fs) = fur.attributes.get("fsz").or(fur.attributes.get("font-size")) {
+            if let Some(fs) = fur
+                .attributes
+                .get("fsz")
+                .or(fur.attributes.get("font-size"))
+            {
                 text.props.font_size = fs.parse().unwrap_or(text.props.font_size);
             }
 
@@ -460,10 +483,14 @@ fn convert_fur_element_to_ui_elements(
 // =================== BUILD UI ===================
 
 pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
-    let elements = ui.elements.get_or_insert_with(|| IndexMap::with_capacity(elems.len()));
+    let elements = ui
+        .elements
+        .get_or_insert_with(|| IndexMap::with_capacity(elems.len()));
     elements.clear();
 
-    let root_ids = ui.root_ids.get_or_insert_with(|| Vec::with_capacity(elems.len()));
+    let root_ids = ui
+        .root_ids
+        .get_or_insert_with(|| Vec::with_capacity(elems.len()));
     root_ids.clear();
 
     for el in elems {

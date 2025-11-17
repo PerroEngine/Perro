@@ -8,10 +8,8 @@ pub enum ApiModule {
     NodeSugar(NodeSugarApi),
     Signal(SignalApi),
 
-
-
     ArrayOp(ArrayApi),
-    MapOp(MapApi)
+    MapOp(MapApi),
 }
 
 #[derive(Debug, Clone)]
@@ -38,12 +36,12 @@ pub enum ConsoleApi {
     Log,
     Warn,
     Error,
-    Info
+    Info,
 }
 
 #[derive(Debug, Clone)]
 pub enum ScriptTypeApi {
-    Instantiate
+    Instantiate,
 }
 
 #[derive(Debug, Clone)]
@@ -52,18 +50,12 @@ pub enum NodeSugarApi {
     SetVar,
 }
 
-
-
 #[derive(Debug, Clone)]
 pub enum SignalApi {
     New,
     Connect,
-    Emit
+    Emit,
 }
-
-
-
-
 
 #[derive(Debug, Clone)]
 pub enum ArrayApi {
@@ -73,9 +65,8 @@ pub enum ArrayApi {
     Remove,
     Len,
 
-    New
+    New,
 }
-
 
 #[derive(Debug, Clone)]
 pub enum MapApi {
@@ -85,6 +76,6 @@ pub enum MapApi {
     Contains,
     Len,
     Clear,
-    
+
     New,
 }

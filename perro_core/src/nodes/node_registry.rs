@@ -1,9 +1,9 @@
-use std::{any::Any, collections::HashMap};
-use std::fmt::Debug;
 use serde_json::Value;
+use std::fmt::Debug;
+use std::{any::Any, collections::HashMap};
 use uuid::Uuid;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Base trait implemented by all engine node types.
 /// Provides unified access and manipulation for all node variants stored in `SceneNode`.
@@ -34,15 +34,21 @@ pub trait BaseNode: Any + Debug + Send {
     fn is_dirty(&self) -> bool;
     fn set_dirty(&mut self, dirty: bool);
 
-    fn mark_dirty(&mut self) { self.set_dirty(true); }
+    fn mark_dirty(&mut self) {
+        self.set_dirty(true);
+    }
 
     fn get_children_mut(&mut self) -> &mut Vec<Uuid>;
 
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn clear_children(&mut self) { self.get_children_mut().clear(); }
-    fn clear_parent(&mut self) { self.set_parent(None); }
+    fn clear_children(&mut self) {
+        self.get_children_mut().clear();
+    }
+    fn clear_parent(&mut self) {
+        self.set_parent(None);
+    }
 }
 
 /// Used to unwrap `SceneNode` variants back into their concrete types.
@@ -56,13 +62,25 @@ pub trait IntoInner<T> {
 macro_rules! impl_scene_node {
     ($ty:ty, $variant:ident) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
-            fn get_id(&self) -> uuid::Uuid { self.id }
-            fn get_local_id(&self) -> uuid::Uuid { self.local_id }
-            fn set_id(&mut self, id: uuid::Uuid) { self.id = id; }
-            fn set_local_id(&mut self, local_id: uuid::Uuid) { self.local_id = local_id; }
+            fn get_id(&self) -> uuid::Uuid {
+                self.id
+            }
+            fn get_local_id(&self) -> uuid::Uuid {
+                self.local_id
+            }
+            fn set_id(&mut self, id: uuid::Uuid) {
+                self.id = id;
+            }
+            fn set_local_id(&mut self, local_id: uuid::Uuid) {
+                self.local_id = local_id;
+            }
 
-            fn get_name(&self) -> &str { &self.name }
-            fn get_parent(&self) -> Option<uuid::Uuid> { self.parent }
+            fn get_name(&self) -> &str {
+                &self.name
+            }
+            fn get_parent(&self) -> Option<uuid::Uuid> {
+                self.parent
+            }
 
             fn get_children(&self) -> &Vec<uuid::Uuid> {
                 // Return empty vec reference if None
@@ -72,15 +90,18 @@ macro_rules! impl_scene_node {
                     None => &EMPTY_CHILDREN,
                 }
             }
-            
 
-            fn get_type(&self) -> &str { &self.ty }
+            fn get_type(&self) -> &str {
+                &self.ty
+            }
 
             fn get_script_path(&self) -> Option<&str> {
                 self.script_path.as_deref() // This works for both Cow and Option<String>
             }
 
-            fn set_parent(&mut self, p: Option<uuid::Uuid>) { self.parent = p; }
+            fn set_parent(&mut self, p: Option<uuid::Uuid>) {
+                self.parent = p;
+            }
 
             fn add_child(&mut self, c: uuid::Uuid) {
                 self.children.get_or_insert_with(Vec::new).push(c);
@@ -92,12 +113,16 @@ macro_rules! impl_scene_node {
                 }
             }
 
-            fn set_script_path(&mut self, path: &str) { 
+            fn set_script_path(&mut self, path: &str) {
                 self.script_path = Some(std::borrow::Cow::Owned(path.to_string()));
             }
 
-            fn is_dirty(&self) -> bool { self.dirty }
-            fn set_dirty(&mut self, dirty: bool) { self.dirty = dirty; }
+            fn is_dirty(&self) -> bool {
+                self.dirty
+            }
+            fn set_dirty(&mut self, dirty: bool) {
+                self.dirty = dirty;
+            }
 
             fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
                 self.children.get_or_insert_with(Vec::new)
@@ -111,8 +136,12 @@ macro_rules! impl_scene_node {
                 self.script_exp_vars = vars;
             }
 
-            fn as_any(&self) -> &dyn std::any::Any { self }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
         }
 
         impl $ty {
@@ -160,13 +189,13 @@ macro_rules! define_nodes {
             {
                 use serde_json::Value;
                 use serde::de::Error;
-                
+
                 let value = Value::deserialize(deserializer)?;
-                
+
                 let type_str = value.get("type")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| D::Error::missing_field("type"))?;
-                    
+
                 match type_str {
                     $(
                         stringify!($variant) => {
@@ -176,7 +205,7 @@ macro_rules! define_nodes {
                         },
                     )+
                     _ => Err(D::Error::unknown_variant(
-                        type_str, 
+                        type_str,
                         &[$(stringify!($variant)),+]
                     )),
                 }

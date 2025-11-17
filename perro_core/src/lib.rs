@@ -1,36 +1,31 @@
 //! “Public” API of your engine
-pub mod nodes;
-pub mod structs;
-pub mod scene;     
-pub mod rendering;
-pub mod scripting;
-pub mod project;
 pub mod brk;
-pub mod types;
+pub mod nodes;
+pub mod project;
+pub mod rendering;
 pub mod runtime;
-
+pub mod scene;
+pub mod scripting;
+pub mod structs;
+pub mod types;
 
 pub use nodes::*;
-pub use structs::*;
-pub use rendering::*;
-pub use scripting::*;
-pub use scene::*;
 pub use project::*;
-
+pub use rendering::*;
+pub use scene::*;
+pub use scripting::*;
+pub use structs::*;
 
 use crate::app::App;
 use crate::registry::DllScriptProvider;
 
 pub type RuntimeApp = App<DllScriptProvider>;
 
-
-
 pub mod prelude {
     // Core engine node types
     pub use crate::nodes::*;
     pub use crate::ui_node::UINode;
 
-    
     pub use crate::structs::*;
 
     // Script API — only what script authors should use
@@ -45,7 +40,7 @@ pub mod prelude {
             hash = hash.wrapping_mul(FNV_PRIME);
         }
         hash
-}
+    }
 
     pub use crate::api::ScriptApi;
     // Correct source for UpdateOp

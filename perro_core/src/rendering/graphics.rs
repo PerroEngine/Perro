@@ -2,22 +2,17 @@ use std::{borrow::Cow, collections::HashMap, fmt, ops::Range, sync::Arc};
 
 use bytemuck::cast_slice;
 use wgpu::{
-    util::DeviceExt, Adapter, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, 
-    BindingResource, BufferBinding, BufferBindingType, BufferDescriptor, BufferSize, 
-    BufferUsages, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, 
-    Instance, Limits, MemoryHints, Queue, RenderPass, RequestAdapterOptions, 
-    SurfaceConfiguration, TextureFormat, TextureViewDescriptor, PowerPreference
+    Adapter, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
+    BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor,
+    Device, DeviceDescriptor, Features, Instance, Limits, MemoryHints, PowerPreference, Queue,
+    RenderPass, RequestAdapterOptions, SurfaceConfiguration, TextureFormat, TextureViewDescriptor,
+    util::DeviceExt,
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 use crate::{
-    asset_io::load_asset,
-    font::FontAtlas,
-    renderer_prim::PrimitiveRenderer,
-    renderer_2d::Renderer2D,
-    renderer_ui::RendererUI,
-    renderer_3d::Renderer3D,
-    structs2d::ImageTexture,
+    asset_io::load_asset, font::FontAtlas, renderer_2d::Renderer2D, renderer_3d::Renderer3D,
+    renderer_prim::PrimitiveRenderer, renderer_ui::RendererUI, structs2d::ImageTexture,
     vertex::Vertex,
 };
 
@@ -121,10 +116,7 @@ pub struct Graphics {
     cached_operations: wgpu::Operations<wgpu::Color>,
 }
 
-pub async fn create_graphics(
-    window: SharedWindow,
-    proxy: EventLoopProxy<Graphics>,
-) {
+pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphics>) {
     // 1) Instance / Surface / Adapter / Device+Queue
     let instance = Instance::default();
     let surface = instance.create_surface(Rc::clone(&window)).unwrap();
@@ -196,12 +188,30 @@ pub async fn create_graphics(
 
     // 4) Quad vertex buffer
     let vertices: &[Vertex] = &[
-        Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
-        Vertex { position: [0.5, -0.5], uv: [1.0, 1.0] },
-        Vertex { position: [0.5, 0.5], uv: [1.0, 0.0] },
-        Vertex { position: [-0.5, -0.5], uv: [0.0, 1.0] },
-        Vertex { position: [0.5, 0.5], uv: [1.0, 0.0] },
-        Vertex { position: [-0.5, 0.5], uv: [0.0, 0.0] },
+        Vertex {
+            position: [-0.5, -0.5],
+            uv: [0.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, -0.5],
+            uv: [1.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, 0.5],
+            uv: [1.0, 0.0],
+        },
+        Vertex {
+            position: [-0.5, -0.5],
+            uv: [0.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, 0.5],
+            uv: [1.0, 0.0],
+        },
+        Vertex {
+            position: [-0.5, 0.5],
+            uv: [0.0, 0.0],
+        },
     ];
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Vertex Buffer"),
@@ -214,16 +224,16 @@ pub async fn create_graphics(
     let virtual_height = VIRTUAL_HEIGHT;
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
-    
+
     let virtual_aspect = virtual_width / virtual_height;
     let window_aspect = window_width / window_height;
-    
+
     let (scale_x, scale_y) = if window_aspect > virtual_aspect {
         (virtual_aspect / window_aspect, 1.0)
     } else {
         (1.0, window_aspect / virtual_aspect)
     };
-    
+
     let camera_data = [
         virtual_width,
         virtual_height,
@@ -235,11 +245,8 @@ pub async fn create_graphics(
     // 6) Create renderers
 
     let renderer_3d = Renderer3D::new(&device, &camera_bind_group_layout, surface_config.format);
-    let renderer_prim = PrimitiveRenderer::new(
-        &device, 
-        &camera_bind_group_layout, 
-        surface_config.format
-    );
+    let renderer_prim =
+        PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
 
@@ -286,36 +293,30 @@ impl Graphics {
         let virtual_height = VIRTUAL_HEIGHT;
         let window_width = self.surface_config.width as f32;
         let window_height = self.surface_config.height as f32;
-        
+
         let virtual_aspect = virtual_width / virtual_height;
         let window_aspect = window_width / window_height;
-        
+
         let (scale_x, scale_y) = if window_aspect > virtual_aspect {
             (virtual_aspect / window_aspect, 1.0)
         } else {
             (1.0, window_aspect / virtual_aspect)
         };
-        
+
         let camera_data = [
             virtual_width,
             virtual_height,
             scale_x * 2.0 / virtual_width,
             scale_y * 2.0 / virtual_height,
         ];
-        
-        self.queue.write_buffer(
-            &self.camera_buffer, 
-            0, 
-            bytemuck::cast_slice(&camera_data)
-        );
+
+        self.queue
+            .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
     }
 
     pub fn initialize_font_atlas(&mut self, font_atlas: FontAtlas) {
-        self.renderer_prim.initialize_font_atlas(
-            &self.device, 
-            &self.queue, 
-            font_atlas
-        );
+        self.renderer_prim
+            .initialize_font_atlas(&self.device, &self.queue, font_atlas);
     }
 
     pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {
@@ -356,12 +357,25 @@ impl Graphics {
         );
     }
 
-    pub fn begin_frame(&mut self) -> (wgpu::SurfaceTexture, wgpu::TextureView, wgpu::CommandEncoder) {
-        let frame = self.surface.get_current_texture().expect("Failed to get next frame");
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Main Encoder"),
-        });
+    pub fn begin_frame(
+        &mut self,
+    ) -> (
+        wgpu::SurfaceTexture,
+        wgpu::TextureView,
+        wgpu::CommandEncoder,
+    ) {
+        let frame = self
+            .surface
+            .get_current_texture()
+            .expect("Failed to get next frame");
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Main Encoder"),
+            });
         (frame, view, encoder)
     }
 

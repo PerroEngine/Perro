@@ -1,8 +1,8 @@
+use crate::asset_io::load_asset;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use serde::Deserialize;
-use crate::asset_io::load_asset;
 
 /// Root project manifest structure
 #[derive(Deserialize, Clone)]
@@ -50,8 +50,12 @@ struct MetadataSection {
 }
 
 // Default constants
-fn default_target_fps() -> f32 { 144.0 }
-fn default_xps() -> f32 { 60.0 }
+fn default_target_fps() -> f32 {
+    144.0
+}
+fn default_xps() -> f32 {
+    60.0
+}
 
 /// Project handle — represents either a loaded or statically defined project.
 #[derive(Clone)]
@@ -68,40 +72,42 @@ impl Project {
 
     /// Creates a static, embedded project (for compile-time manifests)
     pub fn new_static(
-    name: impl Into<String>,
-    version: impl Into<String>,
-    main_scene: impl Into<String>,
-    icon: Option<String>,
-    target_fps: f32,
-    xps: f32,
-    root_script: Option<String>,
-    metadata: &phf::Map<&'static str, &'static str>,
-) -> Self {
-    let mut meta = HashMap::new();
-    
-    // Copy PHF map entries into HashMap
-    for (key, value) in metadata.entries() {
-        meta.insert(key.to_string(), value.to_string());
-    }
+        name: impl Into<String>,
+        version: impl Into<String>,
+        main_scene: impl Into<String>,
+        icon: Option<String>,
+        target_fps: f32,
+        xps: f32,
+        root_script: Option<String>,
+        metadata: &phf::Map<&'static str, &'static str>,
+    ) -> Self {
+        let mut meta = HashMap::new();
 
-    let settings = ProjectSettings {
-        project: ProjectSection {
-            name: name.into(),
-            version: version.into(),
-            main_scene: main_scene.into(),
-            icon,
-        },
-        performance: PerformanceSection { target_fps, xps },
-        root: RootSection { script: root_script },
-        meta: MetadataSection { data: meta },
-    };
+        // Copy PHF map entries into HashMap
+        for (key, value) in metadata.entries() {
+            meta.insert(key.to_string(), value.to_string());
+        }
 
-    Self {
-        root: None,
-        settings,
-        runtime_params: HashMap::new(),
+        let settings = ProjectSettings {
+            project: ProjectSection {
+                name: name.into(),
+                version: version.into(),
+                main_scene: main_scene.into(),
+                icon,
+            },
+            performance: PerformanceSection { target_fps, xps },
+            root: RootSection {
+                script: root_script,
+            },
+            meta: MetadataSection { data: meta },
+        };
+
+        Self {
+            root: None,
+            settings,
+            runtime_params: HashMap::new(),
+        }
     }
-}
 
     /// Load project.toml from embedded or disk-based asset system.
     pub fn load(root: Option<impl AsRef<Path>>) -> io::Result<Self> {

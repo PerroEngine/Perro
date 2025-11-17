@@ -1,8 +1,8 @@
 #![allow(improper_ctypes_definitions)]
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
+use std::sync::mpsc::Sender;
+use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 use std::{fmt, io};
-use std::{any::Any, collections::HashMap, cell::RefCell, rc::Rc};
-use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor, Shl, Shr};
-use std::sync::mpsc::{Sender};
 
 use serde_json::Value;
 use smallvec::SmallVec;
@@ -29,7 +29,6 @@ pub enum Var {
     String(String),
 }
 
-
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -43,8 +42,17 @@ impl fmt::Display for Var {
 
 /// Update operations for script variables
 pub enum UpdateOp {
-    Set, Add, Sub, Mul, Div, Rem,
-    And, Or, Xor, Shl, Shr,
+    Set,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    And,
+    Or,
+    Xor,
+    Shl,
+    Shr,
 }
 
 /// Trait implemented by all user scripts (dyn‑safe)
@@ -71,8 +79,6 @@ pub trait ScriptObject: Script {
     }
 }
 
-
-
 /// Function pointer type for script constructors
 pub type CreateFn = extern "C" fn() -> *mut dyn ScriptObject;
 
@@ -84,11 +90,14 @@ pub trait SceneAccess {
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
 
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
-    fn instantiate_script(&mut self, ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn ScriptObject>>>;
+    fn instantiate_script(
+        &mut self,
+        ctor: CreateFn,
+        node_id: Uuid,
+    ) -> Rc<RefCell<Box<dyn ScriptObject>>>;
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64);
     fn queue_signal_id(&mut self, signal: u64, params: SmallVec<[Value; 3]>);
-
 }
 
 //
@@ -96,25 +105,34 @@ pub trait SceneAccess {
 //
 
 impl From<f32> for Var {
-    fn from(v: f32) -> Self { Var::F32(v) }
+    fn from(v: f32) -> Self {
+        Var::F32(v)
+    }
 }
 
 impl From<i32> for Var {
-    fn from(v: i32) -> Self { Var::I32(v) }
+    fn from(v: i32) -> Self {
+        Var::I32(v)
+    }
 }
 
 impl From<bool> for Var {
-    fn from(v: bool) -> Self { Var::Bool(v) }
+    fn from(v: bool) -> Self {
+        Var::Bool(v)
+    }
 }
 
 impl From<&str> for Var {
-    fn from(v: &str) -> Self { Var::String(v.to_string()) }
+    fn from(v: &str) -> Self {
+        Var::String(v.to_string())
+    }
 }
 
 impl From<String> for Var {
-    fn from(v: String) -> Self { Var::String(v) }
+    fn from(v: String) -> Self {
+        Var::String(v)
+    }
 }
-
 
 impl Add for Var {
     type Output = Self;
@@ -125,10 +143,16 @@ impl Add for Var {
             (Var::F32(a), Var::F32(b)) => Var::F32(a + b),
             (Var::I32(a), Var::F32(b)) => Var::F32(a as f32 + b),
             (Var::F32(a), Var::I32(b)) => Var::F32(a + b as f32),
-            
+
             // string concatenation
-            (Var::String(mut a), b) => { a.push_str(&b.to_string()); Var::String(a) }
-            (a, Var::String(mut b)) => { b.insert_str(0, &a.to_string()); Var::String(b) }
+            (Var::String(mut a), b) => {
+                a.push_str(&b.to_string());
+                Var::String(a)
+            }
+            (a, Var::String(mut b)) => {
+                b.insert_str(0, &a.to_string());
+                Var::String(b)
+            }
 
             _ => panic!("Add not supported for variables provided"),
         }

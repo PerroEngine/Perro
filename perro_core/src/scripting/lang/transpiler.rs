@@ -7,9 +7,13 @@ use std::{
 use walkdir::WalkDir;
 
 use crate::{
-    asset_io::{get_project_root, load_asset, resolve_path, ProjectRoot, ResolvedPath},
+    asset_io::{ProjectRoot, ResolvedPath, get_project_root, load_asset, resolve_path},
     compiler::{BuildProfile, CompileTarget, Compiler},
-    lang::{codegen::{derive_rust_perro_script, write_to_crate}, csharp::parser::CsParser, pup::parser::PupParser},
+    lang::{
+        codegen::{derive_rust_perro_script, write_to_crate},
+        csharp::parser::CsParser,
+        pup::parser::PupParser,
+    },
 };
 
 /// Convert a *res:// path* or absolute path under res/
@@ -59,7 +63,11 @@ pub fn script_path_to_identifier(path: &str) -> Result<String, String> {
         identifier.push_str(&parent_str);
         identifier.push('_');
     }
-    identifier.push_str(&format!("{}_{}", base_name.to_lowercase(), extension.to_lowercase()));
+    identifier.push_str(&format!(
+        "{}_{}",
+        base_name.to_lowercase(),
+        extension.to_lowercase()
+    ));
 
     Ok(identifier)
 }
@@ -140,7 +148,7 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
         pub fn get_script_registry() -> HashMap<String, CreateFn> {\n\
         let mut map: HashMap<String, CreateFn> = HashMap::new();\n\
         // __PERRO_REGISTRY__\n\
-        map\n}\n\n"
+        map\n}\n\n",
     );
 
     // Sort IDs for deterministic ordering
@@ -151,7 +159,7 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
     for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_MODULES__",
-            &format!("pub mod {};\n// __PERRO_MODULES__", id)
+            &format!("pub mod {};\n// __PERRO_MODULES__", id),
         );
     }
 
@@ -159,7 +167,7 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
     for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_IMPORTS__",
-            &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id)
+            &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id),
         );
     }
 
@@ -301,7 +309,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     let total_parse: Duration = timings.iter().map(|t| t.parse_time).sum();
     let total_transpile: Duration = timings.iter().map(|t| t.transpile_time).sum();
 
-   println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!(
         "📊 **Transpilation Summary**\n  \
         📜 Scripts: {}\n  \

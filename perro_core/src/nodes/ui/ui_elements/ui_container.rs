@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
+use crate::structs2d::{Color, Vector2};
 use crate::{impl_ui_element, ui_element::BaseUIElement};
-use crate::structs2d::{Vector2, Color};
+use serde::{Deserialize, Serialize};
 /// =========================
 /// 1. Placeholder container
 /// =========================
@@ -20,9 +20,9 @@ impl_ui_element!(BoxContainer);
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Container {
-    pub mode: ContainerMode,             // Horizontal, Vertical, Grid
-    pub gap: Vector2,                    // spacing between children
-    pub distribution: DistributionMode,  // pack or even spacing
+    pub mode: ContainerMode,            // Horizontal, Vertical, Grid
+    pub gap: Vector2,                   // spacing between children
+    pub distribution: DistributionMode, // pack or even spacing
 }
 
 impl Default for Container {
@@ -36,10 +36,17 @@ impl Default for Container {
 }
 
 #[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Debug, Copy)]
-pub enum ContainerMode { Horizontal, Vertical, Grid }
+pub enum ContainerMode {
+    Horizontal,
+    Vertical,
+    Grid,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum DistributionMode { Pack, Even }
+pub enum DistributionMode {
+    Pack,
+    Even,
+}
 
 /// Horizontal/Vertical layout
 #[derive(Serialize, Deserialize, Clone, Debug)]

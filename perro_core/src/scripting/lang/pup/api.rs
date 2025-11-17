@@ -1,9 +1,11 @@
-
 // ----------------------------------------------------------------
 // Central router used by the parser to map syntax → semantic call
 // ----------------------------------------------------------------
 
-use crate::lang::{api_modules::*, ast::{ContainerKind, Type}};
+use crate::lang::{
+    api_modules::*,
+    ast::{ContainerKind, Type},
+};
 
 pub struct PupAPI;
 
@@ -12,11 +14,10 @@ impl PupAPI {
         match module {
             PupJSON::NAME => PupJSON::resolve_method(func),
             PupTime::NAME => PupTime::resolve_method(func),
-            PupOS::NAME   => PupOS::resolve_method(func),
+            PupOS::NAME => PupOS::resolve_method(func),
             PupConsole::NAME => PupConsole::resolve_method(func),
             PupScriptType::NAME => PupScriptType::resolve_method(func),
             PupSignal::NAME => PupSignal::resolve_method(func),
-
 
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
@@ -41,8 +42,8 @@ impl PupJSON {
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
-            "parse"      => Some(ApiModule::JSON(JSONApi::Parse)),
-            "stringify"  => Some(ApiModule::JSON(JSONApi::Stringify)),
+            "parse" => Some(ApiModule::JSON(JSONApi::Parse)),
+            "stringify" => Some(ApiModule::JSON(JSONApi::Stringify)),
             _ => None,
         }
     }
@@ -54,8 +55,8 @@ impl PupTime {
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
-            "get_delta"           => Some(ApiModule::Time(TimeApi::DeltaTime)),
-            "sleep_msec"         => Some(ApiModule::Time(TimeApi::SleepMsec)),
+            "get_delta" => Some(ApiModule::Time(TimeApi::DeltaTime)),
+            "sleep_msec" => Some(ApiModule::Time(TimeApi::SleepMsec)),
             "get_unix_time_msec" => Some(ApiModule::Time(TimeApi::GetUnixMsec)),
             _ => None,
         }
@@ -68,8 +69,8 @@ impl PupOS {
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
-            "get_env"             => Some(ApiModule::OS(OSApi::GetEnv)),
-            "get_platform_name"   => Some(ApiModule::OS(OSApi::GetPlatformName)),
+            "get_env" => Some(ApiModule::OS(OSApi::GetEnv)),
+            "get_platform_name" => Some(ApiModule::OS(OSApi::GetPlatformName)),
             _ => None,
         }
     }
@@ -117,23 +118,17 @@ impl PupNodeSugar {
 
 pub struct PupSignal;
 impl PupSignal {
-        pub const NAME: &'static str = "Signal";
+    pub const NAME: &'static str = "Signal";
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
             "new" => Some(ApiModule::Signal(SignalApi::New)),
             "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
-            "emit" =>  Some(ApiModule::Signal(SignalApi::Emit)),
+            "emit" => Some(ApiModule::Signal(SignalApi::Emit)),
             _ => None,
         }
     }
 }
-
-
-
-
-
-
 
 pub struct PupArray;
 impl PupArray {
@@ -143,7 +138,7 @@ impl PupArray {
             "push" | "append" => Some(ApiModule::ArrayOp(ArrayApi::Push)),
             "insert" => Some(ApiModule::ArrayOp(ArrayApi::Insert)),
             "remove" => Some(ApiModule::ArrayOp(ArrayApi::Remove)),
-            "pop"  => Some(ApiModule::ArrayOp(ArrayApi::Pop)),
+            "pop" => Some(ApiModule::ArrayOp(ArrayApi::Pop)),
             "len" | "size" => Some(ApiModule::ArrayOp(ArrayApi::Len)),
 
             "new" => Some(ApiModule::ArrayOp(ArrayApi::New)),

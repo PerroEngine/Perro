@@ -1,10 +1,10 @@
 use core::f32;
 use std::process;
-use std::sync::mpsc::Receiver;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 
 #[cfg(not(target_arch = "wasm32"))]
 use winit::{
@@ -17,7 +17,7 @@ use winit::{
 
 use crate::{
     app_command::AppCommand,
-    graphics::{create_graphics, Graphics},
+    graphics::{Graphics, create_graphics},
     scene::Scene,
     script::ScriptProvider,
 };
@@ -125,26 +125,26 @@ impl<P: ScriptProvider> App<P> {
             window_title,
             window_icon_path: icon_path,
             game_scene,
-            
+
             // Render loop timing
             start_time: now,
-            
+
             // FPS tracking
             fps_frames: 0,
             fps_measurement_start: now,
-            
+
             // Frame pacing (capped)
             target_fps,
             frame_debt: 0.0,
             total_frames_rendered: 0,
             first_frame: true,
-            
+
             // Cached render state
             cached_operations: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(CLEAR_COLOR),
                 store: wgpu::StoreOp::Store,
             },
-            
+
             command_rx: rx,
         }
     }
@@ -292,10 +292,8 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                     let primary_monitor = event_loop.primary_monitor().unwrap();
                     let monitor_size = primary_monitor.size();
 
-                    let target_width =
-                        (monitor_size.width as f32 * MONITOR_SCALE_FACTOR) as u32;
-                    let target_height =
-                        (monitor_size.height as f32 * MONITOR_SCALE_FACTOR) as u32;
+                    let target_width = (monitor_size.width as f32 * MONITOR_SCALE_FACTOR) as u32;
+                    let target_height = (monitor_size.height as f32 * MONITOR_SCALE_FACTOR) as u32;
 
                     *WINDOW_CANDIDATES
                         .iter()
@@ -330,14 +328,12 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 }
 
                 #[cfg(target_arch = "wasm32")]
-                let window = std::rc::Rc::new(
-                    event_loop.create_window(attrs).expect("create window")
-                );
+                let window =
+                    std::rc::Rc::new(event_loop.create_window(attrs).expect("create window"));
 
                 #[cfg(not(target_arch = "wasm32"))]
-                let window = std::sync::Arc::new(
-                    event_loop.create_window(attrs).expect("create window")
-                );
+                let window =
+                    std::sync::Arc::new(event_loop.create_window(attrs).expect("create window"));
 
                 #[cfg(target_arch = "wasm32")]
                 wasm_bindgen_futures::spawn_local(create_graphics(window, proxy));
@@ -388,7 +384,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         if let Some(scene) = self.game_scene.as_mut() {
             // Do initial update
             scene.update();
-            
+
             // Queue rendering
             scene.render(&mut graphics);
 

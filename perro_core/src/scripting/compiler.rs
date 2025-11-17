@@ -9,10 +9,10 @@ use rand::RngCore;
 use rand::seq::SliceRandom;
 
 use crate::apply_fur::parse_fur_file;
+use crate::asset_io::{ResolvedPath, resolve_path};
 use crate::ast::{FurElement, FurNode};
-use crate::{BaseNode, SceneData};
-use crate::asset_io::{resolve_path, ResolvedPath};
 use crate::brk::build_brk;
+use crate::{BaseNode, SceneData};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
@@ -25,7 +25,7 @@ pub enum BuildProfile {
 pub enum CompileTarget {
     Scripts, //.perro/scripts
     Project, // .perro/project
-    VerboseProject
+    VerboseProject,
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +86,9 @@ impl Compiler {
     pub fn new(project_root: &Path, target: CompileTarget, from_source: bool) -> Self {
         let manifest = match target {
             CompileTarget::Scripts => project_root.join(".perro/scripts/Cargo.toml"),
-            CompileTarget::Project | CompileTarget::VerboseProject => project_root.join(".perro/project/Cargo.toml"),
+            CompileTarget::Project | CompileTarget::VerboseProject => {
+                project_root.join(".perro/project/Cargo.toml")
+            }
         };
 
         let manifest = dunce::canonicalize(&manifest).unwrap_or(manifest);
@@ -98,7 +100,7 @@ impl Compiler {
             platform: Platform::current(),
             toolchain_version: None,
             project_root: project_root.to_path_buf(),
-            from_source
+            from_source,
         };
 
         compiler.load_toolchain_config();
@@ -113,17 +115,23 @@ impl Compiler {
     fn load_toolchain_config(&mut self) {
         if let Ok(project) = crate::manifest::Project::load(Some(&self.project_root)) {
             if let Some(toolchain_version) = project.get_meta("toolchain") {
-                eprintln!("📋 Found toolchain version in project metadata: {}", toolchain_version);
+                eprintln!(
+                    "📋 Found toolchain version in project metadata: {}",
+                    toolchain_version
+                );
                 self.toolchain_version = Some(toolchain_version.to_string());
-                
+
                 if self.toolchain_root.is_none() {
                     match resolve_path("user://toolchains") {
                         ResolvedPath::Disk(path_buf) => {
                             self.toolchain_root = Some(path_buf);
                         }
                         ResolvedPath::Brk(_) => {
-                            eprintln!("⚠️  user://toolchains resolved to BRK path, falling back to project-relative");
-                            let toolchain_root = self.project_root.join(".perro").join("toolchains");
+                            eprintln!(
+                                "⚠️  user://toolchains resolved to BRK path, falling back to project-relative"
+                            );
+                            let toolchain_root =
+                                self.project_root.join(".perro").join("toolchains");
                             self.toolchain_root = Some(toolchain_root);
                         }
                     }
@@ -136,7 +144,7 @@ impl Compiler {
         let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
         let toolchain_name = self.platform.toolchain_name(version);
         let toolchain_path_str = format!("user://toolchains/{}", toolchain_name);
-        
+
         match resolve_path(&toolchain_path_str) {
             ResolvedPath::Disk(path_buf) => Some(path_buf),
             ResolvedPath::Brk(_) => None,
@@ -183,11 +191,11 @@ impl Compiler {
     fn find_parent_workspace_target_dir(&self) -> Option<PathBuf> {
         // The manifest is at: C:\Users\super\perro\perro_editor\.perro\scripts\Cargo.toml
         // Start from .perro (parent of scripts) and walk up from there
-        
+
         let scripts_dir = self.crate_manifest_path.parent()?; // .perro/scripts
         let perro_dir = scripts_dir.parent()?; // .perro
         let mut current = perro_dir.to_path_buf();
-        
+
         loop {
             // Move up to parent
             if let Some(parent) = current.parent() {
@@ -196,7 +204,7 @@ impl Compiler {
                 // Hit filesystem root
                 break;
             }
-            
+
             // Look for Cargo.toml that defines a workspace
             let workspace_manifest = current.join("Cargo.toml");
             if workspace_manifest.exists() {
@@ -204,14 +212,17 @@ impl Compiler {
                 if let Ok(contents) = std::fs::read_to_string(&workspace_manifest) {
                     if contents.contains("[workspace]") {
                         let target_dir = current.join("target");
-                        eprintln!("📂 Found parent workspace at: {} (target: {})", 
-                            current.display(), target_dir.display());
+                        eprintln!(
+                            "📂 Found parent workspace at: {} (target: {})",
+                            current.display(),
+                            target_dir.display()
+                        );
                         return Some(target_dir);
                     }
                 }
             }
         }
-        
+
         eprintln!("⚠️  Could not find parent workspace root");
         None
     }
@@ -224,7 +235,8 @@ impl Compiler {
         };
 
         // Get the target directory (either build cache or workspace target)
-        let target_base = self.get_cargo_target_dir()
+        let target_base = self
+            .get_cargo_target_dir()
             .expect("Could not determine target directory for build");
 
         let profile_dir = target_base.join(profile);
@@ -245,7 +257,7 @@ impl Compiler {
     /// Copy the built DLL to the project's build output directory
     fn copy_script_dll(&self, profile: &str) -> std::io::Result<()> {
         let src_file = self.get_built_dll_path(profile);
-        
+
         // Output to .perro/scripts/builds/ in the project directory
         let output_dir = self.project_root.join(".perro/scripts/builds");
         fs::create_dir_all(&output_dir)?;
@@ -253,7 +265,11 @@ impl Compiler {
         let final_dylib_name = script_dylib_name();
         let dest_file = output_dir.join(final_dylib_name);
 
-        eprintln!("📦 Copying {} -> {}", src_file.display(), dest_file.display());
+        eprintln!(
+            "📦 Copying {} -> {}",
+            src_file.display(),
+            dest_file.display()
+        );
         fs::copy(&src_file, &dest_file)?;
 
         Ok(())
@@ -298,7 +314,10 @@ impl Compiler {
         // Set CARGO_TARGET_DIR to control where cargo builds
         if let Some(target_dir) = self.get_cargo_target_dir() {
             if self.from_source {
-                eprintln!("📁 Using workspace target directory: {}", target_dir.display());
+                eprintln!(
+                    "📁 Using workspace target directory: {}",
+                    target_dir.display()
+                );
             } else {
                 eprintln!("📁 Using build cache: {}", target_dir.display());
             }
@@ -317,12 +336,15 @@ impl Compiler {
                     BuildProfile::Release => cmd.arg("--release"),
                     BuildProfile::Check => &mut cmd,
                 };
-                
-                cmd.env("PERRO_BUILD_TIMESTAMP", std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    .to_string());
+
+                cmd.env(
+                    "PERRO_BUILD_TIMESTAMP",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        .to_string(),
+                );
             }
         }
 
@@ -351,18 +373,18 @@ impl Compiler {
                     .expect("Project crate manifest has no parent");
                 println!("⚙️ Generating static scene code for project crate...");
                 let codegen_start = Instant::now();
-                
+
                 self.codegen_assets(project_crate_root)
                     .map_err(|e| format!("Asset codegen failed: {}", e))?;
-                
+
                 // Generate main.rs
                 self.codegen_main_file(project_crate_root)
                     .map_err(|e| format!("Main.rs generation failed: {}", e))?;
-                
+
                 // Generate build.rs
                 self.codegen_build_rs(project_crate_root)
                     .map_err(|e| format!("Build.rs generation failed: {}", e))?;
-                
+
                 let codegen_elapsed = codegen_start.elapsed();
                 println!("✅ Asset codegen complete (total {:.2?})", codegen_elapsed);
             } else {
@@ -378,8 +400,7 @@ impl Compiler {
             // --- TIME THE BRK BUILD HERE ---
             println!("📦 Building BRK archive from {}...", res_dir.display());
             let brk_build_start = Instant::now();
-            build_brk(&output, &res_dir, &self.project_root, &key)
-                .map_err(|e| e.to_string())?;
+            build_brk(&output, &res_dir, &self.project_root, &key).map_err(|e| e.to_string())?;
             let brk_build_elapsed = brk_build_start.elapsed();
             println!("✅ BRK archive built (total {:.2?})", brk_build_elapsed);
             // --- END BRK TIMING ---
@@ -390,18 +411,19 @@ impl Compiler {
         } else {
             let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
             let toolchain_name = self.platform.toolchain_name(version);
-            
+
             self.get_toolchain_dir()
                 .map(|p| format!("{} ({})", toolchain_name, p.display()))
                 .unwrap_or_else(|| "system (fallback)".to_string())
         };
 
-        println!("🚀 Compiling {:?} [{:?}] with toolchain: {}", 
-            self.target_name(), 
+        println!(
+            "🚀 Compiling {:?} [{:?}] with toolchain: {}",
+            self.target_name(),
             profile,
             toolchain_info
         );
-        
+
         let start = Instant::now();
         let mut cmd = self.build_command(&profile)?;
         let status = cmd
@@ -430,7 +452,6 @@ impl Compiler {
         Ok(())
     }
 
-
     fn target_name(&self) -> &'static str {
         match self.target {
             CompileTarget::Scripts => "scripts",
@@ -455,9 +476,8 @@ impl Compiler {
         let ops = ["^", "+", "-", ">>", "<<"];
 
         // Build mask expressions (runtime code) and mask values (fixed-size arrays)
-        let mut mask_exprs: [String; 4] = [
-            String::new(), String::new(), String::new(), String::new()
-        ];
+        let mut mask_exprs: [String; 4] =
+            [String::new(), String::new(), String::new(), String::new()];
         let mut mask_values: [u8; 4] = [0; 4];
 
         for i in 0..4 {
@@ -472,11 +492,19 @@ impl Compiler {
                 }
                 "+" => {
                     mask_values[i] = (consts[c1] as u8).wrapping_add(consts[c2] as u8);
-                    format!("((CONST{} as u8).wrapping_add(CONST{} as u8))", c1 + 1, c2 + 1)
+                    format!(
+                        "((CONST{} as u8).wrapping_add(CONST{} as u8))",
+                        c1 + 1,
+                        c2 + 1
+                    )
                 }
                 "-" => {
                     mask_values[i] = (consts[c1] as u8).wrapping_sub(consts[c2] as u8);
-                    format!("((CONST{} as u8).wrapping_sub(CONST{} as u8))", c1 + 1, c2 + 1)
+                    format!(
+                        "((CONST{} as u8).wrapping_sub(CONST{} as u8))",
+                        c1 + 1,
+                        c2 + 1
+                    )
                 }
                 ">>" => {
                     mask_values[i] = ((consts[c1] >> 8) as u8) ^ (consts[c2] as u8);
@@ -499,9 +527,9 @@ impl Compiler {
             .unwrap()
             .join("src")
             .join("static_assets");
-        
+
         fs::create_dir_all(&static_assets_dir)?;
-        
+
         let key_path = static_assets_dir.join("key.rs");
 
         let mut f = OpenOptions::new()
@@ -585,23 +613,47 @@ impl Compiler {
 
         writeln!(main_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(main_file, "")?;
-        writeln!(main_file, "// Embed assets.brk built by compiler/packer in release/export")?;
-        writeln!(main_file, "static ASSETS_BRK: &[u8] = include_bytes!(\"../../../assets.brk\");")?;
+        writeln!(
+            main_file,
+            "// Embed assets.brk built by compiler/packer in release/export"
+        )?;
+        writeln!(
+            main_file,
+            "static ASSETS_BRK: &[u8] = include_bytes!(\"../../../assets.brk\");"
+        )?;
         writeln!(main_file, "")?;
-        writeln!(main_file, "use perro_core::runtime::{{run_game, RuntimeData, StaticAssets}};")?;
+        writeln!(
+            main_file,
+            "use perro_core::runtime::{{run_game, RuntimeData, StaticAssets}};"
+        )?;
         writeln!(main_file, "")?;
         writeln!(main_file, "mod static_assets;")?;
         writeln!(main_file, "")?;
         writeln!(main_file, "fn main() {{")?;
         writeln!(main_file, "    run_game(RuntimeData {{")?;
         writeln!(main_file, "        assets_brk: ASSETS_BRK,")?;
-        writeln!(main_file, "        aes_key: static_assets::key::get_aes_key(),")?;
+        writeln!(
+            main_file,
+            "        aes_key: static_assets::key::get_aes_key(),"
+        )?;
         writeln!(main_file, "        static_assets: StaticAssets {{")?;
-        writeln!(main_file, "            project: &static_assets::manifest::PERRO_PROJECT,")?;
-        writeln!(main_file, "            scenes: &static_assets::scenes::PERRO_SCENES,")?;
-        writeln!(main_file, "            fur: &static_assets::fur::PERRO_FUR,")?;
+        writeln!(
+            main_file,
+            "            project: &static_assets::manifest::PERRO_PROJECT,"
+        )?;
+        writeln!(
+            main_file,
+            "            scenes: &static_assets::scenes::PERRO_SCENES,"
+        )?;
+        writeln!(
+            main_file,
+            "            fur: &static_assets::fur::PERRO_FUR,"
+        )?;
         writeln!(main_file, "        }},")?;
-        writeln!(main_file, "        script_registry: scripts::get_script_registry(),")?;
+        writeln!(
+            main_file,
+            "        script_registry: scripts::get_script_registry(),"
+        )?;
         writeln!(main_file, "    }});")?;
         writeln!(main_file, "}}")?;
 
@@ -609,254 +661,449 @@ impl Compiler {
         Ok(())
     }
 
-fn codegen_build_rs(&self, project_crate_root: &Path) -> anyhow::Result<()> {
-    let build_rs_path = project_crate_root.join("build.rs");
-    let mut build_file = File::create(&build_rs_path)?;
+    fn codegen_build_rs(&self, project_crate_root: &Path) -> anyhow::Result<()> {
+        let build_rs_path = project_crate_root.join("build.rs");
+        let mut build_file = File::create(&build_rs_path)?;
 
-    writeln!(build_file, "// Auto-generated by Perro Engine compiler")?;
-    writeln!(build_file, "use std::fs::{{self, OpenOptions}};")?;
-    writeln!(build_file, "use std::io::Write;")?;
-    writeln!(build_file, "use std::path::{{Path, PathBuf}};")?;
-    writeln!(build_file, "use toml::Value;")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "fn main() {{")?;
-    writeln!(build_file, "    // Set up logging into build.log")?;
-    writeln!(build_file, "    let manifest_dir = PathBuf::from(env!(\"CARGO_MANIFEST_DIR\"));")?;
-    writeln!(build_file, "    let project_root = manifest_dir")?;
-    writeln!(build_file, "        .parent()")?;
-    writeln!(build_file, "        .expect(\"Failed to get parent\")")?;
-    writeln!(build_file, "        .parent()")?;
-    writeln!(build_file, "        .expect(\"Failed to get grandparent\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let log_path = project_root.join(\"build.log\");")?;
-    writeln!(build_file, "    init_log(&log_path);")?;
-    writeln!(build_file, "    log(&log_path, \"=== Build Script Started ===\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    // Read project.toml")?;
-    writeln!(build_file, "    let project_toml_path = project_root.join(\"project.toml\");")?;
-    writeln!(build_file, "    log(&log_path, &format!(\"Reading {{}}\", project_toml_path.display()));")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let content = fs::read_to_string(&project_toml_path)")?;
-    writeln!(build_file, "        .expect(\"❌ Could not read project.toml\");")?;
-    writeln!(build_file, "    let config: Value = content.parse().expect(\"❌ Invalid project.toml format\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let project = config.get(\"project\").expect(\"❌ Missing [project] section\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let name = project")?;
-    writeln!(build_file, "        .get(\"name\")")?;
-    writeln!(build_file, "        .and_then(|v| v.as_str())")?;
-    writeln!(build_file, "        .unwrap_or(\"Perro Game\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let version = project")?;
-    writeln!(build_file, "        .get(\"version\")")?;
-    writeln!(build_file, "        .and_then(|v| v.as_str())")?;
-    writeln!(build_file, "        .unwrap_or(\"0.1.0\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let icon_path = project")?;
-    writeln!(build_file, "        .get(\"icon\")")?;
-    writeln!(build_file, "        .and_then(|v| v.as_str())")?;
-    writeln!(build_file, "        .unwrap_or(\"res://icon.png\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    log(&log_path, &format!(\"Project: {{}}\", name));")?;
-    writeln!(build_file, "    log(&log_path, &format!(\"Version: {{}}\", version));")?;
-    writeln!(build_file, "    log(&log_path, &format!(\"Configured icon path: {{}}\", icon_path));")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let real_icon_path = resolve_res_path(project_root.to_path_buf(), icon_path);")?;
-    writeln!(build_file, "    log(&log_path, &format!(\"Resolved icon path: {{}}\", real_icon_path.display()));")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    // Always rerun if these files or env change")?;
-    writeln!(build_file, "    println!(\"cargo:rerun-if-changed={{}}\", project_toml_path.display());")?;
-    writeln!(build_file, "    println!(\"cargo:rerun-if-changed={{}}\", real_icon_path.display());")?;
-    writeln!(build_file, "    println!(\"cargo:rerun-if-env-changed=PERRO_BUILD_TIMESTAMP\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    #[cfg(target_os = \"windows\")]")?;
-    writeln!(build_file, "    {{")?;
-    writeln!(build_file, "        let final_icon = ensure_ico(&real_icon_path, &project_root, &log_path);")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "        if final_icon.exists() {{")?;
-    writeln!(build_file, "            if let Ok(metadata) = fs::metadata(&final_icon) {{")?;
-    writeln!(build_file, "                if metadata.len() == 0 {{")?;
-    writeln!(build_file, "                    panic!(\"❌ Icon file is empty: {{}}\", final_icon.display());")?;
-    writeln!(build_file, "                }}")?;
-    writeln!(build_file, "                log(")?;
-    writeln!(build_file, "                    &log_path,")?;
-    writeln!(build_file, "                    &format!(\"✔ Final ICO is valid ({{}} bytes)\", metadata.len()),")?;
-    writeln!(build_file, "                );")?;
-    writeln!(build_file, "            }}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "            // Parse semver (major.minor.patch)")?;
-    writeln!(build_file, "            let parts: Vec<&str> = version.split('.').collect();")?;
-    writeln!(build_file, "            let major = parts.get(0).unwrap_or(&\"0\").parse::<u16>().unwrap_or(0);")?;
-    writeln!(build_file, "            let minor = parts.get(1).unwrap_or(&\"0\").parse::<u16>().unwrap_or(0);")?;
-    writeln!(build_file, "            let patch = parts.get(2).unwrap_or(&\"0\").parse::<u16>().unwrap_or(0);")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "            // Build number: from env or fallback")?;
-    writeln!(build_file, "            let build_number: u32 = std::env::var(\"PERRO_BUILD_TIMESTAMP\")")?;
-    writeln!(build_file, "                .ok()")?;
-    writeln!(build_file, "                .and_then(|s| s.parse::<u32>().ok())")?;
-    writeln!(build_file, "                .unwrap_or_else(|| {{")?;
-    writeln!(build_file, "                    std::time::SystemTime::now()")?;
-    writeln!(build_file, "                        .duration_since(std::time::UNIX_EPOCH)")?;
-    writeln!(build_file, "                        .unwrap()")?;
-    writeln!(build_file, "                        .as_secs() as u32")?;
-    writeln!(build_file, "                }});")?;
-    writeln!(build_file, "")?;
-    // Fixed the format string here
-    writeln!(build_file, "            let version_display =")?;
-    writeln!(build_file, "                format!(\"{{}}.{{}}.{{}}.{{}}\", major, minor, patch, build_number);")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "            // Create .rc file")?;
-    writeln!(build_file, "            let out_dir = std::env::var(\"OUT_DIR\").unwrap();")?;
-    writeln!(build_file, "            let rc_path = PathBuf::from(&out_dir).join(\"icon.rc\");")?;
-    writeln!(build_file, "            let icon_str = final_icon.to_str().unwrap().replace(\"\\\\\", \"\\\\\\\\\");")?;
-    writeln!(build_file, "")?;
-    // Fixed the RC content format string
-    writeln!(build_file, "            let rc_content = format!(")?;
-    writeln!(build_file, "    r#\"")?;
-    writeln!(build_file, "APPICON_{{}} ICON \"{{}}\"")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "1 VERSIONINFO")?;
-    writeln!(build_file, "FILEVERSION {{}},{{}},{{}},{{}}")?;
-    writeln!(build_file, "PRODUCTVERSION {{}},{{}},{{}},{{}}")?;
-    writeln!(build_file, "BEGIN")?;
-    writeln!(build_file, "    BLOCK \"StringFileInfo\"")?;
-    writeln!(build_file, "    BEGIN")?;
-    writeln!(build_file, "        BLOCK \"040904E4\"")?;
-    writeln!(build_file, "        BEGIN")?;
-    writeln!(build_file, "            VALUE \"FileDescription\", \"{{}}\"")?;
-    writeln!(build_file, "            VALUE \"FileVersion\", \"{{}}\"")?;
-    writeln!(build_file, "            VALUE \"ProductName\", \"{{}}\"")?;
-    writeln!(build_file, "            VALUE \"ProductVersion\", \"{{}}\"")?;
-    writeln!(build_file, "        END")?;
-    writeln!(build_file, "    END")?;
-    writeln!(build_file, "    BLOCK \"VarFileInfo\"")?;
-    writeln!(build_file, "    BEGIN")?;
-    writeln!(build_file, "        VALUE \"Translation\", 0x0409, 1252")?;
-    writeln!(build_file, "    END")?;
-    writeln!(build_file, "END")?;
-    writeln!(build_file, "\"#,")?;
-    writeln!(build_file, "    build_number,")?;
-    writeln!(build_file, "    icon_str,")?;
-    writeln!(build_file, "    major, minor, patch, build_number,")?;
-    writeln!(build_file, "    major, minor, patch, build_number,")?;
-    writeln!(build_file, "    name,")?;
-    writeln!(build_file, "    version_display,")?;
-    writeln!(build_file, "    name,")?;
-    writeln!(build_file, "    version_display")?;
-    writeln!(build_file, ");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "            fs::write(&rc_path, rc_content).expect(\"Failed to write .rc file\");")?;
-    writeln!(build_file, "            log(")?;
-    writeln!(build_file, "                &log_path,")?;
-    // Fixed the log format string
-    writeln!(build_file, "                &format!(\"✔ Wrote RC with version {{}} (icon ID={{}})\", version_display, build_number),")?;
-    writeln!(build_file, "            );")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "            embed_resource::compile(&rc_path, embed_resource::NONE);")?;
-    writeln!(build_file, "            log(&log_path, \"✔ Icon + version resource embedded successfully\");")?;
-    writeln!(build_file, "        }} else {{")?;
-    writeln!(build_file, "            panic!(\"⚠ Icon not found at {{}}\", final_icon.display());")?;
-    writeln!(build_file, "        }}")?;
-    writeln!(build_file, "    }}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    log(&log_path, \"=== Build Script Finished ===\");")?;
-    writeln!(build_file, "}}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "fn init_log(path: &Path) {{")?;
-    writeln!(build_file, "    let _ = fs::remove_file(path);")?;
-    writeln!(build_file, "    let mut f = OpenOptions::new()")?;
-    writeln!(build_file, "        .create(true)")?;
-    writeln!(build_file, "        .write(true)")?;
-    writeln!(build_file, "        .truncate(true)")?;
-    writeln!(build_file, "        .open(path)")?;
-    writeln!(build_file, "        .expect(\"Failed to create build.log\");")?;
-    writeln!(build_file, "    writeln!(f, \"Perro Build Log\").unwrap();")?;
-    writeln!(build_file, "    writeln!(f, \"================\").unwrap();")?;
-    writeln!(build_file, "}}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "fn log(path: &Path, message: &str) {{")?;
-    writeln!(build_file, "    println!(\"{{}}\", message);")?;
-    writeln!(build_file, "    let mut f = OpenOptions::new()")?;
-    writeln!(build_file, "        .create(true)")?;
-    writeln!(build_file, "        .append(true)")?;
-    writeln!(build_file, "        .open(path)")?;
-    writeln!(build_file, "        .expect(\"Failed to open build.log\");")?;
-    writeln!(build_file, "    writeln!(f, \"{{}}\", message).unwrap();")?;
-    writeln!(build_file, "}}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
-    writeln!(build_file, "fn ensure_ico(path: &Path, project_root: &Path, log_path: &Path) -> PathBuf {{")?;
-    writeln!(build_file, "    if !path.exists() {{")?;
-    writeln!(build_file, "        panic!(\"❌ Icon file not found: {{}}\", path.display());")?;
-    writeln!(build_file, "    }}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let ext = path")?;
-    writeln!(build_file, "        .extension()")?;
-    writeln!(build_file, "        .and_then(|e| e.to_str())")?;
-    writeln!(build_file, "        .unwrap_or(\"\")")?;
-    writeln!(build_file, "        .to_lowercase();")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    if ext == \"ico\" {{")?;
-    writeln!(build_file, "        log(log_path, \"Icon is already an ICO file, using directly.\");")?;
-    writeln!(build_file, "        return path.to_path_buf();")?;
-    writeln!(build_file, "    }}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let ico_path = project_root.join(\"icon.ico\");")?;
-    writeln!(build_file, "    log(")?;
-    writeln!(build_file, "        log_path,")?;
-    // Fixed the format string
-    writeln!(build_file, "        &format!(\"Converting {{}} → {{}}\", path.display(), ico_path.display()),")?;
-    writeln!(build_file, "    );")?;
-    writeln!(build_file, "    convert_any_image_to_ico(path, &ico_path, log_path);")?;
-    writeln!(build_file, "    ico_path")?;
-    writeln!(build_file, "}}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
-    writeln!(build_file, "fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path) {{")?;
-    writeln!(build_file, "    use ico::{{IconDir, IconDirEntry, IconImage, ResourceType}};")?;
-    writeln!(build_file, "    use image::io::Reader as ImageReader;")?;
-    writeln!(build_file, "    use std::fs::File;")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    if !input_path.exists() {{")?;
-    writeln!(build_file, "        panic!(\"❌ Icon path does NOT exist: {{}}\", input_path.display());")?;
-    writeln!(build_file, "    }}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let img = ImageReader::open(input_path)")?;
-    writeln!(build_file, "        .expect(\"Failed to open image\")")?;
-    writeln!(build_file, "        .decode()")?;
-    writeln!(build_file, "        .expect(\"Failed to decode image\");")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let sizes = [16, 32, 48, 256];")?;
-    writeln!(build_file, "    let mut icon_dir = IconDir::new(ResourceType::Icon);")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    for size in sizes {{")?;
-    writeln!(build_file, "        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);")?;
-    writeln!(build_file, "        let rgba = resized.into_rgba8();")?;
-    writeln!(build_file, "        let icon_image =")?;
-    writeln!(build_file, "            IconImage::from_rgba_data(size as u32, size as u32, rgba.into_raw());")?;
-    writeln!(build_file, "        icon_dir.add_entry(IconDirEntry::encode(&icon_image).unwrap());")?;
-    // Fixed the format string
-    writeln!(build_file, "        log(log_path, &format!(\"✔ Added {{}}x{{}} size to ICO\", size, size));")?;
-    writeln!(build_file, "    }}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "    let mut file = File::create(ico_path).expect(\"Failed to create ICO file\");")?;
-    writeln!(build_file, "    icon_dir")?;
-    writeln!(build_file, "        .write(&mut file)")?;
-    writeln!(build_file, "        .expect(\"Failed to write ICO file\");")?;
-    writeln!(build_file, "    log(log_path, &format!(\"✔ ICO saved: {{}}\", ico_path.display()));")?;
-    writeln!(build_file, "}}")?;
-    writeln!(build_file, "")?;
-    writeln!(build_file, "fn resolve_res_path(project_root: PathBuf, res_path: &str) -> PathBuf {{")?;
-    writeln!(build_file, "    if let Some(stripped) = res_path.strip_prefix(\"res://\") {{")?;
-    writeln!(build_file, "        project_root.join(\"res\").join(stripped)")?;
-    writeln!(build_file, "    }} else {{")?;
-    writeln!(build_file, "        project_root.join(res_path)")?;
-    writeln!(build_file, "    }}")?;
-    writeln!(build_file, "}}")?;
+        writeln!(build_file, "// Auto-generated by Perro Engine compiler")?;
+        writeln!(build_file, "use std::fs::{{self, OpenOptions}};")?;
+        writeln!(build_file, "use std::io::Write;")?;
+        writeln!(build_file, "use std::path::{{Path, PathBuf}};")?;
+        writeln!(build_file, "use toml::Value;")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "fn main() {{")?;
+        writeln!(build_file, "    // Set up logging into build.log")?;
+        writeln!(
+            build_file,
+            "    let manifest_dir = PathBuf::from(env!(\"CARGO_MANIFEST_DIR\"));"
+        )?;
+        writeln!(build_file, "    let project_root = manifest_dir")?;
+        writeln!(build_file, "        .parent()")?;
+        writeln!(build_file, "        .expect(\"Failed to get parent\")")?;
+        writeln!(build_file, "        .parent()")?;
+        writeln!(
+            build_file,
+            "        .expect(\"Failed to get grandparent\");"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let log_path = project_root.join(\"build.log\");"
+        )?;
+        writeln!(build_file, "    init_log(&log_path);")?;
+        writeln!(
+            build_file,
+            "    log(&log_path, \"=== Build Script Started ===\");"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    // Read project.toml")?;
+        writeln!(
+            build_file,
+            "    let project_toml_path = project_root.join(\"project.toml\");"
+        )?;
+        writeln!(
+            build_file,
+            "    log(&log_path, &format!(\"Reading {{}}\", project_toml_path.display()));"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let content = fs::read_to_string(&project_toml_path)"
+        )?;
+        writeln!(
+            build_file,
+            "        .expect(\"❌ Could not read project.toml\");"
+        )?;
+        writeln!(
+            build_file,
+            "    let config: Value = content.parse().expect(\"❌ Invalid project.toml format\");"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let project = config.get(\"project\").expect(\"❌ Missing [project] section\");"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let name = project")?;
+        writeln!(build_file, "        .get(\"name\")")?;
+        writeln!(build_file, "        .and_then(|v| v.as_str())")?;
+        writeln!(build_file, "        .unwrap_or(\"Perro Game\");")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let version = project")?;
+        writeln!(build_file, "        .get(\"version\")")?;
+        writeln!(build_file, "        .and_then(|v| v.as_str())")?;
+        writeln!(build_file, "        .unwrap_or(\"0.1.0\");")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let icon_path = project")?;
+        writeln!(build_file, "        .get(\"icon\")")?;
+        writeln!(build_file, "        .and_then(|v| v.as_str())")?;
+        writeln!(build_file, "        .unwrap_or(\"res://icon.png\");")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    log(&log_path, &format!(\"Project: {{}}\", name));"
+        )?;
+        writeln!(
+            build_file,
+            "    log(&log_path, &format!(\"Version: {{}}\", version));"
+        )?;
+        writeln!(
+            build_file,
+            "    log(&log_path, &format!(\"Configured icon path: {{}}\", icon_path));"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let real_icon_path = resolve_res_path(project_root.to_path_buf(), icon_path);"
+        )?;
+        writeln!(
+            build_file,
+            "    log(&log_path, &format!(\"Resolved icon path: {{}}\", real_icon_path.display()));"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    // Always rerun if these files or env change"
+        )?;
+        writeln!(
+            build_file,
+            "    println!(\"cargo:rerun-if-changed={{}}\", project_toml_path.display());"
+        )?;
+        writeln!(
+            build_file,
+            "    println!(\"cargo:rerun-if-changed={{}}\", real_icon_path.display());"
+        )?;
+        writeln!(
+            build_file,
+            "    println!(\"cargo:rerun-if-env-changed=PERRO_BUILD_TIMESTAMP\");"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    #[cfg(target_os = \"windows\")]")?;
+        writeln!(build_file, "    {{")?;
+        writeln!(
+            build_file,
+            "        let final_icon = ensure_ico(&real_icon_path, &project_root, &log_path);"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "        if final_icon.exists() {{")?;
+        writeln!(
+            build_file,
+            "            if let Ok(metadata) = fs::metadata(&final_icon) {{"
+        )?;
+        writeln!(build_file, "                if metadata.len() == 0 {{")?;
+        writeln!(
+            build_file,
+            "                    panic!(\"❌ Icon file is empty: {{}}\", final_icon.display());"
+        )?;
+        writeln!(build_file, "                }}")?;
+        writeln!(build_file, "                log(")?;
+        writeln!(build_file, "                    &log_path,")?;
+        writeln!(
+            build_file,
+            "                    &format!(\"✔ Final ICO is valid ({{}} bytes)\", metadata.len()),"
+        )?;
+        writeln!(build_file, "                );")?;
+        writeln!(build_file, "            }}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "            // Parse semver (major.minor.patch)"
+        )?;
+        writeln!(
+            build_file,
+            "            let parts: Vec<&str> = version.split('.').collect();"
+        )?;
+        writeln!(
+            build_file,
+            "            let major = parts.get(0).unwrap_or(&\"0\").parse::<u16>().unwrap_or(0);"
+        )?;
+        writeln!(
+            build_file,
+            "            let minor = parts.get(1).unwrap_or(&\"0\").parse::<u16>().unwrap_or(0);"
+        )?;
+        writeln!(
+            build_file,
+            "            let patch = parts.get(2).unwrap_or(&\"0\").parse::<u16>().unwrap_or(0);"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "            // Build number: from env or fallback"
+        )?;
+        writeln!(
+            build_file,
+            "            let build_number: u32 = std::env::var(\"PERRO_BUILD_TIMESTAMP\")"
+        )?;
+        writeln!(build_file, "                .ok()")?;
+        writeln!(
+            build_file,
+            "                .and_then(|s| s.parse::<u32>().ok())"
+        )?;
+        writeln!(build_file, "                .unwrap_or_else(|| {{")?;
+        writeln!(
+            build_file,
+            "                    std::time::SystemTime::now()"
+        )?;
+        writeln!(
+            build_file,
+            "                        .duration_since(std::time::UNIX_EPOCH)"
+        )?;
+        writeln!(build_file, "                        .unwrap()")?;
+        writeln!(build_file, "                        .as_secs() as u32")?;
+        writeln!(build_file, "                }});")?;
+        writeln!(build_file, "")?;
+        // Fixed the format string here
+        writeln!(build_file, "            let version_display =")?;
+        writeln!(
+            build_file,
+            "                format!(\"{{}}.{{}}.{{}}.{{}}\", major, minor, patch, build_number);"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "            // Create .rc file")?;
+        writeln!(
+            build_file,
+            "            let out_dir = std::env::var(\"OUT_DIR\").unwrap();"
+        )?;
+        writeln!(
+            build_file,
+            "            let rc_path = PathBuf::from(&out_dir).join(\"icon.rc\");"
+        )?;
+        writeln!(
+            build_file,
+            "            let icon_str = final_icon.to_str().unwrap().replace(\"\\\\\", \"\\\\\\\\\");"
+        )?;
+        writeln!(build_file, "")?;
+        // Fixed the RC content format string
+        writeln!(build_file, "            let rc_content = format!(")?;
+        writeln!(build_file, "    r#\"")?;
+        writeln!(build_file, "APPICON_{{}} ICON \"{{}}\"")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "1 VERSIONINFO")?;
+        writeln!(build_file, "FILEVERSION {{}},{{}},{{}},{{}}")?;
+        writeln!(build_file, "PRODUCTVERSION {{}},{{}},{{}},{{}}")?;
+        writeln!(build_file, "BEGIN")?;
+        writeln!(build_file, "    BLOCK \"StringFileInfo\"")?;
+        writeln!(build_file, "    BEGIN")?;
+        writeln!(build_file, "        BLOCK \"040904E4\"")?;
+        writeln!(build_file, "        BEGIN")?;
+        writeln!(
+            build_file,
+            "            VALUE \"FileDescription\", \"{{}}\""
+        )?;
+        writeln!(build_file, "            VALUE \"FileVersion\", \"{{}}\"")?;
+        writeln!(build_file, "            VALUE \"ProductName\", \"{{}}\"")?;
+        writeln!(build_file, "            VALUE \"ProductVersion\", \"{{}}\"")?;
+        writeln!(build_file, "        END")?;
+        writeln!(build_file, "    END")?;
+        writeln!(build_file, "    BLOCK \"VarFileInfo\"")?;
+        writeln!(build_file, "    BEGIN")?;
+        writeln!(build_file, "        VALUE \"Translation\", 0x0409, 1252")?;
+        writeln!(build_file, "    END")?;
+        writeln!(build_file, "END")?;
+        writeln!(build_file, "\"#,")?;
+        writeln!(build_file, "    build_number,")?;
+        writeln!(build_file, "    icon_str,")?;
+        writeln!(build_file, "    major, minor, patch, build_number,")?;
+        writeln!(build_file, "    major, minor, patch, build_number,")?;
+        writeln!(build_file, "    name,")?;
+        writeln!(build_file, "    version_display,")?;
+        writeln!(build_file, "    name,")?;
+        writeln!(build_file, "    version_display")?;
+        writeln!(build_file, ");")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "            fs::write(&rc_path, rc_content).expect(\"Failed to write .rc file\");"
+        )?;
+        writeln!(build_file, "            log(")?;
+        writeln!(build_file, "                &log_path,")?;
+        // Fixed the log format string
+        writeln!(
+            build_file,
+            "                &format!(\"✔ Wrote RC with version {{}} (icon ID={{}})\", version_display, build_number),"
+        )?;
+        writeln!(build_file, "            );")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "            embed_resource::compile(&rc_path, embed_resource::NONE);"
+        )?;
+        writeln!(
+            build_file,
+            "            log(&log_path, \"✔ Icon + version resource embedded successfully\");"
+        )?;
+        writeln!(build_file, "        }} else {{")?;
+        writeln!(
+            build_file,
+            "            panic!(\"⚠ Icon not found at {{}}\", final_icon.display());"
+        )?;
+        writeln!(build_file, "        }}")?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    log(&log_path, \"=== Build Script Finished ===\");"
+        )?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "fn init_log(path: &Path) {{")?;
+        writeln!(build_file, "    let _ = fs::remove_file(path);")?;
+        writeln!(build_file, "    let mut f = OpenOptions::new()")?;
+        writeln!(build_file, "        .create(true)")?;
+        writeln!(build_file, "        .write(true)")?;
+        writeln!(build_file, "        .truncate(true)")?;
+        writeln!(build_file, "        .open(path)")?;
+        writeln!(
+            build_file,
+            "        .expect(\"Failed to create build.log\");"
+        )?;
+        writeln!(build_file, "    writeln!(f, \"Perro Build Log\").unwrap();")?;
+        writeln!(
+            build_file,
+            "    writeln!(f, \"================\").unwrap();"
+        )?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "fn log(path: &Path, message: &str) {{")?;
+        writeln!(build_file, "    println!(\"{{}}\", message);")?;
+        writeln!(build_file, "    let mut f = OpenOptions::new()")?;
+        writeln!(build_file, "        .create(true)")?;
+        writeln!(build_file, "        .append(true)")?;
+        writeln!(build_file, "        .open(path)")?;
+        writeln!(build_file, "        .expect(\"Failed to open build.log\");")?;
+        writeln!(build_file, "    writeln!(f, \"{{}}\", message).unwrap();")?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
+        writeln!(
+            build_file,
+            "fn ensure_ico(path: &Path, project_root: &Path, log_path: &Path) -> PathBuf {{"
+        )?;
+        writeln!(build_file, "    if !path.exists() {{")?;
+        writeln!(
+            build_file,
+            "        panic!(\"❌ Icon file not found: {{}}\", path.display());"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let ext = path")?;
+        writeln!(build_file, "        .extension()")?;
+        writeln!(build_file, "        .and_then(|e| e.to_str())")?;
+        writeln!(build_file, "        .unwrap_or(\"\")")?;
+        writeln!(build_file, "        .to_lowercase();")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    if ext == \"ico\" {{")?;
+        writeln!(
+            build_file,
+            "        log(log_path, \"Icon is already an ICO file, using directly.\");"
+        )?;
+        writeln!(build_file, "        return path.to_path_buf();")?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let ico_path = project_root.join(\"icon.ico\");"
+        )?;
+        writeln!(build_file, "    log(")?;
+        writeln!(build_file, "        log_path,")?;
+        // Fixed the format string
+        writeln!(
+            build_file,
+            "        &format!(\"Converting {{}} → {{}}\", path.display(), ico_path.display()),"
+        )?;
+        writeln!(build_file, "    );")?;
+        writeln!(
+            build_file,
+            "    convert_any_image_to_ico(path, &ico_path, log_path);"
+        )?;
+        writeln!(build_file, "    ico_path")?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
+        writeln!(
+            build_file,
+            "fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path) {{"
+        )?;
+        writeln!(
+            build_file,
+            "    use ico::{{IconDir, IconDirEntry, IconImage, ResourceType}};"
+        )?;
+        writeln!(build_file, "    use image::io::Reader as ImageReader;")?;
+        writeln!(build_file, "    use std::fs::File;")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    if !input_path.exists() {{")?;
+        writeln!(
+            build_file,
+            "        panic!(\"❌ Icon path does NOT exist: {{}}\", input_path.display());"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let img = ImageReader::open(input_path)")?;
+        writeln!(build_file, "        .expect(\"Failed to open image\")")?;
+        writeln!(build_file, "        .decode()")?;
+        writeln!(build_file, "        .expect(\"Failed to decode image\");")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let sizes = [16, 32, 48, 256];")?;
+        writeln!(
+            build_file,
+            "    let mut icon_dir = IconDir::new(ResourceType::Icon);"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    for size in sizes {{")?;
+        writeln!(
+            build_file,
+            "        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);"
+        )?;
+        writeln!(build_file, "        let rgba = resized.into_rgba8();")?;
+        writeln!(build_file, "        let icon_image =")?;
+        writeln!(
+            build_file,
+            "            IconImage::from_rgba_data(size as u32, size as u32, rgba.into_raw());"
+        )?;
+        writeln!(
+            build_file,
+            "        icon_dir.add_entry(IconDirEntry::encode(&icon_image).unwrap());"
+        )?;
+        // Fixed the format string
+        writeln!(
+            build_file,
+            "        log(log_path, &format!(\"✔ Added {{}}x{{}} size to ICO\", size, size));"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let mut file = File::create(ico_path).expect(\"Failed to create ICO file\");"
+        )?;
+        writeln!(build_file, "    icon_dir")?;
+        writeln!(build_file, "        .write(&mut file)")?;
+        writeln!(build_file, "        .expect(\"Failed to write ICO file\");")?;
+        writeln!(
+            build_file,
+            "    log(log_path, &format!(\"✔ ICO saved: {{}}\", ico_path.display()));"
+        )?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "fn resolve_res_path(project_root: PathBuf, res_path: &str) -> PathBuf {{"
+        )?;
+        writeln!(
+            build_file,
+            "    if let Some(stripped) = res_path.strip_prefix(\"res://\") {{"
+        )?;
+        writeln!(
+            build_file,
+            "        project_root.join(\"res\").join(stripped)"
+        )?;
+        writeln!(build_file, "    }} else {{")?;
+        writeln!(build_file, "        project_root.join(res_path)")?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "}}")?;
 
-    build_file.flush()?;
-    Ok(())
-}
+        build_file.flush()?;
+        Ok(())
+    }
 
     fn codegen_scenes_file(&self, static_assets_dir: &Path) -> anyhow::Result<()> {
         use regex::Regex;
@@ -876,7 +1123,10 @@ fn codegen_build_rs(&self, project_crate_root: &Path) -> anyhow::Result<()> {
         writeln!(scenes_file, "use perro_core::node_registry::*;")?;
         writeln!(scenes_file, "use perro_core::nodes::*;")?;
         writeln!(scenes_file, "use perro_core::ui_node::UINode;")?;
-        writeln!(scenes_file, "use std::{{borrow::Cow, collections::HashMap}};")?;
+        writeln!(
+            scenes_file,
+            "use std::{{borrow::Cow, collections::HashMap}};"
+        )?;
         writeln!(scenes_file, "\n// --- GENERATED SCENE DEFINITIONS ---")?;
 
         let res_dir = self.project_root.join("res");
@@ -885,8 +1135,14 @@ fn codegen_build_rs(&self, project_crate_root: &Path) -> anyhow::Result<()> {
                 "WARNING: `res` directory not found at {}. No scenes will be compiled.",
                 res_dir.display()
             );
-            writeln!(scenes_file, "\n/// A map of scene paths to their statically compiled SceneData blueprints.")?;
-            writeln!(scenes_file, "pub static PERRO_SCENES: Lazy<HashMap<&'static str, &'static SceneData>> = Lazy::new(|| {{")?;
+            writeln!(
+                scenes_file,
+                "\n/// A map of scene paths to their statically compiled SceneData blueprints."
+            )?;
+            writeln!(
+                scenes_file,
+                "pub static PERRO_SCENES: Lazy<HashMap<&'static str, &'static SceneData>> = Lazy::new(|| {{"
+            )?;
             writeln!(scenes_file, "    HashMap::new()")?;
             writeln!(scenes_file, "}});")?;
             scenes_file.flush()?;
@@ -933,23 +1189,23 @@ fn codegen_build_rs(&self, project_crate_root: &Path) -> anyhow::Result<()> {
 
                 // --- UUID fixups ---
                 let uuid_literal_regex = Regex::new(
-                    r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"
+                    r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
                 )?;
                 node_str = uuid_literal_regex
-                .replace_all(&node_str, "uuid!(\"$1\")")
-                .to_string();
+                    .replace_all(&node_str, "uuid!(\"$1\")")
+                    .to_string();
 
                 // Normalize whitespace and string conversions
                 node_str = node_str.replace("Some(\n", "Some(");
                 let string_some_regex = Regex::new(r#"Some\(\s*"([^"]+)"\s*,?\s*\)"#)?;
                 node_str = string_some_regex
-                .replace_all(&node_str, "Some(Cow::Borrowed(\"$1\"))")
-                .to_string();
+                    .replace_all(&node_str, "Some(Cow::Borrowed(\"$1\"))")
+                    .to_string();
 
                 let string_field_regex = Regex::new(r#":\s*"([^"]+)","#)?;
                 node_str = string_field_regex
-                .replace_all(&node_str, ": Cow::Borrowed(\"$1\"),")
-                .to_string();
+                    .replace_all(&node_str, ": Cow::Borrowed(\"$1\"),")
+                    .to_string();
 
                 node_str = node_str.replace(": []", ": vec![]");
                 node_str = node_str.replace(": {},", ": HashMap::new(),");
@@ -991,14 +1247,13 @@ fn codegen_build_rs(&self, project_crate_root: &Path) -> anyhow::Result<()> {
                             "        (uuid!(\"{}\"), SceneNode::{}({})),",
                             uuid, variant_name, inner
                         )?;
-
                     } else {
-                      writeln!(
-                        &mut entries,
-                        "        (uuid!(\"{}\"), SceneNode::{}),",
-                        uuid, node_str.trim()
-                    )?;
-
+                        writeln!(
+                            &mut entries,
+                            "        (uuid!(\"{}\"), SceneNode::{}),",
+                            uuid,
+                            node_str.trim()
+                        )?;
                     }
                 }
             }
@@ -1029,8 +1284,14 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
         writeln!(scenes_file, "{}", static_scene_definitions_code)?;
 
         // --- Write PERRO_SCENES map ---
-        writeln!(scenes_file, "\n/// A map of scene paths to their statically compiled SceneData blueprints.")?;
-        writeln!(scenes_file, "pub static PERRO_SCENES: Lazy<HashMap<&'static str, &'static SceneData>> = Lazy::new(|| {{")?;
+        writeln!(
+            scenes_file,
+            "\n/// A map of scene paths to their statically compiled SceneData blueprints."
+        )?;
+        writeln!(
+            scenes_file,
+            "pub static PERRO_SCENES: Lazy<HashMap<&'static str, &'static SceneData>> = Lazy::new(|| {{"
+        )?;
         writeln!(scenes_file, "    let mut m = HashMap::new();")?;
         write!(scenes_file, "{}", map_insertions_code)?;
         writeln!(scenes_file, "    m")?;
@@ -1066,7 +1327,10 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
         writeln!(fur_file, "use once_cell::sync::Lazy;")?;
         writeln!(fur_file, "use uuid::Uuid;")?;
         writeln!(fur_file, "use indexmap::IndexMap;")?;
-        writeln!(fur_file, "use perro_core::ui::ast::{{FurElement, FurNode}};")?;
+        writeln!(
+            fur_file,
+            "use perro_core::ui::ast::{{FurElement, FurNode}};"
+        )?;
         writeln!(fur_file, "use std::collections::HashMap;")?;
         writeln!(fur_file, "use std::borrow::Cow;")?;
         writeln!(fur_file, "\n// --- GENERATED FUR DEFINITIONS ---")?;
@@ -1077,8 +1341,14 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
                 "WARNING: `res` directory not found at {}. No FUR files will be compiled.",
                 res_dir.display()
             );
-            writeln!(fur_file, "\n/// A map of FUR file paths to their statically compiled UI element trees.")?;
-            writeln!(fur_file, "pub static PERRO_FUR: Lazy<HashMap<&'static str, &'static [FurElement]>> = Lazy::new(|| {{")?;
+            writeln!(
+                fur_file,
+                "\n/// A map of FUR file paths to their statically compiled UI element trees."
+            )?;
+            writeln!(
+                fur_file,
+                "pub static PERRO_FUR: Lazy<HashMap<&'static str, &'static [FurElement]>> = Lazy::new(|| {{"
+            )?;
             writeln!(fur_file, "    HashMap::new()")?;
             writeln!(fur_file, "}});")?;
             fur_file.flush()?;
@@ -1106,13 +1376,14 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
 
         // --- Generate static definitions ---
         while let Some(current_res_path) = fur_queue.pop_front() {
-            let ast = parse_fur_file(&current_res_path)
-                .map_err(|e| anyhow::anyhow!("Failed to parse FUR file {}: {}", current_res_path, e))?;
+            let ast = parse_fur_file(&current_res_path).map_err(|e| {
+                anyhow::anyhow!("Failed to parse FUR file {}: {}", current_res_path, e)
+            })?;
 
             let fur_elements: Vec<FurElement> = ast
                 .into_iter()
                 .filter_map(|f| match f {
-                   FurNode::Element(el) => Some(el),
+                    FurNode::Element(el) => Some(el),
                     _ => None,
                 })
                 .collect();
@@ -1152,8 +1423,14 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         writeln!(fur_file, "{}", static_fur_definitions_code)?;
 
         // --- Write PERRO_FUR map ---
-        writeln!(fur_file, "\n/// A map of FUR file paths to their statically compiled UI element trees.")?;
-        writeln!(fur_file, "pub static PERRO_FUR: Lazy<HashMap<&'static str, &'static [FurElement]>> = Lazy::new(|| {{")?;
+        writeln!(
+            fur_file,
+            "\n/// A map of FUR file paths to their statically compiled UI element trees."
+        )?;
+        writeln!(
+            fur_file,
+            "pub static PERRO_FUR: Lazy<HashMap<&'static str, &'static [FurElement]>> = Lazy::new(|| {{"
+        )?;
         writeln!(fur_file, "    let mut m = HashMap::new();")?;
         write!(fur_file, "{}", map_insertions_code)?;
         writeln!(fur_file, "    m")?;
@@ -1164,16 +1441,28 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         Ok(())
     }
 
-    fn codegen_fur_element(&self, element: &FurElement, indent_level: usize) -> anyhow::Result<String> {
+    fn codegen_fur_element(
+        &self,
+        element: &FurElement,
+        indent_level: usize,
+    ) -> anyhow::Result<String> {
         use std::fmt::Write as _;
-        
+
         let indent = "    ".repeat(indent_level);
         let mut code = String::new();
 
         writeln!(&mut code, "{}FurElement {{", indent)?;
-        writeln!(&mut code, "{}    tag_name: Cow::Borrowed(\"{}\"),", indent, element.tag_name)?;
-        writeln!(&mut code, "{}    id: Cow::Borrowed(\"{}\"),", indent, element.id)?;
-        
+        writeln!(
+            &mut code,
+            "{}    tag_name: Cow::Borrowed(\"{}\"),",
+            indent, element.tag_name
+        )?;
+        writeln!(
+            &mut code,
+            "{}    id: Cow::Borrowed(\"{}\"),",
+            indent, element.id
+        )?;
+
         // Generate attributes HashMap
         if element.attributes.is_empty() {
             writeln!(&mut code, "{}    attributes: HashMap::new(),", indent)?;
@@ -1181,10 +1470,10 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(&mut code, "{}    attributes: HashMap::from([", indent)?;
             for (key, value) in &element.attributes {
                 writeln!(
-                    &mut code, 
-                    "{}        (Cow::Borrowed(\"{}\"), Cow::Borrowed(\"{}\")),", 
-                    indent, 
-                    key, 
+                    &mut code,
+                    "{}        (Cow::Borrowed(\"{}\"), Cow::Borrowed(\"{}\")),",
+                    indent,
+                    key,
                     value.replace("\"", "\\\"")
                 )?;
             }
@@ -1200,13 +1489,18 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                 match child {
                     FurNode::Element(child_el) => {
                         let child_code = self.codegen_fur_element(child_el, indent_level + 2)?;
-                        writeln!(&mut code, "{}        FurNode::Element({}),", indent, child_code.trim())?;
+                        writeln!(
+                            &mut code,
+                            "{}        FurNode::Element({}),",
+                            indent,
+                            child_code.trim()
+                        )?;
                     }
                     FurNode::Text(text) => {
                         writeln!(
-                            &mut code, 
-                            "{}        FurNode::Text(Cow::Borrowed(\"{}\")),", 
-                            indent, 
+                            &mut code,
+                            "{}        FurNode::Text(Cow::Borrowed(\"{}\")),",
+                            indent,
                             text.replace("\"", "\\\"")
                         )?;
                     }
@@ -1215,7 +1509,11 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(&mut code, "{}    ],", indent)?;
         }
 
-        writeln!(&mut code, "{}    self_closing: {},", indent, element.self_closing)?;
+        writeln!(
+            &mut code,
+            "{}    self_closing: {},",
+            indent, element.self_closing
+        )?;
         write!(&mut code, "{}}}", indent)?;
 
         Ok(code)
@@ -1242,7 +1540,11 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         // Generate static metadata PHF map
         let metadata_map_name = "PERRO_METADATA";
         if !project.metadata().is_empty() {
-            writeln!(manifest_file, "\nstatic {}: phf::Map<&'static str, &'static str> = phf::phf_map! {{", metadata_map_name)?;
+            writeln!(
+                manifest_file,
+                "\nstatic {}: phf::Map<&'static str, &'static str> = phf::phf_map! {{",
+                metadata_map_name
+            )?;
             for (key, value) in project.metadata() {
                 writeln!(
                     manifest_file,
@@ -1256,36 +1558,47 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
 
         // Generate the Lazy Project
         writeln!(manifest_file, "\n/// Statically compiled project manifest")?;
-        writeln!(manifest_file, "pub static PERRO_PROJECT: Lazy<Project> = Lazy::new(|| {{")?;
+        writeln!(
+            manifest_file,
+            "pub static PERRO_PROJECT: Lazy<Project> = Lazy::new(|| {{"
+        )?;
         writeln!(manifest_file, "    Project::new_static(")?;
         writeln!(manifest_file, "        \"{}\".to_string(),", project.name())?;
-        writeln!(manifest_file, "        \"{}\".to_string(),", project.version())?;
-        writeln!(manifest_file, "        \"{}\".to_string(),", project.main_scene())?;
-        
+        writeln!(
+            manifest_file,
+            "        \"{}\".to_string(),",
+            project.version()
+        )?;
+        writeln!(
+            manifest_file,
+            "        \"{}\".to_string(),",
+            project.main_scene()
+        )?;
+
         // Handle optional icon
         if let Some(icon) = project.icon() {
             writeln!(manifest_file, "        Some(\"{}\".to_string()),", icon)?;
         } else {
             writeln!(manifest_file, "        None,")?;
         }
-        
+
         writeln!(manifest_file, "        {}f32,", project.target_fps())?;
         writeln!(manifest_file, "        {}f32,", project.xps())?;
-        
+
         // Handle optional root script
         if let Some(script) = project.root_script() {
             writeln!(manifest_file, "        Some(\"{}\".to_string()),", script)?;
         } else {
             writeln!(manifest_file, "        None,")?;
         }
-        
+
         // Pass PHF map reference
         if !project.metadata().is_empty() {
             writeln!(manifest_file, "        &{},", metadata_map_name)?;
         } else {
             writeln!(manifest_file, "        &phf::phf_map! {{}},")?;
         }
-        
+
         writeln!(manifest_file, "    )")?;
         writeln!(manifest_file, "}});")?;
 

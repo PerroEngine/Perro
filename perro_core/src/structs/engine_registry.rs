@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::{
     engine_structs::EngineStruct,
-    lang::ast::{NumberKind, StructDef, StructField, Type}, node_registry::NodeType,
+    lang::ast::{NumberKind, StructDef, StructField, Type},
+    node_registry::NodeType,
 };
 
 #[derive(Debug, Clone)]
@@ -74,10 +75,7 @@ impl EngineRegistry {
         reg.register_node(
             NodeType::Node,
             None,
-            vec![
-                ("name", Type::String),
-                ("id", Type::Custom("Uuid".into())),
-            ],
+            vec![("name", Type::String), ("id", Type::Custom("Uuid".into()))],
         );
 
         reg.register_node(
@@ -165,11 +163,7 @@ impl EngineRegistry {
     // Reflection lookups
     // ---------------------------------------------------
 
-    pub fn get_field_type_struct(
-        &self,
-        struct_kind: &EngineStruct,
-        field: &str,
-    ) -> Option<Type> {
+    pub fn get_field_type_struct(&self, struct_kind: &EngineStruct, field: &str) -> Option<Type> {
         let mut current = Some(struct_kind.clone());
         while let Some(kind) = current {
             if let Some(def) = self.struct_defs.get(&kind) {
@@ -182,11 +176,7 @@ impl EngineRegistry {
         None
     }
 
-    pub fn get_field_type_node(
-        &self,
-        node_kind: &NodeType,
-        field: &str,
-    ) -> Option<Type> {
+    pub fn get_field_type_node(&self, node_kind: &NodeType, field: &str) -> Option<Type> {
         let mut current = Some(node_kind.clone());
         while let Some(kind) = current {
             if let Some(def) = self.node_defs.get(&kind) {
@@ -200,11 +190,7 @@ impl EngineRegistry {
     }
 
     /// Walk through nested fields like Node2D.transform.position.x
-    pub fn resolve_chain_from_node(
-        &self,
-        node_kind: &NodeType,
-        chain: &[String],
-    ) -> Option<Type> {
+    pub fn resolve_chain_from_node(&self, node_kind: &NodeType, chain: &[String]) -> Option<Type> {
         let mut current_type = Type::Node(node_kind.clone());
         for field in chain {
             current_type = match current_type {

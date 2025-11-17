@@ -1,7 +1,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-use perro_core::asset_io::{set_project_root, ProjectRoot};
+use perro_core::asset_io::{ProjectRoot, set_project_root};
 use perro_core::compiler::{BuildProfile, CompileTarget, Compiler};
 use perro_core::lang::transpiler::transpile;
 
@@ -19,11 +19,7 @@ fn resolve_project_root(path_arg: &str) -> PathBuf {
     let workspace_root = exe_dir
         .ancestors()
         .find(|p| p.join("Cargo.toml").exists())
-        .unwrap_or_else(|| {
-            exe_dir
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-        });
+        .unwrap_or_else(|| exe_dir.parent().unwrap_or_else(|| Path::new(".")));
 
     // Handle the input
     if path_arg.eq_ignore_ascii_case("--editor") {
@@ -106,7 +102,7 @@ fn main() {
 
             println!("✅ Project built!");
         }
-         CompileTarget::VerboseProject => {
+        CompileTarget::VerboseProject => {
             println!("🏗️  Building verbose project…");
             if let Err(e) = transpile(&project_root, true) {
                 eprintln!("❌ Transpile failed: {}", e);

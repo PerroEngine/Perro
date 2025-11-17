@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom, Cursor};
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Arc;
 
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use memmap2::Mmap;
 
-use zstd::stream::{decode_all}; // Added for Zstandard decompression
+use zstd::stream::decode_all; // Added for Zstandard decompression
 
 // Flags for BrkEntry (must match brk.rs)
 const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is ZSTD compressed
-const FLAG_ENCRYPTED: u32 = 2;  // Bit 1: Data is AES-GCM encrypted
+const FLAG_ENCRYPTED: u32 = 2; // Bit 1: Data is AES-GCM encrypted
 
 /// Entry metadata
 #[derive(Debug, Clone)]
@@ -64,7 +64,9 @@ impl BrkArchive {
     }
 
     /// Parse header + index (generic over &[u8] or Mmap)
-    fn parse_index<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> io::Result<HashMap<String, BrkEntry>> {
+    fn parse_index<T: AsRef<[u8]>>(
+        cursor: &mut Cursor<T>,
+    ) -> io::Result<HashMap<String, BrkEntry>> {
         let mut magic = [0u8; 4];
         cursor.read_exact(&mut magic)?;
         if &magic != b"BRK1" {
@@ -133,10 +135,13 @@ impl BrkArchive {
 
     /// Read a file fully into memory (for small/encrypted/compressed files)
     pub fn read_file(&self, path: &str, key: Option<&[u8; 32]>) -> io::Result<Vec<u8>> {
-        let entry = self.index.get(path)
+        let entry = self
+            .index
+            .get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
-        let mut data_buf = match &self.data { // Make buf mutable, rename to data_buf for clarity
+        let mut data_buf = match &self.data {
+            // Make buf mutable, rename to data_buf for clarity
             BrkData::Bytes(bytes) => {
                 let start = entry.offset as usize;
                 let end = start + entry.size as usize;
@@ -151,30 +156,42 @@ impl BrkArchive {
 
         // --- DECRYPTION STEP --- (Decrypt first if encrypted)
         if entry.flags & FLAG_ENCRYPTED != 0 {
-            let key = key.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Missing decryption key"))?;
+            let key =
+                key.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Missing decryption key"))?;
             let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
             let nonce = Nonce::from_slice(&entry.nonce);
 
             let mut combined_encrypted_data_with_tag = data_buf.clone();
             combined_encrypted_data_with_tag.extend_from_slice(&entry.tag);
 
-            let decrypted = cipher.decrypt(nonce, combined_encrypted_data_with_tag.as_ref())
+            let decrypted = cipher
+                .decrypt(nonce, combined_encrypted_data_with_tag.as_ref())
                 .map_err(|_| io::Error::new(io::ErrorKind::Other, "Decryption failed"))?;
             data_buf = decrypted; // Update data_buf with decrypted data
         }
 
         // --- DECOMPRESSION STEP --- (Decompress second if compressed)
         if entry.flags & FLAG_COMPRESSED != 0 {
-             let decompressed = decode_all(&*data_buf)
-                 .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("ZSTD decompression failed: {}", e)))?;
+            let decompressed = decode_all(&*data_buf).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("ZSTD decompression failed: {}", e),
+                )
+            })?;
 
-             // Verify decompressed size matches original_size for integrity
-             if decompressed.len() as u64 != entry.original_size {
-                 return Err(io::Error::new(io::ErrorKind::InvalidData,
-                                           format!("Decompressed size mismatch for '{}'. Expected {} bytes, got {} bytes.",
-                                                    path, entry.original_size, decompressed.len())));
-             }
-             data_buf = decompressed; // Update data_buf with decompressed data
+            // Verify decompressed size matches original_size for integrity
+            if decompressed.len() as u64 != entry.original_size {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Decompressed size mismatch for '{}'. Expected {} bytes, got {} bytes.",
+                        path,
+                        entry.original_size,
+                        decompressed.len()
+                    ),
+                ));
+            }
+            data_buf = decompressed; // Update data_buf with decompressed data
         }
 
         Ok(data_buf)
@@ -182,18 +199,24 @@ impl BrkArchive {
 
     /// Open a file for streaming. Only works for unencrypted AND uncompressed files.
     pub fn stream_file(&self, path: &str) -> io::Result<BrkFile> {
-        let entry = self.index.get(path)
+        let entry = self
+            .index
+            .get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
         // Streaming is not supported for encrypted or compressed files as BrkFile
         // currently reads raw chunks and does not handle on-the-fly decryption/decompression.
         if entry.flags & FLAG_ENCRYPTED != 0 {
-            return Err(io::Error::new(io::ErrorKind::Other,
-                "Streaming encrypted files not supported (use read_file)"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Streaming encrypted files not supported (use read_file)",
+            ));
         }
         if entry.flags & FLAG_COMPRESSED != 0 {
-            return Err(io::Error::new(io::ErrorKind::Other,
-                "Streaming compressed files not supported (use read_file)"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Streaming compressed files not supported (use read_file)",
+            ));
         }
 
         Ok(BrkFile {
@@ -222,10 +245,12 @@ pub struct BrkFile {
 impl Read for BrkFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let data: &[u8] = match &self.data {
-            BrkData::Bytes(b) => &b[self.entry.offset as usize
-                ..(self.entry.offset + self.entry.size) as usize],
-            BrkData::Mmap(m) => &m[self.entry.offset as usize
-                ..(self.entry.offset + self.entry.size) as usize],
+            BrkData::Bytes(b) => {
+                &b[self.entry.offset as usize..(self.entry.offset + self.entry.size) as usize]
+            }
+            BrkData::Mmap(m) => {
+                &m[self.entry.offset as usize..(self.entry.offset + self.entry.size) as usize]
+            }
         };
 
         let mut remaining = &data[self.pos as usize..];
@@ -245,7 +270,10 @@ impl Seek for BrkFile {
 
         // Seeking beyond the actual content length is an error
         if new_pos > self.entry.size {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Seek out of bounds"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Seek out of bounds",
+            ));
         }
 
         self.pos = new_pos;
