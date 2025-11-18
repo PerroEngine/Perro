@@ -49,6 +49,12 @@ impl Transform2D {
             scale: scale,
         }
     }
+
+    pub fn is_default(&self) -> bool {
+        is_default_position(&self.position)
+            && is_default_rotation(&self.rotation)
+            && is_default_scale(&self.scale)
+    }
 }
 
 impl Default for Transform2D {
@@ -66,7 +72,7 @@ impl Transform2D {
     pub fn to_mat4(&self) -> glam::Mat4 {
         let t =
             glam::Mat4::from_translation(glam::Vec3::new(self.position.x, self.position.y, 0.0));
-        let r = glam::Mat4::from_rotation_z(self.rotation);
+        let r = glam::Mat4::from_rotation_z(-self.rotation);
         let s = glam::Mat4::from_scale(glam::Vec3::new(self.scale.x, self.scale.y, 1.0));
         t * r * s
     }

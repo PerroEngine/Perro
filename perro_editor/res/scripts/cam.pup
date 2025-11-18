@@ -1,0 +1,9 @@
+extends Camera2D
+
+fn init() {
+
+}
+
+fn update() {
+    self.transform.position.x += 500 * Time.get_delta()
+}

@@ -85,6 +85,7 @@ impl Script for ScriptsCsCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         self.health = 100i32;
         self.speed = 200.0f32;
+        self.speed += 50.0f32;
         api.print(&String::from("Player initialized!"));
     }
 

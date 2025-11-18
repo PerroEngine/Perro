@@ -1,0 +1,10 @@
+extends MeshInstance3D
+
+fn init() {
+
+}
+
+fn update() {
+    self.transform.position.x += 500 * Time.get_delta()
+    self.transform.position.y += 500 * Time.get_delta()
+}

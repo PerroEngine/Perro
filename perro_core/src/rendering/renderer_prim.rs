@@ -345,48 +345,63 @@ impl PrimitiveRenderer {
         }
     }
 
-    pub fn queue_texture(
-        &mut self,
-        uuid: uuid::Uuid,
-        layer: RenderLayer,
-        texture_path: &str,
-        transform: Transform2D,
-        pivot: Vector2,
-        z_index: i32,
-    ) {
-        let new_instance = self.create_texture_instance(transform, pivot, z_index);
-        let texture_path = texture_path.to_string();
+   pub fn queue_texture(
+    &mut self,
+    uuid: uuid::Uuid,
+    layer: RenderLayer,
+    texture_path: &str,
+    transform: Transform2D,
+    pivot: Vector2,
+    z_index: i32,
+    texture_manager: &mut crate::rendering::TextureManager,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) {
 
-        // Check if this texture already exists
-        if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
-            // Update existing slot if changed
-            if let Some(ref mut existing) = self.texture_instance_slots[slot] {
-                if existing.0 != layer || existing.1 != new_instance || existing.2 != texture_path {
-                    existing.0 = layer;
-                    existing.1 = new_instance;
-                    existing.2 = texture_path;
-                    self.mark_texture_slot_dirty(slot);
-                    self.dirty_count += 1;
-                    self.instances_need_rebuild = true;
-                }
+
+
+    // Load or fetch cached texture info
+    let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
+    let tex_size = Vector2::new(tex.width as f32, tex.height as f32);
+
+    // Create a *new* version for rendering
+    let adjusted_transform = Transform2D {
+        position: transform.position,
+        rotation: transform.rotation,
+        scale: Vector2::new(transform.scale.x * tex_size.x, transform.scale.y * tex_size.y),
+    };
+
+    let new_instance = self.create_texture_instance(adjusted_transform, pivot, z_index);
+    let texture_path = texture_path.to_string();
+
+    // The rest stays exactly the same
+    if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+        if let Some(ref mut existing) = self.texture_instance_slots[slot] {
+            if existing.0 != layer || existing.1 != new_instance || existing.2 != texture_path {
+                existing.0 = layer;
+                existing.1 = new_instance;
+                existing.2 = texture_path;
+                self.mark_texture_slot_dirty(slot);
+                self.dirty_count += 1;
+                self.instances_need_rebuild = true;
             }
-        } else {
-            // Allocate new slot
-            let slot = if let Some(free_slot) = self.free_texture_slots.pop() {
-                free_slot
-            } else {
-                let new_slot = self.texture_instance_slots.len();
-                self.texture_instance_slots.push(None);
-                new_slot
-            };
-
-            self.texture_instance_slots[slot] = Some((layer, new_instance, texture_path));
-            self.texture_uuid_to_slot.insert(uuid, slot);
-            self.mark_texture_slot_dirty(slot);
-            self.dirty_count += 1;
-            self.instances_need_rebuild = true;
         }
+    } else {
+        let slot = if let Some(free_slot) = self.free_texture_slots.pop() {
+            free_slot
+        } else {
+            let new_slot = self.texture_instance_slots.len();
+            self.texture_instance_slots.push(None);
+            new_slot
+        };
+
+        self.texture_instance_slots[slot] = Some((layer, new_instance, texture_path));
+        self.texture_uuid_to_slot.insert(uuid, slot);
+        self.mark_texture_slot_dirty(slot);
+        self.dirty_count += 1;
+        self.instances_need_rebuild = true;
     }
+}
 
     pub fn queue_text(
         &mut self,
@@ -715,7 +730,11 @@ impl PrimitiveRenderer {
                     camera_bind_group,
                     vertex_buffer,
                 );
+
+              
             }
+
+            
             RenderLayer::UI => {
                 self.render_rects(
                     &self.ui_rect_instances,
@@ -742,6 +761,8 @@ impl PrimitiveRenderer {
                 );
             }
         }
+
+        
     }
 
     fn create_rect_instance(

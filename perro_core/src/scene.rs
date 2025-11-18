@@ -1,22 +1,8 @@
 use crate::{
-    Graphics,
-    Node,
-    RenderLayer,
-    Vector2,
-    api::ScriptApi,
-    app_command::AppCommand,
-    apply_fur::{build_ui_elements_from_fur, parse_fur_file},
-    asset_io::{ProjectRoot, get_project_root, load_asset, save_asset},
-    ast::{FurElement, FurNode},
-    lang::transpiler::script_path_to_identifier,
-    manifest::Project,
-    node_registry::{BaseNode, SceneNode},
-    prelude::string_to_u64,
-    script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var},
-    ui_element::{BaseElement, UIElement},
-    ui_renderer::render_ui, // NEW import
+    Graphics, Node, RenderLayer, Transform3D, Vector2, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui // NEW import
 };
 
+use glam::{Mat4, Vec3};
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
@@ -708,7 +694,6 @@ impl<P: ScriptProvider> Scene<P> {
         if dirty_nodes.is_empty() {
             return;
         }
-        println!("{} dirty nodes to be rendered", dirty_nodes.len());
         self.traverse_and_render(dirty_nodes, gfx);
     }
 
@@ -971,21 +956,58 @@ impl<P: ScriptProvider> Scene<P> {
         for node_id in dirty_nodes {
             if let Some(node) = self.data.nodes.get_mut(&node_id) {
                 match node {
-                    // SceneNode::Sprite2D(sprite) => {
-                    //     if let Some(tex) = &sprite.texture_path {
-                    //         gfx.renderer_prim.queue_texture(
-                    //             node_id,
-                    //             RenderLayer::World2D,
-                    //             tex,
-                    //             sprite.transform.clone(),
-                    //          sprite.pivot,
-                    //             sprite.z_index
-                    //          );
-                    //     }
-                    // }
+
+                    //2D Nodes
+
+                    SceneNode::Sprite2D(sprite) => {
+                        if let Some(tex) = &sprite.texture_path {
+                            gfx.renderer_2d.queue_texture(
+                                &mut gfx.renderer_prim,
+                                &mut gfx.texture_manager,
+                                &gfx.device,
+                                &gfx.queue,
+                               node_id,
+                                tex,
+                                 sprite.transform,
+                              sprite.pivot,
+                                 sprite.z_index
+                              );
+                         }
+                     }
+                    SceneNode::Camera2D(camera) => {
+                        if camera.active {
+                            gfx.update_camera_2d(camera);
+                        }
+                    }
+
+
                     SceneNode::UINode(ui_node) => {
                         // UI renderer handles layout + rendering internally
                         render_ui(ui_node, gfx);
+                    }
+
+                    //3D Nodes
+
+                    SceneNode::Camera3D(camera) => {
+                        if camera.active {
+                            gfx.update_camera_3d(camera);
+                        }
+                    }
+                    SceneNode::MeshInstance3D(mesh) => {
+                        if mesh.visible {
+                            if let Some(path) = &mesh.mesh_path {
+                                gfx.renderer_3d.queue_mesh(
+                                    node_id,
+                                    path,
+                                    mesh.transform,
+                                    mesh.material_id.unwrap_or(0),
+                                    &mut gfx.mesh_manager,
+                                    &mut gfx.device,
+                                    &mut gfx.queue,
+                                    
+                                );
+                            }
+                        }
                     }
                     _ => {}
                 }

@@ -17,6 +17,10 @@ pub struct Node2D {
     #[serde(rename = "type")]
     pub ty: Cow<'static, str>,
 
+    #[serde(
+        skip_serializing_if = "Transform2D::is_default",
+        default = "Transform2D::default"
+    )]
     pub transform: Transform2D,
 
     #[serde(

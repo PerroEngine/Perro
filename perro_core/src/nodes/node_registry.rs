@@ -303,7 +303,17 @@ macro_rules! define_nodes {
 // ─────────────────────────────────────────────
 define_nodes!(
     Node     => crate::nodes::node::Node,
-    Node2D   => crate::nodes::_2d::node2d::Node2D,
-    Sprite2D => crate::nodes::_2d::sprite2d::Sprite2D,
+
+
+    Node2D   => crate::nodes::_2d::node_2d::Node2D,
+    Sprite2D => crate::nodes::_2d::sprite_2d::Sprite2D,
+    Camera2D  => crate::nodes::_2d::camera_2d::Camera2D,
+
+
     UINode   => crate::nodes::ui_node::UINode,
+    
+
+    Node3D   => crate::nodes::_3d::node_3d::Node3D,
+    MeshInstance3D => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
+    Camera3D  => crate::nodes::_3d::camera_3d::Camera3D,
 );

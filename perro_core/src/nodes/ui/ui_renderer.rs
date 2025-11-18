@@ -960,9 +960,9 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
 
     println!("{}", z_index);
 
-    gfx.renderer_prim.queue_rect(
+    gfx.renderer_ui.queue_panel(
+        &mut gfx.renderer_prim,
         bg_id,
-        RenderLayer::UI,
         panel.base.global_transform,
         panel.base.size,
         panel.base.pivot,
@@ -976,9 +976,9 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
     if border_thickness > 0.0 {
         if let Some(border_color) = border_color {
             let border_id = Uuid::new_v5(&bg_id, b"border");
-            gfx.renderer_prim.queue_rect(
+            gfx.renderer_ui.queue_panel(
+                &mut gfx.renderer_prim,
                 border_id,
-                RenderLayer::UI,
                 panel.base.global_transform,
                 panel.base.size,
                 panel.base.pivot,
@@ -1016,9 +1016,9 @@ fn render_text(text: &UIText, gfx: &mut Graphics) {
         }
     }
 
-    gfx.renderer_prim.queue_text(
+    gfx.renderer_ui.queue_text(
+        &mut gfx.renderer_prim,
         text.id,
-        RenderLayer::UI,
         &text.props.content,
         text.props.font_size,
         text.base.global_transform,

@@ -22,6 +22,7 @@ public class Player : Node2D
     {
         health = 100;
         speed = 200.0;
+        speed += 50.0;
         Console.WriteLine("Player initialized!");
     }
 

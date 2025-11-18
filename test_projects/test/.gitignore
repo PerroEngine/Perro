@@ -1,7 +1,7 @@
 # Ignore Perro build artifacts
-target/
+builds/
 
-/.perro/project/src/key.rs
+/.perro/project/src/static_assets/
 
 /assets.brk
 

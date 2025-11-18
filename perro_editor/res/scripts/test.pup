@@ -1,10 +1,13 @@
-extends Node2D
+extends Sprite2D
 
 fn init() {
-    bob(2)
+    bob(25)
 }
 
-fn update() {}
+fn update() {
+    self.transform.rotation += 0.5 * Time.get_delta()
+    self.transform.position.x += 550 * Time.get_delta()
+}
 
 fn bob(i: int) {
     Console.log(i)

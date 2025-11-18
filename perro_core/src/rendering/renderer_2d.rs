@@ -41,23 +41,29 @@ impl Renderer2D {
     }
 
     pub fn queue_texture(
-        &mut self,
-        primitive_renderer: &mut PrimitiveRenderer,
-        uuid: uuid::Uuid,
-        texture_path: &str,
-        transform: Transform2D,
-        pivot: Vector2,
-        z_index: i32,
-    ) {
-        primitive_renderer.queue_texture(
-            uuid,
-            RenderLayer::World2D,
-            texture_path,
-            transform,
-            pivot,
-            z_index,
-        );
-    }
+    &mut self,
+    primitive_renderer: &mut PrimitiveRenderer,
+    texture_manager: &mut TextureManager,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    uuid: uuid::Uuid,
+    texture_path: &str,
+    transform: Transform2D,
+    pivot: Vector2,
+    z_index: i32,
+) {
+    primitive_renderer.queue_texture(
+        uuid,
+        RenderLayer::World2D,
+        texture_path,
+        transform,
+        pivot,
+        z_index,
+        texture_manager,
+        device,
+        queue,
+    );
+}
 
     pub fn queue_text(
         &mut self,
