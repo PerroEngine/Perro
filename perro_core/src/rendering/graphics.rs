@@ -11,7 +11,15 @@ use wgpu::{
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 use crate::{
-    Camera2D, Camera3D, asset_io::load_asset, font::FontAtlas, renderer_2d::Renderer2D, renderer_3d::{Mesh, Renderer3D}, renderer_prim::PrimitiveRenderer, renderer_ui::RendererUI, structs2d::ImageTexture, vertex::Vertex
+    Camera2D, Camera3D,
+    asset_io::load_asset,
+    font::FontAtlas,
+    renderer_2d::Renderer2D,
+    renderer_3d::{Mesh, Renderer3D},
+    renderer_prim::PrimitiveRenderer,
+    renderer_ui::RendererUI,
+    structs2d::ImageTexture,
+    vertex::Vertex,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -51,7 +59,12 @@ impl TextureManager {
         if !self.textures.contains_key(&key) {
             let img_bytes = load_asset(path).expect("Failed to read image file");
             let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
-            println!("🖼️ Loading texture: {} ({}x{})", path, img.width(), img.height());
+            println!(
+                "🖼️ Loading texture: {} ({}x{})",
+                path,
+                img.width(),
+                img.height()
+            );
             let img_texture = ImageTexture::from_image(&img, device, queue);
             self.textures.insert(key.clone(), img_texture);
         }
@@ -106,7 +119,7 @@ impl MeshManager {
         queue: &Queue,
     ) -> Option<&Mesh> {
         let key = path.to_string();
-        
+
         if !self.meshes.contains_key(&key) {
             // Load mesh from file
             if let Some(mesh) = Self::load_mesh_from_file(path, device) {
@@ -117,7 +130,7 @@ impl MeshManager {
                 return None;
             }
         }
-        
+
         self.meshes.get(&key)
     }
 
@@ -285,7 +298,7 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     let projection = glam::Mat4::perspective_rh(
         45.0_f32.to_radians(), // Field of view
         aspect_ratio,
-        0.1,  // Near plane
+        0.1,   // Near plane
         100.0, // Far plane
     );
 
@@ -354,10 +367,10 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
 
     // 7) Create renderers
     let renderer_3d = Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
-    let renderer_prim = PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
+    let renderer_prim =
+        PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
-
 
     let gfx = Graphics {
         window: window.clone(),
@@ -430,78 +443,79 @@ impl Graphics {
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
     }
-pub fn update_camera_2d(&self, cam: &Camera2D) {
-    let zoom = cam.zoom();
-    let t = &cam.transform;
+    pub fn update_camera_2d(&self, cam: &Camera2D) {
+        let zoom = cam.zoom();
+        let t = &cam.transform;
 
-    let rotation = glam::Mat4::from_rotation_z(t.rotation);
-    let translation = glam::Mat4::from_translation(glam::vec3(-t.position.x, -t.position.y, 0.0));
-    // Translate first, then rotate: world-space panning works
-    let view = rotation * translation;
+        let rotation = glam::Mat4::from_rotation_z(t.rotation);
+        let translation =
+            glam::Mat4::from_translation(glam::vec3(-t.position.x, -t.position.y, 0.0));
+        // Translate first, then rotate: world-space panning works
+        let view = rotation * translation;
 
-    let vw = super::VIRTUAL_WIDTH;
-    let vh = super::VIRTUAL_HEIGHT;
-    let ndc_scale = glam::vec2(2.0 / vw, 2.0 / vh);
+        let vw = super::VIRTUAL_WIDTH;
+        let vh = super::VIRTUAL_HEIGHT;
+        let ndc_scale = glam::vec2(2.0 / vw, 2.0 / vh);
 
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct CameraUniform {
-        virtual_size: [f32; 2],
-        ndc_scale: [f32; 2],
-        zoom: f32,
-        _pad0: f32,
-        _pad1: [f32; 2],
-        view: [[f32; 4]; 4],
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct CameraUniform {
+            virtual_size: [f32; 2],
+            ndc_scale: [f32; 2],
+            zoom: f32,
+            _pad0: f32,
+            _pad1: [f32; 2],
+            view: [[f32; 4]; 4],
+        }
+
+        unsafe impl bytemuck::Pod for CameraUniform {}
+        unsafe impl bytemuck::Zeroable for CameraUniform {}
+
+        let cam_uniform = CameraUniform {
+            virtual_size: [vw, vh],
+            ndc_scale: ndc_scale.into(),
+            zoom,
+            _pad0: 0.0,
+            _pad1: [0.0, 0.0],
+            view: view.to_cols_array_2d(),
+        };
+
+        self.queue
+            .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
     }
+    pub fn update_camera_3d(&self, cam: &Camera3D) {
+        let t = &cam.transform;
 
-    unsafe impl bytemuck::Pod for CameraUniform {}
-    unsafe impl bytemuck::Zeroable for CameraUniform {}
+        // Convert your Vector3 to glam::Vec3 for matrix operations
+        let translation = glam::Mat4::from_translation(t.position.to_glam());
+        let rotation = glam::Mat4::from_euler(
+            glam::EulerRot::XYZ,
+            t.rotation.x,
+            t.rotation.y,
+            t.rotation.z,
+        );
+        let model = translation * rotation;
+        let view = model.inverse(); // View is inverse of model transform
 
-    let cam_uniform = CameraUniform {
-        virtual_size: [vw, vh],
-        ndc_scale: ndc_scale.into(),
-        zoom,
-        _pad0: 0.0,
-        _pad1: [0.0, 0.0],
-        view: view.to_cols_array_2d(),
-    };
+        let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
+        let projection = glam::Mat4::perspective_rh(
+            cam.fov.unwrap_or(45.0_f32.to_radians()), // Unwrap with default
+            aspect_ratio,
+            cam.near.unwrap_or(0.1),  // Unwrap with default
+            cam.far.unwrap_or(100.0), // Unwrap with default
+        );
 
-    self.queue
-        .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
-}
-pub fn update_camera_3d(&self, cam: &Camera3D) {
-    let t = &cam.transform;
-    
-    // Convert your Vector3 to glam::Vec3 for matrix operations
-    let translation = glam::Mat4::from_translation(t.position.to_glam());
-    let rotation = glam::Mat4::from_euler(
-        glam::EulerRot::XYZ, 
-        t.rotation.x, 
-        t.rotation.y, 
-        t.rotation.z
-    );
-    let model = translation * rotation;
-    let view = model.inverse(); // View is inverse of model transform
-    
-    let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
-let projection = glam::Mat4::perspective_rh(
-    cam.fov.unwrap_or(45.0_f32.to_radians()),  // Unwrap with default
-    aspect_ratio,
-    cam.near.unwrap_or(0.1),                   // Unwrap with default
-    cam.far.unwrap_or(100.0),                  // Unwrap with default
-);
+        let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
+            view: view.to_cols_array_2d(),
+            projection: projection.to_cols_array_2d(),
+        };
 
-    let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
-        view: view.to_cols_array_2d(),
-        projection: projection.to_cols_array_2d(),
-    };
-
-    self.queue.write_buffer(
-        &self.camera3d_buffer, 
-        0, 
-        bytemuck::bytes_of(&camera3d_uniform)
-    );
-}
+        self.queue.write_buffer(
+            &self.camera3d_buffer,
+            0,
+            bytemuck::bytes_of(&camera3d_uniform),
+        );
+    }
 
     pub fn initialize_font_atlas(&mut self, font_atlas: FontAtlas) {
         self.renderer_prim
@@ -514,7 +528,6 @@ let projection = glam::Mat4::perspective_rh(
 
     /// Main render method that coordinates all renderers
     pub fn render(&mut self, rpass: &mut RenderPass<'_>) {
-
         self.renderer_3d.render(
             rpass,
             &self.mesh_manager,

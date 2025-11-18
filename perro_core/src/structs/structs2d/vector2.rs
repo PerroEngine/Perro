@@ -58,11 +58,7 @@ impl Vector2 {
     /// Returns a new `Vector2` with length = 1 (same direction)
     pub fn normalized(&self) -> Self {
         let len = self.length();
-        if len > 0.0 {
-            *self / len
-        } else {
-            Self::zero()
-        }
+        if len > 0.0 { *self / len } else { Self::zero() }
     }
 
     /// Distance between two vectors

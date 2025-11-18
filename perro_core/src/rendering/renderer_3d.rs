@@ -1,7 +1,14 @@
-use std::{borrow::Cow, collections::{HashMap, HashSet}, ops::Range};
 use bincode::de;
 use glam::Mat4;
-use wgpu::{util::DeviceExt, BindGroupLayout, Device, RenderPass, RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat, BufferDescriptor, BufferUsages};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
+use wgpu::{
+    BindGroupLayout, BufferDescriptor, BufferUsages, Device, RenderPass, RenderPipeline,
+    RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat, util::DeviceExt,
+};
 
 use crate::{MeshManager, Transform3D};
 
@@ -29,18 +36,18 @@ pub struct Mesh {
 
 pub struct Renderer3D {
     pipeline: RenderPipeline,
-    
+
     // Slot-based instance management
     mesh_instance_slots: Vec<Option<(MeshInstance, String)>>,
     mesh_uuid_to_slot: HashMap<uuid::Uuid, usize>,
     free_mesh_slots: Vec<usize>,
-    
+
     // Batching and rendering
     mesh_groups: Vec<(String, Vec<MeshInstance>)>,
     group_offsets: Vec<(usize, usize)>,
     buffer_ranges: Vec<Range<u64>>,
     mesh_instance_buffer: wgpu::Buffer,
-    
+
     // Dirty tracking
     dirty_slots: HashSet<usize>,
     dirty_count: usize,
@@ -185,7 +192,7 @@ impl Renderer3D {
     ) {
         // Load or fetch cached mesh info
         mesh_manager.get_or_load_mesh(mesh_path, device, queue);
-        
+
         let new_instance = self.create_mesh_instance(transform, material_id);
         let mesh_path = mesh_path.to_string();
 
@@ -242,10 +249,13 @@ impl Renderer3D {
     fn rebuild_mesh_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         // Group instances by mesh
         let mut groups: HashMap<String, Vec<MeshInstance>> = HashMap::new();
-        
+
         for slot in &self.mesh_instance_slots {
             if let Some((instance, mesh_path)) = slot {
-                groups.entry(mesh_path.clone()).or_insert_with(Vec::new).push(*instance);
+                groups
+                    .entry(mesh_path.clone())
+                    .or_insert_with(Vec::new)
+                    .push(*instance);
             }
         }
 
@@ -257,11 +267,12 @@ impl Renderer3D {
         for (_, instances) in &self.mesh_groups {
             let count = instances.len();
             self.group_offsets.push((current_offset, count));
-            
+
             let start_byte = current_offset * std::mem::size_of::<MeshInstance>();
             let end_byte = (current_offset + count) * std::mem::size_of::<MeshInstance>();
-            self.buffer_ranges.push((start_byte as u64)..(end_byte as u64));
-            
+            self.buffer_ranges
+                .push((start_byte as u64)..(end_byte as u64));
+
             current_offset += count;
         }
 
@@ -272,31 +283,30 @@ impl Renderer3D {
         }
 
         if !all_instances.is_empty() {
-    let required_size =
-        (all_instances.len() * std::mem::size_of::<MeshInstance>()) as u64;
+            let required_size = (all_instances.len() * std::mem::size_of::<MeshInstance>()) as u64;
 
-    if required_size > self.mesh_instance_buffer.size() {
-        println!(
-            "⚠️ Resizing instance buffer from {} → {} bytes",
-            self.mesh_instance_buffer.size(),
-            required_size.next_power_of_two()
-        );
+            if required_size > self.mesh_instance_buffer.size() {
+                println!(
+                    "⚠️ Resizing instance buffer from {} → {} bytes",
+                    self.mesh_instance_buffer.size(),
+                    required_size.next_power_of_two()
+                );
 
-        self.mesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Mesh Instance Buffer (Resized)"),
-            size: required_size.next_power_of_two(),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-    }
+                self.mesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Mesh Instance Buffer (Resized)"),
+                    size: required_size.next_power_of_two(),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
 
-    // Write instances to GPU
-    queue.write_buffer(
-        &self.mesh_instance_buffer,
-        0,
-        bytemuck::cast_slice(&all_instances),
-    );
-}
+            // Write instances to GPU
+            queue.write_buffer(
+                &self.mesh_instance_buffer,
+                0,
+                bytemuck::cast_slice(&all_instances),
+            );
+        }
 
         self.instances_need_rebuild = false;
         self.dirty_slots.clear();
@@ -321,10 +331,7 @@ impl Renderer3D {
                     rpass.set_pipeline(&self.pipeline);
                     rpass.set_bind_group(0, camera_bind_group, &[]);
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    rpass.set_vertex_buffer(
-                        1,
-                        instance_buffer.slice(buffer_ranges[i].clone()),
-                    );
+                    rpass.set_vertex_buffer(1, instance_buffer.slice(buffer_ranges[i].clone()));
 
                     if let Some(index_buf) = &mesh.index_buffer {
                         rpass.set_index_buffer(index_buf.slice(..), wgpu::IndexFormat::Uint32);
@@ -349,29 +356,17 @@ impl Renderer3D {
     pub fn create_cube_mesh(device: &wgpu::Device) -> Mesh {
         let vertices: &[f32] = &[
             // Front face
-            -0.5, -0.5,  0.5,
-             0.5, -0.5,  0.5,
-             0.5,  0.5,  0.5,
-            -0.5,  0.5,  0.5,
-            // Back face
-            -0.5, -0.5, -0.5,
-             0.5, -0.5, -0.5,
-             0.5,  0.5, -0.5,
-            -0.5,  0.5, -0.5,
+            -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, // Back face
+            -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5,
         ];
 
         let indices: &[u32] = &[
             // Front
-            0, 1, 2, 2, 3, 0,
-            // Right
-            1, 5, 6, 6, 2, 1,
-            // Back
-            5, 4, 7, 7, 6, 5,
-            // Left
-            4, 0, 3, 3, 7, 4,
-            // Top
-            3, 2, 6, 6, 7, 3,
-            // Bottom
+            0, 1, 2, 2, 3, 0, // Right
+            1, 5, 6, 6, 2, 1, // Back
+            5, 4, 7, 7, 6, 5, // Left
+            4, 0, 3, 3, 7, 4, // Top
+            3, 2, 6, 6, 7, 3, // Bottom
             4, 5, 1, 1, 0, 4,
         ];
 

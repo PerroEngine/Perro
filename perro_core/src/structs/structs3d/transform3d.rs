@@ -1,8 +1,7 @@
+use glam::Mat4;
 use serde::{Deserialize, Serialize};
-use glam::{Mat4};
 
 use crate::{Quaternion, Vector3};
-
 
 fn default_position() -> Vector3 {
     Vector3::zero()

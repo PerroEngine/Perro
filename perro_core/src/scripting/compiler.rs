@@ -499,14 +499,16 @@ impl Compiler {
                     mask_values[i] = (consts[c1] as u8).wrapping_add(consts[c2] as u8);
                     format!(
                         "((CONST{} as u8).wrapping_add(CONST{} as u8))",
-                        c1 + 1, c2 + 1
+                        c1 + 1,
+                        c2 + 1
                     )
                 }
                 "-" => {
                     mask_values[i] = (consts[c1] as u8).wrapping_sub(consts[c2] as u8);
                     format!(
                         "((CONST{} as u8).wrapping_sub(CONST{} as u8))",
-                        c1 + 1, c2 + 1
+                        c1 + 1,
+                        c2 + 1
                     )
                 }
                 ">>" => {

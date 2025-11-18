@@ -1,6 +1,6 @@
-use std::ops::{Deref, DerefMut};
-use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::ops::{Deref, DerefMut};
 
 use crate::nodes::_2d::node_2d::Node2D;
 

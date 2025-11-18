@@ -311,7 +311,7 @@ define_nodes!(
 
 
     UINode   => crate::nodes::ui_node::UINode,
-    
+
 
     Node3D   => crate::nodes::_3d::node_3d::Node3D,
     MeshInstance3D => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
