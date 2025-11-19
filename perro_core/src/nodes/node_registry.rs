@@ -316,4 +316,8 @@ define_nodes!(
     Node3D   => crate::nodes::_3d::node_3d::Node3D,
     MeshInstance3D => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
     Camera3D  => crate::nodes::_3d::camera_3d::Camera3D,
+
+    DirectionalLight3D => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
+    OmniLight3D => crate::nodes::_3d::light_omni_3d::OmniLight3D,
+    SpotLight3D => crate::nodes::_3d::light_spot_3d::SpotLight3D,
 );

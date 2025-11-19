@@ -1,4 +1,5 @@
-use crate::structs2d::{Color, Vector2};
+use crate::structs::Color;
+use crate::structs2d::Vector2;
 use crate::{impl_ui_element, ui_element::BaseUIElement};
 use serde::{Deserialize, Serialize};
 /// =========================

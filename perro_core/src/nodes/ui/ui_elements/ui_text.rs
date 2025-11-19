@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_ui_element, structs2d::Color, ui_element::BaseUIElement};
+use crate::{impl_ui_element, structs::Color, ui_element::BaseUIElement};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct UIText {

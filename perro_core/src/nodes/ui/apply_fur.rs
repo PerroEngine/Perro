@@ -5,7 +5,8 @@ use uuid::Uuid;
 use crate::{
     asset_io::load_asset,
     ast::{FurAnchor, FurElement, FurNode},
-    structs2d::{Color, Vector2},
+    structs::Color,
+    structs2d::Vector2,
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
         ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel},

@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::{
     ast::FurAnchor,
-    structs2d::{Color, Transform2D, Vector2},
+    structs::Color,
+    structs2d::{Transform2D, Vector2},
     ui_elements::{
         ui_container::{BoxContainer, GridLayout, Layout, UIPanel},
         ui_text::UIText,
@@ -100,8 +101,8 @@ pub trait BaseElement {
     fn set_anchor(&mut self, anchor: FurAnchor);
 
     // Modulate
-    fn get_modulate(&self) -> Option<&crate::structs2d::Color>;
-    fn set_modulate(&mut self, color: Option<crate::structs2d::Color>);
+    fn get_modulate(&self) -> Option<&crate::structs::Color>;
+    fn set_modulate(&mut self, color: Option<crate::structs::Color>);
 
     // Z-index
     fn get_z_index(&self) -> i32;
@@ -187,10 +188,10 @@ macro_rules! impl_ui_element {
                 self.base.anchor = anchor;
             }
 
-            fn get_modulate(&self) -> Option<&crate::structs2d::Color> {
+            fn get_modulate(&self) -> Option<&crate::structs::Color> {
                 self.base.modulate.as_ref()
             }
-            fn set_modulate(&mut self, color: Option<crate::structs2d::Color>) {
+            fn set_modulate(&mut self, color: Option<crate::structs::Color>) {
                 self.base.modulate = color;
             }
 

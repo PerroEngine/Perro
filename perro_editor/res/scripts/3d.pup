@@ -5,9 +5,7 @@ fn init() {
 }
 
 fn update() {
-    self.transform.rotation.y += 0.075 * Time.get_delta()
-    self.transform.rotation.z += 0.075 * Time.get_delta()
-    self.transform.scale.x -= 0.05 * Time.get_delta()
-    self.transform.scale.y -= 0.05 * Time.get_delta()
-    self.transform.scale.z -= 0.05 * Time.get_delta()
+    var euler: Vector3 = self.transform.rotation_euler()      // (pitch, yaw, roll)
+    euler.y += 1.0 * Time.get_delta()                            // modify yaw
+    self.transform.set_rotation_euler(euler)             // rebuild quaternion
 }

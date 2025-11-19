@@ -22,6 +22,11 @@ impl Quaternion {
         Self::from_glam(quat)
     }
 
+    pub fn to_euler(&self) -> (f32, f32, f32) {
+        let (yaw, pitch, roll) = self.to_glam().to_euler(glam::EulerRot::YXZ);
+        (pitch, yaw, roll)
+    }
+
     pub fn to_glam(self) -> glam::Quat {
         glam::Quat::from_xyzw(self.x, self.y, self.z, self.w)
     }

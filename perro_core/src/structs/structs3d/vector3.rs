@@ -29,6 +29,10 @@ impl Vector3 {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
     }
 
+    pub fn to_array(&self) -> [f32; 3] {
+        [self.x, self.y, self.z]
+    }
+
     /// Returns the cross product between `self` and `rhs`.
     pub fn cross(self, rhs: Self) -> Self {
         Self {

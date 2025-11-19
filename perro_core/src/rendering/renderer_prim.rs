@@ -298,7 +298,7 @@ impl PrimitiveRenderer {
         transform: Transform2D,
         size: Vector2,
         pivot: Vector2,
-        color: crate::structs2d::Color,
+        color: crate::structs::Color,
         corner_radius: Option<CornerRadius>,
         border_thickness: f32,
         is_border: bool,
@@ -411,7 +411,7 @@ impl PrimitiveRenderer {
         font_size: f32,
         transform: Transform2D,
         _pivot: Vector2,
-        color: crate::structs2d::Color,
+        color: crate::structs::Color,
         z_index: i32,
     ) {
         if let Some(ref atlas) = self.font_atlas {
@@ -765,7 +765,7 @@ impl PrimitiveRenderer {
         transform: Transform2D,
         size: Vector2,
         pivot: Vector2,
-        color: crate::structs2d::Color,
+        color: crate::structs::Color,
         corner_radius: Option<CornerRadius>,
         border_thickness: f32,
         is_border: bool,

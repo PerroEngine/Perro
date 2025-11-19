@@ -51,10 +51,37 @@ impl Transform3D {
         }
     }
 
+    pub fn rotation_euler(&self) -> Vector3 {
+        let (pitch, yaw, roll) = self.rotation.to_euler();
+        Vector3::new(pitch, yaw, roll)
+    }
+
+    pub fn set_rotation_euler(&mut self, e: Vector3) {
+        self.rotation = Quaternion::from_euler(e.x, e.y, e.z);
+    }
+
+    pub fn set_rotation(&mut self, q: Quaternion) {
+        self.rotation = q.normalize();
+    }
+
+    pub fn rotation(&self) -> Quaternion {
+        self.rotation
+    }
+
     pub fn is_default(&self) -> bool {
         is_default_position(&self.position)
             && is_default_rotation(&self.rotation)
             && is_default_scale(&self.scale)
+    }
+
+    pub fn forward(&self) -> glam::Vec3 {
+        self.rotation.to_glam() * glam::Vec3::new(0.0, 0.0, -1.0)
+    }
+    pub fn up(&self) -> glam::Vec3 {
+        self.rotation.to_glam() * glam::Vec3::new(0.0, 1.0, 0.0)
+    }
+    pub fn right(&self) -> glam::Vec3 {
+        self.rotation.to_glam() * glam::Vec3::new(1.0, 0.0, 0.0)
     }
 
     /// Returns a `glam::Mat4` representing scale→rotate→translate

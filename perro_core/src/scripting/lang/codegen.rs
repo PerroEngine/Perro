@@ -1586,6 +1586,9 @@ impl Expr {
                     .map(|name| script.functions.iter().any(|f| f.name == *name))
                     .unwrap_or(false);
 
+                let is_engine_method = matches!(target.as_ref(), Expr::MemberAccess(base, _method))
+                    && !is_local_function;
+
                 // ✅ NEW: Look up the function to get parameter types
                 let func_params = if let Some(name) = &func_name {
                     script
@@ -1689,10 +1692,27 @@ impl Expr {
                 // Finally, build the Rust call string
                 // Handles API injection and empty arg lists
                 // ==============================================================
-                if args_rust.is_empty() {
-                    format!("{}(api, false);", target_str)
+                if is_engine_method {
+                    // ✅ Engine methods: just pass normal args
+                    if args_rust.is_empty() {
+                        format!("{}()", target_str)
+                    } else {
+                        format!("{}({})", target_str, args_rust.join(", "))
+                    }
+                } else if is_local_function {
+                    // Local script functions: add api, false
+                    if args_rust.is_empty() {
+                        format!("{}(api, false);", target_str)
+                    } else {
+                        format!("{}({}, api, false);", target_str, args_rust.join(", "))
+                    }
                 } else {
-                    format!("{}({}, api, false);", target_str, args_rust.join(", "))
+                    // Fallback: treat as external function with api
+                    if args_rust.is_empty() {
+                        format!("{}(api, false);", target_str)
+                    } else {
+                        format!("{}({}, api, false);", target_str, args_rust.join(", "))
+                    }
                 }
             }
             Expr::ContainerLiteral(_, data) => match data {

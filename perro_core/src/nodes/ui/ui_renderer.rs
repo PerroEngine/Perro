@@ -11,7 +11,8 @@ use crate::{
     ast::FurAnchor,
     font::{Font, FontAtlas, Style, Weight},
     graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
-    structs2d::{Color, Transform2D, Vector2},
+    structs::Color,
+    structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
     ui_elements::{
         ui_container::{ContainerMode, UIPanel},

@@ -177,6 +177,9 @@ pub struct Graphics {
     pub renderer_ui: RendererUI,
     pub renderer_3d: Renderer3D,
 
+    pub depth_texture: wgpu::Texture,
+    pub depth_view: wgpu::TextureView,
+
     // Cached render state
     cached_operations: wgpu::Operations<wgpu::Color>,
 }
@@ -264,7 +267,8 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
             label: Some("Camera3D BGL"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                // CHANGE THIS: Add FRAGMENT stage visibility
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -372,6 +376,23 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
 
+    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Depth Texture"),
+        size: wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
     let gfx = Graphics {
         window: window.clone(),
         instance,
@@ -395,6 +416,10 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
         renderer_2d,
         renderer_ui,
         renderer_3d,
+
+        depth_texture,
+        depth_view,
+
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             store: wgpu::StoreOp::Store,
@@ -483,26 +508,26 @@ impl Graphics {
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
     }
+
     pub fn update_camera_3d(&self, cam: &Camera3D) {
         let t = &cam.transform;
 
-        // Convert your Vector3 to glam::Vec3 for matrix operations
+        // Use the quaternion directly instead of converting to/from Euler angles
         let translation = glam::Mat4::from_translation(t.position.to_glam());
-        let rotation = glam::Mat4::from_euler(
-            glam::EulerRot::XYZ,
-            t.rotation.x,
-            t.rotation.y,
-            t.rotation.z,
-        );
+        let rotation = glam::Mat4::from_quat(t.rotation.to_glam());
+
+        // Build the model (camera) transform
         let model = translation * rotation;
-        let view = model.inverse(); // View is inverse of model transform
+
+        // View matrix is the inverse of the camera's model transform
+        let view = model.inverse();
 
         let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
         let projection = glam::Mat4::perspective_rh(
-            cam.fov.unwrap_or(45.0_f32.to_radians()), // Unwrap with default
+            cam.fov.unwrap_or(45.0_f32.to_radians()),
             aspect_ratio,
-            cam.near.unwrap_or(0.1),  // Unwrap with default
-            cam.far.unwrap_or(100.0), // Unwrap with default
+            cam.near.unwrap_or(0.1),
+            cam.far.unwrap_or(100.0),
         );
 
         let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
@@ -516,7 +541,6 @@ impl Graphics {
             bytemuck::bytes_of(&camera3d_uniform),
         );
     }
-
     pub fn initialize_font_atlas(&mut self, font_atlas: FontAtlas) {
         self.renderer_prim
             .initialize_font_atlas(&self.device, &self.queue, font_atlas);
@@ -528,6 +552,8 @@ impl Graphics {
 
     /// Main render method that coordinates all renderers
     pub fn render(&mut self, rpass: &mut RenderPass<'_>) {
+        self.renderer_3d.upload_lights_to_gpu(&self.queue);
+
         self.renderer_3d.render(
             rpass,
             &self.mesh_manager,

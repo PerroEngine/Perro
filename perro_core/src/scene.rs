@@ -1020,6 +1020,45 @@ impl<P: ScriptProvider> Scene<P> {
                             }
                         }
                     }
+
+                    SceneNode::OmniLight3D(light) => {
+                        gfx.renderer_3d.queue_light(
+                            light.id,
+                            crate::renderer_3d::LightUniform {
+                                position: light.node_3d.transform.position.to_array(),
+                                color: light.color.to_array(),
+                                intensity: light.intensity,
+                                ambient: [0.05, 0.05, 0.05],
+                                ..Default::default()
+                            },
+                        );
+                    }
+                    SceneNode::DirectionalLight3D(light) => {
+                        let dir = light.node_3d.transform.forward();
+                        gfx.renderer_3d.queue_light(
+                            light.id,
+                            crate::renderer_3d::LightUniform {
+                                position: [dir.x, dir.y, dir.z],
+                                color: light.color.to_array(),
+                                intensity: light.intensity,
+                                ambient: [0.05, 0.05, 0.05],
+                                ..Default::default()
+                            },
+                        );
+                    }
+                    SceneNode::SpotLight3D(light) => {
+                        let dir = light.node_3d.transform.forward();
+                        gfx.renderer_3d.queue_light(
+                            light.id,
+                            crate::renderer_3d::LightUniform {
+                                position: [dir.x, dir.y, dir.z],
+                                color: light.color.to_array(),
+                                intensity: light.intensity,
+                                ambient: [0.05, 0.05, 0.05],
+                                ..Default::default()
+                            },
+                        );
+                    }
                     _ => {}
                 }
                 node.set_dirty(false); // Set the dirty flag to false after rendering

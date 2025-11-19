@@ -25,6 +25,14 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    pub fn to_array(&self) -> [f32; 3] {
+        [
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+        ]
+    }
+
     pub fn from_hex(s: &str) -> Result<Self, String> {
         let s = s.trim_start_matches('#');
         match s.len() {

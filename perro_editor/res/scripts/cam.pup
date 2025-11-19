@@ -1,9 +1,11 @@
-extends Camera2D
+extends Camera3D
 
 fn init() {
 
 }
 
 fn update() {
-    self.transform.position.x += 500 * Time.get_delta()
+    var euler: Vector3 = self.transform.rotation_euler()      // (pitch, yaw, roll)
+    euler.y -= 0.5 * Time.get_delta()                             // modify yaw
+    self.transform.set_rotation_euler(euler)             // rebuild quaternion
 }

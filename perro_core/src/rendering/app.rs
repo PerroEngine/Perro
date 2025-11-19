@@ -251,7 +251,7 @@ impl<P: ScriptProvider> App<P> {
         // Begin frame
         let (frame, view, mut encoder) = gfx.begin_frame();
 
-        // Main render pass
+        // Main render pass WITH DEPTH
         {
             let color_attachment = wgpu::RenderPassColorAttachment {
                 view: &view,
@@ -259,10 +259,19 @@ impl<P: ScriptProvider> App<P> {
                 ops: self.cached_operations,
             };
 
+            let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
+                view: &gfx.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0), // Clear to max depth
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            };
+
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(RENDER_PASS_LABEL),
                 color_attachments: &[Some(color_attachment)],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(depth_attachment), // ADD THIS
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
@@ -368,11 +377,21 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 resolve_target: None,
                 ops: self.cached_operations,
             };
+
+            let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
+                view: &graphics.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            };
+
             {
                 let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("First Clear Pass"),
                     color_attachments: &[Some(color_attachment)],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(depth_attachment), // ADD THIS
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
@@ -395,11 +414,21 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 resolve_target: None,
                 ops: self.cached_operations,
             };
+
+            let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
+                view: &graphics.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            };
+
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Initial Game Frame"),
                     color_attachments: &[Some(color_attachment)],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(depth_attachment), // ADD THIS
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });

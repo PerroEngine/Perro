@@ -28,7 +28,7 @@ use perro_core::prelude::*;
 // ========================================================================
 
 pub struct ScriptsCamPupScript {
-    node: Camera2D,
+    node: Camera3D,
 }
 
 // ========================================================================
@@ -37,7 +37,7 @@ pub struct ScriptsCamPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_cam_pup_create_script() -> *mut dyn ScriptObject {
-    let node = Camera2D::new("ScriptsCamPup");
+    let node = Camera3D::new("ScriptsCamPup");
 
     Box::into_raw(Box::new(ScriptsCamPupScript {
         node,
@@ -53,8 +53,10 @@ impl Script for ScriptsCamPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<Camera2D>(self.node.id);
-        self.node.transform.position.x += (500f32 * api.Time.get_delta());
+        self.node = api.get_node_clone::<Camera3D>(self.node.id);
+        let mut euler = self.node.transform.rotation_euler();
+        euler.y -= (0.5f32 * api.Time.get_delta());
+        self.node.transform.set_rotation_euler(euler.clone());
 
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
