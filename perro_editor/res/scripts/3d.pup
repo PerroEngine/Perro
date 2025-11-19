@@ -5,6 +5,9 @@ fn init() {
 }
 
 fn update() {
-    self.transform.rotation.y += 0.05 * Time.get_delta()
-    self.transform.rotation.z += 0.05 * Time.get_delta()
+    self.transform.rotation.y += 0.075 * Time.get_delta()
+    self.transform.rotation.z += 0.075 * Time.get_delta()
+    self.transform.scale.x -= 0.05 * Time.get_delta()
+    self.transform.scale.y -= 0.05 * Time.get_delta()
+    self.transform.scale.z -= 0.05 * Time.get_delta()
 }

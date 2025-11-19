@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use glam::{Mat4, Quat, Vec3};
+use serde::{Deserialize, Serialize};
 
 use crate::{Quaternion, Vector3};
 

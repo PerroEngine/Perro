@@ -1,4 +1,21 @@
-use crate::{     Graphics, Node, RenderLayer, Transform3D, Vector2, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, ast::{FurElement, FurNode}, lang::transpiler::script_path_to_identifier, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui // NEW import
+use crate::{
+    Graphics,
+    Node,
+    RenderLayer,
+    Transform3D,
+    Vector2,
+    api::ScriptApi,
+    app_command::AppCommand,
+    apply_fur::{build_ui_elements_from_fur, parse_fur_file},
+    asset_io::{ProjectRoot, get_project_root, load_asset, save_asset},
+    ast::{FurElement, FurNode},
+    lang::transpiler::script_path_to_identifier,
+    manifest::Project,
+    node_registry::{BaseNode, SceneNode},
+    prelude::string_to_u64,
+    script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var},
+    ui_element::{BaseElement, UIElement},
+    ui_renderer::render_ui, // NEW import
 };
 
 use glam::{Mat4, Vec3};
@@ -955,9 +972,7 @@ impl<P: ScriptProvider> Scene<P> {
         for node_id in dirty_nodes {
             if let Some(node) = self.data.nodes.get_mut(&node_id) {
                 match node {
-
                     //2D Nodes
-
                     SceneNode::Sprite2D(sprite) => {
                         if let Some(tex) = &sprite.texture_path {
                             gfx.renderer_2d.queue_texture(
@@ -965,20 +980,19 @@ impl<P: ScriptProvider> Scene<P> {
                                 &mut gfx.texture_manager,
                                 &gfx.device,
                                 &gfx.queue,
-                               node_id,
+                                node_id,
                                 tex,
-                                 sprite.transform,
-                              sprite.pivot,
-                                 sprite.z_index
-                              );
-                         }
-                     }
+                                sprite.transform,
+                                sprite.pivot,
+                                sprite.z_index,
+                            );
+                        }
+                    }
                     SceneNode::Camera2D(camera) => {
                         if camera.active {
                             gfx.update_camera_2d(camera);
                         }
                     }
-
 
                     SceneNode::UINode(ui_node) => {
                         // UI renderer handles layout + rendering internally
@@ -986,7 +1000,6 @@ impl<P: ScriptProvider> Scene<P> {
                     }
 
                     //3D Nodes
-
                     SceneNode::Camera3D(camera) => {
                         if camera.active {
                             gfx.update_camera_3d(camera);
@@ -1003,7 +1016,6 @@ impl<P: ScriptProvider> Scene<P> {
                                     &mut gfx.mesh_manager,
                                     &mut gfx.device,
                                     &mut gfx.queue,
-                                    
                                 );
                             }
                         }

@@ -8,28 +8,16 @@
         "name": "World"
       }
     },
+
     "a5c8e4a1-6d2f-4e9b-8a3c-1f7d9e2b4c6a": {
       "type": "Camera3D",
       "active": true,
       "node_3d": {
         "type": "Node3D",
         "transform": {
-          "position": [
-            0,
-            0,
-            5
-          ],
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ]
+          "position": [0, 0, 5],
+          "rotation": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
         },
         "visible": true,
         "node": {
@@ -39,28 +27,27 @@
         }
       }
     },
+
+    "c5c8e4a1-6d2f-4e9b-8a3c-1f7d9e2b4c6a": {
+      "type": "UINode",
+      "fur_path": "res://fur/editor.fur",
+      "visible": true,
+      "node": {
+        "type": "Node",
+        "name": "UI",
+        "parent": "11111111-1111-1111-1111-111111111111"
+      }
+    },
+
     "b5c8e4a1-6d2f-4e9b-8a3c-1f7d9e2b4c6a": {
       "type": "MeshInstance3D",
       "mesh_path": "cube",
       "node_3d": {
         "type": "Node3D",
         "transform": {
-          "position": [
-            0,
-            0,
-            0
-          ],
-          "rotation": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ]
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
         },
         "visible": true,
         "node": {
