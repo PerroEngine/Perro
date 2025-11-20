@@ -54,9 +54,10 @@ impl Script for Scripts3dPupScript {
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
-        let mut euler = self.node.transform.rotation_euler();
-        euler.y += (1.0f32 * api.Time.get_delta());
-        self.node.transform.set_rotation_euler(euler.clone());
+        let mut delta = api.Time.get_delta();
+        self.node.transform.rotate_x(((1.0f32 * delta)));
+        self.node.transform.rotate_y(((5.0f32 * delta)));
+        self.node.transform.rotate_z(((1.0f32 * delta)));
 
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }

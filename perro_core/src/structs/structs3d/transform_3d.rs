@@ -60,6 +60,28 @@ impl Transform3D {
         self.rotation = Quaternion::from_euler(e.x, e.y, e.z);
     }
 
+    /// Applies incremental Euler rotations (like Godot's rotation.x += delta)
+    /// This avoids gimbal lock by applying quaternion rotations incrementally
+    pub fn rotate_euler(&mut self, delta_pitch: f32, delta_yaw: f32, delta_roll: f32) {
+        let delta_quat = Quaternion::from_euler(delta_pitch, delta_yaw, delta_roll);
+        self.rotation = self.rotation.mul(delta_quat).normalize();
+    }
+
+    /// Rotate only around pitch (X-axis)
+    pub fn rotate_x(&mut self, delta_pitch: f32) {
+        self.rotate_euler(delta_pitch, 0.0, 0.0);
+    }
+
+    /// Rotate only around yaw (Y-axis)
+    pub fn rotate_y(&mut self, delta_yaw: f32) {
+        self.rotate_euler(0.0, delta_yaw, 0.0);
+    }
+
+    /// Rotate only around roll (Z-axis)
+    pub fn rotate_z(&mut self, delta_roll: f32) {
+        self.rotate_euler(0.0, 0.0, delta_roll);
+    }
+
     pub fn set_rotation(&mut self, q: Quaternion) {
         self.rotation = q.normalize();
     }
