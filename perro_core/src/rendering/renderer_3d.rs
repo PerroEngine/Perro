@@ -1,19 +1,20 @@
 use glam::Mat4;
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
 };
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device, Queue, RenderPass,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat,
-    util::DeviceExt,
+    VERTEX_STRIDE_ALIGNMENT, util::DeviceExt,
 };
 
-use crate::{MeshManager, Transform3D};
+use crate::{Frustum, MaterialManager, MeshManager, Transform3D};
 
-pub const MAX_LIGHTS: usize = 16; // Keep this constant for the GPU array size
+pub const MAX_LIGHTS: usize = 16;
+pub const MAX_MATERIALS: usize = 64;
 
 // Vertex with position + normal for lighting
 #[repr(C)]
@@ -23,7 +24,7 @@ pub struct Vertex3D {
     pub normal: [f32; 3],
 }
 
-// Single light uniform (unchanged)
+// Light uniform
 #[repr(C, align(16))]
 #[derive(PartialEq, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Default)]
 pub struct LightUniform {
@@ -35,7 +36,18 @@ pub struct LightUniform {
     pub _pad1: f32,
 }
 
-// Camera uniform (unchanged)
+// Material uniform
+#[repr(C, align(16))]
+#[derive(PartialEq, Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, Default)]
+pub struct MaterialUniform {
+    pub base_color: [f32; 4],
+    pub metallic: f32,
+    pub roughness: f32,
+    pub _pad0: [f32; 2],
+    pub emissive: [f32; 4],
+}
+
+// Camera uniform
 #[repr(C, align(16))]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Camera3DUniform {
@@ -43,7 +55,7 @@ pub struct Camera3DUniform {
     pub projection: [[f32; 4]; 4],
 }
 
-// Instance struct for batched rendering (unchanged)
+// Instance struct for batched rendering
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct MeshInstance {
@@ -52,51 +64,63 @@ pub struct MeshInstance {
     pub _padding: [u32; 3],
 }
 
+pub struct MeshSlot {
+    pub instance: MeshInstance,
+    pub mesh_path: String,
+    pub material_path: String, // Store material path for cache validation
+}
+
 pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: Option<wgpu::Buffer>,
     pub index_count: u32,
     pub vertex_count: u32,
+    pub bounds_center: glam::Vec3,
+    pub bounds_radius: f32,
 }
 
 pub struct Renderer3D {
     pipeline: RenderPipeline,
 
-    // Lighting (updated to be slot-based)
+    // Lighting
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
-    light_slots: Vec<Option<LightUniform>>, // Stores the actual light data in slots
-    light_uuid_to_slot: HashMap<uuid::Uuid, usize>, // Maps light UUIDs to their slot index
-    free_light_slots: Vec<usize>,           // Pool of unused slots
-    lights_need_rebuild: bool,              // Flag to indicate if the light buffer needs updating
+    light_slots: Vec<Option<LightUniform>>,
+    light_uuid_to_slot: HashMap<uuid::Uuid, usize>,
+    free_light_slots: Vec<usize>,
+    lights_need_rebuild: bool,
 
-    // Instancing (mesh management, mostly unchanged)
-    mesh_instance_slots: Vec<Option<(MeshInstance, String)>>,
+    // Materials
+    material_buffer: wgpu::Buffer,
+    material_bind_group: wgpu::BindGroup,
+    material_slots: Vec<Option<MaterialUniform>>,
+    material_uuid_to_slot: HashMap<uuid::Uuid, usize>,
+    free_material_slots: Vec<usize>,
+    materials_need_rebuild: bool,
+
+    // Instancing - Updated to use MeshSlot
+    mesh_instance_slots: Vec<Option<MeshSlot>>,
     mesh_uuid_to_slot: HashMap<uuid::Uuid, usize>,
     free_mesh_slots: Vec<usize>,
 
-    // Batching info (unchanged)
-    mesh_groups: Vec<(String, Vec<MeshInstance>)>,
-    group_offsets: Vec<(usize, usize)>,
-    buffer_ranges: Vec<Range<u64>>,
+    // Batching info - Updated for better material batching
+    mesh_material_groups: Vec<(String, u32, Vec<MeshInstance>)>, // (mesh_path, material_id, instances)
     mesh_instance_buffer: wgpu::Buffer,
 
-    // Dirty state (unchanged for meshes, but lights_need_rebuild is new)
-    dirty_slots: HashSet<usize>,
-    dirty_count: usize,
+    // Dirty state
     instances_need_rebuild: bool,
 }
 
 impl Renderer3D {
     pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
-        println!("🟧 Renderer3D initialized with multi-light support");
+        println!("🟧 Renderer3D initialized with multi-light and material support");
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("3D Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/basic3d.wgsl"))),
         });
 
-        // Light buffer array (MAX_LIGHTS)
+        // ===== LIGHT SETUP =====
         let light_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Light Buffer"),
             size: (MAX_LIGHTS * std::mem::size_of::<LightUniform>()) as u64,
@@ -104,7 +128,6 @@ impl Renderer3D {
             mapped_at_creation: false,
         });
 
-        // Light bind group layout
         let light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Light BGL"),
@@ -122,7 +145,6 @@ impl Renderer3D {
                 }],
             });
 
-        // Bind group for lights
         let light_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("Light BG"),
             layout: &light_bind_group_layout,
@@ -138,14 +160,57 @@ impl Renderer3D {
             }],
         });
 
-        // Pipeline layout (camera + light)
+        // ===== MATERIAL SETUP =====
+        let material_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("Material Buffer"),
+            size: (MAX_MATERIALS * std::mem::size_of::<MaterialUniform>()) as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let material_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Material BGL"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: BufferSize::new(
+                            (MAX_MATERIALS * std::mem::size_of::<MaterialUniform>()) as u64,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
+
+        let material_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Material BG"),
+            layout: &material_bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &material_buffer,
+                    offset: 0,
+                    size: BufferSize::new(
+                        (MAX_MATERIALS * std::mem::size_of::<MaterialUniform>()) as u64,
+                    ),
+                }),
+            }],
+        });
+
+        // ===== PIPELINE SETUP =====
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("3D Pipeline Layout"),
-            bind_group_layouts: &[camera_bgl, &light_bind_group_layout],
+            bind_group_layouts: &[
+                camera_bgl,
+                &light_bind_group_layout,
+                &material_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
-        // Create pipeline
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("3D Pipeline"),
             layout: Some(&pipeline_layout),
@@ -235,7 +300,7 @@ impl Renderer3D {
 
         let mesh_instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Mesh Instances"),
-            size: 1024 * std::mem::size_of::<MeshInstance>() as u64,
+            size: 4096 * std::mem::size_of::<MeshInstance>() as u64, // Increased buffer size
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -244,51 +309,48 @@ impl Renderer3D {
             pipeline,
             light_buffer,
             light_bind_group,
-            // Initialize light slots to MAX_LIGHTS capacity with None
             light_slots: vec![None; MAX_LIGHTS],
             light_uuid_to_slot: HashMap::new(),
-            free_light_slots: (0..MAX_LIGHTS).collect(), // All slots are initially free
-            lights_need_rebuild: false, // Initial state, will be true when first light is added
+            free_light_slots: (0..MAX_LIGHTS).collect(),
+            lights_need_rebuild: false,
+
+            material_buffer,
+            material_bind_group,
+            material_slots: vec![None; MAX_MATERIALS],
+            material_uuid_to_slot: HashMap::new(),
+            free_material_slots: (0..MAX_MATERIALS).rev().collect(),
+            materials_need_rebuild: false,
 
             mesh_instance_slots: Vec::new(),
             mesh_uuid_to_slot: HashMap::new(),
             free_mesh_slots: Vec::new(),
-            mesh_groups: Vec::new(),
-            group_offsets: Vec::new(),
-            buffer_ranges: Vec::new(),
+            mesh_material_groups: Vec::new(),
             mesh_instance_buffer,
-            dirty_slots: HashSet::new(),
-            dirty_count: 0,
             instances_need_rebuild: false,
         }
     }
 
-    // No longer clears all lights, just updates a slot.
-    // Call this for every light that exists in your scene (even if not changed)
+    // ===== LIGHT MANAGEMENT =====
     pub fn queue_light(&mut self, id: uuid::Uuid, light_uniform: LightUniform) {
         let slot = if let Some(&slot_idx) = self.light_uuid_to_slot.get(&id) {
-            // Light already exists, update it if changed
             if let Some(existing_light) = &mut self.light_slots[slot_idx] {
                 if *existing_light != light_uniform {
                     *existing_light = light_uniform;
                     self.lights_need_rebuild = true;
-                    println!("🟨 Updated light UUID: {:?}, slot: {}", id, slot_idx);
                 }
             }
             slot_idx
         } else {
-            // New light, find a free slot
             if let Some(free_slot_idx) = self.free_light_slots.pop() {
                 self.light_slots[free_slot_idx] = Some(light_uniform);
                 self.light_uuid_to_slot.insert(id, free_slot_idx);
                 self.lights_need_rebuild = true;
                 println!(
-                    "🟨 Queued new light UUID: {:?}, slot: {}",
+                    "💡 Queued new light UUID: {:?}, slot: {}",
                     id, free_slot_idx
                 );
                 free_slot_idx
             } else {
-                // No free slots, log warning and skip
                 println!(
                     "⚠️ Max lights reached ({}). Skipping new light: {:?}",
                     MAX_LIGHTS, id
@@ -296,26 +358,16 @@ impl Renderer3D {
                 return;
             }
         };
-
-        // You might want to remove this for production, but good for debugging
-        println!(
-            "Current light queue status: {} active / {} free slots",
-            self.light_uuid_to_slot.len(),
-            self.free_light_slots.len()
-        );
     }
 
-    // Uploads the full `light_slots` buffer to the GPU only if changes occurred.
-    pub fn upload_lights_to_gpu(&mut self, queue: &wgpu::Queue) {
+    pub fn upload_lights_to_gpu(&mut self, queue: &Queue) {
         if self.lights_need_rebuild {
-            // Extract the actual LightUniforms from the Option enum
+            let mut gpu_lights_array = [LightUniform::default(); MAX_LIGHTS];
             let active_lights: Vec<LightUniform> =
                 self.light_slots.iter().filter_map(|l| *l).collect();
-            // Fill a temporary array with actual lights, padding the rest with Default (zeroes)
-            let mut gpu_lights_array = [LightUniform::default(); MAX_LIGHTS];
+
             for (i, light) in active_lights.iter().enumerate() {
                 if i < MAX_LIGHTS {
-                    // Ensure we don't exceed array bounds, even if active_lights somehow grows
                     gpu_lights_array[i] = *light;
                 }
             }
@@ -325,21 +377,12 @@ impl Renderer3D {
                 0,
                 bytemuck::cast_slice(&gpu_lights_array),
             );
-            println!(
-                "✅ Lights uploaded. Active: {} First intensity: {}",
-                active_lights.len(),
-                gpu_lights_array[0].intensity
-            );
-            self.lights_need_rebuild = false; // Reset the dirty flag
-        } else {
-            // This is expected if no lights changed this frame
-            // println!("No light rebuild needed.");
+            self.lights_need_rebuild = false;
         }
     }
 
     pub fn stop_rendering_light(&mut self, uuid: uuid::Uuid) {
         if let Some(&slot_idx) = self.light_uuid_to_slot.get(&uuid) {
-            // Clear the slot and add it back to free list
             self.light_slots[slot_idx] = None;
             self.free_light_slots.push(slot_idx);
             self.light_uuid_to_slot.remove(&uuid);
@@ -351,34 +394,109 @@ impl Renderer3D {
         }
     }
 
-    fn create_mesh_instance(&self, transform: Transform3D, material_id: u32) -> MeshInstance {
-        MeshInstance {
-            model_matrix: transform.to_mat4().to_cols_array_2d(),
-            material_id,
-            _padding: [0; 3],
+    // ===== MATERIAL MANAGEMENT =====
+    pub fn queue_material(&mut self, id: uuid::Uuid, material: MaterialUniform) -> u32 {
+        let slot = if let Some(&slot_idx) = self.material_uuid_to_slot.get(&id) {
+            if let Some(existing_mat) = &mut self.material_slots[slot_idx] {
+                if *existing_mat != material {
+                    *existing_mat = material;
+                    self.materials_need_rebuild = true;
+                }
+            }
+            slot_idx
+        } else {
+            if let Some(free_slot_idx) = self.free_material_slots.pop() {
+                self.material_slots[free_slot_idx] = Some(material);
+                self.material_uuid_to_slot.insert(id, free_slot_idx);
+                self.materials_need_rebuild = true;
+                println!(
+                    "🟦 Queued new material UUID: {:?}, slot: {},",
+                    id, free_slot_idx
+                );
+                free_slot_idx
+            } else {
+                println!(
+                    "⚠️ Max materials reached ({}). Returning slot 0",
+                    MAX_MATERIALS
+                );
+                return 0;
+            }
+        };
+        slot as u32
+    }
+
+    pub fn upload_materials_to_gpu(&mut self, queue: &Queue) {
+        if self.materials_need_rebuild {
+            let mut gpu_materials_array = [MaterialUniform::default(); MAX_MATERIALS];
+            let active_materials: Vec<MaterialUniform> =
+                self.material_slots.iter().filter_map(|m| *m).collect();
+
+            for (i, material) in active_materials.iter().enumerate() {
+                if i < MAX_MATERIALS {
+                    gpu_materials_array[i] = *material;
+                }
+            }
+
+            queue.write_buffer(
+                &self.material_buffer,
+                0,
+                bytemuck::cast_slice(&gpu_materials_array),
+            );
+            println!("✅ Materials uploaded. Active: {}", active_materials.len());
+            self.materials_need_rebuild = false;
         }
     }
 
+    pub fn stop_rendering_material(&mut self, uuid: uuid::Uuid) {
+        if let Some(&slot_idx) = self.material_uuid_to_slot.get(&uuid) {
+            self.material_slots[slot_idx] = None;
+            self.free_material_slots.push(slot_idx);
+            self.material_uuid_to_slot.remove(&uuid);
+            self.materials_need_rebuild = true;
+        }
+    }
+
+    // ===== MESH MANAGEMENT =====
     pub fn queue_mesh(
         &mut self,
         uuid: uuid::Uuid,
         mesh_path: &str,
         transform: Transform3D,
-        material_id: u32,
+        material_path: Option<&str>, // Accept Option<&str>
         mesh_manager: &mut MeshManager,
+        material_manager: &mut MaterialManager,
         device: &Device,
-        queue: &wgpu::Queue,
+        queue: &Queue,
     ) {
+        // Ensure mesh is loaded
         mesh_manager.get_or_load_mesh(mesh_path, device, queue);
 
-        let new_instance = self.create_mesh_instance(transform, material_id);
-        let mesh_path = mesh_path.to_owned();
+        // Use default material if none provided
+        let material_path = material_path.unwrap_or("__default__");
+
+        // Resolve material to slot ID
+        let material_id = material_manager.get_or_upload_material(material_path, self);
+
+        let new_instance = MeshInstance {
+            model_matrix: transform.to_mat4().to_cols_array_2d(),
+            material_id,
+            _padding: [0; 3],
+        };
+
+        let new_slot = MeshSlot {
+            instance: new_instance,
+            mesh_path: mesh_path.to_owned(),
+            material_path: material_path.to_owned(),
+        };
 
         if let Some(&slot) = self.mesh_uuid_to_slot.get(&uuid) {
             if let Some(existing) = &mut self.mesh_instance_slots[slot] {
-                if existing.0 != new_instance || existing.1 != mesh_path {
-                    existing.0 = new_instance;
-                    existing.1 = mesh_path;
+                // Check if anything changed
+                if existing.instance != new_instance
+                    || existing.mesh_path != mesh_path
+                    || existing.material_path != material_path
+                {
+                    *existing = new_slot;
                     self.instances_need_rebuild = true;
                 }
             }
@@ -390,31 +508,101 @@ impl Renderer3D {
             if slot == self.mesh_instance_slots.len() {
                 self.mesh_instance_slots.push(None);
             }
-            self.mesh_instance_slots[slot] = Some((new_instance, mesh_path.clone()));
+            self.mesh_instance_slots[slot] = Some(new_slot);
             self.mesh_uuid_to_slot.insert(uuid, slot);
             self.instances_need_rebuild = true;
         }
     }
 
-    fn rebuild_mesh_instances(&mut self, device: &Device, queue: &wgpu::Queue) {
-        // Rebuild all grouped meshes
-        let mut groups: HashMap<String, Vec<MeshInstance>> = HashMap::new();
+    pub fn stop_rendering_mesh(&mut self, uuid: uuid::Uuid) {
+        if let Some(&slot_idx) = self.mesh_uuid_to_slot.get(&uuid) {
+            self.mesh_instance_slots[slot_idx] = None;
+            self.free_mesh_slots.push(slot_idx);
+            self.mesh_uuid_to_slot.remove(&uuid);
+            self.instances_need_rebuild = true;
+            println!(
+                "🟫 Stopped rendering mesh UUID: {:?}, slot: {}",
+                uuid, slot_idx
+            );
+        }
+    }
+    fn rebuild_mesh_instances(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        mesh_manager: &MeshManager,
+        camera_view: &glam::Mat4,
+        camera_projection: &glam::Mat4,
+    ) {
+        use std::collections::BTreeMap;
+
+        let vp = *camera_projection * *camera_view;
+        let frustum = Frustum::from_matrix(&vp);
+
+        let mut groups: BTreeMap<(String, u32), Vec<MeshInstance>> = BTreeMap::new();
+
         for slot in &self.mesh_instance_slots {
-            if let Some((inst, path)) = slot {
-                groups.entry(path.clone()).or_default().push(*inst);
+            if let Some(slot_data) = slot {
+                let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
+
+                if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path) {
+                    // Transform local-space sphere to world-space
+                    let model = glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
+                    let center_ws = model.transform_point3(mesh.bounds_center);
+                    let scale = model.col(0).truncate().length();
+                    let radius_ws = mesh.bounds_radius * scale;
+
+                    // Skip if outside the frustum
+                    if !frustum.contains_sphere(center_ws, radius_ws) {
+                        continue;
+                    }
+                }
+
+                groups.entry(key).or_default().push(slot_data.instance);
             }
         }
 
-        self.mesh_groups = groups.into_iter().collect();
-
-        let all_instances: Vec<MeshInstance> = self
-            .mesh_groups
+        let total_instances = self
+            .mesh_instance_slots
             .iter()
-            .flat_map(|(_, v)| v.clone())
+            .filter(|s| s.is_some())
+            .count();
+
+        let visible_instances = groups.values().map(|v| v.len()).sum::<usize>();
+
+        println!(
+            "🧭 Frustum culling: {}/{} visible (culled {} meshes)",
+            visible_instances,
+            total_instances,
+            total_instances.saturating_sub(visible_instances)
+        );
+
+        // Build final batched groups
+        self.mesh_material_groups = groups
+            .into_iter()
+            .map(|((mesh_path, material_id), instances)| (mesh_path, material_id, instances))
+            .collect();
+
+        // Rebuild GPU instance buffer if needed
+        let all_instances: Vec<MeshInstance> = self
+            .mesh_material_groups
+            .iter()
+            .flat_map(|(_, _, instances)| instances.clone())
             .collect();
 
         if all_instances.is_empty() {
+            self.instances_need_rebuild = false;
             return;
+        }
+
+        let required_size = (all_instances.len() * std::mem::size_of::<MeshInstance>()) as u64;
+        if required_size > self.mesh_instance_buffer.size() {
+            self.mesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Mesh Instances (Resized)"),
+                size: required_size * 2, // 2x buffer growth margin
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
         }
 
         queue.write_buffer(
@@ -431,47 +619,86 @@ impl Renderer3D {
         rpass: &mut RenderPass<'_>,
         mesh_manager: &MeshManager,
         camera_bind_group: &wgpu::BindGroup,
+        camera_view: &glam::Mat4,
+        camera_projection: &glam::Mat4,
         device: &Device,
         queue: &Queue,
     ) {
+        // -------------------------------------------------------------------------
+        // STEP 1: Rebuild instance buffer if needed (includes frustum culling)
+        // -------------------------------------------------------------------------
         if self.instances_need_rebuild {
-            // Rebuild instance buffer
-            self.rebuild_mesh_instances(device, queue);
+            self.rebuild_mesh_instances(
+                device,
+                queue,
+                mesh_manager,
+                camera_view,
+                camera_projection,
+            );
         }
 
-        for (i, (mesh_path, instances)) in self.mesh_groups.iter().enumerate() {
+        // If all instances were culled or none queued, skip render
+        if self.mesh_material_groups.is_empty() {
+            return;
+        }
+
+        // -------------------------------------------------------------------------
+        // STEP 2: Begin rendering visible mesh instances
+        // -------------------------------------------------------------------------
+        let mut instance_offset = 0;
+
+        for (mesh_path, material_id, instances) in &self.mesh_material_groups {
             if let Some(mesh) = mesh_manager.meshes.get(mesh_path) {
+                // Configure pipeline and all bindings
                 rpass.set_pipeline(&self.pipeline);
                 rpass.set_bind_group(0, camera_bind_group, &[]);
                 rpass.set_bind_group(1, &self.light_bind_group, &[]);
+                rpass.set_bind_group(2, &self.material_bind_group, &[]);
                 rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+
+                // Compute vertex instance range for indirect drawing offset
+                let instance_size = std::mem::size_of::<MeshInstance>() as u64;
+                let start_offset = (instance_offset * std::mem::size_of::<MeshInstance>()) as u64;
+                let end_offset = ((instance_offset + instances.len())
+                    * std::mem::size_of::<MeshInstance>()) as u64;
+
                 rpass.set_vertex_buffer(
                     1,
-                    self.mesh_instance_buffer.slice(
-                        (i * instances.len() * std::mem::size_of::<MeshInstance>()) as u64
-                            ..((i + 1) * instances.len() * std::mem::size_of::<MeshInstance>())
-                                as u64,
-                    ),
+                    self.mesh_instance_buffer.slice(start_offset..end_offset),
                 );
 
+                // Draw by index or vertex
                 if let Some(index_buf) = &mesh.index_buffer {
                     rpass.set_index_buffer(index_buf.slice(..), wgpu::IndexFormat::Uint32);
                     rpass.draw_indexed(0..mesh.index_count, 0, 0..instances.len() as u32);
                 } else {
                     rpass.draw(0..mesh.vertex_count, 0..instances.len() as u32);
                 }
+
+                instance_offset += instances.len();
             }
         }
     }
 
-    // Helper to create a test cube mesh
-    pub fn create_cube_mesh(device: &wgpu::Device) -> Mesh {
-        use bytemuck::cast_slice;
+    pub fn compute_bounds(vertices: &[Vertex3D]) -> (glam::Vec3, f32) {
+        let mut min = glam::Vec3::splat(f32::INFINITY);
+        let mut max = glam::Vec3::splat(f32::NEG_INFINITY);
 
-        let v = |p, n| Vertex3D {
-            position: p,
-            normal: n,
-        };
+        for v in vertices {
+            let p = glam::Vec3::from_array(v.position);
+            min = min.min(p);
+            max = max.max(p);
+        }
+
+        let center = (min + max) * 0.5;
+        let extent = 0.5 * (max - min);
+        let radius = extent.length(); // → half‑diagonal length
+
+        (center, radius)
+    }
+
+    pub fn create_cube_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
 
         let vertices: Vec<Vertex3D> = vec![
             // Front (+Z)
@@ -599,11 +826,547 @@ impl Renderer3D {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
         Mesh {
             vertex_buffer: vb,
             index_buffer: Some(ib),
             index_count: indices.len() as u32,
             vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
         }
+    }
+
+    pub fn create_plane_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+
+        let vertices: Vec<Vertex3D> = vec![
+            Vertex3D {
+                position: [-0.5, 0.0, -0.5],
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex3D {
+                position: [0.5, 0.0, -0.5],
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex3D {
+                position: [0.5, 0.0, 0.5],
+                normal: [0.0, 1.0, 0.0],
+            },
+            Vertex3D {
+                position: [-0.5, 0.0, 0.5],
+                normal: [0.0, 1.0, 0.0],
+            },
+        ];
+
+        let indices: &[u32] = &[0, 1, 2, 2, 3, 0];
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Plane VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Plane IB"),
+            contents: cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    pub fn create_sphere_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+        use std::f32::consts::PI;
+
+        let segments: u32 = 50;
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Generate vertices
+        for lat in 0..=segments {
+            let theta = lat as f32 * PI / segments as f32;
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+
+            for lon in 0..=segments {
+                let phi = lon as f32 * 2.0 * PI / segments as f32;
+                let sin_phi = phi.sin();
+                let cos_phi = phi.cos();
+
+                let x = cos_phi * sin_theta;
+                let y = cos_theta;
+                let z = sin_phi * sin_theta;
+
+                vertices.push(Vertex3D {
+                    position: [x * 0.5, y * 0.5, z * 0.5],
+                    normal: [x, y, z],
+                });
+            }
+        }
+
+        // Generate indices
+        for lat in 0..segments {
+            for lon in 0..segments {
+                let first = lat * (segments + 1) + lon;
+                let second = first + segments + 1;
+
+                indices.push(first);
+                indices.push(second);
+                indices.push(first + 1);
+
+                indices.push(second);
+                indices.push(second + 1);
+                indices.push(first + 1);
+            }
+        }
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere IB"),
+            contents: cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    pub fn create_cylinder_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+        use std::f32::consts::PI;
+
+        let segments = 50;
+        let height = 1.0;
+        let radius = 0.5;
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Top and bottom center points
+        let top_center = Vertex3D {
+            position: [0.0, height / 2.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        };
+        let bottom_center = Vertex3D {
+            position: [0.0, -height / 2.0, 0.0],
+            normal: [0.0, -1.0, 0.0],
+        };
+
+        // Side vertices
+        for i in 0..=segments {
+            let theta = (i as f32 / segments as f32) * 2.0 * PI;
+            let x = radius * theta.cos();
+            let z = radius * theta.sin();
+            let normal = [x / radius, 0.0, z / radius];
+
+            vertices.push(Vertex3D {
+                position: [x, height / 2.0, z],
+                normal,
+            });
+            vertices.push(Vertex3D {
+                position: [x, -height / 2.0, z],
+                normal,
+            });
+        }
+
+        // Top and bottom circles
+        let top_start = vertices.len() as u32;
+        vertices.push(top_center);
+        for i in 0..=segments {
+            let theta = (i as f32 / segments as f32) * 2.0 * PI;
+            let x = radius * theta.cos();
+            let z = radius * theta.sin();
+            vertices.push(Vertex3D {
+                position: [x, height / 2.0, z],
+                normal: [0.0, 1.0, 0.0],
+            });
+        }
+
+        let bottom_start = vertices.len() as u32;
+        vertices.push(bottom_center);
+        for i in 0..=segments {
+            let theta = (i as f32 / segments as f32) * 2.0 * PI;
+            let x = radius * theta.cos();
+            let z = radius * theta.sin();
+            vertices.push(Vertex3D {
+                position: [x, -height / 2.0, z],
+                normal: [0.0, -1.0, 0.0],
+            });
+        }
+
+        // Side indices
+        for i in 0..segments {
+            let top1 = i * 2;
+            let bottom1 = top1 + 1;
+            let top2 = ((i + 1) * 2) % ((segments + 1) * 2);
+            let bottom2 = top2 + 1;
+
+            indices.extend_from_slice(&[
+                top1 as u32,
+                bottom1 as u32,
+                top2 as u32,
+                bottom1 as u32,
+                bottom2 as u32,
+                top2 as u32,
+            ]);
+        }
+
+        // Top cap
+        for i in 1..=segments {
+            indices.extend_from_slice(&[top_start, top_start + i as u32, top_start + i as u32 + 1]);
+        }
+
+        // Bottom cap
+        for i in 1..=segments {
+            indices.extend_from_slice(&[
+                bottom_start,
+                bottom_start + i as u32 + 1,
+                bottom_start + i as u32,
+            ]);
+        }
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cylinder VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cylinder IB"),
+            contents: cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    pub fn create_capsule_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+        use std::f32::consts::PI;
+
+        let segments = 32;
+        let radius = 0.5;
+        let half_height = 0.5;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Hemisphere and cylinder parts
+        for i in 0..=segments {
+            let v = i as f32 / segments as f32;
+            let theta = v * PI;
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+
+            for j in 0..=segments {
+                let u = j as f32 / segments as f32;
+                let phi = u * 2.0 * PI;
+                let sin_phi = phi.sin();
+                let cos_phi = phi.cos();
+
+                let x = cos_phi * sin_theta;
+                let y = cos_theta;
+                let z = sin_phi * sin_theta;
+
+                let mut y_pos = y * radius;
+
+                // Offset vertically for capsule shape
+                if y > 0.0 {
+                    y_pos += half_height;
+                } else {
+                    y_pos -= half_height;
+                }
+
+                vertices.push(Vertex3D {
+                    position: [x * radius, y_pos, z * radius],
+                    normal: [x, y, z],
+                });
+            }
+        }
+
+        for i in 0..segments {
+            for j in 0..segments {
+                let first = i * (segments + 1) + j;
+                let second = first + segments + 1;
+                indices.extend_from_slice(&[
+                    first,
+                    second,
+                    first + 1,
+                    second,
+                    second + 1,
+                    first + 1,
+                ]);
+            }
+        }
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Capsule VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Capsule IB"),
+            contents: cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    pub fn create_cone_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+        use std::f32::consts::PI;
+
+        let segments = 50;
+        let height = 1.0;
+        let radius = 0.5;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Tip and base center
+        vertices.push(Vertex3D {
+            position: [0.0, height / 2.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        });
+        vertices.push(Vertex3D {
+            position: [0.0, -height / 2.0, 0.0],
+            normal: [0.0, -1.0, 0.0],
+        });
+
+        let base_center_index = 1;
+
+        // Base rim vertices
+        for i in 0..=segments {
+            let theta = (i as f32 / segments as f32) * 2.0 * PI;
+            let x = radius * theta.cos();
+            let z = radius * theta.sin();
+            vertices.push(Vertex3D {
+                position: [x, -height / 2.0, z],
+                normal: [x, radius, z],
+            });
+        }
+
+        // Side indices
+        for i in 2..(2 + segments) {
+            indices.extend_from_slice(&[0, i, i + 1]);
+        }
+
+        // Base
+        for i in 2..(2 + segments) {
+            indices.extend_from_slice(&[base_center_index, i + 1, i]);
+        }
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cone VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cone IB"),
+            contents: cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    pub fn create_square_pyramid_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+
+        let vertices = vec![
+            Vertex3D {
+                position: [0.0, 0.5, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            }, // Top
+            Vertex3D {
+                position: [-0.5, -0.5, -0.5],
+                normal: [-1.0, -1.0, -1.0],
+            },
+            Vertex3D {
+                position: [0.5, -0.5, -0.5],
+                normal: [1.0, -1.0, -1.0],
+            },
+            Vertex3D {
+                position: [0.5, -0.5, 0.5],
+                normal: [1.0, -1.0, 1.0],
+            },
+            Vertex3D {
+                position: [-0.5, -0.5, 0.5],
+                normal: [-1.0, -1.0, 1.0],
+            },
+        ];
+
+        let indices: &[u32] = &[
+            0, 1, 2, // Front
+            0, 2, 3, // Right
+            0, 3, 4, // Back
+            0, 4, 1, // Left
+            1, 4, 3, 3, 2, 1, // Base
+        ];
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Square Pyramid VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Square Pyramid IB"),
+            contents: cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    pub fn create_triangular_pyramid_mesh(device: &Device) -> Mesh {
+        use bytemuck::cast_slice;
+
+        let vertices = vec![
+            Vertex3D {
+                position: [0.0, 0.5, 0.0],
+                normal: [0.0, 1.0, 0.0],
+            }, // Top
+            Vertex3D {
+                position: [-0.5, -0.5, 0.288],
+                normal: [-1.0, -1.0, 0.5],
+            },
+            Vertex3D {
+                position: [0.5, -0.5, 0.288],
+                normal: [1.0, -1.0, 0.5],
+            },
+            Vertex3D {
+                position: [0.0, -0.5, -0.577],
+                normal: [0.0, -1.0, -1.0],
+            },
+        ];
+
+        let indices: &[u32] = &[
+            0, 1, 2, // Front face
+            0, 2, 3, // Right
+            0, 3, 1, // Left
+            1, 3, 2, // Bottom
+        ];
+
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Triangular Pyramid VB"),
+            contents: cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Triangular Pyramid IB"),
+            contents: cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let (bounds_center, bounds_radius) = Self::compute_bounds(&vertices);
+
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
+    // Utility methods
+    pub fn get_light_count(&self) -> usize {
+        self.light_slots.iter().filter(|l| l.is_some()).count()
+    }
+
+    pub fn get_material_count(&self) -> usize {
+        self.material_slots.iter().filter(|m| m.is_some()).count()
+    }
+
+    pub fn get_mesh_instance_count(&self) -> usize {
+        self.mesh_instance_slots
+            .iter()
+            .filter(|m| m.is_some())
+            .count()
+    }
+
+    pub fn get_batch_count(&self) -> usize {
+        self.mesh_material_groups.len()
+    }
+
+    pub fn print_stats(&self) {
+        println!("🟧 Renderer3D Stats:");
+        println!("   - Lights: {}/{}", self.get_light_count(), MAX_LIGHTS);
+        println!(
+            "   - Materials: {}/{}",
+            self.get_material_count(),
+            MAX_MATERIALS
+        );
+        println!("   - Mesh Instances: {}", self.get_mesh_instance_count());
+        println!("   - Render Batches: {}", self.get_batch_count());
+        println!(
+            "   - Needs Rebuild: lights={}, materials={}, instances={}",
+            self.lights_need_rebuild, self.materials_need_rebuild, self.instances_need_rebuild
+        );
     }
 }

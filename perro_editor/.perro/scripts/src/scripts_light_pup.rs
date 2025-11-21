@@ -24,38 +24,40 @@ use perro_core::prelude::*;
 //=======================================;
 
 // ========================================================================
-// Scripts3dPup - Main Script Structure
+// ScriptsLightPup - Main Script Structure
 // ========================================================================
 
-pub struct Scripts3dPupScript {
-    node: MeshInstance3D,
+pub struct ScriptsLightPupScript {
+    node: DirectionalLight3D,
 }
 
 // ========================================================================
-// Scripts3dPup - Creator Function (FFI Entry Point)
+// ScriptsLightPup - Creator Function (FFI Entry Point)
 // ========================================================================
 
 #[unsafe(no_mangle)]
-pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
-    let node = MeshInstance3D::new("Scripts3dPup");
+pub extern "C" fn scripts_light_pup_create_script() -> *mut dyn ScriptObject {
+    let node = DirectionalLight3D::new("ScriptsLightPup");
 
-    Box::into_raw(Box::new(Scripts3dPupScript {
+    Box::into_raw(Box::new(ScriptsLightPupScript {
         node,
     })) as *mut dyn ScriptObject
 }
 
 // ========================================================================
-// Scripts3dPup - Script Init & Update Implementation
+// ScriptsLightPup - Script Init & Update Implementation
 // ========================================================================
 
-impl Script for Scripts3dPupScript {
+impl Script for ScriptsLightPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
+        self.node = api.get_node_clone::<DirectionalLight3D>(self.node.id);
         let mut delta = api.Time.get_delta();
-        self.node.transform.position.z -= (0.5f32 * delta);
+        self.node.transform.rotate_x(((1.1f32 * delta)));
+        self.node.transform.rotate_y(((0.9f32 * delta)));
+        self.node.transform.rotate_z(((1.0f32 * delta)));
 
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
@@ -63,7 +65,7 @@ impl Script for Scripts3dPupScript {
 }
 
 
-impl ScriptObject for Scripts3dPupScript {
+impl ScriptObject for ScriptsLightPupScript {
     fn set_node_id(&mut self, id: Uuid) {
         self.node.id = id;
     }
@@ -97,14 +99,14 @@ impl ScriptObject for Scripts3dPupScript {
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&Scripts3dPupScript) -> Option<Value>> = phf::phf_map! {
+static VAR_GET_TABLE: phf::Map<u64, fn(&ScriptsLightPupScript) -> Option<Value>> = phf::phf_map! {
 };
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, Value) -> Option<()>> = phf::phf_map! {
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, Value) -> Option<()>> = phf::phf_map! {
 };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, &Value)> = phf::phf_map! {
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, &Value)> = phf::phf_map! {
 };
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
+static DISPATCH_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
 };

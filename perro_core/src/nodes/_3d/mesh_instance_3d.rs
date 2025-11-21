@@ -30,26 +30,33 @@ pub struct MeshInstance3D {
     pub node_3d: Node3D,
 }
 
+// In mesh_instance_3d.rs - update the implementation
 impl MeshInstance3D {
     pub fn new(name: &str) -> Self {
         Self {
             ty: Cow::Borrowed("MeshInstance3D"),
             mesh_path: None,
-            material_path: None,
-            material_id: None,
+            material_path: Some(Cow::Borrowed("__default__")), // Always start with default
+            material_id: Some(0),                              // Default material is always slot 0
             node_3d: Node3D::new(name),
         }
     }
 
-    /// Convenience method to set mesh + material at once.
-    pub fn with_mesh_and_material(
-        mut self,
-        mesh_path: impl Into<Cow<'static, str>>,
-        material_path: Option<impl Into<Cow<'static, str>>>,
-    ) -> Self {
-        self.mesh_path = Some(mesh_path.into());
-        self.material_path = material_path.map(|m| m.into());
-        self
+    /// Set material path and clear cached material_id (will be resolved on next queue)
+    pub fn set_material(&mut self, material_path: impl Into<Cow<'static, str>>) {
+        let new_path = material_path.into();
+        if self.material_path.as_ref() != Some(&new_path) {
+            self.material_path = Some(new_path);
+            self.material_id = None; // Clear cached ID to force re-resolution
+        }
+    }
+
+    /// Get the current material path (with fallback to default)
+    pub fn get_material_path(&self) -> &str {
+        self.material_path
+            .as_ref()
+            .map(|s| s.as_ref())
+            .unwrap_or("__default__")
     }
 }
 

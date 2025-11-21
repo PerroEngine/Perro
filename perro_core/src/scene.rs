@@ -1012,8 +1012,9 @@ impl<P: ScriptProvider> Scene<P> {
                                     node_id,
                                     path,
                                     mesh.transform,
-                                    mesh.material_id.unwrap_or(0),
+                                    mesh.material_path.as_deref(),
                                     &mut gfx.mesh_manager,
+                                    &mut gfx.material_manager,
                                     &mut gfx.device,
                                     &mut gfx.queue,
                                 );

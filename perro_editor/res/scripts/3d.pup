@@ -6,7 +6,5 @@ fn init() {
 
 fn update() {
     let delta = Time.get_delta()
-   self.transform.rotate_x(1.0 * delta)  // Pitch
-    self.transform.rotate_y(5.0 * delta)  // Yaw
-    self.transform.rotate_z(1.0 * delta)  // Yaw
+   self.transform.position.z -= 0.5 * delta
 }

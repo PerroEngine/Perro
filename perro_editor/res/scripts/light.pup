@@ -1,0 +1,12 @@
+extends DirectionalLight3D
+
+fn init() {
+
+}
+
+fn update() {
+    let delta = Time.get_delta()
+   self.transform.rotate_x(1.1 * delta)  // Pitch
+    self.transform.rotate_y(0.9 * delta)  // Yaw
+    self.transform.rotate_z(1.0 * delta)  // Yaw
+}
