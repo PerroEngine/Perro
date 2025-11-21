@@ -53,6 +53,11 @@ impl Script for Scripts3dPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+        self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
+        let mut delta = api.Time.get_delta();
+        self.node.transform.position.x -= (0.5f32 * delta);
+
+        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 
 }

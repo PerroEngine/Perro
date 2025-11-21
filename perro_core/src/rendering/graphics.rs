@@ -723,14 +723,8 @@ impl Graphics {
             bytemuck::bytes_of(&camera3d_uniform),
         );
 
-        
-            self.renderer_3d.maybe_update_culling(
-        &self.mesh_manager,
-        &view,
-        &projection,
-        &self.queue,
-    );
-    
+        self.renderer_3d
+            .maybe_update_culling(&self.mesh_manager, &view, &projection, &self.queue);
     }
 
     pub fn initialize_font_atlas(&mut self, font_atlas: FontAtlas) {

@@ -20,7 +20,6 @@ use rustc_hash::FxHashMap;
 pub const MAX_LIGHTS: usize = 16;
 pub const MAX_MATERIALS: usize = 64;
 
-
 // Vertex with position + normal for lighting
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -117,6 +116,7 @@ pub struct Renderer3D {
 
     // Dirty state
     pub instances_need_rebuild: bool,
+    pub visibility_dirty: bool,
 }
 
 impl Renderer3D {
@@ -335,6 +335,7 @@ impl Renderer3D {
             mesh_material_groups: Vec::new(),
             mesh_instance_buffer,
             instances_need_rebuild: false,
+            visibility_dirty: false,
 
             last_frustum_matrix: Mat4::IDENTITY,
         }
@@ -538,8 +539,6 @@ impl Renderer3D {
         }
     }
 
-    
-
     pub fn rebuild_mesh_instances(
         &mut self,
         device: &Device,
@@ -551,47 +550,87 @@ impl Renderer3D {
         type MeshGroupKey = (String, u32);
         type MeshGroupMap = FxHashMap<MeshGroupKey, Vec<MeshInstance>>;
 
-        // ---- 1️⃣  Compute frustum ----
-        let vp = *camera_projection * *camera_view;
-        let frustum = Frustum::from_matrix(&vp);
+        let need_recull = self.instances_need_rebuild; // Objects moved
 
-        // ---- 2️⃣  Parallel frustum culling + grouping ----
-        let groups: MeshGroupMap = self
-            .mesh_instance_slots
-            .par_iter()
-            .filter_map(|slot| slot.as_ref())
-            .filter_map(|slot_data| {
-                let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
+        let groups: MeshGroupMap = if need_recull {
+            // Objects moved - need full re-cull
+            let vp = *camera_projection * *camera_view;
+            let frustum = Frustum::from_matrix(&vp);
 
-                if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path) {
-                    let model = glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
-                    let center_ws = model.transform_point3(mesh.bounds_center);
-                    let scale = model.col(0).truncate().length();
-                    let radius_ws = mesh.bounds_radius * scale;
+            self.mesh_instance_slots
+                .par_iter_mut()
+                .filter_map(|slot| {
+                    let slot_data = slot.as_mut()?;
 
-                    if !frustum.contains_sphere(center_ws, radius_ws) {
-                        return None;
+                    // Re-cull because objects moved
+                    let visible = if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path)
+                    {
+                        let model =
+                            glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
+                        let center_ws = model.transform_point3(mesh.bounds_center);
+                        let scale = model.col(0).truncate().length();
+                        let radius_ws = mesh.bounds_radius * scale;
+                        frustum.contains_sphere(center_ws, radius_ws)
+                    } else {
+                        true
+                    };
+
+                    slot_data.instance_visible = visible;
+
+                    if visible {
+                        let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
+                        Some((key, slot_data.instance))
+                    } else {
+                        None
                     }
-                }
-
-                Some((key, slot_data.instance))
-            })
-            .fold(
-                || FxHashMap::<MeshGroupKey, Vec<MeshInstance>>::default(),
-                |mut local, (key, inst)| {
-                    local.entry(key).or_default().push(inst);
-                    local
-                },
-            )
-            .reduce(
-                || FxHashMap::<MeshGroupKey, Vec<MeshInstance>>::default(),
-                |mut a, b| {
-                    for (k, v) in b {
-                        a.entry(k).or_default().extend(v);
-                    }
-                    a
-                },
-            );
+                })
+                .fold(
+                    || MeshGroupMap::default(), // ← Explicit type
+                    |mut local: MeshGroupMap, (key, inst)| {
+                        // ← Explicit type
+                        local.entry(key).or_default().push(inst);
+                        local
+                    },
+                )
+                .reduce(
+                    || MeshGroupMap::default(), // ← Explicit type
+                    |mut a: MeshGroupMap, b: MeshGroupMap| {
+                        // ← Explicit types
+                        for (k, v) in b {
+                            a.entry(k).or_default().extend(v);
+                        }
+                        a
+                    },
+                )
+        } else {
+            // Only visibility changed - use cached flags
+            self.mesh_instance_slots
+                .par_iter()
+                .filter_map(|slot| slot.as_ref())
+                .filter(|slot_data| slot_data.instance_visible)
+                .map(|slot_data| {
+                    let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
+                    (key, slot_data.instance)
+                })
+                .fold(
+                    || MeshGroupMap::default(), // ← Explicit type
+                    |mut local: MeshGroupMap, (key, inst)| {
+                        // ← Explicit type
+                        local.entry(key).or_default().push(inst);
+                        local
+                    },
+                )
+                .reduce(
+                    || MeshGroupMap::default(), // ← Explicit type
+                    |mut a: MeshGroupMap, b: MeshGroupMap| {
+                        // ← Explicit types
+                        for (k, v) in b {
+                            a.entry(k).or_default().extend(v);
+                        }
+                        a
+                    },
+                )
+        };
 
         // ---- 3️⃣  Frustum culling stats ----
         let total_instances = self
@@ -688,6 +727,7 @@ impl Renderer3D {
         );
 
         self.instances_need_rebuild = false;
+        self.visibility_dirty = false;
 
         println!(
             "✅ Instance buffer updated with {} visible instances across {} batches",
@@ -696,14 +736,9 @@ impl Renderer3D {
         );
     }
 
-     pub fn update_culling_from_camera(
-        &mut self,
-        mesh_manager: &MeshManager,
-        vp: glam::Mat4,
-    ) {
+    pub fn update_culling_from_camera(&mut self, mesh_manager: &MeshManager, vp: glam::Mat4) {
         let frustum = Frustum::from_matrix(&vp);
 
-        // Re-cull existing mesh instances
         let mut any_change = false;
         for slot in &mut self.mesh_instance_slots {
             if let Some(slot_data) = slot {
@@ -723,27 +758,26 @@ impl Renderer3D {
         }
 
         if any_change {
-            // Reupload visible batches
-            self.instances_need_rebuild = true;
+            self.visibility_dirty = true;
         }
     }
 
     pub fn maybe_update_culling(
-    &mut self,
-    mesh_manager: &MeshManager,
-    camera_view: &glam::Mat4,
-    camera_projection: &glam::Mat4,
-    queue: &wgpu::Queue,
-) {
-    let vp = *camera_projection * *camera_view;
-    // Only recull if frustum moved significantly
-    if (vp - self.last_frustum_matrix).abs_diff_eq(glam::Mat4::ZERO, 0.001) {
-        return;
-    }
+        &mut self,
+        mesh_manager: &MeshManager,
+        camera_view: &glam::Mat4,
+        camera_projection: &glam::Mat4,
+        queue: &wgpu::Queue,
+    ) {
+        let vp = *camera_projection * *camera_view;
+        // Only recull if frustum moved significantly
+        if (vp - self.last_frustum_matrix).abs_diff_eq(glam::Mat4::ZERO, 0.001) {
+            return;
+        }
 
-    self.last_frustum_matrix = vp;
-    self.update_culling_from_camera(mesh_manager, vp);
-}
+        self.last_frustum_matrix = vp;
+        self.update_culling_from_camera(mesh_manager, vp);
+    }
 
     pub fn render(
         &mut self,
@@ -758,7 +792,7 @@ impl Renderer3D {
         // -------------------------------------------------------------------------
         // STEP 1: Rebuild instance buffer if needed (includes frustum culling)
         // -------------------------------------------------------------------------
-        if self.instances_need_rebuild {
+        if self.instances_need_rebuild || self.visibility_dirty {
             self.rebuild_mesh_instances(
                 device,
                 queue,

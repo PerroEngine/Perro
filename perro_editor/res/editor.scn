@@ -171,8 +171,8 @@
         "node": {
           "type": "Node",
           "name": "CapsuleMesh",
-          "parent": "11111111-1111-1111-1111-111111111111",
-          "script_path": "res://scripts/3d.pup"
+          "parent": "11111111-1111-1111-1111-111111111111"
+     
         }
       }
     },
@@ -192,8 +192,7 @@
         "node": {
           "type": "Node",
           "name": "ConeMesh",
-          "parent": "11111111-1111-1111-1111-111111111111",
-          "script_path": "res://scripts/3d.pup"
+          "parent": "11111111-1111-1111-1111-111111111111"
         }
       }
     },
@@ -212,8 +211,7 @@
         "node": {
           "type": "Node",
           "name": "SquarePyramidMesh",
-          "parent": "11111111-1111-1111-1111-111111111111",
-          "script_path": "res://scripts/3d.pup"
+          "parent": "11111111-1111-1111-1111-111111111111"
         }
       }
     },

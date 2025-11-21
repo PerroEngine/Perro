@@ -5,5 +5,5 @@ fn init() {
 }
 
 fn update() {
-    self.transform.position.x += 1 * Time.get_delta()
+    //self.transform.position.x += 1 * Time.get_delta()
 }

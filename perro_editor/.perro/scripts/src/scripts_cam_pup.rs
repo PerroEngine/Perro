@@ -53,10 +53,6 @@ impl Script for ScriptsCamPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<Camera3D>(self.node.id);
-        self.node.transform.position.x += (1f32 * api.Time.get_delta());
-
-        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 
 }
