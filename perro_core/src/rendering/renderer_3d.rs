@@ -1,4 +1,5 @@
 use glam::Mat4;
+use std::cmp::Ordering;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
@@ -13,8 +14,12 @@ use wgpu::{
 
 use crate::{Frustum, MaterialManager, MeshManager, Transform3D};
 
+use rayon::prelude::*;
+use rustc_hash::FxHashMap;
+
 pub const MAX_LIGHTS: usize = 16;
 pub const MAX_MATERIALS: usize = 64;
+
 
 // Vertex with position + normal for lighting
 #[repr(C)]
@@ -68,6 +73,7 @@ pub struct MeshSlot {
     pub instance: MeshInstance,
     pub mesh_path: String,
     pub material_path: String, // Store material path for cache validation
+    pub instance_visible: bool,
 }
 
 pub struct Mesh {
@@ -107,8 +113,10 @@ pub struct Renderer3D {
     mesh_material_groups: Vec<(String, u32, Vec<MeshInstance>)>, // (mesh_path, material_id, instances)
     mesh_instance_buffer: wgpu::Buffer,
 
+    last_frustum_matrix: glam::Mat4,
+
     // Dirty state
-    instances_need_rebuild: bool,
+    pub instances_need_rebuild: bool,
 }
 
 impl Renderer3D {
@@ -117,7 +125,7 @@ impl Renderer3D {
 
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("3D Shader"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/basic3d.wgsl"))),
+            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/3D/basic3d.wgsl"))),
         });
 
         // ===== LIGHT SETUP =====
@@ -327,6 +335,8 @@ impl Renderer3D {
             mesh_material_groups: Vec::new(),
             mesh_instance_buffer,
             instances_need_rebuild: false,
+
+            last_frustum_matrix: Mat4::IDENTITY,
         }
     }
 
@@ -487,6 +497,7 @@ impl Renderer3D {
             instance: new_instance,
             mesh_path: mesh_path.to_owned(),
             material_path: material_path.to_owned(),
+            instance_visible: true,
         };
 
         if let Some(&slot) = self.mesh_uuid_to_slot.get(&uuid) {
@@ -526,7 +537,10 @@ impl Renderer3D {
             );
         }
     }
-    fn rebuild_mesh_instances(
+
+    
+
+    pub fn rebuild_mesh_instances(
         &mut self,
         device: &Device,
         queue: &Queue,
@@ -534,37 +548,55 @@ impl Renderer3D {
         camera_view: &glam::Mat4,
         camera_projection: &glam::Mat4,
     ) {
-        use std::collections::BTreeMap;
+        type MeshGroupKey = (String, u32);
+        type MeshGroupMap = FxHashMap<MeshGroupKey, Vec<MeshInstance>>;
 
+        // ---- 1️⃣  Compute frustum ----
         let vp = *camera_projection * *camera_view;
         let frustum = Frustum::from_matrix(&vp);
 
-        let mut groups: BTreeMap<(String, u32), Vec<MeshInstance>> = BTreeMap::new();
-
-        for slot in &self.mesh_instance_slots {
-            if let Some(slot_data) = slot {
+        // ---- 2️⃣  Parallel frustum culling + grouping ----
+        let groups: MeshGroupMap = self
+            .mesh_instance_slots
+            .par_iter()
+            .filter_map(|slot| slot.as_ref())
+            .filter_map(|slot_data| {
                 let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
 
                 if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path) {
-                    // Transform local-space sphere to world-space
                     let model = glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
                     let center_ws = model.transform_point3(mesh.bounds_center);
                     let scale = model.col(0).truncate().length();
                     let radius_ws = mesh.bounds_radius * scale;
 
-                    // Skip if outside the frustum
                     if !frustum.contains_sphere(center_ws, radius_ws) {
-                        continue;
+                        return None;
                     }
                 }
 
-                groups.entry(key).or_default().push(slot_data.instance);
-            }
-        }
+                Some((key, slot_data.instance))
+            })
+            .fold(
+                || FxHashMap::<MeshGroupKey, Vec<MeshInstance>>::default(),
+                |mut local, (key, inst)| {
+                    local.entry(key).or_default().push(inst);
+                    local
+                },
+            )
+            .reduce(
+                || FxHashMap::<MeshGroupKey, Vec<MeshInstance>>::default(),
+                |mut a, b| {
+                    for (k, v) in b {
+                        a.entry(k).or_default().extend(v);
+                    }
+                    a
+                },
+            );
 
+        // ---- 3️⃣  Frustum culling stats ----
         let total_instances = self
             .mesh_instance_slots
-            .iter()
+            .par_iter()
             .filter(|s| s.is_some())
             .count();
 
@@ -577,13 +609,56 @@ impl Renderer3D {
             total_instances.saturating_sub(visible_instances)
         );
 
-        // Build final batched groups
-        self.mesh_material_groups = groups
+        // ---- 4️⃣  Deterministic sorting of groups (mesh + material) ----
+        let mut sorted_groups: Vec<_> = groups.into_iter().collect();
+        sorted_groups.sort_by(|a, b| {
+            let (mesh_a, mat_a) = &a.0;
+            let (mesh_b, mat_b) = &b.0;
+            match mesh_a.cmp(mesh_b) {
+                Ordering::Equal => mat_a.cmp(mat_b),
+                ord => ord,
+            }
+        });
+
+        // ---- 5️⃣  Instance sorting inside each group ----
+        // Extract camera position
+        let camera_pos = camera_view.inverse().transform_point3(glam::Vec3::ZERO);
+
+        // Sort visible instances front-to-back or back-to-front based on material transparency
+        for ((_, material_id), instances) in &mut sorted_groups {
+            let is_transparent = self
+                .material_slots
+                .get(*material_id as usize)
+                .and_then(|mat_opt| mat_opt.as_ref())
+                .map(|mat| mat.base_color[3] < 1.0)
+                .unwrap_or(false);
+
+            instances.sort_by(|a, b| {
+                let a_pos = glam::Mat4::from_cols_array_2d(&a.model_matrix)
+                    .transform_point3(glam::Vec3::ZERO);
+                let b_pos = glam::Mat4::from_cols_array_2d(&b.model_matrix)
+                    .transform_point3(glam::Vec3::ZERO);
+
+                let da = (a_pos - camera_pos).length_squared();
+                let db = (b_pos - camera_pos).length_squared();
+
+                let cmp = da.partial_cmp(&db).unwrap_or(Ordering::Equal);
+
+                if is_transparent {
+                    cmp.reverse() // back-to-front for transparency
+                } else {
+                    cmp // front-to-back for opaque
+                }
+            });
+        }
+
+        // ---- 6️⃣  Save as final render batches ----
+        self.mesh_material_groups = sorted_groups
             .into_iter()
             .map(|((mesh_path, material_id), instances)| (mesh_path, material_id, instances))
             .collect();
 
-        // Rebuild GPU instance buffer if needed
+        // ---- 7️⃣  Upload instance buffer ----
         let all_instances: Vec<MeshInstance> = self
             .mesh_material_groups
             .iter()
@@ -596,10 +671,11 @@ impl Renderer3D {
         }
 
         let required_size = (all_instances.len() * std::mem::size_of::<MeshInstance>()) as u64;
+
         if required_size > self.mesh_instance_buffer.size() {
             self.mesh_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Mesh Instances (Resized)"),
-                size: required_size * 2, // 2x buffer growth margin
+                size: required_size * 2, // growth margin
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -612,7 +688,62 @@ impl Renderer3D {
         );
 
         self.instances_need_rebuild = false;
+
+        println!(
+            "✅ Instance buffer updated with {} visible instances across {} batches",
+            all_instances.len(),
+            self.mesh_material_groups.len()
+        );
     }
+
+     pub fn update_culling_from_camera(
+        &mut self,
+        mesh_manager: &MeshManager,
+        vp: glam::Mat4,
+    ) {
+        let frustum = Frustum::from_matrix(&vp);
+
+        // Re-cull existing mesh instances
+        let mut any_change = false;
+        for slot in &mut self.mesh_instance_slots {
+            if let Some(slot_data) = slot {
+                if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path) {
+                    let model = glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
+                    let center_ws = model.transform_point3(mesh.bounds_center);
+                    let scale = model.col(0).truncate().length();
+                    let radius_ws = mesh.bounds_radius * scale;
+
+                    let visible = frustum.contains_sphere(center_ws, radius_ws);
+                    if visible != slot_data.instance_visible {
+                        slot_data.instance_visible = visible;
+                        any_change = true;
+                    }
+                }
+            }
+        }
+
+        if any_change {
+            // Reupload visible batches
+            self.instances_need_rebuild = true;
+        }
+    }
+
+    pub fn maybe_update_culling(
+    &mut self,
+    mesh_manager: &MeshManager,
+    camera_view: &glam::Mat4,
+    camera_projection: &glam::Mat4,
+    queue: &wgpu::Queue,
+) {
+    let vp = *camera_projection * *camera_view;
+    // Only recull if frustum moved significantly
+    if (vp - self.last_frustum_matrix).abs_diff_eq(glam::Mat4::ZERO, 0.001) {
+        return;
+    }
+
+    self.last_frustum_matrix = vp;
+    self.update_culling_from_camera(mesh_manager, vp);
+}
 
     pub fn render(
         &mut self,

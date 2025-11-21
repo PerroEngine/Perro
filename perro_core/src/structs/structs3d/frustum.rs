@@ -26,7 +26,7 @@ impl Frustum {
     }
 
     pub fn contains_sphere(&self, center: glam::Vec3, radius: f32) -> bool {
-        const CULL_BIAS: f32 = 1.02;
+        const CULL_BIAS: f32 = 0.8;
         for plane in &self.planes {
             let d = plane.x * center.x + plane.y * center.y + plane.z * center.z + plane.w;
             if d < -radius * CULL_BIAS {

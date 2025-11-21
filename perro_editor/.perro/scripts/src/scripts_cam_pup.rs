@@ -54,9 +54,7 @@ impl Script for ScriptsCamPupScript {
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         self.node = api.get_node_clone::<Camera3D>(self.node.id);
-        let mut euler = self.node.transform.rotation_euler();
-        euler.y -= (0.5f32 * api.Time.get_delta());
-        self.node.transform.set_rotation_euler(euler.clone());
+        self.node.transform.position.x += (1f32 * api.Time.get_delta());
 
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }

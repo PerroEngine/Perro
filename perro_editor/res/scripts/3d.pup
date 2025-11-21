@@ -5,6 +5,5 @@ fn init() {
 }
 
 fn update() {
-    let delta = Time.get_delta()
-   self.transform.position.z -= 0.5 * delta
+
 }
