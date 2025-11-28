@@ -326,7 +326,7 @@ impl Type {
 
             Type::Object => "json!({})".into(),
 
-            Type::Container(HashMap, _) => "HashMap::new()".into(),
+            Type::Container(Map, _) => "HashMap::new()".into(),
             Type::Container(Array, _) => "Vec::new()".into(),
             Type::Container(FixedArray(size), params) => {
                 let elem_val = params

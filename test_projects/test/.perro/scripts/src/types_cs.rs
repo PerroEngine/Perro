@@ -29,7 +29,7 @@ use perro_core::prelude::*;
 // ========================================================================
 
 pub struct TypesCsScript {
-    node: Node,
+    node: Node2D,
     untyped_num_default: i32,
     typed_int_default: i32,
     typed_int_8: i8,
@@ -78,7 +78,7 @@ pub struct TypesCsScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn types_cs_create_script() -> *mut dyn ScriptObject {
-    let node = Node::new("TypesCs", None);
+    let node = Node2D::new("TypesCs");
     let untyped_num_default = 0i32;
     let typed_int_default = 0i32;
     let typed_int_8 = 0i8;
@@ -100,23 +100,23 @@ pub extern "C" fn types_cs_create_script() -> *mut dyn ScriptObject {
     let other_player = Default::default();
     let my_derived_player = Default::default();
     let my_derived_player_var = Default::default();
-    let dynamic_array_inferred = HashMap::new();
+    let dynamic_array_inferred = Vec::new();
     let dynamic_map_inferred = HashMap::new();
-    let dynamic_array_annotated = HashMap::new();
+    let dynamic_array_annotated = Vec::new();
     let dynamic_map_annotated = HashMap::new();
-    let static_array_int = HashMap::new();
-    let static_array_uint_16 = HashMap::new();
-    let static_array_string = HashMap::new();
-    let static_array_float_64 = HashMap::new();
-    let static_array_big_int = HashMap::new();
-    let static_array_decimal = HashMap::new();
+    let static_array_int = Vec::new();
+    let static_array_uint_16 = Vec::new();
+    let static_array_string = Vec::new();
+    let static_array_float_64 = Vec::new();
+    let static_array_big_int = Vec::new();
+    let static_array_decimal = Vec::new();
     let static_map_string_int_64 = HashMap::new();
     let static_map_int_string = HashMap::new();
     let static_map_uint_8_float = HashMap::new();
     let static_map_string_big = HashMap::new();
     let static_map_string_decimal = HashMap::new();
-    let static_array_entities = HashMap::new();
-    let static_array_players = HashMap::new();
+    let static_array_entities = Vec::new();
+    let static_array_players = Vec::new();
     let static_map_players = HashMap::new();
     let static_map_super_players = HashMap::new();
 
@@ -281,14 +281,14 @@ impl std::ops::DerefMut for SuperTestPlayer {
 
 impl Script for TypesCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        api.print(&String::from("--- START PUP MEGA TEST SUITE ---"));
+        // [stripped for release] api.print(&String::from("--- START PUP MEGA TEST SUITE ---"));
         self.TestPrimitiveOperations(api, false);
         self.TestExplicitCasting(api, false);
         self.TestAssignments(api, false);
         self.TestStructInheritanceAndCasting(api, false);
         self.TestDynamicContainersOps(api, false);
         self.TestStaticContainersOps(api, false);
-        api.print(&String::from("--- ALL PUP TESTS COMPLETE ---"));
+        // [stripped for release] api.print(&String::from("--- ALL PUP TESTS COMPLETE ---"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -308,90 +308,98 @@ impl Script for TypesCsScript {
 
 impl TypesCsScript {
     fn TestPrimitiveOperations(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&String::from("--- Test Primitive Operations ---"));
+        // [stripped for release] api.print(&String::from("--- Test Primitive Operations ---"));
         let mut res_int: i32 = 0i32;
-        let mut res_big;
+        let mut res_big: BigInt = BigInt::from_str("0").unwrap();
         let mut res_decimal: Decimal = Decimal::from_str("0").unwrap();
-        let mut res_big_var;
+        let mut res_big_var: BigInt = BigInt::from_str("0").unwrap();
         let mut res_decimal_var: Decimal = Decimal::from_str("0").unwrap();
         let mut prom_float_big: f64 = 0.0f64;
         let mut prom_float_decimal: f64 = 0.0f64;
-        let mut prom_big_int;
+        let mut prom_big_int: BigInt = BigInt::from_str("0").unwrap();
     }
 
     fn TestExplicitCasting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&String::from("--- Test Explicit Casting ---"));
-        let mut int64_to_big;
+        // [stripped for release] api.print(&String::from("--- Test Explicit Casting ---"));
+        let mut int64_to_big: BigInt = BigInt::from_str("0").unwrap();
         let mut big_to_int: i32 = 0i32;
         let mut float_to_decimal: Decimal = Decimal::from_str("0").unwrap();
         let mut decimal_to_float_64: f64 = 0.0f64;
         let mut string_to_uint16: u16 = 0u16;
         let mut big_to_string: String = String::new();
-        let mut dyn_val_big;
+        let mut dyn_val_big: BigInt = BigInt::from_str("0").unwrap();
         let mut dyn_val_decimal: Decimal = Decimal::from_str("0").unwrap();
-        let mut casted_and_op_big;
+        let mut casted_and_op_big: BigInt = BigInt::from_str("0").unwrap();
     }
 
     fn TestAssignments(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
-        let mut assign_big_lit;
+        // [stripped for release] api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
+        let mut assign_big_lit: BigInt = BigInt::from_str("0").unwrap();
         let mut assign_decimal_var: Decimal = Decimal::from_str("0").unwrap();
-        let mut comp_big;
-        comp_big += 50f32;
+        let mut comp_big: BigInt = BigInt::from_str("0").unwrap();
+        comp_big += BigInt::from_str("50").unwrap();
         let mut comp_decimal: Decimal = Decimal::from_str("0").unwrap();
         comp_decimal -= Decimal::from_str("5.5").unwrap();
         let mut assign_prom_decimal: Decimal = Decimal::from_str("0").unwrap();
     }
 
     fn TestStructInheritanceAndCasting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&String::from("--- Test Struct Inheritance & Casting ---"));
+        // [stripped for release] api.print(&String::from("--- Test Struct Inheritance & Casting ---"));
         self.my_derived_player.health = (self.my_derived_player.health - 10.0f32);
         self.my_derived_player.pos.x = (self.my_derived_player.pos.x + 1.0f32);
         self.my_derived_player.entity_type = String::from("ElitePlayer");
-        let mut player_as_entity;
-        let mut super_player_as_player;
-        let mut player_to_super_player;
-        let mut super_player_roundtrip;
-        let mut entity_from_derived;
+        let mut player_as_entity: GameEntity = Default::default();
+        let mut super_player_as_player: TestPlayer = Default::default();
+        let mut player_to_super_player: SuperTestPlayer = Default::default();
+        let mut super_player_roundtrip: SuperTestPlayer = Default::default();
+        let mut entity_from_derived: GameEntity = Default::default();
         entity_from_derived.entity_name = String::from("DerivedEntity");
     }
 
     fn TestDynamicContainersOps(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&String::from("--- Test Dynamic Containers Ops ---"));
-        let mut arr_dyn_val_big;
-        arr_dyn_val_big *= 2f32;
+        // [stripped for release] api.print(&String::from("--- Test Dynamic Containers Ops ---"));
+        let mut arr_dyn_val_big: BigInt = BigInt::from_str("0").unwrap();
+        arr_dyn_val_big *= BigInt::from_str("2").unwrap();
         let mut arr_dyn_val_decimal: Decimal = Decimal::from_str("0").unwrap();
         arr_dyn_val_decimal += { let tmp: Decimal = Decimal::from_str("0.05").unwrap(); tmp };
-        self.dynamic_array_inferred[0u32 as usize] = json!(self.typed_big_int);
-        self.dynamic_array_inferred[(/* Cannot perform field access 'Length' on array or fixed array */ self.dynamic_array_inferred - 1u32) as usize] = json!(self.local_decimal);
-        let mut map_dyn_val_big;
+        let __idx__dynamic_array_inferred = 0u32 as usize;
+        if self.dynamic_array_inferred.len() <= __idx__dynamic_array_inferred {
+            self.dynamic_array_inferred.resize(__idx__dynamic_array_inferred + 1, json!(null));
+        }
+        self.dynamic_array_inferred[__idx__dynamic_array_inferred] = json!(self.typed_big_int);
+        let __dynamic_array_inferred_idx = (self.dynamic_array_inferred.len() - (1u32 as usize)) as usize;
+        if self.dynamic_array_inferred.len() <= __dynamic_array_inferred_idx {
+            self.dynamic_array_inferred.resize(__dynamic_array_inferred_idx + 1, json!(null));
+        }
+self.dynamic_array_inferred[__dynamic_array_inferred_idx] = json!(self.local_decimal);
+        let mut map_dyn_val_big: BigInt = BigInt::from_str("0").unwrap();
         map_dyn_val_big -= BigInt::from_str(String::from("12345678901234567800").as_ref()).unwrap_or_default();
         let mut map_dyn_val_decimal: Decimal = Decimal::from_str("0").unwrap();
         map_dyn_val_decimal *= Decimal::from_str("2").unwrap();
-        self.dynamic_map_inferred[String::from("new_big") as usize] = self.local_big_int.clone();
-        self.dynamic_map_inferred[String::from("new_decimal") as usize] = self.typed_decimal.clone();
-        let mut dyn_map_numeric_key_big;
-        let mut dyn_map_numeric_key_decimal;
+        self.dynamic_map_inferred.insert(String::from("new_big"), json!(self.local_big_int));
+        self.dynamic_map_inferred.insert(String::from("new_decimal"), json!(self.typed_decimal));
+        let mut dyn_map_numeric_key_big: HashMap<String, Value> = HashMap::new();
+        let mut dyn_map_numeric_key_decimal: HashMap<String, Value> = HashMap::new();
     }
 
     fn TestStaticContainersOps(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&String::from("--- Test Static Containers Ops ---"));
-        let mut arr_static_big_elem;
-        arr_static_big_elem += 50f32;
+        // [stripped for release] api.print(&String::from("--- Test Static Containers Ops ---"));
+        let mut arr_static_big_elem: BigInt = BigInt::from_str("0").unwrap();
+        arr_static_big_elem += BigInt::from_str("50").unwrap();
         let mut arr_static_decimal_elem: Decimal = Decimal::from_str("0").unwrap();
         arr_static_decimal_elem -= Decimal::from_str("0.05").unwrap();
-        let mut map_static_big_val;
-        map_static_big_val *= 2f32;
+        let mut map_static_big_val: BigInt = BigInt::from_str("0").unwrap();
+        map_static_big_val *= BigInt::from_str("2").unwrap();
         let mut map_static_decimal_val: Decimal = Decimal::from_str("0").unwrap();
         map_static_decimal_val += { let tmp: Decimal = Decimal::from_str("0.01").unwrap(); tmp };
         let mut big_to_uint8_key: u8 = 0u8;
         let mut big_to_uint8_key_float_val: f32 = 0.0f32;
-        let mut base_entity;
-        let mut player_as_entity_from_array;
-        let mut super_player_as_entity_from_array;
-        let mut casted_player;
-        let mut casted_super_player;
-        let mut incompatible_downcast;
+        let mut base_entity: GameEntity = Default::default();
+        let mut player_as_entity_from_array: GameEntity = Default::default();
+        let mut super_player_as_entity_from_array: GameEntity = Default::default();
+        let mut casted_player: TestPlayer = Default::default();
+        let mut casted_super_player: SuperTestPlayer = Default::default();
+        let mut incompatible_downcast: SuperTestPlayer = Default::default();
     }
 
 }

@@ -8,5 +8,13 @@
         "name": "World",
         "script_path": "res://types.pup"
       }
+    },
+    "22222222-2222-2222-2222-222222222222": {
+      "type": "Node2D",
+      "node": {
+        "type": "Node",
+        "name": "WorldCS",
+        "script_path": "res://types.cs"
+      }
     }
 } }

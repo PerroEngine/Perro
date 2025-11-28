@@ -4,7 +4,7 @@ using Perro;
 // TOP-LEVEL EXPOSED & INTERNAL VARIABLES (DEPENDENCY ORDERED)
 // =====================================================
 
-public class Types : Node
+public class Types : Node2D
 {
     // --- Primitives: Default, Specific Widths, BigInt, Decimal ---
     public int untyped_num_default = 10;

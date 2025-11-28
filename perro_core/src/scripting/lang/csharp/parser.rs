@@ -377,7 +377,60 @@ impl CsParser {
                     Some(self.map_type(type_name.clone()))
                 }
             }
+            Expr::BinaryOp(left, _op, right) => {
+                // Infer types from both operands and promote
+                let left_type = self.infer_type_from_expr(left);
+                let right_type = self.infer_type_from_expr(right);
+                
+                match (&left_type, &right_type) {
+                    (Some(l), Some(r)) if l == r => Some(l.clone()),
+                    (Some(l), Some(r)) => self.promote_types_simple(l, r),
+                    (Some(l), None) => Some(l.clone()),
+                    (None, Some(r)) => Some(r.clone()),
+                    _ => None,
+                }
+            }
+            Expr::Cast(_, target_type) => Some(target_type.clone()),
             _ => None,
+        }
+    }
+
+    fn promote_types_simple(&self, left: &Type, right: &Type) -> Option<Type> {
+        use crate::scripting::ast::NumberKind;
+        use crate::scripting::ast::Type::*;
+        
+        // Fast path for identical types
+        if left == right {
+            return Some(left.clone());
+        }
+
+        match (left, right) {
+            (Number(NumberKind::BigInt), Number(_))
+            | (Number(_), Number(NumberKind::BigInt)) => {
+                Some(Number(NumberKind::BigInt))
+            }
+            (Number(NumberKind::Decimal), Number(_))
+            | (Number(_), Number(NumberKind::Decimal)) => {
+                Some(Number(NumberKind::Decimal))
+            }
+            (Number(NumberKind::Float(w1)), Number(NumberKind::Float(w2))) => {
+                Some(Number(NumberKind::Float(*w1.max(w2))))
+            }
+            (Number(NumberKind::Float(w)), Number(_))
+            | (Number(_), Number(NumberKind::Float(w))) => {
+                Some(Number(NumberKind::Float(*w)))
+            }
+            (Number(NumberKind::Signed(w1)), Number(NumberKind::Unsigned(w2)))
+            | (Number(NumberKind::Unsigned(w2)), Number(NumberKind::Signed(w1))) => {
+                Some(Number(NumberKind::Signed(u8::max(*w1, *w2))))
+            }
+            (Number(NumberKind::Signed(w1)), Number(NumberKind::Signed(w2))) => {
+                Some(Number(NumberKind::Signed(*w1.max(w2))))
+            }
+            (Number(NumberKind::Unsigned(w1)), Number(NumberKind::Unsigned(w2))) => {
+                Some(Number(NumberKind::Unsigned(*w1.max(w2))))
+            }
+            _ => Some(left.clone()),
         }
     }
 
@@ -622,7 +675,7 @@ impl CsParser {
                 let mut decl_cursor = child.walk();
                 for decl_child in child.children(&mut decl_cursor) {
                     match decl_child.kind() {
-                        "type" | "predefined_type" | "implicit_type" => {
+                        "type" | "predefined_type" | "implicit_type" | "identifier" | "generic_name" => {
                             let type_text = self.get_node_text(decl_child);
                             if type_text != "var" {
                                 typ = Some(self.parse_type(decl_child));

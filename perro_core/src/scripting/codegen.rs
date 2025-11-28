@@ -1024,9 +1024,16 @@ impl Stmt {
                     String::new()
                 };
 
-                // Add type annotation if variable has explicit type
+                // Add type annotation if variable has explicit type OR if we can infer from the expression
                 let type_annotation = if let Some(typ) = &var.typ {
                     format!(": {}", typ.to_rust_type())
+                } else if let Some(expr) = &var.value {
+                    // Try to infer type from the expression if no explicit type was provided
+                    if let Some(inferred_type) = script.infer_expr_type(&expr.expr, current_func) {
+                        format!(": {}", inferred_type.to_rust_type())
+                    } else {
+                        String::new()
+                    }
                 } else {
                     String::new()
                 };
@@ -1273,76 +1280,188 @@ impl Stmt {
             }
 
             Stmt::IndexAssign(array_expr, index_expr, rhs_expr) => {
-                let array_code = array_expr.to_rust(needs_self, script, None, current_func);
-                // Ensure index is usize for array indexing
-                let index_code_raw = index_expr.to_rust(
-                    needs_self,
-                    script,
-                    Some(&Type::Number(NumberKind::Unsigned(32))),
-                    current_func,
-                );
-                let index_code = format!("{} as usize", index_code_raw);
-
                 let lhs_type = script.infer_expr_type(&array_expr, current_func);
                 let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
+                let base_code = array_expr.to_rust(needs_self, script, None, current_func);
 
-                // Check if this is a dynamic array (Vec<Value>) that needs special handling
-                let is_dynamic_array =
-                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = &lhs_type {
-                        inner_types
-                            .get(0)
-                            .map_or(true, |t| *t == Type::Object || matches!(t, Type::Custom(_)))
+                // Check if this is a map (HashMap) vs array (Vec)
+                let is_map = matches!(lhs_type, Some(Type::Container(ContainerKind::Map, _)));
+
+                let (index_code, is_dynamic_array) = if is_map {
+                    // For maps, use string key handling
+                    // For assignment, we need String (not &str) for .insert()
+                    let key_ty = if let Some(Type::Container(ContainerKind::Map, inner_types)) = &lhs_type {
+                        inner_types.get(0).unwrap_or(&Type::String)
                     } else {
-                        false
+                        &Type::String
                     };
+                    let key_code_raw = index_expr.to_rust(needs_self, script, Some(key_ty), current_func);
+                    let key_type = script.infer_expr_type(index_expr, current_func);
+                    let final_key_code = if *key_ty == Type::String {
+                        // For String keys, convert the key to string if it's not already
+                        // For assignment, we need String (not &str), so don't add .as_str()
+                        if matches!(key_type, Some(Type::Number(_)) | Some(Type::Bool)) {
+                            format!("{}.to_string()", key_code_raw)
+                        } else if key_code_raw.starts_with("String::from") {
+                            key_code_raw
+                        } else {
+                            format!("{}.to_string()", key_code_raw)
+                        }
+                    } else {
+                        // For non-string keys, use reference
+                        format!("&{}", key_code_raw)
+                    };
+                    (final_key_code, false)
+                } else {
+                    // For arrays, ensure index is usize
+                    let index_code_raw = index_expr.to_rust(
+                        needs_self,
+                        script,
+                        Some(&Type::Number(NumberKind::Unsigned(32))),
+                        current_func,
+                    );
+                    let index_code = format!("{} as usize", index_code_raw);
+                    
+                    // Check if this is a dynamic array (Vec<Value>) that needs special handling
+                    let is_dynamic_array =
+                        if let Some(Type::Container(ContainerKind::Array, inner_types)) = &lhs_type {
+                            inner_types
+                                .get(0)
+                                .map_or(true, |t| *t == Type::Object || matches!(t, Type::Custom(_)))
+                        } else {
+                            false
+                        };
+                    (index_code, is_dynamic_array)
+                };
 
-                let mut rhs_code =
-                    rhs_expr
+                if is_map {
+                    // Handle map assignment
+                    let inner_types = if let Some(Type::Container(ContainerKind::Map, inner_types)) = &lhs_type {
+                        inner_types
+                    } else {
+                        &vec![]
+                    };
+                    let value_ty = inner_types.get(1).unwrap_or(&Type::Object);
+                    let is_dynamic_map = value_ty == &Type::Object;
+
+                    let mut rhs_code = rhs_expr
                         .expr
-                        .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+                        .to_rust(needs_self, script, Some(value_ty), current_func);
 
-                // Insert implicit conversion if needed, matching your member assign arm
-                let final_rhs = if let Some(lhs_ty) = &lhs_type {
-                    if let Some(rhs_ty) = &rhs_type {
-                        if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
-                            script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                    // Insert implicit conversion if needed
+                    let final_rhs = if let Some(rhs_ty) = &rhs_type {
+                        if rhs_ty.can_implicitly_convert_to(value_ty) && rhs_ty != value_ty {
+                            script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, value_ty)
                         } else {
                             rhs_code
                         }
                     } else {
                         rhs_code
-                    }
-                } else {
-                    rhs_code
-                };
+                    };
 
-                // For dynamic arrays, wrap the value in json!()
-                let final_rhs_wrapped = if is_dynamic_array {
-                    // Check if it's already wrapped in json!() or is a Value
-                    if final_rhs.starts_with("json!") || final_rhs.contains("Value") {
-                        final_rhs
+                    // For dynamic maps, wrap the value in json!()
+                    let final_rhs_wrapped = if is_dynamic_map {
+                        // Check if it's already wrapped in json!() or is a Value
+                        if final_rhs.starts_with("json!") || final_rhs.contains("Value") {
+                            final_rhs
+                        } else {
+                            format!("json!({})", final_rhs)
+                        }
                     } else {
-                        format!("json!({})", final_rhs)
+                        final_rhs
+                    };
+
+                    // Maps use .insert() for assignment
+                    // index_code is already a String for string keys, or a reference for other key types
+                    format!(
+                        "        {}.insert({}, {});\n",
+                        base_code, index_code, final_rhs_wrapped
+                    )
+                } else {
+                    // Handle array assignment
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+
+                    // Insert implicit conversion if needed, matching your member assign arm
+                    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+                        if let Some(rhs_ty) = &rhs_type {
+                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                            } else {
+                                rhs_code
+                            }
+                        } else {
+                            rhs_code
+                        }
+                    } else {
+                        rhs_code
+                    };
+
+                    // For dynamic arrays, wrap the value in json!()
+                    let final_rhs_wrapped = if is_dynamic_array {
+                        // Check if it's already wrapped in json!() or is a Value
+                        if final_rhs.starts_with("json!") || final_rhs.contains("Value") {
+                            final_rhs
+                        } else {
+                            format!("json!({})", final_rhs)
+                        }
+                    } else {
+                        final_rhs
+                    };
+
+                    // Check if index expression references the same array being indexed
+                    // This causes a borrow checker error: cannot borrow as immutable and mutable
+                    let index_refs_array = index_code.contains(&base_code);
+                    
+                    // If the index references the array, extract it to a temporary variable first
+                    if index_refs_array {
+                        // Generate a temporary variable name based on the array name
+                        // Extract the variable name from base_code (e.g., "self.array" -> "array")
+                        let temp_index_var = if base_code.starts_with("self.") {
+                            let var_name = base_code.strip_prefix("self.").unwrap_or(&base_code);
+                            format!("__{}_idx", var_name.replace(".", "_"))
+                        } else {
+                            format!("__{}_idx", base_code.replace(".", "_"))
+                        };
+                        let bounds_check = if is_dynamic_array {
+                            format!(
+                                "        if {}.len() <= {} {{\n            {}.resize({} + 1, json!(null));\n        }}\n",
+                                base_code, temp_index_var, base_code, temp_index_var
+                            )
+                        } else {
+                            String::new()
+                        };
+                        format!(
+                            "        let {} = {};\n{}{}[{}] = {};\n",
+                            temp_index_var, index_code, bounds_check, base_code, temp_index_var, final_rhs_wrapped
+                        )
+                    } else {
+                        // Insert `.clone()` if needed, matching your member assign arm
+                        let should_clone = !is_dynamic_array
+                            && matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
+                            && rhs_type.as_ref().map_or(false, |ty| ty.requires_clone());
+
+                        if is_dynamic_array {
+                            // For dynamic arrays, extract index and check bounds
+                            let temp_index_var = format!("__idx_{}", base_code.replace(".", "_").replace("self", ""));
+                            format!(
+                                "        let {} = {};\n        if {}.len() <= {} {{\n            {}.resize({} + 1, json!(null));\n        }}\n        {}[{}] = {};\n",
+                                temp_index_var, index_code, base_code, temp_index_var, base_code, temp_index_var, base_code, temp_index_var, final_rhs_wrapped
+                            )
+                        } else if should_clone {
+                            format!(
+                                "        {}[{}] = {}.clone();\n",
+                                base_code, index_code, final_rhs_wrapped
+                            )
+                        } else {
+                            format!(
+                                "        {}[{}] = {};\n",
+                                base_code, index_code, final_rhs_wrapped
+                            )
+                        }
                     }
-                } else {
-                    final_rhs
-                };
-
-                // Insert `.clone()` if needed, matching your member assign arm
-                let should_clone = !is_dynamic_array
-                    && matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
-                    && rhs_type.as_ref().map_or(false, |ty| ty.requires_clone());
-
-                if should_clone {
-                    format!(
-                        "        {}[{}] = {}.clone();\n",
-                        array_code, index_code, final_rhs_wrapped
-                    )
-                } else {
-                    format!(
-                        "        {}[{}] = {};\n",
-                        array_code, index_code, final_rhs_wrapped
-                    )
                 }
             }
 
@@ -1654,21 +1773,24 @@ impl Expr {
                     }
                 };
 
+                // Check if left/right are len() calls BEFORE generating code
+                let left_is_len = matches!(
+                    left.as_ref(),
+                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
+                ) || matches!(left.as_ref(), Expr::MemberAccess(_, field) if field == "Length");
+                let right_is_len = matches!(
+                    right.as_ref(),
+                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
+                ) || matches!(right.as_ref(), Expr::MemberAccess(_, field) if field == "Length");
+
                 let left_raw =
                     left.to_rust(needs_self, script, dominant_type.as_ref(), current_func);
                 let right_raw =
                     right.to_rust(needs_self, script, dominant_type.as_ref(), current_func);
 
-                // Special handling: len() returns usize in Rust, so if we're doing operations with it,
-                // ensure the other operand is also usize
-                let left_is_len = matches!(
-                    left.as_ref(),
-                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
-                );
-                let right_is_len = matches!(
-                    right.as_ref(),
-                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
-                );
+                // Also check the generated code strings for .len() calls
+                let left_is_len = left_is_len || left_raw.ends_with(".len()");
+                let right_is_len = right_is_len || right_raw.ends_with(".len()");
 
                 let (left_str, right_str) = {
                     let mut l_str = left_raw.clone();
@@ -1756,13 +1878,18 @@ impl Expr {
                     }
                     Some(Type::Container(ContainerKind::Array, _))
                     | Some(Type::Container(ContainerKind::FixedArray(_), _)) => {
-                        // Vec or FixedArray (support access via integer index, not field name)
-                        // We'll still return an error if used as .field, but you can choose logic:
-                        let base_code = base.to_rust(needs_self, script, None, current_func);
-                        format!(
-                            "/* Cannot perform field access '{}' on array or fixed array */ {}",
-                            field, base_code
-                        )
+                        // Special case: .Length on arrays should convert to .len()
+                        if field == "Length" {
+                            let base_code = base.to_rust(needs_self, script, None, current_func);
+                            format!("{}.len()", base_code)
+                        } else {
+                            // Vec or FixedArray (support access via integer index, not field name)
+                            let base_code = base.to_rust(needs_self, script, None, current_func);
+                            format!(
+                                "/* Cannot perform field access '{}' on array or fixed array */ {}",
+                                field, base_code
+                            )
+                        }
                     }
                     Some(Type::Custom(_)) => {
                         // typed struct: regular .field access
