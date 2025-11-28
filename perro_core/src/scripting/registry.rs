@@ -63,9 +63,14 @@ impl ScriptProvider for DllScriptProvider {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
         let symbol = format!("{short}_create_script\0");
-        let sym: libloading::Symbol<CreateFn> = unsafe { lib.get(symbol.as_bytes())? };
+        eprintln!("🔍 Looking for symbol: '{}' (identifier: '{}')", symbol.trim_end_matches('\0'), short);
+        let sym: libloading::Symbol<CreateFn> = unsafe {
+            lib.get(symbol.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to find symbol '{}' in DLL: {}", symbol.trim_end_matches('\0'), e))?
+        };
         let fptr = *sym;
         self.ctors.insert(short.to_owned(), fptr);
+        eprintln!("✅ Successfully loaded constructor for '{}'", short);
         Ok(fptr)
     }
 

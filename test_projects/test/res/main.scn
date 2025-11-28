@@ -1,25 +1,12 @@
 {
-  "root_id": "61bcc144-573f-49db-88a7-8faca16519d0",
+  "root_id": "11111111-1111-1111-1111-111111111111",
   "nodes": {
-    "61bcc144-573f-49db-88a7-8faca16519d0": {
-        "type": "Node",
-        "name": "Root",
-        "script_path":"res://test.pup"
-    },
-    "51bcc144-573f-49db-88a7-8faca16519d0": {
-        "type": "Node",
-        "script_path":"res://other.pup",
-        "name": "Other"
-    },
-    "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48": {
-      "type": "UI",
-      "fur_path": "res://main.fur",
+    "11111111-1111-1111-1111-111111111111": {
+      "type": "Node2D",
       "node": {
         "type": "Node",
-        "script_path":"res://main.pup",
-        "name": "UI"
+        "name": "World",
+        "script_path": "res://types.pup"
       }
     }
-  },
-  "is_game_scene": false
-}
+} }

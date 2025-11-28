@@ -1595,7 +1595,7 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
         writeln!(fur_file, "use indexmap::IndexMap;")?;
         writeln!(
             fur_file,
-            "use perro_core::ui::ast::{{FurElement, FurNode}};"
+            "use perro_core::ui::fur_ast::{{FurElement, FurNode}};"
         )?;
         writeln!(fur_file, "use std::collections::HashMap;")?;
         writeln!(fur_file, "use std::borrow::Cow;")?;

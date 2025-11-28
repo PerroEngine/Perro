@@ -354,5 +354,10 @@ fn init() {
 }
 
 fn update() {
-    // Empty for now
+     test_primitive_operations()
+    test_explicit_casting()
+    test_assignments()
+    test_struct_inheritance_and_casting()
+    test_dynamic_containers_ops()
+    test_static_containers_ops()
 }
