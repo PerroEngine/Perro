@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use perro_core::asset_io::{ProjectRoot, set_project_root};
 use perro_core::compiler::{BuildProfile, CompileTarget, Compiler};
-use perro_core::lang::transpiler::transpile;
+use perro_core::transpiler::transpile;
+
 
 /// Get the path to the *project root* using the location of the perro_core crate root.
 /// This will resolve properly even when running from target/debug.
@@ -26,6 +27,9 @@ fn resolve_project_root(path_arg: &str) -> PathBuf {
         // Go up to workspace root, then into perro_editor
         let editor_path = workspace_root.join("perro_editor");
         editor_path.canonicalize().unwrap_or(editor_path)
+    } else if path_arg.eq_ignore_ascii_case("--test") {
+        let test_path = workspace_root.join("test_projects/test");
+        test_path.canonicalize().unwrap_or(test_path)
     } else {
         // Treat it as path (absolute or relative to cwd)
         let candidate = PathBuf::from(path_arg);

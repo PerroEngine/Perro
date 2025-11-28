@@ -13,7 +13,7 @@ use crate::manifest::Project;
 use crate::rendering::app::App;
 use crate::scene::{Scene, SceneData};
 use crate::script::{CreateFn, ScriptProvider};
-use crate::ui::ast::FurElement;
+use crate::ui::fur_ast::FurElement;
 use once_cell::sync::Lazy;
 use winit::event_loop::EventLoop;
 

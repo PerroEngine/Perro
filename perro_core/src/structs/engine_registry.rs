@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    engine_structs::EngineStruct,
-    lang::ast::{NumberKind, StructDef, StructField, Type},
-    node_registry::NodeType,
+    ast::*, engine_structs::EngineStruct, node_registry::NodeType
 };
 
 #[derive(Debug, Clone)]

@@ -12,9 +12,11 @@ use std::{
 
 use regex::Regex;
 
+use crate::api_modules::*;
+use crate::ast::*;
+use crate::scripting::ast::{ContainerKind, Expr, NumberKind, Type};
 use crate::{
     asset_io::{ProjectRoot, get_project_root},
-    lang::{api_modules::*, ast::*},
     prelude::string_to_u64,
     script::Var,
 };

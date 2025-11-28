@@ -1,7 +1,5 @@
 use crate::{
-    lang::{api_modules::*, ast::*},
-    node_registry::NodeType, // Ensure this is correctly in scope
-    prelude::string_to_u64,
+    api_modules::*, ast::*, node_registry::NodeType, prelude::string_to_u64, scripting::ast::{ContainerKind, NumberKind}
 };
 
 // ===========================================================

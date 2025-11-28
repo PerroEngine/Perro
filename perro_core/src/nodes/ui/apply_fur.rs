@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     asset_io::load_asset,
-    ast::{FurAnchor, FurElement, FurNode},
+    fur_ast::{FurAnchor, FurElement, FurNode},
     structs::Color,
     structs2d::Vector2,
     ui_element::{BaseElement, BaseUIElement, UIElement},

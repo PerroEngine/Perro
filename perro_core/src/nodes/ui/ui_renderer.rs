@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     Graphics, RenderLayer,
-    ast::FurAnchor,
+    fur_ast::FurAnchor,
     font::{Font, FontAtlas, Style, Weight},
     graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
     structs::Color,

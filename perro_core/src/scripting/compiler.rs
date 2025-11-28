@@ -10,7 +10,8 @@ use rand::seq::SliceRandom;
 
 use crate::apply_fur::parse_fur_file;
 use crate::asset_io::{ResolvedPath, resolve_path};
-use crate::ast::{FurElement, FurNode};
+
+use crate::fur_ast::{FurElement, FurNode};
 use crate::brk::build_brk;
 use crate::{BaseNode, SceneData};
 use walkdir::WalkDir;

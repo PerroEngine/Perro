@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashMap};
 use uuid::Uuid;
 
-use crate::ast::{FurElement, FurNode};
+use crate::fur_ast::{FurElement, FurNode};
 
 // =================== TOKENS ===================
 

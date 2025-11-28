@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{engine_structs::EngineStruct, lang::api_modules::ApiModule, node_registry::NodeType};
+use crate::{api_modules::ApiModule, engine_structs::EngineStruct, node_registry::NodeType};
 
 #[derive(Debug, Clone)]
 pub struct Script {

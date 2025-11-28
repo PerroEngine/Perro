@@ -2,10 +2,8 @@
 // Central router used by the parser to map syntax → semantic call
 // ----------------------------------------------------------------
 
-use crate::lang::{
-    api_modules::*,
-    ast::{ContainerKind, Type},
-};
+use crate::{api_modules::*, ast::{ContainerKind, Type}};
+
 
 pub struct PupAPI;
 

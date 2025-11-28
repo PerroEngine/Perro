@@ -1,21 +1,5 @@
 use crate::{
-    Graphics,
-    Node,
-    RenderLayer,
-    Transform3D,
-    Vector2,
-    api::ScriptApi,
-    app_command::AppCommand,
-    apply_fur::{build_ui_elements_from_fur, parse_fur_file},
-    asset_io::{ProjectRoot, get_project_root, load_asset, save_asset},
-    ast::{FurElement, FurNode},
-    lang::transpiler::script_path_to_identifier,
-    manifest::Project,
-    node_registry::{BaseNode, SceneNode},
-    prelude::string_to_u64,
-    script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var},
-    ui_element::{BaseElement, UIElement},
-    ui_renderer::render_ui, // NEW import
+    Graphics, Node, RenderLayer, Transform3D, Vector2, api::ScriptApi, app_command::AppCommand, apply_fur::{build_ui_elements_from_fur, parse_fur_file}, asset_io::{ProjectRoot, get_project_root, load_asset, save_asset}, fur_ast::{FurElement, FurNode}, manifest::Project, node_registry::{BaseNode, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var}, transpiler::script_path_to_identifier, ui_element::{BaseElement, UIElement}, ui_renderer::render_ui // NEW import
 };
 
 use glam::{Mat4, Vec3};

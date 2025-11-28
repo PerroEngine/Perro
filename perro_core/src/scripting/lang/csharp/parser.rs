@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use tree_sitter::Parser;
 
 // Assuming these are defined in your crate
-use crate::lang::api_modules::{ApiModule, NodeSugarApi};
-use crate::lang::ast::*;
-use crate::lang::csharp::api::CSharpAPI;
+
+use crate::{ast::*, lang::csharp::api::CSharpAPI};
 
 pub struct CsParser {
     source: String,

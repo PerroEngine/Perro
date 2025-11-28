@@ -2,7 +2,7 @@ use crate::{
     SceneData,
     apply_fur::parse_fur_file,
     asset_io::ProjectRoot,
-    ast::{FurElement, FurNode},
+    fur_ast::{FurElement, FurNode},
     script::{CreateFn, ScriptProvider},
 };
 use libloading::Library;

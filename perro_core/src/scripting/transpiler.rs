@@ -7,13 +7,10 @@ use std::{
 use walkdir::WalkDir;
 
 use crate::{
-    asset_io::{ProjectRoot, ResolvedPath, get_project_root, load_asset, resolve_path},
-    compiler::{BuildProfile, CompileTarget, Compiler},
-    lang::{
-        codegen::{derive_rust_perro_script, write_to_crate},
+    asset_io::{ProjectRoot, ResolvedPath, get_project_root, load_asset, resolve_path}, codegen::derive_rust_perro_script, compiler::{BuildProfile, CompileTarget, Compiler}, lang::{
         csharp::parser::CsParser,
         pup::parser::PupParser,
-    },
+    }
 };
 
 /// Convert a *res:// path* or absolute path under res/

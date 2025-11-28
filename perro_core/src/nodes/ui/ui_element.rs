@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    ast::FurAnchor,
+    fur_ast::FurAnchor,
     structs::Color,
     structs2d::{Transform2D, Vector2},
     ui_elements::{
@@ -181,10 +181,10 @@ macro_rules! impl_ui_element {
                 self.base.pivot = pivot;
             }
 
-            fn get_anchor(&self) -> &crate::ast::FurAnchor {
+            fn get_anchor(&self) -> &crate::fur_ast::FurAnchor {
                 &self.base.anchor
             }
-            fn set_anchor(&mut self, anchor: crate::ast::FurAnchor) {
+            fn set_anchor(&mut self, anchor: crate::fur_ast::FurAnchor) {
                 self.base.anchor = anchor;
             }
 
