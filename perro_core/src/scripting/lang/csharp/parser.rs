@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use tree_sitter::Parser;
 
 // Assuming these are defined in your crate
@@ -10,6 +11,8 @@ pub struct CsParser {
     pub parsed_structs: Vec<StructDef>,
     // Add a field to control debugging verbosity
     debug_enabled: bool,
+    /// Variable name → inferred type (for local scope/type inference during parsing)
+    type_env: HashMap<String, Type>,
 }
 
 impl CsParser {
@@ -25,6 +28,7 @@ impl CsParser {
             parser,
             parsed_structs: Vec::new(),
             debug_enabled: false, // Initialize debug flag
+            type_env: HashMap::new(),
         }
     }
 
@@ -88,7 +92,7 @@ impl CsParser {
         None
     }
 
-    fn parse_class_as_script(&self, class_node: tree_sitter::Node) -> Result<Script, String> {
+    fn parse_class_as_script(&mut self, class_node: tree_sitter::Node) -> Result<Script, String> {
         self.debug_node("PARSE_CLASS_START", class_node);
         let mut node_type = String::new();
         let mut script_vars = Vec::new();
@@ -148,7 +152,7 @@ impl CsParser {
         })
     }
 
-    fn parse_field_declaration(&self, node: tree_sitter::Node) -> Result<Variable, String> {
+    fn parse_field_declaration(&mut self, node: tree_sitter::Node) -> Result<Variable, String> {
         self.debug_node("FIELD_DECL_START", node); // Debug field declaration start
         let mut is_public = false;
         let mut is_exposed = false;
@@ -170,12 +174,94 @@ impl CsParser {
                     }
                 }
                 "variable_declaration" => {
-                    // Get type
-                    if let Some(type_node) = self.get_child_by_kind(child, "type") {
-                        typ = Some(self.parse_type(type_node));
-                    } else if let Some(type_node) = self.get_child_by_kind(child, "predefined_type")
-                    {
-                        typ = Some(self.parse_type(type_node));
+                    // Get type - try multiple node types for array types, generic types, etc.
+                    // Check for array_type first since it's more specific
+                    // IMPORTANT: We need to find the type BEFORE parsing the initializer,
+                    // so that explicit types take precedence over inferred types
+                    
+                    // First, try to find array_type (might be nested in a type node)
+                    let mut found_array_type = false;
+                    if let Some(array_type_node) = self.get_child_by_kind(child, "array_type") {
+                        typ = Some(self.parse_type(array_type_node));
+                        found_array_type = true;
+                    } else if let Some(type_node) = self.get_child_by_kind(child, "type") {
+                        // Check if the type node itself is an array_type or contains one
+                        if type_node.kind() == "array_type" {
+                            typ = Some(self.parse_type(type_node));
+                            found_array_type = true;
+                        } else if let Some(nested_array_type) = self.get_child_by_kind(type_node, "array_type") {
+                            typ = Some(self.parse_type(nested_array_type));
+                            found_array_type = true;
+                        } else {
+                            // Check if type node has array_rank_specifier (indicates array)
+                            let mut cursor = type_node.walk();
+                            let has_array_spec = type_node.children(&mut cursor).any(|c| {
+                                c.kind() == "array_rank_specifier" || c.kind() == "["
+                            });
+                            if has_array_spec {
+                                typ = Some(self.parse_type(type_node));
+                                found_array_type = true;
+                            } else {
+                                typ = Some(self.parse_type(type_node));
+                            }
+                        }
+                    }
+                    
+                    if !found_array_type {
+                        if let Some(type_node) = self.get_child_by_kind(child, "predefined_type")
+                        {
+                            typ = Some(self.parse_type(type_node));
+                        } else if let Some(type_node) = self.get_child_by_kind(child, "generic_name") {
+                            typ = Some(self.parse_type(type_node));
+                        } else {
+                            // Fallback: try to extract type from variable_declaration text
+                            // For "BigInteger typed_big_int = ..." or "object[] arr = ..." or "TestPlayer[] arr = ...", extract the type
+                            let decl_text = self.get_node_text(child);
+                            
+                            // First, try to find array_type by checking for [] in the text
+                            // This handles both "object[]" and "TestPlayer[]" cases
+                            if decl_text.contains("[]") {
+                                // Find the part that ends with [] - could be "object[]", "int[]", "TestPlayer[]", etc.
+                                // Split by whitespace and look for the type part
+                                let parts: Vec<&str> = decl_text.split_whitespace().collect();
+                                for (i, part) in parts.iter().enumerate() {
+                                    // Skip modifiers
+                                    if matches!(*part, "public" | "private" | "protected" | "internal" | "static" | "readonly") {
+                                        continue;
+                                    }
+                                    // Check if this part ends with []
+                                    if part.ends_with("[]") {
+                                        let base_type = part.trim_end_matches("[]");
+                                        let element_type = self.map_type(base_type.to_string());
+                                        typ = Some(Type::Container(ContainerKind::Array, vec![element_type]));
+                                        break;
+                                    } else if i < parts.len() - 1 {
+                                        // Check if next part is [] (e.g., "TestPlayer []" with space)
+                                        if let Some(next_part) = parts.get(i + 1) {
+                                            if next_part.trim() == "[]" || next_part.starts_with("[") {
+                                                let base_type = part.trim();
+                                                let element_type = self.map_type(base_type.to_string());
+                                                typ = Some(Type::Container(ContainerKind::Array, vec![element_type]));
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Not an array, try to find the type name
+                                let parts: Vec<&str> = decl_text.split_whitespace().collect();
+                                for part in &parts {
+                                    if !matches!(*part, "public" | "private" | "protected" | "internal" | "static" | "readonly") 
+                                        && !part.contains("=") 
+                                        && !part.contains("(") 
+                                        && !part.contains(")") {
+                                        // It's likely the type name (not the variable name or initializer)
+                                        typ = Some(self.map_type(part.to_string()));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Get variable declarator
@@ -188,13 +274,18 @@ impl CsParser {
                         if let Some(init) =
                             self.get_child_by_kind(declarator, "equals_value_clause")
                         {
-                            if let Some(expr_node) = init.child(1) {
-                                // Skip the '=' token
-                                if let Ok(expr) = self.parse_expression(expr_node) {
-                                    value = Some(TypedExpr {
-                                        expr,
-                                        inferred_type: None,
-                                    });
+                            // The equals_value_clause has structure: = expression
+                            // Find the expression child (skip the = token)
+                            let mut init_cursor = init.walk();
+                            for init_child in init.children(&mut init_cursor) {
+                                if init_child.kind() != "=" {
+                                    if let Ok(expr) = self.parse_expression(init_child) {
+                                        value = Some(TypedExpr {
+                                            expr,
+                                            inferred_type: None,
+                                        });
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -205,8 +296,15 @@ impl CsParser {
         }
 
         // If no explicit type was found but we have an initializer, infer from the initializer
+        // IMPORTANT: Only infer if explicit type is missing - explicit types take precedence
+        // CRITICAL: Never override an explicit type with an inferred type from the initializer
         if typ.is_none() && value.is_some() {
             typ = self.infer_type_from_expr(&value.as_ref().unwrap().expr);
+        }
+
+        // Store in type environment for later variable reference inference
+        if let Some(ref t) = typ {
+            self.type_env.insert(name.clone(), t.clone());
         }
 
         self.debug_node("FIELD_DECL_END", node);
@@ -220,8 +318,6 @@ impl CsParser {
         })
     }
 
-    // ... (infer_type_from_expr is unchanged)
-
     fn infer_type_from_expr(&self, expr: &Expr) -> Option<Type> {
         match expr {
             Expr::Literal(Literal::Number(n)) => {
@@ -229,6 +325,8 @@ impl CsParser {
                     Some(Type::Number(NumberKind::Float(32)))
                 } else if n.contains(".") {
                     Some(Type::Number(NumberKind::Float(64)))
+                } else if n.contains("m") || n.contains("M") {
+                    Some(Type::Number(NumberKind::Decimal))
                 } else {
                     Some(Type::Number(NumberKind::Signed(32)))
                 }
@@ -248,11 +346,42 @@ impl CsParser {
                     vec![Type::Object],
                 )),
             },
+            Expr::ObjectLiteral(_) => Some(Type::Object),
+            Expr::Cast(_, target) => Some(target.clone()),
+            Expr::Ident(var_name) => self.type_env.get(var_name).cloned(),
+            Expr::Call(inner, _) => {
+                // Handle static method calls like BigInteger.Parse()
+                if let Expr::MemberAccess(base, method) = &**inner {
+                    // Check if it's a known type's static method
+                    if let Expr::Ident(type_name) = &**base {
+                        match (type_name.as_str(), method.as_str()) {
+                            ("BigInteger", "Parse") => Some(Type::Number(NumberKind::BigInt)),
+                            ("Decimal", "Parse") | ("decimal", "Parse") => {
+                                Some(Type::Number(NumberKind::Decimal))
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            },
+            Expr::StructNew(type_name, _) => {
+                // Check if it's a known struct
+                if self.parsed_structs.iter().any(|s| s.name == *type_name) {
+                    Some(Type::Custom(type_name.clone()))
+                } else {
+                    // Try to map it as a type
+                    Some(self.map_type(type_name.clone()))
+                }
+            }
             _ => None,
         }
     }
 
-    fn parse_method_declaration(&self, node: tree_sitter::Node) -> Result<Function, String> {
+    fn parse_method_declaration(&mut self, node: tree_sitter::Node) -> Result<Function, String> {
         self.debug_node("METHOD_DECL_START", node); // Debug method declaration start
         let mut is_public = false;
         let mut return_type = Type::Void;
@@ -303,7 +432,7 @@ impl CsParser {
 
     // ... (parse_nested_class is unchanged, but you could add debug_node calls there too)
 
-    fn parse_nested_class(&self, node: tree_sitter::Node) -> Result<StructDef, String> {
+    fn parse_nested_class(&mut self, node: tree_sitter::Node) -> Result<StructDef, String> {
         self.debug_node("NESTED_CLASS_START", node);
         let mut name = String::new();
         let mut base = None;
@@ -317,8 +446,22 @@ impl CsParser {
                     name = self.get_node_text(child);
                 }
                 "base_list" => {
-                    if let Some(type_node) = child.child(0) {
-                        base = Some(self.get_node_text(type_node));
+                    // Look for identifier within base_list (similar to parse_class_as_script)
+                    let mut base_cursor = child.walk();
+                    for base_child in child.children(&mut base_cursor) {
+                        if base_child.kind() == "identifier" {
+                            base = Some(self.get_node_text(base_child));
+                            break;
+                        } else if base_child.kind() == "type" {
+                            // Sometimes it's wrapped in a type node
+                            if let Some(id_node) = self.get_child_by_kind(base_child, "identifier") {
+                                base = Some(self.get_node_text(id_node));
+                                break;
+                            } else {
+                                base = Some(self.get_node_text(base_child));
+                                break;
+                            }
+                        }
                     }
                 }
                 "declaration_list" => {
@@ -394,14 +537,29 @@ impl CsParser {
         Ok(Param { name, typ })
     }
 
-    fn parse_block(&self, node: tree_sitter::Node) -> Result<Vec<Stmt>, String> {
+    fn parse_block(&mut self, node: tree_sitter::Node) -> Result<Vec<Stmt>, String> {
         self.debug_node("BLOCK_START", node); // Debug block start
         let mut statements = Vec::new();
         let mut cursor = node.walk();
 
         for child in node.children(&mut cursor) {
-            if let Ok(stmt) = self.parse_statement(child) {
-                statements.push(stmt);
+            // Skip the opening and closing braces
+            if child.kind() == "{" || child.kind() == "}" {
+                continue;
+            }
+            
+            // Try to parse as statement
+            match self.parse_statement(child) {
+                Ok(Stmt::Pass) => {
+                    // Skip pass statements
+                }
+                Ok(stmt) => {
+                    statements.push(stmt);
+                }
+                Err(e) => {
+                    // Log but don't fail - some nodes might not be statements
+                    self.debug_node(&format!("STMT_PARSE_ERR: {}", e), child);
+                }
             }
         }
 
@@ -409,7 +567,7 @@ impl CsParser {
         Ok(statements)
     }
 
-    fn parse_statement(&self, node: tree_sitter::Node) -> Result<Stmt, String> {
+    fn parse_statement(&mut self, node: tree_sitter::Node) -> Result<Stmt, String> {
         self.debug_node("STMT_START", node); // Debug statement being parsed
         let result = match node.kind() {
             "local_declaration_statement" => self.parse_local_declaration(node),
@@ -452,7 +610,7 @@ impl CsParser {
 
     // ... (parse_local_declaration is unchanged)
 
-    fn parse_local_declaration(&self, node: tree_sitter::Node) -> Result<Stmt, String> {
+    fn parse_local_declaration(&mut self, node: tree_sitter::Node) -> Result<Stmt, String> {
         self.debug_node("LOCAL_DECL_START", node);
         let mut typ = None;
         let mut name = String::new();
@@ -478,12 +636,18 @@ impl CsParser {
                             if let Some(init) =
                                 self.get_child_by_kind(decl_child, "equals_value_clause")
                             {
-                                if let Some(expr_node) = init.child(1) {
-                                    if let Ok(expr) = self.parse_expression(expr_node) {
-                                        value = Some(TypedExpr {
-                                            expr,
-                                            inferred_type: None,
-                                        });
+                                // The equals_value_clause has structure: = expression
+                                // Find the expression child (skip the = token)
+                                let mut init_cursor = init.walk();
+                                for init_child in init.children(&mut init_cursor) {
+                                    if init_child.kind() != "=" {
+                                        if let Ok(expr) = self.parse_expression(init_child) {
+                                            value = Some(TypedExpr {
+                                                expr,
+                                                inferred_type: None,
+                                            });
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -497,6 +661,11 @@ impl CsParser {
         // If no explicit type and we have an initializer, infer from it
         if typ.is_none() && value.is_some() {
             typ = self.infer_type_from_expr(&value.as_ref().unwrap().expr);
+        }
+
+        // Store in type environment for later variable reference inference
+        if let Some(ref t) = typ {
+            self.type_env.insert(name.clone(), t.clone());
         }
 
         self.debug_node("LOCAL_DECL_END", node);
@@ -601,7 +770,17 @@ impl CsParser {
             "base_expression" => Ok(Expr::BaseAccess),
 
             "integer_literal" | "real_literal" => {
-                Ok(Expr::Literal(Literal::Number(self.get_node_text(node))))
+                let mut text = self.get_node_text(node);
+                // Strip C# float suffixes (f, F, d, D, m, M) from the literal text
+                // The type will be inferred separately based on the suffix
+                if text.ends_with('f') || text.ends_with('F') {
+                    text.pop(); // Remove f/F suffix - type will be inferred as f32
+                } else if text.ends_with('d') || text.ends_with('D') {
+                    text.pop(); // Remove d/D suffix - type will be inferred as f64
+                } else if text.ends_with('m') || text.ends_with('M') {
+                    text.pop(); // Remove m/M suffix - type will be inferred as decimal
+                }
+                Ok(Expr::Literal(Literal::Number(text)))
             }
 
             "string_literal" => {
@@ -693,6 +872,32 @@ impl CsParser {
         }
 
         if let Some(expr) = func_expr {
+            // Check if this is a type conversion method like BigInteger.Parse() or Decimal.Parse()
+            if let Expr::MemberAccess(obj, method) = &expr {
+                if method == "Parse" && args.len() == 1 {
+                    if let Expr::Ident(type_name) = &**obj {
+                        match type_name.as_str() {
+                            "BigInteger" => {
+                                // Convert BigInteger.Parse(string) to a Cast expression
+                                // Codegen already knows how to handle String -> BigInt casts
+                                return Ok(Expr::Cast(
+                                    Box::new(args[0].clone()),
+                                    Type::Number(NumberKind::BigInt),
+                                ));
+                            }
+                            "Decimal" | "decimal" => {
+                                // Convert Decimal.Parse(string) to a Cast expression
+                                return Ok(Expr::Cast(
+                                    Box::new(args[0].clone()),
+                                    Type::Number(NumberKind::Decimal),
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
             // Check if this is an API call
             if let Expr::MemberAccess(obj, method) = &expr {
                 if let Expr::Ident(module) = &**obj {
@@ -780,22 +985,102 @@ impl CsParser {
     fn parse_object_creation(&self, node: tree_sitter::Node) -> Result<Expr, String> {
         let mut type_name = String::new();
         let mut args = Vec::new();
+        let mut named_args = Vec::new();
+        let mut initializers = Vec::new();
+        let mut is_array_type = false;
+
+        // First, check if any child is an array_type node or has array_rank_specifier
+        let mut cursor = node.walk();
+        let has_array_type_node = node.children(&mut cursor).any(|c| {
+            c.kind() == "array_type" || c.kind() == "array_rank_specifier"
+        });
+        if has_array_type_node {
+            is_array_type = true;
+        }
 
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
+                "array_type" => {
+                    // Parse the array_type to get the base type
+                    let base_type = self.parse_type(child);
+                    // Extract element type from the array type for display
+                    if let Type::Container(ContainerKind::Array, params) = base_type {
+                        if let Some(element_type) = params.get(0) {
+                            type_name = element_type.to_rust_type(); // Use for display, but we know it's an array
+                        }
+                    }
+                    is_array_type = true;
+                }
+                "array_rank_specifier" => {
+                    is_array_type = true;
+                }
                 "type" | "predefined_type" | "generic_name" | "identifier" => {
-                    type_name = self.get_node_text(child);
+                    let type_text = self.get_node_text(child);
+                    type_name = type_text.clone();
                 }
                 "argument_list" => {
                     args = self.parse_argument_list(child)?;
+                }
+                "initializer_expression" => {
+                    // Check if this is an array initializer { 1, 2, 3 } or object initializer { field = value }
+                    let mut init_cursor = child.walk();
+                    let mut has_assignments = false;
+                    
+                    for init_child in child.children(&mut init_cursor) {
+                        if init_child.kind() == "assignment_expression" {
+                            has_assignments = true;
+                            let mut assign_cursor = init_child.walk();
+                            let assign_children: Vec<tree_sitter::Node> =
+                                init_child.children(&mut assign_cursor).collect();
+
+                            if assign_children.len() >= 3 {
+                                let key = self.get_node_text(assign_children[0]);
+                                let value = self.parse_expression(assign_children[2])?;
+                                named_args.push((key, value));
+                            }
+                        } else if init_child.kind() != "," && init_child.kind() != "{" && init_child.kind() != "}" {
+                            // Try to parse as expression (for array elements)
+                            if let Ok(expr) = self.parse_expression(init_child) {
+                                initializers.push(expr);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
         }
 
-        // Determine container type
-        if type_name.starts_with("Dictionary") {
+        // Handle array types first - check is_array_type flag set from array_type/array_rank_specifier nodes
+        if is_array_type {
+            if !initializers.is_empty() {
+                let len = initializers.len();
+                Ok(Expr::ContainerLiteral(
+                    ContainerKind::FixedArray(len),
+                    ContainerLiteralData::FixedArray(len, initializers),
+                ))
+            } else {
+                // Empty array
+                Ok(Expr::ContainerLiteral(
+                    ContainerKind::Array,
+                    ContainerLiteralData::Array(vec![]),
+                ))
+            }
+        } else if type_name.ends_with("[]") {
+            // Fallback: check type name for [] suffix
+            if !initializers.is_empty() {
+                let len = initializers.len();
+                Ok(Expr::ContainerLiteral(
+                    ContainerKind::FixedArray(len),
+                    ContainerLiteralData::FixedArray(len, initializers),
+                ))
+            } else {
+                Ok(Expr::ContainerLiteral(
+                    ContainerKind::Array,
+                    ContainerLiteralData::Array(vec![]),
+                ))
+            }
+        } else if type_name.starts_with("Dictionary") {
             Ok(Expr::ContainerLiteral(
                 ContainerKind::Map,
                 ContainerLiteralData::Map(vec![]),
@@ -806,9 +1091,16 @@ impl CsParser {
                 ContainerLiteralData::Array(vec![]),
             ))
         } else {
-            // StructNew expects Vec<(String, Expr)> for named arguments
-            // For now, create empty named args since C# constructors use positional args
-            Ok(Expr::StructNew(type_name, vec![]))
+            // Use named args if available, otherwise use positional args converted to named
+            if !named_args.is_empty() {
+                Ok(Expr::StructNew(type_name, named_args))
+            } else if !args.is_empty() {
+                // Convert positional args to named args by field order (similar to Pup parser)
+                // For now, just use empty named args - this will be handled during codegen
+                Ok(Expr::StructNew(type_name, vec![]))
+            } else {
+                Ok(Expr::StructNew(type_name, vec![]))
+            }
         }
     }
 
@@ -886,12 +1178,71 @@ impl CsParser {
     }
 
     fn parse_type(&self, node: tree_sitter::Node) -> Type {
-        let type_text = self.get_node_text(node);
-        self.map_type(type_text)
+        // Handle array_type nodes directly
+        if node.kind() == "array_type" {
+            // array_type has structure: base_type + array_rank_specifier
+            // Find the base type (could be predefined_type, type, or identifier)
+            let mut base_type_node = None;
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "predefined_type" | "type" | "identifier" | "generic_name" => {
+                        base_type_node = Some(child);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            
+            if let Some(base_node) = base_type_node {
+                let base_type = self.parse_type(base_node); // Recursively parse the base type
+                // Wrap in Array container
+                Type::Container(ContainerKind::Array, vec![base_type])
+            } else {
+                // Fallback: try to extract from text
+                let text = self.get_node_text(node);
+                let base_type_str = text.replace("[]", "").trim().to_string();
+                let element_type = self.map_type(base_type_str);
+                Type::Container(ContainerKind::Array, vec![element_type])
+            }
+        } else {
+            // Check if this is an array type (has array_rank_specifier as a child)
+            let mut cursor = node.walk();
+            let has_array_spec = node.children(&mut cursor).any(|child| {
+                child.kind() == "array_rank_specifier" || child.kind() == "[" || child.kind() == "]"
+            });
+
+            if has_array_spec {
+                // For array types, get the base type and wrap it in Container
+                let base_type_text = self.get_node_text(node);
+                // Remove [] from the text to get base type
+                let base_type_str = base_type_text
+                    .replace("[]", "")
+                    .trim()
+                    .to_string();
+                let element_type = self.map_type(base_type_str);
+                Type::Container(ContainerKind::Array, vec![element_type])
+            } else {
+                // Get the type text - it might be directly in the node or in an identifier child
+                let type_text = if let Some(id_node) = self.get_child_by_kind(node, "identifier") {
+                    self.get_node_text(id_node)
+                } else {
+                    self.get_node_text(node)
+                };
+                self.map_type(type_text)
+            }
+        }
     }
 
     fn map_type(&self, t: String) -> Type {
-        match t.as_str() {
+        // Handle qualified names like "System.Numerics.BigInteger" or just "BigInteger"
+        let type_name = if t.contains('.') {
+            t.split('.').last().unwrap_or(&t).to_string()
+        } else {
+            t.clone()
+        };
+
+        match type_name.as_str() {
             "void" => Type::Void,
             "float" => Type::Number(NumberKind::Float(32)),
             "double" => Type::Number(NumberKind::Float(64)),
@@ -908,6 +1259,7 @@ impl CsParser {
             "char" => Type::Number(NumberKind::Unsigned(16)),
             "string" => Type::String,
             "object" | "var" => Type::Object,
+            "BigInteger" => Type::Number(NumberKind::BigInt),
             ty if ty.starts_with("Dictionary") => {
                 Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])
             }

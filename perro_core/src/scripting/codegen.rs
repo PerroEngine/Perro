@@ -441,7 +441,13 @@ impl Script {
         );
 
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
-        write!(out, "    node: {},\n", script.node_type).unwrap();
+        // Use "Node" as default if node_type is empty
+        let node_type = if script.node_type.is_empty() {
+            "Node"
+        } else {
+            &script.node_type
+        };
+        write!(out, "    node: {},\n", node_type).unwrap();
 
         // Use `all_script_vars` for defining struct fields to ensure the correct order
         for var in all_script_vars {
@@ -473,18 +479,23 @@ impl Script {
         .unwrap();
 
         // Optional: handle node init
-        if self.node_type == "Node" {
+        let node_type = if script.node_type.is_empty() {
+            "Node"
+        } else {
+            &script.node_type
+        };
+        if node_type == "Node" {
             write!(
                 out,
                 "    let node = {}::new(\"{}\", None);\n",
-                script.node_type, pascal_struct_name
+                node_type, pascal_struct_name
             )
             .unwrap();
         } else {
             write!(
                 out,
                 "    let node = {}::new(\"{}\");\n",
-                script.node_type, pascal_struct_name
+                node_type, pascal_struct_name
             )
             .unwrap();
         }
@@ -736,7 +747,9 @@ impl StructDef {
         writeln!(out, "pub struct {} {{", self.name).unwrap();
 
         if let Some(base) = &self.base {
-            writeln!(out, "    pub base: {},", base).unwrap();
+            if !base.is_empty() {
+                writeln!(out, "    pub base: {},", base).unwrap();
+            }
         }
 
         for field in &self.fields {

@@ -26,7 +26,7 @@ impl Variable {
     pub fn rust_type(&self) -> String {
         match &self.typ {
             Some(t) => t.to_rust_type(),
-            None => panic!("Type inference unresolved for variable"),
+            None => panic!("Type inference unresolved for variable: {}", self.name),
         }
     }
 
