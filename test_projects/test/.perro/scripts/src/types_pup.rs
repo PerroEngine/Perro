@@ -12,7 +12,7 @@ use std::{
 
 use num_bigint::BigInt;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{ToPrimitive as DecimalToPrimitive, FromPrimitive as DecimalFromPrimitive};
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
@@ -66,10 +66,10 @@ pub struct TypesPupScript {
     static_map_uint_8_float: HashMap<u8, f32>,
     static_map_string_big: HashMap<String, BigInt>,
     static_map_string_decimal: HashMap<String, Decimal>,
-    static_array_entities: Vec<GameEntity>,
-    static_array_players: Vec<TestPlayer>,
-    static_map_players: HashMap<String, TestPlayer>,
-    static_map_super_players: HashMap<String, SuperTestPlayer>,
+    static_array_entities: Vec<Value>,
+    static_array_players: Vec<Value>,
+    static_map_players: HashMap<String, Value>,
+    static_map_super_players: HashMap<String, Value>,
 }
 
 // ========================================================================
@@ -101,24 +101,24 @@ pub extern "C" fn types_pup_create_script() -> *mut dyn ScriptObject {
     let my_derived_player = SuperTestPlayer { base: TestPlayer { base: GameEntity { entity_id: 3i32, entity_name: String::from("SuperHero"), entity_type: String::from("SuperPlayer"), ..Default::default() }, pos: TestVector { x: 10.0f32, y: 10.0f32, ..Default::default() }, health: 200.0f32, mana: 100i8, ..Default::default() }, special_ability: String::from("Flight"), energy_core: Decimal::from_str("99.9").unwrap(), ..Default::default() };
     let my_derived_player_var = SuperTestPlayer { base: TestPlayer { base: GameEntity { entity_id: 4i32, entity_name: String::from("LocalHero"), entity_type: String::from("LocalPlayer"), ..Default::default() }, pos: TestVector { x: 20.0f32, y: 20.0f32, ..Default::default() }, health: 180.0f32, mana: 80i8, ..Default::default() }, special_ability: String::from("Speed"), energy_core: Decimal::from_str("80.0").unwrap(), ..Default::default() };
     let dynamic_array_inferred = vec![json!(1f32), json!(String::from("two")), json!(3.0f32), json!(untyped_num_default), json!(typed_big_int.clone()), json!(typed_decimal.clone())];
-    let dynamic_map_inferred = HashMap::from([(String::from("alpha"), json!(1f32)), (String::from("beta"), json!(typed_string.clone())), (String::from("gamma"), json!(typed_big_int.clone())), (String::from("delta"), json!(typed_decimal.clone()))]);
+    let dynamic_map_inferred = HashMap::<String, Value>::from([(String::from("alpha"), json!(json!(1f32))), (String::from("beta"), json!(json!(typed_string.clone()))), (String::from("gamma"), json!(json!(typed_big_int.clone()))), (String::from("delta"), json!(json!(typed_decimal.clone())))]);
     let dynamic_array_annotated = vec![json!(typed_int_default), json!(typed_float_64), json!(my_derived_player_var.clone()), json!(typed_big_int.clone())];
-    let dynamic_map_annotated = HashMap::from([(String::from("char"), json!(String::from("A"))), (String::from("num"), json!(typed_int_8)), (String::from("big_val"), json!(local_big_int.clone()))]);
+    let dynamic_map_annotated = HashMap::<String, Value>::from([(String::from("char"), json!(json!(String::from("A")))), (String::from("num"), json!(json!(typed_int_8))), (String::from("big_val"), json!(json!(local_big_int.clone())))]);
     let static_array_int = vec![10i32, 20i32, 30i32];
     let static_array_uint_16 = vec![1000u16, 2000u16];
     let static_array_string = vec![String::from("one"), String::from("two"), String::from("three")];
     let static_array_float_64 = vec![1.11f64, 2.22f64, 3.33f64];
     let static_array_big_int = vec![BigInt::from_str("100").unwrap(), BigInt::from_str("200").unwrap(), typed_big_int.clone()];
     let static_array_decimal = vec![Decimal::from_str("5.5").unwrap(), Decimal::from_str("6.6").unwrap(), typed_decimal.clone()];
-    let static_map_string_int_64 = HashMap::from([(String::from("level"), 10_000_000_000i64), (String::from("score"), 1_000_000_000i64)]);
-    let static_map_int_string = HashMap::from([(1i32, String::from("gold")), (2i32, String::from("silver"))]);
-    let static_map_uint_8_float = HashMap::from([(50u8, 0.5f32), (100u8, 1.5f32)]);
-    let static_map_string_big = HashMap::from([(String::from("large_num"), BigInt::from_str("9999999999999999999").unwrap()), (String::from("another_large"), BigInt::from_str("1000").unwrap())]);
-    let static_map_string_decimal = HashMap::from([(String::from("price"), Decimal::from_str("19.99").unwrap()), (String::from("tax"), Decimal::from_str("1.50").unwrap())]);
-    let static_array_entities = vec![my_base_entity.clone(), my_player.clone(), my_derived_player.clone()];
-    let static_array_players = vec![my_player.clone(), other_player.clone()];
-    let static_map_players = HashMap::from([(String::from("main"), my_player.clone()), (String::from("other"), other_player.clone())]);
-    let static_map_super_players = HashMap::from([(String::from("super"), my_derived_player.clone()), (String::from("local_super"), my_derived_player_var.clone())]);
+    let static_map_string_int_64 = HashMap::<String, i64>::from([(String::from("level"), 10_000_000_000i64), (String::from("score"), 1_000_000_000i64)]);
+    let static_map_int_string = HashMap::<i32, String>::from([(1i32, String::from("gold")), (2i32, String::from("silver"))]);
+    let static_map_uint_8_float = HashMap::<u8, f32>::from([(50u8, 0.5f32), (100u8, 1.5f32)]);
+    let static_map_string_big = HashMap::<String, BigInt>::from([(String::from("large_num"), BigInt::from_str("9999999999999999999").unwrap()), (String::from("another_large"), BigInt::from_str("1000").unwrap())]);
+    let static_map_string_decimal = HashMap::<String, Decimal>::from([(String::from("price"), Decimal::from_str("19.99").unwrap()), (String::from("tax"), Decimal::from_str("1.50").unwrap())]);
+    let static_array_entities = vec![json!(my_base_entity.clone()), json!(my_player.clone()), json!(my_derived_player.clone())];
+    let static_array_players = vec![json!(my_player.clone()), json!(other_player.clone())];
+    let static_map_players = HashMap::<String, Value>::from([(String::from("main"), json!(my_player.clone())), (String::from("other"), json!(other_player.clone()))]);
+    let static_map_super_players = HashMap::<String, Value>::from([(String::from("super"), json!(my_derived_player.clone())), (String::from("local_super"), json!(my_derived_player_var.clone()))]);
 
     Box::into_raw(Box::new(TypesPupScript {
         node,
@@ -303,51 +303,51 @@ impl Script for TypesPupScript {
 impl TypesPupScript {
     fn test_primitive_operations(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("--- Test Primitive Operations ---"));
-        let mut res_int = (self.typed_int_default + 10i32);
-        let mut res_big = (self.typed_big_int + BigInt::from_str("1000").unwrap());
-        let mut res_decimal = (self.typed_decimal + (Decimal::from_str("1.000001").unwrap() as Decimal));
+        let mut res_int: i32 = (self.typed_int_default + 10i32);
+        let mut res_big: BigInt = (self.typed_big_int.clone() + BigInt::from_str("1000").unwrap());
+        let mut res_decimal: Decimal = (self.typed_decimal.clone() + (Decimal::from_str("1.000001").unwrap() as Decimal));
         api.print(&format!("{} {} {} {}", String::from("Var + Lit:"), res_int, res_big, res_decimal));
-        let mut res_big_var = (self.typed_big_int + self.local_big_int);
-        let mut res_decimal_var = (self.typed_decimal + self.local_decimal);
+        let mut res_big_var: BigInt = (self.typed_big_int.clone() + self.local_big_int.clone());
+        let mut res_decimal_var: Decimal = (self.typed_decimal.clone() + self.local_decimal.clone());
         api.print(&format!("{} {} {}", String::from("Var + Var (Big/Dec):"), res_big_var, res_decimal_var));
-        let mut prom_float_big = ((self.typed_int_64 as f64) + (self.typed_big_int).clone().to_f64().unwrap_or_default());
-        let mut prom_float_decimal = (self.typed_float_64 + (self.typed_decimal).clone().to_f64().unwrap_or_default());
-        let mut prom_big_int = (BigInt::from(self.typed_int_64) + self.typed_big_int);
+        let mut prom_float_big: f64 = ((self.typed_int_64 as f64) + self.typed_big_int.to_f64().unwrap_or_default());
+        let mut prom_float_decimal: f64 = (self.typed_float_64 + self.typed_decimal.to_f64().unwrap_or_default());
+        let mut prom_big_int: BigInt = (BigInt::from(self.typed_int_64) + self.typed_big_int.clone());
         api.print(&format!("{} {} {} {}", String::from("Promotion (Big/Dec):"), prom_float_big, prom_float_decimal, prom_big_int));
     }
 
     fn test_explicit_casting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("--- Test Explicit Casting ---"));
-        let mut int64_to_big = BigInt::from(self.typed_int_64);
-        let mut big_to_int = (self.typed_big_int).clone().to_i32().unwrap_or_default();
-        let mut float_to_decimal = Decimal::from_f32(self.typed_float_default).unwrap_or_default();
-        let mut decimal_to_float_64 = (self.typed_decimal).clone().to_f64().unwrap_or_default();
-        let mut string_to_uint16 = (String::from("65530")).clone().parse::<u16>().unwrap_or_default();
-        let mut big_to_string = (self.typed_big_int).clone().to_string();
+        let mut int64_to_big: BigInt = BigInt::from(self.typed_int_64);
+        let mut big_to_int: i32 = self.typed_big_int.to_i32().unwrap_or_default();
+        let mut float_to_decimal: Decimal = rust_decimal::prelude::FromPrimitive::from_f32(self.typed_float_default).unwrap_or_default();
+        let mut decimal_to_float_64: f64 = self.typed_decimal.to_f64().unwrap_or_default();
+        let mut string_to_uint16: u16 = String::from("65530").parse::<u16>().unwrap_or_default();
+        let mut big_to_string: String = self.typed_big_int.to_string().clone();
         api.print(&format!("{} {} {} {} {} {} {}", String::from("Numeric Casts:"), int64_to_big, big_to_int, float_to_decimal, decimal_to_float_64, string_to_uint16, big_to_string));
-        let mut dyn_val_big = (self.dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default()).clone().clone();
-        let mut dyn_val_decimal = (self.dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default()).clone().clone();
+        let mut dyn_val_big: BigInt = self.dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
+        let mut dyn_val_decimal: Decimal = self.dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
         api.print(&format!("{} {} {}", String::from("Dyn->Big/Dec Casts:"), dyn_val_big, dyn_val_decimal));
-        let mut casted_and_op_big = ((self.dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default()).clone().clone() + self.typed_big_int);
+        let mut casted_and_op_big: BigInt = (self.dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default())) + self.typed_big_int.clone());
         api.print(&format!("{} {}", String::from("Casted & Op (Big):"), casted_and_op_big));
     }
 
     fn test_assignments(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
-        let mut assign_big_lit = BigInt::from_str("999").unwrap();
-        let mut assign_decimal_var = self.typed_decimal.clone();
+        let mut assign_big_lit: BigInt = BigInt::from_str("999").unwrap();
+        let mut assign_decimal_var: Decimal = self.typed_decimal.clone();
         api.print(&format!("{} {} {}", String::from("Simple Assign (Big/Dec):"), assign_big_lit, assign_decimal_var));
-        let mut comp_big = BigInt::from_str("100").unwrap();
+        let mut comp_big: BigInt = BigInt::from_str("100").unwrap();
         comp_big += BigInt::from_str("50").unwrap();
         api.print(&format!("{} {}", String::from("Comp Assign big +="), comp_big));
-        let mut comp_decimal = Decimal::from_str("20.0").unwrap();
+        let mut comp_decimal: Decimal = Decimal::from_str("20.0").unwrap();
         comp_decimal -= Decimal::from_str("5.5").unwrap();
         api.print(&format!("{} {}", String::from("Comp Assign decimal -="), comp_decimal));
-        let mut assign_prom_decimal = Decimal::from(self.typed_int_default);
-        assign_prom_decimal += Decimal::from_f32(self.typed_float_default).unwrap_or_default();
+        let mut assign_prom_decimal: Decimal = Decimal::from(self.typed_int_default);
+        assign_prom_decimal += { let tmp: Decimal = rust_decimal::prelude::FromPrimitive::from_f32(self.typed_float_default).unwrap_or_default(); tmp };
         api.print(&format!("{} {}", String::from("Assign Promo decimal:"), assign_prom_decimal));
-        self.my_player.pos.x = (self.typed_big_int).clone().to_f32().unwrap_or_default();
-        self.my_player.health = (self.typed_decimal).clone().to_f32().unwrap_or_default();
+        self.my_player.pos.x = self.typed_big_int.to_f32().unwrap_or_default();
+        self.my_player.health = self.typed_decimal.to_f32().unwrap_or_default();
         api.print(&format!("{} {} {}", String::from("Member Assign (Big/Dec to float):"), self.my_player.pos.x, self.my_player.health));
     }
 
@@ -364,75 +364,75 @@ impl TypesPupScript {
         api.print(&format!("{} {}", String::from("Modified SuperTestPlayer health:"), self.my_derived_player.health));
         api.print(&format!("{} {}", String::from("Modified SuperTestPlayer pos.x:"), self.my_derived_player.pos.x));
         api.print(&format!("{} {}", String::from("Modified SuperTestPlayer entity_type:"), self.my_derived_player.entity_type));
-        let mut player_as_entity = ((self.my_player).clone() as GameEntity);
+        let mut player_as_entity: GameEntity = serde_json::from_value::<GameEntity>(serde_json::to_value(&self.my_player.clone()).unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("TestPlayer as GameEntity name:"), player_as_entity.entity_name));
-        let mut super_player_as_player = ((self.my_derived_player).clone() as TestPlayer);
+        let mut super_player_as_player: TestPlayer = serde_json::from_value::<TestPlayer>(serde_json::to_value(&self.my_derived_player.clone()).unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("SuperTestPlayer as TestPlayer health:"), super_player_as_player.health));
-        let mut player_to_super_player = ((self.my_player).clone() as SuperTestPlayer);
+        let mut player_to_super_player: SuperTestPlayer = serde_json::from_value::<SuperTestPlayer>(serde_json::to_value(&self.my_player.clone()).unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("TestPlayer as SuperTestPlayer (entity_name should be Hero OR default):"), player_to_super_player.entity_name));
         api.print(&format!("{} {}", String::from("TestPlayer as SuperTestPlayer (ability should be default/empty):"), player_to_super_player.special_ability));
-        let mut super_player_roundtrip = ((self.my_derived_player).clone() as SuperTestPlayer);
+        let mut super_player_roundtrip: SuperTestPlayer = self.my_derived_player.clone();
         api.print(&format!("{} {}", String::from("SuperTestPlayer roundtrip ability (expect Flight):"), super_player_roundtrip.special_ability));
-        let mut entity_from_derived = ((self.my_derived_player).clone() as GameEntity);
+        let mut entity_from_derived: GameEntity = serde_json::from_value::<GameEntity>(serde_json::to_value(&self.my_derived_player.clone()).unwrap_or_default()).unwrap_or_default();
         entity_from_derived.entity_name = String::from("DerivedEntity");
         api.print(&format!("{} {}", String::from("Entity from Derived, name changed (expect DerivedEntity):"), entity_from_derived.entity_name));
     }
 
     fn test_dynamic_containers_ops(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("--- Test Dynamic Containers Ops ---"));
-        let mut arr_dyn_val_big = (self.dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default()).clone().clone();
+        let mut arr_dyn_val_big: BigInt = self.dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
         arr_dyn_val_big *= BigInt::from_str("2").unwrap();
         api.print(&format!("{} {}", String::from("Dyn Array Elem Op (big):"), arr_dyn_val_big));
-        let mut arr_dyn_val_decimal = (self.dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default()).clone().clone();
-        arr_dyn_val_decimal += Decimal::from_str("0.05").unwrap();
+        let mut arr_dyn_val_decimal: Decimal = self.dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
+        arr_dyn_val_decimal += { let tmp: Decimal = Decimal::from_str("0.05").unwrap(); tmp };
         api.print(&format!("{} {}", String::from("Dyn Array Elem Op (decimal):"), arr_dyn_val_decimal));
-        self.dynamic_array_inferred[0f32] = self.typed_big_int.clone();
+        self.dynamic_array_inferred[0u32 as usize] = json!(self.typed_big_int);
         self.dynamic_array_inferred.push(json!(self.local_decimal));
-        api.print(&format!("{} {}", String::from("Dyn Array Set (big):"), (self.dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default()).clone().clone()));
-        api.print(&format!("{} {}", String::from("Dyn Array Push (decimal):"), (self.dynamic_array_inferred.get((self.dynamic_array_inferred.len() - 1u32) as usize).cloned().unwrap_or_default()).clone().clone()));
-        let mut map_dyn_val_big = (self.dynamic_map_inferred.get(String::from("gamma").as_str()).cloned().unwrap_or_default()).clone().clone();
+        api.print(&format!("{} {}", String::from("Dyn Array Set (big):"), self.dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()))));
+        api.print(&format!("{} {}", String::from("Dyn Array Push (decimal):"), self.dynamic_array_inferred.get((self.dynamic_array_inferred.len() - (1u32 as usize)) as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.dynamic_array_inferred.get((self.dynamic_array_inferred.len() - (1u32 as usize)) as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default())));
+        let mut map_dyn_val_big: BigInt = self.dynamic_map_inferred.get(String::from("gamma").as_str()).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.dynamic_map_inferred.get(String::from("gamma").as_str()).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
         map_dyn_val_big -= BigInt::from_str("12345678901234567800").unwrap();
         api.print(&format!("{} {}", String::from("Dyn Map Elem Op (big):"), map_dyn_val_big));
-        let mut map_dyn_val_decimal = (self.dynamic_map_inferred.get(String::from("delta").as_str()).cloned().unwrap_or_default()).clone().clone();
+        let mut map_dyn_val_decimal: Decimal = self.dynamic_map_inferred.get(String::from("delta").as_str()).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.dynamic_map_inferred.get(String::from("delta").as_str()).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
         map_dyn_val_decimal *= Decimal::from_str("2").unwrap();
         api.print(&format!("{} {}", String::from("Dyn Map Elem Op (decimal):"), map_dyn_val_decimal));
         self.dynamic_map_inferred.insert(String::from("new_big"), json!(self.local_big_int));
         self.dynamic_map_inferred.insert(String::from("new_decimal"), json!(self.typed_decimal));
-        api.print(&format!("{} {}", String::from("Dyn Map Set (new_big):"), (self.dynamic_map_inferred.get(String::from("new_big").as_str()).cloned().unwrap_or_default()).clone().clone()));
-        api.print(&format!("{} {}", String::from("Dyn Map Set (new_decimal):"), (self.dynamic_map_inferred.get(String::from("new_decimal").as_str()).cloned().unwrap_or_default()).clone().clone()));
-        let mut dyn_map_numeric_key_big = HashMap::from([(self.typed_int_default, json!(self.typed_big_int))]);
-        api.print(&format!("{} {}", String::from("Dyn Map Num Key Big (20):"), (dyn_map_numeric_key_big.get(String::from("20").as_str()).cloned().unwrap_or_default()).clone().clone()));
-        let mut dyn_map_numeric_key_decimal = HashMap::from([(self.typed_float_default, json!(self.typed_decimal))]);
-        api.print(&format!("{} {}", String::from("Dyn Map Num Key Dec (30.5):"), (dyn_map_numeric_key_decimal.get(String::from("30.5").as_str()).cloned().unwrap_or_default()).clone().clone()));
+        api.print(&format!("{} {}", String::from("Dyn Map Set (new_big):"), self.dynamic_map_inferred.get(String::from("new_big").as_str()).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.dynamic_map_inferred.get(String::from("new_big").as_str()).cloned().unwrap_or_default().as_i64().unwrap_or_default()))));
+        api.print(&format!("{} {}", String::from("Dyn Map Set (new_decimal):"), self.dynamic_map_inferred.get(String::from("new_decimal").as_str()).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.dynamic_map_inferred.get(String::from("new_decimal").as_str()).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default())));
+        let mut dyn_map_numeric_key_big: HashMap<String, Value> = HashMap::<String, Value>::from([(self.typed_int_default.to_string(), json!(json!(self.typed_big_int)))]);
+        api.print(&format!("{} {}", String::from("Dyn Map Num Key Big (20):"), dyn_map_numeric_key_big.get(String::from("20").as_str()).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(dyn_map_numeric_key_big.get(String::from("20").as_str()).cloned().unwrap_or_default().as_i64().unwrap_or_default()))));
+        let mut dyn_map_numeric_key_decimal: HashMap<String, Value> = HashMap::<String, Value>::from([(self.typed_float_default.to_string(), json!(json!(self.typed_decimal)))]);
+        api.print(&format!("{} {}", String::from("Dyn Map Num Key Dec (30.5):"), dyn_map_numeric_key_decimal.get(String::from("30.5").as_str()).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(dyn_map_numeric_key_decimal.get(String::from("30.5").as_str()).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default())));
     }
 
     fn test_static_containers_ops(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
         api.print(&String::from("--- Test Static Containers Ops ---"));
-        let mut arr_static_big_elem = self.static_array_big_int.get(0u32 as usize).cloned().unwrap_or_default();
+        let mut arr_static_big_elem: BigInt = self.static_array_big_int.get(0u32 as usize).cloned().unwrap_or_default();
         arr_static_big_elem += BigInt::from_str("50").unwrap();
         api.print(&format!("{} {}", String::from("Static Array[big] Elem Op:"), arr_static_big_elem));
-        let mut arr_static_decimal_elem = self.static_array_decimal.get(0u32 as usize).cloned().unwrap_or_default();
+        let mut arr_static_decimal_elem: Decimal = self.static_array_decimal.get(0u32 as usize).cloned().unwrap_or_default();
         arr_static_decimal_elem -= Decimal::from_str("0.05").unwrap();
         api.print(&format!("{} {}", String::from("Static Array[decimal] Elem Op:"), arr_static_decimal_elem));
-        let mut map_static_big_val = self.static_map_string_big.get(String::from("large_num").as_str()).cloned().unwrap_or_default();
+        let mut map_static_big_val: BigInt = self.static_map_string_big.get(String::from("large_num").as_str()).cloned().unwrap_or_default();
         map_static_big_val *= BigInt::from_str("2").unwrap();
         api.print(&format!("{} {}", String::from("Static Map<string:big> Elem Op:"), map_static_big_val));
-        let mut map_static_decimal_val = self.static_map_string_decimal.get(String::from("price").as_str()).cloned().unwrap_or_default();
-        map_static_decimal_val += Decimal::from_str("0.01").unwrap();
+        let mut map_static_decimal_val: Decimal = self.static_map_string_decimal.get(String::from("price").as_str()).cloned().unwrap_or_default();
+        map_static_decimal_val += { let tmp: Decimal = Decimal::from_str("0.01").unwrap(); tmp };
         api.print(&format!("{} {}", String::from("Static Map<string:decimal> Elem Op:"), map_static_decimal_val));
-        let mut big_to_uint8_key_float_val = self.static_map_uint_8_float.get(&(self.typed_big_int).clone().to_u8().unwrap_or_default()).cloned().unwrap_or_default();
+        let mut big_to_uint8_key_float_val: f32 = self.static_map_uint_8_float.get(&self.typed_big_int.to_u8().unwrap_or_default()).cloned().unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Map<uint_8:float> Get with big key:"), big_to_uint8_key_float_val));
-        let mut base_entity = self.static_array_entities.get(0u32 as usize).cloned().unwrap_or_default();
+        let mut base_entity: GameEntity = serde_json::from_value::<GameEntity>(self.static_array_entities.get(0u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Array[Entity] base_entity name:"), base_entity.entity_name));
-        let mut player_as_entity_from_array = self.static_array_entities.get(1u32 as usize).cloned().unwrap_or_default();
+        let mut player_as_entity_from_array: GameEntity = serde_json::from_value::<GameEntity>(self.static_array_entities.get(1u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Array[Entity] player_as_entity_from_array name:"), player_as_entity_from_array.entity_name));
-        let mut super_player_as_entity_from_array = self.static_array_entities.get(2u32 as usize).cloned().unwrap_or_default();
+        let mut super_player_as_entity_from_array: GameEntity = serde_json::from_value::<GameEntity>(self.static_array_entities.get(2u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Array[Entity] super_player_as_entity_from_array name:"), super_player_as_entity_from_array.entity_name));
-        let mut casted_player = ((self.static_array_entities.get(1u32 as usize).cloned().unwrap_or_default()).clone() as TestPlayer);
+        let mut casted_player: TestPlayer = serde_json::from_value::<TestPlayer>(serde_json::to_value(&serde_json::from_value::<GameEntity>(self.static_array_entities.get(1u32 as usize).cloned().unwrap_or_default()).unwrap_or_default().clone()).unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Array[Entity] Casted Player health:"), casted_player.health));
-        let mut casted_super_player = ((self.static_array_entities.get(2u32 as usize).cloned().unwrap_or_default()).clone() as SuperTestPlayer);
+        let mut casted_super_player: SuperTestPlayer = serde_json::from_value::<SuperTestPlayer>(serde_json::to_value(&serde_json::from_value::<GameEntity>(self.static_array_entities.get(2u32 as usize).cloned().unwrap_or_default()).unwrap_or_default().clone()).unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Array[Entity] Casted SuperPlayer ability:"), casted_super_player.special_ability));
-        let mut incompatible_downcast = ((self.static_array_entities.get(0u32 as usize).cloned().unwrap_or_default()).clone() as SuperTestPlayer);
+        let mut incompatible_downcast: SuperTestPlayer = serde_json::from_value::<SuperTestPlayer>(serde_json::to_value(&serde_json::from_value::<GameEntity>(self.static_array_entities.get(0u32 as usize).cloned().unwrap_or_default()).unwrap_or_default().clone()).unwrap_or_default()).unwrap_or_default();
         api.print(&format!("{} {}", String::from("Static Array[Entity] Incompatible Downcast name:"), incompatible_downcast.entity_name));
     }
 
@@ -851,28 +851,28 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut TypesPupScript, Value) -> Option<()>
                                 },
         9044830729489509861u64 => |script: &mut TypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<GameEntity>>(val) {
-                                        script.static_array_entities = vec_typed;
+                                        script.static_array_entities = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                         return Some(());
                                     }
                                     None
                                 },
         1181354728222443296u64 => |script: &mut TypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<TestPlayer>>(val) {
-                                        script.static_array_players = vec_typed;
+                                        script.static_array_players = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                         return Some(());
                                     }
                                     None
                                 },
         16255415596013162047u64 => |script: &mut TypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, TestPlayer>>(val) {
-                                        script.static_map_players = map_typed;
+                                        script.static_map_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                         return Some(());
                                     }
                                     None
                                 },
         937814722116048519u64 => |script: &mut TypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, SuperTestPlayer>>(val) {
-                                        script.static_map_super_players = map_typed;
+                                        script.static_map_super_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                         return Some(());
                                     }
                                     None
@@ -1022,22 +1022,22 @@ static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut TypesPupScript, &Value)> = phf::ph
                                 },
         9044830729489509861u64 => |script: &mut TypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<GameEntity>>(val.clone()) {
-                                        script.static_array_entities = vec_typed;
+                                        script.static_array_entities = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                     }
                                 },
         1181354728222443296u64 => |script: &mut TypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<TestPlayer>>(val.clone()) {
-                                        script.static_array_players = vec_typed;
+                                        script.static_array_players = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                     }
                                 },
         16255415596013162047u64 => |script: &mut TypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, TestPlayer>>(val.clone()) {
-                                        script.static_map_players = map_typed;
+                                        script.static_map_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                     }
                                 },
         937814722116048519u64 => |script: &mut TypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, SuperTestPlayer>>(val.clone()) {
-                                        script.static_map_super_players = map_typed;
+                                        script.static_map_super_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                     }
                                 },
 };

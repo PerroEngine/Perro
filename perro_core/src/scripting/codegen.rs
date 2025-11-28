@@ -411,6 +411,7 @@ impl Script {
         // External crates
         out.push_str("use num_bigint::BigInt;\n");
         out.push_str("use rust_decimal::Decimal;\n");
+        out.push_str("use rust_decimal::prelude::{FromPrimitive, ToPrimitive};\n");
         out.push_str("use serde::{Deserialize, Serialize};\n");
         out.push_str("use serde_json::{json, Value};\n");
         out.push_str("use smallvec::{smallvec, SmallVec};\n");
@@ -940,21 +941,69 @@ impl Stmt {
 
             Stmt::VariableDecl(var) => {
                 let expr_str = if let Some(expr) = &var.value {
-                    let raw_expr = expr.to_rust(needs_self, script, current_func);
+                    // Pass the variable's type as expected type so map/array literals know what to generate
+                    let raw_expr =
+                        expr.expr
+                            .to_rust(needs_self, script, var.typ.as_ref(), current_func);
 
-                    match &expr.expr {
-                        Expr::Ident(_) | Expr::MemberAccess(..) => {
-                            if let Some(ty) = script.infer_expr_type(&expr.expr, current_func) {
-                                if ty.requires_clone() {
-                                    format!("{}.clone()", raw_expr)
-                                } else {
-                                    raw_expr
-                                }
+                    // Check if we need to clone based on both the expression type and variable type
+                    let var_type_is_custom = var
+                        .typ
+                        .as_ref()
+                        .map_or(false, |t| matches!(t, Type::Custom(_)));
+                    let var_type_requires_clone =
+                        var.typ.as_ref().map_or(false, |t| t.requires_clone());
+                    let expr_type = script.infer_expr_type(&expr.expr, current_func);
+
+                    // Check if the expression is an Ident that refers to a struct field (which will get self. prefix)
+                    // OR if it's a Cast with an Ident inside that is a struct field
+                    let is_struct_field_access = match &expr.expr {
+                        Expr::Ident(name) => script.is_struct_field(name),
+                        Expr::Cast(inner, _) => {
+                            if let Expr::Ident(name) = inner.as_ref() {
+                                script.is_struct_field(name)
                             } else {
-                                raw_expr
+                                false
                             }
                         }
-                        _ => raw_expr,
+                        Expr::MemberAccess(..) => true, // MemberAccess always needs checking
+                        _ => false,
+                    };
+
+                    let needs_clone = if is_struct_field_access {
+                        // Always clone struct field access when assigning to a custom type (to avoid move errors)
+                        var_type_is_custom
+                            || var_type_requires_clone
+                            || expr_type.as_ref().map_or(false, |ty| ty.requires_clone())
+                    } else if matches!(expr.expr, Expr::Ident(_)) {
+                        // Clone if the expression type requires it, or if assigning to a custom type
+                        expr_type.as_ref().map_or(var_type_requires_clone, |ty| {
+                            ty.requires_clone() || var_type_requires_clone
+                        })
+                    } else {
+                        false
+                    };
+
+                    // Also check if the generated code contains self. but doesn't have .clone() yet
+                    // This handles cases where casts might be optimized away but we still need to clone
+                    let needs_clone_fallback = if !needs_clone && var_type_is_custom {
+                        raw_expr.contains("self.") && !raw_expr.contains(".clone()")
+                    } else {
+                        false
+                    };
+
+                    // Don't clone if the expression already produces an owned value (e.g., from unwrap_or_default, from_str, etc.)
+                    // This is important for generic functions like FromPrimitive::from_f32 where cloning breaks type inference
+                    let already_owned = raw_expr.contains(".unwrap_or_default()")
+                        || raw_expr.contains(".unwrap()")
+                        || raw_expr.contains("::from_str")
+                        || raw_expr.contains("::from(")
+                        || raw_expr.contains("::new(");
+
+                    if (needs_clone || needs_clone_fallback) && !already_owned {
+                        format!("{}.clone()", raw_expr)
+                    } else {
+                        raw_expr
                     }
                 } else if var.typ.is_some() {
                     var.default_value()
@@ -962,10 +1011,20 @@ impl Stmt {
                     String::new()
                 };
 
-                if expr_str.is_empty() {
-                    format!("        let mut {};\n", var.name)
+                // Add type annotation if variable has explicit type
+                let type_annotation = if let Some(typ) = &var.typ {
+                    format!(": {}", typ.to_rust_type())
                 } else {
-                    format!("        let mut {} = {};\n", var.name, expr_str)
+                    String::new()
+                };
+
+                if expr_str.is_empty() {
+                    format!("        let mut {}{};\n", var.name, type_annotation)
+                } else {
+                    format!(
+                        "        let mut {}{} = {};\n",
+                        var.name, type_annotation, expr_str
+                    )
                 }
             }
             Stmt::Assign(name, expr) => {
@@ -982,8 +1041,20 @@ impl Stmt {
                     expr.expr
                         .to_rust(needs_self, script, target_type.as_ref(), current_func);
 
-                let should_clone = matches!(expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
-                    && expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
+                // Clone if:
+                // 1. Expression type requires clone (BigInt, Decimal, String, etc.)
+                // 2. OR if it's a MemberAccess and target type is a custom type (to avoid move errors)
+                let should_clone = if matches!(expr.expr, Expr::Ident(_) | Expr::MemberAccess(..)) {
+                    let expr_requires_clone =
+                        expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
+                    let target_is_custom = target_type
+                        .as_ref()
+                        .map_or(false, |t| matches!(t, Type::Custom(_)));
+                    let is_member_access = matches!(expr.expr, Expr::MemberAccess(..));
+                    expr_requires_clone || (is_member_access && target_is_custom)
+                } else {
+                    false
+                };
 
                 if should_clone {
                     expr_str = format!("{}.clone()", expr_str);
@@ -1038,11 +1109,20 @@ impl Stmt {
                         } else {
                             expr_str
                         };
+                        // For Decimal AddAssign, ensure the expression is clearly typed as owned Decimal
+                        let final_expr = if *target_type == Type::Number(NumberKind::Decimal)
+                            && matches!(op, Op::Add)
+                        {
+                            // Use a block with explicit type to help compiler choose AddAssign<Decimal> impl
+                            format!("{{ let tmp: Decimal = {}; tmp }}", cast_expr)
+                        } else {
+                            cast_expr
+                        };
                         format!(
                             "        {} {}= {};\n",
                             target,
                             op.to_rust_assign(),
-                            cast_expr
+                            final_expr
                         )
                     } else {
                         format!(
@@ -1181,10 +1261,27 @@ impl Stmt {
 
             Stmt::IndexAssign(array_expr, index_expr, rhs_expr) => {
                 let array_code = array_expr.to_rust(needs_self, script, None, current_func);
-                let index_code = index_expr.to_rust(needs_self, script, None, current_func);
+                // Ensure index is usize for array indexing
+                let index_code_raw = index_expr.to_rust(
+                    needs_self,
+                    script,
+                    Some(&Type::Number(NumberKind::Unsigned(32))),
+                    current_func,
+                );
+                let index_code = format!("{} as usize", index_code_raw);
 
                 let lhs_type = script.infer_expr_type(&array_expr, current_func);
                 let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
+
+                // Check if this is a dynamic array (Vec<Value>) that needs special handling
+                let is_dynamic_array =
+                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = &lhs_type {
+                        inner_types
+                            .get(0)
+                            .map_or(true, |t| *t == Type::Object || matches!(t, Type::Custom(_)))
+                    } else {
+                        false
+                    };
 
                 let mut rhs_code =
                     rhs_expr
@@ -1206,62 +1303,103 @@ impl Stmt {
                     rhs_code
                 };
 
+                // For dynamic arrays, wrap the value in json!()
+                let final_rhs_wrapped = if is_dynamic_array {
+                    // Check if it's already wrapped in json!() or is a Value
+                    if final_rhs.starts_with("json!") || final_rhs.contains("Value") {
+                        final_rhs
+                    } else {
+                        format!("json!({})", final_rhs)
+                    }
+                } else {
+                    final_rhs
+                };
+
                 // Insert `.clone()` if needed, matching your member assign arm
-                let should_clone = matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
+                let should_clone = !is_dynamic_array
+                    && matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
                     && rhs_type.as_ref().map_or(false, |ty| ty.requires_clone());
 
                 if should_clone {
                     format!(
                         "        {}[{}] = {}.clone();\n",
-                        array_code, index_code, final_rhs
+                        array_code, index_code, final_rhs_wrapped
                     )
                 } else {
-                    format!("        {}[{}] = {};\n", array_code, index_code, final_rhs)
+                    format!(
+                        "        {}[{}] = {};\n",
+                        array_code, index_code, final_rhs_wrapped
+                    )
                 }
             }
 
             Stmt::IndexAssignOp(array_expr, index_expr, op, rhs_expr) => {
                 let array_code = array_expr.to_rust(needs_self, script, None, current_func);
-                let index_code = index_expr.to_rust(needs_self, script, None, current_func);
+                // Ensure index is usize for array indexing
+                let index_code_raw = index_expr.to_rust(
+                    needs_self,
+                    script,
+                    Some(&Type::Number(NumberKind::Unsigned(32))),
+                    current_func,
+                );
+                let index_code = format!("{} as usize", index_code_raw);
 
                 let lhs_type = script.infer_expr_type(&array_expr, current_func);
                 let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
 
-                let mut rhs_code =
-                    rhs_expr
-                        .expr
-                        .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+                // Check if this is a dynamic array (Vec<Value>) that needs special handling
+                let is_dynamic_array =
+                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = &lhs_type {
+                        inner_types
+                            .get(0)
+                            .map_or(true, |t| *t == Type::Object || matches!(t, Type::Custom(_)))
+                    } else {
+                        false
+                    };
 
-                // Special case: string += something becomes push_str.
-                if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
-                    return format!(
-                        "        {}[{}].push_str({}.as_str());\n",
-                        array_code, index_code, rhs_code
-                    );
-                }
+                if is_dynamic_array {
+                    // For dynamic arrays stored as Vec<Value>, operations need explicit casting
+                    // This is a limitation - the user should cast the element first
+                    format!(
+                        "        // TODO: Dynamic array compound assignment - cast element to type first, do operation, then assign back as json!()\n"
+                    )
+                } else {
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
 
-                // Insert implicit cast if needed
-                let final_rhs = if let Some(lhs_ty) = &lhs_type {
-                    if let Some(rhs_ty) = &rhs_type {
-                        if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
-                            script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                    // Special case: string += something becomes push_str.
+                    if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
+                        return format!(
+                            "        {}[{}].push_str({}.as_str());\n",
+                            array_code, index_code, rhs_code
+                        );
+                    }
+
+                    // Insert implicit cast if needed
+                    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+                        if let Some(rhs_ty) = &rhs_type {
+                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                            } else {
+                                rhs_code
+                            }
                         } else {
                             rhs_code
                         }
                     } else {
                         rhs_code
-                    }
-                } else {
-                    rhs_code
-                };
+                    };
 
-                format!(
-                    "        {}[{}] {}= {};\n",
-                    array_code,
-                    index_code,
-                    op.to_rust_assign(),
-                    final_rhs
-                )
+                    format!(
+                        "        {}[{}] {}= {};\n",
+                        array_code,
+                        index_code,
+                        op.to_rust_assign(),
+                        final_rhs
+                    )
+                }
             }
         }
     }
@@ -1508,30 +1646,87 @@ impl Expr {
                 let right_raw =
                     right.to_rust(needs_self, script, dominant_type.as_ref(), current_func);
 
-                let (left_str, right_str) = match (&left_type, &right_type, &dominant_type) {
-                    (Some(l), Some(r), Some(dom)) => {
-                        let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
-                            script.generate_implicit_cast_for_expr(&left_raw, l, dom)
-                        } else {
-                            left_raw
-                        };
-                        let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
-                            script.generate_implicit_cast_for_expr(&right_raw, r, dom)
-                        } else {
-                            right_raw
-                        };
-                        (l_cast, r_cast)
+                // Special handling: len() returns usize in Rust, so if we're doing operations with it,
+                // ensure the other operand is also usize
+                let left_is_len = matches!(
+                    left.as_ref(),
+                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
+                );
+                let right_is_len = matches!(
+                    right.as_ref(),
+                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
+                );
+
+                let (left_str, right_str) = {
+                    let mut l_str = left_raw.clone();
+                    let mut r_str = right_raw.clone();
+
+                    // If left is len() and right is u32/u64 or a literal that looks like u32, convert right to usize
+                    if left_is_len {
+                        // Check the rendered string first (most reliable)
+                        if right_raw.ends_with("u32") || right_raw.ends_with("u") {
+                            r_str = format!("({} as usize)", r_str);
+                        } else if matches!(right_type, Some(Type::Number(NumberKind::Unsigned(32))))
+                        {
+                            r_str = format!("({} as usize)", r_str);
+                        } else if matches!(right_type, Some(Type::Number(NumberKind::Unsigned(64))))
+                        {
+                            r_str = format!("({} as usize)", r_str);
+                        } else if let Expr::Literal(Literal::Number(n)) = right.as_ref() {
+                            // Check if it's a u32 literal (ends with u32 or is just a number that should be usize)
+                            if n.ends_with("u32") || n.ends_with("u") {
+                                r_str = format!("({} as usize)", r_str);
+                            }
+                        }
                     }
-                    _ => (left_raw, right_raw),
+                    // If right is len() and left is u32/u64 or a literal, convert left to usize
+                    if right_is_len {
+                        // Check the rendered string first (most reliable)
+                        if left_raw.ends_with("u32") || left_raw.ends_with("u") {
+                            l_str = format!("({} as usize)", l_str);
+                        } else if matches!(left_type, Some(Type::Number(NumberKind::Unsigned(32))))
+                        {
+                            l_str = format!("({} as usize)", l_str);
+                        } else if matches!(left_type, Some(Type::Number(NumberKind::Unsigned(64))))
+                        {
+                            l_str = format!("({} as usize)", l_str);
+                        } else if let Expr::Literal(Literal::Number(n)) = left.as_ref() {
+                            if n.ends_with("u32") || n.ends_with("u") {
+                                l_str = format!("({} as usize)", l_str);
+                            }
+                        }
+                    }
+
+                    // Apply normal type conversions
+                    match (&left_type, &right_type, &dominant_type) {
+                        (Some(l), Some(r), Some(dom)) => {
+                            let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
+                                script.generate_implicit_cast_for_expr(&l_str, l, dom)
+                            } else {
+                                l_str
+                            };
+                            let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
+                                script.generate_implicit_cast_for_expr(&r_str, r, dom)
+                            } else {
+                                r_str
+                            };
+                            (l_cast, r_cast)
+                        }
+                        _ => (l_str, r_str),
+                    }
                 };
+
+                // Apply cloning if needed for non-Copy types (BigInt, Decimal, String, etc.)
+                let left_final = Expr::clone_if_needed(left_str, left, script, current_func);
+                let right_final = Expr::clone_if_needed(right_str, right, script, current_func);
 
                 if matches!(op, Op::Add)
                     && (left_type == Some(Type::String) || right_type == Some(Type::String))
                 {
-                    return format!("format!(\"{{}}{{}}\", {}, {})", left_str, right_str);
+                    return format!("format!(\"{{}}{{}}\", {}, {})", left_final, right_final);
                 }
 
-                format!("({} {} {})", left_str, op.to_rust(), right_str)
+                format!("({} {} {})", left_final, op.to_rust(), right_final)
             }
             Expr::MemberAccess(base, field) => {
                 let base_type = script.infer_expr_type(base, current_func);
@@ -1751,33 +1946,78 @@ impl Expr {
                                     current_func,
                                 );
 
-                                let k_final = if Expr::should_clone_expr(
-                                    &raw_k,
-                                    k_expr,
-                                    script,
-                                    current_func,
-                                ) {
-                                    format!("{}.clone()", raw_k)
+                                // For dynamic maps (String keys), convert numeric keys to strings
+                                let k_final = if *expected_key_type == Type::String {
+                                    let k_type = script.infer_expr_type(k_expr, current_func);
+                                    match k_type {
+                                        Some(Type::Number(_)) | Some(Type::Bool) => {
+                                            format!("{}.to_string()", raw_k)
+                                        }
+                                        _ => {
+                                            if Expr::should_clone_expr(
+                                                &raw_k,
+                                                k_expr,
+                                                script,
+                                                current_func,
+                                            ) {
+                                                format!("{}.clone()", raw_k)
+                                            } else {
+                                                raw_k
+                                            }
+                                        }
+                                    }
                                 } else {
-                                    raw_k
+                                    if Expr::should_clone_expr(&raw_k, k_expr, script, current_func)
+                                    {
+                                        format!("{}.clone()", raw_k)
+                                    } else {
+                                        raw_k
+                                    }
                                 };
 
-                                let v_final = if Expr::should_clone_expr(
-                                    &raw_v,
-                                    v_expr,
-                                    script,
-                                    current_func,
-                                ) {
-                                    format!("{}.clone()", raw_v)
+                                // Wrap value in json!() if this is a dynamic map (Value type) or custom type
+                                let v_final = if *expected_val_type == Type::Object
+                                    || matches!(expected_val_type, Type::Custom(_))
+                                {
+                                    // For dynamic maps or custom types, wrap in json!()
+                                    if Expr::should_clone_expr(&raw_v, v_expr, script, current_func)
+                                    {
+                                        format!("json!({}.clone())", raw_v)
+                                    } else {
+                                        format!("json!({})", raw_v)
+                                    }
                                 } else {
-                                    raw_v
+                                    // For typed maps, just clone if needed
+                                    if Expr::should_clone_expr(&raw_v, v_expr, script, current_func)
+                                    {
+                                        format!("{}.clone()", raw_v)
+                                    } else {
+                                        raw_v
+                                    }
                                 };
 
                                 format!("({}, {})", k_final, v_final)
                             })
                             .collect();
 
-                        format!("HashMap::from([{}])", entries.join(", "))
+                        // Determine the correct HashMap type based on expected types
+                        let final_code = if *expected_val_type == Type::Object
+                            || matches!(expected_val_type, Type::Custom(_))
+                        {
+                            // Dynamic map: HashMap<String, Value>
+                            format!("HashMap::<String, Value>::from([{}])", entries.join(", "))
+                        } else {
+                            // Typed map: HashMap<K, V>
+                            let key_rust = expected_key_type.to_rust_type();
+                            let val_rust = expected_val_type.to_rust_type();
+                            format!(
+                                "HashMap::<{}, {}>::from([{}])",
+                                key_rust,
+                                val_rust,
+                                entries.join(", ")
+                            )
+                        };
+                        final_code
                     };
 
                     if matches!(expected_type, Some(Type::Object)) {
@@ -1808,11 +2048,27 @@ impl Expr {
                             .map(|e| {
                                 let rendered =
                                     e.to_rust(needs_self, script, Some(elem_ty), current_func);
-                                if Expr::should_clone_expr(&rendered, e, script, current_func) {
-                                    format!("{}.clone()", rendered)
-                                } else {
-                                    rendered
-                                }
+
+                                // If this is a custom type array, wrap each element in json!()
+                                let final_rendered = match elem_ty {
+                                    Type::Custom(_) => {
+                                        // Custom types need to be serialized to Value for polymorphic arrays
+                                        format!("json!({})", rendered)
+                                    }
+                                    _ => {
+                                        if Expr::should_clone_expr(
+                                            &rendered,
+                                            e,
+                                            script,
+                                            current_func,
+                                        ) {
+                                            format!("{}.clone()", rendered)
+                                        } else {
+                                            rendered
+                                        }
+                                    }
+                                };
+                                final_rendered
                             })
                             .collect();
 
@@ -2209,11 +2465,17 @@ impl Expr {
                     (
                         Some(Type::Number(NumberKind::Float(32))),
                         Type::Number(NumberKind::Decimal),
-                    ) => format!("Decimal::from_f32({}).unwrap_or_default()", inner_code),
+                    ) => format!(
+                        "rust_decimal::prelude::FromPrimitive::from_f32({}).unwrap_or_default()",
+                        inner_code
+                    ),
                     (
                         Some(Type::Number(NumberKind::Float(64))),
                         Type::Number(NumberKind::Decimal),
-                    ) => format!("Decimal::from_f64({}).unwrap_or_default()", inner_code),
+                    ) => format!(
+                        "rust_decimal::prelude::FromPrimitive::from_f64({}).unwrap_or_default()",
+                        inner_code
+                    ),
 
                     // Decimal ↔ BigInt
                     (Some(Type::Number(NumberKind::Decimal)), Type::Number(NumberKind::BigInt)) => {
@@ -2304,6 +2566,22 @@ impl Expr {
 
                             Type::Bool => format!("{}.as_bool().unwrap_or_default()", inner_code),
 
+                            Type::Number(NumberKind::BigInt) => {
+                                // Value to BigInt: try as string first (JSON serializes BigInt as string)
+                                format!(
+                                    "{}.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
+                                    inner_code, inner_code
+                                )
+                            }
+
+                            Type::Number(NumberKind::Decimal) => {
+                                // Value to Decimal: try as string first, then use FromPrimitive for f64
+                                format!(
+                                    "{}.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default())",
+                                    inner_code, inner_code
+                                )
+                            }
+
                             Type::Custom(name) => format!(
                                 "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
                                 name, inner_code
@@ -2330,6 +2608,41 @@ impl Expr {
 
                             _ => format!("{}.clone()", inner_code),
                         }
+                    }
+
+                    // Custom type to Custom type (struct casts)
+                    (Some(Type::Custom(from_name)), Type::Custom(to_name)) => {
+                        if from_name == to_name {
+                            inner_code
+                        } else {
+                            // Use serde_json conversion for struct casts - clone if it's a MemberAccess to avoid move
+                            let cloned_code = if inner_code.contains("self.")
+                                && !inner_code.contains(".clone()")
+                            {
+                                format!("{}.clone()", inner_code)
+                            } else {
+                                inner_code
+                            };
+                            format!(
+                                "serde_json::from_value::<{}>(serde_json::to_value(&{}).unwrap_or_default()).unwrap_or_default()",
+                                to_name, cloned_code
+                            )
+                        }
+                    }
+
+                    // Custom type to Custom type (from any type)
+                    (_, Type::Custom(to_name)) => {
+                        // Clone if it's a MemberAccess to avoid move
+                        let cloned_code =
+                            if inner_code.contains("self.") && !inner_code.contains(".clone()") {
+                                format!("{}.clone()", inner_code)
+                            } else {
+                                inner_code
+                            };
+                        format!(
+                            "serde_json::from_value::<{}>(serde_json::to_value(&{}).unwrap_or_default()).unwrap_or_default()",
+                            to_name, cloned_code
+                        )
                     }
 
                     _ => {
@@ -2362,7 +2675,13 @@ impl Expr {
                         let key_ty = inner_types.get(0).unwrap_or(&Type::String);
                         // No need to re-infer key_code, already done above with correct type
                         let final_key_code = if *key_ty == Type::String {
-                            format!("{}.as_str()", key_code)
+                            // For String keys, convert the key to string if it's not already
+                            let key_type = script.infer_expr_type(key, current_func);
+                            if matches!(key_type, Some(Type::Number(_)) | Some(Type::Bool)) {
+                                format!("{}.to_string().as_str()", key_code)
+                            } else {
+                                format!("{}.as_str()", key_code)
+                            }
                         } else {
                             format!("&{}", key_code)
                         };
@@ -2383,19 +2702,40 @@ impl Expr {
                     // ----------------------------------------------------------
                     // ✅ Arrays: differentiate typed Vec<T> vs. Vec<Value>
                     // ----------------------------------------------------------
-                    Some(Type::Container(ContainerKind::Array, _)) => {
-                        // inner_types not needed for codegen here, inference does the heavy lifting
+                    Some(Type::Container(ContainerKind::Array, ref inner_types)) => {
                         let index_code = key.to_rust(
                             needs_self,
                             script,
                             Some(&Type::Number(NumberKind::Unsigned(32))),
                             current_func,
                         );
-                        // Result from .get() is cloned, so it's a T or Value, handled by infer_expr_type
-                        format!(
-                            "{}.get({} as usize).cloned().unwrap_or_default()",
-                            base_code, index_code
-                        )
+
+                        // Check if this is a custom type array (polymorphic - stored as Vec<Value>)
+                        if let Some(inner_type) = inner_types.get(0) {
+                            match inner_type {
+                                Type::Custom(_) => {
+                                    // Custom type arrays are stored as Vec<Value>, auto-cast on access
+                                    let rust_type = inner_type.to_rust_type();
+                                    format!(
+                                        "serde_json::from_value::<{}>({}.get({} as usize).cloned().unwrap_or_default()).unwrap_or_default()",
+                                        rust_type, base_code, index_code
+                                    )
+                                }
+                                _ => {
+                                    // Primitive types - direct access
+                                    format!(
+                                        "{}.get({} as usize).cloned().unwrap_or_default()",
+                                        base_code, index_code
+                                    )
+                                }
+                            }
+                        } else {
+                            // No inner type specified - treat as Vec<Value>
+                            format!(
+                                "{}.get({} as usize).cloned().unwrap_or_default()",
+                                base_code, index_code
+                            )
+                        }
                     }
 
                     // ----------------------------------------------------------
@@ -2611,17 +2951,40 @@ pub fn implement_script_boilerplate(
                     ContainerKind::Array => {
                         let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
                         let elem_rs = elem_ty.to_rust_type();
+                        let field_rust_type = var
+                            .typ
+                            .as_ref()
+                            .map(|t| t.to_rust_type())
+                            .unwrap_or_default();
+                        // Check if field is Vec<Value> (for custom types or Object)
+                        let is_value_vec = field_rust_type == "Vec<Value>"
+                            || *elem_ty == Type::Object
+                            || matches!(elem_ty, Type::Custom(_));
                         if *elem_ty != Type::Object {
-                            writeln!(
-                                set_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                            if is_value_vec {
+                                // Convert Vec<T> to Vec<Value>
+                                writeln!(
+                                    set_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
+                                        script.{name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
+                                        return Some(());
+                                    }}
+                                    None
+                                }},"
+                                ).unwrap();
+                            } else {
+                                writeln!(
+                                    set_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
                                         script.{name} = vec_typed;
                                         return Some(());
                                     }}
                                     None
                                 }},"
-                            ).unwrap();
+                                ).unwrap();
+                            }
                         } else {
                             writeln!(
                                 set_entries,
@@ -2672,17 +3035,40 @@ pub fn implement_script_boilerplate(
                         let key_rs = key_ty.to_rust_type();
                         let val_rs = val_ty.to_rust_type();
 
+                        let field_rust_type = var
+                            .typ
+                            .as_ref()
+                            .map(|t| t.to_rust_type())
+                            .unwrap_or_default();
+                        // Check if field is HashMap<String, Value> (for custom types or Object)
+                        let is_value_map = field_rust_type == "HashMap<String, Value>"
+                            || *val_ty == Type::Object
+                            || matches!(val_ty, Type::Custom(_));
                         if *val_ty != Type::Object {
-                            writeln!(
-                                set_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                            if is_value_map {
+                                // Convert HashMap<K, T> to HashMap<String, Value>
+                                writeln!(
+                                    set_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
+                                        script.{name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
+                                        return Some(());
+                                    }}
+                                    None
+                                }},"
+                                ).unwrap();
+                            } else {
+                                writeln!(
+                                    set_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
                                         script.{name} = map_typed;
                                         return Some(());
                                     }}
                                     None
                                 }},"
-                            ).unwrap();
+                                ).unwrap();
+                            }
                         } else {
                             writeln!(
                                 set_entries,
@@ -2737,15 +3123,36 @@ pub fn implement_script_boilerplate(
                     ContainerKind::Array => {
                         let elem_ty = elem_types.get(0).unwrap_or(&Type::Object);
                         let elem_rs = elem_ty.to_rust_type();
+                        let field_rust_type = var
+                            .typ
+                            .as_ref()
+                            .map(|t| t.to_rust_type())
+                            .unwrap_or_default();
+                        // Check if field is Vec<Value> (for custom types or Object)
+                        let is_value_vec = field_rust_type == "Vec<Value>"
+                            || *elem_ty == Type::Object
+                            || matches!(elem_ty, Type::Custom(_));
                         if *elem_ty != Type::Object {
-                            writeln!(
-                                apply_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                            if is_value_vec {
+                                // Convert Vec<T> to Vec<Value>
+                                writeln!(
+                                    apply_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                    if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
+                                        script.{name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
+                                    }}
+                                }},"
+                                ).unwrap();
+                            } else {
+                                writeln!(
+                                    apply_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
                                         script.{name} = vec_typed;
                                     }}
                                 }},"
-                            ).unwrap();
+                                ).unwrap();
+                            }
                         } else {
                             writeln!(
                                 apply_entries,
@@ -2791,15 +3198,36 @@ pub fn implement_script_boilerplate(
                         let key_rs = key_ty.to_rust_type();
                         let val_rs = val_ty.to_rust_type();
 
+                        let field_rust_type = var
+                            .typ
+                            .as_ref()
+                            .map(|t| t.to_rust_type())
+                            .unwrap_or_default();
+                        // Check if field is HashMap<String, Value> (for custom types or Object)
+                        let is_value_map = field_rust_type == "HashMap<String, Value>"
+                            || *val_ty == Type::Object
+                            || matches!(val_ty, Type::Custom(_));
                         if *val_ty != Type::Object {
-                            writeln!(
-                                apply_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                            if is_value_map {
+                                // Convert HashMap<K, T> to HashMap<String, Value>
+                                writeln!(
+                                    apply_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                    if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
+                                        script.{name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
+                                    }}
+                                }},"
+                                ).unwrap();
+                            } else {
+                                writeln!(
+                                    apply_entries,
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
                                         script.{name} = map_typed;
                                     }}
                                 }},"
-                            ).unwrap();
+                                ).unwrap();
+                            }
                         } else {
                             writeln!(
                                 apply_entries,

@@ -269,15 +269,23 @@ impl Type {
                 let k = params
                     .get(0)
                     .map_or("String".to_string(), |p| p.to_rust_type());
-                let v = params
-                    .get(1)
-                    .map_or("Value".to_string(), |p| p.to_rust_type());
+                let v = params.get(1).map_or("Value".to_string(), |p| {
+                    // For custom types, use Value to allow polymorphism
+                    match p {
+                        Type::Custom(_) => "Value".to_string(),
+                        _ => p.to_rust_type(),
+                    }
+                });
                 format!("HashMap<{}, {}>", k, v)
             }
             Type::Container(ContainerKind::Array, params) => {
-                let val = params
-                    .get(0)
-                    .map_or("Value".to_string(), |p| p.to_rust_type());
+                let val = params.get(0).map_or("Value".to_string(), |p| {
+                    // For custom types, use Value to allow polymorphism
+                    match p {
+                        Type::Custom(_) => "Value".to_string(),
+                        _ => p.to_rust_type(),
+                    }
+                });
                 format!("Vec<{}>", val)
             }
             Type::Container(ContainerKind::FixedArray(size), params) => {

@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    ast::*, engine_structs::EngineStruct, node_registry::NodeType
-};
+use crate::{ast::*, engine_structs::EngineStruct, node_registry::NodeType};
 
 #[derive(Debug, Clone)]
 pub struct EngineRegistry {

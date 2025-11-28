@@ -5,7 +5,6 @@ use perro_core::asset_io::{ProjectRoot, set_project_root};
 use perro_core::compiler::{BuildProfile, CompileTarget, Compiler};
 use perro_core::transpiler::transpile;
 
-
 /// Get the path to the *project root* using the location of the perro_core crate root.
 /// This will resolve properly even when running from target/debug.
 fn resolve_project_root(path_arg: &str) -> PathBuf {

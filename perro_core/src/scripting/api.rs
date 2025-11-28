@@ -20,7 +20,17 @@ use std::{
 use uuid::Uuid; // For date/time formatting
 
 use crate::{
-    Node, Node2D, Sprite2D, app_command::AppCommand, asset_io::{self, ResolvedPath, load_asset, resolve_path}, compiler::{BuildProfile, CompileTarget, Compiler}, manifest::Project, node_registry::{IntoInner, SceneNode}, prelude::string_to_u64, script::{CreateFn, SceneAccess, Script, UpdateOp, Var}, transpiler::{script_path_to_identifier, transpile}, types::ScriptType, ui_node::UINode
+    Node, Node2D, Sprite2D,
+    app_command::AppCommand,
+    asset_io::{self, ResolvedPath, load_asset, resolve_path},
+    compiler::{BuildProfile, CompileTarget, Compiler},
+    manifest::Project,
+    node_registry::{IntoInner, SceneNode},
+    prelude::string_to_u64,
+    script::{CreateFn, SceneAccess, Script, UpdateOp, Var},
+    transpiler::{script_path_to_identifier, transpile},
+    types::ScriptType,
+    ui_node::UINode,
 };
 
 //-----------------------------------------------------
