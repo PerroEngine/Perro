@@ -641,12 +641,12 @@ impl Renderer3D {
 
         let visible_instances = groups.values().map(|v| v.len()).sum::<usize>();
 
-        println!(
-            "🧭 Frustum culling: {}/{} visible (culled {} meshes)",
-            visible_instances,
-            total_instances,
-            total_instances.saturating_sub(visible_instances)
-        );
+        // println!(
+        //     "🧭 Frustum culling: {}/{} visible (culled {} meshes)",
+        //     visible_instances,
+        //     total_instances,
+        //     total_instances.saturating_sub(visible_instances)
+        // );
 
         // ---- 4️⃣  Deterministic sorting of groups (mesh + material) ----
         let mut sorted_groups: Vec<_> = groups.into_iter().collect();
@@ -729,11 +729,11 @@ impl Renderer3D {
         self.instances_need_rebuild = false;
         self.visibility_dirty = false;
 
-        println!(
-            "✅ Instance buffer updated with {} visible instances across {} batches",
-            all_instances.len(),
-            self.mesh_material_groups.len()
-        );
+        // println!(
+        //     "✅ Instance buffer updated with {} visible instances across {} batches",
+        //     all_instances.len(),
+        //     self.mesh_material_groups.len()
+        // );
     }
 
     pub fn update_culling_from_camera(&mut self, mesh_manager: &MeshManager, vp: glam::Mat4) {

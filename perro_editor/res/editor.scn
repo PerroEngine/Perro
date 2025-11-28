@@ -158,8 +158,8 @@
 
     "e8f9a0b1-95a0-4d8f-cf3f-4e5f6a7b8c9d": {
       "type": "MeshInstance3D",
-      "mesh_path": "__capsule__",
-      "material_path": "__blue__",
+     "mesh_path": "__cube__",
+      "material_path": "__red__",
       "node_3d": {
         "type": "Node3D",
         "transform": {
@@ -179,8 +179,8 @@
 
     "f9a0b1c2-a6b1-4e9f-df4f-5f6a7b8c9d0e": {
       "type": "MeshInstance3D",
-      "mesh_path": "__cone__",
-      "material_path": "__green__",
+     "mesh_path": "__cube__",
+      "material_path": "__red__",
       "node_3d": {
         "type": "Node3D",
         "transform": {
@@ -199,7 +199,8 @@
 
     "0a1b2c3d-b7c2-4f0a-ef5f-6a7b8c9d0e1f": {
       "type": "MeshInstance3D",
-      "mesh_path": "__s_pyramid__",
+          "mesh_path": "__cube__",
+      "material_path": "__red__",
       "node_3d": {
         "type": "Node3D",
         "transform": {

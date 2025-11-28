@@ -110,6 +110,9 @@ BEGIN
             VALUE "FileVersion", "{}"
             VALUE "ProductName", "{}"
             VALUE "ProductVersion", "{}"
+            VALUE "OriginalFilename", "{}.exe"
+            VALUE "Engine", "Perro"
+            VALUE "EngineWebsite", "https://perroengine.com"
         END
     END
     BLOCK "VarFileInfo"
@@ -125,7 +128,8 @@ END
     name,
     version_display,
     name,
-    version_display
+    version_display,
+    name
 );
 
             fs::write(&rc_path, rc_content).expect("Failed to write .rc file");
@@ -139,6 +143,16 @@ END
         } else {
             panic!("⚠ Icon not found at {}", final_icon.display());
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        setup_macos_bundle(&real_icon_path, &project_root, &log_path, name, version);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        setup_linux_desktop(&real_icon_path, &project_root, &log_path, name, version);
     }
 
     log(&log_path, "=== Build Script Finished ===");
@@ -224,6 +238,125 @@ fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path)
         .write(&mut file)
         .expect("Failed to write ICO file");
     log(log_path, &format!("✔ ICO saved: {}", ico_path.display()));
+}
+
+#[cfg(target_os = "macos")]
+fn setup_macos_bundle(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {
+    if !icon_path.exists() {
+        log(log_path, &format!("⚠ Icon file not found: {}, skipping bundle setup", icon_path.display()));
+        return;
+    }
+
+    let icns_path = project_root.join("icon.icns");
+    convert_to_icns(icon_path, &icns_path, log_path);
+
+    let info_plist_path = project_root.join("Info.plist");
+    let info_plist_content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>{}</string>
+    <key>CFBundleExecutable</key>
+    <string>{}</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.perroengine.{}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>{}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{}</string>
+    <key>CFBundleVersion</key>
+    <string>{}</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>Engine</key>
+    <string>Perro</string>
+    <key>EngineWebsite</key>
+    <string>https://perroengine.com</string>
+</dict>
+</plist>"#,
+        name, name, name, name, version, version
+    );
+
+    fs::write(&info_plist_path, info_plist_content).expect("Failed to write Info.plist");
+    log(log_path, &format!("✔ Created macOS bundle files: {}, {}", icns_path.display(), info_plist_path.display()));
+}
+
+#[cfg(target_os = "macos")]
+fn convert_to_icns(input_path: &Path, icns_path: &Path, log_path: &Path) {
+    use image::io::Reader as ImageReader;
+    use std::process::Command;
+
+    let temp_iconset = icns_path.with_extension("iconset");
+    let _ = fs::create_dir_all(&temp_iconset);
+
+    let img = ImageReader::open(input_path)
+        .expect("Failed to open image")
+        .decode()
+        .expect("Failed to decode image");
+
+    let sizes = [(16, "icon_16x16.png"), (32, "icon_16x16@2x.png"), (32, "icon_32x32.png"), (64, "icon_32x32@2x.png"), (128, "icon_128x128.png"), (256, "icon_128x128@2x.png"), (256, "icon_256x256.png"), (512, "icon_256x256@2x.png"), (512, "icon_512x512.png"), (1024, "icon_512x512@2x.png")];
+
+    for (size, filename) in sizes {
+        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+        let output_path = temp_iconset.join(filename);
+        resized.save(&output_path).expect("Failed to save icon size");
+    }
+
+    let output = Command::new("iconutil")
+        .args(&["-c", "icns", "-o"])
+        .arg(icns_path)
+        .arg(&temp_iconset)
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            log(log_path, &format!("✔ Created ICNS: {}", icns_path.display()));
+        }
+        _ => {
+            log(log_path, "⚠ iconutil failed, fallback to PNG copy");
+            fs::copy(input_path, icns_path.with_extension("png")).ok();
+        }
+    }
+
+    let _ = fs::remove_dir_all(&temp_iconset);
+}
+
+#[cfg(target_os = "linux")]
+fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {
+    if !icon_path.exists() {
+        log(log_path, &format!("⚠ Icon file not found: {}, skipping desktop setup", icon_path.display()));
+        return;
+    }
+
+    let icon_dest = project_root.join(format!("{}.png", name.to_lowercase().replace(" ", "_")));
+    let _ = fs::copy(icon_path, &icon_dest);
+
+    let desktop_path = project_root.join(format!("{}.desktop", name.to_lowercase().replace(" ", "_")));
+    let desktop_content = format!(
+        r#"[Desktop Entry]
+Name={}
+Exec={}
+Icon={}
+Type=Application
+Categories=Game;
+Version={}
+StartupNotify=true
+Engine=Perro
+EngineWebsite=https://perroengine.com
+"#,
+        name, name.to_lowercase().replace(" ", "_"), icon_dest.display(), version
+    );
+
+    fs::write(&desktop_path, desktop_content).expect("Failed to write .desktop file");
+    log(log_path, &format!("✔ Created Linux desktop files: {}, {}", icon_dest.display(), desktop_path.display()));
 }
 
 fn resolve_res_path(project_root: PathBuf, res_path: &str) -> PathBuf {

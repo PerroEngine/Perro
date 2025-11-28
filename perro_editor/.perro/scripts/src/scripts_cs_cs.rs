@@ -86,7 +86,7 @@ impl Script for ScriptsCsCsScript {
         self.health = 100i32;
         self.speed = 200.0f32;
         self.speed += 50.0f32;
-        api.print(&String::from("Player initialized!"));
+        // [stripped for release] api.print(&String::from("Player initialized!"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -102,7 +102,7 @@ impl Script for ScriptsCsCsScript {
 impl ScriptsCsCsScript {
     fn TakeDamage(&mut self, mut amount: i32, api: &mut ScriptApi<'_>, external_call: bool) {
         self.health -= amount;
-        api.print(&String::from("Took damage!"));
+        // [stripped for release] api.print(&String::from("Took damage!"));
     }
 
 }

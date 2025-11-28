@@ -802,6 +802,8 @@ impl Compiler {
             "    println!(\"cargo:rerun-if-env-changed=PERRO_BUILD_TIMESTAMP\");"
         )?;
         writeln!(build_file, "")?;
+
+        // Windows-specific code
         writeln!(build_file, "    #[cfg(target_os = \"windows\")]")?;
         writeln!(build_file, "    {{")?;
         writeln!(
@@ -876,7 +878,6 @@ impl Compiler {
         writeln!(build_file, "                        .as_secs() as u32")?;
         writeln!(build_file, "                }});")?;
         writeln!(build_file, "")?;
-        // Fixed the format string here
         writeln!(build_file, "            let version_display =")?;
         writeln!(
             build_file,
@@ -897,7 +898,6 @@ impl Compiler {
             "            let icon_str = final_icon.to_str().unwrap().replace(\"\\\\\", \"\\\\\\\\\");"
         )?;
         writeln!(build_file, "")?;
-        // Fixed the RC content format string
         writeln!(build_file, "            let rc_content = format!(")?;
         writeln!(build_file, "    r#\"")?;
         writeln!(build_file, "APPICON_{{}} ICON \"{{}}\"")?;
@@ -917,6 +917,15 @@ impl Compiler {
         writeln!(build_file, "            VALUE \"FileVersion\", \"{{}}\"")?;
         writeln!(build_file, "            VALUE \"ProductName\", \"{{}}\"")?;
         writeln!(build_file, "            VALUE \"ProductVersion\", \"{{}}\"")?;
+        writeln!(
+            build_file,
+            "            VALUE \"OriginalFilename\", \"{{}}.exe\""
+        )?;
+        writeln!(build_file, "            VALUE \"Engine\", \"Perro\"")?;
+        writeln!(
+            build_file,
+            "            VALUE \"EngineWebsite\", \"https://perroengine.com\""
+        )?;
         writeln!(build_file, "        END")?;
         writeln!(build_file, "    END")?;
         writeln!(build_file, "    BLOCK \"VarFileInfo\"")?;
@@ -932,7 +941,8 @@ impl Compiler {
         writeln!(build_file, "    name,")?;
         writeln!(build_file, "    version_display,")?;
         writeln!(build_file, "    name,")?;
-        writeln!(build_file, "    version_display")?;
+        writeln!(build_file, "    version_display,")?;
+        writeln!(build_file, "    name")?;
         writeln!(build_file, ");")?;
         writeln!(build_file, "")?;
         writeln!(
@@ -941,7 +951,6 @@ impl Compiler {
         )?;
         writeln!(build_file, "            log(")?;
         writeln!(build_file, "                &log_path,")?;
-        // Fixed the log format string
         writeln!(
             build_file,
             "                &format!(\"✔ Wrote RC with version {{}} (icon ID={{}})\", version_display, build_number),"
@@ -964,12 +973,35 @@ impl Compiler {
         writeln!(build_file, "        }}")?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
+
+        // macOS-specific code
+        writeln!(build_file, "    #[cfg(target_os = \"macos\")]")?;
+        writeln!(build_file, "    {{")?;
+        writeln!(
+            build_file,
+            "        setup_macos_bundle(&real_icon_path, &project_root, &log_path, name, version);"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+
+        // Linux-specific code
+        writeln!(build_file, "    #[cfg(target_os = \"linux\")]")?;
+        writeln!(build_file, "    {{")?;
+        writeln!(
+            build_file,
+            "        setup_linux_desktop(&real_icon_path, &project_root, &log_path, name, version);"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+
         writeln!(
             build_file,
             "    log(&log_path, \"=== Build Script Finished ===\");"
         )?;
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
+
+        // Helper functions
         writeln!(build_file, "fn init_log(path: &Path) {{")?;
         writeln!(build_file, "    let _ = fs::remove_file(path);")?;
         writeln!(build_file, "    let mut f = OpenOptions::new()")?;
@@ -988,6 +1020,7 @@ impl Compiler {
         )?;
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
+
         writeln!(build_file, "fn log(path: &Path, message: &str) {{")?;
         writeln!(build_file, "    println!(\"{{}}\", message);")?;
         writeln!(build_file, "    let mut f = OpenOptions::new()")?;
@@ -998,6 +1031,8 @@ impl Compiler {
         writeln!(build_file, "    writeln!(f, \"{{}}\", message).unwrap();")?;
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
+
+        // Windows functions
         writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
         writeln!(
             build_file,
@@ -1030,7 +1065,6 @@ impl Compiler {
         )?;
         writeln!(build_file, "    log(")?;
         writeln!(build_file, "        log_path,")?;
-        // Fixed the format string
         writeln!(
             build_file,
             "        &format!(\"Converting {{}} → {{}}\", path.display(), ico_path.display()),"
@@ -1043,6 +1077,7 @@ impl Compiler {
         writeln!(build_file, "    ico_path")?;
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
+
         writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
         writeln!(
             build_file,
@@ -1088,7 +1123,6 @@ impl Compiler {
             build_file,
             "        icon_dir.add_entry(IconDirEntry::encode(&icon_image).unwrap());"
         )?;
-        // Fixed the format string
         writeln!(
             build_file,
             "        log(log_path, &format!(\"✔ Added {{}}x{{}} size to ICO\", size, size));"
@@ -1108,6 +1142,213 @@ impl Compiler {
         )?;
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
+
+        // macOS functions
+        writeln!(build_file, "#[cfg(target_os = \"macos\")]")?;
+        writeln!(
+            build_file,
+            "fn setup_macos_bundle(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {{"
+        )?;
+        writeln!(build_file, "    if !icon_path.exists() {{")?;
+        writeln!(
+            build_file,
+            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, skipping bundle setup\", icon_path.display()));"
+        )?;
+        writeln!(build_file, "        return;")?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let icns_path = project_root.join(\"icon.icns\");"
+        )?;
+        writeln!(
+            build_file,
+            "    convert_to_icns(icon_path, &icns_path, log_path);"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let info_plist_path = project_root.join(\"Info.plist\");"
+        )?;
+        writeln!(build_file, "    let info_plist_content = format!(")?;
+        writeln!(
+            build_file,
+            "        r#\"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        )?;
+        writeln!(
+            build_file,
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
+        )?;
+        writeln!(build_file, "<plist version=\"1.0\">")?;
+        writeln!(build_file, "<dict>")?;
+        writeln!(build_file, "    <key>CFBundleDisplayName</key>")?;
+        writeln!(build_file, "    <string>{{}}</string>")?;
+        writeln!(build_file, "    <key>CFBundleExecutable</key>")?;
+        writeln!(build_file, "    <string>{{}}</string>")?;
+        writeln!(build_file, "    <key>CFBundleIconFile</key>")?;
+        writeln!(build_file, "    <string>icon.icns</string>")?;
+        writeln!(build_file, "    <key>CFBundleIdentifier</key>")?;
+        writeln!(build_file, "    <string>com.perroengine.{{}}</string>")?;
+        writeln!(build_file, "    <key>CFBundleInfoDictionaryVersion</key>")?;
+        writeln!(build_file, "    <string>6.0</string>")?;
+        writeln!(build_file, "    <key>CFBundleName</key>")?;
+        writeln!(build_file, "    <string>{{}}</string>")?;
+        writeln!(build_file, "    <key>CFBundlePackageType</key>")?;
+        writeln!(build_file, "    <string>APPL</string>")?;
+        writeln!(build_file, "    <key>CFBundleShortVersionString</key>")?;
+        writeln!(build_file, "    <string>{{}}</string>")?;
+        writeln!(build_file, "    <key>CFBundleVersion</key>")?;
+        writeln!(build_file, "    <string>{{}}</string>")?;
+        writeln!(build_file, "    <key>NSHighResolutionCapable</key>")?;
+        writeln!(build_file, "    <true/>")?;
+        writeln!(build_file, "    <key>Engine</key>")?;
+        writeln!(build_file, "    <string>Perro</string>")?;
+        writeln!(build_file, "    <key>EngineWebsite</key>")?;
+        writeln!(build_file, "    <string>https://perroengine.com</string>")?;
+        writeln!(build_file, "</dict>")?;
+        writeln!(build_file, "</plist>\"#,")?;
+        writeln!(
+            build_file,
+            "        name, name, name, name, version, version"
+        )?;
+        writeln!(build_file, "    );")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    fs::write(&info_plist_path, info_plist_content).expect(\"Failed to write Info.plist\");"
+        )?;
+        writeln!(
+            build_file,
+            "    log(log_path, &format!(\"✔ Created macOS bundle files: {{}}, {{}}\", icns_path.display(), info_plist_path.display()));"
+        )?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+
+        writeln!(build_file, "#[cfg(target_os = \"macos\")]")?;
+        writeln!(
+            build_file,
+            "fn convert_to_icns(input_path: &Path, icns_path: &Path, log_path: &Path) {{"
+        )?;
+        writeln!(build_file, "    use image::io::Reader as ImageReader;")?;
+        writeln!(build_file, "    use std::process::Command;")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let temp_iconset = icns_path.with_extension(\"iconset\");"
+        )?;
+        writeln!(build_file, "    let _ = fs::create_dir_all(&temp_iconset);")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let img = ImageReader::open(input_path)")?;
+        writeln!(build_file, "        .expect(\"Failed to open image\")")?;
+        writeln!(build_file, "        .decode()")?;
+        writeln!(build_file, "        .expect(\"Failed to decode image\");")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let sizes = [(16, \"icon_16x16.png\"), (32, \"icon_16x16@2x.png\"), (32, \"icon_32x32.png\"), (64, \"icon_32x32@2x.png\"), (128, \"icon_128x128.png\"), (256, \"icon_128x128@2x.png\"), (256, \"icon_256x256.png\"), (512, \"icon_256x256@2x.png\"), (512, \"icon_512x512.png\"), (1024, \"icon_512x512@2x.png\")];"
+        )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    for (size, filename) in sizes {{")?;
+        writeln!(
+            build_file,
+            "        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);"
+        )?;
+        writeln!(
+            build_file,
+            "        let output_path = temp_iconset.join(filename);"
+        )?;
+        writeln!(
+            build_file,
+            "        resized.save(&output_path).expect(\"Failed to save icon size\");"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let output = Command::new(\"iconutil\")")?;
+        writeln!(build_file, "        .args(&[\"-c\", \"icns\", \"-o\"])")?;
+        writeln!(build_file, "        .arg(icns_path)")?;
+        writeln!(build_file, "        .arg(&temp_iconset)")?;
+        writeln!(build_file, "        .output();")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    match output {{")?;
+        writeln!(
+            build_file,
+            "        Ok(result) if result.status.success() => {{"
+        )?;
+        writeln!(
+            build_file,
+            "            log(log_path, &format!(\"✔ Created ICNS: {{}}\", icns_path.display()));"
+        )?;
+        writeln!(build_file, "        }}")?;
+        writeln!(build_file, "        _ => {{")?;
+        writeln!(
+            build_file,
+            "            log(log_path, \"⚠ iconutil failed, fallback to PNG copy\");"
+        )?;
+        writeln!(
+            build_file,
+            "            fs::copy(input_path, icns_path.with_extension(\"png\")).ok();"
+        )?;
+        writeln!(build_file, "        }}")?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    let _ = fs::remove_dir_all(&temp_iconset);")?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+
+        // Linux functions
+        writeln!(build_file, "#[cfg(target_os = \"linux\")]")?;
+        writeln!(
+            build_file,
+            "fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {{"
+        )?;
+        writeln!(build_file, "    if !icon_path.exists() {{")?;
+        writeln!(
+            build_file,
+            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, skipping desktop setup\", icon_path.display()));"
+        )?;
+        writeln!(build_file, "        return;")?;
+        writeln!(build_file, "    }}")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let icon_dest = project_root.join(format!(\"{{}}.png\", name.to_lowercase().replace(\" \", \"_\")));"
+        )?;
+        writeln!(build_file, "    let _ = fs::copy(icon_path, &icon_dest);")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    let desktop_path = project_root.join(format!(\"{{}}.desktop\", name.to_lowercase().replace(\" \", \"_\")));"
+        )?;
+        writeln!(build_file, "    let desktop_content = format!(")?;
+        writeln!(build_file, "        r#\"[Desktop Entry]")?;
+        writeln!(build_file, "Name={{}}")?;
+        writeln!(build_file, "Exec={{}}")?;
+        writeln!(build_file, "Icon={{}}")?;
+        writeln!(build_file, "Type=Application")?;
+        writeln!(build_file, "Categories=Game;")?;
+        writeln!(build_file, "Version={{}}")?;
+        writeln!(build_file, "StartupNotify=true")?;
+        writeln!(build_file, "Engine=Perro")?;
+        writeln!(build_file, "EngineWebsite=https://perroengine.com")?;
+        writeln!(build_file, "\"#,")?;
+        writeln!(
+            build_file,
+            "        name, name.to_lowercase().replace(\" \", \"_\"), icon_dest.display(), version"
+        )?;
+        writeln!(build_file, "    );")?;
+        writeln!(build_file, "")?;
+        writeln!(
+            build_file,
+            "    fs::write(&desktop_path, desktop_content).expect(\"Failed to write .desktop file\");"
+        )?;
+        writeln!(
+            build_file,
+            "    log(log_path, &format!(\"✔ Created Linux desktop files: {{}}, {{}}\", icon_dest.display(), desktop_path.display()));"
+        )?;
+        writeln!(build_file, "}}")?;
+        writeln!(build_file, "")?;
+
+        // Common function
         writeln!(
             build_file,
             "fn resolve_res_path(project_root: PathBuf, res_path: &str) -> PathBuf {{"

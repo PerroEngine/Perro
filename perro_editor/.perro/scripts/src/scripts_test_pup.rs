@@ -69,7 +69,7 @@ impl Script for ScriptsTestPupScript {
 
 impl ScriptsTestPupScript {
     fn bob(&mut self, mut i: i32, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&i);
+        // [stripped for release] api.print(&i);
     }
 
 }
