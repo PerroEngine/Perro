@@ -657,10 +657,70 @@ impl Script {
     }
 }
 
+fn expr_accesses_node(expr: &Expr, script: &Script) -> bool {
+    match expr {
+        Expr::SelfAccess => true, // `this` alone means accessing the node
+        Expr::MemberAccess(base, field) => {
+            // Check if this is `this.node` or `this.node.something`
+            if matches!(base.as_ref(), Expr::SelfAccess) {
+                // If field is "node", then we're accessing self.node
+                if field == "node" {
+                    return true;
+                }
+                // If field is a script member, it's NOT accessing the node
+                let is_script_member = script.variables.iter().any(|v| v.name == *field)
+                    || script.functions.iter().any(|f| f.name == *field);
+                if is_script_member {
+                    return false;
+                }
+            }
+            // Recursively check the base
+            expr_accesses_node(base, script)
+        }
+        Expr::BinaryOp(left, _, right) => {
+            expr_accesses_node(left, script) || expr_accesses_node(right, script)
+        }
+        Expr::Call(target, args) => {
+            expr_accesses_node(target, script) || args.iter().any(|arg| expr_accesses_node(arg, script))
+        }
+        _ => false,
+    }
+}
+
+fn stmt_accesses_node(stmt: &Stmt, script: &Script) -> bool {
+    match stmt {
+        Stmt::Expr(e) => expr_accesses_node(&e.expr, script),
+        Stmt::VariableDecl(var) => {
+            var.value.as_ref().map_or(false, |e| expr_accesses_node(&e.expr, script))
+        }
+        Stmt::Assign(_, e) | Stmt::AssignOp(_, _, e) => expr_accesses_node(&e.expr, script),
+        Stmt::MemberAssign(lhs, rhs) | Stmt::MemberAssignOp(lhs, _, rhs) => {
+            expr_accesses_node(&lhs.expr, script) || expr_accesses_node(&rhs.expr, script)
+        }
+        Stmt::ScriptAssign(_, _, expr) | Stmt::ScriptAssignOp(_, _, _, expr) => {
+            expr_accesses_node(&expr.expr, script)
+        }
+        Stmt::IndexAssign(array, index, value) | Stmt::IndexAssignOp(array, index, _, value) => {
+            expr_accesses_node(array, script)
+                || expr_accesses_node(index, script)
+                || expr_accesses_node(&value.expr, script)
+        }
+        Stmt::Pass => false,
+    }
+}
+
 fn analyze_self_usage(script: &mut Script) {
-    // Step 1: mark direct `self` usage
-    for func in &mut script.functions {
-        func.uses_self = func.body.iter().any(|stmt| stmt.contains_self());
+    // Step 1: mark direct `self.node` usage (not just any self. access)
+    // First pass: collect which functions need uses_self set (without mutating)
+    let mut uses_self_flags: Vec<bool> = script
+        .functions
+        .iter()
+        .map(|func| func.body.iter().any(|stmt| stmt_accesses_node(stmt, script)))
+        .collect();
+    
+    // Second pass: apply the flags
+    for (func, uses_self) in script.functions.iter_mut().zip(uses_self_flags.iter()) {
+        func.uses_self = *uses_self;
     }
 
     // Step 2: track which functions call which others
@@ -874,13 +934,14 @@ impl Function {
         // (1) Insert additional preamble if the method uses self/api
         // ---------------------------------------------------
         let needs_self = self.uses_self;
+        let node_type_str = if node_type.is_empty() { "Node" } else { node_type };
 
         if needs_self {
             writeln!(out, "        if external_call {{").unwrap();
             writeln!(
                 out,
                 "            self.node = api.get_node_clone::<{}>(self.node.id);",
-                node_type
+                node_type_str
             )
             .unwrap();
             writeln!(out, "        }}").unwrap();
@@ -916,12 +977,13 @@ impl Function {
         .unwrap();
 
         let needs_self = self.uses_self;
+        let node_type_str = if node_type.is_empty() { "Node" } else { node_type };
 
         if needs_self {
             writeln!(
                 out,
                 "        self.node = api.get_node_clone::<{}>(self.node.id);",
-                node_type
+                node_type_str
             )
             .unwrap();
         }

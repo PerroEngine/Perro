@@ -41,7 +41,7 @@ class Types extends Node {
     public typed_string: string = "HelloPerro";
 
     // Local Primitives (defined before custom structs that might use them)
-    private local_int: number = 5;
+    public local_int: number = 5;
     private local_uint_8: number = 250;
     private local_float: number = 2.5;
     private local_string: string = "LocalString";
@@ -383,14 +383,17 @@ class Types extends Node {
     // Orchestrates tests
     // =====================================================
     public init(): void {
-        console.log("--- START PUP MEGA TEST SUITE ---");
+        console.log("--- START TS MEGA TEST SUITE ---");
         this.test_primitive_operations();
         this.test_explicit_casting();
         this.test_assignments();
         this.test_struct_inheritance_and_casting();
-        this.test_dynamic_containers_ops();
         this.test_static_containers_ops();
-        console.log("--- ALL PUP TESTS COMPLETE ---");
+        this.test_dynamic_containers_ops();
+        console.log("--- ALL TS TESTS COMPLETE ---");
+
+   
+
     }
 
     public update(): void {

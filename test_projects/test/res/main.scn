@@ -16,5 +16,13 @@
         "name": "WorldCS",
         "script_path": "res://types.cs"
       }
+    },
+        "33333333-3333-3333-3333-333333333333": {
+      "type": "Node2D",
+      "node": {
+        "type": "Node",
+        "name": "WorldTS",
+        "script_path": "res://types.ts"
+      }
     }
 } }

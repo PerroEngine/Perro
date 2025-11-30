@@ -141,7 +141,7 @@ impl TypeScriptParser {
             for member in body.children(&mut body_cursor) {
                 self.debug_node("CLASS_MEMBER", member);
                 match member.kind() {
-                    "property_signature" | "public_field_definition" | "field_definition" => {
+                    "property_signature" | "public_field_definition" | "private_field_definition" | "protected_field_definition" | "field_definition" => {
                         // The member itself is the field definition, parse it directly
                         if let Ok(var) = self.parse_field_declaration(member) {
                             script_vars.push(var);
@@ -694,6 +694,8 @@ impl TypeScriptParser {
                         match member.kind() {
                             "property_signature"
                             | "public_field_definition"
+                            | "private_field_definition"
+                            | "protected_field_definition"
                             | "field_definition" => {
                                 if let Ok(var) = self.parse_field_declaration(member) {
                                     fields.push(StructField {
@@ -778,10 +780,43 @@ impl TypeScriptParser {
             match self.parse_statement(child) {
                 Ok(Stmt::Pass) => {}
                 Ok(stmt) => {
+                    // Debug: check if this is a MemberAssignOp
+                    if let Stmt::MemberAssignOp(_, _, _) = &stmt {
+                        self.debug_node("FOUND_MEMBER_ASSIGN_OP", child);
+                    }
                     statements.push(stmt);
                 }
                 Err(e) => {
+                    // Log the error but also try to parse as expression as fallback
                     self.debug_node(&format!("STMT_PARSE_ERR: {}", e), child);
+                    // If it's an expression_statement, try to parse the child as assignment
+                    if child.kind() == "expression_statement" {
+                        if let Some(expr_child) = child.child(0) {
+                            let kind = expr_child.kind();
+                            if kind == "assignment_expression" || kind == "augmented_assignment_expression" {
+                                if let Ok(stmt) = self.parse_assignment(expr_child) {
+                                    statements.push(stmt);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    // Try parsing as expression statement as fallback
+                    if let Ok(expr) = self.parse_expression(child) {
+                        statements.push(Stmt::Expr(TypedExpr {
+                            expr,
+                            inferred_type: None,
+                        }));
+                    } else {
+                        // If expression parsing also fails, try parsing as assignment directly
+                        // (maybe it's an assignment_expression or augmented_assignment_expression at statement level)
+                        let child_kind = child.kind();
+                        if child_kind == "assignment_expression" || child_kind == "augmented_assignment_expression" {
+                            if let Ok(stmt) = self.parse_assignment(child) {
+                                statements.push(stmt);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -795,11 +830,22 @@ impl TypeScriptParser {
         let result = match node.kind() {
             "lexical_declaration" | "variable_declaration" => self.parse_local_declaration(node),
             "expression_statement" => {
+                // Get the expression child (which might be an assignment_expression or augmented_assignment_expression)
                 if let Some(expr_node) = node.child(0) {
-                    self.parse_expression_statement(expr_node)
+                    // Check if the child is an assignment_expression or augmented_assignment_expression
+                    let kind = expr_node.kind();
+                    if kind == "assignment_expression" || kind == "augmented_assignment_expression" {
+                        self.parse_assignment(expr_node)
+                    } else {
+                        self.parse_expression_statement(expr_node)
+                    }
                 } else {
                     Err("Empty expression statement".into())
                 }
+            }
+            "assignment_expression" | "augmented_assignment_expression" => {
+                // Handle assignment_expression or augmented_assignment_expression directly (might be at statement level)
+                self.parse_assignment(node)
             }
             "if_statement" | "while_statement" | "for_statement" | "return_statement" => {
                 Ok(Stmt::Pass)
@@ -909,19 +955,17 @@ impl TypeScriptParser {
     }
 
     fn parse_assignment(&self, node: tree_sitter::Node) -> Result<Stmt, String> {
-        let mut lhs = None;
-        let mut op = None;
-        let mut rhs = None;
-
         let mut cursor = node.walk();
         let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
 
+        // Tree-sitter-typescript structures assignment_expression as: [left, operator, right]
+        // Use the same simple approach as C# parser
         if children.len() >= 3 {
-            lhs = Some(self.parse_expression(children[0])?);
+            let lhs_expr = self.parse_expression(children[0])?;
 
             // Parse operator
             let op_text = self.get_node_text(children[1]);
-            op = match op_text.as_str() {
+            let op = match op_text.as_str() {
                 "=" => Some(None),
                 "+=" => Some(Some(Op::Add)),
                 "-=" => Some(Some(Op::Sub)),
@@ -930,13 +974,15 @@ impl TypeScriptParser {
                 _ => None,
             };
 
-            rhs = Some(self.parse_expression(children[2])?);
-        }
+            let rhs_expr = self.parse_expression(children[2])?;
 
-        if let (Some(lhs_expr), Some(op_val), Some(rhs_expr)) = (lhs, op, rhs) {
-            self.make_assign_stmt(lhs_expr, op_val, rhs_expr)
+            if let Some(op_val) = op {
+                self.make_assign_stmt(lhs_expr, op_val, rhs_expr)
+            } else {
+                Err(format!("Invalid assignment operator: {}", op_text))
+            }
         } else {
-            Err("Invalid assignment".into())
+            Err(format!("Invalid assignment: expected 3 children, got {}", children.len()))
         }
     }
 
