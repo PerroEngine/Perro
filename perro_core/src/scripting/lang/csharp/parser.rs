@@ -178,7 +178,7 @@ impl CsParser {
                     // Check for array_type first since it's more specific
                     // IMPORTANT: We need to find the type BEFORE parsing the initializer,
                     // so that explicit types take precedence over inferred types
-                    
+
                     // First, try to find array_type (might be nested in a type node)
                     let mut found_array_type = false;
                     if let Some(array_type_node) = self.get_child_by_kind(child, "array_type") {
@@ -189,15 +189,17 @@ impl CsParser {
                         if type_node.kind() == "array_type" {
                             typ = Some(self.parse_type(type_node));
                             found_array_type = true;
-                        } else if let Some(nested_array_type) = self.get_child_by_kind(type_node, "array_type") {
+                        } else if let Some(nested_array_type) =
+                            self.get_child_by_kind(type_node, "array_type")
+                        {
                             typ = Some(self.parse_type(nested_array_type));
                             found_array_type = true;
                         } else {
                             // Check if type node has array_rank_specifier (indicates array)
                             let mut cursor = type_node.walk();
-                            let has_array_spec = type_node.children(&mut cursor).any(|c| {
-                                c.kind() == "array_rank_specifier" || c.kind() == "["
-                            });
+                            let has_array_spec = type_node
+                                .children(&mut cursor)
+                                .any(|c| c.kind() == "array_rank_specifier" || c.kind() == "[");
                             if has_array_spec {
                                 typ = Some(self.parse_type(type_node));
                                 found_array_type = true;
@@ -206,18 +208,19 @@ impl CsParser {
                             }
                         }
                     }
-                    
+
                     if !found_array_type {
-                        if let Some(type_node) = self.get_child_by_kind(child, "predefined_type")
-                        {
+                        if let Some(type_node) = self.get_child_by_kind(child, "predefined_type") {
                             typ = Some(self.parse_type(type_node));
-                        } else if let Some(type_node) = self.get_child_by_kind(child, "generic_name") {
+                        } else if let Some(type_node) =
+                            self.get_child_by_kind(child, "generic_name")
+                        {
                             typ = Some(self.parse_type(type_node));
                         } else {
                             // Fallback: try to extract type from variable_declaration text
                             // For "BigInteger typed_big_int = ..." or "object[] arr = ..." or "TestPlayer[] arr = ...", extract the type
                             let decl_text = self.get_node_text(child);
-                            
+
                             // First, try to find array_type by checking for [] in the text
                             // This handles both "object[]" and "TestPlayer[]" cases
                             if decl_text.contains("[]") {
@@ -226,22 +229,39 @@ impl CsParser {
                                 let parts: Vec<&str> = decl_text.split_whitespace().collect();
                                 for (i, part) in parts.iter().enumerate() {
                                     // Skip modifiers
-                                    if matches!(*part, "public" | "private" | "protected" | "internal" | "static" | "readonly") {
+                                    if matches!(
+                                        *part,
+                                        "public"
+                                            | "private"
+                                            | "protected"
+                                            | "internal"
+                                            | "static"
+                                            | "readonly"
+                                    ) {
                                         continue;
                                     }
                                     // Check if this part ends with []
                                     if part.ends_with("[]") {
                                         let base_type = part.trim_end_matches("[]");
                                         let element_type = self.map_type(base_type.to_string());
-                                        typ = Some(Type::Container(ContainerKind::Array, vec![element_type]));
+                                        typ = Some(Type::Container(
+                                            ContainerKind::Array,
+                                            vec![element_type],
+                                        ));
                                         break;
                                     } else if i < parts.len() - 1 {
                                         // Check if next part is [] (e.g., "TestPlayer []" with space)
                                         if let Some(next_part) = parts.get(i + 1) {
-                                            if next_part.trim() == "[]" || next_part.starts_with("[") {
+                                            if next_part.trim() == "[]"
+                                                || next_part.starts_with("[")
+                                            {
                                                 let base_type = part.trim();
-                                                let element_type = self.map_type(base_type.to_string());
-                                                typ = Some(Type::Container(ContainerKind::Array, vec![element_type]));
+                                                let element_type =
+                                                    self.map_type(base_type.to_string());
+                                                typ = Some(Type::Container(
+                                                    ContainerKind::Array,
+                                                    vec![element_type],
+                                                ));
                                                 break;
                                             }
                                         }
@@ -251,10 +271,18 @@ impl CsParser {
                                 // Not an array, try to find the type name
                                 let parts: Vec<&str> = decl_text.split_whitespace().collect();
                                 for part in &parts {
-                                    if !matches!(*part, "public" | "private" | "protected" | "internal" | "static" | "readonly") 
-                                        && !part.contains("=") 
-                                        && !part.contains("(") 
-                                        && !part.contains(")") {
+                                    if !matches!(
+                                        *part,
+                                        "public"
+                                            | "private"
+                                            | "protected"
+                                            | "internal"
+                                            | "static"
+                                            | "readonly"
+                                    ) && !part.contains("=")
+                                        && !part.contains("(")
+                                        && !part.contains(")")
+                                    {
                                         // It's likely the type name (not the variable name or initializer)
                                         typ = Some(self.map_type(part.to_string()));
                                         break;
@@ -367,7 +395,7 @@ impl CsParser {
                 } else {
                     None
                 }
-            },
+            }
             Expr::StructNew(type_name, _) => {
                 // Check if it's a known struct
                 if self.parsed_structs.iter().any(|s| s.name == *type_name) {
@@ -381,7 +409,7 @@ impl CsParser {
                 // Infer types from both operands and promote
                 let left_type = self.infer_type_from_expr(left);
                 let right_type = self.infer_type_from_expr(right);
-                
+
                 match (&left_type, &right_type) {
                     (Some(l), Some(r)) if l == r => Some(l.clone()),
                     (Some(l), Some(r)) => self.promote_types_simple(l, r),
@@ -398,28 +426,24 @@ impl CsParser {
     fn promote_types_simple(&self, left: &Type, right: &Type) -> Option<Type> {
         use crate::scripting::ast::NumberKind;
         use crate::scripting::ast::Type::*;
-        
+
         // Fast path for identical types
         if left == right {
             return Some(left.clone());
         }
 
         match (left, right) {
-            (Number(NumberKind::BigInt), Number(_))
-            | (Number(_), Number(NumberKind::BigInt)) => {
+            (Number(NumberKind::BigInt), Number(_)) | (Number(_), Number(NumberKind::BigInt)) => {
                 Some(Number(NumberKind::BigInt))
             }
-            (Number(NumberKind::Decimal), Number(_))
-            | (Number(_), Number(NumberKind::Decimal)) => {
+            (Number(NumberKind::Decimal), Number(_)) | (Number(_), Number(NumberKind::Decimal)) => {
                 Some(Number(NumberKind::Decimal))
             }
             (Number(NumberKind::Float(w1)), Number(NumberKind::Float(w2))) => {
                 Some(Number(NumberKind::Float(*w1.max(w2))))
             }
             (Number(NumberKind::Float(w)), Number(_))
-            | (Number(_), Number(NumberKind::Float(w))) => {
-                Some(Number(NumberKind::Float(*w)))
-            }
+            | (Number(_), Number(NumberKind::Float(w))) => Some(Number(NumberKind::Float(*w))),
             (Number(NumberKind::Signed(w1)), Number(NumberKind::Unsigned(w2)))
             | (Number(NumberKind::Unsigned(w2)), Number(NumberKind::Signed(w1))) => {
                 Some(Number(NumberKind::Signed(u8::max(*w1, *w2))))
@@ -507,7 +531,8 @@ impl CsParser {
                             break;
                         } else if base_child.kind() == "type" {
                             // Sometimes it's wrapped in a type node
-                            if let Some(id_node) = self.get_child_by_kind(base_child, "identifier") {
+                            if let Some(id_node) = self.get_child_by_kind(base_child, "identifier")
+                            {
                                 base = Some(self.get_node_text(id_node));
                                 break;
                             } else {
@@ -600,7 +625,7 @@ impl CsParser {
             if child.kind() == "{" || child.kind() == "}" {
                 continue;
             }
-            
+
             // Try to parse as statement
             match self.parse_statement(child) {
                 Ok(Stmt::Pass) => {
@@ -675,7 +700,8 @@ impl CsParser {
                 let mut decl_cursor = child.walk();
                 for decl_child in child.children(&mut decl_cursor) {
                     match decl_child.kind() {
-                        "type" | "predefined_type" | "implicit_type" | "identifier" | "generic_name" => {
+                        "type" | "predefined_type" | "implicit_type" | "identifier"
+                        | "generic_name" => {
                             let type_text = self.get_node_text(decl_child);
                             if type_text != "var" {
                                 typ = Some(self.parse_type(decl_child));
@@ -1044,9 +1070,9 @@ impl CsParser {
 
         // First, check if any child is an array_type node or has array_rank_specifier
         let mut cursor = node.walk();
-        let has_array_type_node = node.children(&mut cursor).any(|c| {
-            c.kind() == "array_type" || c.kind() == "array_rank_specifier"
-        });
+        let has_array_type_node = node
+            .children(&mut cursor)
+            .any(|c| c.kind() == "array_type" || c.kind() == "array_rank_specifier");
         if has_array_type_node {
             is_array_type = true;
         }
@@ -1079,7 +1105,7 @@ impl CsParser {
                     // Check if this is an array initializer { 1, 2, 3 } or object initializer { field = value }
                     let mut init_cursor = child.walk();
                     let mut has_assignments = false;
-                    
+
                     for init_child in child.children(&mut init_cursor) {
                         if init_child.kind() == "assignment_expression" {
                             has_assignments = true;
@@ -1092,7 +1118,10 @@ impl CsParser {
                                 let value = self.parse_expression(assign_children[2])?;
                                 named_args.push((key, value));
                             }
-                        } else if init_child.kind() != "," && init_child.kind() != "{" && init_child.kind() != "}" {
+                        } else if init_child.kind() != ","
+                            && init_child.kind() != "{"
+                            && init_child.kind() != "}"
+                        {
                             // Try to parse as expression (for array elements)
                             if let Ok(expr) = self.parse_expression(init_child) {
                                 initializers.push(expr);
@@ -1246,7 +1275,7 @@ impl CsParser {
                     _ => {}
                 }
             }
-            
+
             if let Some(base_node) = base_type_node {
                 let base_type = self.parse_type(base_node); // Recursively parse the base type
                 // Wrap in Array container
@@ -1269,10 +1298,7 @@ impl CsParser {
                 // For array types, get the base type and wrap it in Container
                 let base_type_text = self.get_node_text(node);
                 // Remove [] from the text to get base type
-                let base_type_str = base_type_text
-                    .replace("[]", "")
-                    .trim()
-                    .to_string();
+                let base_type_str = base_type_text.replace("[]", "").trim().to_string();
                 let element_type = self.map_type(base_type_str);
                 Type::Container(ContainerKind::Array, vec![element_type])
             } else {

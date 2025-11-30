@@ -183,7 +183,11 @@ impl Variable {
 
     pub fn rust_initialization(&self, script: &Script, current_func: Option<&Function>) -> String {
         if let Some(expr) = &self.value {
-            expr.to_rust(false, script, current_func) // let TypedExpr handle type propagation
+            // Use the variable's declared type as the expected type for the expression
+            // This ensures literals get the correct suffix (e.g., 42f64 instead of 42f32)
+            let expected_type = self.typ.as_ref();
+            // Call expr.expr.to_rust directly with the variable's type as expected_type
+            expr.expr.to_rust(false, script, expected_type, current_func)
         } else {
             self.default_value()
         }

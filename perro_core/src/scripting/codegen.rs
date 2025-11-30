@@ -27,6 +27,7 @@ use crate::{
 
 thread_local! {
     static TYPE_CACHE: RefCell<HashMap<usize, Option<Type>>> = RefCell::new(HashMap::new());
+    static SCRIPT_MEMBERS_CACHE: RefCell<Option<(usize, std::collections::HashSet<String>)>> = RefCell::new(None);
 }
 
 fn expr_cache_key(expr: &Expr) -> usize {
@@ -35,6 +36,10 @@ fn expr_cache_key(expr: &Expr) -> usize {
 
 fn clear_type_cache() {
     TYPE_CACHE.with(|cache| cache.borrow_mut().clear());
+}
+
+fn clear_script_members_cache() {
+    SCRIPT_MEMBERS_CACHE.with(|cache| *cache.borrow_mut() = None);
 }
 
 fn to_pascal_case(s: &str) -> String {
@@ -383,8 +388,9 @@ impl Script {
         verbose: bool,
     ) -> String {
         self.verbose = verbose;
-        // Clear cache at the start of codegen
+        // Clear caches at the start of codegen
         clear_type_cache();
+        clear_script_members_cache();
 
         let mut script = self.clone();
         // 🔹 Analyze self usage and call propagation before codegen
@@ -1290,12 +1296,14 @@ impl Stmt {
                 let (index_code, is_dynamic_array) = if is_map {
                     // For maps, use string key handling
                     // For assignment, we need String (not &str) for .insert()
-                    let key_ty = if let Some(Type::Container(ContainerKind::Map, inner_types)) = &lhs_type {
-                        inner_types.get(0).unwrap_or(&Type::String)
-                    } else {
-                        &Type::String
-                    };
-                    let key_code_raw = index_expr.to_rust(needs_self, script, Some(key_ty), current_func);
+                    let key_ty =
+                        if let Some(Type::Container(ContainerKind::Map, inner_types)) = &lhs_type {
+                            inner_types.get(0).unwrap_or(&Type::String)
+                        } else {
+                            &Type::String
+                        };
+                    let key_code_raw =
+                        index_expr.to_rust(needs_self, script, Some(key_ty), current_func);
                     let key_type = script.infer_expr_type(index_expr, current_func);
                     let final_key_code = if *key_ty == Type::String {
                         // For String keys, convert the key to string if it's not already
@@ -1321,13 +1329,14 @@ impl Stmt {
                         current_func,
                     );
                     let index_code = format!("{} as usize", index_code_raw);
-                    
+
                     // Check if this is a dynamic array (Vec<Value>) that needs special handling
                     let is_dynamic_array =
-                        if let Some(Type::Container(ContainerKind::Array, inner_types)) = &lhs_type {
-                            inner_types
-                                .get(0)
-                                .map_or(true, |t| *t == Type::Object || matches!(t, Type::Custom(_)))
+                        if let Some(Type::Container(ContainerKind::Array, inner_types)) = &lhs_type
+                        {
+                            inner_types.get(0).map_or(true, |t| {
+                                *t == Type::Object || matches!(t, Type::Custom(_))
+                            })
                         } else {
                             false
                         };
@@ -1336,17 +1345,19 @@ impl Stmt {
 
                 if is_map {
                     // Handle map assignment
-                    let inner_types = if let Some(Type::Container(ContainerKind::Map, inner_types)) = &lhs_type {
-                        inner_types
-                    } else {
-                        &vec![]
-                    };
+                    let inner_types =
+                        if let Some(Type::Container(ContainerKind::Map, inner_types)) = &lhs_type {
+                            inner_types
+                        } else {
+                            &vec![]
+                        };
                     let value_ty = inner_types.get(1).unwrap_or(&Type::Object);
                     let is_dynamic_map = value_ty == &Type::Object;
 
-                    let mut rhs_code = rhs_expr
-                        .expr
-                        .to_rust(needs_self, script, Some(value_ty), current_func);
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, Some(value_ty), current_func);
 
                     // Insert implicit conversion if needed
                     let final_rhs = if let Some(rhs_ty) = &rhs_type {
@@ -1414,7 +1425,7 @@ impl Stmt {
                     // Check if index expression references the same array being indexed
                     // This causes a borrow checker error: cannot borrow as immutable and mutable
                     let index_refs_array = index_code.contains(&base_code);
-                    
+
                     // If the index references the array, extract it to a temporary variable first
                     if index_refs_array {
                         // Generate a temporary variable name based on the array name
@@ -1435,7 +1446,12 @@ impl Stmt {
                         };
                         format!(
                             "        let {} = {};\n{}{}[{}] = {};\n",
-                            temp_index_var, index_code, bounds_check, base_code, temp_index_var, final_rhs_wrapped
+                            temp_index_var,
+                            index_code,
+                            bounds_check,
+                            base_code,
+                            temp_index_var,
+                            final_rhs_wrapped
                         )
                     } else {
                         // Insert `.clone()` if needed, matching your member assign arm
@@ -1445,10 +1461,21 @@ impl Stmt {
 
                         if is_dynamic_array {
                             // For dynamic arrays, extract index and check bounds
-                            let temp_index_var = format!("__idx_{}", base_code.replace(".", "_").replace("self", ""));
+                            let temp_index_var = format!(
+                                "__idx_{}",
+                                base_code.replace(".", "_").replace("self", "")
+                            );
                             format!(
                                 "        let {} = {};\n        if {}.len() <= {} {{\n            {}.resize({} + 1, json!(null));\n        }}\n        {}[{}] = {};\n",
-                                temp_index_var, index_code, base_code, temp_index_var, base_code, temp_index_var, base_code, temp_index_var, final_rhs_wrapped
+                                temp_index_var,
+                                index_code,
+                                base_code,
+                                temp_index_var,
+                                base_code,
+                                temp_index_var,
+                                base_code,
+                                temp_index_var,
+                                final_rhs_wrapped
                             )
                         } else if should_clone {
                             format!(
@@ -1777,11 +1804,11 @@ impl Expr {
                 let left_is_len = matches!(
                     left.as_ref(),
                     Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
-                ) || matches!(left.as_ref(), Expr::MemberAccess(_, field) if field == "Length");
+                ) || matches!(left.as_ref(), Expr::MemberAccess(_, field) if field == "Length" || field == "length" || field == "len");
                 let right_is_len = matches!(
                     right.as_ref(),
                     Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
-                ) || matches!(right.as_ref(), Expr::MemberAccess(_, field) if field == "Length");
+                ) || matches!(right.as_ref(), Expr::MemberAccess(_, field) if field == "Length" || field == "length" || field == "len");
 
                 let left_raw =
                     left.to_rust(needs_self, script, dominant_type.as_ref(), current_func);
@@ -1864,6 +1891,43 @@ impl Expr {
                 format!("({} {} {})", left_final, op.to_rust(), right_final)
             }
             Expr::MemberAccess(base, field) => {
+                // Special case: if base is SelfAccess and field is a script variable,
+                // generate self.field instead of self.node.field
+                if matches!(base.as_ref(), Expr::SelfAccess) {
+                    // Use cached HashSet for O(1) lookup instead of O(n) iteration
+                    let script_ptr = script as *const Script as usize;
+                    let is_script_member = SCRIPT_MEMBERS_CACHE.with(|cache| {
+                        let mut cache_ref = cache.borrow_mut();
+                        
+                        // Check if cache is valid for this script
+                        let needs_rebuild = match cache_ref.as_ref() {
+                            Some((cached_ptr, _)) => *cached_ptr != script_ptr,
+                            None => true,
+                        };
+                        
+                        if needs_rebuild {
+                            // Build HashSet with all script member names
+                            let mut set = std::collections::HashSet::new();
+                            for var in &script.variables {
+                                set.insert(var.name.clone());
+                            }
+                            for func in &script.functions {
+                                set.insert(func.name.clone());
+                            }
+                            *cache_ref = Some((script_ptr, set));
+                        }
+                        
+                        // Now we know cache exists and is valid
+                        cache_ref.as_ref().unwrap().1.contains(field)
+                    });
+                    
+                    if is_script_member {
+                        // This is a script field/method, access directly on self
+                        return format!("self.{}", field);
+                    }
+                    // Otherwise, it's a node field, use self.node.field
+                }
+
                 let base_type = script.infer_expr_type(base, current_func);
 
                 match base_type {
@@ -1878,8 +1942,8 @@ impl Expr {
                     }
                     Some(Type::Container(ContainerKind::Array, _))
                     | Some(Type::Container(ContainerKind::FixedArray(_), _)) => {
-                        // Special case: .Length on arrays should convert to .len()
-                        if field == "Length" {
+                        // Special case: .Length or .length on arrays should convert to .len()
+                        if field == "Length" || field == "length" || field == "len" {
                             let base_code = base.to_rust(needs_self, script, None, current_func);
                             format!("{}.len()", base_code)
                         } else {
@@ -2189,10 +2253,10 @@ impl Expr {
                                 let rendered =
                                     e.to_rust(needs_self, script, Some(elem_ty), current_func);
 
-                                // If this is a custom type array, wrap each element in json!()
+                                // If this is a custom type array or any[]/object[] array, wrap each element in json!()
                                 let final_rendered = match elem_ty {
-                                    Type::Custom(_) => {
-                                        // Custom types need to be serialized to Value for polymorphic arrays
+                                    Type::Custom(_) | Type::Object => {
+                                        // Custom types and any[]/object[] arrays need to be serialized to Value
                                         format!("json!({})", rendered)
                                     }
                                     _ => {
@@ -2226,21 +2290,43 @@ impl Expr {
                 // FIXED ARRAY LITERAL: [a, b, c] with explicit constant size
                 // ===============================================================
                 ContainerLiteralData::FixedArray(size, elems) => {
+                    // Extract element type from expected_type if it's a Container
+                    let elem_ty = match expected_type {
+                        Some(Type::Container(ContainerKind::Array, types))
+                        | Some(Type::Container(ContainerKind::FixedArray(_), types))
+                            if !types.is_empty() =>
+                        {
+                            &types[0]
+                        }
+                        _ => &Type::Object,
+                    };
+
                     let mut body: Vec<_> = elems
                         .iter()
                         .map(|e| {
-                            let rendered = e.to_rust(needs_self, script, None, current_func);
-                            match e {
-                                Expr::Ident(_) | Expr::MemberAccess(..) => {
-                                    let ty = script.infer_expr_type(e, current_func);
-                                    if ty.as_ref().map_or(false, |t| t.requires_clone()) {
-                                        format!("{}.clone()", rendered)
-                                    } else {
-                                        rendered
+                            // Pass element type to to_rust so literals get correct suffix (e.g., f64 for number[])
+                            let rendered = e.to_rust(needs_self, script, Some(elem_ty), current_func);
+                            
+                            // If this is a custom type or any[]/object[] array, wrap in json!()
+                            let final_rendered = match elem_ty {
+                                Type::Custom(_) | Type::Object => {
+                                    format!("json!({})", rendered)
+                                }
+                                _ => {
+                                    match e {
+                                        Expr::Ident(_) | Expr::MemberAccess(..) => {
+                                            let ty = script.infer_expr_type(e, current_func);
+                                            if ty.as_ref().map_or(false, |t| t.requires_clone()) {
+                                                format!("{}.clone()", rendered)
+                                            } else {
+                                                rendered
+                                            }
+                                        }
+                                        _ => rendered,
                                     }
                                 }
-                                _ => rendered,
-                            }
+                            };
+                            final_rendered
                         })
                         .collect();
 
@@ -2251,7 +2337,20 @@ impl Expr {
                         body.truncate(*size);
                     }
 
-                    let code = format!("[{}]", body.join(", "));
+                    // Check if expected type is Array (Vec<T>) - if so, convert FixedArray to vec![]
+                    let should_convert_to_vec = if let Some(Type::Container(ContainerKind::Array, _)) = expected_type {
+                        true
+                    } else {
+                        false
+                    };
+
+                    let code = if should_convert_to_vec {
+                        // Convert FixedArray to Vec for Array variable types
+                        format!("vec![{}]", body.join(", "))
+                    } else {
+                        // Keep as fixed array [T; N]
+                        format!("[{}]", body.join(", "))
+                    };
 
                     if matches!(expected_type, Some(Type::Object)) {
                         format!("json!({})", code)
@@ -2315,7 +2414,13 @@ impl Expr {
                     .structs
                     .iter()
                     .find(|s| s.name == *ty)
-                    .expect("Struct not found");
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Struct not found: '{}'. Available structs: {:?}",
+                            ty,
+                            script.structs.iter().map(|s| &s.name).collect::<Vec<_>>()
+                        )
+                    });
 
                 let mut flat_fields = Vec::new();
                 gather_flat_fields(struct_def, script, &mut flat_fields);
@@ -2461,12 +2566,72 @@ impl Expr {
                     }
                 }
 
-                // Delegate to actual API handler for final construction
-                module.to_rust(&args, script, needs_self, current_func)
+                // Generate the API call code
+                let api_call_code = module.to_rust(&args, script, needs_self, current_func);
+                
+                // If we have an expected_type and the API returns Object, cast the result
+                // This handles cases like: let x: number = map.get("key");
+                // BUT: Only apply cast if the map is actually dynamic (returns Value)
+                // For static maps (e.g., HashMap<String, BigInt>), the API already returns the correct type
+                if let Some(expected_ty) = expected_type {
+                    let api_return_type = module.return_type();
+                    if let Some(Type::Object) = api_return_type.as_ref() {
+                        // Check if this is MapApi::Get and if the map is actually dynamic
+                        let should_cast = if let ApiModule::MapOp(MapApi::Get) = module {
+                            // For MapApi::Get, check if the map's value type is Object (dynamic)
+                            // If it's not Object, then it's a static map and we shouldn't cast
+                            if let Some(map_expr) = args.get(0) {
+                                let map_value_type = script.infer_map_value_type(map_expr, current_func);
+                                map_value_type.as_ref() == Some(&Type::Object)
+                            } else {
+                                true // Fallback: assume dynamic if we can't infer
+                            }
+                        } else {
+                            true // For other APIs, apply cast if they return Object
+                        };
+                        
+                        if should_cast && *expected_ty != Type::Object {
+                            // Generate cast from Value to expected type
+                            match expected_ty {
+                                Type::Number(NumberKind::Float(64)) => {
+                                    format!("{}.as_f64().unwrap_or_default()", api_call_code)
+                                }
+                                Type::Number(NumberKind::Float(32)) => {
+                                    format!("{}.as_f64().unwrap_or_default() as f32", api_call_code)
+                                }
+                                Type::Number(NumberKind::BigInt) => {
+                                    // Value can be a string representation of BigInt or a number
+                                    format!("{}.as_str().and_then(|s| s.parse::<BigInt>().ok()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))", api_call_code, api_call_code)
+                                }
+                                Type::Number(NumberKind::Decimal) => {
+                                    // Decimal is stored as f64 in Value, convert using from_str_exact
+                                    format!("rust_decimal::Decimal::from_str_exact(&{}.as_f64().unwrap_or_default().to_string()).unwrap_or_default()", api_call_code)
+                                }
+                                Type::String => {
+                                    format!("{}.as_str().unwrap_or_default().to_string()", api_call_code)
+                                }
+                                Type::Bool => {
+                                    format!("{}.as_bool().unwrap_or_default()", api_call_code)
+                                }
+                                Type::Custom(custom_type) => {
+                                    format!("serde_json::from_value::<{}>({}).unwrap_or_default()", custom_type, api_call_code)
+                                }
+                                _ => api_call_code,
+                            }
+                        } else {
+                            api_call_code
+                        }
+                    } else {
+                        api_call_code
+                    }
+                } else {
+                    api_call_code
+                }
             }
             Expr::Cast(inner, target_type) => {
                 let inner_type = script.infer_expr_type(inner, current_func);
-                let inner_code = inner.to_rust(needs_self, script, Some(target_type), current_func);
+                // Don't pass target_type as expected_type - let the literal be its natural type, then cast
+                let inner_code = inner.to_rust(needs_self, script, None, current_func);
 
                 match (&inner_type, target_type) {
                     // String → Numeric Type Conversions
@@ -2676,9 +2841,21 @@ impl Expr {
                     ) => format!("({} as f32)", inner_code),
 
                     (
-                        Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))),
+                        Some(Type::Number(NumberKind::Signed(w))),
                         Type::Number(NumberKind::BigInt),
-                    ) => format!("BigInt::from({})", inner_code),
+                    ) => match w {
+                        32 => format!("BigInt::from({} as i32)", inner_code),
+                        64 => format!("BigInt::from({} as i64)", inner_code),
+                        _ => format!("BigInt::from({} as i64)", inner_code),
+                    },
+                    (
+                        Some(Type::Number(NumberKind::Unsigned(w))),
+                        Type::Number(NumberKind::BigInt),
+                    ) => match w {
+                        32 => format!("BigInt::from({} as u32)", inner_code),
+                        64 => format!("BigInt::from({} as u64)", inner_code),
+                        _ => format!("BigInt::from({} as u64)", inner_code),
+                    },
 
                     // ==========================================================
                     // JSON Value (ContainerKind::Object) → Anything

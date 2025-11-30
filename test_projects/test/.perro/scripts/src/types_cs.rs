@@ -281,14 +281,14 @@ impl std::ops::DerefMut for SuperTestPlayer {
 
 impl Script for TypesCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        // [stripped for release] api.print(&String::from("--- START PUP MEGA TEST SUITE ---"));
+        api.print(&String::from("--- START CSharp MEGA TEST SUITE ---"));
         self.TestPrimitiveOperations(api, false);
         self.TestExplicitCasting(api, false);
         self.TestAssignments(api, false);
         self.TestStructInheritanceAndCasting(api, false);
         self.TestDynamicContainersOps(api, false);
         self.TestStaticContainersOps(api, false);
-        // [stripped for release] api.print(&String::from("--- ALL PUP TESTS COMPLETE ---"));
+        api.print(&String::from("--- ALL CSharp TESTS COMPLETE ---"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -308,7 +308,7 @@ impl Script for TypesCsScript {
 
 impl TypesCsScript {
     fn TestPrimitiveOperations(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Primitive Operations ---"));
+        api.print(&String::from("--- Test Primitive Operations ---"));
         let mut res_int: i32 = 0i32;
         let mut res_big: BigInt = BigInt::from_str("0").unwrap();
         let mut res_decimal: Decimal = Decimal::from_str("0").unwrap();
@@ -320,7 +320,7 @@ impl TypesCsScript {
     }
 
     fn TestExplicitCasting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Explicit Casting ---"));
+        api.print(&String::from("--- Test Explicit Casting ---"));
         let mut int64_to_big: BigInt = BigInt::from_str("0").unwrap();
         let mut big_to_int: i32 = 0i32;
         let mut float_to_decimal: Decimal = Decimal::from_str("0").unwrap();
@@ -333,7 +333,7 @@ impl TypesCsScript {
     }
 
     fn TestAssignments(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
+        api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
         let mut assign_big_lit: BigInt = BigInt::from_str("0").unwrap();
         let mut assign_decimal_var: Decimal = Decimal::from_str("0").unwrap();
         let mut comp_big: BigInt = BigInt::from_str("0").unwrap();
@@ -344,7 +344,7 @@ impl TypesCsScript {
     }
 
     fn TestStructInheritanceAndCasting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Struct Inheritance & Casting ---"));
+        api.print(&String::from("--- Test Struct Inheritance & Casting ---"));
         self.my_derived_player.health = (self.my_derived_player.health - 10.0f32);
         self.my_derived_player.pos.x = (self.my_derived_player.pos.x + 1.0f32);
         self.my_derived_player.entity_type = String::from("ElitePlayer");
@@ -357,7 +357,7 @@ impl TypesCsScript {
     }
 
     fn TestDynamicContainersOps(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Dynamic Containers Ops ---"));
+        api.print(&String::from("--- Test Dynamic Containers Ops ---"));
         let mut arr_dyn_val_big: BigInt = BigInt::from_str("0").unwrap();
         arr_dyn_val_big *= BigInt::from_str("2").unwrap();
         let mut arr_dyn_val_decimal: Decimal = Decimal::from_str("0").unwrap();
@@ -383,7 +383,7 @@ self.dynamic_array_inferred[__dynamic_array_inferred_idx] = json!(self.local_dec
     }
 
     fn TestStaticContainersOps(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Static Containers Ops ---"));
+        api.print(&String::from("--- Test Static Containers Ops ---"));
         let mut arr_static_big_elem: BigInt = BigInt::from_str("0").unwrap();
         arr_static_big_elem += BigInt::from_str("50").unwrap();
         let mut arr_static_decimal_elem: Decimal = Decimal::from_str("0").unwrap();

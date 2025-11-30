@@ -437,14 +437,14 @@ public class Types : Node2D
     // =====================================================
     public void Init()
     {
-        Console.WriteLine("--- START PUP MEGA TEST SUITE ---");
+        Console.WriteLine("--- START CSharp MEGA TEST SUITE ---");
         TestPrimitiveOperations();
         TestExplicitCasting();
         TestAssignments();
         TestStructInheritanceAndCasting();
         TestDynamicContainersOps();
         TestStaticContainersOps();
-        Console.WriteLine("--- ALL PUP TESTS COMPLETE ---");
+        Console.WriteLine("--- ALL CSharp TESTS COMPLETE ---");
     }
 
     public void Update()

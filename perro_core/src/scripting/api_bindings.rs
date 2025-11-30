@@ -593,6 +593,9 @@ impl ApiCodegen for ArrayApi {
                 } else if value_code.starts_with("json!(") && inner_type == Type::Object {
                     // If target is Type::Object, json! is fine, just use the string directly
                     // No change needed.
+                } else if inner_type == Type::Object {
+                    // For dynamic arrays (any[]), wrap the value in json!()
+                    value_code = format!("json!({})", value_code);
                 } else {
                     // Perform implicit cast if needed and not already handled
                     if let Some(actual_value_type) =
@@ -751,7 +754,15 @@ impl ApiCodegen for MapApi {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let val_type = script.infer_map_value_type(&args[0], current_func);
                 let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
-                let val_code = args[2].to_rust(needs_self, script, val_type.as_ref(), current_func);
+                let mut val_code = args[2].to_rust(needs_self, script, val_type.as_ref(), current_func);
+                
+                // For dynamic maps (any value type), wrap the value in json!()
+                if let Some(Type::Object) = val_type.as_ref() {
+                    if !val_code.starts_with("json!(") {
+                        val_code = format!("json!({})", val_code);
+                    }
+                }
+                
                 format!("{}.insert({}, {})", args_strs[0], key_code, val_code)
             }
 

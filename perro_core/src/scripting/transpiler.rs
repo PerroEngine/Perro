@@ -10,7 +10,9 @@ use crate::{
     asset_io::{ProjectRoot, ResolvedPath, get_project_root, load_asset, resolve_path},
     codegen::derive_rust_perro_script,
     compiler::{BuildProfile, CompileTarget, Compiler},
-    lang::{csharp::parser::CsParser, pup::parser::PupParser},
+    lang::{
+        csharp::parser::CsParser, pup::parser::PupParser, typescript::parser::TypeScriptParser,
+    },
 };
 
 /// Convert a *res:// path* or absolute path under res/
@@ -87,7 +89,7 @@ fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
 
         if path.is_file() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                if ["pup", "rs", "cs"].contains(&ext) {
+                if ["pup", "rs", "cs", "ts"].contains(&ext) {
                     scripts.push(path.to_path_buf());
                 }
             }
@@ -262,6 +264,14 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
             }
             "cs" => {
                 let mut script = CsParser::new(&code).parse_script()?;
+                parse_time = parse_start.elapsed();
+
+                transpile_start = Instant::now();
+                script.to_rust(&identifier, project_root, None, verbose);
+                transpile_time = transpile_start.elapsed();
+            }
+            "ts" => {
+                let mut script = TypeScriptParser::new(&code).parse_script()?;
                 parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
