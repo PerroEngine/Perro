@@ -974,18 +974,20 @@ impl<P: ScriptProvider> Scene<P> {
                 match node {
                     //2D Nodes
                     SceneNode::Sprite2D(sprite) => {
-                        if let Some(tex) = &sprite.texture_path {
-                            gfx.renderer_2d.queue_texture(
-                                &mut gfx.renderer_prim,
-                                &mut gfx.texture_manager,
-                                &gfx.device,
-                                &gfx.queue,
-                                node_id,
-                                tex,
-                                sprite.transform,
-                                sprite.pivot,
-                                sprite.z_index,
-                            );
+                        if sprite.node_2d.visible {
+                            if let Some(tex) = &sprite.texture_path {
+                                gfx.renderer_2d.queue_texture(
+                                    &mut gfx.renderer_prim,
+                                    &mut gfx.texture_manager,
+                                    &gfx.device,
+                                    &gfx.queue,
+                                    node_id,
+                                    tex,
+                                    sprite.transform,
+                                    sprite.pivot,
+                                    sprite.z_index,
+                                );
+                            }
                         }
                     }
                     SceneNode::Camera2D(camera) => {

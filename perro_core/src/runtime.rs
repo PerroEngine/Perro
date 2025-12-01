@@ -13,8 +13,10 @@ use crate::manifest::Project;
 use crate::rendering::app::App;
 use crate::scene::{Scene, SceneData};
 use crate::script::{CreateFn, ScriptProvider};
+use crate::structs2d::texture::StaticTextureData;
 use crate::ui::fur_ast::FurElement;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use winit::event_loop::EventLoop;
 
 /// Static assets that are bundled with the binary
@@ -22,6 +24,7 @@ pub struct StaticAssets {
     pub project: &'static Project,
     pub scenes: &'static Lazy<HashMap<&'static str, &'static SceneData>>,
     pub fur: &'static Lazy<HashMap<&'static str, &'static [FurElement]>>,
+    pub textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>,
 }
 
 /// Project-specific data that needs to be passed from the binary
@@ -101,6 +104,26 @@ fn run_app(event_loop: EventLoop<Graphics>, mut app: App<StaticScriptProvider>) 
     let _ = event_loop.run_app(&mut app);
 }
 
+/// Global static textures map (set once at startup, only in runtime mode)
+static STATIC_TEXTURES: AtomicPtr<std::collections::HashMap<&'static str, &'static StaticTextureData>> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Initialize static textures (called once at startup in runtime mode)
+pub fn set_static_textures(textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>) {
+    // Get the inner HashMap reference
+    let map_ref = &**textures;
+    STATIC_TEXTURES.store(map_ref as *const _ as *mut _, Ordering::Release);
+}
+
+/// Get static textures map (returns None if not initialized or in dev mode)
+pub fn get_static_textures() -> Option<&'static std::collections::HashMap<&'static str, &'static StaticTextureData>> {
+    let ptr = STATIC_TEXTURES.load(Ordering::Acquire);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { &*ptr })
+    }
+}
+
 /// Helper to append errors to errors.log
 fn log_error(msg: &str) {
     if let Ok(exe_path) = env::current_exe() {
@@ -155,10 +178,13 @@ pub fn run_game(data: RuntimeData) {
         }
     }
 
-    // 4. Create event loop
+    // 4. Initialize static textures (runtime mode only)
+    set_static_textures(data.static_assets.textures);
+
+    // 5. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 5. Build runtime scene using StaticScriptProvider
+    // 6. Build runtime scene using StaticScriptProvider
     let provider = StaticScriptProvider::new(&data);
 
     // Wrap project in Rc<RefCell>

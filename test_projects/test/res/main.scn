@@ -5,24 +5,54 @@
       "type": "Node2D",
       "node": {
         "type": "Node",
-        "name": "World",
-        "script_path": "res://types.pup"
+        "name": "World"
+    
       }
     },
     "22222222-2222-2222-2222-222222222222": {
       "type": "Node2D",
       "node": {
         "type": "Node",
-        "name": "WorldCS",
-        "script_path": "res://types.cs"
+        "name": "WorldCS"
+
       }
     },
-        "33333333-3333-3333-3333-333333333333": {
-      "type": "Node2D",
-      "node": {
-        "type": "Node",
-        "name": "WorldTS",
-        "script_path": "res://types.ts"
+    "33333333-3333-3333-3333-333333333333": {
+      "type": "Sprite2D",
+      "texture_path": "res://perro-logo.png",
+      "node_2d": {
+        "type": "Node2D",
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        },
+        "visible": true,
+        "node": {
+          "type": "Node",
+          "name": "WorldTS",
+          "parent": "11111111-1111-1111-1111-111111111111"
+        }
+      }
+    },
+    "44444444-4444-4444-4444-444444444444": {
+      "type": "Camera2D",
+      "active": true,
+      "zoom": 1.0,
+      "node_2d": {
+        "type": "Node2D",
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        },
+        "visible": true,
+        "node": {
+          "type": "Node",
+          "name": "MainCamera",
+          "parent": "11111111-1111-1111-1111-111111111111"
+        }
       }
     }
-} }
+  }
+}

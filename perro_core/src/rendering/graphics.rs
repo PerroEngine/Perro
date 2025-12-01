@@ -18,6 +18,7 @@ use crate::{
     renderer_3d::{MaterialUniform, Mesh, Renderer3D},
     renderer_prim::PrimitiveRenderer,
     renderer_ui::RendererUI,
+    runtime::get_static_textures,
     structs2d::ImageTexture,
     vertex::Vertex,
 };
@@ -57,15 +58,37 @@ impl TextureManager {
     ) -> &ImageTexture {
         let key = path.to_string();
         if !self.textures.contains_key(&key) {
-            let img_bytes = load_asset(path).expect("Failed to read image file");
-            let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
-            println!(
-                "🖼️ Loading texture: {} ({}x{})",
-                path,
-                img.width(),
-                img.height()
-            );
-            let img_texture = ImageTexture::from_image(&img, device, queue);
+            // Runtime mode: check static textures first, then fall back to disk/BRK
+            // Dev mode: static textures will be None, so it loads from disk/BRK
+            let img_texture = if let Some(static_textures) = get_static_textures() {
+                if let Some(static_data) = static_textures.get(path) {
+                    println!("🖼️ Loading static texture: {} ({}x{})", path, static_data.width, static_data.height);
+                    // Use pre-decoded RGBA8 data to create ImageTexture
+                    static_data.to_image_texture(device, queue)
+                } else {
+                    // Not in static textures, load from disk/BRK
+                    let img_bytes = load_asset(path).expect("Failed to read image file");
+                    let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
+                    println!(
+                        "🖼️ Loading texture: {} ({}x{})",
+                        path,
+                        img.width(),
+                        img.height()
+                    );
+                    ImageTexture::from_image(&img, device, queue)
+                }
+            } else {
+                // Dev mode: no static textures, load from disk/BRK
+                let img_bytes = load_asset(path).expect("Failed to read image file");
+                let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
+                println!(
+                    "🖼️ Loading texture: {} ({}x{})",
+                    path,
+                    img.width(),
+                    img.height()
+                );
+                ImageTexture::from_image(&img, device, queue)
+            };
             self.textures.insert(key.clone(), img_texture);
         }
         self.textures.get(&key).unwrap()
