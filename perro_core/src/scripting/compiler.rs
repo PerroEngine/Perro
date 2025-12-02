@@ -1882,8 +1882,6 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
     }
 
     fn codegen_textures_file(&self, static_assets_dir: &Path) -> anyhow::Result<()> {
-        use std::fmt::Write as _;
-
         let textures_output_path = static_assets_dir.join("textures.rs");
         let mut textures_file = File::create(&textures_output_path)?;
 
@@ -1914,6 +1912,16 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             textures_file.flush()?;
             return Ok(());
         }
+
+        // Create embedded_assets directory in project root (outside src/)
+        // static_assets_dir is project_crate_root/src/static_assets
+        // So project_crate_root is static_assets_dir.parent().parent()
+        let project_crate_root = static_assets_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .ok_or_else(|| anyhow::anyhow!("Could not determine project crate root"))?;
+        let embedded_assets_dir = project_crate_root.join("embedded_assets");
+        fs::create_dir_all(&embedded_assets_dir)?;
 
         let mut processed_texture_paths: HashSet<String> = HashSet::new();
         let mut static_texture_definitions_code = String::new();
@@ -1950,25 +1958,26 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                             // Generate static texture data
                             let static_texture_name = Self::sanitize_res_path_to_ident(&res_path);
                             
-                            // Format RGBA8 bytes as a compact static byte array literal
-                            // Use fewer line breaks to reduce file size (one line per 1024 bytes)
-                            let mut bytes_code = String::new();
-                            bytes_code.push_str("&[");
-                            let raw_bytes = rgba.as_raw();
-                            for (i, byte) in raw_bytes.iter().enumerate() {
-                                if i > 0 && i % 1024 == 0 {
-                                    bytes_code.push_str("\n        ");
-                                }
-                                write!(&mut bytes_code, "0x{:02X},", byte)?;
-                            }
-                            bytes_code.push_str("]");
+                            // Write RGBA8 bytes to a binary file in embedded_assets/
+                            // Use sanitized name for the file to avoid filesystem issues
+                            let rgba_file_name = format!("{}.rgba", static_texture_name);
+                            let rgba_file_path = embedded_assets_dir.join(&rgba_file_name);
+                            std::fs::write(&rgba_file_path, rgba.as_raw())
+                                .map_err(|e| anyhow::anyhow!("Failed to write RGBA file {}: {}", rgba_file_path.display(), e))?;
                             
-                            // Create a static byte array and reference it
-                            let bytes_array_name = format!("{}_BYTES", static_texture_name);
+                            // Note: Cargo automatically tracks files included via include_bytes!,
+                            // so we don't need to add rerun-if-changed for the rgba file.
+                            // The source image is already tracked above.
+                            
+                            // Generate code using include_bytes! macro
+                            // Path is relative to textures.rs location (src/static_assets/)
+                            // embedded_assets/ is at project root, so relative path is ../../embedded_assets/
+                            let include_path = format!("../../embedded_assets/{}", rgba_file_name);
                             static_texture_definitions_code.push_str(&format!(
                                 r#"
 /// Auto-generated static texture bytes for {path}
-static {bytes_name}: &[u8] = {bytes_code};
+/// Loaded from embedded binary file at compile time
+static {bytes_name}: &[u8] = include_bytes!("{include_path}");
 
 /// Auto-generated static texture data for {path}
 static {name}: StaticTextureData = StaticTextureData {{
@@ -1979,10 +1988,10 @@ static {name}: StaticTextureData = StaticTextureData {{
 "#,
                                 path = res_path,
                                 name = static_texture_name,
-                                bytes_name = bytes_array_name,
+                                bytes_name = format!("{}_BYTES", static_texture_name),
+                                include_path = include_path,
                                 width = width,
                                 height = height,
-                                bytes_code = bytes_code
                             ));
 
                             map_insertions_code.push_str(&format!(

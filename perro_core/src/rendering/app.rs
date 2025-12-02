@@ -46,30 +46,53 @@ const MAX_FRAME_DEBT: f64 = 0.025; // 25ms worth of frames
 #[cfg(not(target_arch = "wasm32"))]
 fn load_icon(path: &str) -> Option<winit::window::Icon> {
     use crate::asset_io::load_asset;
+    use crate::runtime::get_static_textures;
     use image::imageops::FilterType;
+    use image::ImageBuffer;
     use winit::window::Icon;
 
     println!("🔎 Loading icon from {path}");
 
-    match load_asset(path) {
-        Ok(bytes) => match image::load_from_memory(&bytes) {
-            Ok(img) => {
-                println!("✅ Successfully decoded {path} as icon");
-
-                let target_size = 32;
-                let resized = img.resize_exact(target_size, target_size, FilterType::Lanczos3);
-
-                let rgba = resized.into_rgba8();
-                let (width, height) = rgba.dimensions();
-                Some(Icon::from_rgba(rgba.into_raw(), width, height).ok()?)
+    // Check static textures first (runtime mode)
+    let img = if let Some(static_textures) = get_static_textures() {
+        if let Some(static_data) = static_textures.get(path) {
+            println!("✅ Loading icon from static texture: {} ({}x{})", path, static_data.width, static_data.height);
+            // Convert pre-decoded RGBA8 bytes to DynamicImage
+            ImageBuffer::from_raw(
+                static_data.width,
+                static_data.height,
+                static_data.rgba8_bytes.to_vec(),
+            )
+            .map(image::DynamicImage::ImageRgba8)
+            .ok_or_else(|| "Failed to create image from static texture data".to_string())
+        } else {
+            // Not in static textures, load from disk/BRK
+            match load_asset(path) {
+                Ok(bytes) => image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e)),
+                Err(e) => Err(format!("Failed to load asset: {}", e)),
             }
-            Err(err) => {
-                eprintln!("❌ Failed to decode image {path}: {err}");
-                None
-            }
-        },
+        }
+    } else {
+        // Dev mode: no static textures, load from disk/BRK
+        match load_asset(path) {
+            Ok(bytes) => image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e)),
+            Err(e) => Err(format!("Failed to load asset: {}", e)),
+        }
+    };
+
+    match img {
+        Ok(img) => {
+            println!("✅ Successfully decoded {path} as icon");
+
+            let target_size = 32;
+            let resized = img.resize_exact(target_size, target_size, FilterType::Lanczos3);
+
+            let rgba = resized.into_rgba8();
+            let (width, height) = rgba.dimensions();
+            Some(Icon::from_rgba(rgba.into_raw(), width, height).ok()?)
+        }
         Err(err) => {
-            eprintln!("❌ Failed to load asset {path}: {err}");
+            eprintln!("❌ Failed to load/decode icon {path}: {err}");
             None
         }
     }

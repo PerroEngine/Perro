@@ -17,7 +17,7 @@ use zstd::stream::encode_all; // Added for Zstandard compression
 const SKIP_SCRIPTING: &[&str] = &["pup", "rs", "cs", "ts"];
 
 // Scene and UI data (compiled into scenes.rs and fur.rs)
-const SKIP_SCENE_DATA: &[&str] = &["scn", "fur", "png"];
+const SKIP_SCENE_DATA: &[&str] = &["scn", "fur", "rgba", "png"];
 
 // Helper function to check if extension should be skipped
 fn should_skip_extension(ext: &str) -> bool {

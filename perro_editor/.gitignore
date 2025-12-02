@@ -2,6 +2,7 @@
 builds/
 
 /.perro/project/src/static_assets/
+/.perro/project/embedded_assets/
 
 /assets.brk
 
