@@ -9,6 +9,7 @@ use crate::{
     apply_fur::{build_ui_elements_from_fur, parse_fur_file},
     asset_io::{ProjectRoot, get_project_root, load_asset, save_asset},
     fur_ast::{FurElement, FurNode},
+    input::joycon::ControllerManager,
     manifest::Project,
     node_registry::{BaseNode, SceneNode},
     prelude::string_to_u64,
@@ -17,6 +18,7 @@ use crate::{
     ui_element::{BaseElement, UIElement},
     ui_renderer::render_ui, // NEW import
 };
+use std::sync::Mutex;
 
 use glam::{Mat4, Vec3};
 use indexmap::IndexMap;
@@ -201,6 +203,7 @@ pub struct Scene<P: ScriptProvider> {
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
+    pub controller_manager: Mutex<ControllerManager>, // Controller input manager
 
     pub last_scene_update: Option<Instant>,
     pub delta_accum: f32,
@@ -226,6 +229,7 @@ impl<P: ScriptProvider> Scene<P> {
             provider,
             project,
             app_command_tx: None,
+            controller_manager: Mutex::new(ControllerManager::new()),
 
             last_scene_update: Some(Instant::now()),
             delta_accum: 0.0,
@@ -244,6 +248,7 @@ impl<P: ScriptProvider> Scene<P> {
             provider,
             project,
             app_command_tx: None,
+            controller_manager: Mutex::new(ControllerManager::new()),
 
             last_scene_update: Some(Instant::now()),
             delta_accum: 0.0,
@@ -1120,6 +1125,10 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     // NEW method implementation
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>> {
         self.app_command_tx.as_ref()
+    }
+
+    fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>> {
+        Some(&self.controller_manager)
     }
 }
 

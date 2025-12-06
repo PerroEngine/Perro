@@ -12,6 +12,7 @@ use std::{
 
 use num_bigint::BigInt;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
@@ -86,7 +87,7 @@ impl Script for ScriptsCsCsScript {
         self.health = 100i32;
         self.speed = 200.0f32;
         self.speed += 50.0f32;
-        // [stripped for release] api.print(&String::from("Player initialized!"));
+        api.print(&String::from("Player initialized!"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -102,7 +103,7 @@ impl Script for ScriptsCsCsScript {
 impl ScriptsCsCsScript {
     fn TakeDamage(&mut self, mut amount: i32, api: &mut ScriptApi<'_>, external_call: bool) {
         self.health -= amount;
-        // [stripped for release] api.print(&String::from("Took damage!"));
+        api.print(&String::from("Took damage!"));
     }
 
 }

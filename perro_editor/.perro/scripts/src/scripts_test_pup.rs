@@ -12,6 +12,7 @@ use std::{
 
 use num_bigint::BigInt;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
@@ -69,7 +70,7 @@ impl Script for ScriptsTestPupScript {
 
 impl ScriptsTestPupScript {
     fn bob(&mut self, mut i: i32, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&i);
+        api.print(&i);
     }
 
 }

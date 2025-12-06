@@ -12,6 +12,7 @@ use std::{
 
 use num_bigint::BigInt;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
@@ -54,7 +55,7 @@ impl Script for ScriptsLightPupScript {
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         self.node = api.get_node_clone::<DirectionalLight3D>(self.node.id);
-        let mut delta = api.Time.get_delta();
+        let mut delta: f32 = api.Time.get_delta();
         self.node.transform.rotate_x(((1.1f32 * delta)));
         self.node.transform.rotate_y(((0.9f32 * delta)));
         self.node.transform.rotate_z(((1.0f32 * delta)));

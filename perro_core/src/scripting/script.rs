@@ -82,12 +82,16 @@ pub trait ScriptObject: Script {
 /// Function pointer type for script constructors
 pub type CreateFn = extern "C" fn() -> *mut dyn ScriptObject;
 
+use crate::input::joycon::ControllerManager;
+use std::sync::Mutex;
+
 /// Trait object for scene access (dyn‑safe)
 pub trait SceneAccess {
     fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode>;
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>);
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>>;
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
+    fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
 
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn instantiate_script(
