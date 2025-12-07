@@ -740,6 +740,15 @@ impl<P: ScriptProvider> Scene<P> {
             self.true_updates = 0;
         }
 
+        // Automatically poll Joy-Con 1 devices if polling is enabled
+        // (Joy-Con 2 is polled automatically via async task)
+        if let Some(mgr) = self.get_controller_manager() {
+            let mgr = mgr.lock().unwrap();
+            if mgr.is_polling_enabled() {
+                mgr.poll_joycon1_sync();
+            }
+        }
+
         // now use `true_delta` instead of external_delta
         let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
 

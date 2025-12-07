@@ -59,7 +59,8 @@ impl JoyCon2 {
             .map_err(|e| JoyConError::Ble(format!("Failed to start scan: {}", e)))?;
 
         // Wait a bit for devices to be discovered
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Reduced to 1 second to connect faster while device is still in pairing mode
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
         let peripherals = central.peripherals().await
             .map_err(|e| JoyConError::Ble(format!("Failed to get peripherals: {}", e)))?;
@@ -328,10 +329,15 @@ impl JoyCon2 {
         ];
         
         for (i, cmd) in commands.iter().enumerate() {
+            println!("  Sending command {}...", i + 1);
             match self.peripheral.write(cmd_char, cmd, write_type).await {
                 Ok(_) => {
                     println!("  ✓ Sent command {} successfully", i + 1);
-                    tokio::time::sleep(Duration::from_millis(500)).await; // 500ms delay as in C++ code
+                    if i < commands.len() - 1 {
+                        println!("  Waiting 500ms before next command...");
+                        tokio::time::sleep(Duration::from_millis(500)).await; // 500ms delay as in C++ code
+                        println!("  Wait complete, continuing to next command...");
+                    }
                 }
                 Err(e) => {
                     println!("  ⚠ Failed to send command {}: {}", i + 1, e);
@@ -340,6 +346,7 @@ impl JoyCon2 {
         }
         
         println!("  Note: Motion data should appear at bytes 0x30-0x3B in input reports.");
+        println!("  ✓ Sensors enabled");
         
         Ok(())
     }
@@ -485,7 +492,8 @@ pub async fn scan_devices() -> Result<Vec<String>> {
                 Some(JOYCON_R_SIDE) => " (Right)",
                 _ => "",
             };
-            println!("  ✓ Found Joy-Con 2{}: {} - {}", side_str, id_str, debug_info);
+            println!("[Joy-Con 2] ✓ FOUND Joy-Con 2{}: ID={}", side_str, id_str);
+            println!("[Joy-Con 2]   Details: {}", debug_info);
             if !devices.contains(&id_str) {
                 devices.push(id_str);
             }

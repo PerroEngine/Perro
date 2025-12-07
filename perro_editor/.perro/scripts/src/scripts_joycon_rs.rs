@@ -51,119 +51,66 @@ pub extern "C" fn scripts_joycon_rs_create_script() -> *mut dyn ScriptObject {
 
 impl Script for JoyConScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        // Scan for Joy-Con 1 devices (HID)
-        api.print("Scanning for Joy-Con 1 devices...");
-        api.print("About to call scan_joycon1()...");
-        let devices = api.Input.JoyCon.scan_joycon1();
-        api.print(&format!("scan_joycon1() returned, got {} devices", devices.len()));
-        api.print(&format!("Found {} Joy-Con devices", devices.len()));
-        
-        // Connect to each found device
-        let mut connected_count = 0;
-        for device in devices {
-            if let Some(serial) = device.get("serial").and_then(|v| v.as_str()) {
-                if let Some(vid) = device.get("vendor_id").and_then(|v| v.as_u64()) {
-                    if let Some(pid) = device.get("product_id").and_then(|v| v.as_u64()) {
-                        api.print(&format!("Attempting to connect to: {} (VID: 0x{:04X}, PID: 0x{:04X})", serial, vid, pid));
-                        if api.Input.JoyCon.connect_joycon1(serial, vid, pid) {
-                            api.print(&format!("Successfully connected to: {}", serial));
-                            connected_count += 1;
-                        } else {
-                            api.print(&format!("Failed to connect to: {}", serial));
-                        }
-                    }
-                }
-            }
-        }
-        
-        api.print(&format!("Connected to {} Joy-Con device(s)", connected_count));
-        
-        // Enable polling to start receiving input reports
-        if api.Input.JoyCon.enable_polling() {
-            api.print("Joy-Con polling enabled");
-        } else {
-            api.print("Failed to enable Joy-Con polling");
-        }
+        // Enable polling - this automatically scans, connects, and starts polling
+        // for all available Joy-Con devices (both V1 and V2)
+        api.Input.JoyCon.enable_polling();
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
         let mut delta = api.Time.get_delta();
         
-        // Poll Joy-Con 1 devices synchronously (call this every frame)
-        api.Input.JoyCon.poll_joycon1_sync();
-        
-        // Get data from all connected controllers
+        // Get data from all connected controllers (both Joy-Con 1 and 2)
+        // Polling is now automatic when enable_polling() is called in init()
+        // No need to call poll_joycon1_sync() manually anymore!
         let controllers = api.Input.JoyCon.get_data();
-        
         
         // Default movement (if no controllers connected)
         if controllers.is_empty() {
             self.node.transform.position.x -= (0.5f32 * delta);
         } else {
-            // Process each controller
+            // Process each controller (works with both Joy-Con V1 and V2)
+            // Data is returned as JoyconState structs - direct field access!
             for controller in controllers {
-                if let Some(serial) = controller.get("serial").and_then(|v| v.as_str()) {
-                    if let Some(report) = controller.get("report") {
-                        // Check button states
-                        if let Some(buttons) = report.get("buttons") {
-                            if buttons.get("a").and_then(|v| v.as_bool()).unwrap_or(false) {
-                                api.print(&format!("[{}] A button pressed!", serial));
-                            }
-                            
-                            if buttons.get("b").and_then(|v| v.as_bool()).unwrap_or(false) {
-                                api.print(&format!("[{}] B button pressed!", serial));
-                            }
-                            
-                            // Reset transform to default when X button is pressed
-                            if buttons.get("x").and_then(|v| v.as_bool()).unwrap_or(false) {
-                                self.node.transform = Transform3D::default();
-                            }
-                        }
-                        
-                        // Get stick data and use it to move the node
-                        if let Some(stick) = report.get("stick") {
-                            let h = stick.get("horizontal_norm").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-                            let v = stick.get("vertical_norm").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-                            
-                            // Move node based on stick input (normalized 0.0-1.0, center is 0.5)
-                            let stick_h = (h - 0.5) * 2.0; // Convert to -1.0 to 1.0
-                            let stick_v = (v - 0.5) * 2.0; // Convert to -1.0 to 1.0
-                        
-                        }
-                        
-                        // Get gyro data and use it to rotate the node
-                        // Joy-Con gyro axes (when held normally, buttons facing you):
-                        // - X-axis: Roll (twist around long axis) → rotate_z (roll in world space)
-                        // - Y-axis: Pitch (tilt forward/backward) → rotate_x (pitch in world space)
-                        // - Z-axis: Yaw (turn left/right) → rotate_y (yaw in world space)
-                        // Note: Gyro values are in degrees/second, convert to radians and scale by delta
-                        if let Some(gyro) = report.get("gyro") {
-                            let gx_raw = gyro.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                            let gy_raw = gyro.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                            let gz_raw = gyro.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                            
-                            // Apply gyro deadzone: if absolute value is less than 35, treat as 0
-                            const GYRO_DEADZONE: f32 = 75.0;
-                            let gx = if gx_raw.abs() < GYRO_DEADZONE { 0.0 } else { gx_raw };
-                            let gy = if gy_raw.abs() < GYRO_DEADZONE { 0.0 } else { gy_raw };
-                            let gz = if gz_raw.abs() < GYRO_DEADZONE { 0.0 } else { gz_raw };
-                            
-                            // Convert degrees/second to radians and apply rotation
-                            // Scale factor: 0.001 converts deg/s to rad/frame (assuming ~1000 FPS)
-                            // Adjust this value to make rotation more/less sensitive
-                            const GYRO_SCALE: f32 = 0.001;
-                            
-                            // Map Joy-Con gyro to world space rotations:
-                            // gx (roll/twist) → rotate_z
-                            // gy (pitch/tilt) → rotate_x  
-                            // gz (yaw/turn) → rotate_y
-                            self.node.transform.rotate_x(-gy * delta * GYRO_SCALE);
-                            self.node.transform.rotate_y(-gz * delta * GYRO_SCALE);
-                            self.node.transform.rotate_z(gx * delta * GYRO_SCALE);
-                        }
-                    }
+        
+                // Check button states - direct struct access
+                if controller.buttons.a {
+                    api.print("A button pressed!");
                 }
+                
+                if controller.buttons.b {
+                    api.print("B button pressed!");
+                }
+                
+                // Reset transform to default when X button is pressed
+                if controller.buttons.x {
+                    self.node.transform = Transform3D::default();
+                }
+                
+                // Get stick data - direct struct access
+                // Stick is already normalized to -1.0 to 1.0 (center at 0.0)
+                let stick_h = controller.stick.x;
+                let stick_v = controller.stick.y;
+                
+                // Move node based on stick input
+                // stick_h and stick_v are already in -1.0 to 1.0 range
+                
+                // Get gyro data - direct struct access!
+                // Gyro axes are already remapped to match engine coordinate system:
+                // - X: Pitch (tilt forward/backward) → rotate_x
+                // - Y: Yaw (turn left/right, up/down) → rotate_y
+                // - Z: Roll (twist around long axis) → rotate_z
+                // Note: Gyro values are already in radians/second (converted in the API)
+                // Deadzone is already applied at the calibration level with adaptive behavior
+                let gx = controller.gyro.x;
+                let gy = controller.gyro.y;
+                let gz = controller.gyro.z;
+                
+                // Apply rotations directly - axes already match engine coordinate system
+                // Gyro is already in radians/second, so just multiply by delta
+                self.node.transform.rotate_x(gx * delta);
+                self.node.transform.rotate_y(gy * delta);
+                self.node.transform.rotate_z(gz * delta);
             }
         }
 

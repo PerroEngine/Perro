@@ -5,5 +5,6 @@
 
 pub mod joycon;
 
-pub use joycon::{InputReport, Buttons, Stick, Gyro, Accel, Calibration, ControllerManager};
+pub use joycon::{InputReport, Buttons, Calibration, ControllerManager};
+pub use crate::structs::{Vector2, Vector3};
 

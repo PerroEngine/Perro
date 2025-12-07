@@ -4,6 +4,13 @@
 
 use crate::input::joycon::error::Result;
 use crate::input::joycon::{JOYCON_1_LEFT_PID, JOYCON_1_RIGHT_PID};
+use crate::structs::{Vector2, Vector3};
+
+/// Gyroscope scale factor: divide raw i16 values by this to get degrees per second
+/// Joy-Con gyro raw values need scaling. If rotations are too sensitive, increase this value.
+/// If rotations are too slow or not moving, decrease this value.
+/// Typical range: 10-30 depending on sensor calibration
+const JOYCON_GYRO_SCALE: f32 = 15.0;
 
 /// Remap stick percent value with deadzone and range expansion
 /// - Deadzone: 45-55% maps to 50% (center)
@@ -38,12 +45,12 @@ pub(crate) fn remap_stick_percent(raw_percent: f32) -> u8 {
 pub struct InputReport {
     /// Button states
     pub buttons: Buttons,
-    /// Analog stick position
-    pub stick: Stick,
-    /// Gyroscope data (degrees per second)
-    pub gyro: Gyro,
-    /// Accelerometer data (g-force)
-    pub accel: Accel,
+    /// Analog stick position as Vector2 (normalized -1.0 to 1.0, where 0.0 is center)
+    pub stick: Vector2,
+    /// Gyroscope data (degrees per second) as Vector3
+    pub gyro: Vector3,
+    /// Accelerometer data (g-force) as Vector3
+    pub accel: Vector3,
     /// Battery level (0-4, where 4 is full)
     pub battery_level: u8,
     /// Whether the device is charging
@@ -79,36 +86,6 @@ pub struct Buttons {
     pub stick_press: bool, // Left stick on left, right stick on right
 }
 
-/// Analog stick position
-#[derive(Debug, Clone, Copy)]
-pub struct Stick {
-    pub horizontal: u16, // Raw value 0-4095
-    pub vertical: u16,   // Raw value 0-4095
-    /// Normalized horizontal position (-1.0 to 1.0, where 0.0 is center)
-    pub horizontal_norm: f32,
-    /// Normalized vertical position (-1.0 to 1.0, where 0.0 is center)
-    pub vertical_norm: f32,
-    /// Horizontal position as percentage (0-100, where 50 is center) - deprecated, use horizontal_norm
-    pub horizontal_percent: u8,
-    /// Vertical position as percentage (0-100, where 50 is center) - deprecated, use vertical_norm
-    pub vertical_percent: u8,
-}
-
-/// Gyroscope data (degrees per second)
-#[derive(Debug, Clone, Copy)]
-pub struct Gyro {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-/// Accelerometer data (g-force)
-#[derive(Debug, Clone, Copy)]
-pub struct Accel {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
 
 impl InputReport {
     /// Decode a raw Joy-Con 1 input report buffer into structured data
@@ -210,20 +187,11 @@ impl InputReport {
             // Normalize: 0-4095 -> 0.0-1.0 (center ~2048 = 0.5)
             let x_norm = raw_x as f32 / 4095.0;
             let y_norm = raw_y as f32 / 4095.0;
-            // Apply deadzone and range remapping for better sensitivity
-            let x_percent_raw = (raw_x as f32 / 4095.0) * 100.0;
-            let y_percent_raw = (raw_y as f32 / 4095.0) * 100.0;
-            let x_percent = remap_stick_percent(x_percent_raw);
-            let y_percent = remap_stick_percent(y_percent_raw);
+            // Convert to -1.0 to 1.0 range (center at 0.0)
+            let x = (x_norm - 0.5) * 2.0;
+            let y = (y_norm - 0.5) * 2.0;
             
-            Stick {
-                horizontal: raw_x,
-                vertical: raw_y,
-                horizontal_norm: x_norm,
-                vertical_norm: y_norm,
-                horizontal_percent: x_percent,
-                vertical_percent: y_percent,
-            }
+            Vector2::new(x, y)
         } else {
             // Right stick at bytes 9-11 (absolute indices like C++ code)
             let stick_start = 9 - offset;
@@ -240,20 +208,11 @@ impl InputReport {
             // Normalize: 0-4095 -> 0.0-1.0 (center ~2048 = 0.5)
             let x_norm = raw_x as f32 / 4095.0;
             let y_norm = raw_y as f32 / 4095.0;
-            // Apply deadzone and range remapping for better sensitivity
-            let x_percent_raw = (raw_x as f32 / 4095.0) * 100.0;
-            let y_percent_raw = (raw_y as f32 / 4095.0) * 100.0;
-            let x_percent = remap_stick_percent(x_percent_raw);
-            let y_percent = remap_stick_percent(y_percent_raw);
+            // Convert to -1.0 to 1.0 range (center at 0.0)
+            let x = (x_norm - 0.5) * 2.0;
+            let y = (y_norm - 0.5) * 2.0;
             
-            Stick {
-                horizontal: raw_x,
-                vertical: raw_y,
-                horizontal_norm: x_norm,
-                vertical_norm: y_norm,
-                horizontal_percent: x_percent,
-                vertical_percent: y_percent,
-            }
+            Vector2::new(x, y)
         };
 
         // Extract battery and charging info from byte 2 (absolute index like C++ code)
@@ -283,14 +242,10 @@ impl InputReport {
                 let accel_x = i16::from_le_bytes([data[accel_start], data[accel_start + 1]]) as f32;
                 let accel_y = i16::from_le_bytes([data[accel_start + 2], data[accel_start + 3]]) as f32;
                 let accel_z = i16::from_le_bytes([data[accel_start + 4], data[accel_start + 5]]) as f32;
-                Accel {
-                    x: accel_x,
-                    y: accel_y,
-                    z: accel_z,
-                }
+                Vector3::new(accel_x, accel_y, accel_z)
             } else {
                 // Return zeros if data not available
-                Accel { x: 0.0, y: 0.0, z: 0.0 }
+                Vector3::zero()
             }
         };
 
@@ -299,21 +254,19 @@ impl InputReport {
         // Gyro X: bytes 19 (LSB), 20 (MSB)
         // Gyro Y: bytes 21 (LSB), 22 (MSB)
         // Gyro Z: bytes 23 (LSB), 24 (MSB)
+        // Joy-Con 1 gyro raw values need to be scaled to convert to degrees/second
+        // Divide raw i16 values by JOYCON_GYRO_SCALE to get degrees per second
         let gyro = {
             let gyro_start = 19 - offset;
             let gyro_end = 25 - offset;
             if gyro_end <= data.len() {
-                let gyro_x = i16::from_le_bytes([data[gyro_start], data[gyro_start + 1]]) as f32;
-                let gyro_y = i16::from_le_bytes([data[gyro_start + 2], data[gyro_start + 3]]) as f32;
-                let gyro_z = i16::from_le_bytes([data[gyro_start + 4], data[gyro_start + 5]]) as f32;
-                Gyro {
-                    x: gyro_x,
-                    y: gyro_y,
-                    z: gyro_z,
-                }
+                let gyro_x = i16::from_le_bytes([data[gyro_start], data[gyro_start + 1]]) as f32 / JOYCON_GYRO_SCALE;
+                let gyro_y = i16::from_le_bytes([data[gyro_start + 2], data[gyro_start + 3]]) as f32 / JOYCON_GYRO_SCALE;
+                let gyro_z = i16::from_le_bytes([data[gyro_start + 4], data[gyro_start + 5]]) as f32 / JOYCON_GYRO_SCALE;
+                Vector3::new(gyro_x, gyro_y, gyro_z)
             } else {
                 // Return zeros if data not available
-                Gyro { x: 0.0, y: 0.0, z: 0.0 }
+                Vector3::zero()
             }
         };
 
@@ -363,6 +316,7 @@ impl InputReport {
         let state = ((data[btn_offset] as u32) << 16) 
                   | ((data[btn_offset + 1] as u32) << 8) 
                   | (data[btn_offset + 2] as u32);
+        
         
         let mut buttons = Buttons::default();
         
@@ -415,6 +369,7 @@ impl InputReport {
             buttons.r = (state & BUTTON_R_MASK_RIGHT) != 0;
             buttons.stick_press = (state & BUTTON_STICK_MASK_RIGHT) != 0;
             buttons.zr = (state & ZR_MASK) != 0;
+            
             // SL/SR/Home need to be checked from the original bytes
             if data.len() > 4 {
                 buttons.sl = (data[4] & 0x20) != 0;
@@ -447,17 +402,11 @@ impl InputReport {
         let max = 4095.0;
         let horizontal_norm = (stick_x as f32 / max).clamp(0.0, 1.0);
         let vertical_norm = (stick_y as f32 / max).clamp(0.0, 1.0);
-        let horizontal_percent = remap_stick_percent(horizontal_norm * 100.0);
-        let vertical_percent = remap_stick_percent(vertical_norm * 100.0);
+        // Convert to -1.0 to 1.0 range (center at 0.0)
+        let x = (horizontal_norm - 0.5) * 2.0;
+        let y = (vertical_norm - 0.5) * 2.0;
     
-        let stick = Stick {
-            horizontal: stick_x,
-            vertical: stick_y,
-            horizontal_norm,
-            vertical_norm,
-            horizontal_percent,
-            vertical_percent,
-        };
+        let stick = Vector2::new(x, y);
     
         // Battery & charging - approximate (same offsets for both formats)
         let battery_voltage = if data.len() >= 33 { 
@@ -472,28 +421,47 @@ impl InputReport {
             else { 0 };
 
         // Motion data decoding
-        // For Report 0x08 (63 bytes): Motion data is at 0x30-0x3B (same as Report 0x05)
-        // Based on joycon2cpp C++ code: motion data is always at 0x30-0x3B regardless of report type
-        // The byte at 0xF might not be the motion data length for Report 0x08
-        // Just use the same location as Report 0x05 (0x30-0x3B)
+        // Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md
+        // Motion data is at 0x30-0x3B (same for both Report 0x05 and 0x08)
         // Accelerometer: Use raw signed 16-bit values to match Joy-Con 1 format (around 4000 when flat)
-        // Gyroscope: Scale by 133.333 to convert to degrees per second
+        // Gyroscope: Scale to degrees/second
+        // Joy-Con 2 uses a different base scale than Joy-Con 1
+        // Scale adjustment: if 90° physical = 135° virtual, reduce sensitivity by 1.5x
+        // 9.25 * 1.5 = 13.875
+        const JOYCON2_GYRO_SCALE: f32 = 13.875; // Adjusted: 90° physical = 90° virtual
         let (gyro, accel) = if data.len() >= 0x3C {
-            // Motion data at 0x30-0x3B (same for both Report 0x05 and 0x08)
-            // Accelerometer: raw values (no scaling) to match Joy-Con 1
+            // Accelerometer: raw values (no scaling) - matches Joy-Con 1 format
             let accel_x = i16::from_le_bytes([data[0x30], data[0x31]]) as f32;
             let accel_y = i16::from_le_bytes([data[0x32], data[0x33]]) as f32;
             let accel_z = i16::from_le_bytes([data[0x34], data[0x35]]) as f32;
-            // Gyroscope: scale to degrees per second
-            let gyro_x = i16::from_le_bytes([data[0x36], data[0x37]]) as f32 / 133.333333;
-            let gyro_y = i16::from_le_bytes([data[0x38], data[0x39]]) as f32 / 133.333333;
-            let gyro_z = i16::from_le_bytes([data[0x3A], data[0x3B]]) as f32 / 133.333333;
+            
+            // Gyroscope: convert from raw i16 to degrees/second
+            // Joy-Con 2 has different axis orientation than Joy-Con 1
+            // Transform axes here so state.rs mapping produces correct result
+            // state.rs does: -y → X, -z → Y, x → Z
+            // We want: -x_raw → X, z_raw → Y, y_raw → Z
+            // So set: y = x_raw, z = -z_raw, x = y_raw
+            let gyro_x_raw = i16::from_le_bytes([data[0x36], data[0x37]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gyro_y_raw = i16::from_le_bytes([data[0x38], data[0x39]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gyro_z_raw = i16::from_le_bytes([data[0x3A], data[0x3B]]) as f32 / JOYCON2_GYRO_SCALE;
+            
+            // Transform: state.rs will do -y → X, -z → Y, x → Z
+            // We want: -x_raw → X, z_raw → Y, y_raw → Z
+            // So: y = x_raw (state.rs does -y = -x_raw → X ✓)
+            //     z = -z_raw (state.rs does -z = -(-z_raw) = z_raw → Y ✓)
+            //     x = y_raw (state.rs does x = y_raw → Z ✓)
+            let gyro = Vector3::new(
+                gyro_y_raw,   // x → Z (state.rs: x → Z)
+                gyro_x_raw,   // y → X (state.rs: -y → X, so -gyro_x_raw → X)
+                -gyro_z_raw,  // z → Y (state.rs: -z → Y, so -(-gyro_z_raw) = gyro_z_raw → Y)
+            );
+            
             (
-                Gyro { x: gyro_x, y: gyro_y, z: gyro_z },
-                Accel { x: accel_x, y: accel_y, z: accel_z }
+                gyro,
+                Vector3::new(accel_x, accel_y, accel_z)
             )
         } else {
-            (Gyro::default(), Accel::default())
+            (Vector3::zero(), Vector3::zero())
         };
     
         Ok(InputReport { buttons, stick, gyro, accel, battery_level, charging })
@@ -501,28 +469,5 @@ impl InputReport {
     
 }
 
-impl Default for Stick {
-    fn default() -> Self {
-        Stick {
-            horizontal: 0,
-            vertical: 0,
-            horizontal_norm: 0.0,
-            vertical_norm: 0.0,
-            horizontal_percent: 0,
-            vertical_percent: 0,
-        }
-    }
-}
 
-impl Default for Gyro {
-    fn default() -> Self {
-        Gyro { x: 0.0, y: 0.0, z: 0.0 }
-    }
-}
-
-impl Default for Accel {
-    fn default() -> Self {
-        Accel { x: 0.0, y: 0.0, z: 0.0 }
-    }
-}
 

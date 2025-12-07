@@ -240,11 +240,95 @@ impl JoyConApi {
         }
     }
     
-    /// Scan for Joy-Con 2 devices (BLE) - async, returns empty for now
-    /// Note: This would need async support in the scripting API
+    /// Scan for Joy-Con 2 devices (BLE)
+    /// Returns a vector of device addresses/identifiers as JSON
     pub fn scan_joycon2(&mut self) -> Vec<Value> {
-        // TODO: Implement async scan when scripting API supports async
-        vec![]
+        // Get ScriptApi pointer
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                let self_ptr = self as *mut JoyConApi;
+                unsafe {
+                    (*self_ptr).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                return vec![];
+            }
+        };
+        
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::scan_joycon2_impl(api)
+        }
+    }
+    
+    pub(crate) fn scan_joycon2_impl(api: &mut ScriptApi) -> Vec<Value> {
+        if let Some(mgr) = api.scene.get_controller_manager() {
+            let mgr = mgr.lock().unwrap();
+            match mgr.scan_joycon2_sync() {
+                Ok(devices) => {
+                    devices.into_iter().map(|address| {
+                        serde_json::json!({
+                            "address": address,
+                        })
+                    }).collect()
+                },
+                Err(e) => {
+                    api.print_error(&format!("Joy-Con 2 scan failed: {:?}", e));
+                    vec![]
+                },
+            }
+        } else {
+            api.print_error("No controller manager found in scene");
+            vec![]
+        }
+    }
+    
+    /// Connect to a Joy-Con 2 device (BLE)
+    /// Returns true if connection was successful, false otherwise
+    pub fn connect_joycon2(&mut self, address: &str) -> bool {
+        // Get ScriptApi pointer
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                let self_ptr = self as *mut JoyConApi;
+                unsafe {
+                    (*self_ptr).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                return false;
+            }
+        };
+        
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::connect_joycon2_impl(api, address)
+        }
+    }
+    
+    pub(crate) fn connect_joycon2_impl(api: &mut ScriptApi, address: &str) -> bool {
+        if let Some(mgr) = api.scene.get_controller_manager() {
+            let mgr = mgr.lock().unwrap();
+            match mgr.connect_joycon2_sync(address) {
+                Ok(_) => {
+                    api.print(&format!("Successfully connected to Joy-Con 2: {}", address));
+                    true
+                },
+                Err(e) => {
+                    api.print_error(&format!("Failed to connect to Joy-Con 2 {}: {:?}", address, e));
+                    false
+                },
+            }
+        } else {
+            api.print_error("No controller manager found in scene");
+            false
+        }
     }
     
     /// Connect to a Joy-Con 1 device
@@ -292,8 +376,9 @@ impl JoyConApi {
         }
     }
     
-    /// Get data from all connected controllers
-    pub fn get_data(&mut self) -> Vec<Value> {
+    /// Get data from all connected controllers as structs
+    /// Returns Vec<JoyconState> directly - allows direct field access like controller.gyro.x
+    pub fn get_data(&mut self) -> Vec<crate::input::joycon::JoyconState> {
         // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -317,99 +402,38 @@ impl JoyConApi {
         }
     }
     
-    pub(crate) fn get_data_impl(api: &mut ScriptApi) -> Vec<Value> {
+    pub(crate) fn get_data_impl(api: &mut ScriptApi) -> Vec<crate::input::joycon::JoyconState> {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
             let data = mgr.get_data();
             data.into_iter().map(|controller| {
-                let report = controller.latest_report.as_ref().map(|r| {
-                    // Apply calibration
-                    let (calibrated_gyro, calibrated_accel) = controller.calibration.apply(r.gyro, r.accel);
-                    
-                    // Apply stick calibration: subtract center offset to get values centered at 0
-                    // If center is 2000 and we read 2050, calibrated raw should be 50
-                    let stick_h_raw_calibrated = r.stick.horizontal as i32 - controller.calibration.stick_center.horizontal as i32;
-                    let stick_v_raw_calibrated = r.stick.vertical as i32 - controller.calibration.stick_center.vertical as i32;
-                    
-                    // Normalize to -1.0 to 1.0 range
-                    const ESTIMATED_RANGE: f32 = 1500.0;
-                    let stick_h_norm = (stick_h_raw_calibrated as f32 / ESTIMATED_RANGE).clamp(-1.0, 1.0);
-                    let stick_v_norm = (stick_v_raw_calibrated as f32 / ESTIMATED_RANGE).clamp(-1.0, 1.0);
-                    
-                    // Apply deadzone: values between -50 and 50 raw units should be treated as 0
-                    const STICK_DEADZONE_RAW: i32 = 50;
-                    let stick_h = if stick_h_raw_calibrated.abs() < STICK_DEADZONE_RAW { 0.0 } else { stick_h_norm };
-                    let stick_v = if stick_v_raw_calibrated.abs() < STICK_DEADZONE_RAW { 0.0 } else { stick_v_norm };
-                    
-                    // For h_raw and v_raw, use the calibrated (offset) values
-                    let stick_h_raw = stick_h_raw_calibrated;
-                    let stick_v_raw = stick_v_raw_calibrated;
-                    
-                    // Apply gyro deadzone: values between -50 and 50 deg/s should be treated as 0
-                    const GYRO_DEADZONE: f32 = 50.0;
-                    let gyro_x = if calibrated_gyro.x.abs() < GYRO_DEADZONE { 0.0 } else { calibrated_gyro.x };
-                    let gyro_y = if calibrated_gyro.y.abs() < GYRO_DEADZONE { 0.0 } else { calibrated_gyro.y };
-                    let gyro_z = if calibrated_gyro.z.abs() < GYRO_DEADZONE { 0.0 } else { calibrated_gyro.z };
-                    
-                    // Build JSON with side-specific buttons
-                    let buttons_json = if controller.is_left {
-                        serde_json::json!({
-                            "up": r.buttons.up,
-                            "down": r.buttons.down,
-                            "left": r.buttons.left,
-                            "right": r.buttons.right,
-                            "l": r.buttons.l,
-                            "zl": r.buttons.zl,
-                            "minus": r.buttons.minus,
-                            "capture": r.buttons.capture,
-                            "sl": r.buttons.sl,
-                            "sr": r.buttons.sr,
-                            "stick_press": r.buttons.stick_press,
-                        })
-                    } else {
-                        serde_json::json!({
-                            "a": r.buttons.a,
-                            "b": r.buttons.b,
-                            "x": r.buttons.x,
-                            "y": r.buttons.y,
-                            "r": r.buttons.r,
-                            "zr": r.buttons.zr,
-                            "home": r.buttons.home,
-                            "plus": r.buttons.plus,
-                            "sl": r.buttons.sl,
-                            "sr": r.buttons.sr,
-                            "stick_press": r.buttons.stick_press,
-                        })
-                    };
-                    
-                    serde_json::json!({
-                        "buttons": buttons_json,
-                        "stick": {
-                            "h_raw": stick_h_raw,
-                            "v_raw": stick_v_raw,
-                            "h": stick_h,
-                            "v": stick_v,
-                        },
-                        "gyro": {
-                            "x": gyro_x,
-                            "y": gyro_y,
-                            "z": gyro_z,
-                        },
-                        "accel": {
-                            "x": calibrated_accel.x,
-                            "y": calibrated_accel.y,
-                            "z": calibrated_accel.z,
-                        },
-                        "battery_level": r.battery_level,
-                        "charging": r.charging,
-                    })
-                });
-                serde_json::json!({
-                    "serial": controller.serial,
-                    "is_left": controller.is_left,
-                    "is_joycon2": controller.is_joycon2,
-                    "report": report,
-                })
+                // Use the unified state if available, otherwise convert from report
+                if let Some(mut state) = controller.state {
+                    // Ensure serial is set (in case it wasn't set when state was created)
+                    if state.serial.is_empty() {
+                        state.serial = controller.serial.clone();
+                    }
+                    state
+                } else if let Some(ref report) = controller.latest_report {
+                    use crate::input::joycon::{JoyconState, JoyconSide, JoyconVersion};
+                    let side = if controller.is_left { JoyconSide::Left } else { JoyconSide::Right };
+                    let version = if controller.is_joycon2 { JoyconVersion::V2 } else { JoyconVersion::V1 };
+                    JoyconState::from_input_report(report, controller.serial.clone(), side, version, true)
+                } else {
+                    // No data available
+                    use crate::input::joycon::{JoyconState, JoyconSide, JoyconVersion, JoyconButtons};
+                    use crate::structs::{Vector2, Vector3};
+                    JoyconState {
+                        serial: controller.serial.clone(),
+                        side: if controller.is_left { JoyconSide::Left } else { JoyconSide::Right },
+                        version: if controller.is_joycon2 { JoyconVersion::V2 } else { JoyconVersion::V1 },
+                        connected: false,
+                        buttons: JoyconButtons::default(),
+                        stick: Vector2::zero(),
+                        gyro: Vector3::zero(),
+                        accel: Vector3::zero(),
+                    }
+                }
             }).collect()
         } else {
             vec![]
@@ -444,9 +468,28 @@ impl JoyConApi {
     pub(crate) fn enable_polling_impl(api: &mut ScriptApi) -> bool {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mut mgr = mgr.lock().unwrap();
+            api.print("Enabling Joy-Con polling...");
+            api.print("Scanning for Joy-Con 1 devices (HID)...");
+            
+            // Scan Joy-Con 1 first and show results
+            match mgr.scan_joycon1() {
+                Ok(devices) => {
+                    api.print(&format!("Found {} Joy-Con 1 device(s)", devices.len()));
+                    for (serial, vid, pid) in &devices {
+                        api.print(&format!("  - {} (VID: 0x{:04X}, PID: 0x{:04X})", serial, vid, pid));
+                    }
+                },
+                Err(e) => {
+                    api.print_error(&format!("Failed to scan Joy-Con 1: {:?}", e));
+                }
+            }
+            
             match mgr.enable_polling() {
                 Ok(_) => {
                     api.print("Joy-Con polling enabled");
+                    api.print("Joy-Con 1: Connecting and starting polling...");
+                    api.print("Joy-Con 2: Starting background scan (may take 5-10 seconds)...");
+                    api.print("Check console for Joy-Con 2 connection status");
                     true
                 },
                 Err(e) => {
@@ -680,8 +723,8 @@ impl<'a> ScriptApi<'a> {
         JoyConApi::scan_joycon1_impl(self)
     }
     
-    /// Get data from all connected controllers
-    pub fn get_joycon_data(&mut self) -> Vec<Value> {
+    /// Get data from all connected controllers as structs
+    pub fn get_joycon_data(&mut self) -> Vec<crate::input::joycon::JoyconState> {
         JoyConApi::get_data_impl(self)
     }
     

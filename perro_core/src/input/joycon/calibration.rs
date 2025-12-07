@@ -3,32 +3,31 @@
 //! This module provides functionality to calculate and apply offsets to gyroscope
 //! and accelerometer readings to account for baseline drift and noise.
 
-use crate::input::joycon::input_report::{Gyro, Accel, Stick};
+use crate::structs::{Vector2, Vector3};
 
 /// Calibration offsets for gyroscope, accelerometer, and analog stick
 #[derive(Debug, Clone, Copy)]
 pub struct Calibration {
     /// Gyroscope offsets (degrees per second)
-    pub gyro: Gyro,
+    pub gyro: Vector3,
     /// Accelerometer offsets (g-force)
-    pub accel: Accel,
-    /// Stick center offsets (raw values, typically around 2048)
-    pub stick_center: Stick,
+    pub accel: Vector3,
+    /// Stick center offset (normalized, typically 0.0, 0.0)
+    pub stick_center: Vector2,
+    /// Gyroscope deadzone threshold (degrees per second)
+    /// Values below this threshold are treated as zero to filter noise
+    pub gyro_deadzone: f32,
 }
 
 impl Default for Calibration {
     fn default() -> Self {
         Self {
-            gyro: Gyro { x: 0.0, y: 0.0, z: 0.0 },
-            accel: Accel { x: 0.0, y: 0.0, z: 0.0 },
-            stick_center: Stick {
-                horizontal: 2048,
-                vertical: 2048,
-                horizontal_norm: 0.5,
-                vertical_norm: 0.5,
-                horizontal_percent: 50,
-                vertical_percent: 50,
-            },
+            gyro: Vector3::zero(),
+            accel: Vector3::zero(),
+            stick_center: Vector2::zero(),
+            // Default deadzone: 5.0 degrees/second (approximately 0.087 radians/second)
+            // This filters out small noise while still allowing intentional movements
+            gyro_deadzone: 5.0,
         }
     }
 }
@@ -41,6 +40,7 @@ impl Calibration {
 
     /// Calculate offsets from a collection of samples
     /// This averages all samples to find the baseline offset
+    /// Also calculates noise level to determine appropriate deadzone
     pub fn calculate_offset(samples: &[CalibrationSample]) -> Self {
         if samples.is_empty() {
             return Self::default();
@@ -57,111 +57,96 @@ impl Calibration {
         let accel_y_avg = samples.iter().map(|s| s.accel.y).sum::<f32>() / count;
         let accel_z_avg = samples.iter().map(|s| s.accel.z).sum::<f32>() / count;
         
-        let stick_h_avg = samples.iter().map(|s| s.stick.horizontal as f32).sum::<f32>() / count;
-        let stick_v_avg = samples.iter().map(|s| s.stick.vertical as f32).sum::<f32>() / count;
+        let stick_x_avg = samples.iter().map(|s| s.stick.x).sum::<f32>() / count;
+        let stick_y_avg = samples.iter().map(|s| s.stick.y).sum::<f32>() / count;
+
+        // Calculate noise level: standard deviation of gyro values
+        // This helps determine an appropriate deadzone threshold
+        let gyro_x_variance = samples.iter()
+            .map(|s| (s.gyro.x - gyro_x_avg).powi(2))
+            .sum::<f32>() / count;
+        let gyro_y_variance = samples.iter()
+            .map(|s| (s.gyro.y - gyro_y_avg).powi(2))
+            .sum::<f32>() / count;
+        let gyro_z_variance = samples.iter()
+            .map(|s| (s.gyro.z - gyro_z_avg).powi(2))
+            .sum::<f32>() / count;
+        
+        let gyro_x_stddev = gyro_x_variance.sqrt();
+        let gyro_y_stddev = gyro_y_variance.sqrt();
+        let gyro_z_stddev = gyro_z_variance.sqrt();
+        
+        // Use 3x the average standard deviation as deadzone threshold
+        // This filters out ~99.7% of noise (3-sigma rule) while preserving intentional movements
+        let avg_stddev = (gyro_x_stddev + gyro_y_stddev + gyro_z_stddev) / 3.0;
+        let gyro_deadzone = (avg_stddev * 3.0).max(5.0); // Minimum 5.0 deg/s, or 3x noise level
 
         Self {
-            gyro: Gyro {
-                x: gyro_x_avg,
-                y: gyro_y_avg,
-                z: gyro_z_avg,
-            },
-            accel: Accel {
-                x: accel_x_avg,
-                y: accel_y_avg,
-                z: accel_z_avg,
-            },
-            stick_center: Stick {
-                horizontal: stick_h_avg as u16,
-                vertical: stick_v_avg as u16,
-                horizontal_norm: stick_h_avg / 4095.0,
-                vertical_norm: stick_v_avg / 4095.0,
-                horizontal_percent: ((stick_h_avg / 4095.0) * 100.0) as u8,
-                vertical_percent: ((stick_v_avg / 4095.0) * 100.0) as u8,
-            },
+            gyro: Vector3::new(gyro_x_avg, gyro_y_avg, gyro_z_avg),
+            accel: Vector3::new(accel_x_avg, accel_y_avg, accel_z_avg),
+            stick_center: Vector2::new(stick_x_avg, stick_y_avg),
+            gyro_deadzone,
         }
     }
 
     /// Apply calibration offsets to raw gyroscope data
     /// Returns calibrated values (raw - offset)
-    pub fn apply_gyro(&self, raw: Gyro) -> Gyro {
-        Gyro {
-            x: raw.x - self.gyro.x,
-            y: raw.y - self.gyro.y,
-            z: raw.z - self.gyro.z,
-        }
+    /// EXACT COPY from reference crate - no deadzone logic here
+    pub fn apply_gyro(&self, raw: Vector3) -> Vector3 {
+        Vector3::new(
+            raw.x - self.gyro.x,
+            raw.y - self.gyro.y,
+            raw.z - self.gyro.z,
+        )
     }
 
     /// Apply calibration offsets to raw accelerometer data
     /// Returns raw values unchanged (accelerometer should show absolute G-forces, not relative to calibration position)
     /// Unlike gyroscope, accelerometer values need to show absolute forces (e.g., 4000 = 1G, 8000 = 2G)
     /// so we don't subtract the calibration offset
-    pub fn apply_accel(&self, raw: Accel) -> Accel {
+    pub fn apply_accel(&self, raw: Vector3) -> Vector3 {
         // Return raw values - don't subtract offset
         // Accelerometer should show absolute G-forces, not relative to calibration position
         raw
     }
 
     /// Apply calibration offsets to both gyro and accel
-    pub fn apply(&self, raw_gyro: Gyro, raw_accel: Accel) -> (Gyro, Accel) {
+    pub fn apply(&self, raw_gyro: Vector3, raw_accel: Vector3) -> (Vector3, Vector3) {
         (self.apply_gyro(raw_gyro), self.apply_accel(raw_accel))
     }
 
-    /// Apply calibration offsets to raw stick data
-    /// Subtracts center values so rest position becomes 0,0
-    /// Then normalizes to -1.0 to 1.0 range (where 0,0 is center)
+    /// Apply calibration offsets to stick data
+    /// Subtracts center offset so rest position becomes 0,0
     /// Applies deadzone so small values near 0 are treated as 0
-    pub fn apply_stick(&self, raw: Stick) -> Stick {
-        // Subtract center values: if center is 2046, subtract 2046 so rest becomes 0
-        // This is the same as gyro/accel calibration (raw - offset)
-        let h_offset = raw.horizontal as i32 - self.stick_center.horizontal as i32;
-        let v_offset = raw.vertical as i32 - self.stick_center.vertical as i32;
-        
-        // Estimate the physical range of the stick (typically ±1000-1500 from center)
-        // This is an estimate - actual range may vary per controller
-        const ESTIMATED_RANGE: f32 = 1500.0; // Maximum offset from center we expect
-        
-        // Normalize to -1.0 to 1.0 range (0,0 is center)
-        let mut h_norm = (h_offset as f32 / ESTIMATED_RANGE).clamp(-1.0, 1.0);
-        let mut v_norm = (v_offset as f32 / ESTIMATED_RANGE).clamp(-1.0, 1.0);
+    pub fn apply_stick(&self, raw: Vector2) -> Vector2 {
+        // Subtract center offset (stick is already normalized to -1.0 to 1.0)
+        let mut x = raw.x - self.stick_center.x;
+        let mut y = raw.y - self.stick_center.y;
         
         // Apply deadzone: small values near 0 are treated as 0
-        // Values like -0.0100 and -0.0227 should be considered 0
         const DEADZONE: f32 = 0.03; // Deadzone threshold (3% of range)
-        if h_norm.abs() < DEADZONE {
-            h_norm = 0.0;
+        if x.abs() < DEADZONE {
+            x = 0.0;
         }
-        if v_norm.abs() < DEADZONE {
-            v_norm = 0.0;
+        if y.abs() < DEADZONE {
+            y = 0.0;
         }
         
-        // Store the offset from center (0 when at rest)
-        // When offset = 0, store 0
-        let h_calibrated = if h_offset == 0 { 0 } else { h_offset.abs() as u16 };
-        let v_calibrated = if v_offset == 0 { 0 } else { v_offset.abs() as u16 };
-        
-        Stick {
-            horizontal: h_calibrated,
-            vertical: v_calibrated,
-            horizontal_norm: h_norm,
-            vertical_norm: v_norm,
-            horizontal_percent: 0, // Deprecated, not used
-            vertical_percent: 0, // Deprecated, not used
-        }
+        Vector2::new(x, y)
     }
 }
 
 /// A sample containing gyro, accel, and stick readings for calibration
 #[derive(Debug, Clone, Copy)]
 pub struct CalibrationSample {
-    pub gyro: Gyro,
-    pub accel: Accel,
-    pub stick: Stick,
+    pub gyro: Vector3,
+    pub accel: Vector3,
+    pub stick: Vector2,
 }
 
 impl CalibrationSample {
     /// Create a new sample from gyro, accel, and stick readings
-    pub fn new(gyro: Gyro, accel: Accel, stick: Stick) -> Self {
+    pub fn new(gyro: Vector3, accel: Vector3, stick: Vector2) -> Self {
         Self { gyro, accel, stick }
     }
 }

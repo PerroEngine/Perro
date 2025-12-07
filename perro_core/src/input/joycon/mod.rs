@@ -8,13 +8,16 @@ pub mod error;
 pub mod input_report;
 pub mod calibration;
 pub mod manager;
+pub mod state;
 
 pub use joycon::JoyCon;
 pub use joycon2::JoyCon2;
 pub use error::{JoyConError, Result};
-pub use input_report::{InputReport, Buttons, Stick, Gyro, Accel};
+pub use input_report::{InputReport, Buttons};
+pub use crate::structs::{Vector2, Vector3};
 pub use calibration::{Calibration, CalibrationSample};
 pub use manager::ControllerManager;
+pub use state::{JoyconState, JoyconButtons, JoyconSide, JoyconVersion};
 
 /// Joy-Con vendor ID (Nintendo) - for HID devices
 pub const JOYCON_VENDOR_ID: u16 = 0x057E;
