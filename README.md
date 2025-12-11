@@ -47,12 +47,12 @@ This launches the **Perro Editor** in dev mode.
 Currently supports **variables, functions, and cross-script communication**:
 
 ```pup
-@script Player extends Sprite2D
+extends Sprite2D
     var speed = 7.5
-    var is_moving = false
 
     fn init() {
         print("Player is ready!")
+        set_speed(2.1)
     }
 
     fn set_speed(new_speed: float) {
@@ -61,7 +61,7 @@ Currently supports **variables, functions, and cross-script communication**:
 
     fn update() {
         var delta = Time.get_delta()
-        self.position.x += speed * delta
+        self.transform.position.x += speed * delta
     }
 ```
 
@@ -73,12 +73,12 @@ You can write scripts in multiple languages. Languages using **Tree Sitter** for
 
 - **Pup** (native DSL, hand-written parser)
 - **C#** (full syntax via Tree Sitter CST → Perro AST; not all AST bindings implemented yet)
-- **TypeScript** (planned, same Tree Sitter pipeline)
+- **TypeScript** (full syntax via Tree Sitter CST → Perro AST; not all AST bindings implemented yet)
 - **Rust** (direct, no transpilation)
 
 The transpilation pipeline:
 
-1. **Parse** – Tree Sitter CST → Perro AST (or native parser for Pup)
+1. **Parse** – Tree Sitter CST → Perro AST (or manual parser for Pup)
 2. **Codegen** – AST → type-checked Rust
 3. **Compile** – Rust → DLL (Dev) or static binary (Release)
 4. **Load** – DLL hot-load (Dev) or direct calls (Release)
@@ -186,18 +186,16 @@ The editors are pinned to specific versions of the toolchain, (eg. 1.0 => 1.90.0
 
 ### Stabilized Features
 
-- ✅ Scripting system (Pup, C# via Tree Sitter CST)
-- ✅ Signal system & cross-script communication
+- ✅ Basic scripting system (Pup, C#, TS -> Rust pipeline)
 - ✅ Type checking and casting during Rust codegen
-- ✅ C# → Rust transpilation (Tree Sitter → AST → codegen)
 - ✅ DLL loading & dynamic script loading
+- ✅ Static linking of scripts and assets during release
 - ✅ FUR layouts, panels, child layouts, and boxing
 
 ### In Progress / Planned
 
 - 🔄 Pup DSL expansion (control flow, standard library)
-- 🔄 C# AST bindings completion
-- 🔄 TypeScript support (Tree Sitter pipeline)
+- 🔄 C# & TypeScript AST bindings completion
 - 🔄 FUR runtime editing & editor viewer
 - 📋 Scene editor
 - 📋 Asset pipeline
