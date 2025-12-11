@@ -9,6 +9,15 @@
       }
     },
 
+ "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48": {
+      "type": "UINode",
+      "fur_path": "res://fur/editor.fur",
+      "node": {
+        "type": "Node",
+        "name": "Manager UI"
+      }
+    },
+
     "a5c8e4a1-6d2f-4e9b-8a3c-1f7d9e2b4c6a": {
       "type": "Camera3D",
       "active": true,
@@ -86,7 +95,7 @@
           "type": "Node",
           "name": "TriangularPyramidMesh",
           "parent": "11111111-1111-1111-1111-111111111111",
-          "script_path": "res://scripts/joycon.rs"
+          "script_path": "res://scripts/3d.pup"
         }
       }
     }
