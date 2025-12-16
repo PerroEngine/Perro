@@ -7,6 +7,7 @@ pub enum ApiModule {
     ScriptType(ScriptTypeApi),
     NodeSugar(NodeSugarApi),
     Signal(SignalApi),
+    Input(InputApi),
 
     ArrayOp(ArrayApi),
     MapOp(MapApi),
@@ -48,6 +49,7 @@ pub enum ScriptTypeApi {
 pub enum NodeSugarApi {
     GetVar,
     SetVar,
+    GetChildByName, // For self.get_node("name") - finds child by name and returns ID
 }
 
 #[derive(Debug, Clone)]
@@ -78,4 +80,24 @@ pub enum MapApi {
     Clear,
 
     New,
+}
+
+#[derive(Debug, Clone)]
+pub enum InputApi {
+    // Actions
+    GetAction,
+
+    // Keyboard
+    IsKeyPressed,
+    GetTextInput,
+    ClearTextInput,
+
+    // Mouse
+    IsButtonPressed,
+    GetMousePosition,
+    GetMousePositionWorld,
+    GetScrollDelta,
+    IsWheelUp,
+    IsWheelDown,
+    ScreenToWorld,
 }

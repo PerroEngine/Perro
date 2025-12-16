@@ -16,6 +16,7 @@ impl TypeScriptAPI {
             TypeScriptSignal::NAME => TypeScriptSignal::resolve_method(func),
             TypeScriptArray::NAME => TypeScriptArray::resolve_method(func),
             TypeScriptMap::NAME => TypeScriptMap::resolve_method(func),
+            TypeScriptInput::NAME => TypeScriptInput::resolve_method(func),
             _ => None,
         }
     }
@@ -136,6 +137,45 @@ impl TypeScriptMap {
             "size" | "len" => Some(ApiModule::MapOp(MapApi::Len)),
             "clear" => Some(ApiModule::MapOp(MapApi::Clear)),
             "new" | "create" => Some(ApiModule::MapOp(MapApi::New)),
+            _ => None,
+        }
+    }
+}
+
+pub struct TypeScriptInput;
+impl TypeScriptInput {
+    pub const NAME: &'static str = "Input";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            // Actions
+            "getAction" | "get_action" => Some(ApiModule::Input(InputApi::GetAction)),
+
+            // Keyboard
+            "isKeyPressed" | "is_key_pressed" | "getKeyPressed" => {
+                Some(ApiModule::Input(InputApi::IsKeyPressed))
+            }
+            "getTextInput" | "get_text_input" => Some(ApiModule::Input(InputApi::GetTextInput)),
+            "clearTextInput" | "clear_text_input" => {
+                Some(ApiModule::Input(InputApi::ClearTextInput))
+            }
+
+            // Mouse
+            "isButtonPressed" | "is_button_pressed" | "isMouseButtonPressed" => {
+                Some(ApiModule::Input(InputApi::IsButtonPressed))
+            }
+            "getMousePosition" | "get_mouse_position" | "getMousePos" => {
+                Some(ApiModule::Input(InputApi::GetMousePosition))
+            }
+            "getMousePositionWorld" | "get_mouse_position_world" | "getMousePosWorld" => {
+                Some(ApiModule::Input(InputApi::GetMousePositionWorld))
+            }
+            "getScrollDelta" | "get_scroll_delta" | "getScroll" => {
+                Some(ApiModule::Input(InputApi::GetScrollDelta))
+            }
+            "isWheelUp" | "is_wheel_up" => Some(ApiModule::Input(InputApi::IsWheelUp)),
+            "isWheelDown" | "is_wheel_down" => Some(ApiModule::Input(InputApi::IsWheelDown)),
+            "screenToWorld" | "screen_to_world" => Some(ApiModule::Input(InputApi::ScreenToWorld)),
             _ => None,
         }
     }

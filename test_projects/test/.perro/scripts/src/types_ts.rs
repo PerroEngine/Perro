@@ -30,6 +30,7 @@ use perro_core::prelude::*;
 
 pub struct TypesTsScript {
     node: Node,
+    attributes: HashMap<String, Vec<String>>,
     untyped_num_default: f64,
     typed_int_default: f64,
     typed_int_8: f64,
@@ -83,6 +84,7 @@ pub struct TypesTsScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn types_ts_create_script() -> *mut dyn ScriptObject {
     let node = Node::new("TypesTs", None);
+    let attributes = HashMap::new();
     let untyped_num_default = 10f64;
     let typed_int_default = 20f64;
     let typed_int_8 = 0.0f64;
@@ -130,6 +132,7 @@ pub extern "C" fn types_ts_create_script() -> *mut dyn ScriptObject {
 
     Box::into_raw(Box::new(TypesTsScript {
         node,
+        attributes,
         untyped_num_default,
         typed_int_default,
         typed_int_8,
@@ -471,7 +474,7 @@ impl ScriptObject for TypesTsScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -486,16 +489,51 @@ impl ScriptObject for TypesTsScript {
         }
     }
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+    }
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {
+        self.attributes
+            .get(member)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {
+        self.attributes
+            .iter()
+            .filter_map(|(member, attrs)| {
+                if attrs.iter().any(|a| a == attribute) {
+                    Some(member.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {
+        self.attributes
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| a == attribute))
+            .unwrap_or(false)
     }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&TypesTsScript) -> Option<Value>> = phf::phf_map! {
+static VAR_GET_TABLE: phf::Map<u64, fn(&TypesTsScript) -> Option<Value>> =
+    phf::phf_map! {
         2485169244931714667u64 => |script: &TypesTsScript| -> Option<Value> {
                         Some(json!(script.untyped_num_default))
                     },
@@ -607,9 +645,11 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&TypesTsScript) -> Option<Value>> = phf::
         937814722116048519u64 => |script: &TypesTsScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.static_map_super_players).unwrap_or_default())
                             },
-};
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut TypesTsScript, Value) -> Option<()>> = phf::phf_map! {
+    };
+
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut TypesTsScript, Value) -> Option<()>> =
+    phf::phf_map! {
         2485169244931714667u64 => |script: &mut TypesTsScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.untyped_num_default = v as f64;
@@ -869,12 +909,18 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut TypesTsScript, Value) -> Option<()>>
                                     }
                                     None
                                 },
-};
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut TypesTsScript, &Value)> = phf::phf_map! {
-};
+    };
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut TypesTsScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut TypesTsScript, &Value)> =
+    phf::phf_map! {
+
+    };
+
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut TypesTsScript, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {
         8498657248953742794u64 => | script: &mut TypesTsScript, params: &[Value], api: &mut ScriptApi<'_>| {
             script.test_primitive_operations(api, true);
         },
@@ -893,4 +939,5 @@ static DISPATCH_TABLE: phf::Map<u64, fn(&mut TypesTsScript, &[Value], &mut Scrip
         8968113419297778246u64 => | script: &mut TypesTsScript, params: &[Value], api: &mut ScriptApi<'_>| {
             script.test_static_containers_ops(api, true);
         },
-};
+
+    };

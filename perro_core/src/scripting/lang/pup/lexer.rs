@@ -14,6 +14,10 @@ pub enum PupToken {
     Fn,
     Var,
     Pass,
+    If,
+    Else,
+    For,
+    In,
     At,
     As,
     Dollar,
@@ -35,6 +39,7 @@ pub enum PupToken {
     LessThan,
     GreaterThan,
     Dot,
+    DotDot,
     Colon,
     DoubleColon,
     Semicolon,
@@ -54,6 +59,8 @@ pub enum PupToken {
     Star,
     Slash,
     Comma,
+    PlusPlus,   // ++
+    MinusMinus, // --
     Eof,
 }
 
@@ -88,6 +95,14 @@ impl PupLexer {
             if ch.is_whitespace() {
                 self.advance();
             } else if ch == '/' && self.input.get(self.pos + 1) == Some(&'/') {
+                // Skip // comments until newline
+                while let Some(c) = self.advance() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+            } else if ch == '#' {
+                // Skip # comments until newline
                 while let Some(c) = self.advance() {
                     if c == '\n' {
                         break;
@@ -116,15 +131,21 @@ impl PupLexer {
             }
         }
 
-        // Consume a single decimal point
+        // Consume a single decimal point, but only if it's not part of `..`
         if self.peek() == Some('.') {
-            num_str.push(self.advance().unwrap());
-            // Consume digits after the decimal point
-            while let Some(ch) = self.peek() {
-                if ch.is_ascii_digit() {
-                    num_str.push(self.advance().unwrap());
-                } else {
-                    break;
+            // Check if the next character is also `.` (making it `..`)
+            if self.input.get(self.pos + 1) == Some(&'.') {
+                // This is `..`, don't consume the `.` as part of the number
+                // The `.` will be handled by the `..` operator parsing
+            } else {
+                num_str.push(self.advance().unwrap());
+                // Consume digits after the decimal point
+                while let Some(ch) = self.peek() {
+                    if ch.is_ascii_digit() {
+                        num_str.push(self.advance().unwrap());
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -164,6 +185,10 @@ impl PupLexer {
             "fn" => PupToken::Fn,
             "var" | "let" => PupToken::Var,
             "pass" => PupToken::Pass,
+            "if" => PupToken::If,
+            "else" => PupToken::Else,
+            "for" => PupToken::For,
+            "in" => PupToken::In,
             "as" => PupToken::As,
             "expose" => PupToken::Expose,
             "true" => PupToken::True,
@@ -204,8 +229,22 @@ impl PupLexer {
             '}' => PupToken::RBrace,
             '[' => PupToken::LBracket,
             ']' => PupToken::RBracket,
-            '<' => PupToken::LessThan,
-            '>' => PupToken::GreaterThan,
+            '<' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    PupToken::Le
+                } else {
+                    PupToken::LessThan
+                }
+            }
+            '>' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    PupToken::Ge
+                } else {
+                    PupToken::GreaterThan
+                }
+            }
             ':' => {
                 if self.peek() == Some(':') {
                     self.advance();
@@ -216,7 +255,14 @@ impl PupLexer {
             }
             ';' => PupToken::Semicolon,
             ',' => PupToken::Comma,
-            '.' => PupToken::Dot,
+            '.' => {
+                if self.peek() == Some('.') {
+                    self.advance();
+                    PupToken::DotDot
+                } else {
+                    PupToken::Dot
+                }
+            }
             '=' => {
                 if self.peek() == Some('=') {
                     self.advance();
@@ -225,10 +271,21 @@ impl PupLexer {
                     PupToken::Assign
                 }
             }
+            '!' => {
+                if self.peek() == Some('=') {
+                    self.advance();
+                    PupToken::Ne
+                } else {
+                    panic!("Unexpected character '!'");
+                }
+            }
             '+' => {
                 if self.peek() == Some('=') {
                     self.advance();
                     PupToken::PlusEq
+                } else if self.peek() == Some('+') {
+                    self.advance();
+                    PupToken::PlusPlus
                 } else {
                     PupToken::Plus
                 }
@@ -237,6 +294,9 @@ impl PupLexer {
                 if self.peek() == Some('=') {
                     self.advance();
                     PupToken::MinusEq
+                } else if self.peek() == Some('-') {
+                    self.advance();
+                    PupToken::MinusMinus
                 } else {
                     PupToken::Minus
                 }

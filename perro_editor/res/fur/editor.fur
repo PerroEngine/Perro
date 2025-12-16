@@ -8,7 +8,7 @@
 
       [VLayout anchor=tl ty=-3%]
             [Panel h=49.5% w=19% bg=#181C26 border=2 color=#FF9F42/]
-            [Panel h=1% w=19% bg=amber-6 border=2 color=#FF9F42 rounding-r=70%/]
+            [Panel h=1% w=19% bg=sea-7 border=2 color=#FF9F42 rounding-r=70%/]
             [Panel h=49.5% w=19% bg=#10141C/]
       [/VLayout]
 
@@ -16,7 +16,7 @@
             [Panel h=3% w=62% bg=#181C26 rounding-t=25% border=2 color=#FF9F42]
                   [HLayout anchor=l gap=75 ty=-35]
                         [Text fsz=24 color=#FF9F42]
-                        Item b
+                        
                         [/Text]
 
                         [Text fsz=24 color=#FF9F42]

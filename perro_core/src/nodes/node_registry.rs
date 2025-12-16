@@ -49,6 +49,18 @@ pub trait BaseNode: Any + Debug + Send {
     fn clear_parent(&mut self) {
         self.set_parent(None);
     }
+
+    /// Internal fixed update - called during fixed update phase for nodes that need it
+    /// Default implementation does nothing.
+    fn internal_fixed_update(&mut self, _api: &mut crate::scripting::api::ScriptApi) {
+        // Default empty implementation - nodes can override this
+    }
+
+    /// Returns true if this node needs internal fixed updates
+    /// Nodes like Area2D should override this to return true
+    fn needs_internal_fixed_update(&self) -> bool {
+        false
+    }
 }
 
 /// Used to unwrap `SceneNode` variants back into their concrete types.
@@ -292,6 +304,14 @@ macro_rules! define_nodes {
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 match self { $( SceneNode::$variant(n) => n.as_any_mut(), )+ }
             }
+
+            fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+                match self { $( SceneNode::$variant(n) => n.internal_fixed_update(api), )+ }
+            }
+
+            fn needs_internal_fixed_update(&self) -> bool {
+                match self { $( SceneNode::$variant(n) => n.needs_internal_fixed_update(), )+ }
+            }
         }
 
         $( impl_scene_node!($ty, $variant); )+
@@ -307,6 +327,7 @@ define_nodes!(
 
     Node2D   => crate::nodes::_2d::node_2d::Node2D,
     Sprite2D => crate::nodes::_2d::sprite_2d::Sprite2D,
+    Area2D   => crate::nodes::_2d::area_2d::Area2D,
     Camera2D  => crate::nodes::_2d::camera_2d::Camera2D,
 
 

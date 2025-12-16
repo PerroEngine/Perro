@@ -26,3 +26,35 @@ impl Default for TextProps {
 }
 
 impl_ui_element!(UIText);
+
+impl UIText {
+    /// Get the text content
+    pub fn get_content(&self) -> &str {
+        &self.props.content
+    }
+
+    /// Set the text content
+    pub fn set_content(&mut self, content: &str) {
+        self.props.content = content.to_string();
+    }
+
+    /// Get the font size
+    pub fn get_font_size(&self) -> f32 {
+        self.props.font_size
+    }
+
+    /// Set the font size
+    pub fn set_font_size(&mut self, size: f32) {
+        self.props.font_size = size;
+    }
+
+    /// Get the text color
+    pub fn get_color(&self) -> &Color {
+        &self.props.color
+    }
+
+    /// Set the text color
+    pub fn set_color(&mut self, color: Color) {
+        self.props.color = color;
+    }
+}

@@ -11,9 +11,9 @@ use rand::seq::SliceRandom;
 use crate::apply_fur::parse_fur_file;
 use crate::asset_io::{ResolvedPath, resolve_path};
 
+use crate::SceneData;
 use crate::brk::build_brk;
 use crate::fur_ast::{FurElement, FurNode};
-use crate::SceneData;
 use image::GenericImageView;
 use walkdir::WalkDir;
 
@@ -355,7 +355,15 @@ impl Compiler {
 
     /// Build and copy the output to the final location
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
-        if matches!(self.target, CompileTarget::Project) {
+        // Handle verbose project builds (remove Windows subsystem flag for console visibility)
+        if matches!(self.target, CompileTarget::VerboseProject) {
+            self.remove_windows_subsystem_flag()?;
+        }
+
+        if matches!(
+            self.target,
+            CompileTarget::Project | CompileTarget::VerboseProject
+        ) {
             let mut key = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
 
@@ -450,6 +458,70 @@ impl Compiler {
             self.copy_script_dll(profile_str)
                 .map_err(|e| format!("Failed to copy DLL: {}", e))?;
         }
+
+        Ok(())
+    }
+
+    /// Remove Windows subsystem flag from Cargo.toml for verbose builds (shows console)
+    fn remove_windows_subsystem_flag(&self) -> Result<(), String> {
+        use std::fs;
+        use toml::Value;
+
+        let project_manifest = self.project_root.join(".perro/project/Cargo.toml");
+        if !project_manifest.exists() {
+            return Ok(()); // No project manifest, skip
+        }
+
+        let content = fs::read_to_string(&project_manifest)
+            .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+
+        let mut doc: Value = content
+            .parse()
+            .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+
+        // Remove the Windows subsystem flag if it exists
+        // TOML structure: [target.'cfg(windows)'] rustflags = [...]
+        if let Some(root_table) = doc.as_table_mut() {
+            if let Some(target_value) = root_table.get_mut("target") {
+                if let Some(target_table) = target_value.as_table_mut() {
+                    // Look for the 'cfg(windows)' key
+                    let windows_key = "'cfg(windows)'";
+                    if let Some(cfg_value) = target_table.get_mut(windows_key) {
+                        if let Some(cfg_table) = cfg_value.as_table_mut() {
+                            if let Some(rustflags_value) = cfg_table.get_mut("rustflags") {
+                                if let Some(rustflags) = rustflags_value.as_array_mut() {
+                                    // Remove flags containing SUBSYSTEM:WINDOWS
+                                    rustflags.retain(|flag| {
+                                        if let Some(flag_str) = flag.as_str() {
+                                            !flag_str.contains("SUBSYSTEM:WINDOWS")
+                                        } else {
+                                            true
+                                        }
+                                    });
+
+                                    // Remove the entire cfg(windows) section if rustflags is now empty
+                                    if rustflags.is_empty() {
+                                        cfg_table.remove("rustflags");
+                                        if cfg_table.is_empty() {
+                                            target_table.remove(windows_key);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Write back the modified Cargo.toml
+        let modified_content = toml::to_string_pretty(&doc)
+            .map_err(|e| format!("Failed to serialize Cargo.toml: {}", e))?;
+
+        fs::write(&project_manifest, modified_content)
+            .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+
+        println!("🔧 Removed Windows subsystem flag for verbose build (console will be visible)");
 
         Ok(())
     }
@@ -1042,6 +1114,66 @@ impl Compiler {
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
 
+        // Embed default icon bytes
+        // Try to find the default icon relative to perro_core
+        let default_icon_path = std::env::current_exe()
+            .ok()
+            .and_then(|exe| {
+                // Find perro_core directory by walking up from executable
+                let mut dir = exe.parent()?;
+                for _ in 0..15 {
+                    let icon_path = dir.join("src").join("resources").join("default-icon.png");
+                    if icon_path.exists() {
+                        return Some(icon_path);
+                    }
+                    // Also check if we're in perro_core directory
+                    if dir.join("Cargo.toml").exists() {
+                        let icon_path = dir.join("src").join("resources").join("default-icon.png");
+                        if icon_path.exists() {
+                            return Some(icon_path);
+                        }
+                    }
+                    dir = dir.parent()?;
+                }
+                None
+            })
+            .or_else(|| {
+                // Fallback: try relative to project_root (for workspace setups)
+                self.project_root
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| {
+                        p.join("perro_core")
+                            .join("src")
+                            .join("resources")
+                            .join("default-icon.png")
+                    })
+            });
+
+        if let Some(icon_path) = default_icon_path {
+            if icon_path.exists() {
+                if let Ok(icon_bytes) = fs::read(&icon_path) {
+                    writeln!(build_file, "// Default Perro icon embedded at compile time")?;
+                    writeln!(build_file, "const DEFAULT_ICON_BYTES: &[u8] = &[")?;
+                    for chunk in icon_bytes.chunks(16) {
+                        let bytes_str: Vec<String> =
+                            chunk.iter().map(|b| format!("0x{:02X}", b)).collect();
+                        writeln!(build_file, "    {},", bytes_str.join(", "))?;
+                    }
+                    writeln!(build_file, "];")?;
+                    writeln!(build_file, "")?;
+                }
+            }
+        } else {
+            // If we can't find the default icon, create an empty array (build will fail gracefully)
+            writeln!(
+                build_file,
+                "// Default icon not found - projects must provide their own icon"
+            )?;
+            writeln!(build_file, "const DEFAULT_ICON_BYTES: &[u8] = &[];")?;
+            writeln!(build_file, "")?;
+        }
+
         // Windows functions
         writeln!(build_file, "#[cfg(target_os = \"windows\")]")?;
         writeln!(
@@ -1051,8 +1183,40 @@ impl Compiler {
         writeln!(build_file, "    if !path.exists() {{")?;
         writeln!(
             build_file,
-            "        panic!(\"❌ Icon file not found: {{}}\", path.display());"
+            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, using default Perro icon\", path.display()));"
         )?;
+        writeln!(build_file, "        // Use default icon if available")?;
+        writeln!(build_file, "        if DEFAULT_ICON_BYTES.is_empty() {{")?;
+        writeln!(
+            build_file,
+            "            panic!(\"❌ Icon file not found: {{}} and no default icon available\", path.display());"
+        )?;
+        writeln!(build_file, "        }}")?;
+        writeln!(
+            build_file,
+            "        let default_icon_path = project_root.join(\"default-icon-temp.png\");"
+        )?;
+        writeln!(
+            build_file,
+            "        fs::write(&default_icon_path, DEFAULT_ICON_BYTES)"
+        )?;
+        writeln!(
+            build_file,
+            "            .expect(\"Failed to write default icon\");"
+        )?;
+        writeln!(
+            build_file,
+            "        let ico_path = project_root.join(\"icon.ico\");"
+        )?;
+        writeln!(
+            build_file,
+            "        convert_any_image_to_ico(&default_icon_path, &ico_path, log_path);"
+        )?;
+        writeln!(
+            build_file,
+            "        let _ = fs::remove_file(&default_icon_path); // Clean up temp file"
+        )?;
+        writeln!(build_file, "        return ico_path;")?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
         writeln!(build_file, "    let ext = path")?;
@@ -1159,13 +1323,31 @@ impl Compiler {
             build_file,
             "fn setup_macos_bundle(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {{"
         )?;
-        writeln!(build_file, "    if !icon_path.exists() {{")?;
         writeln!(
             build_file,
-            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, skipping bundle setup\", icon_path.display()));"
+            "    let actual_icon_path = if !icon_path.exists() {{"
         )?;
-        writeln!(build_file, "        return;")?;
-        writeln!(build_file, "    }}")?;
+        writeln!(
+            build_file,
+            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, using default Perro icon\", icon_path.display()));"
+        )?;
+        writeln!(
+            build_file,
+            "        let default_icon_path = project_root.join(\"default-icon-temp.png\");"
+        )?;
+        writeln!(
+            build_file,
+            "        fs::write(&default_icon_path, DEFAULT_ICON_BYTES)"
+        )?;
+        writeln!(
+            build_file,
+            "            .expect(\"Failed to write default icon\");"
+        )?;
+        writeln!(build_file, "        default_icon_path")?;
+        writeln!(build_file, "    }} else {{")?;
+        writeln!(build_file, "        icon_path.to_path_buf()")?;
+        writeln!(build_file, "    }};")?;
+        writeln!(build_file, "")?;
         writeln!(build_file, "")?;
         writeln!(
             build_file,
@@ -1173,8 +1355,17 @@ impl Compiler {
         )?;
         writeln!(
             build_file,
-            "    convert_to_icns(icon_path, &icns_path, log_path);"
+            "    convert_to_icns(&actual_icon_path, &icns_path, log_path);"
         )?;
+        writeln!(
+            build_file,
+            "    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some(\"default-icon-temp.png\") {{"
+        )?;
+        writeln!(
+            build_file,
+            "        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file"
+        )?;
+        writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
         writeln!(
             build_file,
@@ -1311,19 +1502,58 @@ impl Compiler {
             build_file,
             "fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {{"
         )?;
-        writeln!(build_file, "    if !icon_path.exists() {{")?;
         writeln!(
             build_file,
-            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, skipping desktop setup\", icon_path.display()));"
+            "    let actual_icon_path = if !icon_path.exists() {{"
         )?;
-        writeln!(build_file, "        return;")?;
-        writeln!(build_file, "    }}")?;
+        writeln!(
+            build_file,
+            "        log(log_path, &format!(\"⚠ Icon file not found: {{}}, using default Perro icon\", icon_path.display()));"
+        )?;
+        writeln!(
+            build_file,
+            "        let default_icon_path = project_root.join(\"default-icon-temp.png\");"
+        )?;
+        writeln!(
+            build_file,
+            "        fs::write(&default_icon_path, DEFAULT_ICON_BYTES)"
+        )?;
+        writeln!(
+            build_file,
+            "            .expect(\"Failed to write default icon\");"
+        )?;
+        writeln!(build_file, "        default_icon_path")?;
+        writeln!(build_file, "    }} else {{")?;
+        writeln!(build_file, "        icon_path.to_path_buf()")?;
+        writeln!(build_file, "    }};")?;
+        writeln!(build_file, "")?;
         writeln!(build_file, "")?;
         writeln!(
             build_file,
             "    let icon_dest = project_root.join(format!(\"{{}}.png\", name.to_lowercase().replace(\" \", \"_\")));"
         )?;
-        writeln!(build_file, "    let _ = fs::copy(icon_path, &icon_dest);")?;
+        writeln!(
+            build_file,
+            "    let _ = fs::copy(&actual_icon_path, &icon_dest);"
+        )?;
+        writeln!(
+            build_file,
+            "    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some(\"default-icon-temp.png\") {{"
+        )?;
+        writeln!(
+            build_file,
+            "        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file"
+        )?;
+        writeln!(build_file, "    }}")?;
+        writeln!(
+            build_file,
+            "    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some(\"default-icon-temp.png\") {{"
+        )?;
+        writeln!(
+            build_file,
+            "        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file"
+        )?;
+        writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
         writeln!(
             build_file,
@@ -1795,7 +2025,6 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
     }
 
     fn codegen_manifest_file(&self, static_assets_dir: &Path) -> anyhow::Result<()> {
-
         let manifest_output_path = static_assets_dir.join("manifest.rs");
         let mut manifest_file = File::create(&manifest_output_path)?;
 
@@ -1890,7 +2119,10 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         writeln!(textures_file, "#![allow(clippy::all)]")?;
         writeln!(textures_file, "use once_cell::sync::Lazy;")?;
         writeln!(textures_file, "use std::collections::HashMap;")?;
-        writeln!(textures_file, "use perro_core::structs2d::texture::StaticTextureData;")?;
+        writeln!(
+            textures_file,
+            "use perro_core::structs2d::texture::StaticTextureData;"
+        )?;
         writeln!(textures_file, "\n// --- GENERATED TEXTURE DEFINITIONS ---")?;
 
         let res_dir = self.project_root.join("res");
@@ -1938,37 +2170,48 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     if image_extensions.contains(&ext.to_lowercase().as_str()) {
                         println!("cargo:rerun-if-changed={}", path.display());
-                        let relative_path = path.strip_prefix(&res_dir)?.to_string_lossy().to_string();
+                        let relative_path =
+                            path.strip_prefix(&res_dir)?.to_string_lossy().to_string();
                         let res_path = format!("res://{}", relative_path.replace('\\', "/"));
-                        
+
                         if processed_texture_paths.insert(res_path.clone()) {
                             // Load and decode image at compile time
-                            let img_bytes = std::fs::read(path)
-                                .map_err(|e| anyhow::anyhow!("Failed to read image {}: {}", path.display(), e))?;
-                            
-                            let img = image::load_from_memory(&img_bytes)
-                                .map_err(|e| anyhow::anyhow!("Failed to decode image {}: {}", path.display(), e))?;
-                            
+                            let img_bytes = std::fs::read(path).map_err(|e| {
+                                anyhow::anyhow!("Failed to read image {}: {}", path.display(), e)
+                            })?;
+
+                            let img = image::load_from_memory(&img_bytes).map_err(|e| {
+                                anyhow::anyhow!("Failed to decode image {}: {}", path.display(), e)
+                            })?;
+
                             // Convert to RGBA8 (same as ImageTexture::from_image does)
                             let rgba = img.to_rgba8();
                             let (width, height) = img.dimensions();
-                            
-                            println!("🖼️ Pre-decoding texture: {} ({}x{})", res_path, width, height);
-                            
+
+                            println!(
+                                "🖼️ Pre-decoding texture: {} ({}x{})",
+                                res_path, width, height
+                            );
+
                             // Generate static texture data
                             let static_texture_name = Self::sanitize_res_path_to_ident(&res_path);
-                            
+
                             // Write RGBA8 bytes to a binary file in embedded_assets/
                             // Use sanitized name for the file to avoid filesystem issues
                             let rgba_file_name = format!("{}.rgba", static_texture_name);
                             let rgba_file_path = embedded_assets_dir.join(&rgba_file_name);
-                            std::fs::write(&rgba_file_path, rgba.as_raw())
-                                .map_err(|e| anyhow::anyhow!("Failed to write RGBA file {}: {}", rgba_file_path.display(), e))?;
-                            
+                            std::fs::write(&rgba_file_path, rgba.as_raw()).map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Failed to write RGBA file {}: {}",
+                                    rgba_file_path.display(),
+                                    e
+                                )
+                            })?;
+
                             // Note: Cargo automatically tracks files included via include_bytes!,
                             // so we don't need to add rerun-if-changed for the rgba file.
                             // The source image is already tracked above.
-                            
+
                             // Generate code using include_bytes! macro
                             // Path is relative to textures.rs location (src/static_assets/)
                             // embedded_assets/ is at project root, so relative path is ../../embedded_assets/

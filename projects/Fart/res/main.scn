@@ -1,0 +1,25 @@
+{
+  "root_id": "00000000-0000-0000-0000-000000000000",
+  "nodes": {
+    "00000000-0000-0000-0000-000000000000": {
+      "type": "Node2D",
+      "node": { "type": "Node", "name": "World", "script_path": "res://script.pup" }
+    },
+    "00000000-0000-0000-0000-000000000001": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "node_2d": {
+        "type": "Node2D",
+        "node": { "type": "Node", "name": "Body", "parent": "00000000-0000-0000-0000-000000000000" }
+      }
+    },
+    "00000000-0000-0000-0000-000000000002": {
+      "type": "Camera2D",
+      "active": true,
+      "node_2d": {
+        "type": "Node2D",
+        "node": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
+      }
+    }
+  }
+}

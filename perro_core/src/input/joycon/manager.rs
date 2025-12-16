@@ -2,13 +2,19 @@
 //!
 //! Provides a unified API for scanning, connecting, and polling controllers.
 
-use crate::input::joycon::{self, JoyCon, JoyCon2, InputReport, Calibration, CalibrationSample, JoyConError, JoyconState, JoyconSide, JoyconVersion};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, atomic::{AtomicU32, Ordering}};
-use tokio::sync::{mpsc, Mutex as TokioMutex};
-use tokio::time::{Duration, interval};
-use tokio::runtime::Handle;
+use crate::input::joycon::{
+    self, Calibration, CalibrationSample, InputReport, JoyCon, JoyCon2, JoyConError, JoyconSide,
+    JoyconState, JoyconVersion,
+};
 use futures::StreamExt;
+use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, Ordering},
+};
+use tokio::runtime::Handle;
+use tokio::sync::{Mutex as TokioMutex, mpsc};
+use tokio::time::{Duration, interval};
 
 /// Represents a connected Joy-Con controller
 #[derive(Debug, Clone)]
@@ -64,15 +70,17 @@ impl ControllerManager {
     /// Create a new controller manager
     pub fn new() -> Self {
         eprintln!("[ControllerManager::new] Creating ControllerManager...");
-        
+
         // Try to get the current runtime handle, or create a new runtime
         let runtime_handle = match Handle::try_current() {
             Ok(handle) => {
                 eprintln!("[ControllerManager::new] Using existing Tokio runtime handle");
                 handle
-            },
+            }
             Err(_) => {
-                eprintln!("[ControllerManager::new] No Tokio runtime found, creating one in background thread...");
+                eprintln!(
+                    "[ControllerManager::new] No Tokio runtime found, creating one in background thread..."
+                );
                 // No runtime exists, create one in a background thread
                 let (tx, rx) = std::sync::mpsc::channel();
                 let thread_result = std::thread::Builder::new()
@@ -122,34 +130,43 @@ impl ControllerManager {
                             let _ = rx.recv().await;
                         });
                     });
-                
+
                 match thread_result {
                     Ok(_) => {
                         eprintln!("[ControllerManager::new] Runtime thread spawned successfully");
-                    },
+                    }
                     Err(e) => {
-                        eprintln!("[ControllerManager::new] ERROR: Failed to spawn runtime thread: {:?}", e);
+                        eprintln!(
+                            "[ControllerManager::new] ERROR: Failed to spawn runtime thread: {:?}",
+                            e
+                        );
                         panic!("Failed to spawn runtime thread: {:?}", e);
                     }
                 }
-            
+
                 match rx.recv() {
                     Ok(Ok(handle)) => {
                         eprintln!("[ControllerManager::new] Successfully received runtime handle");
                         handle
-                    },
+                    }
                     Ok(Err(e)) => {
-                        eprintln!("[ControllerManager::new] ERROR: Runtime creation failed: {}", e);
+                        eprintln!(
+                            "[ControllerManager::new] ERROR: Runtime creation failed: {}",
+                            e
+                        );
                         panic!("Runtime creation failed: {}", e);
-                    },
+                    }
                     Err(e) => {
-                        eprintln!("[ControllerManager::new] ERROR: Failed to receive runtime handle: {:?}", e);
+                        eprintln!(
+                            "[ControllerManager::new] ERROR: Failed to receive runtime handle: {:?}",
+                            e
+                        );
                         panic!("Failed to receive runtime handle: {:?}", e);
                     }
                 }
             }
         };
-        
+
         eprintln!("[ControllerManager::new] Creating mutexes...");
         Self {
             joycon1_devices: Mutex::new(HashMap::new()),
@@ -177,12 +194,12 @@ impl ControllerManager {
     pub async fn scan_joycon2(&self) -> Result<Vec<String>, JoyConError> {
         joycon::scan_joycon2_devices().await
     }
-    
+
     /// Scan for Joy-Con 2 devices (BLE) - synchronous wrapper
     /// Blocks on the async operation using the runtime handle with a timeout
     pub fn scan_joycon2_sync(&self) -> Result<Vec<String>, JoyConError> {
-        use tokio::sync::oneshot;
         use std::time::Duration;
+        use tokio::sync::oneshot;
         // Spawn the async operation and use a oneshot channel to get the result
         let (tx, rx) = oneshot::channel();
         let handle = self.runtime_handle.clone();
@@ -194,7 +211,9 @@ impl ControllerManager {
         match rx.blocking_recv() {
             Ok(result) => result,
             Err(_) => {
-                eprintln!("[scan_joycon2_sync] Timeout or channel error - no Joy-Con 2 devices found");
+                eprintln!(
+                    "[scan_joycon2_sync] Timeout or channel error - no Joy-Con 2 devices found"
+                );
                 Ok(vec![]) // Return empty vec instead of error, so polling can continue
             }
         }
@@ -202,53 +221,65 @@ impl ControllerManager {
 
     /// Connect to a Joy-Con 1 device
     pub fn connect_joycon1(&self, serial: &str, vid: u16, pid: u16) -> Result<(), JoyConError> {
-        eprintln!("[connect_joycon1] Connecting to: serial={}, vid=0x{:04X}, pid=0x{:04X}", serial, vid, pid);
-        
+        eprintln!(
+            "[connect_joycon1] Connecting to: serial={}, vid=0x{:04X}, pid=0x{:04X}",
+            serial, vid, pid
+        );
+
         eprintln!("[connect_joycon1] Creating JoyCon instance...");
         let joycon = match JoyCon::new(vid, pid, serial) {
             Ok(jc) => {
                 eprintln!("[connect_joycon1] JoyCon instance created successfully");
                 jc
-            },
+            }
             Err(e) => {
-                eprintln!("[connect_joycon1] ERROR: Failed to create JoyCon instance: {:?}", e);
+                eprintln!(
+                    "[connect_joycon1] ERROR: Failed to create JoyCon instance: {:?}",
+                    e
+                );
                 return Err(e);
             }
         };
-        
+
         eprintln!("[connect_joycon1] Enabling sensors...");
         match joycon.enable_sensors() {
             Ok(_) => {
                 eprintln!("[connect_joycon1] Sensors enabled successfully");
                 // Small delay to let the Joy-Con process the command
                 std::thread::sleep(std::time::Duration::from_millis(100));
-            },
+            }
             Err(e) => {
                 eprintln!("[connect_joycon1] ERROR: Failed to enable sensors: {:?}", e);
                 return Err(e);
             }
         }
-        
+
         let is_left = pid == joycon::JOYCON_1_LEFT_PID;
-        eprintln!("[connect_joycon1] Device is {} Joy-Con", if is_left { "left" } else { "right" });
-        
+        eprintln!(
+            "[connect_joycon1] Device is {} Joy-Con",
+            if is_left { "left" } else { "right" }
+        );
+
         eprintln!("[connect_joycon1] Adding to devices map...");
         let mut devices = lock_mutex(&self.joycon1_devices);
         devices.insert(serial.to_string(), joycon);
         eprintln!("[connect_joycon1] Device added to devices map");
-        
+
         eprintln!("[connect_joycon1] Adding to controller_data map...");
         let mut data = lock_mutex(&self.controller_data);
-        data.insert(serial.to_string(), ConnectedJoyCon {
-            serial: serial.to_string(),
-            is_left,
-            is_joycon2: false,
-            latest_report: None,
-            calibration: Calibration::new(),
-            state: None,
-        });
+        data.insert(
+            serial.to_string(),
+            ConnectedJoyCon {
+                serial: serial.to_string(),
+                is_left,
+                is_joycon2: false,
+                latest_report: None,
+                calibration: Calibration::new(),
+                state: None,
+            },
+        );
         eprintln!("[connect_joycon1] Device added to controller_data map");
-        
+
         eprintln!("[connect_joycon1] Connection successful!");
         Ok(())
     }
@@ -258,26 +289,29 @@ impl ControllerManager {
         let mut joycon2 = JoyCon2::connect(address).await?;
         joycon2.subscribe_to_inputs().await?;
         joycon2.enable_sensors().await?;
-        
+
         let is_left = joycon2.is_left();
         let serial = joycon2.serial_number();
-        
+
         let mut devices = self.joycon2_devices.lock().await;
         devices.insert(serial.clone(), joycon2);
-        
+
         let mut data = self.controller_data.lock().unwrap();
-        data.insert(serial.clone(), ConnectedJoyCon {
-            serial,
-            is_left,
-            is_joycon2: true,
-            latest_report: None,
-            calibration: Calibration::new(),
-            state: None,
-        });
-        
+        data.insert(
+            serial.clone(),
+            ConnectedJoyCon {
+                serial,
+                is_left,
+                is_joycon2: true,
+                latest_report: None,
+                calibration: Calibration::new(),
+                state: None,
+            },
+        );
+
         Ok(())
     }
-    
+
     /// Connect to a Joy-Con 2 device - synchronous wrapper
     /// Blocks on the async operation using the runtime handle
     pub fn connect_joycon2_sync(&self, address: &str) -> Result<(), JoyConError> {
@@ -293,29 +327,34 @@ impl ControllerManager {
                 let mut joycon2 = JoyCon2::connect(&address).await?;
                 joycon2.subscribe_to_inputs().await?;
                 joycon2.enable_sensors().await?;
-                
+
                 let is_left = joycon2.is_left();
                 let serial = joycon2.serial_number();
-                
+
                 let mut devices = devices_clone.lock().await;
                 devices.insert(serial.clone(), joycon2);
-                
+
                 let mut data = self_clone.lock().unwrap();
-                data.insert(serial.clone(), ConnectedJoyCon {
-                    serial,
-                    is_left,
-                    is_joycon2: true,
-                    latest_report: None,
-                    calibration: Calibration::new(),
-                    state: None,
-                });
-                
+                data.insert(
+                    serial.clone(),
+                    ConnectedJoyCon {
+                        serial,
+                        is_left,
+                        is_joycon2: true,
+                        latest_report: None,
+                        calibration: Calibration::new(),
+                        state: None,
+                    },
+                );
+
                 Ok::<(), JoyConError>(())
-            }.await;
+            }
+            .await;
             let _ = tx.send(result);
         });
         // Block on receiving the result
-        rx.blocking_recv().unwrap_or(Err(JoyConError::Other("Channel closed".to_string())))
+        rx.blocking_recv()
+            .unwrap_or(Err(JoyConError::Other("Channel closed".to_string())))
     }
 
     /// Get all connected controllers' data
@@ -325,15 +364,13 @@ impl ControllerManager {
         let data = self.controller_data.lock().unwrap();
         data.values().cloned().collect()
     }
-    
+
     /// Get all connected controllers' unified state
     ///
     /// Returns a vector of JoyconState for all connected controllers
     pub fn get_states(&self) -> Vec<JoyconState> {
         let data = self.controller_data.lock().unwrap();
-        data.values()
-            .filter_map(|c| c.state.clone())
-            .collect()
+        data.values().filter_map(|c| c.state.clone()).collect()
     }
 
     /// Calibrate a specific controller by serial number
@@ -343,7 +380,7 @@ impl ControllerManager {
         let mut samples = Vec::new();
         let start_time = std::time::Instant::now();
         let duration = Duration::from_millis(duration_ms);
-        
+
         // Check if it's a Joy-Con 1 or 2
         let is_joycon2 = {
             let data = self.controller_data.lock().unwrap();
@@ -351,7 +388,7 @@ impl ControllerManager {
                 .map(|c| c.is_joycon2)
                 .ok_or_else(|| JoyConError::DeviceNotFound)?
         };
-        
+
         while start_time.elapsed() < duration {
             if is_joycon2 {
                 let devices = self.joycon2_devices.lock().await;
@@ -360,7 +397,11 @@ impl ControllerManager {
                         Ok(data) => {
                             let is_left = joycon2.is_left();
                             if let Ok(report) = InputReport::decode_joycon2(&data, is_left) {
-                                samples.push(CalibrationSample::new(report.gyro, report.accel, report.stick));
+                                samples.push(CalibrationSample::new(
+                                    report.gyro,
+                                    report.accel,
+                                    report.stick,
+                                ));
                             }
                         }
                         Err(_) => {}
@@ -372,8 +413,14 @@ impl ControllerManager {
                     let mut buffer = [0u8; 64];
                     if let Ok(bytes) = joycon.read_input_report(&mut buffer) {
                         if bytes > 0 {
-                            if let Ok(report) = InputReport::decode(&buffer[..bytes], joycon.product_id()) {
-                                samples.push(CalibrationSample::new(report.gyro, report.accel, report.stick));
+                            if let Ok(report) =
+                                InputReport::decode(&buffer[..bytes], joycon.product_id())
+                            {
+                                samples.push(CalibrationSample::new(
+                                    report.gyro,
+                                    report.accel,
+                                    report.stick,
+                                ));
                             }
                         }
                     }
@@ -381,29 +428,49 @@ impl ControllerManager {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        
+
         if samples.is_empty() {
-            return Err(JoyConError::Other("No samples collected during calibration".to_string()));
+            return Err(JoyConError::Other(
+                "No samples collected during calibration".to_string(),
+            ));
         }
-        
+
         let calibration = Calibration::calculate_offset(&samples);
-        
+
         let mut data = self.controller_data.lock().unwrap();
         if let Some(controller) = data.get_mut(serial) {
             controller.calibration = calibration;
             // Recompute state if we have a latest report
             if let Some(ref report) = controller.latest_report {
-                controller.state = Some(Self::compute_state(report, serial.to_string(), controller.is_left, controller.is_joycon2));
+                controller.state = Some(Self::compute_state(
+                    report,
+                    serial.to_string(),
+                    controller.is_left,
+                    controller.is_joycon2,
+                ));
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Helper function to compute unified state from an input report
-    fn compute_state(report: &InputReport, serial: String, is_left: bool, is_joycon2: bool) -> JoyconState {
-        let side = if is_left { JoyconSide::Left } else { JoyconSide::Right };
-        let version = if is_joycon2 { JoyconVersion::V2 } else { JoyconVersion::V1 };
+    fn compute_state(
+        report: &InputReport,
+        serial: String,
+        is_left: bool,
+        is_joycon2: bool,
+    ) -> JoyconState {
+        let side = if is_left {
+            JoyconSide::Left
+        } else {
+            JoyconSide::Right
+        };
+        let version = if is_joycon2 {
+            JoyconVersion::V2
+        } else {
+            JoyconVersion::V1
+        };
         JoyconState::from_input_report(report, serial, side, version, true)
     }
 
@@ -415,7 +482,7 @@ impl ControllerManager {
         }
         *enabled = true;
         drop(enabled);
-        
+
         // Automatically scan and connect to all available Joy-Con 1 devices
         // Note: Scanning is done in enable_polling_impl for user feedback
         // Here we just connect to devices that were already scanned
@@ -428,18 +495,18 @@ impl ControllerManager {
                     match self.connect_joycon1(&serial, vid, pid) {
                         Ok(_) => {
                             println!("[Joy-Con 1] ✓ Successfully connected: {}", serial);
-                        },
+                        }
                         Err(e) => {
                             eprintln!("[Joy-Con 1] ✗ Failed to connect {}: {:?}", serial, e);
                         }
                     }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("[Joy-Con 1] ✗ Failed to scan: {:?}", e);
             }
         }
-        
+
         // Automatically scan and connect to all available Joy-Con 2 devices
         // Run this in a background thread using block_on (like the original joycon crate does)
         // (BLE scan can take 5+ seconds, so we don't want to block)
@@ -448,7 +515,7 @@ impl ControllerManager {
         let joycon2_devices_clone = Arc::clone(&self.joycon2_devices);
         let runtime_handle_clone = self.runtime_handle.clone();
         let polling_enabled_clone = Arc::clone(&self.polling_enabled);
-        
+
         // Spawn a background thread that uses block_on to run the scan
         // This is how the original joycon crate does it (everything runs inside tokio::main)
         let runtime_for_block_on = runtime_handle_clone.clone();
@@ -588,32 +655,32 @@ impl ControllerManager {
                 });
             })
             .expect("Failed to spawn Joy-Con 2 scan thread");
-        
+
         println!("[Joy-Con 2] Background scan thread spawned");
-        
+
         let (tx, _rx) = mpsc::unbounded_channel();
         let tx_clone = tx.clone();
         self.report_tx = Some(tx);
-        
+
         // Joy-Con 1 polling is handled automatically by the scene update loop
         // (called via poll_joycon1_sync() when polling is enabled)
         // This is necessary because HidDevice is not Send/Sync and must be accessed
         // from the main thread
-        
+
         // Start Joy-Con 2 polling (BLE devices) in a background thread using block_on
         // This ensures the polling actually runs (like the scan thread)
         let joycon2_devices = Arc::clone(&self.joycon2_devices);
         let controller_data = Arc::clone(&self.controller_data);
         let polling_enabled = Arc::clone(&self.polling_enabled);
         let runtime_for_polling = self.runtime_handle.clone();
-        
+
         std::thread::Builder::new()
             .name("joycon2-poll".to_string())
             .spawn(move || {
                 println!("[Joy-Con 2] Polling thread started");
                 // Use block_on to run the polling loop - this ensures it actually executes
                 runtime_for_polling.block_on(async move {
-                    let mut interval = interval(Duration::from_millis(5)); // ~200Hz polling for lower latency
+                    let mut interval = interval(Duration::from_millis(1)); // ~1000Hz polling for lowest latency
                     
                     loop {
                         interval.tick().await;
@@ -718,37 +785,37 @@ impl ControllerManager {
                 });
             })
             .expect("Failed to spawn Joy-Con 2 polling thread");
-        
+
         println!("[Joy-Con 2] Polling thread spawned");
         Ok(())
     }
 
     /// Poll Joy-Con 1 (HID) devices synchronously
-    /// 
+    ///
     /// This must be called from a synchronous context since HidDevice is not Send/Sync.
     /// Call this periodically (e.g., in your main game loop) to update Joy-Con 1 input data.
-    /// 
+    ///
     /// NOTE: This uses a blocking read (like the original project), which will wait for data.
     /// The Joy-Con sends reports when there's input change, so this will block until data arrives.
     /// This matches the behavior of the original joycon project.
-    /// 
+    ///
     /// WARNING: This will block the game loop until the Joy-Con sends a report.
     /// Consider calling this less frequently or only when you know input is expected.
     /// Poll Joy-Con 1 (HID) devices synchronously
-    /// 
+    ///
     /// Uses blocking read exactly like the original project
     pub fn poll_joycon1_sync(&self) {
         let devices = lock_mutex(&self.joycon1_devices);
         let mut data = lock_mutex(&self.controller_data);
-        
+
         let device_count = devices.len();
         if device_count == 0 {
             return; // No devices to poll
         }
-        
+
         for (serial, joycon) in devices.iter() {
             let mut buffer = [0u8; 64];
-            
+
             // Use non-blocking read - returns immediately if no data available
             // This allows the update loop to run at full speed
             match joycon.read_input_report(&mut buffer) {
@@ -759,20 +826,26 @@ impl ControllerManager {
                             Ok(report) => {
                                 // Apply calibration
                                 if let Some(controller) = data.get_mut(serial) {
-                                    let (calibrated_gyro, _calibrated_accel) = controller.calibration.apply(report.gyro, report.accel);
+                                    let (calibrated_gyro, _calibrated_accel) =
+                                        controller.calibration.apply(report.gyro, report.accel);
                                     let mut calibrated_report = report.clone();
                                     calibrated_report.gyro = calibrated_gyro;
                                     controller.latest_report = Some(calibrated_report.clone());
                                     // Compute unified state
-                                    controller.state = Some(Self::compute_state(&calibrated_report, serial.clone(), controller.is_left, controller.is_joycon2));
+                                    controller.state = Some(Self::compute_state(
+                                        &calibrated_report,
+                                        serial.clone(),
+                                        controller.is_left,
+                                        controller.is_joycon2,
+                                    ));
                                 }
-                            },
+                            }
                             Err(_) => {
                                 // Decode failed - ignore
                             }
                         }
                     }
-                },
+                }
                 Err(_) => {
                     // Read failed - ignore
                 }
@@ -786,10 +859,10 @@ impl ControllerManager {
             let mut enabled = self.polling_enabled.lock().unwrap();
             *enabled = false;
         }
-        
+
         // Drop the channel to signal the polling task to stop
         self.report_tx = None;
-        
+
         // Wait for the polling task to finish
         if let Some(handle) = self.polling_handle.take() {
             handle.abort();
@@ -813,4 +886,3 @@ impl Drop for ControllerManager {
         self.disable_polling();
     }
 }
-

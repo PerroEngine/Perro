@@ -4,7 +4,8 @@
 //! Currently supports Joy-Con controllers (both HID and BLE).
 
 pub mod joycon;
+pub mod manager;
 
-pub use joycon::{InputReport, Buttons, Calibration, ControllerManager};
 pub use crate::structs::{Vector2, Vector3};
-
+pub use joycon::{Buttons, Calibration, ControllerManager, InputReport};
+pub use manager::{InputManager, InputMap, InputSource, MouseButton, parse_input_source};

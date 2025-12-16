@@ -2,22 +2,22 @@
 //!
 //! This module provides low-level access to Joy-Con 1 (HID) and Joy-Con 2 (BLE) controllers.
 
-pub mod joycon;
-pub mod joycon2;
+pub mod calibration;
 pub mod error;
 pub mod input_report;
-pub mod calibration;
+pub mod joycon;
+pub mod joycon2;
 pub mod manager;
 pub mod state;
 
-pub use joycon::JoyCon;
-pub use joycon2::JoyCon2;
-pub use error::{JoyConError, Result};
-pub use input_report::{InputReport, Buttons};
 pub use crate::structs::{Vector2, Vector3};
 pub use calibration::{Calibration, CalibrationSample};
+pub use error::{JoyConError, Result};
+pub use input_report::{Buttons, InputReport};
+pub use joycon::JoyCon;
+pub use joycon2::JoyCon2;
 pub use manager::ControllerManager;
-pub use state::{JoyconState, JoyconButtons, JoyconSide, JoyconVersion};
+pub use state::{JoyconButtons, JoyconSide, JoyconState, JoyconVersion};
 
 /// Joy-Con vendor ID (Nintendo) - for HID devices
 pub const JOYCON_VENDOR_ID: u16 = 0x057E;
@@ -42,4 +42,3 @@ pub fn scan_joycon1_devices() -> Result<Vec<(String, u16, u16)>> {
 pub async fn scan_joycon2_devices() -> Result<Vec<String>> {
     joycon2::scan_devices().await
 }
-

@@ -377,7 +377,16 @@ impl PrimitiveRenderer {
         // The rest stays exactly the same
         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
             if let Some(ref mut existing) = self.texture_instance_slots[slot] {
-                if existing.0 != layer || existing.1 != new_instance || existing.2 != texture_path {
+                // Always update if layer, instance, or texture path changed
+                // Use a more robust comparison for TextureInstance to handle floating point precision
+                let instance_changed = existing.1.transform_0 != new_instance.transform_0
+                    || existing.1.transform_1 != new_instance.transform_1
+                    || existing.1.transform_2 != new_instance.transform_2
+                    || existing.1.transform_3 != new_instance.transform_3
+                    || existing.1.pivot != new_instance.pivot
+                    || existing.1.z_index != new_instance.z_index;
+
+                if existing.0 != layer || instance_changed || existing.2 != texture_path {
                     existing.0 = layer;
                     existing.1 = new_instance;
                     existing.2 = texture_path;

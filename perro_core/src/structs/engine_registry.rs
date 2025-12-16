@@ -123,6 +123,7 @@ impl EngineRegistry {
                 .map(|(n, t)| StructField {
                     name: n.into(),
                     typ: t,
+                    attributes: vec![],
                 })
                 .collect(),
             methods: vec![],
@@ -148,6 +149,7 @@ impl EngineRegistry {
                 .map(|(n, t)| StructField {
                     name: n.into(),
                     typ: t,
+                    attributes: vec![],
                 })
                 .collect(),
             methods: vec![],

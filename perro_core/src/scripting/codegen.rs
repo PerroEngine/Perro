@@ -14,7 +14,7 @@ use regex::Regex;
 
 use crate::api_modules::*;
 use crate::ast::*;
-use crate::scripting::ast::{ContainerKind, Expr, NumberKind, Type};
+use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Type};
 use crate::{
     asset_io::{ProjectRoot, get_project_root},
     prelude::string_to_u64,
@@ -156,6 +156,15 @@ impl Script {
                 } else {
                     self.get_variable_type(name).cloned()
                 }
+            }
+            Expr::Range(start, end) => {
+                // Ranges are iterable, so they return a type that can be used in for loops
+                // For now, we'll infer it as a range type that generates Rust's Range
+                // The actual iteration type will be inferred from context
+                Some(Type::Container(
+                    ContainerKind::Array,
+                    vec![Type::Number(NumberKind::Signed(32))],
+                ))
             }
             Expr::BinaryOp(left, _op, right) => {
                 let left_type = self.infer_expr_type(left, current_func);
@@ -416,6 +425,7 @@ impl Script {
 
         // External crates
         out.push_str("use num_bigint::BigInt;\n");
+        out.push_str("use phf::{phf_map, Map};\n");
         out.push_str("use rust_decimal::Decimal;\n");
         out.push_str("use rust_decimal::prelude::{FromPrimitive, ToPrimitive};\n");
         out.push_str("use serde::{Deserialize, Serialize};\n");
@@ -445,6 +455,101 @@ impl Script {
         out.push_str(
             "// ========================================================================\n\n",
         );
+
+        // Generate MEMBER_TO_ATTRIBUTES_MAP and ATTRIBUTE_TO_MEMBERS_MAP once at the top
+        // Also build reverse index for O(1) attribute lookups
+
+        // Build reverse index: attribute -> members
+        let mut attribute_to_members: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        out.push_str("static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {\n");
+        for var in &script.variables {
+            let attrs = script
+                .attributes
+                .get(&var.name)
+                .cloned()
+                .unwrap_or_else(|| var.attributes.clone());
+            // Only store members that have attributes
+            if !attrs.is_empty() {
+                write!(out, "    \"{}\" => &[", var.name).unwrap();
+                for (i, attr) in attrs.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    write!(out, "\"{}\"", attr).unwrap();
+                    attribute_to_members
+                        .entry(attr.clone())
+                        .or_insert_with(Vec::new)
+                        .push(var.name.clone());
+                }
+                out.push_str("],\n");
+            }
+        }
+        for func in &script.functions {
+            // Suffix function names with "()" to differentiate from variables
+            let func_key = format!("{}()", func.name);
+            let attrs = script
+                .attributes
+                .get(&func.name)
+                .cloned()
+                .unwrap_or_else(|| func.attributes.clone());
+            // Only store members that have attributes
+            if !attrs.is_empty() {
+                write!(out, "    \"{}\" => &[", func_key).unwrap();
+                for (i, attr) in attrs.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(", ");
+                    }
+                    write!(out, "\"{}\"", attr).unwrap();
+                    attribute_to_members
+                        .entry(attr.clone())
+                        .or_insert_with(Vec::new)
+                        .push(func_key.clone());
+                }
+                out.push_str("],\n");
+            }
+        }
+        for struct_def in &script.structs {
+            for field in &struct_def.fields {
+                let qualified_name = format!("{}.{}", struct_def.name, field.name);
+                let attrs = script
+                    .attributes
+                    .get(&qualified_name)
+                    .cloned()
+                    .unwrap_or_else(|| field.attributes.clone());
+                // Only store members that have attributes
+                if !attrs.is_empty() {
+                    write!(out, "    \"{}\" => &[", qualified_name).unwrap();
+                    for (i, attr) in attrs.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(", ");
+                        }
+                        write!(out, "\"{}\"", attr).unwrap();
+                        attribute_to_members
+                            .entry(attr.clone())
+                            .or_insert_with(Vec::new)
+                            .push(qualified_name.clone());
+                    }
+                    out.push_str("],\n");
+                }
+            }
+        }
+        out.push_str("};\n\n");
+
+        // Generate reverse index for O(1) attribute lookups
+        out.push_str("static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {\n");
+        for (attr, members) in &attribute_to_members {
+            write!(out, "    \"{}\" => &[", attr).unwrap();
+            for (i, member) in members.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write!(out, "\"{}\"", member).unwrap();
+            }
+            out.push_str("],\n");
+        }
+        out.push_str("};\n\n");
 
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
         // Use "Node" as default if node_type is empty
@@ -505,6 +610,8 @@ impl Script {
             )
             .unwrap();
         }
+
+        // MEMBER_TO_ATTRIBUTES_MAP is generated at the top, not here in the create function
 
         // -----------------------------------------------------
         // 1. Emit local variable predefinitions for all fields
@@ -647,6 +754,7 @@ impl Script {
             &format!("{}Script", pascal_struct_name),
             &script.variables, // Pass the unified list for exposed vars
             &script.functions,
+            &script.attributes,
         ));
 
         if let Err(e) = write_to_crate(&project_path, &out, struct_name) {
@@ -681,7 +789,8 @@ fn expr_accesses_node(expr: &Expr, script: &Script) -> bool {
             expr_accesses_node(left, script) || expr_accesses_node(right, script)
         }
         Expr::Call(target, args) => {
-            expr_accesses_node(target, script) || args.iter().any(|arg| expr_accesses_node(arg, script))
+            expr_accesses_node(target, script)
+                || args.iter().any(|arg| expr_accesses_node(arg, script))
         }
         _ => false,
     }
@@ -690,9 +799,10 @@ fn expr_accesses_node(expr: &Expr, script: &Script) -> bool {
 fn stmt_accesses_node(stmt: &Stmt, script: &Script) -> bool {
     match stmt {
         Stmt::Expr(e) => expr_accesses_node(&e.expr, script),
-        Stmt::VariableDecl(var) => {
-            var.value.as_ref().map_or(false, |e| expr_accesses_node(&e.expr, script))
-        }
+        Stmt::VariableDecl(var) => var
+            .value
+            .as_ref()
+            .map_or(false, |e| expr_accesses_node(&e.expr, script)),
         Stmt::Assign(_, e) | Stmt::AssignOp(_, _, e) => expr_accesses_node(&e.expr, script),
         Stmt::MemberAssign(lhs, rhs) | Stmt::MemberAssignOp(lhs, _, rhs) => {
             expr_accesses_node(&lhs.expr, script) || expr_accesses_node(&rhs.expr, script)
@@ -706,6 +816,38 @@ fn stmt_accesses_node(stmt: &Stmt, script: &Script) -> bool {
                 || expr_accesses_node(&value.expr, script)
         }
         Stmt::Pass => false,
+        Stmt::If {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            expr_accesses_node(&condition.expr, script)
+                || then_body.iter().any(|s| stmt_accesses_node(s, script))
+                || else_body.as_ref().map_or(false, |body| {
+                    body.iter().any(|s| stmt_accesses_node(s, script))
+                })
+        }
+        Stmt::For { iterable, body, .. } => {
+            expr_accesses_node(&iterable.expr, script)
+                || body.iter().any(|s| stmt_accesses_node(s, script))
+        }
+        Stmt::ForTraditional {
+            init,
+            condition,
+            increment,
+            body,
+        } => {
+            (init
+                .as_ref()
+                .map_or(false, |s| stmt_accesses_node(s.as_ref(), script)))
+                || (condition
+                    .as_ref()
+                    .map_or(false, |c| expr_accesses_node(&c.expr, script)))
+                || (increment
+                    .as_ref()
+                    .map_or(false, |s| stmt_accesses_node(s.as_ref(), script)))
+                || body.iter().any(|s| stmt_accesses_node(s, script))
+        }
     }
 }
 
@@ -715,12 +857,39 @@ fn analyze_self_usage(script: &mut Script) {
     let mut uses_self_flags: Vec<bool> = script
         .functions
         .iter()
-        .map(|func| func.body.iter().any(|stmt| stmt_accesses_node(stmt, script)))
+        .map(|func| {
+            func.body
+                .iter()
+                .any(|stmt| stmt_accesses_node(stmt, script))
+        })
         .collect();
-    
-    // Second pass: apply the flags
-    for (func, uses_self) in script.functions.iter_mut().zip(uses_self_flags.iter()) {
+
+    // Step 1.5: Collect cloned child nodes for each function (before mutating)
+    // collect_cloned_node_vars takes &Script (immutable), so we can call it here
+    let cloned_nodes_per_func: Vec<Vec<String>> = script
+        .functions
+        .iter()
+        .map(|func| {
+            let mut cloned_nodes = Vec::new();
+            let mut cloned_ui_elements = Vec::new();
+            collect_cloned_node_vars(
+                &func.body,
+                &mut cloned_nodes,
+                &mut cloned_ui_elements,
+                script,
+            );
+            cloned_nodes
+        })
+        .collect();
+
+    // Second pass: apply the flags and cloned child nodes
+    for (func, (uses_self, cloned_nodes)) in script
+        .functions
+        .iter_mut()
+        .zip(uses_self_flags.iter().zip(cloned_nodes_per_func.iter()))
+    {
         func.uses_self = *uses_self;
+        func.cloned_child_nodes = cloned_nodes.clone();
     }
 
     // Step 2: track which functions call which others
@@ -755,6 +924,123 @@ fn analyze_self_usage(script: &mut Script) {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Collect variable names that hold cloned child nodes (from self.get_node("name") as Type)
+/// and cloned UI elements (from ui_node.get_element("name") as UIText)
+/// These need to be merged back at function end
+fn collect_cloned_node_vars(
+    stmts: &[Stmt],
+    cloned_nodes: &mut Vec<String>,
+    cloned_ui_elements: &mut Vec<(String, String, String)>, // (ui_node_var, element_name, element_var)
+    script: &Script,
+) {
+    // Check if an expression contains GetChildByName anywhere (recursively)
+    // GetChildByName always returns a cloned node that needs to be merged
+    fn expr_contains_get_node(expr: &Expr, _verbose: bool) -> bool {
+        match expr {
+            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) => true,
+            Expr::Cast(inner, _) => expr_contains_get_node(inner, _verbose),
+            Expr::Call(target, args) => {
+                expr_contains_get_node(target, _verbose)
+                    || args.iter().any(|arg| expr_contains_get_node(arg, _verbose))
+            }
+            Expr::MemberAccess(base, _) => expr_contains_get_node(base, _verbose),
+            Expr::BinaryOp(l, _, r) => {
+                expr_contains_get_node(l, _verbose) || expr_contains_get_node(r, _verbose)
+            }
+            Expr::Index(base, idx) => {
+                expr_contains_get_node(base, _verbose) || expr_contains_get_node(idx, _verbose)
+            }
+            Expr::Range(start, end) => {
+                expr_contains_get_node(start, _verbose) || expr_contains_get_node(end, _verbose)
+            }
+            Expr::ObjectLiteral(pairs) => pairs
+                .iter()
+                .any(|(_, expr)| expr_contains_get_node(expr, _verbose)),
+            Expr::ContainerLiteral(_, data) => match data {
+                crate::ast::ContainerLiteralData::Array(elems) => {
+                    elems.iter().any(|e| expr_contains_get_node(e, _verbose))
+                }
+                crate::ast::ContainerLiteralData::Map(pairs) => pairs.iter().any(|(k, v)| {
+                    expr_contains_get_node(k, _verbose) || expr_contains_get_node(v, _verbose)
+                }),
+                crate::ast::ContainerLiteralData::FixedArray(_, elems) => {
+                    elems.iter().any(|e| expr_contains_get_node(e, _verbose))
+                }
+            },
+            Expr::StructNew(_, fields) => fields
+                .iter()
+                .any(|(_, expr)| expr_contains_get_node(expr, _verbose)),
+            _ => false,
+        }
+    }
+
+    fn is_cloned_ui_element_expr(expr: &Expr) -> Option<(String, String)> {
+        // Returns (ui_node_var, element_name) if this is ui_node.get_element("name") as UIText
+        match expr {
+            Expr::Cast(inner, target_type) => {
+                if let Expr::Call(target, args) = inner.as_ref() {
+                    if let Expr::MemberAccess(base, method) = target.as_ref() {
+                        if method == "get_element" && args.len() == 1 {
+                            // Extract ui_node variable name from base
+                            if let Expr::Ident(ui_node_var) = base.as_ref() {
+                                // Extract element name from args[0] (args is Vec<Expr>, not Vec<TypedExpr>)
+                                if let Expr::Literal(crate::ast::Literal::String(element_name)) =
+                                    &args[0]
+                                {
+                                    return Some((ui_node_var.clone(), element_name.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    for stmt in stmts {
+        match stmt {
+            Stmt::VariableDecl(var) => {
+                if let Some(value) = &var.value {
+                    // Check if the expression contains GetChildByName - if so, track the variable
+                    if expr_contains_get_node(&value.expr, script.verbose) {
+                        cloned_nodes.push(var.name.clone());
+                    } else if let Some((ui_node_var, element_name)) =
+                        is_cloned_ui_element_expr(&value.expr)
+                    {
+                        cloned_ui_elements.push((ui_node_var, element_name, var.name.clone()));
+                    }
+                }
+            }
+            Stmt::Assign(name, expr) => {
+                // Check if the expression contains GetChildByName - if so, track the variable
+                if expr_contains_get_node(&expr.expr, script.verbose) {
+                    cloned_nodes.push(name.clone());
+                } else if let Some((ui_node_var, element_name)) =
+                    is_cloned_ui_element_expr(&expr.expr)
+                {
+                    cloned_ui_elements.push((ui_node_var, element_name, name.clone()));
+                }
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_cloned_node_vars(then_body, cloned_nodes, cloned_ui_elements, script);
+                if let Some(else_body) = else_body {
+                    collect_cloned_node_vars(else_body, cloned_nodes, cloned_ui_elements, script);
+                }
+            }
+            Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } => {
+                collect_cloned_node_vars(body, cloned_nodes, cloned_ui_elements, script);
+            }
+            _ => {}
         }
     }
 }
@@ -934,7 +1220,11 @@ impl Function {
         // (1) Insert additional preamble if the method uses self/api
         // ---------------------------------------------------
         let needs_self = self.uses_self;
-        let node_type_str = if node_type.is_empty() { "Node" } else { node_type };
+        let node_type_str = if node_type.is_empty() {
+            "Node"
+        } else {
+            node_type
+        };
 
         if needs_self {
             writeln!(out, "        if external_call {{").unwrap();
@@ -948,16 +1238,82 @@ impl Function {
         }
 
         // ---------------------------------------------------
-        // (2) Emit body
+        // (2) Use cloned child nodes that were already collected during analysis
+        // ---------------------------------------------------
+        // cloned_child_nodes was already populated by collect_cloned_node_vars during analyze_self_usage
+        // which recursively scans all statements including nested if/for blocks and Assign statements
+        let cloned_node_vars = &self.cloned_child_nodes;
+
+        // Collect cloned UI elements (we still need to scan for these)
+        let mut cloned_ui_elements: Vec<(String, String, String)> = Vec::new();
+        collect_cloned_node_vars(&self.body, &mut Vec::new(), &mut cloned_ui_elements, script);
+
+        // ---------------------------------------------------
+        // (3) Emit body
         // ---------------------------------------------------
         for stmt in &self.body {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
+        // ---------------------------------------------------
+        // (4) Merge cloned nodes and UI elements back
+        // ---------------------------------------------------
+
+        // Merge all cloned nodes together (child nodes + self.node)
+        // These were tracked during codegen when we saw VariableDecl with get_node
+        let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
+            .iter()
+            .map(|v| format!("{}.to_scene_node()", v))
+            .collect();
+
+        // Add self.node if needed (only in external_call context)
         if needs_self {
             out.push_str("\n        if external_call {\n");
-            out.push_str("            api.merge_nodes(vec![self.node.clone().to_scene_node()]);\n");
+            all_nodes_to_merge.push("self.node.clone().to_scene_node()".to_string());
+            if !all_nodes_to_merge.is_empty() {
+                out.push_str("            // Merge cloned nodes\n");
+                out.push_str(&format!(
+                    "            api.merge_nodes(vec![{}]);\n",
+                    all_nodes_to_merge.join(", ")
+                ));
+            }
             out.push_str("        }\n");
+        } else if !all_nodes_to_merge.is_empty() {
+            out.push_str("\n        // Merge cloned child nodes\n");
+            out.push_str(&format!(
+                "        api.merge_nodes(vec![{}]);\n",
+                all_nodes_to_merge.join(", ")
+            ));
+        }
+
+        // Merge cloned UI elements back into their UINodes
+        if !cloned_ui_elements.is_empty() {
+            out.push_str("\n        // Merge cloned UI elements back\n");
+            // Group by ui_node_var
+            use std::collections::HashMap;
+            let mut by_ui_node: HashMap<String, Vec<(String, String)>> = HashMap::new();
+            for (ui_node_var, element_name, element_var) in &cloned_ui_elements {
+                by_ui_node
+                    .entry(ui_node_var.clone())
+                    .or_insert_with(Vec::new)
+                    .push((element_name.clone(), element_var.clone()));
+            }
+            for (ui_node_var, elements) in by_ui_node {
+                let merge_pairs: Vec<String> = elements
+                    .iter()
+                    .map(|(name, var)| {
+                        format!(
+                            "(\"{}\".to_string(), crate::ui_element::UIElement::Text({}.clone()))",
+                            name, var
+                        )
+                    })
+                    .collect();
+                out.push_str(&format!(
+                    "        {}.merge_elements(vec![{}]);\n",
+                    ui_node_var,
+                    merge_pairs.join(", ")
+                ));
+            }
         }
 
         out.push_str("    }\n\n");
@@ -977,7 +1333,11 @@ impl Function {
         .unwrap();
 
         let needs_self = self.uses_self;
-        let node_type_str = if node_type.is_empty() { "Node" } else { node_type };
+        let node_type_str = if node_type.is_empty() {
+            "Node"
+        } else {
+            node_type
+        };
 
         if needs_self {
             writeln!(
@@ -988,12 +1348,29 @@ impl Function {
             .unwrap();
         }
 
+        // Emit body
         for stmt in &self.body {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
+        // Merge all cloned nodes together (child nodes + self.node)
+        let cloned_node_vars = &self.cloned_child_nodes;
+        let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
+            .iter()
+            .map(|v| format!("{}.to_scene_node()", v))
+            .collect();
+
+        // Add self.node if needed
         if needs_self {
-            out.push_str("\n        api.merge_nodes(vec![self.node.clone().to_scene_node()]);\n");
+            all_nodes_to_merge.push("self.node.clone().to_scene_node()".to_string());
+        }
+
+        if !all_nodes_to_merge.is_empty() {
+            out.push_str("\n        // Merge cloned nodes\n");
+            out.push_str(&format!(
+                "        api.merge_nodes(vec![{}]);\n",
+                all_nodes_to_merge.join(", ")
+            ));
         }
 
         out.push_str("    }\n\n");
@@ -1075,11 +1452,14 @@ impl Stmt {
 
                     // Don't clone if the expression already produces an owned value (e.g., from unwrap_or_default, from_str, etc.)
                     // This is important for generic functions like FromPrimitive::from_f32 where cloning breaks type inference
+                    // Also don't clone if it's a get_node_clone call - that already returns an owned value
                     let already_owned = raw_expr.contains(".unwrap_or_default()")
                         || raw_expr.contains(".unwrap()")
                         || raw_expr.contains("::from_str")
                         || raw_expr.contains("::from(")
-                        || raw_expr.contains("::new(");
+                        || raw_expr.contains("::new(")
+                        || raw_expr.contains("get_node_clone")
+                        || raw_expr.contains("get_element_clone");
 
                     if (needs_clone || needs_clone_fallback) && !already_owned {
                         format!("{}.clone()", raw_expr)
@@ -1301,6 +1681,213 @@ impl Stmt {
 
             Stmt::Pass => String::new(),
 
+            Stmt::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                let cond_str = condition.to_rust(needs_self, script, current_func);
+                let mut result = format!("        if {} {{\n", cond_str);
+
+                for stmt in then_body {
+                    let stmt_str = stmt.to_rust(needs_self, script, current_func);
+                    // Add extra indentation for statements inside the block
+                    let indented = stmt_str
+                        .lines()
+                        .map(|line| {
+                            if line.trim().is_empty() {
+                                String::new()
+                            } else {
+                                format!("    {}", line)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    result.push_str(&indented);
+                    if !indented.ends_with('\n') {
+                        result.push('\n');
+                    }
+                }
+
+                result.push_str("        }");
+
+                if let Some(else_body) = else_body {
+                    result.push_str(" else {\n");
+                    for stmt in else_body {
+                        let stmt_str = stmt.to_rust(needs_self, script, current_func);
+                        // Add extra indentation for statements inside the block
+                        let indented = stmt_str
+                            .lines()
+                            .map(|line| {
+                                if line.trim().is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("    {}", line)
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        result.push_str(&indented);
+                        if !indented.ends_with('\n') {
+                            result.push('\n');
+                        }
+                    }
+                    result.push_str("        }\n");
+                } else {
+                    result.push_str("\n");
+                }
+
+                result
+            }
+
+            Stmt::For {
+                var_name,
+                iterable,
+                body,
+            } => {
+                let iter_str = iterable.to_rust(needs_self, script, current_func);
+                let mut result = format!("        for {} in {} {{\n", var_name, iter_str);
+
+                for stmt in body {
+                    let stmt_str = stmt.to_rust(needs_self, script, current_func);
+                    // Add extra indentation for statements inside the block
+                    let indented = stmt_str
+                        .lines()
+                        .map(|line| {
+                            if line.trim().is_empty() {
+                                String::new()
+                            } else {
+                                format!("    {}", line)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    result.push_str(&indented);
+                    if !indented.ends_with('\n') {
+                        result.push('\n');
+                    }
+                }
+
+                result.push_str("        }\n");
+                result
+            }
+
+            Stmt::ForTraditional {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
+                let mut result = String::new();
+
+                // Init - declare variable before the loop if it's a VariableDecl
+                if let Some(init_stmt) = init {
+                    match init_stmt.as_ref() {
+                        Stmt::VariableDecl(var) => {
+                            // Default to f32 if type is not inferred (common for loop counters)
+                            let var_type = if var.typ.is_none() {
+                                "f32".to_string()
+                            } else {
+                                var.rust_type()
+                            };
+                            let init_val = if var.value.is_none() {
+                                "0.0".to_string()
+                            } else {
+                                var.rust_initialization(script, current_func)
+                            };
+                            result.push_str(&format!(
+                                "        let mut {}: {} = {};\n",
+                                var.name, var_type, init_val
+                            ));
+                        }
+                        Stmt::Assign(name, expr) => {
+                            let expr_str = expr.to_rust(needs_self, script, current_func);
+                            result.push_str(&format!("        let mut {} = {};\n", name, expr_str));
+                        }
+                        _ => {
+                            // For other init statements, just generate the code
+                            let init_code = init_stmt.to_rust(needs_self, script, current_func);
+                            result.push_str(&format!(
+                                "        {}\n",
+                                init_code.trim().trim_end_matches(';')
+                            ));
+                        }
+                    }
+                }
+
+                // Convert to while loop since Rust doesn't support C-style for loops
+                result.push_str("        while ");
+
+                // Condition
+                if let Some(cond) = condition {
+                    let cond_str = cond.to_rust(needs_self, script, current_func);
+                    result.push_str(&cond_str);
+                } else {
+                    result.push_str("true");
+                }
+                result.push_str(" {\n");
+
+                // Body
+                for stmt in body {
+                    let stmt_str = stmt.to_rust(needs_self, script, current_func);
+                    // Add extra indentation for statements inside the block
+                    let indented = stmt_str
+                        .lines()
+                        .map(|line| {
+                            if line.trim().is_empty() {
+                                String::new()
+                            } else {
+                                format!("            {}", line)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    result.push_str(&indented);
+                    if !indented.ends_with('\n') {
+                        result.push('\n');
+                    }
+                }
+
+                // Increment at the end of the loop body
+                if let Some(incr_stmt) = increment {
+                    match incr_stmt.as_ref() {
+                        Stmt::AssignOp(name, op, expr) => {
+                            // Rust doesn't have ++ or --, so use += and -=
+                            let op_str = match op {
+                                Op::Add => "+=",
+                                Op::Sub => "-=",
+                                Op::Mul => "*=",
+                                Op::Div => "/=",
+                                Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
+                                    unreachable!(
+                                        "Comparison operators cannot be used in assignment operations"
+                                    )
+                                }
+                            };
+                            let expr_str = expr.to_rust(needs_self, script, current_func);
+                            result.push_str(&format!(
+                                "            {} {} {};\n",
+                                name, op_str, expr_str
+                            ));
+                        }
+                        Stmt::Assign(name, expr) => {
+                            let expr_str = expr.to_rust(needs_self, script, current_func);
+                            result.push_str(&format!("            {} = {};\n", name, expr_str));
+                        }
+                        _ => {
+                            let incr_code = incr_stmt.to_rust(needs_self, script, current_func);
+                            result.push_str(&format!(
+                                "            {}\n",
+                                incr_code.trim().trim_end_matches(';')
+                            ));
+                        }
+                    }
+                }
+
+                result.push_str("        }\n");
+                result
+            }
+
             Stmt::ScriptAssign(var, field, rhs) => {
                 let rhs_str = rhs.to_rust(needs_self, script, current_func);
 
@@ -1328,6 +1915,9 @@ impl Stmt {
                     Op::Sub => "Sub",
                     Op::Mul => "Mul",
                     Op::Div => "Div",
+                    Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
+                        unreachable!("Comparison operators cannot be used in assignment operations")
+                    }
                 };
 
                 let ctor = match script.infer_expr_type(&rhs.expr, current_func) {
@@ -1710,6 +2300,33 @@ impl Stmt {
                 array.contains_self() || index.contains_self() || value.contains_self()
             }
             Stmt::Pass => false,
+            Stmt::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                condition.contains_self()
+                    || then_body.iter().any(|s| s.contains_self())
+                    || else_body
+                        .as_ref()
+                        .map_or(false, |body| body.iter().any(|s| s.contains_self()))
+            }
+            Stmt::For { iterable, body, .. } => {
+                iterable.contains_self() || body.iter().any(|s| s.contains_self())
+            }
+            Stmt::ForTraditional {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
+                (init.as_ref().map_or(false, |s| s.as_ref().contains_self()))
+                    || (condition.as_ref().map_or(false, |c| c.contains_self()))
+                    || (increment
+                        .as_ref()
+                        .map_or(false, |s| s.as_ref().contains_self()))
+                    || body.iter().any(|s| s.contains_self())
+            }
         }
     }
 
@@ -1734,6 +2351,38 @@ impl Stmt {
                 e.contains_api_call(script)
             }
             Stmt::Pass => false,
+            Stmt::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                condition.contains_api_call(script)
+                    || then_body.iter().any(|s| s.contains_api_call(script))
+                    || else_body.as_ref().map_or(false, |body| {
+                        body.iter().any(|s| s.contains_api_call(script))
+                    })
+            }
+            Stmt::For { iterable, body, .. } => {
+                iterable.contains_api_call(script)
+                    || body.iter().any(|s| s.contains_api_call(script))
+            }
+            Stmt::ForTraditional {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
+                (init
+                    .as_ref()
+                    .map_or(false, |s| s.as_ref().contains_api_call(script)))
+                    || (condition
+                        .as_ref()
+                        .map_or(false, |c| c.contains_api_call(script)))
+                    || (increment
+                        .as_ref()
+                        .map_or(false, |s| s.as_ref().contains_api_call(script)))
+                    || body.iter().any(|s| s.contains_api_call(script))
+            }
         }
     }
 }
@@ -1751,11 +2400,19 @@ impl TypedExpr {
     }
 
     pub fn contains_self(&self) -> bool {
-        self.expr.contains_self()
+        match &self.expr {
+            Expr::Range(start, end) => start.contains_self() || end.contains_self(),
+            _ => self.expr.contains_self(),
+        }
     }
 
     pub fn contains_api_call(&self, script: &Script) -> bool {
-        self.expr.contains_api_call(script)
+        match &self.expr {
+            Expr::Range(start, end) => {
+                start.contains_api_call(script) || end.contains_api_call(script)
+            }
+            _ => self.expr.contains_api_call(script),
+        }
     }
 }
 
@@ -1950,6 +2607,30 @@ impl Expr {
                     return format!("format!(\"{{}}{{}}\", {}, {})", left_final, right_final);
                 }
 
+                // Handle null checks: body != null -> body.is_some(), body == null -> body.is_none()
+                // Check if one side is the identifier "null" and the other is an Option type
+                if matches!(op, Op::Ne | Op::Eq) {
+                    let left_is_null = matches!(left.as_ref(), Expr::Ident(name) if name == "null");
+                    let right_is_null =
+                        matches!(right.as_ref(), Expr::Ident(name) if name == "null");
+
+                    if left_is_null && !right_is_null {
+                        // null != body -> body.is_none(), null == body -> body.is_none()
+                        if matches!(op, Op::Ne) {
+                            return format!("{}.is_some()", right_final);
+                        } else {
+                            return format!("{}.is_none()", right_final);
+                        }
+                    } else if right_is_null && !left_is_null {
+                        // body != null -> body.is_some(), body == null -> body.is_none()
+                        if matches!(op, Op::Ne) {
+                            return format!("{}.is_some()", left_final);
+                        } else {
+                            return format!("{}.is_none()", left_final);
+                        }
+                    }
+                }
+
                 format!("({} {} {})", left_final, op.to_rust(), right_final)
             }
             Expr::MemberAccess(base, field) => {
@@ -1960,13 +2641,13 @@ impl Expr {
                     let script_ptr = script as *const Script as usize;
                     let is_script_member = SCRIPT_MEMBERS_CACHE.with(|cache| {
                         let mut cache_ref = cache.borrow_mut();
-                        
+
                         // Check if cache is valid for this script
                         let needs_rebuild = match cache_ref.as_ref() {
                             Some((cached_ptr, _)) => *cached_ptr != script_ptr,
                             None => true,
                         };
-                        
+
                         if needs_rebuild {
                             // Build HashSet with all script member names
                             let mut set = std::collections::HashSet::new();
@@ -1978,11 +2659,11 @@ impl Expr {
                             }
                             *cache_ref = Some((script_ptr, set));
                         }
-                        
+
                         // Now we know cache exists and is valid
                         cache_ref.as_ref().unwrap().1.contains(field)
                     });
-                    
+
                     if is_script_member {
                         // This is a script field/method, access directly on self
                         return format!("self.{}", field);
@@ -2020,6 +2701,9 @@ impl Expr {
                     Some(Type::Custom(_)) => {
                         // typed struct: regular .field access
                         let base_code = base.to_rust(needs_self, script, None, current_func);
+
+                        // Special handling for UINode.get_element - this will be handled in Call expression
+                        // when it's cast to a specific type like UIText
                         format!("{}.{}", base_code, field)
                     }
                     _ => {
@@ -2367,26 +3051,25 @@ impl Expr {
                         .iter()
                         .map(|e| {
                             // Pass element type to to_rust so literals get correct suffix (e.g., f64 for number[])
-                            let rendered = e.to_rust(needs_self, script, Some(elem_ty), current_func);
-                            
+                            let rendered =
+                                e.to_rust(needs_self, script, Some(elem_ty), current_func);
+
                             // If this is a custom type or any[]/object[] array, wrap in json!()
                             let final_rendered = match elem_ty {
                                 Type::Custom(_) | Type::Object => {
                                     format!("json!({})", rendered)
                                 }
-                                _ => {
-                                    match e {
-                                        Expr::Ident(_) | Expr::MemberAccess(..) => {
-                                            let ty = script.infer_expr_type(e, current_func);
-                                            if ty.as_ref().map_or(false, |t| t.requires_clone()) {
-                                                format!("{}.clone()", rendered)
-                                            } else {
-                                                rendered
-                                            }
+                                _ => match e {
+                                    Expr::Ident(_) | Expr::MemberAccess(..) => {
+                                        let ty = script.infer_expr_type(e, current_func);
+                                        if ty.as_ref().map_or(false, |t| t.requires_clone()) {
+                                            format!("{}.clone()", rendered)
+                                        } else {
+                                            rendered
                                         }
-                                        _ => rendered,
                                     }
-                                }
+                                    _ => rendered,
+                                },
                             };
                             final_rendered
                         })
@@ -2400,11 +3083,12 @@ impl Expr {
                     }
 
                     // Check if expected type is Array (Vec<T>) - if so, convert FixedArray to vec![]
-                    let should_convert_to_vec = if let Some(Type::Container(ContainerKind::Array, _)) = expected_type {
-                        true
-                    } else {
-                        false
-                    };
+                    let should_convert_to_vec =
+                        if let Some(Type::Container(ContainerKind::Array, _)) = expected_type {
+                            true
+                        } else {
+                            false
+                        };
 
                     let code = if should_convert_to_vec {
                         // Convert FixedArray to Vec for Array variable types
@@ -2630,7 +3314,7 @@ impl Expr {
 
                 // Generate the API call code
                 let api_call_code = module.to_rust(&args, script, needs_self, current_func);
-                
+
                 // If we have an expected_type and the API returns Object, cast the result
                 // This handles cases like: let x: number = map.get("key");
                 // BUT: Only apply cast if the map is actually dynamic (returns Value)
@@ -2643,7 +3327,8 @@ impl Expr {
                             // For MapApi::Get, check if the map's value type is Object (dynamic)
                             // If it's not Object, then it's a static map and we shouldn't cast
                             if let Some(map_expr) = args.get(0) {
-                                let map_value_type = script.infer_map_value_type(map_expr, current_func);
+                                let map_value_type =
+                                    script.infer_map_value_type(map_expr, current_func);
                                 map_value_type.as_ref() == Some(&Type::Object)
                             } else {
                                 true // Fallback: assume dynamic if we can't infer
@@ -2651,7 +3336,7 @@ impl Expr {
                         } else {
                             true // For other APIs, apply cast if they return Object
                         };
-                        
+
                         if should_cast && *expected_ty != Type::Object {
                             // Generate cast from Value to expected type
                             match expected_ty {
@@ -2663,20 +3348,32 @@ impl Expr {
                                 }
                                 Type::Number(NumberKind::BigInt) => {
                                     // Value can be a string representation of BigInt or a number
-                                    format!("{}.as_str().and_then(|s| s.parse::<BigInt>().ok()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))", api_call_code, api_call_code)
+                                    format!(
+                                        "{}.as_str().and_then(|s| s.parse::<BigInt>().ok()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
+                                        api_call_code, api_call_code
+                                    )
                                 }
                                 Type::Number(NumberKind::Decimal) => {
                                     // Decimal is stored as f64 in Value, convert using from_str_exact
-                                    format!("rust_decimal::Decimal::from_str_exact(&{}.as_f64().unwrap_or_default().to_string()).unwrap_or_default()", api_call_code)
+                                    format!(
+                                        "rust_decimal::Decimal::from_str_exact(&{}.as_f64().unwrap_or_default().to_string()).unwrap_or_default()",
+                                        api_call_code
+                                    )
                                 }
                                 Type::String => {
-                                    format!("{}.as_str().unwrap_or_default().to_string()", api_call_code)
+                                    format!(
+                                        "{}.as_str().unwrap_or_default().to_string()",
+                                        api_call_code
+                                    )
                                 }
                                 Type::Bool => {
                                     format!("{}.as_bool().unwrap_or_default()", api_call_code)
                                 }
                                 Type::Custom(custom_type) => {
-                                    format!("serde_json::from_value::<{}>({}).unwrap_or_default()", custom_type, api_call_code)
+                                    format!(
+                                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
+                                        custom_type, api_call_code
+                                    )
                                 }
                                 _ => api_call_code,
                             }
@@ -2690,9 +3387,70 @@ impl Expr {
                     api_call_code
                 }
             }
+            Expr::Range(start, end) => {
+                // For ranges, ensure integer literals are typed as integers, not floats
+                // Rust ranges require types that implement Step, which f32 doesn't
+                // Check if start/end are number literals - if so, prefer i32 for ranges
+                let start_inferred = script.infer_expr_type(start, current_func);
+                let start_expected_type = match &**start {
+                    Expr::Literal(Literal::Number(_)) => {
+                        // For number literals in ranges, default to i32 unless already typed as integer
+                        start_inferred
+                            .map(|t| match t {
+                                Type::Number(NumberKind::Float(_)) => {
+                                    Type::Number(NumberKind::Signed(32))
+                                }
+                                other => other,
+                            })
+                            .or(Some(Type::Number(NumberKind::Signed(32))))
+                    }
+                    _ => start_inferred,
+                };
+                let end_inferred = script.infer_expr_type(end, current_func);
+                let end_expected_type = match &**end {
+                    Expr::Literal(Literal::Number(_)) => end_inferred
+                        .map(|t| match t {
+                            Type::Number(NumberKind::Float(_)) => {
+                                Type::Number(NumberKind::Signed(32))
+                            }
+                            other => other,
+                        })
+                        .or(Some(Type::Number(NumberKind::Signed(32)))),
+                    _ => end_inferred,
+                };
+
+                let start_code = start.to_rust(
+                    needs_self,
+                    script,
+                    start_expected_type.as_ref(),
+                    current_func,
+                );
+                let end_code =
+                    end.to_rust(needs_self, script, end_expected_type.as_ref(), current_func);
+                format!("({}..{})", start_code, end_code)
+            }
             Expr::Cast(inner, target_type) => {
                 let inner_type = script.infer_expr_type(inner, current_func);
                 // Don't pass target_type as expected_type - let the literal be its natural type, then cast
+
+                // Special case: ui_node.get_element("name") as UIText
+                // Convert get_element to get_element_clone with the target type
+                if let Expr::Call(target, args) = inner.as_ref() {
+                    if let Expr::MemberAccess(base, method) = target.as_ref() {
+                        if method == "get_element" && args.len() == 1 {
+                            // This is get_element call being cast - convert to get_element_clone
+                            let base_code = base.to_rust(needs_self, script, None, current_func);
+                            let arg_code = args[0].to_rust(needs_self, script, None, current_func);
+                            if let Type::Custom(type_name) = target_type {
+                                return format!(
+                                    "{}.get_element_clone::<{}>({})",
+                                    base_code, type_name, arg_code
+                                );
+                            }
+                        }
+                    }
+                }
+
                 let inner_code = inner.to_rust(needs_self, script, None, current_func);
 
                 match (&inner_type, target_type) {
@@ -2920,6 +3678,22 @@ impl Expr {
                     },
 
                     // ==========================================================
+                    // Bool → Number (for arithmetic operations)
+                    // ==========================================================
+                    (Some(Type::Bool), Type::Number(NumberKind::Float(32))) => {
+                        format!("({} as u8 as f32)", inner_code)
+                    }
+                    (Some(Type::Bool), Type::Number(NumberKind::Float(64))) => {
+                        format!("({} as u8 as f64)", inner_code)
+                    }
+                    (Some(Type::Bool), Type::Number(NumberKind::Signed(w))) => {
+                        format!("({} as i{})", inner_code, w)
+                    }
+                    (Some(Type::Bool), Type::Number(NumberKind::Unsigned(w))) => {
+                        format!("({} as u{})", inner_code, w)
+                    }
+
+                    // ==========================================================
                     // JSON Value (ContainerKind::Object) → Anything
                     // ==========================================================
                     (Some(Type::Object), target) => {
@@ -2961,10 +3735,27 @@ impl Expr {
                                 )
                             }
 
-                            Type::Custom(name) => format!(
-                                "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
-                                name, inner_code
-                            ),
+                            Type::Custom(name) => {
+                                // Check if this is a cast from get_child_by_name (Option<Uuid>) to a node type
+                                // Pattern: self.get_node("name") as Sprite2D
+                                if let Expr::ApiCall(
+                                    ApiModule::NodeSugar(NodeSugarApi::GetChildByName),
+                                    _,
+                                ) = inner.as_ref()
+                                {
+                                    // get_child_by_name returns Option<Uuid>, we need to call get_node_clone with the type
+                                    // Unwrap the Option - panic if child not found (user expects this behavior)
+                                    format!(
+                                        "{}.map(|id| api.get_node_clone::<{}>(id)).unwrap_or_else(|| panic!(\"Child node not found\"))",
+                                        inner_code, name
+                                    )
+                                } else {
+                                    format!(
+                                        "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
+                                        name, inner_code
+                                    )
+                                }
+                            }
 
                             Type::Container(ContainerKind::Array, inner) => format!(
                                 "serde_json::from_value::<Vec<{}>>({}).unwrap_or_default()",
@@ -2986,6 +3777,39 @@ impl Expr {
                             ),
 
                             _ => format!("{}.clone()", inner_code),
+                        }
+                    }
+
+                    // Option<Uuid> (from get_child_by_name) to Custom type (node type)
+                    // Pattern: self.get_node("name") as Sprite2D
+                    (Some(Type::Custom(from_name)), Type::Custom(to_name))
+                        if from_name == "UuidOption" =>
+                    {
+                        // get_child_by_name returns Option<Uuid>, cast to node type
+                        // Unwrap the Option - panic if child not found (user expects this behavior)
+                        format!(
+                            "{}.map(|id| api.get_node_clone::<{}>(id)).unwrap_or_else(|| panic!(\"Child node not found\"))",
+                            inner_code, to_name
+                        )
+                    }
+
+                    // UIElement (from get_element) to specific UI element type
+                    // Pattern: ui_node.get_element("bob") as UIText
+                    (Some(Type::Custom(from_name)), Type::Custom(to_name))
+                        if from_name == "UIElement" =>
+                    {
+                        // Check if this is a get_element call being cast
+                        // Convert to get_element_clone call
+                        if inner_code.contains(".get_element(") {
+                            // Replace .get_element( with .get_element_clone::<Type>(
+                            let new_code = inner_code.replace(
+                                ".get_element(",
+                                &format!(".get_element_clone::<{}>(", to_name),
+                            );
+                            format!("{}", new_code)
+                        } else {
+                            // Fallback for other UIElement casts
+                            format!("{}.clone()", inner_code)
                         }
                     }
 
@@ -3258,6 +4082,12 @@ impl Op {
             Op::Sub => "-",
             Op::Mul => "*",
             Op::Div => "/",
+            Op::Lt => "<",
+            Op::Gt => ">",
+            Op::Le => "<=",
+            Op::Ge => ">=",
+            Op::Eq => "==",
+            Op::Ne => "!=",
         }
     }
 
@@ -3267,6 +4097,9 @@ impl Op {
             Op::Sub => "-",
             Op::Mul => "*",
             Op::Div => "/",
+            Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
+                panic!("Comparison operators cannot be used in assignment")
+            }
         }
     }
 }
@@ -3275,6 +4108,7 @@ pub fn implement_script_boilerplate(
     struct_name: &str,
     script_vars: &[Variable],
     functions: &[Function],
+    attributes_map: &std::collections::HashMap<String, Vec<String>>,
 ) -> String {
     let mut out = String::with_capacity(8192);
     let mut get_entries = String::with_capacity(512);
@@ -3728,6 +4562,9 @@ pub fn implement_script_boilerplate(
         .unwrap();
     }
 
+    // MEMBER_TO_ATTRIBUTES_MAP and ATTRIBUTE_TO_MEMBERS_MAP are generated once at the top in to_rust(),
+    // not here in the boilerplate to avoid duplicates
+
     //----------------------------------------------------
     // FINAL OUTPUT
     //----------------------------------------------------
@@ -3744,7 +4581,7 @@ impl ScriptObject for {struct_name} {{
     }}
 
     fn get_var(&self, var_id: u64) -> Option<Value> {{
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }}
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {{
@@ -3759,26 +4596,65 @@ impl ScriptObject for {struct_name} {{
         }}
     }}
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {{
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {{
         if let Some(f) = DISPATCH_TABLE.get(&id) {{
             f(self, params, api);
         }}
+    }}
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {{
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }}
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {{
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }}
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {{
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
+            .unwrap_or(false)
     }}
 }}
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&{struct_name}) -> Option<Value>> = phf::phf_map! {{
-{get_entries}}};
+static VAR_GET_TABLE: phf::Map<u64, fn(&{struct_name}) -> Option<Value>> =
+    phf::phf_map! {{
+{get_entries}
+    }};
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut {struct_name}, Value) -> Option<()>> = phf::phf_map! {{
-{set_entries}}};
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut {struct_name}, Value) -> Option<()>> =
+    phf::phf_map! {{
+{set_entries}
+    }};
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut {struct_name}, &Value)> = phf::phf_map! {{
-{apply_entries}}};
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut {struct_name}, &Value)> =
+    phf::phf_map! {{
+{apply_entries}
+    }};
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {{
-{dispatch_entries}}};"#,
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {{
+{dispatch_entries}
+    }};
+"#,
         struct_name = struct_name,
         get_entries = get_entries,
         set_entries = set_entries,
@@ -3822,13 +4698,15 @@ pub fn write_to_crate(
         );
     }
 
-    let registry_line = format!(
-        "    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n",
-        lower_name, lower_name
-    );
-    if !current_content.contains(&registry_line) {
+    // Check if this entry already exists in the phf_map!
+    let existing_entry = format!("\"{}\" =>", lower_name);
+    if !current_content.contains(&existing_entry) {
+        let registry_line = format!(
+            "    \"{}\" => {}_create_script as CreateFn,\n",
+            lower_name, lower_name
+        );
         current_content = current_content.replace(
-            "// __PERRO_REGISTRY__",
+            "    // __PERRO_REGISTRY__",
             &format!("{}    // __PERRO_REGISTRY__", registry_line),
         );
     }
@@ -3879,44 +4757,72 @@ pub fn derive_rust_perro_script(
     let actual_struct_name_from_struct = captures[1].to_string();
     let struct_body = captures[2].to_string();
 
-    let mut variables = Vec::new(); // This variable is no longer needed but its usage is removed below
+    let mut variables = Vec::new();
+    let mut attributes_map = std::collections::HashMap::new();
 
+    // Parse attributes from doc comments: ///@Expose, ///@OtherAttr, etc.
+    // This regex matches: ///@AttributeName followed by a field or function
+    let attr_re =
+        Regex::new(r"///\s*@(\w+)[^\n]*\n\s*(?:pub\s+)?(\w+)(?:\s*:\s*[^,\n}]+)?[,}]?").unwrap();
+
+    // First, collect all attributes for fields
+    for cap in attr_re.captures_iter(&struct_body) {
+        let attr_name = cap[1].to_string();
+        let member_name = cap[2].to_string();
+
+        // Skip if it's the node field
+        if member_name == "node" {
+            continue;
+        }
+
+        attributes_map
+            .entry(member_name.clone())
+            .or_insert_with(Vec::new)
+            .push(attr_name);
+    }
+
+    // Parse exposed fields (///@expose)
     let expose_re =
         Regex::new(r"///\s*@expose[^\n]*\n\s*(?:pub\s+)?(\w+)\s*:\s*([^,]+),?").unwrap();
     for cap in expose_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
         let typ = cap[2].trim().to_string();
-        // This old way of populating 'exposed' and 'variables' is no longer used,
-        // as the parser now populates 'script_vars' directly with flags.
-        // Keeping it for now as a comment for context of removal in future refactors.
         let mut is_pub = false;
         if cap[0].contains("pub") {
             is_pub = true;
         }
+
+        // Ensure Expose attribute is in the map
+        attributes_map
+            .entry(name.clone())
+            .or_insert_with(Vec::new)
+            .push("Expose".to_string());
+
         variables.push(Variable {
             name: name.clone(),
             typ: Some(Variable::parse_type(&typ)),
             value: None,
             is_exposed: true,
             is_public: is_pub,
+            attributes: attributes_map.get(&name).cloned().unwrap_or_default(),
         });
     }
 
+    // Parse public fields (pub field: Type)
     let pub_re = Regex::new(r"pub\s+(\w+)\s*:\s*([^,\n}]+)").unwrap();
     for cap in pub_re.captures_iter(&struct_body) {
         let name = cap[1].to_string();
-        // This old way of populating 'variables' is no longer used.
-        // Its functionality is now absorbed by 'script_vars' in the parser.
         if name == "node" || variables.iter().any(|v| v.name == name) {
             continue;
         }
         let typ = cap[2].trim().to_string();
         variables.push(Variable {
-            name,
+            name: name.clone(),
             typ: Some(Variable::parse_type(&typ)),
             value: None,
-            is_exposed: false, // Not explicitly exposed
-            is_public: true,   // Explicitly pub
+            is_exposed: false,
+            is_public: true,
+            attributes: attributes_map.get(&name).cloned().unwrap_or_default(),
         });
     }
 
@@ -3941,6 +4847,17 @@ pub fn derive_rust_perro_script(
 
     if let Some(impl_cap) = impl_block_re.captures(&code) {
         let impl_body = &impl_cap[1];
+
+        // Parse attributes for functions: ///@AttributeName before fn function_name
+        let fn_attr_re = Regex::new(r"///\s*@(\w+)[^\n]*\n\s*fn\s+(\w+)").unwrap();
+        for attr_cap in fn_attr_re.captures_iter(impl_body) {
+            let attr_name = attr_cap[1].to_string();
+            let fn_name = attr_cap[2].to_string();
+            attributes_map
+                .entry(fn_name.clone())
+                .or_insert_with(Vec::new)
+                .push(attr_name);
+        }
 
         // Find all function definitions with their full signatures
         // Matches: fn function_name(&mut self, param: Type, ...) -> ReturnType {
@@ -3981,13 +4898,15 @@ pub fn derive_rust_perro_script(
             };
 
             functions.push(Function {
-                name: fn_name,
+                name: fn_name.clone(),
                 is_trait_method: false,
                 params,
                 return_type,
                 uses_self: false,
+                cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
                 body: vec![],
                 locals: vec![],
+                attributes: attributes_map.get(&fn_name).cloned().unwrap_or_default(),
             });
         }
     }
@@ -3999,8 +4918,125 @@ pub fn derive_rust_perro_script(
         code.to_string()
     };
 
-    let boilerplate = implement_script_boilerplate(&actual_struct_name, &variables, &functions);
-    let combined = format!("{}\n\n{}", final_contents, boilerplate);
+    // Don't generate MEMBER_NAMES and ATTRIBUTES_MAP here - let the boilerplate generate them
+    // to avoid duplicates. The boilerplate will add them after the struct definition.
+    let mut injected_code = final_contents.clone();
+    let marker_pos = marker_re
+        .find(&final_contents)
+        .map(|m| m.end())
+        .unwrap_or(0);
+    let struct_pos = final_contents[marker_pos..]
+        .find("struct ")
+        .map(|p| marker_pos + p)
+        .unwrap_or(0);
+
+    // No need to inject/fix attributes field - we use MEMBER_TO_ATTRIBUTES_MAP directly in trait methods
+
+    // For Rust scripts, remove any existing MEMBER_TO_ATTRIBUTES_MAP and ATTRIBUTE_TO_MEMBERS_MAP, then generate them once at the top
+    // Match multiline from "static MEMBER_TO_ATTRIBUTES_MAP" to the closing "};"
+    let member_to_attributes_map_re =
+        Regex::new(r"(?s)static\s+MEMBER_TO_ATTRIBUTES_MAP\s*:.*?};").unwrap();
+    // Also match old ATTRIBUTES_MAP name for backwards compatibility
+    let attributes_map_re = Regex::new(r"(?s)static\s+ATTRIBUTES_MAP\s*:.*?};").unwrap();
+    // Match multiline from "static ATTRIBUTE_TO_MEMBERS_MAP" to the closing "};"
+    let attribute_to_members_map_re =
+        Regex::new(r"(?s)static\s+ATTRIBUTE_TO_MEMBERS_MAP\s*:.*?};").unwrap();
+    // Also remove any old MEMBER_NAMES if it exists
+    let member_names_re = Regex::new(r"(?s)(pub\s+)?static\s+MEMBER_NAMES\s*:.*?];").unwrap();
+
+    let mut cleaned_code = injected_code.clone();
+    cleaned_code = member_names_re.replace_all(&cleaned_code, "").to_string();
+    cleaned_code = member_to_attributes_map_re
+        .replace_all(&cleaned_code, "")
+        .to_string();
+    cleaned_code = attributes_map_re.replace_all(&cleaned_code, "").to_string();
+    cleaned_code = attribute_to_members_map_re
+        .replace_all(&cleaned_code, "")
+        .to_string();
+
+    // Generate MEMBER_TO_ATTRIBUTES_MAP and ATTRIBUTE_TO_MEMBERS_MAP once at the top (before struct) - no need for separate MEMBER_NAMES
+    // Build reverse index: attribute -> members
+    let mut attribute_to_members: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
+    let mut attributes_map_code = String::new();
+    attributes_map_code.push_str("static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {\n");
+    for var in &variables {
+        let attrs = attributes_map
+            .get(&var.name)
+            .cloned()
+            .unwrap_or_else(|| var.attributes.clone());
+        // Only store members that have attributes
+        if !attrs.is_empty() {
+            write!(attributes_map_code, "    \"{}\" => &[", var.name).unwrap();
+            for (i, attr) in attrs.iter().enumerate() {
+                if i > 0 {
+                    attributes_map_code.push_str(", ");
+                }
+                write!(attributes_map_code, "\"{}\"", attr).unwrap();
+                attribute_to_members
+                    .entry(attr.clone())
+                    .or_insert_with(Vec::new)
+                    .push(var.name.clone());
+            }
+            attributes_map_code.push_str("],\n");
+        }
+    }
+    for func in &functions {
+        // Suffix function names with "()" to differentiate from variables
+        let func_key = format!("{}()", func.name);
+        let attrs = attributes_map
+            .get(&func.name)
+            .cloned()
+            .unwrap_or_else(|| func.attributes.clone());
+        // Only store members that have attributes
+        if !attrs.is_empty() {
+            write!(attributes_map_code, "    \"{}\" => &[", func_key).unwrap();
+            for (i, attr) in attrs.iter().enumerate() {
+                if i > 0 {
+                    attributes_map_code.push_str(", ");
+                }
+                write!(attributes_map_code, "\"{}\"", attr).unwrap();
+                attribute_to_members
+                    .entry(attr.clone())
+                    .or_insert_with(Vec::new)
+                    .push(func_key.clone());
+            }
+            attributes_map_code.push_str("],\n");
+        }
+    }
+    attributes_map_code.push_str("};\n\n");
+
+    // Generate reverse index for O(1) attribute lookups
+    attributes_map_code.push_str("static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {\n");
+    for (attr, members) in &attribute_to_members {
+        write!(attributes_map_code, "    \"{}\" => &[", attr).unwrap();
+        for (i, member) in members.iter().enumerate() {
+            if i > 0 {
+                attributes_map_code.push_str(", ");
+            }
+            write!(attributes_map_code, "\"{}\"", member).unwrap();
+        }
+        attributes_map_code.push_str("],\n");
+    }
+    attributes_map_code.push_str("};\n\n");
+
+    // Find struct position in cleaned code
+    let marker_pos = marker_re.find(&cleaned_code).map(|m| m.end()).unwrap_or(0);
+    let struct_pos = cleaned_code[marker_pos..]
+        .find("struct ")
+        .map(|p| marker_pos + p)
+        .unwrap_or(0);
+
+    // Inject MEMBER_TO_ATTRIBUTES_MAP and ATTRIBUTE_TO_MEMBERS_MAP before the struct definition
+    let mut final_code = cleaned_code;
+    if struct_pos > 0 {
+        final_code.insert_str(struct_pos, &attributes_map_code);
+    }
+
+    let boilerplate =
+        implement_script_boilerplate(&actual_struct_name, &variables, &functions, &attributes_map);
+    let combined = format!("{}\n\n{}", final_code, boilerplate);
 
     write_to_crate(project_path, &combined, struct_name)
 }

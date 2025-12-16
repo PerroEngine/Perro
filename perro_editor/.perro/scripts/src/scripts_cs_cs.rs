@@ -11,6 +11,7 @@ use std::{
 };
 
 use num_bigint::BigInt;
+use phf::{phf_map, Map};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -28,12 +29,20 @@ use perro_core::prelude::*;
 // ScriptsCsCs - Main Script Structure
 // ========================================================================
 
+static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "speed" => &["ThisIsAnAttribute"],
+    "TakeDamage()" => &["DamageFunc"],
+};
+
+static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "ThisIsAnAttribute" => &["speed"],
+    "DamageFunc" => &["TakeDamage()"],
+};
+
 pub struct ScriptsCsCsScript {
     node: Node2D,
     speed: f32,
     health: i32,
-    playerName: String,
-    james: i64,
 }
 
 // ========================================================================
@@ -45,38 +54,13 @@ pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
     let node = Node2D::new("ScriptsCsCs");
     let speed = 0.0f32;
     let health = 0i32;
-    let playerName = String::new();
-    let james = 0i64;
 
     Box::into_raw(Box::new(ScriptsCsCsScript {
         node,
         speed,
         health,
-        playerName,
-        james,
     })) as *mut dyn ScriptObject
 }
-
-// ========================================================================
-// Supporting Struct Definitions
-// ========================================================================
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct TestClass {
-    pub b: i32,
-    pub f: f32,
-}
-
-impl std::fmt::Display for TestClass {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{ ")?;
-        write!(f, "b: {:?}, ", self.b)?;
-        write!(f, "f: {:?} ", self.f)?;
-        write!(f, "}}")
-    }
-}
-
-
 
 // ========================================================================
 // ScriptsCsCs - Script Init & Update Implementation
@@ -84,14 +68,12 @@ impl std::fmt::Display for TestClass {
 
 impl Script for ScriptsCsCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        self.health = 100i32;
-        self.speed = 200.0f32;
-        self.speed += 50.0f32;
+        self.speed = 10.0f32;
         api.print(&String::from("Player initialized!"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.TakeDamage(2i32, api, false);
+        self.TakeDamage(24i32, api, false);
     }
 
 }
@@ -119,7 +101,7 @@ impl ScriptObject for ScriptsCsCsScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -134,25 +116,56 @@ impl ScriptObject for ScriptsCsCsScript {
         }
     }
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+    }
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
+            .unwrap_or(false)
     }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&ScriptsCsCsScript) -> Option<Value>> = phf::phf_map! {
+static VAR_GET_TABLE: phf::Map<u64, fn(&ScriptsCsCsScript) -> Option<Value>> =
+    phf::phf_map! {
         2486349329025994304u64 => |script: &ScriptsCsCsScript| -> Option<Value> {
                         Some(json!(script.speed))
                     },
         9181103189905877455u64 => |script: &ScriptsCsCsScript| -> Option<Value> {
                         Some(json!(script.health))
                     },
-};
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut ScriptsCsCsScript, Value) -> Option<()>> = phf::phf_map! {
+    };
+
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut ScriptsCsCsScript, Value) -> Option<()>> =
+    phf::phf_map! {
         2486349329025994304u64 => |script: &mut ScriptsCsCsScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.speed = v as f32;
@@ -167,21 +180,23 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut ScriptsCsCsScript, Value) -> Option<
                             }
                             None
                         },
-};
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut ScriptsCsCsScript, &Value)> = phf::phf_map! {
-        2486349329025994304u64 => |script: &mut ScriptsCsCsScript, val: &Value| {
-                            if let Some(v) = val.as_f64() {
-                                script.speed = v as f32;
-                            }
-                        },
-};
+    };
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut ScriptsCsCsScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut ScriptsCsCsScript, &Value)> =
+    phf::phf_map! {
+
+    };
+
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut ScriptsCsCsScript, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {
         1329396982928406835u64 => | script: &mut ScriptsCsCsScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let amount = params.get(0)
                             .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
                             .unwrap_or_default() as i32;
             script.TakeDamage(amount, api, true);
         },
-};
+
+    };

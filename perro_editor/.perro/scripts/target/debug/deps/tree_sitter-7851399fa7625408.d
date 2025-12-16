@@ -1,0 +1,13 @@
+D:\Rust\perro\perro_editor\.perro\scripts\target\debug\deps\tree_sitter-7851399fa7625408.d: C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\lib.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\ffi.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\util.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\./README.md C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\./bindings.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\../src/parser.h D:\Rust\perro\perro_editor\.perro\scripts\target\debug\build\tree-sitter-9d10c9881fc4a1c6\out/stdlib-symbols.txt
+
+D:\Rust\perro\perro_editor\.perro\scripts\target\debug\deps\libtree_sitter-7851399fa7625408.rmeta: C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\lib.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\ffi.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\util.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\./README.md C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\./bindings.rs C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\../src/parser.h D:\Rust\perro\perro_editor\.perro\scripts\target\debug\build\tree-sitter-9d10c9881fc4a1c6\out/stdlib-symbols.txt
+
+C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\lib.rs:
+C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\ffi.rs:
+C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\util.rs:
+C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\./README.md:
+C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\./bindings.rs:
+C:\Users\super\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tree-sitter-0.25.10\binding_rust\../src/parser.h:
+D:\Rust\perro\perro_editor\.perro\scripts\target\debug\build\tree-sitter-9d10c9881fc4a1c6\out/stdlib-symbols.txt:
+
+# env-dep:OUT_DIR=D:\\Rust\\perro\\perro_editor\\.perro\\scripts\\target\\debug\\build\\tree-sitter-9d10c9881fc4a1c6\\out

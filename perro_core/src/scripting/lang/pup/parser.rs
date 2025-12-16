@@ -11,6 +11,8 @@ pub struct PupParser {
     /// Variable name → inferred type (for local scope/type inference during parsing)
     type_env: HashMap<String, Type>,
     pub parsed_structs: Vec<StructDef>,
+    /// Pending attributes that were consumed at top level (for @AttributeName before var/fn)
+    pending_attributes: Vec<String>,
 }
 
 impl PupParser {
@@ -22,6 +24,7 @@ impl PupParser {
             current_token: cur,
             type_env: HashMap::new(),
             parsed_structs: Vec::new(),
+            pending_attributes: Vec::new(),
         }
     }
 
@@ -58,21 +61,30 @@ impl PupParser {
         while self.current_token != PupToken::Eof {
             match &self.current_token {
                 PupToken::At => {
+                    // Check if it's @expose (special directive) or @AttributeName (generic attribute)
                     self.next_token();
-                    match &self.current_token {
-                        PupToken::Expose => {
-                            self.next_token();
-                            let mut var = self.parse_variable_decl()?; // Parse `var name: type = value` part
-                            var.is_exposed = true; // Mark this variable as exposed
-                            var.is_public = true; // All top-level Pup variables are public
-                            script_vars.push(var); // Add to the unified list
+                    if self.current_token == PupToken::Expose {
+                        // @expose is a special directive that also sets is_exposed
+                        self.next_token();
+                        let mut var = self.parse_variable_decl()?; // Parse `var name: type = value` part
+                        var.is_exposed = true; // Mark this variable as exposed
+                        var.is_public = true; // All top-level Pup variables are public
+                        // Also add "Expose" as an attribute
+                        if !var.attributes.contains(&"Expose".to_string()) {
+                            var.attributes.push("Expose".to_string());
                         }
-                        PupToken::Ident(name) => {
-                            return Err(format!("Unknown directive @{}", name));
-                        }
-                        other => {
-                            return Err(format!("Expected directive after '@', got {:?}", other));
-                        }
+                        script_vars.push(var); // Add to the unified list
+                    } else if let PupToken::Ident(attr_name) = &self.current_token {
+                        // @AttributeName - store it as pending, will be picked up by parse_attributes()
+                        self.pending_attributes.push(attr_name.clone());
+                        self.next_token();
+                        // Continue to parse the actual declaration (var/fn)
+                        continue;
+                    } else {
+                        return Err(format!(
+                            "Expected identifier after '@', got {:?}",
+                            self.current_token
+                        ));
                     }
                 }
                 PupToken::Struct => {
@@ -93,12 +105,35 @@ impl PupParser {
             }
         }
 
+        // Build attributes HashMap from variables, functions, and struct fields
+        let mut attributes = HashMap::new();
+        for var in &script_vars {
+            if !var.attributes.is_empty() {
+                attributes.insert(var.name.clone(), var.attributes.clone());
+            }
+        }
+        for func in &functions {
+            if !func.attributes.is_empty() {
+                attributes.insert(func.name.clone(), func.attributes.clone());
+            }
+        }
+        // Include struct field attributes with qualified names (StructName.fieldName)
+        for struct_def in &structs {
+            for field in &struct_def.fields {
+                if !field.attributes.is_empty() {
+                    let qualified_name = format!("{}.{}", struct_def.name, field.name);
+                    attributes.insert(qualified_name, field.attributes.clone());
+                }
+            }
+        }
+
         Ok(Script {
             node_type,
             variables: script_vars, // Pass the single, unified, and ordered list to the Script AST
             functions,
             structs,
             verbose: true,
+            attributes,
         })
     }
 
@@ -156,6 +191,9 @@ impl PupParser {
     }
 
     fn parse_field(&mut self) -> Result<StructField, String> {
+        // Parse attributes before field declaration
+        let attributes = self.parse_attributes()?;
+
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
@@ -166,10 +204,60 @@ impl PupParser {
         Ok(StructField {
             name,
             typ: self.parse_type()?,
+            attributes,
         })
     }
 
+    fn parse_attributes(&mut self) -> Result<Vec<String>, String> {
+        let mut attrs = Vec::new();
+
+        // First, add any pending attributes that were consumed at top level
+        attrs.extend(self.pending_attributes.drain(..));
+
+        // Parse @AttributeName syntax (e.g., @Expose, @MyAttribute)
+        while self.current_token == PupToken::At {
+            self.next_token();
+            if let PupToken::Ident(attr_name) = &self.current_token {
+                attrs.push(attr_name.clone());
+                self.next_token();
+            } else {
+                return Err("Expected attribute name after '@'".into());
+            }
+        }
+
+        // Also support [attr1, attr2] syntax for backwards compatibility
+        if self.current_token == PupToken::LBracket {
+            self.next_token();
+            // Handle empty attribute list []
+            if self.current_token == PupToken::RBracket {
+                self.next_token();
+                return Ok(attrs);
+            }
+            loop {
+                if let PupToken::Ident(attr_name) = &self.current_token {
+                    attrs.push(attr_name.clone());
+                    self.next_token();
+                } else {
+                    return Err("Expected attribute name".into());
+                }
+                if self.current_token == PupToken::Comma {
+                    self.next_token();
+                } else if self.current_token == PupToken::RBracket {
+                    self.next_token();
+                    break;
+                } else {
+                    return Err("Expected ',' or ']' in attribute list".into());
+                }
+            }
+        }
+
+        Ok(attrs)
+    }
+
     fn parse_function(&mut self) -> Result<Function, String> {
+        // Parse attributes before function declaration
+        let attributes = self.parse_attributes()?;
+
         self.expect(PupToken::Fn)?;
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
@@ -190,7 +278,7 @@ impl PupParser {
         self.expect(PupToken::RParen)?;
 
         let body = self.parse_block()?;
-        let is_trait = name == "init" || name == "update";
+        let is_trait = name == "init" || name == "update" || name == "fixed_update";
         let locals = self.collect_locals(&body);
 
         Ok(Function {
@@ -200,7 +288,9 @@ impl PupParser {
             body,
             is_trait_method: is_trait,
             uses_self: false,
+            cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type: Type::Void,
+            attributes,
         })
     }
 
@@ -292,8 +382,44 @@ impl PupParser {
             self.next_token();
             return Ok(Stmt::Pass);
         }
+        if self.current_token == PupToken::If {
+            return self.parse_if_statement();
+        }
+        if self.current_token == PupToken::For {
+            return self.parse_for_loop();
+        }
+
+        // Note: Increment/decrement (i++, i--) are handled in parse_statement
+        // by checking after parsing an identifier expression, not by peeking ahead
+        // This avoids token restoration issues
 
         let lhs = self.parse_expression(0)?;
+
+        // Handle increment/decrement operators (i++, i--) after parsing expression
+        if let Expr::Ident(name) = &lhs {
+            if self.current_token == PupToken::PlusPlus {
+                self.next_token();
+                return Ok(Stmt::AssignOp(
+                    name.clone(),
+                    Op::Add,
+                    TypedExpr {
+                        expr: Expr::Literal(Literal::Number("1".to_string())),
+                        inferred_type: None,
+                    },
+                ));
+            }
+            if self.current_token == PupToken::MinusMinus {
+                self.next_token();
+                return Ok(Stmt::AssignOp(
+                    name.clone(),
+                    Op::Sub,
+                    TypedExpr {
+                        expr: Expr::Literal(Literal::Number("1".to_string())),
+                        inferred_type: None,
+                    },
+                ));
+            }
+        }
         if let Some(op) = self.take_assign_op() {
             let rhs = self.parse_expression(0)?;
             return self.make_assign_stmt(lhs, op, rhs);
@@ -303,6 +429,125 @@ impl PupParser {
             expr: lhs,
             inferred_type: None,
         }))
+    }
+
+    fn parse_if_statement(&mut self) -> Result<Stmt, String> {
+        self.expect(PupToken::If)?;
+
+        // Parentheses are optional for if statements
+        let condition = if self.current_token == PupToken::LParen {
+            self.next_token();
+            let cond = self.parse_expression(0)?;
+            self.expect(PupToken::RParen)?;
+            cond
+        } else {
+            self.parse_expression(0)?
+        };
+
+        let then_body = self.parse_block()?;
+
+        let else_body = if self.current_token == PupToken::Else {
+            self.next_token();
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+
+        Ok(Stmt::If {
+            condition: TypedExpr {
+                expr: condition,
+                inferred_type: None,
+            },
+            then_body,
+            else_body,
+        })
+    }
+
+    fn parse_for_loop(&mut self) -> Result<Stmt, String> {
+        self.expect(PupToken::For)?;
+        self.expect(PupToken::LParen)?;
+
+        // Check if it's a traditional for loop (starts with 'var') or range-based (has 'in')
+        // We'll parse the first part and check if next token is 'in'
+
+        if matches!(self.current_token, PupToken::Var) {
+            // Traditional for loop: for (var i = 0, i < 10, i++) { body }
+            // Traditional for loop: for (init, condition, increment) { body }
+            // Uses commas instead of semicolons since pup doesn't use semicolons
+            let init = if self.current_token == PupToken::Comma {
+                self.next_token();
+                None
+            } else {
+                let init_stmt = self.parse_statement()?;
+                self.expect(PupToken::Comma)?;
+                Some(Box::new(init_stmt))
+            };
+
+            let condition = if self.current_token == PupToken::Comma {
+                self.next_token();
+                None
+            } else {
+                let cond = self.parse_expression(0)?;
+                self.expect(PupToken::Comma)?;
+                Some(TypedExpr {
+                    expr: cond,
+                    inferred_type: None,
+                })
+            };
+
+            let increment = if self.current_token == PupToken::RParen {
+                None
+            } else {
+                let incr_stmt = self.parse_statement()?;
+                Some(Box::new(incr_stmt))
+            };
+
+            self.expect(PupToken::RParen)?;
+            let body = self.parse_block()?;
+
+            Ok(Stmt::ForTraditional {
+                init,
+                condition,
+                increment,
+                body,
+            })
+        } else {
+            // Range-based for loop: for (var in iterable) { body }
+            // Parse identifier first
+            let var_name = if let PupToken::Ident(name) = &self.current_token {
+                let name = name.clone();
+                self.next_token();
+                name
+            } else {
+                return Err("Expected identifier in for loop".to_string());
+            };
+
+            // Check if next token is 'in' - if not, it might be a traditional loop without 'var'
+            if self.current_token != PupToken::In {
+                // This might be a traditional loop like: for (i = 0, i < 10, i++)
+                // But we've already consumed the identifier, so we need to handle this differently
+                // For now, let's assume if there's no 'in', it's an error for range-based
+                return Err(format!(
+                    "Expected 'in' after identifier in for loop, got {:?}",
+                    self.current_token
+                ));
+            }
+
+            self.expect(PupToken::In)?;
+            let iterable = self.parse_expression(0)?;
+            self.expect(PupToken::RParen)?;
+
+            let body = self.parse_block()?;
+
+            Ok(Stmt::For {
+                var_name,
+                iterable: TypedExpr {
+                    expr: iterable,
+                    inferred_type: None,
+                },
+                body,
+            })
+        }
     }
 
     fn make_assign_stmt(&mut self, lhs: Expr, op: Option<Op>, rhs: Expr) -> Result<Stmt, String> {
@@ -367,6 +612,9 @@ impl PupParser {
     // =================== VARIABLE DECLARATIONS ==================
 
     fn parse_variable_decl(&mut self) -> Result<Variable, String> {
+        // Parse attributes before variable declaration
+        let attributes = self.parse_attributes()?;
+
         self.expect(PupToken::Var)?;
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
@@ -445,6 +693,7 @@ impl PupParser {
             value,
             is_exposed: false,
             is_public: false,
+            attributes,
         })
     }
 
@@ -506,7 +755,7 @@ impl PupParser {
                 while self.current_token != PupToken::RBracket
                     && self.current_token != PupToken::Eof
                 {
-                    elements.push((self.parse_expression(0)?));
+                    elements.push(self.parse_expression(0)?);
                     if self.current_token == PupToken::Comma {
                         self.next_token();
                     } else {
@@ -757,6 +1006,16 @@ impl PupParser {
                         }
                     }
 
+                    // Handle self.get_node("name") - special case for getting child nodes
+                    if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node" {
+                        if let Some(api) = PupNodeSugar::resolve_method(method) {
+                            // args[0] should be the child name (string)
+                            let mut args_full = vec![Expr::SelfAccess];
+                            args_full.extend(args);
+                            return Ok(Expr::ApiCall(api, args_full));
+                        }
+                    }
+
                     if let Some(api) = PupNodeSugar::resolve_method(method) {
                         let mut args_full = vec![*obj.clone()];
                         args_full.extend(args);
@@ -833,6 +1092,13 @@ impl PupParser {
                     Box::new(self.parse_expression(2)?),
                 ))
             }
+            PupToken::DotDot => {
+                self.next_token();
+                Ok(Expr::Range(
+                    Box::new(left),
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
             PupToken::Plus => {
                 self.next_token();
                 Ok(Expr::BinaryOp(
@@ -849,6 +1115,58 @@ impl PupParser {
                     Box::new(self.parse_expression(1)?),
                 ))
             }
+            PupToken::LessThan => {
+                // In infix context, < is a comparison operator (Lt)
+                // Map literals are handled in parse_primary
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Lt,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
+            PupToken::GreaterThan => {
+                // In infix context, > is a comparison operator (Gt)
+                // Map literals are handled in parse_primary
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Gt,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
+            PupToken::Le => {
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Le,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
+            PupToken::Ge => {
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Ge,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
+            PupToken::Eq => {
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Eq,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
+            PupToken::Ne => {
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::Ne,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
             _ => Ok(left),
         }
     }
@@ -861,6 +1179,13 @@ impl PupParser {
             PupToken::As => 4,
             PupToken::Star | PupToken::Slash => 3,
             PupToken::Plus | PupToken::Minus => 2,
+            PupToken::LessThan
+            | PupToken::GreaterThan
+            | PupToken::Le
+            | PupToken::Ge
+            | PupToken::Eq
+            | PupToken::Ne => 1, // Comparison operators
+            PupToken::DotDot => 1, // Range operator has low precedence
             _ => 0,
         }
     }

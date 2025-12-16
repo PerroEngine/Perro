@@ -10,6 +10,7 @@ use perro_core::prelude::*;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
+use phf::{phf_map, Map};
 use smallvec::{SmallVec, smallvec};
 
 
@@ -18,13 +19,10 @@ pub struct RootScript {
     node: Node,
     /// @expose
     pub b: f32,
-    /// @expose
+    /// @bitch
     pub a: i32,
-    /// @expose
     e: String,
-    /// @expose
     pub f: F,
-    /// @expose
     pub h: i64,
 }
 
@@ -230,6 +228,7 @@ impl RootScript {
 
 impl Script for RootScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
        let my_version = api.project().version().to_string();
         let current_exe_path = std::env::current_exe().expect("Could not get exe path");
         let current_exe_name = current_exe_path
@@ -295,7 +294,18 @@ impl Script for RootScript {
         // Window will open immediately - updater script handles network checks
     }
 
-    fn update(&mut self, _api: &mut ScriptApi<'_>) {}
+    fn update(&mut self, api: &mut ScriptApi<'_>) {
+        // In your script struct
+let mut was_mouse_down = false;
+
+// In update()
+let is_mouse_down = api.Input.Mouse.is_button_pressed("MouseLeft");
+if is_mouse_down && !was_mouse_down {
+    // Mouse was just clicked (transition from up to down)
+    println!("Mouse clicked!");
+}
+was_mouse_down = is_mouse_down;
+    }
 }
 
 // Natural ordering for version comparison

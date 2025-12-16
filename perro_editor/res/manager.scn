@@ -3,7 +3,7 @@
   "nodes": {
     "4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48": {
       "type": "UINode",
-      "fur_path": "res://fur/manager.fur",
+      "fur_path": "res://fur/editor.fur",
       "node": {
         "type": "Node",
         "name": "Manager UI"

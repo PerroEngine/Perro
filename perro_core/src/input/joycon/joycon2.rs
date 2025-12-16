@@ -11,12 +11,12 @@
 //! input reports. The device may not send notifications until properly initialized.
 
 use crate::input::joycon::error::{JoyConError, Result};
-use crate::input::joycon::{NINTENDO_BLE_CID, JOYCON_L_SIDE, JOYCON_R_SIDE};
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, Characteristic};
-use btleplug::platform::{Manager, Peripheral as PlatformPeripheral, Adapter};
+use crate::input::joycon::{JOYCON_L_SIDE, JOYCON_R_SIDE, NINTENDO_BLE_CID};
+use btleplug::api::{Central, Characteristic, Manager as _, Peripheral, ScanFilter};
+use btleplug::platform::{Adapter, Manager, Peripheral as PlatformPeripheral};
+use futures::StreamExt;
 use std::sync::Arc;
 use tokio::time::{Duration, timeout};
-use futures::StreamExt;
 use uuid::Uuid;
 
 // Joy-Con 2 GATT characteristic UUIDs for input reports
@@ -40,14 +40,17 @@ pub struct JoyCon2 {
 
 impl JoyCon2 {
     /// Create a new JoyCon2 instance by connecting to a device
-    /// 
+    ///
     /// The address should be from a device that was found via scan_devices(),
     /// which only returns devices that match the strict Joy-Con 2 criteria.
     pub async fn connect(address: &str) -> Result<Self> {
-        let manager = Manager::new().await
+        let manager = Manager::new()
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to create BLE manager: {}", e)))?;
 
-        let adapters = manager.adapters().await
+        let adapters = manager
+            .adapters()
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to get adapters: {}", e)))?;
 
         if adapters.is_empty() {
@@ -55,14 +58,18 @@ impl JoyCon2 {
         }
 
         let central = adapters.into_iter().next().unwrap();
-        central.start_scan(ScanFilter::default()).await
+        central
+            .start_scan(ScanFilter::default())
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to start scan: {}", e)))?;
 
         // Wait a bit for devices to be discovered
         // Reduced to 1 second to connect faster while device is still in pairing mode
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let peripherals = central.peripherals().await
+        let peripherals = central
+            .peripherals()
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to get peripherals: {}", e)))?;
 
         // Find the peripheral by address AND verify it's actually a Joy-Con 2
@@ -80,10 +87,12 @@ impl JoyCon2 {
                 }
             }
         }
-        
+
         let peripheral = found_peripheral.ok_or_else(|| JoyConError::DeviceNotFound)?;
 
-        peripheral.connect().await
+        peripheral
+            .connect()
+            .await
             .map_err(|e| JoyConError::ConnectionFailed(format!("Failed to connect: {}", e)))?;
 
         // Wait for connection to establish
@@ -112,13 +121,15 @@ impl JoyCon2 {
     /// - Input Report 0x08 (Right): UUID d5a9e01e-2ffc-4cca-b20c-8b67142bf442
     pub async fn subscribe_to_inputs(&mut self) -> Result<()> {
         // Discover services
-        self.peripheral.discover_services().await
+        self.peripheral
+            .discover_services()
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to discover services: {}", e)))?;
 
         let services = self.peripheral.services();
-        
+
         println!("  Discovering services and characteristics...");
-        
+
         // Parse the known UUIDs
         let report_05_uuid = Uuid::parse_str(INPUT_REPORT_05_UUID)
             .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
@@ -126,21 +137,27 @@ impl JoyCon2 {
             .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
         let report_08_uuid = Uuid::parse_str(INPUT_REPORT_08_UUID)
             .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
-        
+
         // First, try to find the specific Joy-Con 2 input report characteristics
         let mut found_characteristic: Option<Characteristic> = None;
-        
+
         for service in &services {
             println!("    Service UUID: {}", service.uuid);
             for characteristic in &service.characteristics {
-                println!("      Characteristic UUID: {}, Properties: {:?}", 
-                    characteristic.uuid, characteristic.properties);
-                
+                println!(
+                    "      Characteristic UUID: {}, Properties: {:?}",
+                    characteristic.uuid, characteristic.properties
+                );
+
                 // Check if this is one of the known Joy-Con 2 input report characteristics
-                if characteristic.uuid == report_05_uuid 
-                    || characteristic.uuid == report_07_uuid 
-                    || characteristic.uuid == report_08_uuid {
-                    if characteristic.properties.contains(btleplug::api::CharPropFlags::NOTIFY) {
+                if characteristic.uuid == report_05_uuid
+                    || characteristic.uuid == report_07_uuid
+                    || characteristic.uuid == report_08_uuid
+                {
+                    if characteristic
+                        .properties
+                        .contains(btleplug::api::CharPropFlags::NOTIFY)
+                    {
                         found_characteristic = Some(characteristic.clone());
                         println!("      → Found Joy-Con 2 input report characteristic!");
                         break;
@@ -151,7 +168,7 @@ impl JoyCon2 {
                 break;
             }
         }
-        
+
         // If we didn't find a specific one, fall back to any NOTIFY characteristic
         // (for compatibility or if UUIDs are different)
         let characteristic = if let Some(char) = found_characteristic {
@@ -161,53 +178,63 @@ impl JoyCon2 {
             let mut notify_chars = Vec::new();
             for service in self.peripheral.services() {
                 for char in &service.characteristics {
-                    if char.properties.contains(btleplug::api::CharPropFlags::NOTIFY) {
+                    if char
+                        .properties
+                        .contains(btleplug::api::CharPropFlags::NOTIFY)
+                    {
                         notify_chars.push(char.clone());
                     }
                 }
             }
-            
+
             if notify_chars.is_empty() {
-                return Err(JoyConError::Ble("No characteristics with NOTIFY property found".to_string()));
+                return Err(JoyConError::Ble(
+                    "No characteristics with NOTIFY property found".to_string(),
+                ));
             }
-            
+
             // Prefer READ | NOTIFY, fall back to NOTIFY only
-            let read_notify: Vec<_> = notify_chars.iter()
+            let read_notify: Vec<_> = notify_chars
+                .iter()
                 .filter(|c| c.properties.contains(btleplug::api::CharPropFlags::READ))
                 .cloned()
                 .collect();
-            
+
             if !read_notify.is_empty() {
                 read_notify[0].clone()
             } else {
                 notify_chars[0].clone()
             }
         };
-        
-        println!("  Attempting to subscribe to characteristic: {} (Properties: {:?})", 
-            characteristic.uuid, characteristic.properties);
-        
+
+        println!(
+            "  Attempting to subscribe to characteristic: {} (Properties: {:?})",
+            characteristic.uuid, characteristic.properties
+        );
+
         // Subscribe to notifications (btleplug will handle writing 0x0001 to CCCD)
-        self.peripheral.subscribe(&characteristic).await
+        self.peripheral
+            .subscribe(&characteristic)
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to subscribe: {}", e)))?;
-        
+
         self.input_characteristic = Some(characteristic.clone());
         println!("  ✓ Subscribed to input characteristic (notifications enabled)");
-        
+
         // Joy-Con 2 requires initialization commands to start sending input reports
         // Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/bluetooth_interface.md
         // The initialization sequence involves sending commands to enable input reports.
         // For now, we'll attempt a minimal initialization sequence.
         println!("  Attempting to initialize Joy-Con 2...");
-        
+
         // Find command characteristic - use the exact UUID from joycon2cpp
         // Based on: https://github.com/TheFrano/joycon2cpp/blob/main/testapp/src/testapp.cpp
         // const wchar_t* WRITE_COMMAND_UUID = L"649d4ac9-8eb7-4e6c-af44-1ea54fe5f005";
         let write_command_uuid = Uuid::parse_str("649d4ac9-8eb7-4e6c-af44-1ea54fe5f005")
             .map_err(|e| JoyConError::Ble(format!("Failed to parse write command UUID: {}", e)))?;
-        
+
         let mut command_char: Option<Characteristic> = None;
-        
+
         for service in self.peripheral.services() {
             for cmd_char in &service.characteristics {
                 if cmd_char.uuid == write_command_uuid {
@@ -219,9 +246,12 @@ impl JoyCon2 {
                 break;
             }
         }
-        
+
         if let Some(cmd_char) = command_char {
-            println!("  Found command characteristic: {} (Properties: {:?})", cmd_char.uuid, cmd_char.properties);
+            println!(
+                "  Found command characteristic: {} (Properties: {:?})",
+                cmd_char.uuid, cmd_char.properties
+            );
             self.command_characteristic = Some(cmd_char.clone());
         } else {
             println!("  ⚠ Command characteristic 649d4ac9-8eb7-4e6c-af44-1ea54fe5f005 not found");
@@ -229,9 +259,15 @@ impl JoyCon2 {
             // Fallback: find any WRITE_WITHOUT_RESPONSE characteristic
             for service in self.peripheral.services() {
                 for cmd_char in &service.characteristics {
-                    if cmd_char.properties.contains(btleplug::api::CharPropFlags::WRITE_WITHOUT_RESPONSE) {
+                    if cmd_char
+                        .properties
+                        .contains(btleplug::api::CharPropFlags::WRITE_WITHOUT_RESPONSE)
+                    {
                         command_char = Some(cmd_char.clone());
-                        println!("  Using fallback: {} (Properties: {:?})", cmd_char.uuid, cmd_char.properties);
+                        println!(
+                            "  Using fallback: {} (Properties: {:?})",
+                            cmd_char.uuid, cmd_char.properties
+                        );
                         self.command_characteristic = Some(cmd_char.clone());
                         break;
                     }
@@ -241,21 +277,23 @@ impl JoyCon2 {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Get a notification stream for continuous reading
     /// This should be called once and reused, not called repeatedly
-    pub async fn notification_stream(&self) -> Result<impl futures::Stream<Item = Result<Vec<u8>>>> {
-        let notifications = self.peripheral.notifications().await
-            .map_err(|e| JoyConError::Ble(format!("Failed to get notification stream: {}", e)))?;
-        
-        Ok(notifications.map(|notification| {
-            Ok(notification.value)
-        }))
+    pub async fn notification_stream(
+        &self,
+    ) -> Result<impl futures::Stream<Item = Result<Vec<u8>>>> {
+        let notifications =
+            self.peripheral.notifications().await.map_err(|e| {
+                JoyConError::Ble(format!("Failed to get notification stream: {}", e))
+            })?;
+
+        Ok(notifications.map(|notification| Ok(notification.value)))
     }
-    
+
     /// Read notifications from the subscribed characteristic
     ///
     /// This attempts to read one notification from the subscribed characteristic.
@@ -264,11 +302,15 @@ impl JoyCon2 {
     /// NOTE: This creates a new stream each time, which can cause issues.
     /// For continuous reading, use notification_stream() instead.
     pub async fn read_notifications(&self) -> Result<Vec<u8>> {
-        let characteristic = self.input_characteristic.as_ref()
-            .ok_or_else(|| JoyConError::Ble("Not subscribed to input characteristic".to_string()))?;
-        
+        let characteristic = self.input_characteristic.as_ref().ok_or_else(|| {
+            JoyConError::Ble("Not subscribed to input characteristic".to_string())
+        })?;
+
         // If the characteristic has READ property, try reading it directly first
-        if characteristic.properties.contains(btleplug::api::CharPropFlags::READ) {
+        if characteristic
+            .properties
+            .contains(btleplug::api::CharPropFlags::READ)
+        {
             match self.peripheral.read(characteristic).await {
                 Ok(data) => {
                     return Ok(data);
@@ -278,56 +320,66 @@ impl JoyCon2 {
                 }
             }
         }
-        
+
         // For NOTIFY characteristics, use the peripheral's notification stream
         // This is the correct way to receive notifications in btleplug
-        let mut notifications = self.peripheral.notifications().await
-            .map_err(|e| JoyConError::Ble(format!("Failed to get notification stream: {}", e)))?;
-        
+        let mut notifications =
+            self.peripheral.notifications().await.map_err(|e| {
+                JoyConError::Ble(format!("Failed to get notification stream: {}", e))
+            })?;
+
         // Wait for a notification with timeout
         let timeout_duration = Duration::from_secs(5);
-        
+
         match timeout(timeout_duration, notifications.next()).await {
-            Ok(Some(notification)) => {
-                Ok(notification.value)
-            }
-            Ok(None) => {
-                Err(JoyConError::Ble("Notification stream ended unexpectedly".to_string()))
-            }
-            Err(_) => {
-                Err(JoyConError::Ble(
-                    format!("No notification received within timeout. Make sure the controller is sending data (move it or press buttons).")
-                ))
-            }
+            Ok(Some(notification)) => Ok(notification.value),
+            Ok(None) => Err(JoyConError::Ble(
+                "Notification stream ended unexpectedly".to_string(),
+            )),
+            Err(_) => Err(JoyConError::Ble(format!(
+                "No notification received within timeout. Make sure the controller is sending data (move it or press buttons)."
+            ))),
         }
     }
-    
+
     /// Enable motion sensors (gyroscope and accelerometer)
     /// Based on joycon2cpp: https://github.com/TheFrano/joycon2cpp
     /// Uses the write command characteristic UUID: 649d4ac9-8eb7-4e6c-af44-1ea54fe5f005
-    /// 
+    ///
     /// Sends the exact commands from joycon2cpp's SendCustomCommands function:
     /// - Command 1: { 0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 }
     /// - Command 2: { 0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 }
     pub async fn enable_sensors(&self) -> Result<()> {
-        let cmd_char = self.command_characteristic.as_ref()
+        let cmd_char = self
+            .command_characteristic
+            .as_ref()
             .ok_or_else(|| JoyConError::Ble("No command characteristic available".to_string()))?;
-        
+
         println!("  Attempting to enable motion sensors...");
-        println!("  Using command characteristic: {} (Properties: {:?})", cmd_char.uuid, cmd_char.properties);
-        
-        let write_type = if cmd_char.properties.contains(btleplug::api::CharPropFlags::WRITE_WITHOUT_RESPONSE) {
+        println!(
+            "  Using command characteristic: {} (Properties: {:?})",
+            cmd_char.uuid, cmd_char.properties
+        );
+
+        let write_type = if cmd_char
+            .properties
+            .contains(btleplug::api::CharPropFlags::WRITE_WITHOUT_RESPONSE)
+        {
             btleplug::api::WriteType::WithoutResponse
         } else {
             btleplug::api::WriteType::WithResponse
         };
-        
+
         // Exact commands from joycon2cpp SendCustomCommands function
         let commands = vec![
-            vec![0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
-            vec![0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00],
+            vec![
+                0x0c, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
+            ],
+            vec![
+                0x0c, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
+            ],
         ];
-        
+
         for (i, cmd) in commands.iter().enumerate() {
             println!("  Sending command {}...", i + 1);
             match self.peripheral.write(cmd_char, cmd, write_type).await {
@@ -344,19 +396,18 @@ impl JoyCon2 {
                 }
             }
         }
-        
+
         println!("  Note: Motion data should appear at bytes 0x30-0x3B in input reports.");
         println!("  ✓ Sensors enabled");
-        
+
         Ok(())
     }
-    
 
     /// Get the device address
     pub fn address(&self) -> &str {
         &self.address
     }
-    
+
     /// Get a serial number identifier for this Joy-Con 2
     /// Uses the BLE address formatted as a serial number (e.g., "3CA9ABCCAFE7")
     pub fn serial_number(&self) -> String {
@@ -367,12 +418,12 @@ impl JoyCon2 {
             .replace(":", "")
             .to_uppercase()
     }
-    
+
     /// Check if this is a left Joy-Con
     pub fn is_left(&self) -> bool {
         self.is_left
     }
-    
+
     /// Check if this is a right Joy-Con
     pub fn is_right(&self) -> bool {
         !self.is_left
@@ -380,23 +431,25 @@ impl JoyCon2 {
 
     /// Disconnect from the device
     pub async fn disconnect(&self) -> Result<()> {
-        self.peripheral.disconnect().await
+        self.peripheral
+            .disconnect()
+            .await
             .map_err(|e| JoyConError::Ble(format!("Failed to disconnect: {}", e)))?;
         Ok(())
     }
 }
 
 /// Check if a peripheral is a Joy-Con 2 device
-/// 
+///
 /// STRICT FILTERING: Only matches devices that have:
 /// 1. Nintendo BLE Company ID (0x0553) in manufacturer data
 /// 2. AND Joy-Con side identifier (0x66 for Right, 0x67 for Left) in that same data
-/// 
+///
 /// This ensures we only match actual Joy-Con 2 controllers, not other BLE devices.
 async fn is_joycon2_device(peripheral: &PlatformPeripheral) -> (bool, String, Option<u8>) {
     let mut debug_info = String::new();
     let mut side: Option<u8> = None;
-    
+
     if let Ok(Some(props)) = peripheral.properties().await {
         // Build debug info
         if let Some(name) = props.local_name.as_ref() {
@@ -404,12 +457,15 @@ async fn is_joycon2_device(peripheral: &PlatformPeripheral) -> (bool, String, Op
         } else {
             debug_info.push_str("Name: <none>");
         }
-        debug_info.push_str(&format!(", Manufacturers: {:?}", props.manufacturer_data.keys().collect::<Vec<_>>()));
-        
+        debug_info.push_str(&format!(
+            ", Manufacturers: {:?}",
+            props.manufacturer_data.keys().collect::<Vec<_>>()
+        ));
+
         // STRICT: Only match if we have Nintendo BLE Company ID (0x0553)
         if let Some(manufacturer_data) = props.manufacturer_data.get(&NINTENDO_BLE_CID) {
             debug_info.push_str(&format!(", Data: {:?}", manufacturer_data));
-            
+
             // STRICT: Must also have side identifier (0x66 or 0x67) in the data
             let mut found_side = false;
             for &byte in manufacturer_data.iter() {
@@ -423,7 +479,7 @@ async fn is_joycon2_device(peripheral: &PlatformPeripheral) -> (bool, String, Op
                     break;
                 }
             }
-            
+
             // Only return true if we found BOTH the Nintendo CID AND a side identifier
             if found_side {
                 let side_str = match side {
@@ -431,32 +487,46 @@ async fn is_joycon2_device(peripheral: &PlatformPeripheral) -> (bool, String, Op
                     Some(JOYCON_L_SIDE) => "Left",
                     _ => "Unknown",
                 };
-                return (true, format!("Matched by Nintendo BLE CID 0x{:04X} ({}) with side identifier: {}", 
-                    NINTENDO_BLE_CID, side_str, debug_info), side);
+                return (
+                    true,
+                    format!(
+                        "Matched by Nintendo BLE CID 0x{:04X} ({}) with side identifier: {}",
+                        NINTENDO_BLE_CID, side_str, debug_info
+                    ),
+                    side,
+                );
             } else {
                 // Has Nintendo CID but no side identifier - NOT a match
-                return (false, format!("Has Nintendo CID 0x{:04X} but no side identifier (0x66/0x67): {}", 
-                    NINTENDO_BLE_CID, debug_info), None);
+                return (
+                    false,
+                    format!(
+                        "Has Nintendo CID 0x{:04X} but no side identifier (0x66/0x67): {}",
+                        NINTENDO_BLE_CID, debug_info
+                    ),
+                    None,
+                );
             }
         }
-        
+
         // No Nintendo BLE CID found - NOT a match
         return (false, debug_info, None);
     }
-    
+
     (false, "No properties available".to_string(), None)
 }
-
 
 /// Scan for available Joy-Con 2 devices via BLE advertisements
 ///
 /// Returns a vector of device addresses/identifiers
 /// Devices should be in sync mode (holding sync button) to be discovered
 pub async fn scan_devices() -> Result<Vec<String>> {
-    let manager = Manager::new().await
+    let manager = Manager::new()
+        .await
         .map_err(|e| JoyConError::Ble(format!("Failed to create BLE manager: {}", e)))?;
 
-    let adapters = manager.adapters().await
+    let adapters = manager
+        .adapters()
+        .await
         .map_err(|e| JoyConError::Ble(format!("Failed to get adapters: {}", e)))?;
 
     if adapters.is_empty() {
@@ -464,28 +534,35 @@ pub async fn scan_devices() -> Result<Vec<String>> {
     }
 
     let central = adapters.into_iter().next().unwrap();
-    
+
     // Start scanning
-    central.start_scan(ScanFilter::default()).await
+    central
+        .start_scan(ScanFilter::default())
+        .await
         .map_err(|e| JoyConError::Ble(format!("Failed to start scan: {}", e)))?;
 
     // Wait for devices to be discovered
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Get discovered peripherals
-    let peripherals = central.peripherals().await
+    let peripherals = central
+        .peripherals()
+        .await
         .map_err(|e| JoyConError::Ble(format!("Failed to get peripherals: {}", e)))?;
 
     let mut devices = Vec::new();
     let mut all_devices_info = Vec::new();
-    
-    println!("Scanning {} BLE devices for Joy-Con 2...", peripherals.len());
-    
+
+    println!(
+        "Scanning {} BLE devices for Joy-Con 2...",
+        peripherals.len()
+    );
+
     for peripheral in peripherals {
         let id_str = format!("{:?}", peripheral.id());
         let (is_match, debug_info, side) = is_joycon2_device(&peripheral).await;
         all_devices_info.push((id_str.clone(), debug_info.clone()));
-        
+
         if is_match {
             let side_str = match side {
                 Some(JOYCON_L_SIDE) => " (Left)",
@@ -499,11 +576,14 @@ pub async fn scan_devices() -> Result<Vec<String>> {
             }
         }
     }
-    
+
     // If no devices found with strict filtering, show debug info and return all devices
     if devices.is_empty() && !all_devices_info.is_empty() {
         println!("\n⚠ No Joy-Con 2 devices found with strict filtering.");
-        println!("Found {} total BLE devices. Showing first 10:", all_devices_info.len());
+        println!(
+            "Found {} total BLE devices. Showing first 10:",
+            all_devices_info.len()
+        );
         for (id, info) in all_devices_info.iter().take(10) {
             println!("  Device {}: {}", id, info);
         }
@@ -512,7 +592,7 @@ pub async fn scan_devices() -> Result<Vec<String>> {
         }
         println!("\nReturning all devices. Look for your Joy-Con 2 in the list above.");
         println!("If you see it, note its properties so we can improve filtering.\n");
-        
+
         // Return all devices so user can see what's available
         return Ok(all_devices_info.into_iter().map(|(id, _)| id).collect());
     } else if !devices.is_empty() {
@@ -533,5 +613,3 @@ mod tests {
         assert!(devices.is_ok());
     }
 }
-
-

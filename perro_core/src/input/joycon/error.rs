@@ -33,4 +33,3 @@ impl From<hidapi::HidError> for JoyConError {
         JoyConError::Hid(err.to_string())
     }
 }
-

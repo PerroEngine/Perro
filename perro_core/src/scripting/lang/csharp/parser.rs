@@ -143,12 +143,35 @@ impl CsParser {
         }
         println! {"AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH I AM THE NODE TYPE:  {}", node_type};
 
+        // Build attributes HashMap from variables, functions, and struct fields
+        let mut attributes = HashMap::new();
+        for var in &script_vars {
+            if !var.attributes.is_empty() {
+                attributes.insert(var.name.clone(), var.attributes.clone());
+            }
+        }
+        for func in &functions {
+            if !func.attributes.is_empty() {
+                attributes.insert(func.name.clone(), func.attributes.clone());
+            }
+        }
+        // Include struct field attributes with qualified names (StructName.fieldName)
+        for struct_def in &structs {
+            for field in &struct_def.fields {
+                if !field.attributes.is_empty() {
+                    let qualified_name = format!("{}.{}", struct_def.name, field.name);
+                    attributes.insert(qualified_name, field.attributes.clone());
+                }
+            }
+        }
+
         Ok(Script {
             node_type,
             variables: script_vars,
             functions,
             structs,
             verbose: true,
+            attributes,
         })
     }
 
@@ -156,6 +179,7 @@ impl CsParser {
         self.debug_node("FIELD_DECL_START", node); // Debug field declaration start
         let mut is_public = false;
         let mut is_exposed = false;
+        let mut attributes = Vec::new();
         let mut typ = None;
         let mut name = String::new();
         let mut value = None;
@@ -167,6 +191,7 @@ impl CsParser {
             match child.kind() {
                 "attribute_list" => {
                     is_exposed = self.has_expose_attribute(child);
+                    attributes = self.parse_attributes(child);
                 }
                 "modifier" => {
                     if self.get_node_text(child) == "public" {
@@ -343,6 +368,7 @@ impl CsParser {
             value,
             is_exposed,
             is_public,
+            attributes,
         })
     }
 
@@ -461,6 +487,7 @@ impl CsParser {
     fn parse_method_declaration(&mut self, node: tree_sitter::Node) -> Result<Function, String> {
         self.debug_node("METHOD_DECL_START", node); // Debug method declaration start
         let mut is_public = false;
+        let mut attributes = Vec::new();
         let mut return_type = Type::Void;
         let mut name = String::new();
         let mut params = Vec::new();
@@ -470,6 +497,9 @@ impl CsParser {
         for child in node.children(&mut cursor) {
             self.debug_node("METHOD_CHILD", child); // Debug method children
             match child.kind() {
+                "attribute_list" => {
+                    attributes = self.parse_attributes(child);
+                }
                 "modifier" => {
                     if self.get_node_text(child) == "public" {
                         is_public = true;
@@ -491,7 +521,9 @@ impl CsParser {
             }
         }
 
-        let is_trait_method = name.to_lowercase() == "init" || name.to_lowercase() == "update";
+        let is_trait_method = name.to_lowercase() == "init"
+            || name.to_lowercase() == "update"
+            || name.to_lowercase() == "fixed_update";
         let locals = self.collect_locals(&body);
 
         self.debug_node("METHOD_DECL_END", node);
@@ -503,7 +535,9 @@ impl CsParser {
             body,
             is_trait_method,
             uses_self: false,
+            cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type,
+            attributes,
         })
     }
 
@@ -551,6 +585,7 @@ impl CsParser {
                                     fields.push(StructField {
                                         name: var.name,
                                         typ: var.typ.unwrap_or(Type::Object),
+                                        attributes: var.attributes,
                                     });
                                 }
                             }
@@ -755,6 +790,7 @@ impl CsParser {
             value,
             is_exposed: false,
             is_public: false,
+            attributes: Vec::new(),
         }))
     }
 
@@ -1374,6 +1410,23 @@ impl CsParser {
             }
         }
         false
+    }
+
+    fn parse_attributes(&self, attr_list: tree_sitter::Node) -> Vec<String> {
+        let mut attrs = Vec::new();
+        let mut cursor = attr_list.walk();
+        for child in attr_list.children(&mut cursor) {
+            if child.kind() == "attribute" {
+                // Extract attribute name - could be "AttributeName" or "AttributeName()"
+                let text = self.get_node_text(child);
+                // Remove parentheses and arguments if present
+                let attr_name = text.split('(').next().unwrap_or(&text).trim().to_string();
+                if !attr_name.is_empty() {
+                    attrs.push(attr_name);
+                }
+            }
+        }
+        attrs
     }
 
     fn get_child_by_kind<'a>(

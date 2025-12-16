@@ -100,6 +100,9 @@ impl ApiModule {
             ApiModule::MapOp(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
+            ApiModule::Input(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
         }
     }
 
@@ -115,6 +118,7 @@ impl ApiModule {
             ApiModule::Signal(api) => api.return_type(),
             ApiModule::ArrayOp(api) => api.return_type(),
             ApiModule::MapOp(api) => api.return_type(),
+            ApiModule::Input(api) => api.return_type(),
         }
     }
 
@@ -130,6 +134,7 @@ impl ApiModule {
             ApiModule::Signal(api) => api.param_types(),
             ApiModule::ArrayOp(api) => api.param_types(),
             ApiModule::MapOp(api) => api.param_types(),
+            ApiModule::Input(api) => api.param_types(),
         };
         // Add this line:
         result
@@ -418,6 +423,30 @@ impl ApiCodegen for NodeSugarApi {
                     val.map(|s| s.as_str()).unwrap_or("Value::Null")
                 )
             }
+            NodeSugarApi::GetChildByName => {
+                // self.get_node("name") -> api.get_child_by_name(self.node.id, "name")
+                // Returns the child node's ID (Option<Uuid>), which can then be used with get_node_clone
+                // Extract the string literal value from args[1] if it's a Literal::String
+                let child_name =
+                    if let Some(Expr::Literal(crate::ast::Literal::String(s))) = args.get(1) {
+                        // It's a string literal, use it directly with quotes
+                        format!("\"{}\"", s)
+                    } else {
+                        // Fallback to args_strs[1] if it's not a literal
+                        args_strs
+                            .get(1)
+                            .cloned()
+                            .unwrap_or_else(|| "\"\"".to_string())
+                    };
+                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.node.id".to_string()
+                } else if let Some(node_str) = args_strs.get(0) {
+                    format!("{}.id", node_str)
+                } else {
+                    "self.node.id".to_string()
+                };
+                format!("api.get_child_by_name({}, {})", node_expr, child_name)
+            }
         }
     }
 }
@@ -427,6 +456,7 @@ impl ApiTypes for NodeSugarApi {
         match self {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
+            NodeSugarApi::GetChildByName => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - child node ID (special marker type)
         }
     }
     // No specific param_types for NodeSugar APIs needed by default, uses None.
@@ -754,15 +784,16 @@ impl ApiCodegen for MapApi {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let val_type = script.infer_map_value_type(&args[0], current_func);
                 let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
-                let mut val_code = args[2].to_rust(needs_self, script, val_type.as_ref(), current_func);
-                
+                let mut val_code =
+                    args[2].to_rust(needs_self, script, val_type.as_ref(), current_func);
+
                 // For dynamic maps (any value type), wrap the value in json!()
                 if let Some(Type::Object) = val_type.as_ref() {
                     if !val_code.starts_with("json!(") {
                         val_code = format!("json!({})", val_code);
                     }
                 }
-                
+
                 format!("{}.insert({}, {})", args_strs[0], key_code, val_code)
             }
 
@@ -854,6 +885,103 @@ impl ApiTypes for MapApi {
             MapApi::Contains => Some(vec![
                 Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
                 Type::String,
+            ]),
+            _ => None,
+        }
+    }
+}
+
+// ===========================================================
+// Input API Implementations
+// ===========================================================
+
+impl ApiCodegen for InputApi {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            InputApi::GetAction => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                format!("api.Input.get_action({})", arg)
+            }
+            InputApi::IsKeyPressed => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                format!("api.Input.Keyboard.is_key_pressed({})", arg)
+            }
+            InputApi::GetTextInput => "api.Input.Keyboard.get_text_input()".into(),
+            InputApi::ClearTextInput => "api.Input.Keyboard.clear_text_input()".into(),
+            InputApi::IsButtonPressed => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                format!("api.Input.Mouse.is_button_pressed({})", arg)
+            }
+            InputApi::GetMousePosition => "api.Input.Mouse.get_position()".into(),
+            InputApi::GetMousePositionWorld => "api.Input.Mouse.get_position_world()".into(),
+            InputApi::GetScrollDelta => "api.Input.Mouse.get_scroll_delta()".into(),
+            InputApi::IsWheelUp => "api.Input.Mouse.is_wheel_up()".into(),
+            InputApi::IsWheelDown => "api.Input.Mouse.is_wheel_down()".into(),
+            InputApi::ScreenToWorld => {
+                let camera_pos = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "Vector2::zero()".into());
+                let camera_rotation = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
+                let camera_zoom = args_strs.get(2).cloned().unwrap_or_else(|| "1.0".into());
+                let virtual_width = args_strs.get(3).cloned().unwrap_or_else(|| "1920.0".into());
+                let virtual_height = args_strs.get(4).cloned().unwrap_or_else(|| "1080.0".into());
+                let window_width = args_strs.get(5).cloned().unwrap_or_else(|| "1920.0".into());
+                let window_height = args_strs.get(6).cloned().unwrap_or_else(|| "1080.0".into());
+                format!(
+                    "api.Input.Mouse.screen_to_world({}, {}, {}, {}, {}, {}, {})",
+                    camera_pos,
+                    camera_rotation,
+                    camera_zoom,
+                    virtual_width,
+                    virtual_height,
+                    window_width,
+                    window_height
+                )
+            }
+        }
+    }
+}
+
+impl ApiTypes for InputApi {
+    fn return_type(&self) -> Option<Type> {
+        use NumberKind::*;
+        match self {
+            InputApi::GetAction
+            | InputApi::IsKeyPressed
+            | InputApi::IsButtonPressed
+            | InputApi::IsWheelUp
+            | InputApi::IsWheelDown => Some(Type::Bool),
+            InputApi::GetTextInput => Some(Type::String),
+            InputApi::GetMousePosition
+            | InputApi::GetMousePositionWorld
+            | InputApi::ScreenToWorld => Some(Type::Custom("Vector2".into())),
+            InputApi::GetScrollDelta => Some(Type::Number(Float(32))),
+            InputApi::ClearTextInput => Some(Type::Void),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        use NumberKind::*;
+        match self {
+            InputApi::GetAction | InputApi::IsKeyPressed | InputApi::IsButtonPressed => {
+                Some(vec![Type::String])
+            }
+            InputApi::ScreenToWorld => Some(vec![
+                Type::Custom("Vector2".into()),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
             ]),
             _ => None,
         }

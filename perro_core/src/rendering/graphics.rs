@@ -59,40 +59,47 @@ impl TextureManager {
         let key = path.to_string();
         if !self.textures.contains_key(&key) {
             let start = Instant::now();
-            
+
             // Runtime mode: check static textures first, then fall back to disk/BRK
             // Dev mode: static textures will be None, so it loads from disk/BRK
             let img_texture = if let Some(static_textures) = get_static_textures() {
                 if let Some(static_data) = static_textures.get(path) {
-                    println!("🖼️ Loading static texture: {} ({}x{})", path, static_data.width, static_data.height);
+                    println!(
+                        "🖼️ Loading static texture: {} ({}x{})",
+                        path, static_data.width, static_data.height
+                    );
                     // Use pre-decoded RGBA8 data to create ImageTexture
                     let texture = static_data.to_image_texture(device, queue);
                     let elapsed = start.elapsed();
-                    println!("⏱️ Static texture loaded in {:.2}ms", elapsed.as_secs_f64() * 1000.0);
+                    println!(
+                        "⏱️ Static texture loaded in {:.2}ms",
+                        elapsed.as_secs_f64() * 1000.0
+                    );
                     texture
                 } else {
                     // Not in static textures, load from disk/BRK
                     let load_start = Instant::now();
                     let img_bytes = load_asset(path).expect("Failed to read image file");
                     let load_elapsed = load_start.elapsed();
-                    
+
                     let decode_start = Instant::now();
                     let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
                     let decode_elapsed = decode_start.elapsed();
-                    
+
                     println!(
                         "🖼️ Loading texture: {} ({}x{})",
                         path,
                         img.width(),
                         img.height()
                     );
-                    
+
                     let upload_start = Instant::now();
                     let texture = ImageTexture::from_image(&img, device, queue);
                     let upload_elapsed = upload_start.elapsed();
-                    
+
                     let total_elapsed = start.elapsed();
-                    println!("⏱️ Runtime texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)", 
+                    println!(
+                        "⏱️ Runtime texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
                         total_elapsed.as_secs_f64() * 1000.0,
                         load_elapsed.as_secs_f64() * 1000.0,
                         decode_elapsed.as_secs_f64() * 1000.0,
@@ -105,24 +112,25 @@ impl TextureManager {
                 let load_start = Instant::now();
                 let img_bytes = load_asset(path).expect("Failed to read image file");
                 let load_elapsed = load_start.elapsed();
-                
+
                 let decode_start = Instant::now();
                 let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
                 let decode_elapsed = decode_start.elapsed();
-                
+
                 println!(
                     "🖼️ Loading texture: {} ({}x{})",
                     path,
                     img.width(),
                     img.height()
                 );
-                
+
                 let upload_start = Instant::now();
                 let texture = ImageTexture::from_image(&img, device, queue);
                 let upload_elapsed = upload_start.elapsed();
-                
+
                 let total_elapsed = start.elapsed();
-                println!("⏱️ Dev texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)", 
+                println!(
+                    "⏱️ Dev texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
                     total_elapsed.as_secs_f64() * 1000.0,
                     load_elapsed.as_secs_f64() * 1000.0,
                     decode_elapsed.as_secs_f64() * 1000.0,

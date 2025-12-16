@@ -7,3 +7,12 @@ version="1.0.0"
 [performance]
 target_fps = 120
 xps = 60
+
+[input]
+# Example input mappings - actions can have multiple input sources
+jump = ["Space", "Up", "MouseLeft"]
+fire = ["MouseLeft", "KeyF"]
+move_left = ["Left", "KeyA"]
+move_right = ["Right", "KeyD"]
+move_up = ["Up", "KeyW"]
+move_down = ["Down", "KeyS"]

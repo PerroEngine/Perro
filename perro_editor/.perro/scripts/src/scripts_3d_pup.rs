@@ -11,6 +11,7 @@ use std::{
 };
 
 use num_bigint::BigInt;
+use phf::{phf_map, Map};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -28,8 +29,22 @@ use perro_core::prelude::*;
 // Scripts3dPup - Main Script Structure
 // ========================================================================
 
+static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "b" => &["name", "a", "bob", "Expose"],
+    "init()" => &["func"],
+};
+
+static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "bob" => &["b"],
+    "Expose" => &["b"],
+    "name" => &["b"],
+    "func" => &["init()"],
+    "a" => &["b"],
+};
+
 pub struct Scripts3dPupScript {
     node: MeshInstance3D,
+    b: f32,
 }
 
 // ========================================================================
@@ -39,9 +54,11 @@ pub struct Scripts3dPupScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
     let node = MeshInstance3D::new("Scripts3dPup");
+    let b = 5f32;
 
     Box::into_raw(Box::new(Scripts3dPupScript {
         node,
+        b,
     })) as *mut dyn ScriptObject
 }
 
@@ -51,12 +68,34 @@ pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for Scripts3dPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+        self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
+        self.node.transform.position.x = 3f32;
+        api.print(&String::from("Input API Test - Testing all input methods"));
+
+        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
         self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
         let mut delta: f32 = api.Time.get_delta();
-        self.node.transform.position.x -= (0.5f32 * delta);
+        let mut move_forward_action: bool = api.Input.get_action(String::from("move_forward"));
+        let mut move_backward_action: bool = api.Input.get_action(String::from("move_backward"));
+        let mut move_left_action: bool = api.Input.get_action(String::from("move_left"));
+        let mut move_right_action: bool = api.Input.get_action(String::from("move_right"));
+        let mut jump_action: bool = api.Input.get_action(String::from("jump"));
+        let mut forward_val: f32 = (move_forward_action as u8 as f32);
+        let mut backward_val: f32 = (move_backward_action as u8 as f32);
+        let mut left_val: f32 = (move_left_action as u8 as f32);
+        let mut right_val: f32 = (move_right_action as u8 as f32);
+        let mut jump_val: f32 = (jump_action as u8 as f32);
+        let mut move_z: f32 = ((forward_val - backward_val) * (delta * 5.0f32));
+        let mut move_x: f32 = ((left_val - right_val) * (delta * 5.0f32));
+        let mut move_y: f32 = (jump_val * (delta * 5.0f32));
+        self.node.transform.position.x += move_x;
+        self.node.transform.position.z += move_z;
+        self.node.transform.position.y += move_y;
+        let mut scroll: f32 = api.Input.Mouse.get_scroll_delta();
+        self.node.transform.position.y += (scroll * (delta * 2.0f32));
 
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
@@ -74,7 +113,7 @@ impl ScriptObject for Scripts3dPupScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -89,23 +128,76 @@ impl ScriptObject for Scripts3dPupScript {
         }
     }
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+    }
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
+            .unwrap_or(false)
     }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&Scripts3dPupScript) -> Option<Value>> = phf::phf_map! {
-};
+static VAR_GET_TABLE: phf::Map<u64, fn(&Scripts3dPupScript) -> Option<Value>> =
+    phf::phf_map! {
+        12638190499090526629u64 => |script: &Scripts3dPupScript| -> Option<Value> {
+                        Some(json!(script.b))
+                    },
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, Value) -> Option<()>> = phf::phf_map! {
-};
+    };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, &Value)> = phf::phf_map! {
-};
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, Value) -> Option<()>> =
+    phf::phf_map! {
+        12638190499090526629u64 => |script: &mut Scripts3dPupScript, val: Value| -> Option<()> {
+                            if let Some(v) = val.as_f64() {
+                                script.b = v as f32;
+                                return Some(());
+                            }
+                            None
+                        },
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
-};
+    };
+
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut Scripts3dPupScript, &Value)> =
+    phf::phf_map! {
+        12638190499090526629u64 => |script: &mut Scripts3dPupScript, val: &Value| {
+                            if let Some(v) = val.as_f64() {
+                                script.b = v as f32;
+                            }
+                        },
+
+    };
+
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut Scripts3dPupScript, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {
+
+    };

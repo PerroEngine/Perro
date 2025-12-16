@@ -10,21 +10,30 @@ use perro_core::prelude::*;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use std::path::{Path, PathBuf};
 use std::{rc::Rc, cell::RefCell};
+use phf::{phf_map, Map};
 use smallvec::{SmallVec, smallvec};
 
 
 /// @PerroScript
-pub struct RootScript {
+pub static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "b" => &["expose", "Expose"],
+    "a" => &["bitch"],
+};
+
+static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "expose" => &["b"],
+    "Expose" => &["b"],
+    "bitch" => &["a"],
+};
+
+struct RootScript {
     node: Node,
     /// @expose
     pub b: f32,
-    /// @expose
+    /// @bitch
     pub a: i32,
-    /// @expose
     e: String,
-    /// @expose
     pub f: F,
-    /// @expose
     pub h: i64,
 }
 
@@ -230,6 +239,7 @@ impl RootScript {
 
 impl Script for RootScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
+api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
        let my_version = api.project().version().to_string();
         let current_exe_path = std::env::current_exe().expect("Could not get exe path");
         let current_exe_name = current_exe_path
@@ -295,7 +305,18 @@ impl Script for RootScript {
         // Window will open immediately - updater script handles network checks
     }
 
-    fn update(&mut self, _api: &mut ScriptApi<'_>) {}
+    fn update(&mut self, api: &mut ScriptApi<'_>) {
+        // In your script struct
+let mut was_mouse_down = false;
+
+// In update()
+let is_mouse_down = api.Input.Mouse.is_button_pressed("MouseLeft");
+if is_mouse_down && !was_mouse_down {
+    // Mouse was just clicked (transition from up to down)
+    println!("Mouse clicked!");
+}
+was_mouse_down = is_mouse_down;
+    }
 }
 
 // Natural ordering for version comparison
@@ -337,7 +358,7 @@ impl ScriptObject for RootScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -352,16 +373,45 @@ impl ScriptObject for RootScript {
         }
     }
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+    }
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
+            .unwrap_or(false)
     }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&RootScript) -> Option<Value>> = phf::phf_map! {
+static VAR_GET_TABLE: phf::Map<u64, fn(&RootScript) -> Option<Value>> =
+    phf::phf_map! {
         12638190499090526629u64 => |script: &RootScript| -> Option<Value> {
                         Some(json!(script.b))
                     },
@@ -374,9 +424,11 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&RootScript) -> Option<Value>> = phf::phf
         12638197096160295895u64 => |script: &RootScript| -> Option<Value> {
                         Some(json!(script.h))
                     },
-};
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut RootScript, Value) -> Option<()>> = phf::phf_map! {
+    };
+
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut RootScript, Value) -> Option<()>> =
+    phf::phf_map! {
         12638190499090526629u64 => |script: &mut RootScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.b = v as f32;
@@ -405,35 +457,22 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut RootScript, Value) -> Option<()>> = 
                             }
                             None
                         },
-};
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut RootScript, &Value)> = phf::phf_map! {
+    };
+
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut RootScript, &Value)> =
+    phf::phf_map! {
         12638190499090526629u64 => |script: &mut RootScript, val: &Value| {
                             if let Some(v) = val.as_f64() {
                                 script.b = v as f32;
                             }
                         },
-        12638187200555641996u64 => |script: &mut RootScript, val: &Value| {
-                            if let Some(v) = val.as_i64() {
-                                script.a = v as i32;
-                            }
-                        },
-        12638182802509129152u64 => |script: &mut RootScript, val: &Value| {
-                            if let Some(v) = val.as_str() {
-                                script.e = v.to_string();
-                            }
-                        },
-        12638186101044013785u64 => |script: &mut RootScript, val: &Value| {
-                            if let Ok(v) = serde_json::from_value::<F>(val.clone()) {
-                                script.f = v;
-                            }
-                        },
-        12638197096160295895u64 => |script: &mut RootScript, val: &Value| {
-                            if let Some(v) = val.as_i64() {
-                                script.h = v as i64;
-                            }
-                        },
-};
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut RootScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
-};
+    };
+
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut RootScript, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {
+
+    };

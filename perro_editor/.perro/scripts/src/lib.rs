@@ -3,7 +3,7 @@ use std::ffi::CStr;
 #[cfg(debug_assertions)]
 use std::os::raw::c_char;
 use perro_core::script::CreateFn;
-use std::collections::HashMap;
+use phf::{phf_map, Map};
 
 pub mod scripts_3d_pup;
 pub mod scripts_cam_pup;
@@ -26,20 +26,22 @@ use scripts_test_pup::scripts_test_pup_create_script;
 use scripts_updater_rs::scripts_updater_rs_create_script;
 // __PERRO_IMPORTS__
 
-pub fn get_script_registry() -> HashMap<String, CreateFn> {
-let mut map: HashMap<String, CreateFn> = HashMap::new();
-    map.insert("scripts_3d_pup".to_string(), scripts_3d_pup_create_script as CreateFn);
-        map.insert("scripts_cam_pup".to_string(), scripts_cam_pup_create_script as CreateFn);
-        map.insert("scripts_cs_cs".to_string(), scripts_cs_cs_create_script as CreateFn);
-        map.insert("scripts_joycon_rs".to_string(), scripts_joycon_rs_create_script as CreateFn);
-        map.insert("scripts_light_pup".to_string(), scripts_light_pup_create_script as CreateFn);
-        map.insert("scripts_repair_rs".to_string(), scripts_repair_rs_create_script as CreateFn);
-        map.insert("scripts_root_rs".to_string(), scripts_root_rs_create_script as CreateFn);
-        map.insert("scripts_test_pup".to_string(), scripts_test_pup_create_script as CreateFn);
-        map.insert("scripts_updater_rs".to_string(), scripts_updater_rs_create_script as CreateFn);
-    // __PERRO_REGISTRY__
-map
+pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {
+&SCRIPT_REGISTRY
 }
+
+static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
+    "scripts_3d_pup" => scripts_3d_pup_create_script as CreateFn,
+        "scripts_cam_pup" => scripts_cam_pup_create_script as CreateFn,
+        "scripts_cs_cs" => scripts_cs_cs_create_script as CreateFn,
+        "scripts_joycon_rs" => scripts_joycon_rs_create_script as CreateFn,
+        "scripts_light_pup" => scripts_light_pup_create_script as CreateFn,
+        "scripts_repair_rs" => scripts_repair_rs_create_script as CreateFn,
+        "scripts_root_rs" => scripts_root_rs_create_script as CreateFn,
+        "scripts_test_pup" => scripts_test_pup_create_script as CreateFn,
+        "scripts_updater_rs" => scripts_updater_rs_create_script as CreateFn,
+    // __PERRO_REGISTRY__
+};
 
 
 #[cfg(debug_assertions)]

@@ -10,10 +10,11 @@ use crate::{
     asset_io::{ProjectRoot, get_project_root, load_asset, save_asset},
     fur_ast::{FurElement, FurNode},
     input::joycon::ControllerManager,
+    input::manager::InputManager,
     manifest::Project,
     node_registry::{BaseNode, SceneNode},
     prelude::string_to_u64,
-    script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, UpdateOp, Var},
+    script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, Var},
     transpiler::script_path_to_identifier,
     ui_element::{BaseElement, UIElement},
     ui_renderer::render_ui, // NEW import
@@ -196,7 +197,7 @@ impl SceneData {
 /// Runtime scene, parameterized by a script provider
 /// Now holds a reference to the project via Rc<RefCell<Project>>
 pub struct Scene<P: ScriptProvider> {
-    data: SceneData,
+    pub(crate) data: SceneData,
     pub signals: SignalBus,
     queued_signals: Vec<(u64, SmallVec<[Value; 3]>)>,
     pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn ScriptObject>>>>,
@@ -204,11 +205,17 @@ pub struct Scene<P: ScriptProvider> {
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
     pub controller_manager: Mutex<ControllerManager>, // Controller input manager
+    pub input_manager: Mutex<InputManager>,         // Keyboard/mouse input manager
 
     pub last_scene_update: Option<Instant>,
     pub delta_accum: f32,
     pub true_updates: i32,
     pub test_val: Value,
+
+    // Fixed update timing
+    pub fixed_update_accumulator: f32,
+    pub last_fixed_update: Option<Instant>,
+    pub nodes_with_internal_fixed_update: Vec<Uuid>,
 }
 
 #[derive(Default)]
@@ -230,11 +237,15 @@ impl<P: ScriptProvider> Scene<P> {
             project,
             app_command_tx: None,
             controller_manager: Mutex::new(ControllerManager::new()),
+            input_manager: Mutex::new(InputManager::new()),
 
             last_scene_update: Some(Instant::now()),
             delta_accum: 0.0,
             true_updates: 0,
             test_val: Value::Null,
+            fixed_update_accumulator: 0.0,
+            last_fixed_update: Some(Instant::now()),
+            nodes_with_internal_fixed_update: Vec::new(),
         }
     }
 
@@ -249,11 +260,15 @@ impl<P: ScriptProvider> Scene<P> {
             project,
             app_command_tx: None,
             controller_manager: Mutex::new(ControllerManager::new()),
+            input_manager: Mutex::new(InputManager::new()),
 
             last_scene_update: Some(Instant::now()),
             delta_accum: 0.0,
             true_updates: 0,
             test_val: Value::Null,
+            fixed_update_accumulator: 0.0,
+            last_fixed_update: Some(Instant::now()),
+            nodes_with_internal_fixed_update: Vec::new(),
         }
     }
 
@@ -271,6 +286,14 @@ impl<P: ScriptProvider> Scene<P> {
     ) -> anyhow::Result<Self> {
         let root_node = SceneNode::Node(Node::new("Root", None));
         let mut game_scene = Scene::new(root_node, provider, project.clone());
+
+        // Initialize input manager with action map from project.toml
+        {
+            let project_ref = game_scene.project.borrow();
+            let input_map = project_ref.get_input_map();
+            let mut input_mgr = game_scene.input_manager.lock().unwrap();
+            input_mgr.load_action_map(input_map);
+        }
 
         println!("Building scene from project manifest...");
 
@@ -438,6 +461,9 @@ impl<P: ScriptProvider> Scene<P> {
         let remap_start = Instant::now();
         const NODE_PARALLEL_THRESHOLD: usize = 20;
 
+        // parent_children map needs to be accessible after both branches
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+
         if other.nodes.len() >= NODE_PARALLEL_THRESHOLD {
             // Convert to Vec for parallel processing
             let mut nodes_vec: Vec<(Uuid, SceneNode)> = other.nodes.into_iter().collect();
@@ -456,8 +482,6 @@ impl<P: ScriptProvider> Scene<P> {
             });
 
             // Phase 2b: Sequential relationship rebuilding
-            let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-
             for (local_id, node) in &mut nodes_vec {
                 // Remap parent if it exists in the subscene
                 if let Some(parent) = node.get_parent() {
@@ -483,19 +507,29 @@ impl<P: ScriptProvider> Scene<P> {
             other.nodes = nodes_vec.into_iter().collect();
         } else {
             // Sequential processing for small scenes
-            let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-
-            for node in other.nodes.values_mut() {
-                let new_id = id_map[&node.get_local_id()];
+            // First pass: remap IDs and build parent_children map
+            let mut local_to_new_id: HashMap<Uuid, Uuid> = HashMap::new();
+            for (local_id, node) in other.nodes.iter_mut() {
+                let new_id = id_map[local_id];
+                local_to_new_id.insert(*local_id, new_id);
                 node.set_id(new_id);
                 node.clear_children();
 
                 // Remap parent if it exists in the subscene
-                if let Some(parent) = node.get_parent() {
-                    if let Some(&mapped_parent) = id_map.get(&parent) {
+                if let Some(parent_local) = node.get_parent() {
+                    if let Some(&mapped_parent) = id_map.get(&parent_local) {
+                        // Parent is in the subscene - remap it
                         node.set_parent(Some(mapped_parent));
                         parent_children
                             .entry(mapped_parent)
+                            .or_default()
+                            .push(new_id);
+                    } else {
+                        // Parent is NOT in the subscene - it's already in the game scene
+                        // Keep the parent reference as-is and add this node as a child of that parent
+                        node.set_parent(Some(parent_local));
+                        parent_children
+                            .entry(parent_local)
                             .or_default()
                             .push(new_id);
                     }
@@ -508,10 +542,26 @@ impl<P: ScriptProvider> Scene<P> {
                 }
             }
 
-            // Apply parent-child relationships
-            for (parent_id, children) in parent_children {
-                if let Some(parent) = other.nodes.get_mut(&parent_id) {
-                    parent.get_children_mut().extend(children);
+            // Apply parent-child relationships using remapped IDs
+            // We need to find nodes by their new remapped ID, not by the local_id key
+            // Get root's new ID to skip it here (will be handled separately)
+            let root_new_id_opt = other
+                .nodes
+                .get(&other.root_id)
+                .map(|root_node| id_map[&root_node.get_local_id()]);
+
+            for (parent_id, children) in &parent_children {
+                // Skip root - it will be handled separately before removal
+                if Some(*parent_id) == root_new_id_opt {
+                    continue;
+                }
+
+                // Find the parent node by searching through values (since keys are local_id, not new_id)
+                for (_, node) in other.nodes.iter_mut() {
+                    if node.get_id() == *parent_id {
+                        node.get_children_mut().extend(children.iter().copied());
+                        break;
+                    }
                 }
             }
         }
@@ -526,6 +576,22 @@ impl<P: ScriptProvider> Scene<P> {
         // 3️⃣ HANDLE ROOT NODE
         // ───────────────────────────────────────────────
         let root_start = Instant::now();
+        // Get the root's new ID before removing it
+        let root_new_id = if let Some(root_node) = other.nodes.get(&other.root_id) {
+            id_map[&root_node.get_local_id()]
+        } else {
+            eprintln!("⚠️ Merge root missing");
+            return Ok(());
+        };
+
+        // Add any children that should be attached to the root BEFORE removing it
+        // The root might be in parent_children with its new remapped ID
+        if let Some(children) = parent_children.get(&root_new_id) {
+            if let Some(root) = other.nodes.get_mut(&other.root_id) {
+                root.get_children_mut().extend(children.iter().copied());
+            }
+        }
+
         let root_to_insert = if let Some(mut root) = other.nodes.remove(&other.root_id) {
             let new_root_id = id_map[&root.get_local_id()];
             root.set_id(new_root_id);
@@ -749,7 +815,46 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
 
-        // now use `true_delta` instead of external_delta
+        // Fixed update logic - runs at XPS rate from project manifest
+        let xps = {
+            let project_ref = self.project.borrow();
+            project_ref.xps()
+        };
+        let fixed_delta = 1.0 / xps.max(1.0); // Time per fixed update
+
+        self.fixed_update_accumulator += true_delta;
+
+        // Check if we should run fixed update this frame
+        let should_run_fixed_update = self.fixed_update_accumulator >= fixed_delta;
+
+        if should_run_fixed_update {
+            // Calculate how many fixed updates to run (catch up if behind)
+            let fixed_update_count = (self.fixed_update_accumulator / fixed_delta).floor() as u32;
+            let clamped_count = fixed_update_count.min(5); // Cap at 5 to prevent spiral of death
+
+            for _ in 0..clamped_count {
+                // Run fixed update for all scripts
+                let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
+                for id in script_ids {
+                    let project_ref = self.project.clone();
+                    let mut project_borrow = project_ref.borrow_mut();
+                    let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
+                    api.call_fixed_update(id);
+                }
+
+                // Run internal fixed update for nodes that need it
+                // Get node directly from self.data.nodes, then create API
+                let node_ids: Vec<Uuid> = self.nodes_with_internal_fixed_update.clone();
+                for node_id in node_ids {
+                    self.call_node_internal_fixed_update(node_id, fixed_delta);
+                }
+            }
+
+            // Subtract the time we consumed
+            self.fixed_update_accumulator -= fixed_delta * clamped_count as f32;
+        }
+
+        // Regular update - runs every frame
         let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
 
         for id in script_ids {
@@ -762,6 +867,45 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         self.process_queued_signals();
+    }
+
+    /// Helper method to call internal_fixed_update on a node
+    /// Get node from self.data.nodes, then create API and call internal_fixed_update
+    fn call_node_internal_fixed_update(&mut self, node_id: Uuid, fixed_delta: f32) {
+        // Get project borrow first
+        let project_ref = self.project.clone();
+        let mut project_borrow = project_ref.borrow_mut();
+        
+        // Get the node directly from self.data.nodes
+        // SAFETY: We're borrowing self.data.nodes (a field) and self (the struct) simultaneously.
+        // This is safe because:
+        // 1. node borrows a specific HashMap entry (self.data.nodes[node_id])
+        // 2. api borrows self as a trait object (the whole Scene)
+        // 3. These are disjoint borrows - one is a HashMap entry, one is the container
+        // 4. We're not modifying the HashMap structure, just the node's contents
+        // 5. internal_fixed_update won't access the same node_id entry
+        // Rust's borrow checker can't prove this is safe, but it is!
+        let node_ptr = unsafe {
+            // Get node reference - borrows self.data.nodes
+            if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                node as *mut SceneNode
+            } else {
+                return;
+            }
+        };
+        
+        // Now create API - borrows self (the whole struct)
+        // SAFETY: node_ptr is valid and points to a node in self.data.nodes.
+        // We're not using self.data.nodes anymore, so we can borrow self for the API.
+        // The node reference and API don't conflict because they borrow different parts.
+        let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
+        
+        // Use the node reference
+        unsafe {
+            if let Some(node) = node_ptr.as_mut() {
+                node.internal_fixed_update(&mut api);
+            }
+        }
     }
 
     fn connect_signal(&mut self, signal: u64, target_id: Uuid, function_id: u64) {
@@ -893,12 +1037,21 @@ impl<P: ScriptProvider> Scene<P> {
         self.data.nodes.insert(id, node);
         println!("✅ Node {} added\n", id);
 
+        // Register node for internal fixed updates if needed
+        if let Some(node_ref) = self.data.nodes.get(&id) {
+            if node_ref.needs_internal_fixed_update() {
+                if !self.nodes_with_internal_fixed_update.contains(&id) {
+                    self.nodes_with_internal_fixed_update.push(id);
+                }
+            }
+        }
+
         // node is moved already, so get it back immutably from scene
         if let Some(node_ref) = self.data.nodes.get(&id) {
             if let Some(script_path) = node_ref.get_script_path() {
                 println!("   ✅ Found script_path: {}", script_path);
 
-                let identifier = script_path_to_identifier(&script_path)
+                let identifier = script_path_to_identifier(script_path)
                     .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
                 let ctor = self.ctor(&identifier)?;
 
@@ -1110,11 +1263,20 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
             let id = node.get_id();
             node.mark_dirty();
 
+            let needs_fixed_update = node.needs_internal_fixed_update();
+
             if let Some(existing_node) = self.data.nodes.get_mut(&id) {
                 *existing_node = node;
             } else {
                 println!("Inserting new node with ID {}: {:?} during merge", id, node);
                 self.data.nodes.insert(id, node);
+            }
+
+            // Register node for internal fixed updates if needed
+            if needs_fixed_update {
+                if !self.nodes_with_internal_fixed_update.contains(&id) {
+                    self.nodes_with_internal_fixed_update.push(id);
+                }
             }
         }
     }
@@ -1138,6 +1300,10 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
 
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>> {
         Some(&self.controller_manager)
+    }
+
+    fn get_input_manager(&self) -> Option<&Mutex<InputManager>> {
+        Some(&self.input_manager)
     }
 }
 
@@ -1207,6 +1373,14 @@ impl Scene<DllScriptProvider> {
 
         // Now move `project` into Scene
         let mut game_scene = Scene::new(root_node, provider, project);
+
+        // Initialize input manager with action map from project.toml
+        {
+            let project_ref = game_scene.project.borrow();
+            let input_map = project_ref.get_input_map();
+            let mut input_mgr = game_scene.input_manager.lock().unwrap();
+            input_mgr.load_action_map(input_map);
+        }
 
         println!("About to graft main scene...");
         let main_scene_path = game_scene.project.borrow().main_scene().to_string();

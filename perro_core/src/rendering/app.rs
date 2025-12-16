@@ -20,6 +20,7 @@ use crate::{
     graphics::{Graphics, create_graphics},
     scene::Scene,
     script::ScriptProvider,
+    scripting::script::SceneAccess,
 };
 
 enum State {
@@ -43,12 +44,41 @@ const MONITOR_SCALE_FACTOR: f32 = 0.75;
 const FPS_MEASUREMENT_INTERVAL: f32 = 1.0;
 const MAX_FRAME_DEBT: f64 = 0.025; // 25ms worth of frames
 
+// Default Perro icon embedded at compile time
+const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_default_icon() -> Option<winit::window::Icon> {
+    use image::imageops::FilterType;
+    use winit::window::Icon;
+
+    if DEFAULT_ICON_BYTES.is_empty() {
+        eprintln!("⚠ Default icon bytes are empty");
+        return None;
+    }
+
+    match image::load_from_memory(DEFAULT_ICON_BYTES) {
+        Ok(img) => {
+            println!("✅ Loading default Perro icon (embedded)");
+            let target_size = 32;
+            let resized = img.resize_exact(target_size, target_size, FilterType::Lanczos3);
+            let rgba = resized.into_rgba8();
+            let (width, height) = rgba.dimensions();
+            Icon::from_rgba(rgba.into_raw(), width, height).ok()
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to decode default icon: {}", e);
+            None
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn load_icon(path: &str) -> Option<winit::window::Icon> {
     use crate::asset_io::load_asset;
     use crate::runtime::get_static_textures;
-    use image::imageops::FilterType;
     use image::ImageBuffer;
+    use image::imageops::FilterType;
     use winit::window::Icon;
 
     println!("🔎 Loading icon from {path}");
@@ -56,7 +86,10 @@ fn load_icon(path: &str) -> Option<winit::window::Icon> {
     // Check static textures first (runtime mode)
     let img = if let Some(static_textures) = get_static_textures() {
         if let Some(static_data) = static_textures.get(path) {
-            println!("✅ Loading icon from static texture: {} ({}x{})", path, static_data.width, static_data.height);
+            println!(
+                "✅ Loading icon from static texture: {} ({}x{})",
+                path, static_data.width, static_data.height
+            );
             // Convert pre-decoded RGBA8 bytes to DynamicImage
             ImageBuffer::from_raw(
                 static_data.width,
@@ -68,14 +101,16 @@ fn load_icon(path: &str) -> Option<winit::window::Icon> {
         } else {
             // Not in static textures, load from disk/BRK
             match load_asset(path) {
-                Ok(bytes) => image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e)),
+                Ok(bytes) => image::load_from_memory(&bytes)
+                    .map_err(|e| format!("Failed to decode image: {}", e)),
                 Err(e) => Err(format!("Failed to load asset: {}", e)),
             }
         }
     } else {
         // Dev mode: no static textures, load from disk/BRK
         match load_asset(path) {
-            Ok(bytes) => image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e)),
+            Ok(bytes) => image::load_from_memory(&bytes)
+                .map_err(|e| format!("Failed to decode image: {}", e)),
             Err(e) => Err(format!("Failed to load asset: {}", e)),
         }
     };
@@ -93,7 +128,8 @@ fn load_icon(path: &str) -> Option<winit::window::Icon> {
         }
         Err(err) => {
             eprintln!("❌ Failed to load/decode icon {path}: {err}");
-            None
+            eprintln!("⚠ Falling back to default Perro icon");
+            load_default_icon()
         }
     }
 }
@@ -237,6 +273,12 @@ impl<P: ScriptProvider> App<P> {
 
         // 2. UNCAPPED UPDATE LOOP - Runs every single frame for maximum UPS
         if let Some(scene) = self.game_scene.as_mut() {
+            // Reset scroll delta at start of frame
+            if let Some(input_mgr) = scene.get_input_manager() {
+                let mut input_mgr = input_mgr.lock().unwrap();
+                input_mgr.reset_scroll_delta();
+            }
+
             scene.update(); // Update runs EVERY frame (uncapped UPS)
         }
 
@@ -383,6 +425,75 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        // Handle input events
+        if let Some(scene) = self.game_scene.as_mut() {
+            use crate::input::manager::{InputManager, MouseButton};
+            use crate::structs2d::vector2::Vector2;
+            use winit::event::{ElementState, MouseButton as WinitMouseButton};
+            use winit::keyboard::KeyCode;
+
+            if let Some(input_mgr) = scene.get_input_manager() {
+                let mut input_mgr = input_mgr.lock().unwrap();
+
+                match &event {
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        if let winit::keyboard::PhysicalKey::Code(keycode) = event.physical_key {
+                            match event.state {
+                                ElementState::Pressed => {
+                                    input_mgr.handle_key_press(keycode);
+                                }
+                                ElementState::Released => {
+                                    input_mgr.handle_key_release(keycode);
+                                }
+                            }
+                        }
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        let mouse_btn = match button {
+                            WinitMouseButton::Left => MouseButton::Left,
+                            WinitMouseButton::Right => MouseButton::Right,
+                            WinitMouseButton::Middle => MouseButton::Middle,
+                            WinitMouseButton::Back => MouseButton::Other(4),
+                            WinitMouseButton::Forward => MouseButton::Other(5),
+                            WinitMouseButton::Other(id) => MouseButton::Other(*id),
+                        };
+                        match state {
+                            ElementState::Pressed => {
+                                input_mgr.handle_mouse_button_press(mouse_btn);
+                            }
+                            ElementState::Released => {
+                                input_mgr.handle_mouse_button_release(mouse_btn);
+                            }
+                        }
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        input_mgr
+                            .handle_mouse_move(Vector2::new(position.x as f32, position.y as f32));
+                    }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        use winit::event::MouseScrollDelta;
+                        let scroll_delta = match delta {
+                            MouseScrollDelta::LineDelta(_, y) => *y,
+                            MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01, // Scale pixel delta
+                        };
+                        input_mgr.handle_scroll(scroll_delta);
+                    }
+                    WindowEvent::Ime(ime) => match ime {
+                        winit::event::Ime::Commit(text) => {
+                            input_mgr.handle_text_input(text.to_string());
+                        }
+                        winit::event::Ime::Preedit(text, _) => {
+                            if !text.is_empty() {
+                                input_mgr.handle_text_input(text.to_string());
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+        }
+
         match event {
             WindowEvent::Resized(size) => self.resized(size),
             WindowEvent::RedrawRequested => self.process_game(), // This drives uncapped updates

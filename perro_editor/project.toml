@@ -13,3 +13,23 @@ script = "res://scripts/root.rs"
 
 [meta]
 toolchain = "1.90.0"
+
+
+[input]
+# Input action mappings
+# Format: action_name = ["InputSource1", "InputSource2", ...]
+# Multiple inputs can map to the same action
+# 
+# Available input sources:
+# - Keyboard: "Space", "Enter", "Escape", "KeyW", "KeyA", etc.
+# - Arrow keys: "Up", "Down", "Left", "Right"
+# - Modifiers: "Shift", "Control", "Alt", "Meta"
+# - Mouse: "MouseLeft", "MouseRight", "MouseMiddle"
+# - Scroll: "MouseWheelUp", "MouseWheelDown"
+#
+# Example actions:
+jump = ["Space", "Up"]
+move_forward = ["KeyW"]
+move_backward = ["KeyS"]
+move_left = ["KeyA"]
+move_right = ["KeyD"]

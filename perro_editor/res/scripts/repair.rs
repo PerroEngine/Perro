@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use smallvec::{SmallVec, smallvec};
+use phf::{phf_map, Map};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn repair_create_script() -> *mut dyn ScriptObject {

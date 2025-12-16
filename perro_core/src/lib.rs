@@ -3,6 +3,7 @@ pub mod brk;
 pub mod input;
 pub mod nodes;
 pub mod project;
+pub mod project_creator;
 pub mod rendering;
 pub mod runtime;
 pub mod scene;
@@ -44,8 +45,8 @@ pub mod prelude {
     }
 
     pub use crate::api::ScriptApi;
-    // Correct source for UpdateOp
-    pub use crate::script::{UpdateOp, Var};
+
+    pub use crate::script::Var;
 
     // Core primitive/shared types (Vec2, Color, etc.)
     pub use crate::types::*;

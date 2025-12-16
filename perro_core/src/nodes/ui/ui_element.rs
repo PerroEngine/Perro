@@ -225,6 +225,12 @@ macro_rules! impl_ui_element {
     };
 }
 
+/// Trait used to unwrap `UIElement` variants back into their concrete types.
+/// Similar to `IntoInner` for `SceneNode`.
+pub trait IntoUIInner<T> {
+    fn into_ui_inner(self) -> T;
+}
+
 /// Enum of all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[enum_dispatch(BaseElement)]
@@ -235,4 +241,56 @@ pub enum UIElement {
     GridLayout(GridLayout),
 
     Text(UIText),
+}
+
+// Implement IntoUIInner for each UI element type
+impl IntoUIInner<UIText> for UIElement {
+    fn into_ui_inner(self) -> UIText {
+        match self {
+            UIElement::Text(inner) => inner,
+            _ => panic!("Cannot extract UIText from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<BoxContainer> for UIElement {
+    fn into_ui_inner(self) -> BoxContainer {
+        match self {
+            UIElement::BoxContainer(inner) => inner,
+            _ => panic!(
+                "Cannot extract BoxContainer from UIElement variant {:?}",
+                self
+            ),
+        }
+    }
+}
+
+impl IntoUIInner<UIPanel> for UIElement {
+    fn into_ui_inner(self) -> UIPanel {
+        match self {
+            UIElement::Panel(inner) => inner,
+            _ => panic!("Cannot extract UIPanel from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<Layout> for UIElement {
+    fn into_ui_inner(self) -> Layout {
+        match self {
+            UIElement::Layout(inner) => inner,
+            _ => panic!("Cannot extract Layout from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<GridLayout> for UIElement {
+    fn into_ui_inner(self) -> GridLayout {
+        match self {
+            UIElement::GridLayout(inner) => inner,
+            _ => panic!(
+                "Cannot extract GridLayout from UIElement variant {:?}",
+                self
+            ),
+        }
+    }
 }

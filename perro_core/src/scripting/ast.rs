@@ -11,6 +11,7 @@ pub struct Script {
     pub structs: Vec<StructDef>,
 
     pub verbose: bool,
+    pub attributes: HashMap<String, Vec<String>>, // member name -> list of attribute names
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +21,7 @@ pub struct Variable {
     pub value: Option<TypedExpr>,
     pub is_public: bool,
     pub is_exposed: bool,
+    pub attributes: Vec<String>, // List of attribute names
 }
 
 impl Variable {
@@ -187,7 +189,8 @@ impl Variable {
             // This ensures literals get the correct suffix (e.g., 42f64 instead of 42f32)
             let expected_type = self.typ.as_ref();
             // Call expr.expr.to_rust directly with the variable's type as expected_type
-            expr.expr.to_rust(false, script, expected_type, current_func)
+            expr.expr
+                .to_rust(false, script, expected_type, current_func)
         } else {
             self.default_value()
         }
@@ -209,7 +212,9 @@ pub struct Function {
     pub body: Vec<Stmt>,
     pub is_trait_method: bool,
     pub uses_self: bool,
+    pub cloned_child_nodes: Vec<String>, // Variable names that hold cloned child nodes (from self.get_node("name") as Type)
     pub return_type: Type,
+    pub attributes: Vec<String>, // List of attribute names
 }
 
 #[derive(Debug, Clone)]
@@ -415,6 +420,22 @@ pub enum Stmt {
     ScriptAssignOp(String, String, Op, TypedExpr), // RHS needs type
     IndexAssign(Box<Expr>, Box<Expr>, TypedExpr),
     IndexAssignOp(Box<Expr>, Box<Expr>, Op, TypedExpr),
+    If {
+        condition: TypedExpr,
+        then_body: Vec<Stmt>,
+        else_body: Option<Vec<Stmt>>,
+    },
+    For {
+        var_name: String,
+        iterable: TypedExpr,
+        body: Vec<Stmt>,
+    },
+    ForTraditional {
+        init: Option<Box<Stmt>>,      // var i = 0
+        condition: Option<TypedExpr>, // i < 10
+        increment: Option<Box<Stmt>>, // i++
+        body: Vec<Stmt>,
+    },
     Pass,
 }
 
@@ -436,6 +457,7 @@ pub enum Expr {
     StructNew(String, Vec<(String, Expr)>),
 
     ApiCall(ApiModule, Vec<Expr>),
+    Range(Box<Expr>, Box<Expr>), // start..end
 }
 
 #[derive(Debug, Clone)]
@@ -465,6 +487,12 @@ pub enum Op {
     Sub,
     Mul,
     Div,
+    Lt, // <
+    Gt, // >
+    Le, // <=
+    Ge, // >=
+    Eq, // ==
+    Ne, // !=
 }
 
 #[derive(Debug, Clone)]
@@ -479,4 +507,5 @@ pub struct StructDef {
 pub struct StructField {
     pub name: String,
     pub typ: Type,
+    pub attributes: Vec<String>, // List of attribute names
 }

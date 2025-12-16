@@ -1,5 +1,7 @@
 extends Camera3D
 
+@variable var name = "cheese"
+
 fn init() {
 
 }

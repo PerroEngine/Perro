@@ -16,6 +16,7 @@ use crate::script::{CreateFn, ScriptProvider};
 use crate::structs2d::texture::StaticTextureData;
 use crate::ui::fur_ast::FurElement;
 use once_cell::sync::Lazy;
+use phf::Map;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use winit::event_loop::EventLoop;
 
@@ -35,13 +36,13 @@ pub struct RuntimeData {
     pub aes_key: [u8; 32],
     /// Static versions of scenes, ui, etc
     pub static_assets: StaticAssets,
-    /// Script constructor registry
-    pub script_registry: HashMap<String, CreateFn>,
+    /// Script constructor registry (compile-time perfect hash map)
+    pub script_registry: &'static Map<&'static str, CreateFn>,
 }
 
 /// Generic static script provider that lives in core
 pub struct StaticScriptProvider {
-    ctors: HashMap<String, CreateFn>,
+    ctors: &'static Map<&'static str, CreateFn>,
     pub scenes: &'static Lazy<HashMap<&'static str, &'static SceneData>>,
     pub fur: &'static Lazy<HashMap<&'static str, &'static [FurElement]>>,
 }
@@ -49,7 +50,7 @@ pub struct StaticScriptProvider {
 impl StaticScriptProvider {
     pub fn new(data: &RuntimeData) -> Self {
         Self {
-            ctors: data.script_registry.clone(),
+            ctors: data.script_registry,
             scenes: data.static_assets.scenes,
             fur: data.static_assets.fur,
         }
@@ -105,17 +106,22 @@ fn run_app(event_loop: EventLoop<Graphics>, mut app: App<StaticScriptProvider>) 
 }
 
 /// Global static textures map (set once at startup, only in runtime mode)
-static STATIC_TEXTURES: AtomicPtr<std::collections::HashMap<&'static str, &'static StaticTextureData>> = AtomicPtr::new(std::ptr::null_mut());
+static STATIC_TEXTURES: AtomicPtr<
+    std::collections::HashMap<&'static str, &'static StaticTextureData>,
+> = AtomicPtr::new(std::ptr::null_mut());
 
 /// Initialize static textures (called once at startup in runtime mode)
-pub fn set_static_textures(textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>) {
+pub fn set_static_textures(
+    textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>,
+) {
     // Get the inner HashMap reference
     let map_ref = &**textures;
     STATIC_TEXTURES.store(map_ref as *const _ as *mut _, Ordering::Release);
 }
 
 /// Get static textures map (returns None if not initialized or in dev mode)
-pub fn get_static_textures() -> Option<&'static std::collections::HashMap<&'static str, &'static StaticTextureData>> {
+pub fn get_static_textures()
+-> Option<&'static std::collections::HashMap<&'static str, &'static StaticTextureData>> {
     let ptr = STATIC_TEXTURES.load(Ordering::Acquire);
     if ptr.is_null() {
         None
@@ -222,7 +228,90 @@ pub fn run_dev() {
 
     // 1. Determine project root path (disk or exe dir)
     let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
-        PathBuf::from(&args[i + 1])
+        let path_arg = &args[i + 1];
+
+        // Get the directory where cargo executed the compiled binary
+        let exe_dir = env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| env::current_dir().expect("Failed to get working directory"));
+
+        // Step upward to crate workspace root if we're inside target/
+        let workspace_root: PathBuf = exe_dir
+            .ancestors()
+            .find(|p| p.join("Cargo.toml").exists())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| {
+                exe_dir
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."))
+            });
+
+        // Handle the input path
+        let candidate = PathBuf::from(path_arg);
+
+        // On Windows, paths starting with / are not valid absolute paths
+        // Treat them as relative to workspace root instead
+        let is_valid_absolute = {
+            #[cfg(windows)]
+            {
+                if path_arg.starts_with('/') {
+                    false // Unix-style path on Windows - treat as relative
+                } else {
+                    candidate.is_absolute()
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                candidate.is_absolute()
+            }
+        };
+
+        if is_valid_absolute {
+            candidate
+        } else {
+            // If it starts with / on Windows, treat as relative to workspace root
+            let base_path: PathBuf = {
+                #[cfg(windows)]
+                {
+                    if path_arg.starts_with('/') {
+                        workspace_root.clone()
+                    } else {
+                        env::current_dir().expect("Failed to get current dir")
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    env::current_dir().expect("Failed to get current dir")
+                }
+            };
+
+            let full_path = if path_arg.starts_with('/') {
+                // Strip leading / and join to base
+                base_path.join(&path_arg[1..])
+            } else {
+                base_path.join(&candidate)
+            };
+
+            // Try to canonicalize, but if it fails, ensure we have a proper absolute path
+            use dunce;
+            dunce::canonicalize(&full_path).unwrap_or_else(|_| {
+                if full_path.is_absolute() {
+                    full_path
+                } else {
+                    env::current_dir()
+                        .expect("Failed to get current dir")
+                        .join(&full_path)
+                        .canonicalize()
+                        .unwrap_or_else(|_| {
+                            env::current_dir()
+                                .expect("Failed to get current dir")
+                                .join(&full_path)
+                        })
+                }
+            })
+        }
     } else if args.contains(&"--editor".to_string()) {
         // Dev-only: hardcoded editor project path (relative to workspace root)
         let exe_dir = env::current_exe().unwrap();

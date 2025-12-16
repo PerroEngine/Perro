@@ -40,25 +40,11 @@ impl fmt::Display for Var {
     }
 }
 
-/// Update operations for script variables
-pub enum UpdateOp {
-    Set,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    And,
-    Or,
-    Xor,
-    Shl,
-    Shr,
-}
-
 /// Trait implemented by all user scripts (dyn‑safe)
 pub trait Script {
-    fn init(&mut self, api: &mut ScriptApi);
-    fn update(&mut self, api: &mut ScriptApi);
+    fn init(&mut self, api: &mut ScriptApi) {}
+    fn update(&mut self, api: &mut ScriptApi) {}
+    fn fixed_update(&mut self, _api: &mut ScriptApi) {}
 }
 
 pub trait ScriptObject: Script {
@@ -70,6 +56,10 @@ pub trait ScriptObject: Script {
     fn set_node_id(&mut self, id: Uuid);
     fn get_node_id(&self) -> Uuid;
 
+    fn attributes_of(&self, member: &str) -> Vec<String>;
+    fn members_with(&self, attribute: &str) -> Vec<String>;
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool;
+
     // Engine-facing init/update that calls the Script version
     fn engine_init(&mut self, api: &mut ScriptApi) {
         self.init(api)
@@ -77,12 +67,16 @@ pub trait ScriptObject: Script {
     fn engine_update(&mut self, api: &mut ScriptApi) {
         self.update(api)
     }
+    fn engine_fixed_update(&mut self, api: &mut ScriptApi) {
+        self.fixed_update(api)
+    }
 }
 
 /// Function pointer type for script constructors
 pub type CreateFn = extern "C" fn() -> *mut dyn ScriptObject;
 
 use crate::input::joycon::ControllerManager;
+use crate::input::manager::InputManager;
 use std::sync::Mutex;
 
 /// Trait object for scene access (dyn‑safe)
@@ -92,6 +86,7 @@ pub trait SceneAccess {
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>>;
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
+    fn get_input_manager(&self) -> Option<&Mutex<InputManager>>;
 
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn instantiate_script(

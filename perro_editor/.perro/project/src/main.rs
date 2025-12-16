@@ -15,6 +15,7 @@ fn main() {
             project: &static_assets::manifest::PERRO_PROJECT,
             scenes: &static_assets::scenes::PERRO_SCENES,
             fur: &static_assets::fur::PERRO_FUR,
+            textures: &static_assets::textures::PERRO_TEXTURES,
         },
         script_registry: scripts::get_script_registry(),
     });

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use uuid::Uuid;
+use phf::{phf_map, Map};
 
 use perro_core::prelude::*;
 
@@ -28,7 +29,13 @@ use perro_core::prelude::*;
 // ========================================================================
 
 /// @PerroScript
-pub struct JoyConScript {
+pub static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+};
+
+static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+};
+
+struct JoyConScript {
     node: MeshInstance3D,
 }
 
@@ -48,6 +55,7 @@ pub extern "C" fn scripts_joycon_rs_create_script() -> *mut dyn ScriptObject {
 // ========================================================================
 // Scripts3dPup - Script Init & Update Implementation
 // ========================================================================
+
 
 impl Script for JoyConScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
@@ -130,7 +138,7 @@ impl ScriptObject for JoyConScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -145,23 +153,61 @@ impl ScriptObject for JoyConScript {
         }
     }
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+    }
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
+            .unwrap_or(false)
     }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&JoyConScript) -> Option<Value>> = phf::phf_map! {
-};
+static VAR_GET_TABLE: phf::Map<u64, fn(&JoyConScript) -> Option<Value>> =
+    phf::phf_map! {
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut JoyConScript, Value) -> Option<()>> = phf::phf_map! {
-};
+    };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut JoyConScript, &Value)> = phf::phf_map! {
-};
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut JoyConScript, Value) -> Option<()>> =
+    phf::phf_map! {
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut JoyConScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
-};
+    };
+
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut JoyConScript, &Value)> =
+    phf::phf_map! {
+
+    };
+
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut JoyConScript, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {
+
+    };

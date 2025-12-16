@@ -142,12 +142,14 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
 
     let mut content = String::from(
         "#[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n\
-        use perro_core::script::CreateFn;\nuse std::collections::HashMap;\n\n\
+        use perro_core::script::CreateFn;\nuse phf::{phf_map, Map};\n\n\
         // __PERRO_MODULES__\n// __PERRO_IMPORTS__\n\n\
-        pub fn get_script_registry() -> HashMap<String, CreateFn> {\n\
-        let mut map: HashMap<String, CreateFn> = HashMap::new();\n\
+        pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {\n\
+        &SCRIPT_REGISTRY\n\
+        }\n\n\
+        static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {\n\
         // __PERRO_REGISTRY__\n\
-        map\n}\n\n",
+        };\n\n",
     );
 
     // Sort IDs for deterministic ordering
@@ -174,7 +176,10 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
     for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_REGISTRY__",
-            &format!("    map.insert(\"{}\".to_string(), {}_create_script as CreateFn);\n    // __PERRO_REGISTRY__", id, id)
+            &format!(
+                "    \"{}\" => {}_create_script as CreateFn,\n    // __PERRO_REGISTRY__",
+                id, id
+            ),
         );
     }
 
@@ -208,19 +213,21 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     let total_start = Instant::now();
 
     let script_paths = discover_scripts(project_root)?;
-    if script_paths.is_empty() {
-        println!("📜 No scripts found.");
-        return Ok(());
-    }
 
-    println!("📜 Found {} script(s)", script_paths.len());
-
+    // Always ensure lib.rs exists, even if there are no scripts
     let script_res_paths: Vec<String> = script_paths
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
     clean_orphaned_scripts(project_root, &script_res_paths)?;
+
+    if script_paths.is_empty() {
+        println!("📜 No scripts found.");
+        return Ok(());
+    }
+
+    println!("📜 Found {} script(s)", script_paths.len());
 
     // For summarizing timings at the end
     struct Timing {

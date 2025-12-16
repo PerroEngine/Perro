@@ -18,9 +18,11 @@ impl PupAPI {
             PupConsole::NAME => PupConsole::resolve_method(func),
             PupScriptType::NAME => PupScriptType::resolve_method(func),
             PupSignal::NAME => PupSignal::resolve_method(func),
+            PupInput::NAME => PupInput::resolve_method(func),
 
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
+            PupInput::NAME => PupInput::resolve_method(func),
             _ => PupNodeSugar::resolve_method(func),
         }
     }
@@ -111,6 +113,7 @@ impl PupNodeSugar {
         match method {
             "get_var" => Some(ApiModule::NodeSugar(NodeSugarApi::GetVar)),
             "set_var" => Some(ApiModule::NodeSugar(NodeSugarApi::SetVar)),
+            "get_node" => Some(ApiModule::NodeSugar(NodeSugarApi::GetChildByName)),
             _ => None,
         }
     }
@@ -161,6 +164,39 @@ impl PupMap {
             "len" | "size" => Some(ApiModule::MapOp(MapApi::Len)),
             "clear" => Some(ApiModule::MapOp(MapApi::Clear)),
             "new" => Some(ApiModule::MapOp(MapApi::New)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupInput;
+impl PupInput {
+    pub const NAME: &'static str = "Input";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            // Actions
+            "get_action" => Some(ApiModule::Input(InputApi::GetAction)),
+
+            // Keyboard
+            "is_key_pressed" | "get_key_pressed" => Some(ApiModule::Input(InputApi::IsKeyPressed)),
+            "get_text_input" => Some(ApiModule::Input(InputApi::GetTextInput)),
+            "clear_text_input" => Some(ApiModule::Input(InputApi::ClearTextInput)),
+
+            // Mouse
+            "is_button_pressed" | "is_mouse_button_pressed" => {
+                Some(ApiModule::Input(InputApi::IsButtonPressed))
+            }
+            "get_mouse_position" | "get_mouse_pos" => {
+                Some(ApiModule::Input(InputApi::GetMousePosition))
+            }
+            "get_mouse_position_world" | "get_mouse_pos_world" => {
+                Some(ApiModule::Input(InputApi::GetMousePositionWorld))
+            }
+            "get_scroll_delta" | "get_scroll" => Some(ApiModule::Input(InputApi::GetScrollDelta)),
+            "is_wheel_up" => Some(ApiModule::Input(InputApi::IsWheelUp)),
+            "is_wheel_down" => Some(ApiModule::Input(InputApi::IsWheelDown)),
+            "screen_to_world" => Some(ApiModule::Input(InputApi::ScreenToWorld)),
             _ => None,
         }
     }

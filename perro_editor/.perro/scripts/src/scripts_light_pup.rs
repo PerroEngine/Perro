@@ -11,6 +11,7 @@ use std::{
 };
 
 use num_bigint::BigInt;
+use phf::{phf_map, Map};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,12 @@ use perro_core::prelude::*;
 // ========================================================================
 // ScriptsLightPup - Main Script Structure
 // ========================================================================
+
+static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+};
+
+static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+};
 
 pub struct ScriptsLightPupScript {
     node: DirectionalLight3D,
@@ -76,7 +83,7 @@ impl ScriptObject for ScriptsLightPupScript {
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
-            VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
+        VAR_GET_TABLE.get(&var_id).and_then(|f| f(self))
     }
 
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()> {
@@ -91,23 +98,61 @@ impl ScriptObject for ScriptsLightPupScript {
         }
     }
 
-    fn call_function(&mut self, id: u64, api: &mut ScriptApi<'_>, params: &SmallVec<[Value; 3]>) {
+    fn call_function(
+        &mut self,
+        id: u64,
+        api: &mut ScriptApi<'_>,
+        params: &SmallVec<[Value; 3]>,
+    ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+    }
+
+    // Attributes
+
+    fn attributes_of(&self, member: &str) -> Vec<String> {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn members_with(&self, attribute: &str) -> Vec<String> {
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
+    }
+
+    fn has_attribute(&self, member: &str, attribute: &str) -> bool {
+        MEMBER_TO_ATTRIBUTES_MAP
+            .get(member)
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
+            .unwrap_or(false)
     }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
 
-static VAR_GET_TABLE: phf::Map<u64, fn(&ScriptsLightPupScript) -> Option<Value>> = phf::phf_map! {
-};
+static VAR_GET_TABLE: phf::Map<u64, fn(&ScriptsLightPupScript) -> Option<Value>> =
+    phf::phf_map! {
 
-static VAR_SET_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, Value) -> Option<()>> = phf::phf_map! {
-};
+    };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, &Value)> = phf::phf_map! {
-};
+static VAR_SET_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, Value) -> Option<()>> =
+    phf::phf_map! {
 
-static DISPATCH_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, &[Value], &mut ScriptApi<'_>)> = phf::phf_map! {
-};
+    };
+
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut ScriptsLightPupScript, &Value)> =
+    phf::phf_map! {
+
+    };
+
+static DISPATCH_TABLE: phf::Map<
+    u64,
+    fn(&mut ScriptsLightPupScript, &[Value], &mut ScriptApi<'_>),
+> = phf::phf_map! {
+
+    };

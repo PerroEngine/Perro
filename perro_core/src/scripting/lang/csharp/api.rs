@@ -12,6 +12,7 @@ impl CSharpAPI {
             CSharpTime::NAME => CSharpTime::resolve_method(func),
             CSharpOS::NAME => CSharpOS::resolve_method(func),
             CSharpConsole::NAME => CSharpConsole::resolve_method(func),
+            CSharpInput::NAME => CSharpInput::resolve_method(func),
             _ => None,
         }
     }
@@ -73,6 +74,39 @@ impl CSharpConsole {
             "Warn" => Some(ApiModule::Console(ConsoleApi::Warn)),
             "Error" => Some(ApiModule::Console(ConsoleApi::Error)),
             "WriteInfo" => Some(ApiModule::Console(ConsoleApi::Info)),
+            _ => None,
+        }
+    }
+}
+
+pub struct CSharpInput;
+impl CSharpInput {
+    pub const NAME: &'static str = "Input";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            // Actions
+            "GetAction" => Some(ApiModule::Input(InputApi::GetAction)),
+
+            // Keyboard
+            "IsKeyPressed" | "GetKeyPressed" => Some(ApiModule::Input(InputApi::IsKeyPressed)),
+            "GetTextInput" => Some(ApiModule::Input(InputApi::GetTextInput)),
+            "ClearTextInput" => Some(ApiModule::Input(InputApi::ClearTextInput)),
+
+            // Mouse
+            "IsButtonPressed" | "IsMouseButtonPressed" => {
+                Some(ApiModule::Input(InputApi::IsButtonPressed))
+            }
+            "GetMousePosition" | "GetMousePos" => {
+                Some(ApiModule::Input(InputApi::GetMousePosition))
+            }
+            "GetMousePositionWorld" | "GetMousePosWorld" => {
+                Some(ApiModule::Input(InputApi::GetMousePositionWorld))
+            }
+            "GetScrollDelta" | "GetScroll" => Some(ApiModule::Input(InputApi::GetScrollDelta)),
+            "IsWheelUp" => Some(ApiModule::Input(InputApi::IsWheelUp)),
+            "IsWheelDown" => Some(ApiModule::Input(InputApi::IsWheelDown)),
+            "ScreenToWorld" => Some(ApiModule::Input(InputApi::ScreenToWorld)),
             _ => None,
         }
     }

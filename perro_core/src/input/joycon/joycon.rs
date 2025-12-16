@@ -39,9 +39,7 @@ impl JoyCon {
         // Use non-blocking read with 0ms timeout - returns immediately if no data available
         // This prevents blocking the update loop while still reading data as fast as it arrives
         match self.device.read_timeout(buffer, 0) {
-            Ok(bytes_read) => {
-                Ok(bytes_read)
-            },
+            Ok(bytes_read) => Ok(bytes_read),
             Err(e) => {
                 // On timeout or error, return 0 bytes (not an error, just no data available)
                 // This allows the update loop to continue without blocking
@@ -62,14 +60,14 @@ impl JoyCon {
         cmd.push(0x40); // Subcommand: enable 6-axis
         cmd.push(0x01); // Argument: enable
         self.write_output_report(&cmd)?;
-        
+
         // Switch to standard input report mode (0x30)
         let mut cmd2 = vec![0x01, 0x01]; // Report ID and packet number
         cmd2.extend_from_slice(&[0x00, 0x01, 0x40, 0x40, 0x00, 0x01, 0x40, 0x40]); // Rumble data
         cmd2.push(0x03); // Subcommand: set input report mode
         cmd2.push(0x30); // Argument: standard input report
         self.write_output_report(&cmd2)?;
-        
+
         Ok(())
     }
 
@@ -77,7 +75,10 @@ impl JoyCon {
     pub fn read_decoded_report(&self) -> Result<crate::input::joycon::input_report::InputReport> {
         let mut buffer = [0u8; 64];
         let bytes_read = self.read_input_report(&mut buffer)?;
-        crate::input::joycon::input_report::InputReport::decode(&buffer[..bytes_read], self.product_id)
+        crate::input::joycon::input_report::InputReport::decode(
+            &buffer[..bytes_read],
+            self.product_id,
+        )
     }
 
     /// Write an output report to the Joy-Con
@@ -125,7 +126,7 @@ pub fn scan_devices() -> Result<Vec<(String, u16, u16)>> {
         }
     };
     eprintln!("[scan_devices] HID API initialized");
-    
+
     let mut devices = Vec::new();
     let mut total_count = 0;
     let mut nintendo_count = 0;
@@ -139,11 +140,17 @@ pub fn scan_devices() -> Result<Vec<(String, u16, u16)>> {
         // Check if it's a Joy-Con 1 device
         if vid == JOYCON_VENDOR_ID {
             nintendo_count += 1;
-            eprintln!("[scan_devices] Found Nintendo device: vid=0x{:04X}, pid=0x{:04X}", vid, pid);
-            
+            eprintln!(
+                "[scan_devices] Found Nintendo device: vid=0x{:04X}, pid=0x{:04X}",
+                vid, pid
+            );
+
             if pid == JOYCON_1_LEFT_PID || pid == JOYCON_1_RIGHT_PID {
                 if let Some(serial) = device_info.serial_number() {
-                    eprintln!("[scan_devices] ✓ FOUND JOY-CON: serial={}, vid=0x{:04X}, pid=0x{:04X}", serial, vid, pid);
+                    eprintln!(
+                        "[scan_devices] ✓ FOUND JOY-CON: serial={}, vid=0x{:04X}, pid=0x{:04X}",
+                        serial, vid, pid
+                    );
                     devices.push((serial.to_string(), vid, pid));
                 } else {
                     eprintln!("[scan_devices] ⚠ Joy-Con found but no serial number!");
@@ -152,7 +159,11 @@ pub fn scan_devices() -> Result<Vec<(String, u16, u16)>> {
         }
     }
 
-    eprintln!("[scan_devices] Scan complete: {} total devices, {} Nintendo devices, {} Joy-Con devices", total_count, nintendo_count, devices.len());
+    eprintln!(
+        "[scan_devices] Scan complete: {} total devices, {} Nintendo devices, {} Joy-Con devices",
+        total_count,
+        nintendo_count,
+        devices.len()
+    );
     Ok(devices)
 }
-

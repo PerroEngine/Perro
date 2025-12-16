@@ -1,4 +1,5 @@
 use crate::asset_io::load_asset;
+use crate::input::{InputMap, InputSource, parse_input_source};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io;
@@ -14,6 +15,8 @@ struct ProjectSettings {
     root: RootSection,
     #[serde(default)]
     meta: MetadataSection,
+    #[serde(default)]
+    input: InputSection,
 }
 
 /// `[project]` section
@@ -49,12 +52,23 @@ struct MetadataSection {
     data: HashMap<String, String>,
 }
 
+/// `[input]` section - maps action names to input sources
+/// Example:
+/// [input]
+/// jump = ["Space", "Up", "MouseLeft"]
+/// fire = ["MouseLeft", "KeyF"]
+#[derive(Deserialize, Default, Clone)]
+struct InputSection {
+    #[serde(flatten)]
+    actions: HashMap<String, Vec<String>>,
+}
+
 // Default constants
 fn default_target_fps() -> f32 {
-    144.0
+    60.0
 }
 fn default_xps() -> f32 {
-    60.0
+    30.0
 }
 
 /// Project handle — represents either a loaded or statically defined project.
@@ -100,6 +114,7 @@ impl Project {
                 script: root_script,
             },
             meta: MetadataSection { data: meta },
+            input: InputSection::default(),
         };
 
         Self {
@@ -268,5 +283,33 @@ impl Project {
     #[inline]
     pub fn runtime_params(&self) -> &HashMap<String, String> {
         &self.runtime_params
+    }
+
+    // ======================================================
+    // ================= Input Mapping ======================
+    // ======================================================
+
+    /// Get the input action map parsed from project.toml
+    pub fn get_input_map(&self) -> InputMap {
+        let mut input_map = InputMap::new();
+
+        for (action_name, sources) in &self.settings.input.actions {
+            let mut parsed_sources = Vec::new();
+            for source_str in sources {
+                if let Some(source) = parse_input_source(source_str) {
+                    parsed_sources.push(source);
+                } else {
+                    eprintln!(
+                        "Warning: Unknown input source '{}' for action '{}'",
+                        source_str, action_name
+                    );
+                }
+            }
+            if !parsed_sources.is_empty() {
+                input_map.insert(action_name.clone(), parsed_sources);
+            }
+        }
+
+        input_map
     }
 }

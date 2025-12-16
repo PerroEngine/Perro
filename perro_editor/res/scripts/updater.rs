@@ -12,6 +12,7 @@ use std::time::Duration;
 use std::process::Command;
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use smallvec::{SmallVec, smallvec};
+use phf::{phf_map, Map};
 
 /// @PerroScript
 pub struct UpdaterScript {

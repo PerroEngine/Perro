@@ -3,7 +3,10 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use tree_sitter::Parser;
 
-use crate::{ast::*, lang::typescript::api::{TypeScriptAPI, TypeScriptArray, TypeScriptMap}};
+use crate::{
+    ast::*,
+    lang::typescript::api::{TypeScriptAPI, TypeScriptArray, TypeScriptMap},
+};
 
 pub struct TypeScriptParser {
     source: String,
@@ -87,13 +90,13 @@ impl TypeScriptParser {
         self.debug_node("CLASS_FOUND", class_node);
 
         let mut script = self.parse_class_as_script(class_node)?;
-        
+
         // Add the parsed interfaces to the script's structs (prepend so they're available)
         // Interfaces are defined first, then nested classes from the class body
         let mut all_structs = self.parsed_structs.clone();
         all_structs.extend(script.structs);
         script.structs = all_structs;
-        
+
         Ok(script)
     }
 
@@ -141,7 +144,11 @@ impl TypeScriptParser {
             for member in body.children(&mut body_cursor) {
                 self.debug_node("CLASS_MEMBER", member);
                 match member.kind() {
-                    "property_signature" | "public_field_definition" | "private_field_definition" | "protected_field_definition" | "field_definition" => {
+                    "property_signature"
+                    | "public_field_definition"
+                    | "private_field_definition"
+                    | "protected_field_definition"
+                    | "field_definition" => {
                         // The member itself is the field definition, parse it directly
                         if let Ok(var) = self.parse_field_declaration(member) {
                             script_vars.push(var);
@@ -162,12 +169,35 @@ impl TypeScriptParser {
             }
         }
 
+        // Build attributes HashMap from variables, functions, and struct fields
+        let mut attributes = HashMap::new();
+        for var in &script_vars {
+            if !var.attributes.is_empty() {
+                attributes.insert(var.name.clone(), var.attributes.clone());
+            }
+        }
+        for func in &functions {
+            if !func.attributes.is_empty() {
+                attributes.insert(func.name.clone(), func.attributes.clone());
+            }
+        }
+        // Include struct field attributes with qualified names (StructName.fieldName)
+        for struct_def in &structs {
+            for field in &struct_def.fields {
+                if !field.attributes.is_empty() {
+                    let qualified_name = format!("{}.{}", struct_def.name, field.name);
+                    attributes.insert(qualified_name, field.attributes.clone());
+                }
+            }
+        }
+
         Ok(Script {
             node_type,
             variables: script_vars,
             functions,
             structs,
             verbose: true,
+            attributes,
         })
     }
 
@@ -175,6 +205,7 @@ impl TypeScriptParser {
         self.debug_node("FIELD_DECL_START", node);
         let mut is_public = false;
         let mut is_exposed = false;
+        let mut attributes = Vec::new();
         let mut typ = None;
         let mut name = String::new();
         let mut value = None;
@@ -182,7 +213,7 @@ impl TypeScriptParser {
         // Extract name - in TypeScript tree-sitter, property_identifier is a direct child
         let mut cursor = node.walk();
         let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
-        
+
         // Strategy 1: Look for property_identifier directly (TypeScript uses this, not property_name)
         for child in &children {
             if child.kind() == "property_identifier" {
@@ -190,7 +221,7 @@ impl TypeScriptParser {
                 break;
             }
         }
-        
+
         // Strategy 2: Fallback to property_name -> identifier (for compatibility)
         if name.is_empty() {
             for child in &children {
@@ -210,10 +241,14 @@ impl TypeScriptParser {
             self.debug_node("FIELD_CHILD", child);
             match child.kind() {
                 "decorator" => {
-                    // Check for @expose decorator
-                    let decorator_text = self.get_node_text(child);
-                    if decorator_text.contains("expose") || decorator_text.contains("Expose") {
-                        is_exposed = true;
+                    // Parse decorator as attribute
+                    let attr_name = self.parse_decorator(child);
+                    if !attr_name.is_empty() {
+                        attributes.push(attr_name.clone());
+                        // Check for @expose decorator
+                        if attr_name.to_lowercase() == "expose" {
+                            is_exposed = true;
+                        }
                     }
                 }
                 "accessibility_modifier" => {
@@ -271,7 +306,10 @@ impl TypeScriptParser {
                             self.parse_expression(child).and_then(|expr| {
                                 if let Expr::ObjectLiteral(pairs) = expr {
                                     if self.parsed_structs.iter().any(|s| s.name == *struct_name) {
-                                        self.convert_object_literal_to_struct_new(struct_name, &pairs)
+                                        self.convert_object_literal_to_struct_new(
+                                            struct_name,
+                                            &pairs,
+                                        )
                                     } else {
                                         Ok(Expr::ObjectLiteral(pairs))
                                     }
@@ -284,7 +322,7 @@ impl TypeScriptParser {
                         // Regular expression parsing
                         self.parse_expression(child)
                     };
-                    
+
                     if let Ok(expr) = expr_result {
                         value = Some(TypedExpr {
                             expr,
@@ -317,6 +355,7 @@ impl TypeScriptParser {
             value,
             is_exposed,
             is_public,
+            attributes,
         })
     }
 
@@ -425,11 +464,12 @@ impl TypeScriptParser {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut body = Vec::new();
+        let mut attributes = Vec::new();
 
         // Extract method name - in TypeScript tree-sitter, property_identifier is a direct child
         let mut method_cursor = node.walk();
         let method_children: Vec<tree_sitter::Node> = node.children(&mut method_cursor).collect();
-        
+
         // Strategy 1: Look for property_identifier directly (TypeScript uses this)
         for child in &method_children {
             if child.kind() == "property_identifier" {
@@ -437,7 +477,7 @@ impl TypeScriptParser {
                 break;
             }
         }
-        
+
         // Strategy 2: Fallback to property_name -> identifier (for compatibility)
         if name.is_empty() {
             for child in &method_children {
@@ -456,6 +496,13 @@ impl TypeScriptParser {
         for child in node.children(&mut cursor) {
             self.debug_node("METHOD_CHILD", child);
             match child.kind() {
+                "decorator" => {
+                    // Parse decorator as attribute
+                    let attr_name = self.parse_decorator(child);
+                    if !attr_name.is_empty() {
+                        attributes.push(attr_name);
+                    }
+                }
                 "property_identifier" => {
                     // Property identifier is the method name in TypeScript
                     if name.is_empty() {
@@ -491,7 +538,9 @@ impl TypeScriptParser {
             }
         }
 
-        let is_trait_method = name.to_lowercase() == "init" || name.to_lowercase() == "update";
+        let is_trait_method = name.to_lowercase() == "init"
+            || name.to_lowercase() == "update"
+            || name.to_lowercase() == "fixed_update";
         let locals = self.collect_locals(&body);
 
         self.debug_node("METHOD_DECL_END", node);
@@ -503,15 +552,26 @@ impl TypeScriptParser {
             body,
             is_trait_method,
             uses_self: false,
+            cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type,
+            attributes,
         })
     }
 
-    fn collect_interface_members(&mut self, node: tree_sitter::Node, fields: &mut Vec<StructField>, methods: &mut Vec<Function>) {
+    fn collect_interface_members(
+        &mut self,
+        node: tree_sitter::Node,
+        fields: &mut Vec<StructField>,
+        methods: &mut Vec<Function>,
+    ) {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             // Skip braces, commas, semicolons, and other punctuation
-            if child.kind() == "{" || child.kind() == "}" || child.kind() == "," || child.kind() == ";" {
+            if child.kind() == "{"
+                || child.kind() == "}"
+                || child.kind() == ","
+                || child.kind() == ";"
+            {
                 continue;
             }
             self.debug_node(&format!("COLLECT_MEMBER: {}", child.kind()), child);
@@ -520,7 +580,10 @@ impl TypeScriptParser {
                     self.debug_node("COLLECT_PROP_SIG", child);
                     match self.parse_interface_property(child) {
                         Ok(field) => {
-                            self.debug_node(&format!("COLLECT_PROP_SUCCESS: {}: {:?}", field.name, field.typ), child);
+                            self.debug_node(
+                                &format!("COLLECT_PROP_SUCCESS: {}: {:?}", field.name, field.typ),
+                                child,
+                            );
                             fields.push(field);
                         }
                         Err(e) => {
@@ -550,19 +613,24 @@ impl TypeScriptParser {
         self.debug_node("PARSE_INTERFACE_PROP", node);
         let mut name = String::new();
         let mut typ = Type::Object;
+        let mut attributes = Vec::new();
 
         let mut cursor = node.walk();
         let children: Vec<tree_sitter::Node> = node.children(&mut cursor).collect();
-        
-        // Extract name - look for property_identifier, identifier, or property_name
+
+        // Extract name and attributes - look for property_identifier, identifier, or property_name
         for child in &children {
             self.debug_node("PROP_CHILD", *child);
-            if child.kind() == "property_identifier" {
+            if child.kind() == "decorator" {
+                // Parse decorator as attribute
+                let attr_name = self.parse_decorator(*child);
+                if !attr_name.is_empty() {
+                    attributes.push(attr_name);
+                }
+            } else if child.kind() == "property_identifier" {
                 name = self.get_node_text(*child);
-                break;
             } else if child.kind() == "identifier" {
                 name = self.get_node_text(*child);
-                break;
             } else if child.kind() == "property_name" {
                 // property_name might contain an identifier
                 if let Some(id) = self.get_child_by_kind(*child, "identifier") {
@@ -570,10 +638,9 @@ impl TypeScriptParser {
                 } else {
                     name = self.get_node_text(*child);
                 }
-                break;
             }
         }
-        
+
         // Extract type from type_annotation
         for child in &children {
             if child.kind() == "type_annotation" {
@@ -591,11 +658,19 @@ impl TypeScriptParser {
 
         if name.is_empty() {
             let node_text = self.get_node_text(node);
-            return Err(format!("Property signature missing name. Node text: '{}', Kind: '{}'", node_text, node.kind()));
+            return Err(format!(
+                "Property signature missing name. Node text: '{}', Kind: '{}'",
+                node_text,
+                node.kind()
+            ));
         }
 
         self.debug_node(&format!("PROP_PARSED: {}: {:?}", name, typ), node);
-        Ok(StructField { name, typ })
+        Ok(StructField {
+            name,
+            typ,
+            attributes,
+        })
     }
 
     fn parse_interface_as_struct(&mut self, node: tree_sitter::Node) -> Result<StructDef, String> {
@@ -626,7 +701,9 @@ impl TypeScriptParser {
                             break;
                         } else if extends_child.kind() == "type" {
                             // Sometimes the type is wrapped in a type node
-                            if let Some(type_id) = self.get_child_by_kind(extends_child, "type_identifier") {
+                            if let Some(type_id) =
+                                self.get_child_by_kind(extends_child, "type_identifier")
+                            {
                                 base = Some(self.get_node_text(type_id));
                                 self.debug_node(&format!("INTERFACE_BASE: {:?}", base), type_id);
                                 break;
@@ -653,7 +730,10 @@ impl TypeScriptParser {
             }
         }
 
-        self.debug_node(&format!("INTERFACE_END: {} with {} fields", name, fields.len()), node);
+        self.debug_node(
+            &format!("INTERFACE_END: {} with {} fields", name, fields.len()),
+            node,
+        );
         Ok(StructDef {
             name,
             fields,
@@ -701,6 +781,7 @@ impl TypeScriptParser {
                                     fields.push(StructField {
                                         name: var.name,
                                         typ: var.typ.unwrap_or(Type::Object),
+                                        attributes: var.attributes,
                                     });
                                 }
                             }
@@ -793,7 +874,9 @@ impl TypeScriptParser {
                     if child.kind() == "expression_statement" {
                         if let Some(expr_child) = child.child(0) {
                             let kind = expr_child.kind();
-                            if kind == "assignment_expression" || kind == "augmented_assignment_expression" {
+                            if kind == "assignment_expression"
+                                || kind == "augmented_assignment_expression"
+                            {
                                 if let Ok(stmt) = self.parse_assignment(expr_child) {
                                     statements.push(stmt);
                                     continue;
@@ -811,7 +894,9 @@ impl TypeScriptParser {
                         // If expression parsing also fails, try parsing as assignment directly
                         // (maybe it's an assignment_expression or augmented_assignment_expression at statement level)
                         let child_kind = child.kind();
-                        if child_kind == "assignment_expression" || child_kind == "augmented_assignment_expression" {
+                        if child_kind == "assignment_expression"
+                            || child_kind == "augmented_assignment_expression"
+                        {
                             if let Ok(stmt) = self.parse_assignment(child) {
                                 statements.push(stmt);
                             }
@@ -834,7 +919,8 @@ impl TypeScriptParser {
                 if let Some(expr_node) = node.child(0) {
                     // Check if the child is an assignment_expression or augmented_assignment_expression
                     let kind = expr_node.kind();
-                    if kind == "assignment_expression" || kind == "augmented_assignment_expression" {
+                    if kind == "assignment_expression" || kind == "augmented_assignment_expression"
+                    {
                         self.parse_assignment(expr_node)
                     } else {
                         self.parse_expression_statement(expr_node)
@@ -882,7 +968,7 @@ impl TypeScriptParser {
             if child.kind() == "variable_declarator" {
                 // IMPORTANT: Parse type annotation FIRST (before parsing the value)
                 // so that explicit types take precedence over inferred types
-                
+
                 // Look for type_annotation inside variable_declarator
                 if let Some(type_annot) = self.get_child_by_kind(child, "type_annotation") {
                     if let Some(inner_type) = self.get_child_by_kind(type_annot, "type") {
@@ -892,12 +978,12 @@ impl TypeScriptParser {
                         typ = Some(self.parse_type(type_annot));
                     }
                 }
-                
+
                 // Get the variable name
                 if let Some(id) = self.get_child_by_kind(child, "identifier") {
                     name = self.get_node_text(id);
                 }
-                
+
                 // Find the expression after =
                 let mut init_cursor = child.walk();
                 let mut found_equals = false;
@@ -934,6 +1020,7 @@ impl TypeScriptParser {
             value,
             is_exposed: false,
             is_public: false,
+            attributes: Vec::new(),
         }))
     }
 
@@ -942,7 +1029,7 @@ impl TypeScriptParser {
         if node.kind() == "assignment_expression" {
             return self.parse_assignment(node);
         }
-        
+
         // Otherwise, parse as a regular expression
         if let Ok(expr) = self.parse_expression(node) {
             Ok(Stmt::Expr(TypedExpr {
@@ -982,7 +1069,10 @@ impl TypeScriptParser {
                 Err(format!("Invalid assignment operator: {}", op_text))
             }
         } else {
-            Err(format!("Invalid assignment: expected 3 children, got {}", children.len()))
+            Err(format!(
+                "Invalid assignment: expected 3 children, got {}",
+                children.len()
+            ))
         }
     }
 
@@ -1075,7 +1165,7 @@ impl TypeScriptParser {
                 // When parsing object literals, we don't have context about expected type here
                 // The conversion will happen in parse_field_declaration or when used as values
                 self.parse_object_literal(node)
-            },
+            }
 
             _ => Err(format!("Unsupported expression kind: {}", node.kind())),
         };
@@ -1190,7 +1280,7 @@ impl TypeScriptParser {
                         return Ok(Expr::ApiCall(api_sem, args));
                     }
                 }
-                
+
                 // Second, check if it's a method call on an array or map (like array.push() or map.get())
                 // For array/map methods, the base is the array/map expression, and the method is the API method
                 // We need to check if the method matches array/map API methods
@@ -1359,11 +1449,17 @@ impl TypeScriptParser {
                 // The first argument should be an array of [key, value] pairs
                 // Handle both Array and FixedArray cases
                 let elements = match &args[0] {
-                    Expr::ContainerLiteral(ContainerKind::Array, ContainerLiteralData::Array(elems)) => Some(elems),
-                    Expr::ContainerLiteral(ContainerKind::FixedArray(_), ContainerLiteralData::FixedArray(_, elems)) => Some(elems),
+                    Expr::ContainerLiteral(
+                        ContainerKind::Array,
+                        ContainerLiteralData::Array(elems),
+                    ) => Some(elems),
+                    Expr::ContainerLiteral(
+                        ContainerKind::FixedArray(_),
+                        ContainerLiteralData::FixedArray(_, elems),
+                    ) => Some(elems),
                     _ => None,
                 };
-                
+
                 if let Some(elements) = elements {
                     // Convert array of pairs to map entries
                     let mut map_entries = Vec::new();
@@ -1371,11 +1467,17 @@ impl TypeScriptParser {
                         // Each element should be an array literal [key, value]
                         // Handle both Array and FixedArray cases for pairs
                         let pair = match elem {
-                            Expr::ContainerLiteral(ContainerKind::Array, ContainerLiteralData::Array(p)) => Some(p),
-                            Expr::ContainerLiteral(ContainerKind::FixedArray(_), ContainerLiteralData::FixedArray(_, p)) => Some(p),
+                            Expr::ContainerLiteral(
+                                ContainerKind::Array,
+                                ContainerLiteralData::Array(p),
+                            ) => Some(p),
+                            Expr::ContainerLiteral(
+                                ContainerKind::FixedArray(_),
+                                ContainerLiteralData::FixedArray(_, p),
+                            ) => Some(p),
                             _ => None,
                         };
-                        
+
                         if let Some(pair) = pair {
                             if pair.len() >= 2 {
                                 map_entries.push((pair[0].clone(), pair[1].clone()));
@@ -1411,7 +1513,11 @@ impl TypeScriptParser {
         }
     }
 
-    fn parse_array_literal(&self, node: tree_sitter::Node, expected_type: Option<&Type>) -> Result<Expr, String> {
+    fn parse_array_literal(
+        &self,
+        node: tree_sitter::Node,
+        expected_type: Option<&Type>,
+    ) -> Result<Expr, String> {
         let mut elements = Vec::new();
 
         let mut cursor = node.walk();
@@ -1428,12 +1534,13 @@ impl TypeScriptParser {
 
         // Check if the expected type is a dynamic array (Array with Object element type)
         // If so, use ContainerKind::Array instead of FixedArray
-        let use_dynamic_array = if let Some(Type::Container(ContainerKind::Array, params)) = expected_type {
-            // If element type is Object (any[] or object[]), use dynamic array
-            params.first().map_or(false, |t| matches!(t, Type::Object))
-        } else {
-            false
-        };
+        let use_dynamic_array =
+            if let Some(Type::Container(ContainerKind::Array, params)) = expected_type {
+                // If element type is Object (any[] or object[]), use dynamic array
+                params.first().map_or(false, |t| matches!(t, Type::Object))
+            } else {
+                false
+            };
 
         let len = elements.len();
         if use_dynamic_array {
@@ -1463,13 +1570,17 @@ impl TypeScriptParser {
 
     fn find_field_type_in_struct(&self, struct_name: &str, field_name: &str) -> Option<Type> {
         // Recursively search through base classes to find the field type
-        fn find_field_recursive(parser: &TypeScriptParser, struct_name: &str, field_name: &str) -> Option<Type> {
+        fn find_field_recursive(
+            parser: &TypeScriptParser,
+            struct_name: &str,
+            field_name: &str,
+        ) -> Option<Type> {
             if let Some(struct_def) = parser.parsed_structs.iter().find(|s| s.name == struct_name) {
                 // Check fields in this struct
                 if let Some(field) = struct_def.fields.iter().find(|f| f.name == field_name) {
                     return Some(field.typ.clone());
                 }
-                
+
                 // Check base class recursively
                 if let Some(base_name) = &struct_def.base {
                     return find_field_recursive(parser, base_name, field_name);
@@ -1477,16 +1588,20 @@ impl TypeScriptParser {
             }
             None
         }
-        
+
         find_field_recursive(self, struct_name, field_name)
     }
 
-    fn convert_object_literal_to_struct_new(&self, struct_name: &str, pairs: &[(Option<String>, Expr)]) -> Result<Expr, String> {
+    fn convert_object_literal_to_struct_new(
+        &self,
+        struct_name: &str,
+        pairs: &[(Option<String>, Expr)],
+    ) -> Result<Expr, String> {
         // Verify struct exists
         if !self.parsed_structs.iter().any(|s| s.name == struct_name) {
             return Err(format!("Struct {} not found", struct_name));
         }
-        
+
         // Convert pairs to named args, recursively converting nested object literals
         let mut named_args = Vec::new();
         for (k, v) in pairs {
@@ -1498,9 +1613,16 @@ impl TypeScriptParser {
                     // convert it recursively
                     if let Type::Custom(nested_struct_name) = &field_type {
                         if let Expr::ObjectLiteral(nested_pairs) = &converted_value {
-                            if self.parsed_structs.iter().any(|s| s.name == *nested_struct_name) {
+                            if self
+                                .parsed_structs
+                                .iter()
+                                .any(|s| s.name == *nested_struct_name)
+                            {
                                 // Recursively convert nested object literal
-                                converted_value = self.convert_object_literal_to_struct_new(nested_struct_name, nested_pairs)?;
+                                converted_value = self.convert_object_literal_to_struct_new(
+                                    nested_struct_name,
+                                    nested_pairs,
+                                )?;
                             }
                         }
                     }
@@ -1511,7 +1633,11 @@ impl TypeScriptParser {
         Ok(Expr::StructNew(struct_name.to_string(), named_args))
     }
 
-    fn parse_object_literal_with_context(&self, node: tree_sitter::Node, expected_struct: Option<&str>) -> Result<Expr, String> {
+    fn parse_object_literal_with_context(
+        &self,
+        node: tree_sitter::Node,
+        expected_struct: Option<&str>,
+    ) -> Result<Expr, String> {
         let mut pairs = Vec::new();
 
         let mut cursor = node.walk();
@@ -1521,19 +1647,22 @@ impl TypeScriptParser {
                 let mut value = None;
                 let mut field_type = None;
 
-                            // If we have an expected struct, find the field type for this key
-                            // (field type will be found after we get the key)
+                // If we have an expected struct, find the field type for this key
+                // (field type will be found after we get the key)
 
                 let mut pair_cursor = child.walk();
                 for pair_child in child.children(&mut pair_cursor) {
                     match pair_child.kind() {
                         "property_identifier" | "string" => {
-                            let key_text = self.get_node_text(pair_child).trim_matches('"').to_string();
+                            let key_text =
+                                self.get_node_text(pair_child).trim_matches('"').to_string();
                             key = Some(key_text.clone());
-                            
+
                             // If we have an expected struct, find the field type (checking base classes too)
                             if let Some(struct_name) = expected_struct {
-                                if let Some(ft) = self.find_field_type_in_struct(struct_name, &key_text) {
+                                if let Some(ft) =
+                                    self.find_field_type_in_struct(struct_name, &key_text)
+                                {
                                     field_type = Some(ft);
                                 }
                             }
@@ -1546,39 +1675,55 @@ impl TypeScriptParser {
                                     if let Some(Type::Custom(nested_struct_name)) = &field_type {
                                         // Parse the nested object literal with the expected struct type
                                         // Pass &str instead of String
-                                        if let Ok(nested_expr) = self.parse_object_literal_with_context(pair_child, Some(nested_struct_name.as_str())) {
+                                        if let Ok(nested_expr) = self
+                                            .parse_object_literal_with_context(
+                                                pair_child,
+                                                Some(nested_struct_name.as_str()),
+                                            )
+                                        {
                                             nested_expr
                                         } else {
                                             // Fallback to regular parsing
-                                            self.parse_expression(pair_child).unwrap_or_else(|_| Expr::ObjectLiteral(vec![]))
+                                            self.parse_expression(pair_child)
+                                                .unwrap_or_else(|_| Expr::ObjectLiteral(vec![]))
                                         }
                                     } else {
                                         // Regular object literal parsing
-                                        self.parse_expression(pair_child).unwrap_or_else(|_| Expr::ObjectLiteral(vec![]))
+                                        self.parse_expression(pair_child)
+                                            .unwrap_or_else(|_| Expr::ObjectLiteral(vec![]))
                                     }
                                 } else {
                                     // Regular expression parsing
-                                    self.parse_expression(pair_child).unwrap_or_else(|_| Expr::ObjectLiteral(vec![]))
+                                    self.parse_expression(pair_child)
+                                        .unwrap_or_else(|_| Expr::ObjectLiteral(vec![]))
                                 };
-                                
+
                                 // If the value is an ObjectLiteral and we know the field type is a custom struct,
                                 // convert it to StructNew (fallback conversion for non-object nodes)
-                                let final_expr = if let Some(Type::Custom(nested_struct_name)) = &field_type {
-                                    if let Expr::ObjectLiteral(nested_pairs) = &expr {
-                                        if self.parsed_structs.iter().any(|s| s.name == *nested_struct_name) {
-                                            // Use the helper function to recursively convert
-                                            self.convert_object_literal_to_struct_new(nested_struct_name, nested_pairs)
+                                let final_expr =
+                                    if let Some(Type::Custom(nested_struct_name)) = &field_type {
+                                        if let Expr::ObjectLiteral(nested_pairs) = &expr {
+                                            if self
+                                                .parsed_structs
+                                                .iter()
+                                                .any(|s| s.name == *nested_struct_name)
+                                            {
+                                                // Use the helper function to recursively convert
+                                                self.convert_object_literal_to_struct_new(
+                                                    nested_struct_name,
+                                                    nested_pairs,
+                                                )
                                                 .unwrap_or(expr)
+                                            } else {
+                                                expr
+                                            }
                                         } else {
                                             expr
                                         }
                                     } else {
                                         expr
-                                    }
-                                } else {
-                                    expr
-                                };
-                                
+                                    };
+
                                 value = Some(final_expr);
                             }
                         }
@@ -1596,9 +1741,7 @@ impl TypeScriptParser {
             if self.parsed_structs.iter().any(|s| s.name == *struct_name) {
                 let named_args: Vec<(String, Expr)> = pairs
                     .iter()
-                    .filter_map(|(k, v)| {
-                        k.as_ref().map(|key| (key.clone(), v.clone()))
-                    })
+                    .filter_map(|(k, v)| k.as_ref().map(|key| (key.clone(), v.clone())))
                     .collect();
                 return Ok(Expr::StructNew(struct_name.to_string(), named_args));
             }
@@ -1650,7 +1793,7 @@ impl TypeScriptParser {
             } else {
                 self.get_node_text(node)
             };
-            
+
             // Check if this node has type_arguments (generic type parameters)
             if self.get_child_by_kind(node, "type_arguments").is_some() {
                 // This is a generic type like Map<string, any> or Array<number>
@@ -1720,5 +1863,20 @@ impl TypeScriptParser {
         node.utf8_text(self.source.as_bytes())
             .unwrap_or("Node")
             .to_string()
+    }
+
+    fn parse_decorator(&self, node: tree_sitter::Node) -> String {
+        // Decorator structure: @identifier or @identifier(...)
+        // Extract the identifier name after @
+        let text = self.get_node_text(node);
+        // Remove @ symbol and any parentheses/arguments
+        let attr_name = text
+            .trim_start_matches('@')
+            .split('(')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        attr_name
     }
 }

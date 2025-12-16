@@ -19,7 +19,7 @@ pub(crate) fn remap_stick_percent(raw_percent: f32) -> u8 {
     const DEADZONE_LOW: f32 = 45.0;
     const DEADZONE_HIGH: f32 = 55.0;
     const CENTER: f32 = 50.0;
-    
+
     if raw_percent >= DEADZONE_LOW && raw_percent <= DEADZONE_HIGH {
         // In deadzone - map to center
         CENTER as u8
@@ -69,7 +69,7 @@ pub struct Buttons {
     pub zr: bool,
     pub home: bool,
     pub plus: bool,
-    
+
     // Left Joy-Con buttons
     pub up: bool,
     pub down: bool,
@@ -79,20 +79,22 @@ pub struct Buttons {
     pub zl: bool,
     pub minus: bool,
     pub capture: bool,
-    
+
     // Shared buttons
     pub sl: bool,
     pub sr: bool,
     pub stick_press: bool, // Left stick on left, right stick on right
 }
 
-
 impl InputReport {
     /// Decode a raw Joy-Con 1 input report buffer into structured data
     pub fn decode(data: &[u8], product_id: u16) -> Result<Self> {
         if data.len() < 49 {
             return Err(crate::input::joycon::error::JoyConError::InvalidData(
-                format!("Input report too short: {} bytes (expected at least 49)", data.len())
+                format!(
+                    "Input report too short: {} bytes (expected at least 49)",
+                    data.len()
+                ),
             ));
         }
 
@@ -110,7 +112,7 @@ impl InputReport {
         // Bytes 9-11: Right stick (3 bytes, 12 bits X + 12 bits Y)
         // Bytes 13-18: Accelerometer (6 bytes, 3 x int16 little-endian)
         // Bytes 19-24: Gyroscope (6 bytes, 3 x int16 little-endian)
-        
+
         // Auto-detect if report ID is present (0x30 at byte 0)
         // C++ code uses absolute byte indices (2, 3, 4, 5, etc.) assuming report ID is at byte 0
         // If report ID is NOT present, all indices are shifted by -1
@@ -119,7 +121,7 @@ impl InputReport {
         let offset = if has_report_id { 0 } else { 1 };
         // If report ID is present: offset = 0 (use indices as-is)
         // If report ID is NOT present: offset = 1 (subtract 1 from all indices)
-        
+
         // Extract button states from bytes 3, 4, 5 (absolute indices like C++ code)
         // C++ uses: getNBitFromInputReport(3, ...), getNBitFromInputReport(4, ...), getNBitFromInputReport(5, ...)
         let button_idx_right = 3 - offset;
@@ -127,13 +129,13 @@ impl InputReport {
         let button_idx_left = 5 - offset;
         let button_byte_right = data[button_idx_right]; // Byte 3: Right buttons
         let button_byte_shared = data[button_idx_shared]; // Byte 4: Shared buttons  
-        let button_byte_left = data[button_idx_left];   // Byte 5: Left buttons
-        
+        let button_byte_left = data[button_idx_left]; // Byte 5: Left buttons
+
         let mut buttons = Buttons::default();
-        
+
         // Buttons are active HIGH (1 = pressed, 0 = not pressed)
         // Based on JoyConGD C++ code:
-        
+
         if is_right {
             // Right Joy-Con buttons from byte 3
             buttons.y = (button_byte_right & 0x01) != 0;
@@ -144,7 +146,7 @@ impl InputReport {
             buttons.sl = (button_byte_right & 0x20) != 0;
             buttons.r = (button_byte_right & 0x40) != 0;
             buttons.zr = (button_byte_right & 0x80) != 0;
-            
+
             // Shared buttons from byte 4
             buttons.plus = (button_byte_shared & 0x02) != 0;
             buttons.stick_press = (button_byte_shared & 0x04) != 0; // R-Stick (bit 2) - Python uses (4, 2, 1)
@@ -159,7 +161,7 @@ impl InputReport {
             buttons.sl = (button_byte_left & 0x20) != 0;
             buttons.l = (button_byte_left & 0x40) != 0;
             buttons.zl = (button_byte_left & 0x80) != 0;
-            
+
             // Shared buttons from byte 4
             buttons.minus = (button_byte_shared & 0x01) != 0;
             buttons.stick_press = (button_byte_shared & 0x08) != 0; // L-Stick (bit 3) - try bit 3 since right uses bit 2
@@ -177,20 +179,20 @@ impl InputReport {
             let stick_end = 9 - offset;
             if stick_end > data.len() {
                 return Err(crate::input::joycon::error::JoyConError::InvalidData(
-                    "Input report too short for left stick data".to_string()
+                    "Input report too short for left stick data".to_string(),
                 ));
             }
             let stick_bytes = &data[stick_start..stick_end];
             let raw_x = (stick_bytes[0] as u16) | (((stick_bytes[1] & 0x0F) as u16) << 8);
             let raw_y = (((stick_bytes[1] & 0xF0) >> 4) as u16) | ((stick_bytes[2] as u16) << 4);
-            
+
             // Normalize: 0-4095 -> 0.0-1.0 (center ~2048 = 0.5)
             let x_norm = raw_x as f32 / 4095.0;
             let y_norm = raw_y as f32 / 4095.0;
             // Convert to -1.0 to 1.0 range (center at 0.0)
             let x = (x_norm - 0.5) * 2.0;
             let y = (y_norm - 0.5) * 2.0;
-            
+
             Vector2::new(x, y)
         } else {
             // Right stick at bytes 9-11 (absolute indices like C++ code)
@@ -198,20 +200,20 @@ impl InputReport {
             let stick_end = 12 - offset;
             if stick_end > data.len() {
                 return Err(crate::input::joycon::error::JoyConError::InvalidData(
-                    "Input report too short for right stick data".to_string()
+                    "Input report too short for right stick data".to_string(),
                 ));
             }
             let stick_bytes = &data[stick_start..stick_end];
             let raw_x = (stick_bytes[0] as u16) | (((stick_bytes[1] & 0x0F) as u16) << 8);
             let raw_y = (((stick_bytes[1] & 0xF0) >> 4) as u16) | ((stick_bytes[2] as u16) << 4);
-            
+
             // Normalize: 0-4095 -> 0.0-1.0 (center ~2048 = 0.5)
             let x_norm = raw_x as f32 / 4095.0;
             let y_norm = raw_y as f32 / 4095.0;
             // Convert to -1.0 to 1.0 range (center at 0.0)
             let x = (x_norm - 0.5) * 2.0;
             let y = (y_norm - 0.5) * 2.0;
-            
+
             Vector2::new(x, y)
         };
 
@@ -240,8 +242,10 @@ impl InputReport {
             let accel_end = 19 - offset;
             if accel_end <= data.len() {
                 let accel_x = i16::from_le_bytes([data[accel_start], data[accel_start + 1]]) as f32;
-                let accel_y = i16::from_le_bytes([data[accel_start + 2], data[accel_start + 3]]) as f32;
-                let accel_z = i16::from_le_bytes([data[accel_start + 4], data[accel_start + 5]]) as f32;
+                let accel_y =
+                    i16::from_le_bytes([data[accel_start + 2], data[accel_start + 3]]) as f32;
+                let accel_z =
+                    i16::from_le_bytes([data[accel_start + 4], data[accel_start + 5]]) as f32;
                 Vector3::new(accel_x, accel_y, accel_z)
             } else {
                 // Return zeros if data not available
@@ -260,9 +264,14 @@ impl InputReport {
             let gyro_start = 19 - offset;
             let gyro_end = 25 - offset;
             if gyro_end <= data.len() {
-                let gyro_x = i16::from_le_bytes([data[gyro_start], data[gyro_start + 1]]) as f32 / JOYCON_GYRO_SCALE;
-                let gyro_y = i16::from_le_bytes([data[gyro_start + 2], data[gyro_start + 3]]) as f32 / JOYCON_GYRO_SCALE;
-                let gyro_z = i16::from_le_bytes([data[gyro_start + 4], data[gyro_start + 5]]) as f32 / JOYCON_GYRO_SCALE;
+                let gyro_x = i16::from_le_bytes([data[gyro_start], data[gyro_start + 1]]) as f32
+                    / JOYCON_GYRO_SCALE;
+                let gyro_y = i16::from_le_bytes([data[gyro_start + 2], data[gyro_start + 3]])
+                    as f32
+                    / JOYCON_GYRO_SCALE;
+                let gyro_z = i16::from_le_bytes([data[gyro_start + 4], data[gyro_start + 5]])
+                    as f32
+                    / JOYCON_GYRO_SCALE;
                 Vector3::new(gyro_x, gyro_y, gyro_z)
             } else {
                 // Return zeros if data not available
@@ -279,9 +288,9 @@ impl InputReport {
             charging,
         })
     }
-    
+
     /// Decode a raw Joy-Con 2 input report (Report 0x05) into structured data
-    /// 
+    ///
     /// Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md
     /// Input Report 0x05 format:
     /// - Offset 0x0: Counter (4 bytes)
@@ -295,31 +304,33 @@ impl InputReport {
     pub fn decode_joycon2(data: &[u8], is_left: bool) -> Result<Self> {
         if data.len() < 43 {
             return Err(crate::input::joycon::error::JoyConError::InvalidData(
-                format!("Joy-Con 2 input report too short: {} bytes", data.len())
+                format!("Joy-Con 2 input report too short: {} bytes", data.len()),
             ));
         }
-    
+
         // Based on joycon2cpp C++ code:
         // int btnOffset = isLeft ? 4 : 3;
         // uint32_t state = (buffer[btnOffset] << 16) | (buffer[btnOffset + 1] << 8) | buffer[btnOffset + 2];
         // This creates a 24-bit value from 3 consecutive bytes
         let btn_offset = if is_left { 4 } else { 3 };
-        
+
         if data.len() < btn_offset + 3 {
             return Err(crate::input::joycon::error::JoyConError::InvalidData(
-                format!("Joy-Con 2 input report too short for buttons: {} bytes (need at least {})", 
-                    data.len(), btn_offset + 3)
+                format!(
+                    "Joy-Con 2 input report too short for buttons: {} bytes (need at least {})",
+                    data.len(),
+                    btn_offset + 3
+                ),
             ));
         }
-        
+
         // Build 24-bit state value: high byte << 16 | mid byte << 8 | low byte
-        let state = ((data[btn_offset] as u32) << 16) 
-                  | ((data[btn_offset + 1] as u32) << 8) 
-                  | (data[btn_offset + 2] as u32);
-        
-        
+        let state = ((data[btn_offset] as u32) << 16)
+            | ((data[btn_offset + 1] as u32) << 8)
+            | (data[btn_offset + 2] as u32);
+
         let mut buttons = Buttons::default();
-        
+
         // Button masks from C++ code
         const BUTTON_A_MASK_RIGHT: u32 = 0x000800;
         const BUTTON_B_MASK_RIGHT: u32 = 0x000200;
@@ -335,12 +346,12 @@ impl InputReport {
         const BUTTON_MINUS_MASK_LEFT: u32 = 0x000100;
         const BUTTON_L_MASK_LEFT: u32 = 0x000040;
         const BUTTON_STICK_MASK_LEFT: u32 = 0x000800;
-        
+
         // From decode_triggers_shoulders: ZL=0x000080 (bit 7), ZR=0x008000 (bit 15)
         // L=0x000040 (bit 6), R=0x004000 (bit 14) when upright
         const ZL_MASK: u32 = 0x000080;
         const ZR_MASK: u32 = 0x008000;
-        
+
         if is_left {
             buttons.up = (state & BUTTON_UP_MASK_LEFT) != 0;
             buttons.down = (state & BUTTON_DOWN_MASK_LEFT) != 0;
@@ -369,7 +380,7 @@ impl InputReport {
             buttons.r = (state & BUTTON_R_MASK_RIGHT) != 0;
             buttons.stick_press = (state & BUTTON_STICK_MASK_RIGHT) != 0;
             buttons.zr = (state & ZR_MASK) != 0;
-            
+
             // SL/SR/Home need to be checked from the original bytes
             if data.len() > 4 {
                 buttons.sl = (data[4] & 0x20) != 0;
@@ -379,13 +390,13 @@ impl InputReport {
                 buttons.home = (data[5] & 0x10) != 0;
             }
         }
-    
+
         // Stick decoding - based on C++ code:
         // const uint8_t* data = isLeft ? &buffer[10] : &buffer[13];
         // int x_raw = ((data[1] & 0x0F) << 8) | data[0];
         // int y_raw = (data[2] << 4) | ((data[1] & 0xF0) >> 4);
         let stick_data_offset = if is_left { 10 } else { 13 };
-        
+
         let (stick_x, stick_y) = if data.len() >= stick_data_offset + 3 {
             let stick_data = &data[stick_data_offset..stick_data_offset + 3];
             // Format: 3 bytes per stick, 12 bits X + 12 bits Y
@@ -398,27 +409,35 @@ impl InputReport {
         } else {
             (0, 0)
         };
-    
+
         let max = 4095.0;
         let horizontal_norm = (stick_x as f32 / max).clamp(0.0, 1.0);
         let vertical_norm = (stick_y as f32 / max).clamp(0.0, 1.0);
         // Convert to -1.0 to 1.0 range (center at 0.0)
         let x = (horizontal_norm - 0.5) * 2.0;
         let y = (vertical_norm - 0.5) * 2.0;
-    
+
         let stick = Vector2::new(x, y);
-    
+
         // Battery & charging - approximate (same offsets for both formats)
-        let battery_voltage = if data.len() >= 33 { 
-            u16::from_le_bytes([data[31], data[32]]) 
-        } else { 0 };
+        let battery_voltage = if data.len() >= 33 {
+            u16::from_le_bytes([data[31], data[32]])
+        } else {
+            0
+        };
         let charging_byte = if data.len() >= 34 { data[33] } else { 0 };
         let charging = (charging_byte & 0x20) != 0;
-        let battery_level = if battery_voltage >= 4000 { 4 } 
-            else if battery_voltage >= 3800 { 3 } 
-            else if battery_voltage >= 3600 { 2 } 
-            else if battery_voltage >= 3400 { 1 } 
-            else { 0 };
+        let battery_level = if battery_voltage >= 4000 {
+            4
+        } else if battery_voltage >= 3800 {
+            3
+        } else if battery_voltage >= 3600 {
+            2
+        } else if battery_voltage >= 3400 {
+            1
+        } else {
+            0
+        };
 
         // Motion data decoding
         // Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md
@@ -434,40 +453,43 @@ impl InputReport {
             let accel_x = i16::from_le_bytes([data[0x30], data[0x31]]) as f32;
             let accel_y = i16::from_le_bytes([data[0x32], data[0x33]]) as f32;
             let accel_z = i16::from_le_bytes([data[0x34], data[0x35]]) as f32;
-            
+
             // Gyroscope: convert from raw i16 to degrees/second
             // Joy-Con 2 has different axis orientation than Joy-Con 1
             // Transform axes here so state.rs mapping produces correct result
             // state.rs does: -y → X, -z → Y, x → Z
             // We want: -x_raw → X, z_raw → Y, y_raw → Z
             // So set: y = x_raw, z = -z_raw, x = y_raw
-            let gyro_x_raw = i16::from_le_bytes([data[0x36], data[0x37]]) as f32 / JOYCON2_GYRO_SCALE;
-            let gyro_y_raw = i16::from_le_bytes([data[0x38], data[0x39]]) as f32 / JOYCON2_GYRO_SCALE;
-            let gyro_z_raw = i16::from_le_bytes([data[0x3A], data[0x3B]]) as f32 / JOYCON2_GYRO_SCALE;
-            
+            let gyro_x_raw =
+                i16::from_le_bytes([data[0x36], data[0x37]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gyro_y_raw =
+                i16::from_le_bytes([data[0x38], data[0x39]]) as f32 / JOYCON2_GYRO_SCALE;
+            let gyro_z_raw =
+                i16::from_le_bytes([data[0x3A], data[0x3B]]) as f32 / JOYCON2_GYRO_SCALE;
+
             // Transform: state.rs will do -y → X, -z → Y, x → Z
             // We want: -x_raw → X, z_raw → Y, y_raw → Z
             // So: y = x_raw (state.rs does -y = -x_raw → X ✓)
             //     z = -z_raw (state.rs does -z = -(-z_raw) = z_raw → Y ✓)
             //     x = y_raw (state.rs does x = y_raw → Z ✓)
             let gyro = Vector3::new(
-                gyro_y_raw,   // x → Z (state.rs: x → Z)
-                gyro_x_raw,   // y → X (state.rs: -y → X, so -gyro_x_raw → X)
-                -gyro_z_raw,  // z → Y (state.rs: -z → Y, so -(-gyro_z_raw) = gyro_z_raw → Y)
+                gyro_y_raw,  // x → Z (state.rs: x → Z)
+                gyro_x_raw,  // y → X (state.rs: -y → X, so -gyro_x_raw → X)
+                -gyro_z_raw, // z → Y (state.rs: -z → Y, so -(-gyro_z_raw) = gyro_z_raw → Y)
             );
-            
-            (
-                gyro,
-                Vector3::new(accel_x, accel_y, accel_z)
-            )
+
+            (gyro, Vector3::new(accel_x, accel_y, accel_z))
         } else {
             (Vector3::zero(), Vector3::zero())
         };
-    
-        Ok(InputReport { buttons, stick, gyro, accel, battery_level, charging })
+
+        Ok(InputReport {
+            buttons,
+            stick,
+            gyro,
+            accel,
+            battery_level,
+            charging,
+        })
     }
-    
 }
-
-
-

@@ -26,9 +26,9 @@ use crate::{
     compiler::{BuildProfile, CompileTarget, Compiler},
     input::joycon::ControllerManager,
     manifest::Project,
-    node_registry::{IntoInner, SceneNode},
+    node_registry::{BaseNode, IntoInner, SceneNode},
     prelude::string_to_u64,
-    script::{CreateFn, SceneAccess, Script, UpdateOp, Var},
+    script::{CreateFn, SceneAccess, Script, Var},
     transpiler::{script_path_to_identifier, transpile},
     types::ScriptType,
     ui_node::UINode,
@@ -164,29 +164,27 @@ impl JoyConApi {
     fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
         self.api_ptr = Some(api_ptr);
     }
-    
+
     /// Get the ScriptApi pointer - tries stored pointer, then gets from parent InputApi
     fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
         // First try stored pointer
         if let Some(ptr) = self.api_ptr {
             return Some(ptr);
         }
-        
+
         // Try to get from parent InputApi
         // Since InputApi has JoyConApi as its first field, we can use pointer arithmetic
         // to get from JoyConApi* to InputApi*
         let joycon_ptr = self as *const JoyConApi;
         // InputApi layout: JoyConApi is first field, so InputApi* == JoyConApi* (same address)
         let input_api_ptr = joycon_ptr as *const InputApi;
-        unsafe {
-            (*input_api_ptr).get_parent_ptr()
-        }
+        unsafe { (*input_api_ptr).get_parent_ptr() }
     }
 }
 
 impl JoyConApi {
     /// Scan for Joy-Con 1 devices (HID)
-    /// 
+    ///
     /// NOTE: This method should be called through ScriptApi::scan_joycon1_direct()
     /// to avoid thread-local context issues. This public method is kept for API compatibility.
     pub fn scan_joycon1(&mut self) -> Vec<Value> {
@@ -207,39 +205,40 @@ impl JoyConApi {
                 return vec![];
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::scan_joycon1_impl(api)
         }
     }
-    
+
     /// Internal method that actually does the scan
     pub(crate) fn scan_joycon1_impl(api: &mut ScriptApi) -> Vec<Value> {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
-            
+
             match mgr.scan_joycon1() {
-                Ok(devices) => {
-                    devices.into_iter().map(|(serial, vid, pid)| {
+                Ok(devices) => devices
+                    .into_iter()
+                    .map(|(serial, vid, pid)| {
                         serde_json::json!({
                             "serial": serial,
                             "vendor_id": vid,
                             "product_id": pid
                         })
-                    }).collect()
-                },
+                    })
+                    .collect(),
                 Err(e) => {
                     api.print_error(&format!("Joy-Con scan failed: {:?}", e));
                     vec![]
-                },
+                }
             }
         } else {
             api.print_error("No controller manager found in scene");
             vec![]
         }
     }
-    
+
     /// Scan for Joy-Con 2 devices (BLE)
     /// Returns a vector of device addresses/identifiers as JSON
     pub fn scan_joycon2(&mut self) -> Vec<Value> {
@@ -258,35 +257,36 @@ impl JoyConApi {
                 return vec![];
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::scan_joycon2_impl(api)
         }
     }
-    
+
     pub(crate) fn scan_joycon2_impl(api: &mut ScriptApi) -> Vec<Value> {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
             match mgr.scan_joycon2_sync() {
-                Ok(devices) => {
-                    devices.into_iter().map(|address| {
+                Ok(devices) => devices
+                    .into_iter()
+                    .map(|address| {
                         serde_json::json!({
                             "address": address,
                         })
-                    }).collect()
-                },
+                    })
+                    .collect(),
                 Err(e) => {
                     api.print_error(&format!("Joy-Con 2 scan failed: {:?}", e));
                     vec![]
-                },
+                }
             }
         } else {
             api.print_error("No controller manager found in scene");
             vec![]
         }
     }
-    
+
     /// Connect to a Joy-Con 2 device (BLE)
     /// Returns true if connection was successful, false otherwise
     pub fn connect_joycon2(&mut self, address: &str) -> bool {
@@ -305,13 +305,13 @@ impl JoyConApi {
                 return false;
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::connect_joycon2_impl(api, address)
         }
     }
-    
+
     pub(crate) fn connect_joycon2_impl(api: &mut ScriptApi, address: &str) -> bool {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
@@ -319,18 +319,21 @@ impl JoyConApi {
                 Ok(_) => {
                     api.print(&format!("Successfully connected to Joy-Con 2: {}", address));
                     true
-                },
+                }
                 Err(e) => {
-                    api.print_error(&format!("Failed to connect to Joy-Con 2 {}: {:?}", address, e));
+                    api.print_error(&format!(
+                        "Failed to connect to Joy-Con 2 {}: {:?}",
+                        address, e
+                    ));
                     false
-                },
+                }
             }
         } else {
             api.print_error("No controller manager found in scene");
             false
         }
     }
-    
+
     /// Connect to a Joy-Con 1 device
     /// Returns true if connection was successful, false otherwise
     pub fn connect_joycon1(&mut self, serial: &str, vid: u64, pid: u64) -> bool {
@@ -350,32 +353,37 @@ impl JoyConApi {
                 return false;
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::connect_joycon1_impl(api, serial, vid, pid)
         }
     }
-    
-    pub(crate) fn connect_joycon1_impl(api: &mut ScriptApi, serial: &str, vid: u64, pid: u64) -> bool {
+
+    pub(crate) fn connect_joycon1_impl(
+        api: &mut ScriptApi,
+        serial: &str,
+        vid: u64,
+        pid: u64,
+    ) -> bool {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
             match mgr.connect_joycon1(serial, vid as u16, pid as u16) {
                 Ok(_) => {
                     api.print(&format!("Successfully connected to Joy-Con: {}", serial));
                     true
-                },
+                }
                 Err(e) => {
                     api.print_error(&format!("Failed to connect to Joy-Con {}: {:?}", serial, e));
                     false
-                },
+                }
             }
         } else {
             api.print_error("No controller manager found in scene");
             false
         }
     }
-    
+
     /// Get data from all connected controllers as structs
     /// Returns Vec<JoyconState> directly - allows direct field access like controller.gyro.x
     pub fn get_data(&mut self) -> Vec<crate::input::joycon::JoyconState> {
@@ -395,51 +403,77 @@ impl JoyConApi {
                 return vec![];
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::get_data_impl(api)
         }
     }
-    
+
     pub(crate) fn get_data_impl(api: &mut ScriptApi) -> Vec<crate::input::joycon::JoyconState> {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
             let data = mgr.get_data();
-            data.into_iter().map(|controller| {
-                // Use the unified state if available, otherwise convert from report
-                if let Some(mut state) = controller.state {
-                    // Ensure serial is set (in case it wasn't set when state was created)
-                    if state.serial.is_empty() {
-                        state.serial = controller.serial.clone();
+            data.into_iter()
+                .map(|controller| {
+                    // Use the unified state if available, otherwise convert from report
+                    if let Some(mut state) = controller.state {
+                        // Ensure serial is set (in case it wasn't set when state was created)
+                        if state.serial.is_empty() {
+                            state.serial = controller.serial.clone();
+                        }
+                        state
+                    } else if let Some(ref report) = controller.latest_report {
+                        use crate::input::joycon::{JoyconSide, JoyconState, JoyconVersion};
+                        let side = if controller.is_left {
+                            JoyconSide::Left
+                        } else {
+                            JoyconSide::Right
+                        };
+                        let version = if controller.is_joycon2 {
+                            JoyconVersion::V2
+                        } else {
+                            JoyconVersion::V1
+                        };
+                        JoyconState::from_input_report(
+                            report,
+                            controller.serial.clone(),
+                            side,
+                            version,
+                            true,
+                        )
+                    } else {
+                        // No data available
+                        use crate::input::joycon::{
+                            JoyconButtons, JoyconSide, JoyconState, JoyconVersion,
+                        };
+                        use crate::structs::{Vector2, Vector3};
+                        JoyconState {
+                            serial: controller.serial.clone(),
+                            side: if controller.is_left {
+                                JoyconSide::Left
+                            } else {
+                                JoyconSide::Right
+                            },
+                            version: if controller.is_joycon2 {
+                                JoyconVersion::V2
+                            } else {
+                                JoyconVersion::V1
+                            },
+                            connected: false,
+                            buttons: JoyconButtons::default(),
+                            stick: Vector2::zero(),
+                            gyro: Vector3::zero(),
+                            accel: Vector3::zero(),
+                        }
                     }
-                    state
-                } else if let Some(ref report) = controller.latest_report {
-                    use crate::input::joycon::{JoyconState, JoyconSide, JoyconVersion};
-                    let side = if controller.is_left { JoyconSide::Left } else { JoyconSide::Right };
-                    let version = if controller.is_joycon2 { JoyconVersion::V2 } else { JoyconVersion::V1 };
-                    JoyconState::from_input_report(report, controller.serial.clone(), side, version, true)
-                } else {
-                    // No data available
-                    use crate::input::joycon::{JoyconState, JoyconSide, JoyconVersion, JoyconButtons};
-                    use crate::structs::{Vector2, Vector3};
-                    JoyconState {
-                        serial: controller.serial.clone(),
-                        side: if controller.is_left { JoyconSide::Left } else { JoyconSide::Right },
-                        version: if controller.is_joycon2 { JoyconVersion::V2 } else { JoyconVersion::V1 },
-                        connected: false,
-                        buttons: JoyconButtons::default(),
-                        stick: Vector2::zero(),
-                        gyro: Vector3::zero(),
-                        accel: Vector3::zero(),
-                    }
-                }
-            }).collect()
+                })
+                .collect()
         } else {
             vec![]
         }
     }
-    
+
     /// Enable polling
     pub fn enable_polling(&mut self) -> bool {
         // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
@@ -458,32 +492,35 @@ impl JoyConApi {
                 return false;
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::enable_polling_impl(api)
         }
     }
-    
+
     pub(crate) fn enable_polling_impl(api: &mut ScriptApi) -> bool {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mut mgr = mgr.lock().unwrap();
             api.print("Enabling Joy-Con polling...");
             api.print("Scanning for Joy-Con 1 devices (HID)...");
-            
+
             // Scan Joy-Con 1 first and show results
             match mgr.scan_joycon1() {
                 Ok(devices) => {
                     api.print(&format!("Found {} Joy-Con 1 device(s)", devices.len()));
                     for (serial, vid, pid) in &devices {
-                        api.print(&format!("  - {} (VID: 0x{:04X}, PID: 0x{:04X})", serial, vid, pid));
+                        api.print(&format!(
+                            "  - {} (VID: 0x{:04X}, PID: 0x{:04X})",
+                            serial, vid, pid
+                        ));
                     }
-                },
+                }
                 Err(e) => {
                     api.print_error(&format!("Failed to scan Joy-Con 1: {:?}", e));
                 }
             }
-            
+
             match mgr.enable_polling() {
                 Ok(_) => {
                     api.print("Joy-Con polling enabled");
@@ -491,18 +528,18 @@ impl JoyConApi {
                     api.print("Joy-Con 2: Starting background scan (may take 5-10 seconds)...");
                     api.print("Check console for Joy-Con 2 connection status");
                     true
-                },
+                }
                 Err(e) => {
                     api.print_error(&format!("Failed to enable Joy-Con polling: {:?}", e));
                     false
-                },
+                }
             }
         } else {
             api.print_error("No controller manager found in scene");
             false
         }
     }
-    
+
     /// Disable polling
     pub fn disable_polling(&mut self) {
         SCRIPT_API_CONTEXT.with(|ctx| {
@@ -514,14 +551,14 @@ impl JoyConApi {
             }
         })
     }
-    
+
     pub(crate) fn disable_polling_impl(api: &mut ScriptApi) {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mut mgr = mgr.lock().unwrap();
             mgr.disable_polling();
         }
     }
-    
+
     /// Poll Joy-Con 1 synchronously (call from main loop)
     pub fn poll_joycon1_sync(&mut self) {
         // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
@@ -541,20 +578,20 @@ impl JoyConApi {
                 return;
             }
         };
-        
+
         unsafe {
             let api = &mut *api_ptr;
             Self::poll_joycon1_sync_impl(api);
         }
     }
-    
+
     pub(crate) fn poll_joycon1_sync_impl(api: &mut ScriptApi) {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
             mgr.poll_joycon1_sync();
         }
     }
-    
+
     /// Check if polling is enabled
     pub fn is_polling_enabled(&mut self) -> bool {
         SCRIPT_API_CONTEXT.with(|ctx| {
@@ -568,7 +605,7 @@ impl JoyConApi {
             }
         })
     }
-    
+
     pub(crate) fn is_polling_enabled_impl(api: &mut ScriptApi) -> bool {
         if let Some(mgr) = api.scene.get_controller_manager() {
             let mgr = mgr.lock().unwrap();
@@ -579,8 +616,296 @@ impl JoyConApi {
     }
 }
 
+pub struct KeyboardApi {
+    // Pointer to the parent ScriptApi - set when accessed through DerefMut
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
+
+impl Default for KeyboardApi {
+    fn default() -> Self {
+        Self { api_ptr: None }
+    }
+}
+
+impl KeyboardApi {
+    fn get_api_ptr(&mut self) -> Option<*mut ScriptApi<'static>> {
+        if let Some(ptr) = self.api_ptr {
+            return Some(ptr);
+        }
+        let input_api_ptr = self as *const KeyboardApi as *const InputApi;
+        unsafe { (*input_api_ptr).get_parent_ptr() }
+    }
+
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    /// Check if a key is pressed
+    pub fn is_key_pressed<S: AsRef<str>>(&mut self, key: S) -> bool {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::is_key_pressed_impl(api, key.as_ref())
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn is_key_pressed_impl(api: &mut ScriptApi, key: &str) -> bool {
+        use crate::input::manager::{InputSource, parse_input_source};
+
+        if let Some(InputSource::Key(keycode)) = parse_input_source(key) {
+            if let Some(mgr) = api.scene.get_input_manager() {
+                let mgr = mgr.lock().unwrap();
+                mgr.is_key_pressed(keycode)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Get text input buffer (accumulated text input events)
+    pub fn get_text_input(&mut self) -> String {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::get_text_input_impl(api)
+            }
+        } else {
+            String::new()
+        }
+    }
+
+    pub(crate) fn get_text_input_impl(api: &mut ScriptApi) -> String {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.get_text_input().to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    /// Clear text input buffer (call after processing text input)
+    pub fn clear_text_input(&mut self) {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::clear_text_input_impl(api);
+            }
+        }
+    }
+
+    pub(crate) fn clear_text_input_impl(api: &mut ScriptApi) {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mut mgr = mgr.lock().unwrap();
+            mgr.clear_text_input();
+        }
+    }
+}
+
+pub struct MouseApi {
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
+
+impl Default for MouseApi {
+    fn default() -> Self {
+        Self { api_ptr: None }
+    }
+}
+
+impl MouseApi {
+    fn get_api_ptr(&mut self) -> Option<*mut ScriptApi<'static>> {
+        if let Some(ptr) = self.api_ptr {
+            return Some(ptr);
+        }
+        let input_api_ptr = self as *const MouseApi as *const InputApi;
+        unsafe { (*input_api_ptr).get_parent_ptr() }
+    }
+
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    /// Get mouse position in screen space
+    pub fn get_position(&mut self) -> crate::structs2d::vector2::Vector2 {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::get_position_impl(api)
+            }
+        } else {
+            crate::structs2d::vector2::Vector2::zero()
+        }
+    }
+
+    pub(crate) fn get_position_impl(api: &mut ScriptApi) -> crate::structs2d::vector2::Vector2 {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.get_mouse_position()
+        } else {
+            crate::structs2d::vector2::Vector2::zero()
+        }
+    }
+
+    /// Check if a mouse button is pressed
+    pub fn is_button_pressed<S: AsRef<str>>(&mut self, button: S) -> bool {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::is_button_pressed_impl(api, button.as_ref())
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn is_button_pressed_impl(api: &mut ScriptApi, button: &str) -> bool {
+        use crate::input::manager::{InputSource, parse_input_source};
+
+        if let Some(InputSource::MouseButton(btn)) = parse_input_source(button) {
+            if let Some(mgr) = api.scene.get_input_manager() {
+                let mgr = mgr.lock().unwrap();
+                mgr.is_mouse_button_pressed(btn)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Get scroll wheel delta
+    pub fn get_scroll_delta(&mut self) -> f32 {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::get_scroll_delta_impl(api)
+            }
+        } else {
+            0.0
+        }
+    }
+
+    pub(crate) fn get_scroll_delta_impl(api: &mut ScriptApi) -> f32 {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.get_scroll_delta()
+        } else {
+            0.0
+        }
+    }
+
+    /// Check if mouse wheel scrolled up this frame
+    pub fn is_wheel_up(&mut self) -> bool {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::is_wheel_up_impl(api)
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn is_wheel_up_impl(api: &mut ScriptApi) -> bool {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.is_mouse_wheel_up()
+        } else {
+            false
+        }
+    }
+
+    /// Check if mouse wheel scrolled down this frame
+    pub fn is_wheel_down(&mut self) -> bool {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::is_wheel_down_impl(api)
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn is_wheel_down_impl(api: &mut ScriptApi) -> bool {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.is_mouse_wheel_down()
+        } else {
+            false
+        }
+    }
+
+    /// Get mouse position in world space (requires active camera)
+    /// Returns None if no active camera or world position not available
+    pub fn get_position_world(&mut self) -> Option<crate::structs2d::vector2::Vector2> {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::get_position_world_impl(api)
+            }
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn get_position_world_impl(
+        api: &mut ScriptApi,
+    ) -> Option<crate::structs2d::vector2::Vector2> {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.get_mouse_position_world()
+        } else {
+            None
+        }
+    }
+
+    /// Convert screen coordinates to world coordinates using camera transform
+    /// For 2D cameras: takes camera position, rotation, zoom, and virtual screen size
+    pub fn screen_to_world(
+        &mut self,
+        camera_pos: crate::structs2d::vector2::Vector2,
+        camera_rotation: f32,
+        camera_zoom: f32,
+        virtual_width: f32,
+        virtual_height: f32,
+        window_width: f32,
+        window_height: f32,
+    ) -> crate::structs2d::vector2::Vector2 {
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                let screen_pos = Self::get_position_impl(api);
+                if let Some(mgr) = api.scene.get_input_manager() {
+                    let mgr = mgr.lock().unwrap();
+                    mgr.screen_to_world_2d(
+                        screen_pos,
+                        camera_pos,
+                        camera_rotation,
+                        camera_zoom,
+                        virtual_width,
+                        virtual_height,
+                        window_width,
+                        window_height,
+                    )
+                } else {
+                    crate::structs2d::vector2::Vector2::zero()
+                }
+            }
+        } else {
+            crate::structs2d::vector2::Vector2::zero()
+        }
+    }
+}
+
 pub struct InputApi {
     pub JoyCon: JoyConApi,
+    pub Keyboard: KeyboardApi,
+    pub Mouse: MouseApi,
     // Pointer to the parent ScriptApi - set when accessed through DerefMut
     parent_api_ptr: Option<*mut ScriptApi<'static>>,
 }
@@ -589,6 +914,8 @@ impl Default for InputApi {
     fn default() -> Self {
         Self {
             JoyCon: JoyConApi::default(),
+            Keyboard: KeyboardApi::default(),
+            Mouse: MouseApi::default(),
             parent_api_ptr: None,
         }
     }
@@ -597,28 +924,49 @@ impl Default for InputApi {
 impl InputApi {
     /// Set the parent ScriptApi pointer
     fn set_parent_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
-        
         self.parent_api_ptr = Some(api_ptr);
-        // Also set it in JoyConApi
+        // Also set it in sub-APIs
         self.JoyCon.set_api_ptr(api_ptr);
- 
+        self.Keyboard.set_api_ptr(api_ptr);
+        self.Mouse.set_api_ptr(api_ptr);
     }
-    
+
     /// Set the parent ScriptApi pointer (immutable version for Deref)
     fn set_parent_ptr_immut(&self, api_ptr: *mut ScriptApi<'static>) {
-       
         unsafe {
             let self_mut = self as *const InputApi as *mut InputApi;
             (*self_mut).parent_api_ptr = Some(api_ptr);
             (*self_mut).JoyCon.set_api_ptr(api_ptr);
+            (*self_mut).Keyboard.set_api_ptr(api_ptr);
+            (*self_mut).Mouse.set_api_ptr(api_ptr);
         }
-      
     }
-    
+
     /// Get the parent ScriptApi pointer
     fn get_parent_ptr(&self) -> Option<*mut ScriptApi<'static>> {
-     
         self.parent_api_ptr
+    }
+
+    /// Check if an action is currently pressed
+    /// Actions are defined in project.toml [input] section
+    pub fn get_action<S: AsRef<str>>(&mut self, action: S) -> bool {
+        if let Some(api_ptr) = self.get_parent_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::get_action_impl(api, action.as_ref())
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn get_action_impl(api: &mut ScriptApi, action: &str) -> bool {
+        if let Some(mgr) = api.scene.get_input_manager() {
+            let mgr = mgr.lock().unwrap();
+            mgr.is_action_pressed(action)
+        } else {
+            false
+        }
     }
 }
 
@@ -645,8 +993,9 @@ impl<'a> Deref for ScriptApi<'a> {
     fn deref(&self) -> &Self::Target {
         // Also set the parent pointer when accessed immutably
         // This ensures the pointer is set even if DerefMut isn't called
-        let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self as *const ScriptApi<'a> as *mut ScriptApi<'static>) };
-      
+        let api_ptr: *mut ScriptApi<'static> =
+            unsafe { std::mem::transmute(self as *const ScriptApi<'a> as *mut ScriptApi<'static>) };
+
         unsafe {
             let input_api = &(*api_ptr).engine.Input;
             input_api.set_parent_ptr_immut(api_ptr);
@@ -660,9 +1009,9 @@ impl<'a> DerefMut for ScriptApi<'a> {
         // Set the parent pointer in InputApi so JoyConApi can access ScriptApi
         // Cast to 'static lifetime (safe because we control the lifetime)
         let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self) };
- 
+
         unsafe {
-            // Set the pointer in InputApi and JoyConApi
+            // Set the pointer in InputApi and all sub-APIs
             let input_api = &mut (*api_ptr).engine.Input;
             input_api.set_parent_ptr(api_ptr);
         }
@@ -676,7 +1025,7 @@ impl<'a> DerefMut for ScriptApi<'a> {
 // 3️⃣ Script API Context (main entry point for scripts)
 //-----------------------------------------------------
 pub struct ScriptApi<'a> {
-    scene: &'a mut dyn SceneAccess,
+    pub(crate) scene: &'a mut dyn SceneAccess,
     project: &'a mut Project,
     engine: EngineApi,
 }
@@ -691,17 +1040,17 @@ impl<'a> ScriptApi<'a> {
             engine,
         }
     }
-    
+
     /// Set the thread-local context for this ScriptApi
     /// This allows JoyConApi methods to access the ScriptApi
     pub(crate) fn set_context(&mut self) {
         let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self) };
-       
+
         SCRIPT_API_CONTEXT.with(|ctx| {
             *ctx.borrow_mut() = Some(api_ptr);
         });
     }
-    
+
     pub(crate) fn clear_context() {
         SCRIPT_API_CONTEXT.with(|ctx| {
             *ctx.borrow_mut() = None;
@@ -722,27 +1071,27 @@ impl<'a> ScriptApi<'a> {
     pub fn scan_joycon1(&mut self) -> Vec<Value> {
         JoyConApi::scan_joycon1_impl(self)
     }
-    
+
     /// Get data from all connected controllers as structs
     pub fn get_joycon_data(&mut self) -> Vec<crate::input::joycon::JoyconState> {
         JoyConApi::get_data_impl(self)
     }
-    
+
     /// Enable polling
     pub fn enable_joycon_polling(&mut self) -> bool {
         JoyConApi::enable_polling_impl(self)
     }
-    
+
     /// Disable polling
     pub fn disable_joycon_polling(&mut self) {
         JoyConApi::disable_polling_impl(self)
     }
-    
+
     /// Poll Joy-Con 1 synchronously (call from main loop)
     pub fn poll_joycon1_sync(&mut self) {
         JoyConApi::poll_joycon1_sync_impl(self)
     }
-    
+
     /// Check if polling is enabled
     pub fn is_joycon_polling_enabled(&mut self) -> bool {
         JoyConApi::is_polling_enabled_impl(self)
@@ -802,6 +1151,15 @@ impl<'a> ScriptApi<'a> {
         if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
             script.engine_update(self);
+        }
+        Self::clear_context();
+    }
+
+    pub fn call_fixed_update(&mut self, id: Uuid) {
+        self.set_context();
+        if let Some(rc_script) = self.scene.get_script(id) {
+            let mut script = rc_script.borrow_mut();
+            script.engine_fixed_update(self);
         }
         Self::clear_context();
     }
@@ -912,9 +1270,35 @@ impl<'a> ScriptApi<'a> {
             .clone();
         node_enum.into_inner()
     }
+
+    /// Get a child node by name, searching through the parent's children
+    /// Returns the child node's ID if found, None otherwise
+    pub fn get_child_by_name(&mut self, parent_id: Uuid, child_name: &str) -> Option<Uuid> {
+        // Collect children first to avoid multiple mutable borrows
+        // We need to drop the mutable borrow of parent_node before we can borrow again
+        let children: Vec<Uuid> = {
+            if let Some(parent_node) = self.scene.get_scene_node(parent_id) {
+                parent_node.get_children().iter().copied().collect()
+            } else {
+                return None;
+            }
+        }; // parent_node borrow ends here
+
+        // Now iterate over the collected children (no borrows held)
+        for child_id in children {
+            if let Some(child_node) = self.scene.get_scene_node(child_id) {
+                if child_node.get_name() == child_name {
+                    return Some(child_id);
+                }
+            }
+        }
+        None
+    }
+
     pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         self.scene.merge_nodes(nodes);
     }
+
 
     pub fn set_script_var(&mut self, node_id: Uuid, name: &str, val: Value) -> Option<()> {
         let var_id = string_to_u64(name);
