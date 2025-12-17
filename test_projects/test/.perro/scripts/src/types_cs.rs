@@ -11,6 +11,7 @@ use std::{
 };
 
 use num_bigint::BigInt;
+use phf::{phf_map, Map};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -28,9 +29,14 @@ use perro_core::prelude::*;
 // TypesCs - Main Script Structure
 // ========================================================================
 
+static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+};
+
+static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+};
+
 pub struct TypesCsScript {
-    node: Node2D,
-    attributes: HashMap<String, Vec<String>>,
+    base: Node2D,
     untyped_num_default: i32,
     typed_int_default: i32,
     typed_int_8: i8,
@@ -79,8 +85,7 @@ pub struct TypesCsScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn types_cs_create_script() -> *mut dyn ScriptObject {
-    let node = Node2D::new("TypesCs");
-    let attributes = HashMap::new();
+    let base = Node2D::new("TypesCs");
     let untyped_num_default = 0i32;
     let typed_int_default = 0i32;
     let typed_int_8 = 0i8;
@@ -123,8 +128,7 @@ pub extern "C" fn types_cs_create_script() -> *mut dyn ScriptObject {
     let static_map_super_players = HashMap::new();
 
     Box::into_raw(Box::new(TypesCsScript {
-        node,
-        attributes,
+        base,
         untyped_num_default,
         typed_int_default,
         typed_int_8,
@@ -284,14 +288,14 @@ impl std::ops::DerefMut for SuperTestPlayer {
 
 impl Script for TypesCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        // [stripped for release] api.print(&String::from("--- START CSharp MEGA TEST SUITE ---"));
+        api.print(&String::from("--- START CSharp MEGA TEST SUITE ---"));
         self.TestPrimitiveOperations(api, false);
         self.TestExplicitCasting(api, false);
         self.TestAssignments(api, false);
         self.TestStructInheritanceAndCasting(api, false);
         self.TestDynamicContainersOps(api, false);
         self.TestStaticContainersOps(api, false);
-        // [stripped for release] api.print(&String::from("--- ALL CSharp TESTS COMPLETE ---"));
+        api.print(&String::from("--- ALL CSharp TESTS COMPLETE ---"));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -311,7 +315,7 @@ impl Script for TypesCsScript {
 
 impl TypesCsScript {
     fn TestPrimitiveOperations(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Primitive Operations ---"));
+        api.print(&String::from("--- Test Primitive Operations ---"));
         let mut res_int: i32 = 0i32;
         let mut res_big: BigInt = BigInt::from_str("0").unwrap();
         let mut res_decimal: Decimal = Decimal::from_str("0").unwrap();
@@ -323,7 +327,7 @@ impl TypesCsScript {
     }
 
     fn TestExplicitCasting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Explicit Casting ---"));
+        api.print(&String::from("--- Test Explicit Casting ---"));
         let mut int64_to_big: BigInt = BigInt::from_str("0").unwrap();
         let mut big_to_int: i32 = 0i32;
         let mut float_to_decimal: Decimal = Decimal::from_str("0").unwrap();
@@ -336,7 +340,7 @@ impl TypesCsScript {
     }
 
     fn TestAssignments(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
+        api.print(&String::from("--- Test Assignments (Simple & Compound) ---"));
         let mut assign_big_lit: BigInt = BigInt::from_str("0").unwrap();
         let mut assign_decimal_var: Decimal = Decimal::from_str("0").unwrap();
         let mut comp_big: BigInt = BigInt::from_str("0").unwrap();
@@ -347,7 +351,7 @@ impl TypesCsScript {
     }
 
     fn TestStructInheritanceAndCasting(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Struct Inheritance & Casting ---"));
+        api.print(&String::from("--- Test Struct Inheritance & Casting ---"));
         self.my_derived_player.health = (self.my_derived_player.health - 10.0f32);
         self.my_derived_player.pos.x = (self.my_derived_player.pos.x + 1.0f32);
         self.my_derived_player.entity_type = String::from("ElitePlayer");
@@ -360,7 +364,7 @@ impl TypesCsScript {
     }
 
     fn TestDynamicContainersOps(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Dynamic Containers Ops ---"));
+        api.print(&String::from("--- Test Dynamic Containers Ops ---"));
         let mut arr_dyn_val_big: BigInt = BigInt::from_str("0").unwrap();
         arr_dyn_val_big *= BigInt::from_str("2").unwrap();
         let mut arr_dyn_val_decimal: Decimal = Decimal::from_str("0").unwrap();
@@ -386,7 +390,7 @@ self.dynamic_array_inferred[__dynamic_array_inferred_idx] = json!(self.local_dec
     }
 
     fn TestStaticContainersOps(&mut self, api: &mut ScriptApi<'_>, external_call: bool) {
-        // [stripped for release] api.print(&String::from("--- Test Static Containers Ops ---"));
+        api.print(&String::from("--- Test Static Containers Ops ---"));
         let mut arr_static_big_elem: BigInt = BigInt::from_str("0").unwrap();
         arr_static_big_elem += BigInt::from_str("50").unwrap();
         let mut arr_static_decimal_elem: Decimal = Decimal::from_str("0").unwrap();
@@ -410,11 +414,11 @@ self.dynamic_array_inferred[__dynamic_array_inferred_idx] = json!(self.local_dec
 
 impl ScriptObject for TypesCsScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -447,29 +451,23 @@ impl ScriptObject for TypesCsScript {
     // Attributes
 
     fn attributes_of(&self, member: &str) -> Vec<String> {
-        self.attributes
+        MEMBER_TO_ATTRIBUTES_MAP
             .get(member)
-            .cloned()
+            .map(|attrs| attrs.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default()
     }
 
     fn members_with(&self, attribute: &str) -> Vec<String> {
-        self.attributes
-            .iter()
-            .filter_map(|(member, attrs)| {
-                if attrs.iter().any(|a| a == attribute) {
-                    Some(member.clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
+        ATTRIBUTE_TO_MEMBERS_MAP
+            .get(attribute)
+            .map(|members| members.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
     }
 
     fn has_attribute(&self, member: &str, attribute: &str) -> bool {
-        self.attributes
+        MEMBER_TO_ATTRIBUTES_MAP
             .get(member)
-            .map(|attrs| attrs.iter().any(|a| a == attribute))
+            .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
     }
 }

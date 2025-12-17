@@ -3,7 +3,7 @@ use std::ffi::CStr;
 #[cfg(debug_assertions)]
 use std::os::raw::c_char;
 use perro_core::script::CreateFn;
-use std::collections::HashMap;
+use phf::{phf_map, Map};
 
 pub mod types_cs;
 pub mod types_pup;
@@ -14,14 +14,16 @@ use types_pup::types_pup_create_script;
 use types_ts::types_ts_create_script;
 // __PERRO_IMPORTS__
 
-pub fn get_script_registry() -> HashMap<String, CreateFn> {
-let mut map: HashMap<String, CreateFn> = HashMap::new();
-    map.insert("types_cs".to_string(), types_cs_create_script as CreateFn);
-        map.insert("types_pup".to_string(), types_pup_create_script as CreateFn);
-        map.insert("types_ts".to_string(), types_ts_create_script as CreateFn);
-    // __PERRO_REGISTRY__
-map
+pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {
+&SCRIPT_REGISTRY
 }
+
+static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
+    "types_cs" => types_cs_create_script as CreateFn,
+        "types_pup" => types_pup_create_script as CreateFn,
+        "types_ts" => types_ts_create_script as CreateFn,
+    // __PERRO_REGISTRY__
+};
 
 
 #[cfg(debug_assertions)]
