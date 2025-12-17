@@ -16,7 +16,8 @@ pub struct OmniLight3D {
     pub intensity: f32,
     pub range: f32,
 
-    pub node_3d: Node3D,
+    #[serde(rename = "base")]
+    pub base: Node3D,
 }
 
 impl OmniLight3D {
@@ -26,7 +27,7 @@ impl OmniLight3D {
             color: Color::default(),
             intensity: 1.0,
             range: 10.0,
-            node_3d: Node3D::new(name),
+            base: Node3D::new(name),
         }
     }
 }
@@ -34,11 +35,11 @@ impl OmniLight3D {
 impl Deref for OmniLight3D {
     type Target = Node3D;
     fn deref(&self) -> &Self::Target {
-        &self.node_3d
+        &self.base
     }
 }
 impl DerefMut for OmniLight3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_3d
+        &mut self.base
     }
 }

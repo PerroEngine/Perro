@@ -16,7 +16,8 @@ pub struct Sprite2D {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<[f32; 4]>,
 
-    pub node_2d: Node2D,
+    #[serde(rename = "base")]
+    pub base: Node2D,
 }
 
 impl Sprite2D {
@@ -25,7 +26,7 @@ impl Sprite2D {
             ty: Cow::Borrowed("Sprite2D"),
             texture_path: None,
             region: None,
-            node_2d: Node2D::new(name),
+            base: Node2D::new(name),
         }
     }
 }
@@ -34,12 +35,12 @@ impl Deref for Sprite2D {
     type Target = Node2D;
 
     fn deref(&self) -> &Self::Target {
-        &self.node_2d
+        &self.base
     }
 }
 
 impl DerefMut for Sprite2D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_2d
+        &mut self.base
     }
 }

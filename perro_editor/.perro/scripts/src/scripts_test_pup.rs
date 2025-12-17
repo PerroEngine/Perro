@@ -66,6 +66,7 @@ impl Script for ScriptsTestPupScript {
         self.node.transform.rotation += (0.5f32 * api.Time.get_delta());
         self.node.transform.position.x += (550f32 * api.Time.get_delta());
 
+        // Merge cloned nodes
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::asset_io::set_key;
@@ -248,92 +248,111 @@ pub fn run_dev() {
                     .unwrap_or_else(|| PathBuf::from("."))
             });
 
-        // Handle the input path
-        let candidate = PathBuf::from(path_arg);
-
-        // On Windows, paths starting with / are not valid absolute paths
-        // Treat them as relative to workspace root instead
-        let is_valid_absolute = {
-            #[cfg(windows)]
-            {
-                if path_arg.starts_with('/') {
-                    false // Unix-style path on Windows - treat as relative
-                } else {
-                    candidate.is_absolute()
-                }
-            }
-            #[cfg(not(windows))]
-            {
-                candidate.is_absolute()
-            }
-        };
-
-        if is_valid_absolute {
-            candidate
+        // Handle special flags like --editor and --test
+        if path_arg.eq_ignore_ascii_case("--editor") {
+            let editor_path = workspace_root.join("perro_editor");
+            use dunce;
+            dunce::canonicalize(&editor_path).unwrap_or(editor_path)
+        } else if path_arg.eq_ignore_ascii_case("--test") {
+            let test_path = workspace_root.join("test_projects/test");
+            use dunce;
+            dunce::canonicalize(&test_path).unwrap_or(test_path)
         } else {
-            // If it starts with / on Windows, treat as relative to workspace root
-            let base_path: PathBuf = {
+            // Handle the input path
+            let candidate = PathBuf::from(path_arg);
+
+            // On Windows, paths starting with / are not valid absolute paths
+            // Treat them as relative to workspace root instead
+            let is_valid_absolute = {
                 #[cfg(windows)]
                 {
                     if path_arg.starts_with('/') {
-                        workspace_root.clone()
+                        false // Unix-style path on Windows - treat as relative
                     } else {
-                        env::current_dir().expect("Failed to get current dir")
+                        candidate.is_absolute()
                     }
                 }
                 #[cfg(not(windows))]
                 {
-                    env::current_dir().expect("Failed to get current dir")
+                    candidate.is_absolute()
                 }
             };
 
-            let full_path = if path_arg.starts_with('/') {
-                // Strip leading / and join to base
-                base_path.join(&path_arg[1..])
+            if is_valid_absolute {
+                candidate
             } else {
-                base_path.join(&candidate)
-            };
+                // If it starts with / on Windows, treat as relative to workspace root
+                let base_path: PathBuf = {
+                    #[cfg(windows)]
+                    {
+                        if path_arg.starts_with('/') {
+                            workspace_root.clone()
+                        } else {
+                            env::current_dir().expect("Failed to get current dir")
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        env::current_dir().expect("Failed to get current dir")
+                    }
+                };
 
-            // Try to canonicalize, but if it fails, ensure we have a proper absolute path
-            use dunce;
-            dunce::canonicalize(&full_path).unwrap_or_else(|_| {
-                if full_path.is_absolute() {
-                    full_path
+                let full_path = if path_arg.starts_with('/') {
+                    // Strip leading / and join to base
+                    base_path.join(&path_arg[1..])
                 } else {
-                    env::current_dir()
-                        .expect("Failed to get current dir")
-                        .join(&full_path)
-                        .canonicalize()
-                        .unwrap_or_else(|_| {
-                            env::current_dir()
-                                .expect("Failed to get current dir")
-                                .join(&full_path)
-                        })
-                }
-            })
+                    base_path.join(&candidate)
+                };
+
+                // Try to canonicalize, but if it fails, ensure we have a proper absolute path
+                use dunce;
+                dunce::canonicalize(&full_path).unwrap_or_else(|_| {
+                    if full_path.is_absolute() {
+                        full_path
+                    } else {
+                        env::current_dir()
+                            .expect("Failed to get current dir")
+                            .join(&full_path)
+                            .canonicalize()
+                            .unwrap_or_else(|_| {
+                                env::current_dir()
+                                    .expect("Failed to get current dir")
+                                    .join(&full_path)
+                            })
+                    }
+                })
+            }
         }
     } else if args.contains(&"--editor".to_string()) {
-        // Dev-only: hardcoded editor project path (relative to workspace root)
-        let exe_dir = env::current_exe().unwrap();
-        exe_dir
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("perro_editor")
+        // Dev-only: editor project path (relative to workspace root)
+        let exe_dir = env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| env::current_dir().expect("Failed to get working directory"));
+
+        // Step upward to crate workspace root if we're inside target/
+        let workspace_root = exe_dir
+            .ancestors()
+            .find(|p| p.join("Cargo.toml").exists())
+            .unwrap_or_else(|| exe_dir.parent().unwrap_or_else(|| Path::new(".")));
+
+        let editor_path = workspace_root.join("perro_editor");
+        dunce::canonicalize(&editor_path).unwrap_or(editor_path)
     } else {
         // Dev mode: default to editor project
-        let exe_dir = env::current_exe().unwrap();
-        exe_dir
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("perro_editor")
+        let exe_dir = env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| env::current_dir().expect("Failed to get working directory"));
+
+        // Step upward to crate workspace root if we're inside target/
+        let workspace_root = exe_dir
+            .ancestors()
+            .find(|p| p.join("Cargo.toml").exists())
+            .unwrap_or_else(|| exe_dir.parent().unwrap_or_else(|| Path::new(".")));
+
+        let editor_path = workspace_root.join("perro_editor");
+        dunce::canonicalize(&editor_path).unwrap_or(editor_path)
     };
 
     println!("Running project at {:?}", project_root);

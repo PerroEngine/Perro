@@ -558,7 +558,7 @@ impl Script {
         } else {
             &script.node_type
         };
-        write!(out, "    node: {},\n", node_type).unwrap();
+        write!(out, "    base: {},\n", node_type).unwrap();
 
         // Use `all_script_vars` for defining struct fields to ensure the correct order
         for var in all_script_vars {
@@ -589,7 +589,7 @@ impl Script {
         )
         .unwrap();
 
-        // Optional: handle node init
+        // Optional: handle base init
         let node_type = if script.node_type.is_empty() {
             "Node"
         } else {
@@ -598,14 +598,14 @@ impl Script {
         if node_type == "Node" {
             write!(
                 out,
-                "    let node = {}::new(\"{}\", None);\n",
+                "    let base = {}::new(\"{}\", None);\n",
                 node_type, pascal_struct_name
             )
             .unwrap();
         } else {
             write!(
                 out,
-                "    let node = {}::new(\"{}\");\n",
+                "    let base = {}::new(\"{}\");\n",
                 node_type, pascal_struct_name
             )
             .unwrap();
@@ -683,7 +683,7 @@ impl Script {
         .unwrap();
 
         // Fill in struct fields using locals (safe to reference one another now)
-        write!(out, "        node,\n").unwrap();
+        write!(out, "        base,\n").unwrap();
         // Use `all_script_vars` here again for consistent ordering
         for var in all_script_vars {
             write!(out, "        {},\n", var.name).unwrap();
@@ -771,8 +771,8 @@ fn expr_accesses_node(expr: &Expr, script: &Script) -> bool {
         Expr::MemberAccess(base, field) => {
             // Check if this is `this.node` or `this.node.something`
             if matches!(base.as_ref(), Expr::SelfAccess) {
-                // If field is "node", then we're accessing self.node
-                if field == "node" {
+                // If field is "base", then we're accessing self.base
+                if field == "base" {
                     return true;
                 }
                 // If field is a script member, it's NOT accessing the node
@@ -1230,7 +1230,7 @@ impl Function {
             writeln!(out, "        if external_call {{").unwrap();
             writeln!(
                 out,
-                "            self.node = api.get_node_clone::<{}>(self.node.id);",
+                "            self.base = api.get_node_clone::<{}>(self.base.id);",
                 node_type_str
             )
             .unwrap();
@@ -1259,17 +1259,17 @@ impl Function {
         // (4) Merge cloned nodes and UI elements back
         // ---------------------------------------------------
 
-        // Merge all cloned nodes together (child nodes + self.node)
+        // Merge all cloned nodes together (child nodes + self.base)
         // These were tracked during codegen when we saw VariableDecl with get_node
         let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
             .iter()
             .map(|v| format!("{}.to_scene_node()", v))
             .collect();
 
-        // Add self.node if needed (only in external_call context)
+        // Add self.base if needed (only in external_call context)
         if needs_self {
             out.push_str("\n        if external_call {\n");
-            all_nodes_to_merge.push("self.node.clone().to_scene_node()".to_string());
+            all_nodes_to_merge.push("self.base.clone().to_scene_node()".to_string());
             if !all_nodes_to_merge.is_empty() {
                 out.push_str("            // Merge cloned nodes\n");
                 out.push_str(&format!(
@@ -1342,7 +1342,7 @@ impl Function {
         if needs_self {
             writeln!(
                 out,
-                "        self.node = api.get_node_clone::<{}>(self.node.id);",
+                "        self.base = api.get_node_clone::<{}>(self.base.id);",
                 node_type_str
             )
             .unwrap();
@@ -1353,16 +1353,16 @@ impl Function {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
-        // Merge all cloned nodes together (child nodes + self.node)
+        // Merge all cloned nodes together (child nodes + self.base)
         let cloned_node_vars = &self.cloned_child_nodes;
         let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
             .iter()
             .map(|v| format!("{}.to_scene_node()", v))
             .collect();
 
-        // Add self.node if needed
+        // Add self.base if needed
         if needs_self {
-            all_nodes_to_merge.push("self.node.clone().to_scene_node()".to_string());
+            all_nodes_to_merge.push("self.base.clone().to_scene_node()".to_string());
         }
 
         if !all_nodes_to_merge.is_empty() {
@@ -2668,7 +2668,7 @@ impl Expr {
                         // This is a script field/method, access directly on self
                         return format!("self.{}", field);
                     }
-                    // Otherwise, it's a node field, use self.node.field
+                    // Otherwise, it's a node field, use self.base.field
                 }
 
                 let base_type = script.infer_expr_type(base, current_func);
@@ -2715,7 +2715,7 @@ impl Expr {
             }
             Expr::SelfAccess => {
                 if needs_self {
-                    "self.node".to_string()
+                    "self.base".to_string()
                 } else {
                     "self".to_string()
                 }
@@ -4573,11 +4573,11 @@ pub fn implement_script_boilerplate(
         r#"
 impl ScriptObject for {struct_name} {{
     fn set_node_id(&mut self, id: Uuid) {{
-        self.node.id = id;
+        self.base.id = id;
     }}
 
     fn get_node_id(&self) -> Uuid {{
-        self.node.id
+        self.base.id
     }}
 
     fn get_var(&self, var_id: u64) -> Option<Value> {{

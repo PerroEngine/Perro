@@ -14,8 +14,8 @@ pub struct DirectionalLight3D {
     #[serde(default = "default_intensity")]
     pub intensity: f32,
 
-    #[serde(default = "Node3D::default")]
-    pub node_3d: Node3D,
+    #[serde(rename = "base", default = "Node3D::default")]
+    pub base: Node3D,
 }
 
 // ---------- Default fallback functions ----------
@@ -36,7 +36,7 @@ impl Default for DirectionalLight3D {
             ty: default_type(),
             color: Color::default(),
             intensity: default_intensity(),
-            node_3d: Node3D::default(),
+            base: Node3D::default(),
         }
     }
 }
@@ -46,7 +46,7 @@ impl Default for DirectionalLight3D {
 impl DirectionalLight3D {
     pub fn new(name: &str) -> Self {
         Self {
-            node_3d: Node3D::new(name),
+            base: Node3D::new(name),
             ..Default::default()
         }
     }
@@ -57,12 +57,12 @@ impl DirectionalLight3D {
 impl Deref for DirectionalLight3D {
     type Target = Node3D;
     fn deref(&self) -> &Self::Target {
-        &self.node_3d
+        &self.base
     }
 }
 
 impl DerefMut for DirectionalLight3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_3d
+        &mut self.base
     }
 }

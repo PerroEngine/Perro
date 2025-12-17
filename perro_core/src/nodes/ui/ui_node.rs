@@ -43,8 +43,9 @@ pub struct UINode {
     )]
     pub visible: bool,
 
-    // Parent
-    pub node: Node,
+    // Base node with name, uuid, parent relationship, etc.
+    #[serde(rename = "base")]
+    pub base: Node,
 }
 
 impl UINode {
@@ -52,8 +53,8 @@ impl UINode {
         Self {
             ty: Cow::Borrowed("UINode"),
             visible: default_visible(),
-            // Parent
-            node: Node::new(name, None),
+            // Base node
+            base: Node::new(name, None),
             fur_path: None,
             props: None,
             elements: None,
@@ -186,12 +187,12 @@ impl Deref for UINode {
     type Target = Node;
 
     fn deref(&self) -> &Self::Target {
-        &self.node
+        &self.base
     }
 }
 
 impl DerefMut for UINode {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node
+        &mut self.base
     }
 }

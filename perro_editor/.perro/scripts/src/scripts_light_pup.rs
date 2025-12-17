@@ -67,6 +67,7 @@ impl Script for ScriptsLightPupScript {
         self.node.transform.rotate_y(((0.9f32 * delta)));
         self.node.transform.rotate_z(((1.0f32 * delta)));
 
+        // Merge cloned nodes
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 

@@ -1164,6 +1164,29 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
+    pub fn call_node_internal_fixed_update(&mut self, node_id: Uuid) {
+        // Get the node reference and convert to raw pointer
+        // Converting to raw pointer ends the borrow, so we can use self afterward
+        let node_ptr = if let Some(node) = self.scene.get_scene_node(node_id) {
+            node as *mut SceneNode
+        } else {
+            return;
+        };
+
+        // SAFETY: node_ptr is valid and points to a node in the scene.
+        // The borrow from get_scene_node ended when we converted to a raw pointer.
+        // We can now use self freely, and convert the raw pointer back to a reference.
+        // This is safe because:
+        // 1. The node pointer is valid (it came from a valid mutable reference)
+        // 2. The node won't be removed while we're using it (we control the call site)
+        // 3. internal_fixed_update won't access the same node_id through the API
+        unsafe {
+            if let Some(node) = node_ptr.as_mut() {
+                node.internal_fixed_update(self);
+            }
+        }
+    }
+
     pub fn call_function(&mut self, id: Uuid, func: &str, params: &SmallVec<[Value; 3]>) {
         let func_id = self.string_to_u64(func);
         self.call_function_id(id, func_id, params);
@@ -1299,6 +1322,15 @@ impl<'a> ScriptApi<'a> {
         self.scene.merge_nodes(nodes);
     }
 
+    /// Get the global transform for a node (calculates lazily if dirty)
+    pub fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {
+        self.scene.get_global_transform(node_id)
+    }
+
+    /// Set the global transform for a node (marks it as dirty)
+    pub fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()> {
+        self.scene.set_global_transform(node_id, transform)
+    }
 
     pub fn set_script_var(&mut self, node_id: Uuid, name: &str, val: Value) -> Option<()> {
         let var_id = string_to_u64(name);

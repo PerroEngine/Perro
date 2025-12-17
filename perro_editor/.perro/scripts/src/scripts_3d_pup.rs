@@ -35,11 +35,11 @@ static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
-    "bob" => &["b"],
-    "Expose" => &["b"],
-    "name" => &["b"],
-    "func" => &["init()"],
     "a" => &["b"],
+    "bob" => &["b"],
+    "name" => &["b"],
+    "Expose" => &["b"],
+    "func" => &["init()"],
 };
 
 pub struct Scripts3dPupScript {
@@ -72,6 +72,7 @@ impl Script for Scripts3dPupScript {
         self.node.transform.position.x = 3f32;
         api.print(&String::from("Input API Test - Testing all input methods"));
 
+        // Merge cloned nodes
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 
@@ -97,6 +98,7 @@ impl Script for Scripts3dPupScript {
         let mut scroll: f32 = api.Input.Mouse.get_scroll_delta();
         self.node.transform.position.y += (scroll * (delta * 2.0f32));
 
+        // Merge cloned nodes
         api.merge_nodes(vec![self.node.clone().to_scene_node()]);
     }
 

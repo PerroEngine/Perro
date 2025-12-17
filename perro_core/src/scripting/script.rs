@@ -77,6 +77,8 @@ pub type CreateFn = extern "C" fn() -> *mut dyn ScriptObject;
 
 use crate::input::joycon::ControllerManager;
 use crate::input::manager::InputManager;
+use crate::physics::physics_2d::PhysicsWorld2D;
+use std::cell::RefCell as CellRefCell;
 use std::sync::Mutex;
 
 /// Trait object for scene access (dyn‑safe)
@@ -87,6 +89,7 @@ pub trait SceneAccess {
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>>;
+    fn get_physics_2d(&self) -> Option<&CellRefCell<PhysicsWorld2D>>;
 
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn instantiate_script(
@@ -97,6 +100,12 @@ pub trait SceneAccess {
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64);
     fn queue_signal_id(&mut self, signal: u64, params: SmallVec<[Value; 3]>);
+
+    /// Get the global transform for a node (calculates lazily if dirty)
+    fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D>;
+    
+    /// Set the global transform for a node (marks it as dirty)
+    fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()>;
 }
 
 //

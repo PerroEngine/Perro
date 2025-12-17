@@ -4,6 +4,10 @@ use serde_json::Value;
 use std::{borrow::Cow, collections::HashMap};
 use uuid::Uuid;
 
+use crate::nodes::node_registry::BaseNode;
+use crate::scripting::api::ScriptApi;
+use std::any::Any;
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Node {
     #[serde(skip)]

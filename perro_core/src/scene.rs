@@ -13,6 +13,7 @@ use crate::{
     input::manager::InputManager,
     manifest::Project,
     node_registry::{BaseNode, SceneNode},
+    physics::physics_2d::PhysicsWorld2D,
     prelude::string_to_u64,
     script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, Var},
     transpiler::script_path_to_identifier,
@@ -97,6 +98,10 @@ impl<'de> Deserialize<'de> for SceneData {
                 // not its runtime UUID. This preserves deterministic structure.
                 node.set_local_id(local_id);
                 node.clear_children();
+                
+                // Mark transform as dirty for Node2D nodes after deserialization
+                // (transform_dirty is skipped during serialization, so it defaults to false)
+                node.mark_transform_dirty_if_node2d();
 
                 if let Some(parent_local) = node.get_parent() {
                     parent_children
@@ -128,6 +133,8 @@ impl<'de> Deserialize<'de> for SceneData {
             for (local_id, mut node) in nodes_vec {
                 node.set_local_id(local_id);
                 node.clear_children();
+                // Mark transform as dirty for Node2D nodes after deserialization
+                node.mark_transform_dirty_if_node2d();
                 nodes.insert(local_id, node);
             }
             nodes
@@ -216,6 +223,9 @@ pub struct Scene<P: ScriptProvider> {
     pub fixed_update_accumulator: f32,
     pub last_fixed_update: Option<Instant>,
     pub nodes_with_internal_fixed_update: Vec<Uuid>,
+
+    // Physics (wrapped in RefCell for interior mutability through trait objects)
+    pub physics_2d: std::cell::RefCell<PhysicsWorld2D>,
 }
 
 #[derive(Default)]
@@ -246,16 +256,24 @@ impl<P: ScriptProvider> Scene<P> {
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
             nodes_with_internal_fixed_update: Vec::new(),
+            physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
         }
     }
 
     /// Create a runtime scene from serialized data
-    pub fn from_data(data: SceneData, provider: P, project: Rc<RefCell<Project>>) -> Self {
+    pub fn from_data(mut data: SceneData, provider: P, project: Rc<RefCell<Project>>) -> Self {
+        // Mark all nodes as dirty and transform_dirty when loading from data
+        for node in data.nodes.values_mut() {
+            node.mark_dirty();
+            node.mark_transform_dirty_if_node2d();
+        }
+        
         Self {
             data,
             signals: SignalBus::default(),
             queued_signals: Vec::new(),
             scripts: HashMap::new(),
+            physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
             provider,
             project,
             app_command_tx: None,
@@ -603,6 +621,8 @@ impl<P: ScriptProvider> Scene<P> {
             }
 
             root.mark_dirty();
+            // Mark transform dirty for Node2D nodes
+            root.mark_transform_dirty_if_node2d();
             Some(root)
         } else {
             eprintln!("⚠️ Merge root missing");
@@ -619,16 +639,53 @@ impl<P: ScriptProvider> Scene<P> {
 
         for mut node in other.nodes.into_values() {
             node.mark_dirty();
-            self.data.nodes.insert(node.get_id(), node);
+            // Mark transform dirty BEFORE insertion (for Node2D nodes)
+            node.mark_transform_dirty_if_node2d();
+            let id = node.get_id();
+            self.data.nodes.insert(id, node);
+            // Mark transform as dirty recursively (after insertion, to mark children too)
+            self.mark_transform_dirty_recursive(id);
+
+            // Register node for internal fixed updates if needed
+            if let Some(node_ref) = self.data.nodes.get(&id) {
+                if node_ref.needs_internal_fixed_update() {
+                    if !self.nodes_with_internal_fixed_update.contains(&id) {
+                        self.nodes_with_internal_fixed_update.push(id);
+                    }
+                }
+            }
         }
 
         if let Some(root) = root_to_insert {
-            self.data.nodes.insert(root.get_id(), root);
+            let root_id = root.get_id();
+            self.data.nodes.insert(root_id, root);
+            // Mark transform as dirty for newly inserted root (after insertion)
+            self.mark_transform_dirty_recursive(root_id);
+
+            // Register root node for internal fixed updates if needed
+            if let Some(root_ref) = self.data.nodes.get(&root_id) {
+                if root_ref.needs_internal_fixed_update() {
+                    if !self.nodes_with_internal_fixed_update.contains(&root_id) {
+                        self.nodes_with_internal_fixed_update.push(root_id);
+                    }
+                }
+            }
         }
 
         // Collect all new runtime IDs
         let new_ids: Vec<Uuid> = id_map.values().copied().collect();
         let insert_time = insert_start.elapsed();
+
+        // ───────────────────────────────────────────────
+        // 5️⃣ REGISTER COLLISION SHAPES WITH PHYSICS
+        // ───────────────────────────────────────────────
+        let physics_start = Instant::now();
+        self.register_collision_shapes(&new_ids);
+        let physics_time = physics_start.elapsed();
+        println!(
+            "⏱ Physics registration: {:.2} ms",
+            physics_time.as_secs_f64() * 1000.0
+        );
 
         // ───────────────────────────────────────────────
         // 5️⃣ PARALLELIZED FUR LOADING (UI FILES)
@@ -833,6 +890,12 @@ impl<P: ScriptProvider> Scene<P> {
             let clamped_count = fixed_update_count.min(5); // Cap at 5 to prevent spiral of death
 
             for _ in 0..clamped_count {
+                // Update collider transforms before physics step
+                self.update_collider_transforms();
+                
+                // Step physics simulation
+                self.physics_2d.borrow_mut().step(fixed_delta);
+
                 // Run fixed update for all scripts
                 let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
                 for id in script_ids {
@@ -843,10 +906,12 @@ impl<P: ScriptProvider> Scene<P> {
                 }
 
                 // Run internal fixed update for nodes that need it
-                // Get node directly from self.data.nodes, then create API
                 let node_ids: Vec<Uuid> = self.nodes_with_internal_fixed_update.clone();
                 for node_id in node_ids {
-                    self.call_node_internal_fixed_update(node_id, fixed_delta);
+                    let project_ref = self.project.clone();
+                    let mut project_borrow = project_ref.borrow_mut();
+                    let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
+                    api.call_node_internal_fixed_update(node_id);
                 }
             }
 
@@ -866,46 +931,9 @@ impl<P: ScriptProvider> Scene<P> {
             self.test_val = api.get_script_var(uuid, "script_updates").into();
         }
 
-        self.process_queued_signals();
-    }
+        // Global transforms are now calculated lazily when needed (in traverse_and_render)
 
-    /// Helper method to call internal_fixed_update on a node
-    /// Get node from self.data.nodes, then create API and call internal_fixed_update
-    fn call_node_internal_fixed_update(&mut self, node_id: Uuid, fixed_delta: f32) {
-        // Get project borrow first
-        let project_ref = self.project.clone();
-        let mut project_borrow = project_ref.borrow_mut();
-        
-        // Get the node directly from self.data.nodes
-        // SAFETY: We're borrowing self.data.nodes (a field) and self (the struct) simultaneously.
-        // This is safe because:
-        // 1. node borrows a specific HashMap entry (self.data.nodes[node_id])
-        // 2. api borrows self as a trait object (the whole Scene)
-        // 3. These are disjoint borrows - one is a HashMap entry, one is the container
-        // 4. We're not modifying the HashMap structure, just the node's contents
-        // 5. internal_fixed_update won't access the same node_id entry
-        // Rust's borrow checker can't prove this is safe, but it is!
-        let node_ptr = unsafe {
-            // Get node reference - borrows self.data.nodes
-            if let Some(node) = self.data.nodes.get_mut(&node_id) {
-                node as *mut SceneNode
-            } else {
-                return;
-            }
-        };
-        
-        // Now create API - borrows self (the whole struct)
-        // SAFETY: node_ptr is valid and points to a node in self.data.nodes.
-        // We're not using self.data.nodes anymore, so we can borrow self for the API.
-        // The node reference and API don't conflict because they borrow different parts.
-        let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
-        
-        // Use the node reference
-        unsafe {
-            if let Some(node) = node_ptr.as_mut() {
-                node.internal_fixed_update(&mut api);
-            }
-        }
+        self.process_queued_signals();
     }
 
     fn connect_signal(&mut self, signal: u64, target_id: Uuid, function_id: u64) {
@@ -1035,6 +1063,8 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
         self.data.nodes.insert(id, node);
+        // Mark transform as dirty for Node2D nodes (after insertion)
+        self.mark_transform_dirty_recursive(id);
         println!("✅ Node {} added\n", id);
 
         // Register node for internal fixed updates if needed
@@ -1095,6 +1125,274 @@ impl<P: ScriptProvider> Scene<P> {
         self.scripts.remove(&node_id);
     }
 
+    /// Get the global transform for a node, calculating it lazily if dirty
+    /// This recursively traverses up the parent chain until it finds a clean transform
+    pub fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {
+        // First, check if this node exists and get its parent
+        let (parent_id, local_transform, is_dirty) = if let Some(node) = self.data.nodes.get(&node_id) {
+            let node2d = match node.as_node2d() {
+                Some(n2d) => n2d,
+                None => {
+                    // Not a Node2D-based node - can't get global transform
+                    return None;
+                }
+            };
+            let local = match node.get_node2d_transform() {
+                Some(t) => t,
+                None => {
+                    return None;
+                }
+            };
+            (node2d.base.parent, local, node2d.transform_dirty)
+        } else {
+            return None;
+        };
+
+        // If not dirty, return cached global transform
+        if !is_dirty {
+            if let Some(node) = self.data.nodes.get(&node_id) {
+                return node.as_node2d().map(|n2d| n2d.global_transform);
+            }
+        }
+
+        // Need to recalculate - get parent's global transform (recursively)
+        // If parent is not Node2D-based, use identity transform
+        let parent_global = if let Some(pid) = parent_id {
+            // Try to get parent's global transform, but if parent is not Node2D-based, use identity
+            self.get_global_transform(pid).unwrap_or_else(|| {
+                // Parent exists but is not Node2D-based (e.g., regular Node) - use identity transform
+                crate::structs2d::Transform2D::default()
+            })
+        } else {
+            // No parent - use identity transform
+            crate::structs2d::Transform2D::default()
+        };
+
+        // Calculate this node's global transform
+        let mut global = crate::structs2d::Transform2D::default();
+        global.scale.x = parent_global.scale.x * local_transform.scale.x;
+        global.scale.y = parent_global.scale.y * local_transform.scale.y;
+        global.position.x = parent_global.position.x + (local_transform.position.x * parent_global.scale.x);
+        global.position.y = parent_global.position.y + (local_transform.position.y * parent_global.scale.y);
+        global.rotation = parent_global.rotation + local_transform.rotation;
+
+        // Cache the result and mark as clean
+        if let Some(node) = self.data.nodes.get_mut(&node_id) {
+            if let Some(node2d) = node.as_node2d_mut() {
+                node2d.global_transform = global;
+                node2d.transform_dirty = false;
+            }
+        }
+
+        Some(global)
+    }
+
+    /// Set the global transform for a node (marks it as dirty)
+    pub fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()> {
+        if let Some(node) = self.data.nodes.get_mut(&node_id) {
+            if let Some(node2d) = node.as_node2d_mut() {
+                node2d.global_transform = transform;
+                node2d.transform_dirty = true;
+                Some(())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Mark a node's transform as dirty (and all its children)
+    /// Also marks nodes as dirty for rendering so they get picked up by get_dirty_nodes()
+    pub fn mark_transform_dirty_recursive(&mut self, node_id: Uuid) {
+        if let Some(node) = self.data.nodes.get_mut(&node_id) {
+            // Mark this node as dirty for rendering
+            node.mark_dirty();
+            
+            // Mark this node's transform as dirty if it's a Node2D-based node
+            if let Some(node2d) = node.as_node2d_mut() {
+                node2d.transform_dirty = true;
+            }
+
+            // Mark all children as dirty (recursively)
+            let children = node.get_children().clone();
+            for child_id in children {
+                self.mark_transform_dirty_recursive(child_id);
+            }
+        }
+    }
+
+    /// Recursively update global transform for a node and its children (DEPRECATED - use get_global_transform instead)
+    #[allow(dead_code)]
+    fn update_node2d_global_transform_recursive(&mut self, _node_id: Uuid, _parent_global: &crate::structs2d::Transform2D) {
+        // This method is deprecated - use get_global_transform instead which handles lazy calculation
+        // Keeping for backwards compatibility but should not be used
+    }
+
+    /// Calculate world transform by traversing up the parent chain
+    /// Returns the accumulated transform from root to this node
+    fn calculate_world_transform(&self, node_id: Uuid) -> Option<(crate::structs2d::Transform2D, Uuid)> {
+        // First, collect all transforms from node to root (in reverse order)
+        let mut transform_chain = Vec::new();
+        let mut current_id = Some(node_id);
+        
+        while let Some(id) = current_id {
+            if let Some(node) = self.data.nodes.get(&id) {
+                let local_transform = match node {
+                    SceneNode::Node2D(n2d) => n2d.transform,
+                    SceneNode::Sprite2D(sprite) => sprite.transform,
+                    SceneNode::Area2D(area) => area.transform,
+                    SceneNode::CollisionShape2D(cs) => cs.transform,
+                    SceneNode::Shape2D(shape) => shape.transform,
+                    SceneNode::Camera2D(cam) => cam.transform,
+                    _ => crate::structs2d::Transform2D::default(),
+                };
+                
+                transform_chain.push(local_transform);
+                
+                // Move to parent
+                current_id = match node {
+                    SceneNode::Node2D(n2d) => n2d.parent,
+                    SceneNode::Sprite2D(sprite) => sprite.parent,
+                    SceneNode::Area2D(area) => area.parent,
+                    SceneNode::CollisionShape2D(cs) => cs.parent,
+                    SceneNode::Shape2D(shape) => shape.parent,
+                    SceneNode::Camera2D(cam) => cam.parent,
+                    _ => None,
+                };
+            } else {
+                break;
+            }
+        }
+        
+        // Now apply transforms from root to node (reverse of what we collected)
+        let mut world_transform = crate::structs2d::Transform2D::default();
+        
+        for local_transform in transform_chain.iter().rev() {
+            // Apply parent transform first, then local (like UI system)
+            // Scale: parent_scale * local_scale
+            world_transform.scale.x *= local_transform.scale.x;
+            world_transform.scale.y *= local_transform.scale.y;
+            
+            // Position: parent_pos + (local_pos * parent_scale)
+            // But we need to use the scale BEFORE we multiplied it
+            let parent_scale_x = world_transform.scale.x / local_transform.scale.x;
+            let parent_scale_y = world_transform.scale.y / local_transform.scale.y;
+            
+            world_transform.position.x = world_transform.position.x + (local_transform.position.x * parent_scale_x);
+            world_transform.position.y = world_transform.position.y + (local_transform.position.y * parent_scale_y);
+            
+            // Rotation: parent_rot + local_rot
+            world_transform.rotation += local_transform.rotation;
+        }
+        
+        Some((world_transform, node_id))
+    }
+
+    /// Update collider transforms to match node transforms
+    fn update_collider_transforms(&mut self) {
+        // First collect node IDs that need updating
+        let node_ids: Vec<Uuid> = self.data.nodes
+            .iter()
+            .filter_map(|(node_id, node)| {
+                if let SceneNode::CollisionShape2D(cs) = node {
+                    if cs.collider_handle.is_some() {
+                        Some(*node_id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        // Get global transforms (requires mutable access)
+        let mut to_update: Vec<(Uuid, [f32; 2], f32)> = Vec::new();
+        for node_id in node_ids {
+            if let Some(global) = self.get_global_transform(node_id) {
+                let position = [global.position.x, global.position.y];
+                let rotation = global.rotation;
+                to_update.push((node_id, position, rotation));
+            }
+        }
+        
+        // Update physics colliders (after releasing all borrows)
+        let mut physics = self.physics_2d.borrow_mut();
+        for (node_id, position, rotation) in to_update {
+            physics.update_collider_transform(node_id, position, rotation);
+        }
+    }
+
+    /// Register CollisionShape2D nodes with the physics world
+    fn register_collision_shapes(&mut self, node_ids: &[Uuid]) {
+        // First, collect all the data we need (shape info, transforms, parent info)
+        let mut to_register: Vec<(Uuid, crate::physics::physics_2d::ColliderShape, Option<Uuid>)> = Vec::new();
+        
+        for &node_id in node_ids {
+            if let Some(node) = self.data.nodes.get(&node_id) {
+                if let SceneNode::CollisionShape2D(collision_shape) = node {
+                    // Only register if it has a shape defined
+                    if let Some(shape) = collision_shape.shape {
+                        let parent_id = collision_shape.parent;
+                        to_register.push((node_id, shape, parent_id));
+                    }
+                }
+            }
+        }
+        
+        // Get global transforms for all nodes (requires mutable access)
+        let mut global_transforms: HashMap<Uuid, ([f32; 2], f32)> = HashMap::new();
+        for (node_id, _, _) in &to_register {
+            if let Some(global) = self.get_global_transform(*node_id) {
+                global_transforms.insert(*node_id, ([global.position.x, global.position.y], global.rotation));
+            }
+        }
+        
+        // Now register with physics (after releasing all node borrows)
+        let mut physics = self.physics_2d.borrow_mut();
+        let mut handles_to_store: Vec<(Uuid, rapier2d::prelude::ColliderHandle, Option<Uuid>)> = Vec::new();
+        
+        for (node_id, shape, parent_id) in to_register {
+            // Use global transform if available, otherwise use default (for first frame)
+            let (world_position, world_rotation) = global_transforms
+                .get(&node_id)
+                .copied()
+                .unwrap_or(([0.0, 0.0], 0.0));
+            
+            // Create the sensor collider in physics world with world transform
+            let collider_handle = physics.create_sensor_collider(
+                node_id,
+                shape,
+                world_position,
+                world_rotation,
+            );
+            
+            // If this collision shape is a child of an Area2D, register it
+            if let Some(pid) = parent_id {
+                if let Some(parent) = self.data.nodes.get(&pid) {
+                    if matches!(parent, SceneNode::Area2D(_)) {
+                        physics.register_area_collider(pid, collider_handle);
+                    }
+                }
+            }
+            
+            handles_to_store.push((node_id, collider_handle, parent_id));
+        }
+        
+        // Drop physics borrow before mutating nodes
+        drop(physics);
+        
+        // Store handles in collision shapes
+        for (node_id, collider_handle, _) in handles_to_store {
+            if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                if let SceneNode::CollisionShape2D(cs) = node {
+                    cs.collider_handle = Some(collider_handle);
+                }
+            }
+        }
+    }
+
     fn stop_rendering_recursive(&self, node_id: Uuid, gfx: &mut Graphics) {
         if let Some(node) = self.data.nodes.get(&node_id) {
             // Stop rendering this node itself
@@ -1117,6 +1415,7 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     // Get dirty nodes for rendering
+    // Also includes visible Node2D nodes that need their transforms calculated
     fn get_dirty_nodes(&self) -> Vec<Uuid> {
         const PARALLEL_THRESHOLD: usize = 50;
 
@@ -1124,42 +1423,124 @@ impl<P: ScriptProvider> Scene<P> {
             self.data
                 .nodes
                 .par_iter()
-                .filter_map(|(id, node)| if node.is_dirty() { Some(*id) } else { None })
+                .filter_map(|(id, node)| {
+                    // Include if dirty (for rendering changes)
+                    if node.is_dirty() {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         } else {
             self.data
                 .nodes
                 .iter()
-                .filter_map(|(id, node)| if node.is_dirty() { Some(*id) } else { None })
+                .filter_map(|(id, node)| {
+                    // Include if dirty (for rendering changes)
+                    if node.is_dirty() {
+                        Some(*id)
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         }
     }
 
     fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
         for node_id in dirty_nodes {
+            // Get global transform first (before borrowing node mutably)
+            // Only try to get transform for Node2D-based nodes
+            let global_transform_opt = if let Some(node) = self.data.nodes.get(&node_id) {
+                if node.as_node2d().is_some() {
+                    self.get_global_transform(node_id)
+                } else {
+                    // Not a Node2D node - skip transform calculation
+                    None
+                }
+            } else {
+                None
+            };
+            
             if let Some(node) = self.data.nodes.get_mut(&node_id) {
                 match node {
                     //2D Nodes
                     SceneNode::Sprite2D(sprite) => {
-                        if sprite.node_2d.visible {
+                        if sprite.visible {
                             if let Some(tex) = &sprite.texture_path {
-                                gfx.renderer_2d.queue_texture(
-                                    &mut gfx.renderer_prim,
-                                    &mut gfx.texture_manager,
-                                    &gfx.device,
-                                    &gfx.queue,
-                                    node_id,
-                                    tex,
-                                    sprite.transform,
-                                    sprite.pivot,
-                                    sprite.z_index,
-                                );
+                                // Use the global transform we got earlier
+                                if let Some(global_transform) = global_transform_opt {
+                                    gfx.renderer_2d.queue_texture(
+                                        &mut gfx.renderer_prim,
+                                        &mut gfx.texture_manager,
+                                        &gfx.device,
+                                        &gfx.queue,
+                                        node_id,
+                                        tex,
+                                        global_transform,
+                                        sprite.pivot,
+                                        sprite.z_index,
+                                    );
+                                }
                             }
                         }
                     }
                     SceneNode::Camera2D(camera) => {
                         if camera.active {
                             gfx.update_camera_2d(camera);
+                        }
+                    }
+                    SceneNode::Shape2D(shape) => {
+                        if shape.visible {
+                            if let Some(shape_type) = shape.shape_type {
+                                // Use the global transform we got earlier
+                                if let Some(transform) = global_transform_opt {
+                                    let pivot = shape.pivot;
+                                    let z_index = shape.z_index;
+                                    let color = shape.color.unwrap_or(crate::Color::new(255, 255, 255, 200));
+                                    let border_thickness = if shape.filled { 0.0 } else { 2.0 };
+                                    let is_border = !shape.filled;
+
+                                    match shape_type {
+                                        crate::nodes::_2d::shape_2d::ShapeType::Rectangle { width, height } => {
+                                            gfx.renderer_2d.queue_rect(
+                                                &mut gfx.renderer_prim,
+                                                node_id,
+                                                transform,
+                                                crate::Vector2::new(width, height),
+                                                pivot,
+                                                color,
+                                                None, // No corner radius
+                                                border_thickness,
+                                                is_border,
+                                                z_index,
+                                            );
+                                        }
+                                        crate::nodes::_2d::shape_2d::ShapeType::Circle { radius } => {
+                                            // For circles, render as a square with corner radius = radius
+                                            let size = radius * 2.0;
+                                            gfx.renderer_2d.queue_rect(
+                                                &mut gfx.renderer_prim,
+                                                node_id,
+                                                transform,
+                                                crate::Vector2::new(size, size),
+                                                pivot,
+                                                color,
+                                                Some(crate::ui_elements::ui_container::CornerRadius {
+                                                    top_left: radius,
+                                                    top_right: radius,
+                                                    bottom_left: radius,
+                                                    bottom_right: radius,
+                                                }),
+                                                border_thickness,
+                                                is_border,
+                                                z_index,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -1195,7 +1576,7 @@ impl<P: ScriptProvider> Scene<P> {
                         gfx.renderer_3d.queue_light(
                             light.id,
                             crate::renderer_3d::LightUniform {
-                                position: light.node_3d.transform.position.to_array(),
+                                position: light.transform.position.to_array(),
                                 color: light.color.to_array(),
                                 intensity: light.intensity,
                                 ambient: [0.05, 0.05, 0.05],
@@ -1204,7 +1585,7 @@ impl<P: ScriptProvider> Scene<P> {
                         );
                     }
                     SceneNode::DirectionalLight3D(light) => {
-                        let dir = light.node_3d.transform.forward();
+                        let dir = light.transform.forward();
                         gfx.renderer_3d.queue_light(
                             light.id,
                             crate::renderer_3d::LightUniform {
@@ -1217,7 +1598,7 @@ impl<P: ScriptProvider> Scene<P> {
                         );
                     }
                     SceneNode::SpotLight3D(light) => {
-                        let dir = light.node_3d.transform.forward();
+                        let dir = light.transform.forward();
                         gfx.renderer_3d.queue_light(
                             light.id,
                             crate::renderer_3d::LightUniform {
@@ -1231,7 +1612,15 @@ impl<P: ScriptProvider> Scene<P> {
                     }
                     _ => {}
                 }
-                node.set_dirty(false); // Set the dirty flag to false after rendering
+                // Only set dirty to false if transform is also clean (both need to be clean to skip rendering)
+                // If transform is still dirty, keep node dirty so it renders again next frame
+                if let Some(node2d) = node.as_node2d() {
+                    if !node2d.transform_dirty {
+                        node.set_dirty(false);
+                    }
+                } else {
+                    node.set_dirty(false);
+                }
             }
         }
     }
@@ -1259,11 +1648,12 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
     fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
+        let mut node_ids = Vec::new();
+        
         for mut node in nodes {
             let id = node.get_id();
+            node_ids.push(id);
             node.mark_dirty();
-
-            let needs_fixed_update = node.needs_internal_fixed_update();
 
             if let Some(existing_node) = self.data.nodes.get_mut(&id) {
                 *existing_node = node;
@@ -1272,12 +1662,19 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
                 self.data.nodes.insert(id, node);
             }
 
-            // Register node for internal fixed updates if needed
-            if needs_fixed_update {
-                if !self.nodes_with_internal_fixed_update.contains(&id) {
-                    self.nodes_with_internal_fixed_update.push(id);
+            // Register node for internal fixed updates if needed (check after insertion)
+            if let Some(node_ref) = self.data.nodes.get(&id) {
+                if node_ref.needs_internal_fixed_update() {
+                    if !self.nodes_with_internal_fixed_update.contains(&id) {
+                        self.nodes_with_internal_fixed_update.push(id);
+                    }
                 }
             }
+        }
+        
+        // Mark all merged nodes as transform dirty so they recalculate on next access
+        for id in node_ids {
+            self.mark_transform_dirty_recursive(id);
         }
     }
 
@@ -1304,6 +1701,18 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
 
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>> {
         Some(&self.input_manager)
+    }
+
+    fn get_physics_2d(&self) -> Option<&std::cell::RefCell<PhysicsWorld2D>> {
+        Some(&self.physics_2d)
+    }
+
+    fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {
+        Self::get_global_transform(self, node_id)
+    }
+
+    fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()> {
+        Self::set_global_transform(self, node_id, transform)
     }
 }
 

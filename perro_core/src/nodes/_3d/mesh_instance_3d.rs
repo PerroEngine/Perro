@@ -27,7 +27,8 @@ pub struct MeshInstance3D {
     pub material_id: Option<u32>,
 
     /// Base transform node (provides position/rotation/scale/hierarchy)
-    pub node_3d: Node3D,
+    #[serde(rename = "base")]
+    pub base: Node3D,
 }
 
 // In mesh_instance_3d.rs - update the implementation
@@ -38,7 +39,7 @@ impl MeshInstance3D {
             mesh_path: None,
             material_path: Some(Cow::Borrowed("__default__")), // Always start with default
             material_id: Some(0),                              // Default material is always slot 0
-            node_3d: Node3D::new(name),
+            base: Node3D::new(name),
         }
     }
 
@@ -63,12 +64,12 @@ impl MeshInstance3D {
 impl Deref for MeshInstance3D {
     type Target = Node3D;
     fn deref(&self) -> &Self::Target {
-        &self.node_3d
+        &self.base
     }
 }
 
 impl DerefMut for MeshInstance3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_3d
+        &mut self.base
     }
 }

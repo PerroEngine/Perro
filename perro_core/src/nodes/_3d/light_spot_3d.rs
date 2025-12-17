@@ -27,8 +27,8 @@ pub struct SpotLight3D {
     #[serde(default = "default_outer_angle")]
     pub outer_angle: f32,
 
-    #[serde(default = "Node3D::default")]
-    pub node_3d: Node3D,
+    #[serde(rename = "base", default = "Node3D::default")]
+    pub base: Node3D,
 }
 
 // ---------- Default fallback values ----------
@@ -64,7 +64,7 @@ impl Default for SpotLight3D {
             range: default_range(),
             inner_angle: default_inner_angle(),
             outer_angle: default_outer_angle(),
-            node_3d: Node3D::default(),
+            base: Node3D::default(),
         }
     }
 }
@@ -74,7 +74,7 @@ impl Default for SpotLight3D {
 impl SpotLight3D {
     pub fn new(name: &str) -> Self {
         Self {
-            node_3d: Node3D::new(name),
+            base: Node3D::new(name),
             ..Default::default()
         }
     }
@@ -85,12 +85,12 @@ impl SpotLight3D {
 impl Deref for SpotLight3D {
     type Target = Node3D;
     fn deref(&self) -> &Self::Target {
-        &self.node_3d
+        &self.base
     }
 }
 
 impl DerefMut for SpotLight3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_3d
+        &mut self.base
     }
 }

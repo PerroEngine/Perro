@@ -1,0 +1,26 @@
+extends Sprite2D
+
+fn init() {
+    self.transform.position.x = -1000
+
+    Signal.connect("Deadzone_AreaEntered", self, ent)
+    
+    Signal.connect("Deadzone_AreaExited", self, ext)
+}
+
+fn update() {
+    var delta = Time.get_delta()
+
+    self.transform.position.x += 100 * delta
+
+}
+
+
+fn ent() {
+    self.transform.position.y += 100
+}
+
+
+fn ext() {
+   self.transform.position.y -= 200
+}

@@ -2,6 +2,7 @@
 pub mod brk;
 pub mod input;
 pub mod nodes;
+pub mod physics;
 pub mod project;
 pub mod project_creator;
 pub mod rendering;

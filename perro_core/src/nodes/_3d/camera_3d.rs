@@ -27,7 +27,8 @@ pub struct Camera3D {
     pub active: bool,
 
     /// Embedded base Node3D (provides transform, visibility, etc.)
-    pub node_3d: Node3D,
+    #[serde(rename = "base")]
+    pub base: Node3D,
 }
 
 impl Camera3D {
@@ -39,7 +40,7 @@ impl Camera3D {
             near: Some(0.1),
             far: Some(1000.0),
             active: false,
-            node_3d: Node3D::new(name),
+            base: Node3D::new(name),
         }
     }
 
@@ -60,8 +61,8 @@ impl Camera3D {
 
     /// Computes the view matrix from the node's transform.
     pub fn view_matrix(&self) -> glam::Mat4 {
-        let pos = self.node_3d.transform.position.to_glam();
-        let rot = self.node_3d.transform.rotation.to_glam();
+        let pos = self.transform.position.to_glam();
+        let rot = self.transform.rotation.to_glam();
         glam::Mat4::from_rotation_translation(rot, pos).inverse()
     }
 
@@ -80,12 +81,12 @@ impl Deref for Camera3D {
     type Target = Node3D;
 
     fn deref(&self) -> &Self::Target {
-        &self.node_3d
+        &self.base
     }
 }
 
 impl DerefMut for Camera3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_3d
+        &mut self.base
     }
 }

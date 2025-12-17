@@ -3,22 +3,98 @@
   "nodes": {
     "00000000-0000-0000-0000-000000000000": {
       "type": "Node2D",
-      "node": { "type": "Node", "name": "World", "script_path": "res://script.pup" }
+      "base": { "type": "Node", "name": "World"}
     },
     "00000000-0000-0000-0000-000000000001": {
+      "type": "Area2D",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Deadzone", "parent": "00000000-0000-0000-0000-000000000000" },
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000003": {
+      "type": "CollisionShape2D",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "AreaCollision", "parent": "00000000-0000-0000-0000-000000000001" },
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        }
+      },
+      "shape": { "Rectangle": { "width": 200.0, "height": 1000.0 } }
+    },
+    "00000000-0000-0000-0000-000000000006": {
+      "type": "Shape2D",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "AreaCollisionVisual", "parent": "00000000-0000-0000-0000-000000000003" },
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        },
+        "z_index": 1
+      },
+      "shape_type": { "Rectangle": { "width": 200.0, "height": 1000.0 } },
+      "color": { "r": 255, "g": 0, "b": 0, "a": 100 },
+      "filled": false
+    },
+    "00000000-0000-0000-0000-000000000004": {
       "type": "Sprite2D",
       "texture_path": "res://icon.png",
-      "node_2d": {
+      "base": {
         "type": "Node2D",
-        "node": { "type": "Node", "name": "Body", "parent": "00000000-0000-0000-0000-000000000000" }
+        "base": { "type": "Node", "name": "Player", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": -1.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
       }
+    },
+    "00000000-0000-0000-0000-000000000005": {
+      "type": "CollisionShape2D",
+      "base": {
+        "type": "Node2D",
+        "z_index": 3,
+        "base": { "type": "Node", "name": "PlayerCollision", "parent": "00000000-0000-0000-0000-000000000004" },
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        }
+      },
+      "shape": { "Circle": { "radius": 100.0 } }
+    },
+    "00000000-0000-0000-0000-000000000007": {
+      "type": "Shape2D",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "PlayerCollisionVisual", "parent": "00000000-0000-0000-0000-000000000005" },
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        },
+        "z_index": 1
+      },
+      "shape_type": { "Rectangle": { "width": 310.0, "height": 310.0 } },
+      "color": { "r": 0, "g": 0, "b": 255, "a": 100 },
+      "filled": false
     },
     "00000000-0000-0000-0000-000000000002": {
       "type": "Camera2D",
       "active": true,
-      "node_2d": {
+      "base": {
         "type": "Node2D",
-        "node": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
+        "base": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
       }
     }
   }

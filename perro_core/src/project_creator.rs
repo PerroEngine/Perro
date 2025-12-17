@@ -154,18 +154,19 @@ pub fn create_new_project(
     Ok(())
 }
 
-/// Calculate relative path from project to perro_core
+/// Calculate relative path from .perro/project/ to perro_core
 fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
     use dunce;
 
-    // Get the path to perro_core by finding the workspace root
-    // We assume perro_core is at workspace_root/perro_core
+    // The Cargo.toml is in .perro/project/, so we need to calculate relative to that
+    let project_cargo_dir = project_path.join(".perro/project");
+    let project_cargo_abs = dunce::canonicalize(&project_cargo_dir)
+        .map_err(|e| format!("Failed to canonicalize .perro/project path: {}", e))?;
 
-    // Try to find workspace root by looking for Cargo.toml that contains perro_core
-    let project_abs = dunce::canonicalize(project_path)
-        .map_err(|e| format!("Failed to canonicalize project path: {}", e))?;
-
-    let mut current = project_abs.clone();
+    let mut current = project_path.to_path_buf();
+    if let Ok(canon) = dunce::canonicalize(&current) {
+        current = canon;
+    }
 
     // Walk up to find workspace root
     loop {
@@ -174,12 +175,12 @@ fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
             // Check if this workspace contains perro_core
             let perro_core_path = current.join("perro_core");
             if perro_core_path.exists() && perro_core_path.join("Cargo.toml").exists() {
-                // Calculate relative path from project to perro_core
+                // Calculate relative path from .perro/project/ to perro_core
                 let perro_core_abs = dunce::canonicalize(&perro_core_path)
                     .map_err(|e| format!("Failed to canonicalize perro_core path: {}", e))?;
 
                 // Calculate relative path manually
-                let relative = calculate_relative_path(&project_abs, &perro_core_abs)?;
+                let relative = calculate_relative_path(&project_cargo_abs, &perro_core_abs)?;
 
                 // Convert to forward slashes for cross-platform compatibility
                 let path_str = relative.replace('\\', "/");
@@ -206,7 +207,7 @@ fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
                     let perro_core_abs = dunce::canonicalize(&perro_core_path)
                         .map_err(|e| format!("Failed to canonicalize perro_core path: {}", e))?;
 
-                    let relative = calculate_relative_path(&project_abs, &perro_core_abs)?;
+                    let relative = calculate_relative_path(&project_cargo_abs, &perro_core_abs)?;
                     let path_str = relative.replace('\\', "/");
                     return Ok(format!("perro_core = {{ path = \"{}\" }}", path_str));
                 }
@@ -220,8 +221,8 @@ fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
     }
 
     // If we can't find it, use a default relative path
-    // This assumes the project is created in a standard location relative to workspace
-    Ok("perro_core = { path = \"../../../../perro_core\" }".to_string())
+    // From .perro/project/ to workspace root/perro_core: ../../perro_core
+    Ok("perro_core = { path = \"../../perro_core\" }".to_string())
 }
 
 /// Calculate relative path from scripts Cargo.toml (.perro/scripts/) to perro_core

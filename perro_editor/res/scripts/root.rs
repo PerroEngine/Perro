@@ -295,6 +295,8 @@ api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+
+      
         // In your script struct
 let mut was_mouse_down = false;
 

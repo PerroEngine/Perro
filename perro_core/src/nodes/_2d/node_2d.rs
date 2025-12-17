@@ -12,7 +12,7 @@ fn is_default_visible(v: &bool) -> bool {
     *v == default_visible()
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Node2D {
     #[serde(rename = "type")]
     pub ty: Cow<'static, str>,
@@ -22,6 +22,19 @@ pub struct Node2D {
         default = "Transform2D::default"
     )]
     pub transform: Transform2D,
+
+    /// World-space transform (calculated from parent's global_transform + local transform)
+    /// This is runtime-only and not serialized
+    #[serde(
+        skip_serializing_if = "Transform2D::is_default",
+        default = "Transform2D::default"
+    )]
+    pub global_transform: Transform2D,
+
+    /// Flag indicating if the global transform needs to be recalculated
+    /// When true, the global transform will be recalculated lazily when accessed
+    #[serde(skip, default = "default_transform_dirty")]
+    pub transform_dirty: bool,
 
     #[serde(
         skip_serializing_if = "Vector2::is_half_half",
@@ -38,12 +51,17 @@ pub struct Node2D {
     )]
     pub visible: bool,
 
-    // Parent
-    pub node: Node,
+    // Base node with name, uuid, parent relationship, etc.
+    #[serde(rename = "base")]
+    pub base: Node,
 }
 
 fn is_zero_i32(value: &i32) -> bool {
     *value == 0
+}
+
+fn default_transform_dirty() -> bool {
+    true
 }
 
 impl Node2D {
@@ -51,14 +69,16 @@ impl Node2D {
         Self {
             ty: Cow::Borrowed("Node2D"),
             transform: Transform2D::default(),
+            global_transform: Transform2D::default(),
+            transform_dirty: true, // New nodes start dirty
 
             pivot: Vector2 { x: 0.5, y: 0.5 },
 
             z_index: 0,
 
             visible: default_visible(),
-            // Parent
-            node: Node::new(name, None),
+            // Base node
+            base: Node::new(name, None),
         }
     }
     pub fn get_visible(&self) -> bool {
@@ -68,18 +88,48 @@ impl Node2D {
     pub fn set_visible(&mut self, visible: bool) {
         self.visible = visible;
     }
+
+    /// Mark the transform as dirty, indicating the global transform needs recalculation
+    pub fn mark_transform_dirty(&mut self) {
+        self.transform_dirty = true;
+    }
+
+    /// Check if the transform is dirty
+    pub fn is_transform_dirty(&self) -> bool {
+        self.transform_dirty
+    }
+
+    /// Mark the transform as clean (after recalculation)
+    pub fn mark_transform_clean(&mut self) {
+        self.transform_dirty = false;
+    }
+}
+
+impl Default for Node2D {
+    fn default() -> Self {
+        Self {
+            ty: Cow::Borrowed("Node2D"),
+            transform: Transform2D::default(),
+            global_transform: Transform2D::default(),
+            transform_dirty: true, // Default to dirty
+            pivot: Vector2 { x: 0.5, y: 0.5 },
+            z_index: 0,
+            visible: default_visible(),
+            base: Node::new("", None),
+        }
+    }
 }
 
 impl Deref for Node2D {
     type Target = Node;
 
     fn deref(&self) -> &Self::Target {
-        &self.node
+        &self.base
     }
 }
 
 impl DerefMut for Node2D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node
+        &mut self.base
     }
 }

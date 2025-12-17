@@ -191,15 +191,15 @@ impl Compiler {
 
     /// Find the parent workspace root's target directory, skipping the immediate workspace
     fn find_parent_workspace_target_dir(&self) -> Option<PathBuf> {
-        // The manifest is at: C:\Users\super\perro\perro_editor\.perro\scripts\Cargo.toml
-        // Start from .perro (parent of scripts) and walk up from there
+        // The manifest is at: perro_editor\.perro\project\Cargo.toml or .perro\scripts\Cargo.toml
+        // Start from .perro (parent of scripts/project) and walk up from there
 
-        let scripts_dir = self.crate_manifest_path.parent()?; // .perro/scripts
-        let perro_dir = scripts_dir.parent()?; // .perro
-        let mut current = perro_dir.to_path_buf();
+        let manifest_dir = self.crate_manifest_path.parent()?; // .perro/scripts or .perro/project
+        let perro_dir = manifest_dir.parent()?; // .perro
+        let mut current = dunce::canonicalize(perro_dir).ok()?;
 
         loop {
-            // Move up to parent
+            // Move up to parent first
             if let Some(parent) = current.parent() {
                 current = parent.to_path_buf();
             } else {
@@ -214,12 +214,15 @@ impl Compiler {
                 if let Ok(contents) = std::fs::read_to_string(&workspace_manifest) {
                     if contents.contains("[workspace]") {
                         let target_dir = current.join("target");
+                        // Canonicalize to ensure absolute path
+                        let target_dir_abs = dunce::canonicalize(&target_dir)
+                            .unwrap_or_else(|_| target_dir.clone());
                         eprintln!(
                             "📂 Found parent workspace at: {} (target: {})",
                             current.display(),
-                            target_dir.display()
+                            target_dir_abs.display()
                         );
-                        return Some(target_dir);
+                        return Some(target_dir_abs);
                     }
                 }
             }
@@ -312,18 +315,28 @@ impl Compiler {
             .arg(num_cpus.to_string())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
+        
+        // Set working directory to the manifest directory so relative paths resolve correctly
+        if let Some(manifest_dir) = self.crate_manifest_path.parent() {
+            cmd.current_dir(manifest_dir);
+        }
 
         // Set CARGO_TARGET_DIR to control where cargo builds
         if let Some(target_dir) = self.get_cargo_target_dir() {
+            // Canonicalize to ensure absolute path (required for CARGO_TARGET_DIR)
+            let target_dir_abs = dunce::canonicalize(&target_dir)
+                .unwrap_or_else(|_| target_dir.clone());
+            
             if self.from_source {
                 eprintln!(
                     "📁 Using workspace target directory: {}",
-                    target_dir.display()
+                    target_dir_abs.display()
                 );
             } else {
-                eprintln!("📁 Using build cache: {}", target_dir.display());
+                eprintln!("📁 Using build cache: {}", target_dir_abs.display());
             }
-            cmd.env("CARGO_TARGET_DIR", target_dir);
+            // CARGO_TARGET_DIR must be an absolute path
+            cmd.env("CARGO_TARGET_DIR", &target_dir_abs);
         } else {
             eprintln!("⚠️  Could not determine target directory, using cargo default");
         }
@@ -1628,9 +1641,10 @@ impl Compiler {
         writeln!(scenes_file, "use perro_core::node_registry::*;")?;
         writeln!(scenes_file, "use perro_core::nodes::*;")?;
         writeln!(scenes_file, "use perro_core::ui_node::UINode;")?;
+        writeln!(scenes_file, "use perro_core::physics::ColliderShape;")?;
         writeln!(
             scenes_file,
-            "use std::{{borrow::Cow, collections::HashMap}};"
+            "use std::{{borrow::Cow, collections::{{HashMap, HashSet}}}};"
         )?;
         writeln!(scenes_file, "\n// --- GENERATED SCENE DEFINITIONS ---")?;
 
@@ -1713,7 +1727,31 @@ impl Compiler {
                     .to_string();
 
                 node_str = node_str.replace(": []", ": vec![]");
+                // Handle HashSet fields (like previous_collisions in Area2D)
+                node_str = node_str.replace("previous_collisions: {},", "previous_collisions: HashSet::new(),");
+                // Handle other HashMap fields
                 node_str = node_str.replace(": {},", ": HashMap::new(),");
+                
+                // Fix enum variants that need qualification
+                // ShapeType variants (for Shape2D)
+                let shape_type_rectangle_regex = Regex::new(r"shape_type:\s*Some\s*\(\s*Rectangle\s*\{")?;
+                let shape_type_circle_regex = Regex::new(r"shape_type:\s*Some\s*\(\s*Circle\s*\{")?;
+                node_str = shape_type_rectangle_regex
+                    .replace_all(&node_str, "shape_type: Some(ShapeType::Rectangle {")
+                    .to_string();
+                node_str = shape_type_circle_regex
+                    .replace_all(&node_str, "shape_type: Some(ShapeType::Circle {")
+                    .to_string();
+                
+                // ColliderShape variants (for CollisionShape2D)
+                let collider_shape_rectangle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Rectangle\s*\{")?;
+                let collider_shape_circle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Circle\s*\{")?;
+                node_str = collider_shape_rectangle_regex
+                    .replace_all(&node_str, "shape: Some(ColliderShape::Rectangle {")
+                    .to_string();
+                node_str = collider_shape_circle_regex
+                    .replace_all(&node_str, "shape: Some(ColliderShape::Circle {")
+                    .to_string();
 
                 // --- Option<Vec<Uuid>>: safe bracket correction ---
                 let regex_children = Regex::new(r"children:\s*Some\s*\(\s*\[")?;

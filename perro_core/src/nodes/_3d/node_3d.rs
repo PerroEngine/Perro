@@ -37,7 +37,8 @@ pub struct Node3D {
     pub visible: bool,
 
     /// Wrapped base node with name, uuid, parent relationship, etc.
-    pub node: Node,
+    #[serde(rename = "base")]
+    pub base: Node,
 }
 
 impl Node3D {
@@ -52,7 +53,7 @@ impl Node3D {
                 z: 0.5,
             },
             visible: default_visible(),
-            node: Node::new(name, None),
+            base: Node::new(name, None),
         }
     }
 
@@ -71,12 +72,12 @@ impl Deref for Node3D {
     type Target = Node;
 
     fn deref(&self) -> &Self::Target {
-        &self.node
+        &self.base
     }
 }
 
 impl DerefMut for Node3D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node
+        &mut self.base
     }
 }

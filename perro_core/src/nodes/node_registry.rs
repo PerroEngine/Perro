@@ -5,6 +5,27 @@ use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};
 
+/// Trait for inner node types that need internal fixed updates (e.g., Area2D for physics)
+/// Nodes implement this trait to opt into internal fixed updates.
+///
+/// To use this trait:
+/// 1. Implement `NodeWithInternalFixedUpdate` for your node type
+/// 2. The macro-generated BaseNode impl will automatically call your trait method
+///
+/// Example for Node:
+/// ```rust
+/// impl NodeWithInternalFixedUpdate for Node {
+///     fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
+///         // Your internal fixed update logic here
+///     }
+/// }
+/// ```
+pub trait NodeWithInternalFixedUpdate: BaseNode {
+    /// Called during the fixed update phase
+    /// This runs at the XPS rate from the project manifest
+    fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi);
+}
+
 /// Base trait implemented by all engine node types.
 /// Provides unified access and manipulation for all node variants stored in `SceneNode`.
 pub trait BaseNode: Any + Debug + Send {
@@ -52,14 +73,23 @@ pub trait BaseNode: Any + Debug + Send {
 
     /// Internal fixed update - called during fixed update phase for nodes that need it
     /// Default implementation does nothing.
+    /// Nodes that implement NodeWithInternalFixedUpdate will have their trait method called
+    /// automatically in SceneNode::internal_fixed_update.
     fn internal_fixed_update(&mut self, _api: &mut crate::scripting::api::ScriptApi) {
-        // Default empty implementation - nodes can override this
+        // Default empty implementation
     }
 
     /// Returns true if this node needs internal fixed updates
-    /// Nodes like Area2D should override this to return true
+    /// Default implementation returns false.
+    /// Nodes that implement NodeWithInternalFixedUpdate should override this to return true.
     fn needs_internal_fixed_update(&self) -> bool {
         false
+    }
+
+    /// Mark transform as dirty for Node2D nodes (no-op for other node types)
+    /// This is called after deserialization to ensure transforms are recalculated
+    fn mark_transform_dirty_if_node2d(&mut self) {
+        // Default implementation does nothing - only Node2D nodes override this
     }
 }
 
@@ -72,7 +102,7 @@ pub trait IntoInner<T> {
 /// This version supports `Option<Vec<Uuid>>` for `children`.
 #[macro_export]
 macro_rules! impl_scene_node {
-    ($ty:ty, $variant:ident) => {
+    ($ty:ty, $variant:ident, $needs_internal:literal) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
             fn get_id(&self) -> uuid::Uuid {
                 self.id
@@ -154,6 +184,19 @@ macro_rules! impl_scene_node {
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 self
             }
+
+            // Generate internal_fixed_update based on the flag
+            fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+                // If the node needs internal fixed update, call its method
+                // The node must have an `internal_fixed_update` method in its impl block
+                if $needs_internal {
+                    self.internal_fixed_update(api);
+                }
+            }
+
+            fn needs_internal_fixed_update(&self) -> bool {
+                $needs_internal
+            }
         }
 
         impl $ty {
@@ -182,9 +225,13 @@ macro_rules! impl_scene_node {
 
 /// Declares all node types and generates `NodeType` + `SceneNode` enums.
 /// Also implements the `BaseNode` trait for `SceneNode` by delegating to its inner value.
+///
+/// Syntax: `NodeName(needs_internal_fixed_update) => path::to::NodeType`
+/// where `needs_internal_fixed_update` is `true` or `false`
+/// If true, the node must have an `internal_fixed_update` method in its impl block
 #[macro_export]
 macro_rules! define_nodes {
-    ( $( $variant:ident => $ty:path ),+ $(,)? ) => {
+    ( $( $variant:ident($needs_internal:literal) => $ty:path ),+ $(,)? ) => {
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub enum NodeType { $( $variant, )+ }
 
@@ -306,39 +353,91 @@ macro_rules! define_nodes {
             }
 
             fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
-                match self { $( SceneNode::$variant(n) => n.internal_fixed_update(api), )+ }
+                match self {
+                    $(
+                        SceneNode::$variant(n) => {
+                            // Call BaseNode::internal_fixed_update - if the type implements NodeWithInternalFixedUpdate
+                            // and used the macro, this will call the trait method
+                            <$ty as crate::nodes::node_registry::BaseNode>::internal_fixed_update(n, api);
+                        }
+                    )+
+                }
             }
 
             fn needs_internal_fixed_update(&self) -> bool {
                 match self { $( SceneNode::$variant(n) => n.needs_internal_fixed_update(), )+ }
             }
+
+            fn mark_transform_dirty_if_node2d(&mut self) {
+                if let Some(node2d) = self.as_node2d_mut() {
+                    node2d.transform_dirty = true;
+                }
+            }
         }
 
-        $( impl_scene_node!($ty, $variant); )+
+        // Helper methods to extract Node2D references
+        impl SceneNode {
+            /// Get a mutable reference to the Node2D if this is a Node2D-based node
+            pub fn as_node2d_mut(&mut self) -> Option<&mut crate::nodes::_2d::node_2d::Node2D> {
+                match self {
+                    SceneNode::Node2D(n2d) => Some(n2d),
+                    SceneNode::Sprite2D(sprite) => Some(&mut sprite.base),
+                    SceneNode::Area2D(area) => Some(&mut area.base),
+                    SceneNode::CollisionShape2D(cs) => Some(&mut cs.base),
+                    SceneNode::Shape2D(shape) => Some(&mut shape.base),
+                    SceneNode::Camera2D(cam) => Some(&mut cam.base),
+                    _ => None,
+                }
+            }
+
+            /// Get a reference to the Node2D if this is a Node2D-based node
+            pub fn as_node2d(&self) -> Option<&crate::nodes::_2d::node_2d::Node2D> {
+                match self {
+                    SceneNode::Node2D(n2d) => Some(n2d),
+                    SceneNode::Sprite2D(sprite) => Some(&sprite.base),
+                    SceneNode::Area2D(area) => Some(&area.base),
+                    SceneNode::CollisionShape2D(cs) => Some(&cs.base),
+                    SceneNode::Shape2D(shape) => Some(&shape.base),
+                    SceneNode::Camera2D(cam) => Some(&cam.base),
+                    _ => None,
+                }
+            }
+
+            /// Get the local transform if this is a Node2D-based node
+            /// Uses Deref to access transform through Node2D
+            pub fn get_node2d_transform(&self) -> Option<crate::structs2d::Transform2D> {
+                self.as_node2d().map(|node2d| node2d.transform)
+            }
+        }
+
+        $( impl_scene_node!($ty, $variant, $needs_internal); )+
     };
 }
 
 // ─────────────────────────────────────────────
 // Register all built-in node types here
 // ─────────────────────────────────────────────
+
+//true means it has internal fixed update logic
 define_nodes!(
-    Node     => crate::nodes::node::Node,
+    Node(false)     => crate::nodes::node::Node,
+    Node2D(false)   => crate::nodes::_2d::node_2d::Node2D,
+    Sprite2D(false) => crate::nodes::_2d::sprite_2d::Sprite2D,
+    Area2D(true)   => crate::nodes::_2d::area_2d::Area2D,
+    CollisionShape2D(false) => crate::nodes::_2d::collision_shape_2d::CollisionShape2D,
+    Shape2D(false) => crate::nodes::_2d::shape_2d::Shape2D,
+    Camera2D(false)  => crate::nodes::_2d::camera_2d::Camera2D,
 
 
-    Node2D   => crate::nodes::_2d::node_2d::Node2D,
-    Sprite2D => crate::nodes::_2d::sprite_2d::Sprite2D,
-    Area2D   => crate::nodes::_2d::area_2d::Area2D,
-    Camera2D  => crate::nodes::_2d::camera_2d::Camera2D,
+    UINode(false)   => crate::nodes::ui_node::UINode,
 
 
-    UINode   => crate::nodes::ui_node::UINode,
+    Node3D(false)   => crate::nodes::_3d::node_3d::Node3D,
+    MeshInstance3D(false) => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
+    Camera3D(false)  => crate::nodes::_3d::camera_3d::Camera3D,
 
-
-    Node3D   => crate::nodes::_3d::node_3d::Node3D,
-    MeshInstance3D => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
-    Camera3D  => crate::nodes::_3d::camera_3d::Camera3D,
-
-    DirectionalLight3D => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
-    OmniLight3D => crate::nodes::_3d::light_omni_3d::OmniLight3D,
-    SpotLight3D => crate::nodes::_3d::light_spot_3d::SpotLight3D,
+    DirectionalLight3D(false) => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
+    OmniLight3D(false) => crate::nodes::_3d::light_omni_3d::OmniLight3D,
+    SpotLight3D(false) => crate::nodes::_3d::light_spot_3d::SpotLight3D,
 );
+

@@ -3,7 +3,7 @@
   "nodes": {
     "00000000-0000-0000-0000-000000000000": {
       "type": "Node2D",
-      "node": { "type": "Node", "name": "World" }
+      "base": { "type": "Node", "name": "World" }
     },
 
     "00000000-0000-0000-0000-000000000001": { "type": "Node2D", "node": { "type": "Node", "name": "Pup_001", "script_path": "res://types.pup" } },

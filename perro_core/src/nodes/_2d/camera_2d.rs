@@ -19,7 +19,8 @@ pub struct Camera2D {
     pub active: bool,
 
     /// The base Node2D containing transform, z-index, etc.
-    pub node_2d: Node2D,
+    #[serde(rename = "base")]
+    pub base: Node2D,
 }
 
 impl Camera2D {
@@ -28,7 +29,7 @@ impl Camera2D {
             ty: Cow::Borrowed("Camera2D"),
             zoom: Some(1.0),
             active: false,
-            node_2d: Node2D::new(name),
+            base: Node2D::new(name),
         }
     }
 
@@ -42,12 +43,12 @@ impl Deref for Camera2D {
     type Target = Node2D;
 
     fn deref(&self) -> &Self::Target {
-        &self.node_2d
+        &self.base
     }
 }
 
 impl DerefMut for Camera2D {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.node_2d
+        &mut self.base
     }
 }

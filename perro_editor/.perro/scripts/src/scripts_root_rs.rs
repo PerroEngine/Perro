@@ -306,6 +306,8 @@ api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+
+        api.scene.get_scene_node(Uuid::from_str("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48").unwrap()).unwrap().internal_fixed_update(api);
         // In your script struct
 let mut was_mouse_down = false;
 

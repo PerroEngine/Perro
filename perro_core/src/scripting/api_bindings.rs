@@ -424,7 +424,7 @@ impl ApiCodegen for NodeSugarApi {
                 )
             }
             NodeSugarApi::GetChildByName => {
-                // self.get_node("name") -> api.get_child_by_name(self.node.id, "name")
+                // self.get_node("name") -> api.get_child_by_name(self.base.id, "name")
                 // Returns the child node's ID (Option<Uuid>), which can then be used with get_node_clone
                 // Extract the string literal value from args[1] if it's a Literal::String
                 let child_name =
@@ -439,11 +439,11 @@ impl ApiCodegen for NodeSugarApi {
                             .unwrap_or_else(|| "\"\"".to_string())
                     };
                 let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.node.id".to_string()
+                    "self.base.id".to_string()
                 } else if let Some(node_str) = args_strs.get(0) {
                     format!("{}.id", node_str)
                 } else {
-                    "self.node.id".to_string()
+                    "self.base.id".to_string()
                 };
                 format!("api.get_child_by_name({}, {})", node_expr, child_name)
             }
@@ -528,9 +528,9 @@ impl ApiCodegen for SignalApi {
                         let mut node = args_strs
                             .get(1)
                             .cloned()
-                            .unwrap_or_else(|| "self.node".into());
+                            .unwrap_or_else(|| "self.base".into());
                         if node == "self" {
-                            node = "self.node".into()
+                            node = "self.base".into()
                         }
                         let func = strip_string_from(args_strs.get(2).unwrap());
                         let func_id = string_to_u64(&func);
