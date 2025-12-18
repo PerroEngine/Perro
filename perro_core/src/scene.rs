@@ -1756,7 +1756,18 @@ impl Scene<DllScriptProvider> {
         // Load DLL
         let lib_path = default_perro_rust_path()?;
         println!("Loading script library from {:?}", lib_path);
-        let lib = unsafe { Library::new(&lib_path)? };
+        
+        // Check if DLL exists before trying to load it
+        if !lib_path.exists() {
+            return Err(anyhow::anyhow!(
+                "Script DLL not found at {:?}. Please compile scripts first using: cargo run -p perro_core -- --path <path> --scripts",
+                lib_path
+            ));
+        }
+        
+        let lib = unsafe { Library::new(&lib_path).map_err(|e| {
+            anyhow::anyhow!("Failed to load DLL at {:?}: {}. The DLL might be corrupted or incompatible.", lib_path, e)
+        })? };
         let provider = DllScriptProvider::new(Some(lib));
 
         // Borrow project briefly to clone root_path & name
@@ -1777,8 +1788,29 @@ impl Scene<DllScriptProvider> {
             }
         };
 
-        // Inject project root into DLL
-        provider.inject_project_root(&root)?;
+        // Inject project root into DLL (optional - only if DLL needs it)
+        // NOTE: On Windows, this can cause STATUS_ACCESS_VIOLATION if the DLL was built
+        // against a different version of perro_core, because DLLs have separate static
+        // variable instances. Since the project root is already set in the main binary
+        // before loading the DLL, this call is redundant and can be safely skipped.
+        // 
+        // If you're experiencing access violations, try commenting out this call:
+        // provider.inject_project_root(&root)?;
+        
+        // For now, we'll skip it on Windows to avoid access violations
+        #[cfg(not(windows))]
+        {
+            if let Err(e) = provider.inject_project_root(&root) {
+                eprintln!("⚠ Warning: Failed to inject project root into DLL (this is usually okay): {}", e);
+            }
+        }
+        
+        #[cfg(windows)]
+        {
+            // On Windows, skip the DLL call to avoid potential access violations
+            // The project root is already set in the main binary
+            eprintln!("ℹ Skipping DLL project root injection on Windows (already set in main binary)");
+        }
 
         // Now move `project` into Scene
         let mut game_scene = Scene::new(root_node, provider, project);

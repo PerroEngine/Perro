@@ -222,6 +222,19 @@ pub fn run_dev() {
     use crate::registry::DllScriptProvider;
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
+    
+    // Setup panic handler to catch access violations and provide better diagnostics
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("❌ PANIC occurred!");
+        eprintln!("   Location: {:?}", panic_info.location());
+        eprintln!("   Message: {:?}", panic_info.payload().downcast_ref::<&str>());
+        eprintln!("   This might be an access violation (STATUS_ACCESS_VIOLATION)");
+        eprintln!("   Common causes:");
+        eprintln!("   - Script DLL not compiled or corrupted");
+        eprintln!("   - DLL function signature mismatch");
+        eprintln!("   - Invalid memory access in DLL");
+        eprintln!("   Try: cargo run -p perro_core -- --path <path> --scripts");
+    }));
 
     let args: Vec<String> = env::args().collect();
     let mut key: Option<String> = None;

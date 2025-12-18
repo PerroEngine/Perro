@@ -29,22 +29,43 @@ impl DllScriptProvider {
             .ok_or_else(|| anyhow::anyhow!("No DLL loaded"))?;
 
         unsafe {
-            let set_root_fn: libloading::Symbol<
+            // Try to get the symbol - if it doesn't exist, that's okay (older DLLs might not have it)
+            let set_root_fn_result: Result<libloading::Symbol<
                 unsafe extern "C" fn(*const c_char, *const c_char),
-            > = lib.get(b"perro_set_project_root\0")?;
+            >, _> = lib.get(b"perro_set_project_root\0");
+            
+            match set_root_fn_result {
+                Ok(set_root_fn) => {
+                    // Match to extract disk path and name
+                    if let ProjectRoot::Disk {
+                        root: path_buf,
+                        name,
+                    } = root
+                    {
+                        let path_c = CString::new(path_buf.to_string_lossy().as_ref())
+                            .map_err(|e| anyhow::anyhow!("Failed to create CString for path: {}", e))?;
+                        let name_c = CString::new(name.as_str())
+                            .map_err(|e| anyhow::anyhow!("Failed to create CString for name: {}", e))?;
 
-            // Match to extract disk path and name
-            if let ProjectRoot::Disk {
-                root: path_buf,
-                name,
-            } = root
-            {
-                let path_c = CString::new(path_buf.to_string_lossy().as_ref())?;
-                let name_c = CString::new(name.as_str())?;
-
-                set_root_fn(path_c.as_ptr(), name_c.as_ptr());
-            } else {
-                anyhow::bail!("inject_project_root only supports ProjectRoot::Disk for now");
+                        // Ensure the CStrings stay alive during the function call
+                        // by keeping them in scope
+                        let path_ptr = path_c.as_ptr();
+                        let name_ptr = name_c.as_ptr();
+                        
+                        // Call the function
+                        // NOTE: On Windows, this can cause STATUS_ACCESS_VIOLATION if the DLL
+                        // was built against a different version of perro_core, because DLLs
+                        // have separate static variable instances. The caller should skip this
+                        // on Windows if experiencing issues.
+                        set_root_fn(path_ptr, name_ptr);
+                    } else {
+                        anyhow::bail!("inject_project_root only supports ProjectRoot::Disk for now");
+                    }
+                }
+                Err(e) => {
+                    // Symbol doesn't exist - this is okay for older DLLs
+                    eprintln!("⚠ Warning: perro_set_project_root symbol not found in DLL (this is okay for older builds): {}", e);
+                }
             }
         }
 

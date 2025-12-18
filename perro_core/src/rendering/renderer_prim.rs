@@ -166,7 +166,7 @@ pub struct PrimitiveRenderer {
 
 impl PrimitiveRenderer {
     pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
-        println!("🔳 Primitive Renderer initialized");
+        println!("🔳 Primitive Renderer initialized - starting setup");
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Texture BGL"),
@@ -234,11 +234,15 @@ impl PrimitiveRenderer {
             mapped_at_creation: false,
         });
 
+        println!("🔳 Creating rect pipeline...");
         let rect_instanced_pipeline = Self::create_rect_pipeline(device, camera_bgl, format);
+        println!("🔳 Creating texture pipeline...");
         let texture_instanced_pipeline =
             Self::create_texture_pipeline(device, &texture_bind_group_layout, camera_bgl, format);
+        println!("🔳 Creating font pipeline...");
         let font_instanced_pipeline =
             Self::create_font_pipeline(device, &font_bind_group_layout, camera_bgl, format);
+        println!("🔳 All pipelines created successfully");
 
         Self {
             rect_instance_buffer,
@@ -1155,10 +1159,12 @@ impl PrimitiveRenderer {
         camera_bgl: &BindGroupLayout,
         format: TextureFormat,
     ) -> RenderPipeline {
+        println!("🔳 Loading rect shader...");
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Rect Instanced Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect_instanced.wgsl"))),
         });
+        println!("🔳 Rect shader loaded, creating pipeline...");
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Rect Instanced Pipeline Layout"),
@@ -1288,12 +1294,14 @@ impl PrimitiveRenderer {
         camera_bgl: &BindGroupLayout,
         format: TextureFormat,
     ) -> RenderPipeline {
+        println!("🔳 Loading texture shader...");
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Sprite Instanced Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!(
                 "shaders/sprite_instanced.wgsl"
             ))),
         });
+        println!("🔳 Texture shader loaded, creating pipeline...");
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Sprite Instanced Pipeline Layout"),
@@ -1393,10 +1401,12 @@ impl PrimitiveRenderer {
         camera_bgl: &BindGroupLayout,
         format: TextureFormat,
     ) -> RenderPipeline {
+        println!("🔳 Loading font shader...");
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Font Instanced Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/font_instanced.wgsl"))),
         });
+        println!("🔳 Font shader loaded, creating pipeline...");
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Font Pipeline Layout"),

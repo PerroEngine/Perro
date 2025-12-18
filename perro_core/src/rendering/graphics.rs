@@ -2,9 +2,9 @@ use std::{borrow::Cow, collections::HashMap, fmt, ops::Range, sync::Arc, time::I
 
 use bytemuck::cast_slice;
 use wgpu::{
-    Adapter, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
+    Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor,
-    Device, DeviceDescriptor, Features, Instance, Limits, MemoryHints, PowerPreference, Queue,
+    Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, MemoryHints, PowerPreference, Queue,
     RenderPass, RequestAdapterOptions, SurfaceConfiguration, TextureFormat, TextureViewDescriptor,
     util::DeviceExt,
 };
@@ -415,33 +415,304 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     renderer_3d.upload_materials_to_gpu(queue);
 
     material_manager
-}
-
-pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphics>) {
-    // 1) Instance / Surface / Adapter / Device+Queue
-    let instance = Instance::default();
-    let surface = instance.create_surface(Rc::clone(&window)).unwrap();
+}pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphics>) {
+    use std::io::Write;
+    
+    // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
+    // Different GPUs work better with different backends:
+    // - Intel integrated: DX12 > Vulkan (Vulkan drivers crash)
+    // - NVIDIA: Vulkan ≈ DX12 (both good, Vulkan often slightly better)
+    // - AMD: Vulkan > DX12 (Vulkan usually better)
+    // - Apple Silicon: Metal only
+    
+    println!("🔍 Probing available GPUs and backends...");
+    std::io::stdout().flush().unwrap();
+    
+    // Get list of available backends for this platform
+    #[cfg(windows)]
+    let available_backends = vec![
+        ("DX12", Backends::DX12),
+        ("Vulkan", Backends::VULKAN),
+        ("OpenGL", Backends::GL),
+    ];
+    #[cfg(target_os = "macos")]
+    let available_backends = vec![
+        ("Metal", Backends::METAL),
+        ("Vulkan", Backends::VULKAN),
+        ("OpenGL", Backends::GL),
+    ];
+    #[cfg(target_os = "linux")]
+    let available_backends = vec![
+        ("Vulkan", Backends::VULKAN),
+        ("OpenGL", Backends::GL),
+    ];
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let available_backends = vec![
+        ("Vulkan", Backends::VULKAN),
+        ("OpenGL", Backends::GL),
+    ];
+    
+    // Collect all available adapters from all backends
+    struct AdapterCandidate {
+        backend_name: &'static str,
+        backend: Backends,
+        info: wgpu::AdapterInfo,
+    }
+    
+    let mut candidates: Vec<AdapterCandidate> = Vec::new();
+    
+    for (backend_name, backends) in available_backends.iter() {
+        let test_instance = Instance::new(&InstanceDescriptor {
+            backends: *backends,
+            ..Default::default()
+        });
+        
+        let test_surface = match test_instance.create_surface(Rc::clone(&window)) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        
+        // Try to get adapters (prefer discrete, then integrated)
+        let mut seen_names = std::collections::HashSet::new();
+        
+        // Try high performance (discrete GPU)
+        if let Some(adap) = test_instance
+            .request_adapter(&RequestAdapterOptions {
+                power_preference: PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&test_surface),
+            })
+            .await
+        {
+            let info = adap.get_info();
+            if seen_names.insert(info.name.clone()) {
+                candidates.push(AdapterCandidate {
+                    backend_name,
+                    backend: *backends,
+                    info,
+                });
+            }
+        }
+        
+        // Try default (might get integrated)
+        if let Some(adap) = test_instance
+            .request_adapter(&RequestAdapterOptions {
+                power_preference: PowerPreference::default(),
+                force_fallback_adapter: false,
+                compatible_surface: Some(&test_surface),
+            })
+            .await
+        {
+            let info = adap.get_info();
+            if seen_names.insert(info.name.clone()) {
+                candidates.push(AdapterCandidate {
+                    backend_name,
+                    backend: *backends,
+                    info,
+                });
+            }
+        }
+    }
+    
+    // Also try WARP (software renderer) as last resort on Windows
+    #[cfg(windows)]
+    {
+        let warp_instance = Instance::new(&InstanceDescriptor {
+            backends: Backends::DX12,
+            ..Default::default()
+        });
+        if let Ok(warp_surface) = warp_instance.create_surface(Rc::clone(&window)) {
+            if let Some(warp_adap) = warp_instance
+                .request_adapter(&RequestAdapterOptions {
+                    power_preference: PowerPreference::LowPower,
+                    force_fallback_adapter: true, // This enables WARP
+                    compatible_surface: Some(&warp_surface),
+                })
+                .await
+            {
+                let info = warp_adap.get_info();
+                candidates.push(AdapterCandidate {
+                    backend_name: "WARP (Software)",
+                    backend: Backends::DX12,
+                    info,
+                });
+            }
+        }
+    }
+    
+    if candidates.is_empty() {
+        panic!("No GPU adapter found (hardware or software)");
+    }
+    
+    println!("🔍 Found {} GPU adapter(s):", candidates.len());
+    for (i, cand) in candidates.iter().enumerate() {
+        println!("   {}. {} on {} backend (Type: {:?})", 
+            i + 1, cand.info.name, cand.backend_name, cand.info.device_type);
+    }
+    std::io::stdout().flush().unwrap();
+    
+    // Score each candidate based on GPU vendor and backend compatibility
+    let scored: Vec<_> = candidates.into_iter().map(|cand| {
+        let mut score = 0i32;
+        let name_lower = cand.info.name.to_lowercase();
+        
+        // Prefer discrete GPUs over integrated
+        match cand.info.device_type {
+            wgpu::DeviceType::DiscreteGpu => score += 1000,
+            wgpu::DeviceType::IntegratedGpu => score += 100,
+            wgpu::DeviceType::Cpu => score += 1, // WARP/software
+            _ => {}
+        }
+        
+        // GPU vendor-specific backend preferences
+        if name_lower.contains("intel") {
+            // Intel: DX12 >> Vulkan (Vulkan drivers crash on integrated)
+            match cand.backend_name {
+                "DX12" => score += 500,
+                "Vulkan" => score -= 200, // Heavy penalty for Intel + Vulkan
+                "OpenGL" => score += 200,
+                _ => {}
+            }
+        } else if name_lower.contains("nvidia") {
+            // NVIDIA: Vulkan ≈ DX12 (both excellent, Vulkan often slightly better)
+            match cand.backend_name {
+                "Vulkan" => score += 300,
+                "DX12" => score += 280,
+                "OpenGL" => score += 100,
+                _ => {}
+            }
+        } else if name_lower.contains("amd") || name_lower.contains("radeon") {
+            // AMD: Vulkan > DX12 (Vulkan usually better)
+            match cand.backend_name {
+                "Vulkan" => score += 400,
+                "DX12" => score += 200,
+                "OpenGL" => score += 100,
+                _ => {}
+            }
+        } else if name_lower.contains("apple") || name_lower.contains("m1") || 
+                  name_lower.contains("m2") || name_lower.contains("m3") {
+            // Apple Silicon: Metal only
+            match cand.backend_name {
+                "Metal" => score += 1000,
+                _ => score -= 500, // Don't use other backends on Apple
+            }
+        } else {
+            // Unknown GPU: prefer Vulkan, then DX12, then GL
+            match cand.backend_name {
+                "Vulkan" => score += 250,
+                "DX12" => score += 200,
+                "Metal" => score += 200,
+                "OpenGL" => score += 100,
+                _ => {}
+            }
+        }
+        
+        (score, cand)
+    }).collect();
+    
+    // Sort by score (highest first) and take the best one
+    let mut scored_sorted = scored;
+    scored_sorted.sort_by(|a, b| b.0.cmp(&a.0));
+    
+    let (score, best_candidate) = scored_sorted.into_iter().next().unwrap();
+    
+    println!("✅ Selected: {} on {} backend (score: {})", 
+        best_candidate.info.name, best_candidate.backend_name, score);
+    std::io::stdout().flush().unwrap();
+    
+    // Warn about known problematic combinations
+    let name_lower = best_candidate.info.name.to_lowercase();
+    let is_intel_integrated = matches!(best_candidate.info.device_type, wgpu::DeviceType::IntegratedGpu)
+        && name_lower.contains("intel");
+    
+    if is_intel_integrated && best_candidate.backend_name == "Vulkan" {
+        println!("⚠ WARNING: Intel integrated GPU with Vulkan - known to crash!");
+        println!("   DX12 would be more stable. Consider updating Intel GPU drivers.");
+        std::io::stdout().flush().unwrap();
+    }
+    
+    // Create fresh instance and surface for the selected backend
+    // IMPORTANT: Must be done immediately before requesting adapter to avoid invalidation
+    println!("🔧 Creating instance and surface for {} backend...", best_candidate.backend_name);
+    std::io::stdout().flush().unwrap();
+    
+    let instance = Instance::new(&InstanceDescriptor {
+        backends: best_candidate.backend,
+        ..Default::default()
+    });
+    
+    let surface = instance.create_surface(Rc::clone(&window))
+        .expect("Failed to create surface for selected adapter");
+    
+    println!("🔧 Requesting adapter...");
+    std::io::stdout().flush().unwrap();
+    
+    // Request the adapter again with the fresh instance/surface
+    // This prevents the adapter from becoming invalid
     let adapter = instance
         .request_adapter(&RequestAdapterOptions {
-            power_preference: PowerPreference::default(),
-            force_fallback_adapter: false,
+            power_preference: if best_candidate.info.device_type == wgpu::DeviceType::DiscreteGpu {
+                PowerPreference::HighPerformance
+            } else {
+                PowerPreference::default()
+            },
+            force_fallback_adapter: best_candidate.backend_name == "WARP (Software)",
             compatible_surface: Some(&surface),
         })
         .await
-        .expect("No GPU adapter");
+        .expect("Failed to request adapter for selected backend");
+    
+    let backend_used = best_candidate.backend_name;
+    
+    // Print adapter info for debugging GPU driver issues
+    println!("🔧 GPU Adapter Info:");
+    println!("   Backend Used: {}", backend_used);
+    println!("   Name: {:?}", adapter.get_info().name);
+    println!("   Backend: {:?}", adapter.get_info().backend);
+    println!("   Device Type: {:?}", adapter.get_info().device_type);
+    
+    // Check if it's integrated graphics (often less stable)
+    let is_integrated = matches!(adapter.get_info().device_type, wgpu::DeviceType::IntegratedGpu);
+    if is_integrated {
+        println!("   ⚠ WARNING: Using integrated GPU - enabling compatibility mode");
+        println!("   Consider using a discrete GPU if available");
+    }
+    
+    println!("   If you're experiencing crashes, try updating your GPU drivers.");
+    std::io::stdout().flush().unwrap();
+    
+    // Use more conservative limits for integrated GPUs to avoid driver crashes
+    let device_limits = if is_integrated {
+        // More conservative limits for integrated GPUs
+        wgpu::Limits::downlevel_webgl2_defaults()
+            .using_resolution(adapter.limits())
+    } else {
+        wgpu::Limits::downlevel_webgl2_defaults()
+            .using_resolution(adapter.limits())
+    };
+    
+    println!("🔧 Requesting device...");
+    std::io::stdout().flush().unwrap();
+    
     let (device, queue) = adapter
         .request_device(
             &DeviceDescriptor {
                 label: None,
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::Performance,
+                required_limits: device_limits,
+                memory_hints: if is_integrated {
+                    wgpu::MemoryHints::Performance // Use performance hints for integrated
+                } else {
+                    wgpu::MemoryHints::Performance
+                },
             },
             None,
         )
         .await
         .expect("Failed to get device");
+
+    println!("✅ Device and queue created successfully");
+    std::io::stdout().flush().unwrap();
 
     // 2) Surface config
     let size = window.inner_size();
@@ -599,17 +870,42 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
 
     // 7) Create renderers
+    println!("🔧 Creating Renderer3D...");
+    std::io::stdout().flush().unwrap();
     let mut renderer_3d =
         Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
+    println!("✅ Renderer3D created successfully");
+    std::io::stdout().flush().unwrap();
+    
+    println!("🔧 Creating PrimitiveRenderer...");
+    std::io::stdout().flush().unwrap();
     let renderer_prim =
         PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
+    println!("✅ PrimitiveRenderer created successfully");
+    std::io::stdout().flush().unwrap();
+    
+    println!("🔧 Creating Renderer2D...");
+    std::io::stdout().flush().unwrap();
     let renderer_2d = Renderer2D::new();
+    println!("✅ Renderer2D created successfully");
+    std::io::stdout().flush().unwrap();
+    
+    println!("🔧 Creating RendererUI...");
+    std::io::stdout().flush().unwrap();
     let renderer_ui = RendererUI::new();
+    println!("✅ RendererUI created successfully");
+    std::io::stdout().flush().unwrap();
 
     // 8) Initialize material system with default material
+    println!("🔧 Initializing material system...");
+    std::io::stdout().flush().unwrap();
     let material_manager = initialize_material_system(&mut renderer_3d, &queue);
+    println!("✅ Material system initialized");
+    std::io::stdout().flush().unwrap();
 
     // 9) Create depth texture
+    println!("🔧 Creating depth texture...");
+    std::io::stdout().flush().unwrap();
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Depth Texture"),
         size: wgpu::Extent3d {
@@ -626,7 +922,11 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     });
 
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    println!("✅ Depth texture created");
+    std::io::stdout().flush().unwrap();
 
+    println!("🔧 Constructing Graphics struct...");
+    std::io::stdout().flush().unwrap();
     let gfx = Graphics {
         window: window.clone(),
         instance,
@@ -661,8 +961,14 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
             store: wgpu::StoreOp::Store,
         },
     };
+    println!("✅ Graphics struct constructed");
+    std::io::stdout().flush().unwrap();
 
+    println!("🔧 Sending Graphics event...");
+    std::io::stdout().flush().unwrap();
     let _ = proxy.send_event(gfx);
+    println!("✅ Graphics event sent successfully");
+    std::io::stdout().flush().unwrap();
 }
 
 impl Graphics {

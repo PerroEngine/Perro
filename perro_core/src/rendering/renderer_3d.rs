@@ -122,19 +122,22 @@ pub struct Renderer3D {
 impl Renderer3D {
     pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
         println!("🟧 Renderer3D initialized with multi-light and material support");
-
+        println!("🟧 Creating shader module...");
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("3D Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/3D/basic3d.wgsl"))),
         });
+        println!("🟧 Shader module created");
 
         // ===== LIGHT SETUP =====
+        println!("🟧 Creating light buffer...");
         let light_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Light Buffer"),
             size: (MAX_LIGHTS * std::mem::size_of::<LightUniform>()) as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        println!("🟧 Light buffer created, creating bind group layout...");
 
         let light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -152,6 +155,7 @@ impl Renderer3D {
                     count: None,
                 }],
             });
+        println!("🟧 Light bind group layout created, creating bind group...");
 
         let light_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("Light BG"),
@@ -167,14 +171,17 @@ impl Renderer3D {
                 }),
             }],
         });
+        println!("🟧 Light bind group created");
 
         // ===== MATERIAL SETUP =====
+        println!("🟧 Creating material buffer...");
         let material_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Material Buffer"),
             size: (MAX_MATERIALS * std::mem::size_of::<MaterialUniform>()) as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        println!("🟧 Material buffer created, creating bind group layout...");
 
         let material_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -192,6 +199,7 @@ impl Renderer3D {
                     count: None,
                 }],
             });
+        println!("🟧 Material bind group layout created, creating bind group...");
 
         let material_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("Material BG"),
@@ -207,8 +215,10 @@ impl Renderer3D {
                 }),
             }],
         });
+        println!("🟧 Material bind group created");
 
         // ===== PIPELINE SETUP =====
+        println!("🟧 Creating pipeline layout...");
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("3D Pipeline Layout"),
             bind_group_layouts: &[
@@ -218,102 +228,147 @@ impl Renderer3D {
             ],
             push_constant_ranges: &[],
         });
+        println!("🟧 Pipeline layout created, creating render pipeline...");
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
 
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        // Build pipeline descriptor step by step to isolate the issue
+        println!("🟧 Building vertex state...");
+        std::io::stdout().flush().unwrap();
+        let vertex_state = wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                // Vertex
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex3D>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                    ],
+                },
+                // Instance
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<MeshInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 48,
+                            shader_location: 5,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 64,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        };
+        println!("🟧 Vertex state built");
+        std::io::stdout().flush().unwrap();
+
+        println!("🟧 Building fragment state...");
+        std::io::stdout().flush().unwrap();
+        let fragment_state = Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        });
+        println!("🟧 Fragment state built");
+        std::io::stdout().flush().unwrap();
+
+        println!("🟧 Building primitive state...");
+        std::io::stdout().flush().unwrap();
+        let primitive_state = wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            ..Default::default()
+        };
+        println!("🟧 Primitive state built");
+        std::io::stdout().flush().unwrap();
+
+        println!("🟧 Building depth stencil state...");
+        std::io::stdout().flush().unwrap();
+        let depth_stencil_state = Some(wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+        println!("🟧 Depth stencil state built");
+        std::io::stdout().flush().unwrap();
+
+        println!("🟧 Building render pipeline descriptor...");
+        std::io::stdout().flush().unwrap();
+        let pipeline_descriptor = RenderPipelineDescriptor {
             label: Some("3D Pipeline"),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    // Vertex
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex3D>() as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 0,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 12,
-                                shader_location: 1,
-                                format: wgpu::VertexFormat::Float32x3,
-                            },
-                        ],
-                    },
-                    // Instance
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<MeshInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                offset: 0,
-                                shader_location: 2,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 16,
-                                shader_location: 3,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 32,
-                                shader_location: 4,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 48,
-                                shader_location: 5,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                offset: 64,
-                                shader_location: 6,
-                                format: wgpu::VertexFormat::Uint32,
-                            },
-                        ],
-                    },
-                ],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            vertex: vertex_state,
+            fragment: fragment_state,
+            primitive: primitive_state,
+            depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
-        });
+        };
+        println!("🟧 Pipeline descriptor built, calling create_render_pipeline...");
+        std::io::stdout().flush().unwrap();
+        println!("🟧 NOTE: If this crashes with STATUS_ACCESS_VIOLATION, it's likely a GPU driver issue.");
+        println!("🟧 Try updating your GPU drivers or using a different GPU adapter.");
+        std::io::stdout().flush().unwrap();
 
+        // This is where it crashes - the actual wgpu API call
+        // Access violations can't be caught by Rust, they're OS-level exceptions
+        // If this crashes, it's almost certainly a GPU driver bug
+        let pipeline = device.create_render_pipeline(&pipeline_descriptor);
+        println!("🟧 Render pipeline created successfully");
+        std::io::stdout().flush().unwrap();
+
+        println!("🟧 Creating mesh instance buffer...");
         let mesh_instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Mesh Instances"),
             size: 4096 * std::mem::size_of::<MeshInstance>() as u64, // Increased buffer size
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        println!("🟧 Mesh instance buffer created");
 
-        Self {
+        println!("🟧 Constructing Renderer3D struct...");
+        let result = Self {
             pipeline,
             light_buffer,
             light_bind_group,
@@ -338,7 +393,9 @@ impl Renderer3D {
             visibility_dirty: false,
 
             last_frustum_matrix: Mat4::IDENTITY,
-        }
+        };
+        println!("🟧 Renderer3D struct constructed successfully");
+        result
     }
 
     // ===== LIGHT MANAGEMENT =====
