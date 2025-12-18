@@ -1,0 +1,10 @@
+extends Node2D
+
+
+
+fn update() {
+    var delta = Time.get_delta()
+
+    self.transform.position.y -= 50 * delta
+
+}

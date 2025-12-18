@@ -1,0 +1,28 @@
+{
+  "root_id": "00000000-0000-0000-0000-000000000001",
+  "nodes": {
+    "00000000-0000-0000-0000-000000000001": {
+      "type": "Node2D",
+      "base": { "type": "Node", "name": "ThirdWorld"}
+    },
+
+            "00000000-0000-0000-0000-000000000031": {
+      "type": "Node2D",
+      "base": { "type": "Node", "name": "RootOFFour", "parent": "00000000-0000-0000-0000-000000000001", "is_root_of": "res://four.scn"}
+    },
+   
+    "00000000-0000-0000-0000-000000000008": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "PlayerofThird", "parent": "00000000-0000-0000-0000-000000000001", "script_path": "res://player.pup"},
+        "transform": {
+          "position": { "x": -1.0, "y": -500.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    }
+   
+}}

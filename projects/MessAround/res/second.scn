@@ -1,9 +1,14 @@
 {
-  "root_id": "00000000-0000-0000-0000-000000000000",
+  "root_id": "00000000-0000-0000-0000-000000000054",
   "nodes": {
-    "00000000-0000-0000-0000-000000000000": {
+    "00000000-0000-0000-0000-000000000054": {
       "type": "Node2D",
-      "base": { "type": "Node", "name": "World"}
+      "base": { "type": "Node", "name": "SubsSceneWorld"}
+    },
+
+    "00000000-0000-0000-0000-000000000001": {
+      "type": "Node2D",
+      "base": { "type": "Node", "name": "RootThird", "parent": "00000000-0000-0000-0000-000000000054", "is_root_of": "res://third.scn"}
     },
    
     "00000000-0000-0000-0000-000000000004": {
@@ -11,9 +16,9 @@
       "texture_path": "res://icon.png",
       "base": {
         "type": "Node2D",
-        "base": { "type": "Node", "name": "Player", "parent": "00000000-0000-0000-0000-000000000000"},
+        "base": { "type": "Node", "name": "PlayerofSubScene", "parent": "00000000-0000-0000-0000-000000000054", "script_path": "res://player.pup"},
         "transform": {
-          "position": { "x": -1.0, "y": 0.0 },
+          "position": { "x": -1.0, "y": 500.0 },
           "rotation": 0.0,
           "scale": { "x": 0.5, "y": 0.5 }
         }
