@@ -593,10 +593,11 @@ impl<P: ScriptProvider> Scene<P> {
             node.mark_dirty();
             node.mark_transform_dirty_if_node2d();
     
-            // Resolve name conflicts
+            // Resolve name conflicts (only check siblings - nodes with the same parent)
             let node_name = node.get_name();
-            if self.data.nodes.values().any(|n| n.get_name() == node_name) {
-                let resolved_name = self.resolve_name_conflict(node_name);
+            let parent_id = node.get_parent();
+            if self.has_sibling_name_conflict(parent_id, node_name) {
+                let resolved_name = self.resolve_name_conflict(parent_id, node_name);
                 Self::set_node_name(&mut node, resolved_name);
             }
     
@@ -941,10 +942,11 @@ impl<P: ScriptProvider> Scene<P> {
             node.mark_dirty();
             node.mark_transform_dirty_if_node2d();
     
-            // Resolve name conflicts
+            // Resolve name conflicts (only check siblings - nodes with the same parent)
             let node_name = node.get_name();
-            if self.data.nodes.values().any(|n| n.get_name() == node_name) {
-                let resolved_name = self.resolve_name_conflict(node_name);
+            let parent_id = node.get_parent();
+            if self.has_sibling_name_conflict(parent_id, node_name) {
+                let resolved_name = self.resolve_name_conflict(parent_id, node_name);
                 Self::set_node_name(&mut node, resolved_name);
             }
     
@@ -1140,13 +1142,21 @@ impl<P: ScriptProvider> Scene<P> {
         Ok(())
     }
 
+    /// Check if a node name conflicts with any sibling (node with the same parent)
+    fn has_sibling_name_conflict(&self, parent_id: Option<Uuid>, name: &str) -> bool {
+        self.data.nodes.values().any(|n| {
+            n.get_parent() == parent_id && n.get_name() == name
+        })
+    }
+
     /// Resolve name conflicts by appending a digit suffix
-    fn resolve_name_conflict(&self, base_name: &str) -> String {
+    /// Only checks for conflicts among siblings (nodes with the same parent)
+    fn resolve_name_conflict(&self, parent_id: Option<Uuid>, base_name: &str) -> String {
         let mut counter = 1;
         let mut candidate = format!("{}{}", base_name, counter);
         
-        // Check if any existing node has this name
-        while self.data.nodes.values().any(|node| node.get_name() == candidate.as_str()) {
+        // Check if any sibling (node with the same parent) has this name
+        while self.has_sibling_name_conflict(parent_id, &candidate) {
             counter += 1;
             candidate = format!("{}{}", base_name, counter);
         }

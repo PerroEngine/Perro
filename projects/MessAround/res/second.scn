@@ -10,6 +10,11 @@
       "type": "Node2D",
       "base": { "type": "Node", "name": "RootThird", "parent": "00000000-0000-0000-0000-000000000054", "is_root_of": "res://third.scn"}
     },
+
+       "00000000-0000-0000-0000-000000000008": {
+      "type": "Node2D",
+      "base": { "type": "Node", "name": "RootOFFour", "parent": "00000000-0000-0000-0000-000000000001", "is_root_of": "res://four.scn"}
+    },
    
     "00000000-0000-0000-0000-000000000004": {
       "type": "Sprite2D",
