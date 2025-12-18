@@ -71,7 +71,7 @@
           "scale": { "x": 1.0, "y": 1.0 }
         }
       },
-      "shape": { "Circle": { "radius": 100.0 } }
+      "shape": { "Circle": { "radius": 120.0 } }
     },
     "00000000-0000-0000-0000-000000000007": {
       "type": "Shape2D",
@@ -88,6 +88,10 @@
       "shape_type": { "Rectangle": { "width": 310.0, "height": 310.0 } },
       "color": { "r": 0, "g": 0, "b": 255, "a": 100 },
       "filled": false
+    },
+     "00000000-0000-0000-0000-000000000009": {
+      "type": "Node2D",
+      "base": { "type": "Node", "name": "World2", "is_root_of": "res://second.scn"}
     },
     "00000000-0000-0000-0000-000000000002": {
       "type": "Camera2D",

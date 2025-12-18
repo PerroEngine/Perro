@@ -1,5 +1,5 @@
 [[bin]]
-name = "Fart"
+name = "MessAround"
 path = "src/main.rs"
 
 [build-dependencies]

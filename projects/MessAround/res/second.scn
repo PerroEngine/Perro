@@ -1,0 +1,23 @@
+{
+  "root_id": "00000000-0000-0000-0000-000000000000",
+  "nodes": {
+    "00000000-0000-0000-0000-000000000000": {
+      "type": "Node2D",
+      "base": { "type": "Node", "name": "World"}
+    },
+   
+    "00000000-0000-0000-0000-000000000004": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player", "parent": "00000000-0000-0000-0000-000000000000"},
+        "transform": {
+          "position": { "x": -1.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    }
+   
+}}

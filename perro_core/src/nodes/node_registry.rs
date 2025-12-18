@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::{any::Any, collections::HashMap};
 use uuid::Uuid;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Trait for inner node types that need internal fixed updates (e.g., Area2D for physics)
 /// Nodes implement this trait to opt into internal fixed updates.
@@ -35,6 +35,8 @@ pub trait BaseNode: Any + Debug + Send {
     fn set_local_id(&mut self, local_id: Uuid);
 
     fn get_name(&self) -> &str;
+    fn set_name(&mut self, name: String);
+    fn get_is_root_of(&self) -> Option<&str>;
     fn get_parent(&self) -> Option<Uuid>;
 
     /// Returns a reference to the children list.
@@ -119,6 +121,12 @@ macro_rules! impl_scene_node {
 
             fn get_name(&self) -> &str {
                 &self.name
+            }
+            fn set_name(&mut self, name: String) {
+                self.name = std::borrow::Cow::Owned(name);
+            }
+            fn get_is_root_of(&self) -> Option<&str> {
+                self.is_root_of.as_deref()
             }
             fn get_parent(&self) -> Option<uuid::Uuid> {
                 self.parent
@@ -290,6 +298,14 @@ macro_rules! define_nodes {
 
             fn get_name(&self) -> &str {
                 match self { $( SceneNode::$variant(n) => n.get_name(), )+ }
+            }
+
+            fn set_name(&mut self, name: String) {
+                match self { $( SceneNode::$variant(n) => n.set_name(name), )+ }
+            }
+
+            fn get_is_root_of(&self) -> Option<&str> {
+                match self { $( SceneNode::$variant(n) => n.get_is_root_of(), )+ }
             }
 
             fn get_parent(&self) -> Option<uuid::Uuid> {

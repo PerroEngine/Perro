@@ -1,0 +1,5 @@
+extends Node
+
+fn init() {
+    Console.print("hello there root")
+}

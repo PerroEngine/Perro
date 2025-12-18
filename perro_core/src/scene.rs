@@ -610,6 +610,15 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
 
+        // Store root's is_root_of and new_id before moving it (for nested scene loading)
+        let (root_is_root_of, root_new_id) = if let Some(root_ref) = other.nodes.get(&other.root_id) {
+            let is_root_of = Self::get_is_root_of(root_ref);
+            let new_id = id_map[&root_ref.get_local_id()];
+            (is_root_of, Some(new_id))
+        } else {
+            (None, None)
+        };
+        
         let root_to_insert = if let Some(mut root) = other.nodes.remove(&other.root_id) {
             let new_root_id = id_map[&root.get_local_id()];
             root.set_id(new_root_id);
@@ -641,6 +650,14 @@ impl<P: ScriptProvider> Scene<P> {
             node.mark_dirty();
             // Mark transform dirty BEFORE insertion (for Node2D nodes)
             node.mark_transform_dirty_if_node2d();
+            
+            // Resolve name conflicts
+            let node_name = node.get_name();
+            if self.data.nodes.values().any(|n| n.get_name() == node_name) {
+                let resolved_name = self.resolve_name_conflict(node_name);
+                Self::set_node_name(&mut node, resolved_name);
+            }
+            
             let id = node.get_id();
             self.data.nodes.insert(id, node);
             // Mark transform as dirty recursively (after insertion, to mark children too)
@@ -656,7 +673,14 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
 
-        if let Some(root) = root_to_insert {
+        if let Some(mut root) = root_to_insert {
+            // Resolve name conflicts for root
+            let root_name = root.get_name();
+            if self.data.nodes.values().any(|n| n.get_name() == root_name) {
+                let resolved_name = self.resolve_name_conflict(root_name);
+                Self::set_node_name(&mut root, resolved_name);
+            }
+            
             let root_id = root.get_id();
             self.data.nodes.insert(root_id, root);
             // Mark transform as dirty for newly inserted root (after insertion)
@@ -675,6 +699,43 @@ impl<P: ScriptProvider> Scene<P> {
         // Collect all new runtime IDs
         let new_ids: Vec<Uuid> = id_map.values().copied().collect();
         let insert_time = insert_start.elapsed();
+
+        // ───────────────────────────────────────────────
+        // 4.5️⃣ HANDLE is_root_of SCENE REFERENCES (RECURSIVE)
+        // ───────────────────────────────────────────────
+        let nested_scene_start = Instant::now();
+        let mut nodes_with_nested_scenes: Vec<(Uuid, String)> = Vec::new();
+        
+        // Collect nodes with is_root_of from newly inserted nodes
+        for id in &new_ids {
+            if let Some(node) = self.data.nodes.get(id) {
+                if let Some(scene_path) = Self::get_is_root_of(node) {
+                    nodes_with_nested_scenes.push((*id, scene_path));
+                }
+            }
+        }
+        
+        // Also check the root node if it has is_root_of (we captured this before moving)
+        if let (Some(root_id), Some(scene_path)) = (root_new_id, root_is_root_of) {
+            nodes_with_nested_scenes.push((root_id, scene_path));
+        }
+        
+        // Recursively load and merge nested scenes
+        let nested_scene_count = nodes_with_nested_scenes.len();
+        for (parent_node_id, scene_path) in nodes_with_nested_scenes {
+            if let Err(e) = self.merge_nested_scene(parent_node_id, &scene_path) {
+                eprintln!("⚠️ Error loading nested scene '{}' for node {}: {}", scene_path, parent_node_id, e);
+            }
+        }
+        
+        let nested_scene_time = nested_scene_start.elapsed();
+        if nested_scene_count > 0 {
+            println!(
+                "⏱ Nested scene loading: {:.2} ms ({} scene(s))",
+                nested_scene_time.as_secs_f64() * 1000.0,
+                nested_scene_count
+            );
+        }
 
         // ───────────────────────────────────────────────
         // 5️⃣ REGISTER COLLISION SHAPES WITH PHYSICS
@@ -827,6 +888,43 @@ impl<P: ScriptProvider> Scene<P> {
         );
 
         Ok(())
+    }
+
+    /// Helper to extract is_root_of from a SceneNode
+    /// Uses BaseNode trait method
+    fn get_is_root_of(node: &SceneNode) -> Option<String> {
+        node.get_is_root_of().map(|s| s.to_string())
+    }
+
+    /// Helper to set the name on a SceneNode
+    /// Uses BaseNode trait method
+    fn set_node_name(node: &mut SceneNode, new_name: String) {
+        node.set_name(new_name);
+    }
+
+    /// Merge a nested scene referenced by is_root_of
+    fn merge_nested_scene(&mut self, parent_node_id: Uuid, scene_path: &str) -> anyhow::Result<()> {
+        // Load the nested scene data
+        let nested_data = self.provider.load_scene_data(scene_path)?;
+        
+        // Merge it with the parent node as the target
+        self.merge_scene_data(nested_data, parent_node_id)?;
+        
+        Ok(())
+    }
+
+    /// Resolve name conflicts by appending a digit suffix
+    fn resolve_name_conflict(&self, base_name: &str) -> String {
+        let mut counter = 1;
+        let mut candidate = format!("{}{}", base_name, counter);
+        
+        // Check if any existing node has this name
+        while self.data.nodes.values().any(|node| node.get_name() == candidate.as_str()) {
+            counter += 1;
+            candidate = format!("{}{}", base_name, counter);
+        }
+        
+        candidate
     }
 
     fn ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
@@ -1222,72 +1320,7 @@ impl<P: ScriptProvider> Scene<P> {
         }
     }
 
-    /// Recursively update global transform for a node and its children (DEPRECATED - use get_global_transform instead)
-    #[allow(dead_code)]
-    fn update_node2d_global_transform_recursive(&mut self, _node_id: Uuid, _parent_global: &crate::structs2d::Transform2D) {
-        // This method is deprecated - use get_global_transform instead which handles lazy calculation
-        // Keeping for backwards compatibility but should not be used
-    }
-
-    /// Calculate world transform by traversing up the parent chain
-    /// Returns the accumulated transform from root to this node
-    fn calculate_world_transform(&self, node_id: Uuid) -> Option<(crate::structs2d::Transform2D, Uuid)> {
-        // First, collect all transforms from node to root (in reverse order)
-        let mut transform_chain = Vec::new();
-        let mut current_id = Some(node_id);
-        
-        while let Some(id) = current_id {
-            if let Some(node) = self.data.nodes.get(&id) {
-                let local_transform = match node {
-                    SceneNode::Node2D(n2d) => n2d.transform,
-                    SceneNode::Sprite2D(sprite) => sprite.transform,
-                    SceneNode::Area2D(area) => area.transform,
-                    SceneNode::CollisionShape2D(cs) => cs.transform,
-                    SceneNode::Shape2D(shape) => shape.transform,
-                    SceneNode::Camera2D(cam) => cam.transform,
-                    _ => crate::structs2d::Transform2D::default(),
-                };
-                
-                transform_chain.push(local_transform);
-                
-                // Move to parent
-                current_id = match node {
-                    SceneNode::Node2D(n2d) => n2d.parent,
-                    SceneNode::Sprite2D(sprite) => sprite.parent,
-                    SceneNode::Area2D(area) => area.parent,
-                    SceneNode::CollisionShape2D(cs) => cs.parent,
-                    SceneNode::Shape2D(shape) => shape.parent,
-                    SceneNode::Camera2D(cam) => cam.parent,
-                    _ => None,
-                };
-            } else {
-                break;
-            }
-        }
-        
-        // Now apply transforms from root to node (reverse of what we collected)
-        let mut world_transform = crate::structs2d::Transform2D::default();
-        
-        for local_transform in transform_chain.iter().rev() {
-            // Apply parent transform first, then local (like UI system)
-            // Scale: parent_scale * local_scale
-            world_transform.scale.x *= local_transform.scale.x;
-            world_transform.scale.y *= local_transform.scale.y;
-            
-            // Position: parent_pos + (local_pos * parent_scale)
-            // But we need to use the scale BEFORE we multiplied it
-            let parent_scale_x = world_transform.scale.x / local_transform.scale.x;
-            let parent_scale_y = world_transform.scale.y / local_transform.scale.y;
-            
-            world_transform.position.x = world_transform.position.x + (local_transform.position.x * parent_scale_x);
-            world_transform.position.y = world_transform.position.y + (local_transform.position.y * parent_scale_y);
-            
-            // Rotation: parent_rot + local_rot
-            world_transform.rotation += local_transform.rotation;
-        }
-        
-        Some((world_transform, node_id))
-    }
+   
 
     /// Update collider transforms to match node transforms
     fn update_collider_transforms(&mut self) {
@@ -1823,32 +1856,9 @@ impl Scene<DllScriptProvider> {
             input_mgr.load_action_map(input_map);
         }
 
-        println!("About to graft main scene...");
-        let main_scene_path = game_scene.project.borrow().main_scene().to_string();
-        let t_load_begin = Instant::now();
-        let loaded_data = SceneData::load(&main_scene_path)?;
-        let load_time = t_load_begin.elapsed();
-        println!(
-            "⏱  SceneData::load() completed in {:.03} sec ({} ms)",
-            load_time.as_secs_f32(),
-            load_time.as_millis()
-        );
-
-        // ────────────────────────────────────────────────
-        // ⏱  Benchmark: Scene graft
-        // ────────────────────────────────────────────────
-        let t_graft_begin = Instant::now();
-        let game_root = game_scene.get_root().get_id();
-        game_scene.merge_scene_data(loaded_data, game_root)?;
-        let graft_time = t_graft_begin.elapsed();
-        println!(
-            "⏱  Scene grafting completed in {:.03} sec ({} ms)",
-            graft_time.as_secs_f32(),
-            graft_time.as_millis()
-        );
-
         println!("Building scene from project manifest...");
-        // Borrow separately to avoid conflicts with mutable game_scene borrow
+        
+        // ✅ root script first - load before merging main scene
         let root_script_path_opt = {
             let project_ref = game_scene.project.borrow();
             project_ref.root_script().map(|s| s.to_string())
@@ -1877,6 +1887,30 @@ impl Scene<DllScriptProvider> {
                 }
             }
         }
+
+        println!("About to graft main scene...");
+        let main_scene_path = game_scene.project.borrow().main_scene().to_string();
+        let t_load_begin = Instant::now();
+        let loaded_data = SceneData::load(&main_scene_path)?;
+        let load_time = t_load_begin.elapsed();
+        println!(
+            "⏱  SceneData::load() completed in {:.03} sec ({} ms)",
+            load_time.as_secs_f32(),
+            load_time.as_millis()
+        );
+
+        // ────────────────────────────────────────────────
+        // ⏱  Benchmark: Scene graft
+        // ────────────────────────────────────────────────
+        let t_graft_begin = Instant::now();
+        let game_root = game_scene.get_root().get_id();
+        game_scene.merge_scene_data(loaded_data, game_root)?;
+        let graft_time = t_graft_begin.elapsed();
+        println!(
+            "⏱  Scene grafting completed in {:.03} sec ({} ms)",
+            graft_time.as_secs_f32(),
+            graft_time.as_millis()
+        );
 
         Ok(game_scene)
     }

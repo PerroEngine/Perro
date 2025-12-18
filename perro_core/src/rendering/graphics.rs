@@ -425,9 +425,6 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // - AMD: Vulkan > DX12 (Vulkan usually better)
     // - Apple Silicon: Metal only
     
-    println!("🔍 Probing available GPUs and backends...");
-    std::io::stdout().flush().unwrap();
-    
     // Get list of available backends for this platform
     #[cfg(windows)]
     let available_backends = vec![
@@ -544,13 +541,6 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         panic!("No GPU adapter found (hardware or software)");
     }
     
-    println!("🔍 Found {} GPU adapter(s):", candidates.len());
-    for (i, cand) in candidates.iter().enumerate() {
-        println!("   {}. {} on {} backend (Type: {:?})", 
-            i + 1, cand.info.name, cand.backend_name, cand.info.device_type);
-    }
-    std::io::stdout().flush().unwrap();
-    
     // Score each candidate based on GPU vendor and backend compatibility
     let scored: Vec<_> = candidates.into_iter().map(|cand| {
         let mut score = 0i32;
@@ -614,28 +604,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let mut scored_sorted = scored;
     scored_sorted.sort_by(|a, b| b.0.cmp(&a.0));
     
-    let (score, best_candidate) = scored_sorted.into_iter().next().unwrap();
-    
-    println!("✅ Selected: {} on {} backend (score: {})", 
-        best_candidate.info.name, best_candidate.backend_name, score);
-    std::io::stdout().flush().unwrap();
-    
-    // Warn about known problematic combinations
-    let name_lower = best_candidate.info.name.to_lowercase();
-    let is_intel_integrated = matches!(best_candidate.info.device_type, wgpu::DeviceType::IntegratedGpu)
-        && name_lower.contains("intel");
-    
-    if is_intel_integrated && best_candidate.backend_name == "Vulkan" {
-        println!("⚠ WARNING: Intel integrated GPU with Vulkan - known to crash!");
-        println!("   DX12 would be more stable. Consider updating Intel GPU drivers.");
-        std::io::stdout().flush().unwrap();
-    }
+    let (_, best_candidate) = scored_sorted.into_iter().next().unwrap();
     
     // Create fresh instance and surface for the selected backend
     // IMPORTANT: Must be done immediately before requesting adapter to avoid invalidation
-    println!("🔧 Creating instance and surface for {} backend...", best_candidate.backend_name);
-    std::io::stdout().flush().unwrap();
-    
     let instance = Instance::new(&InstanceDescriptor {
         backends: best_candidate.backend,
         ..Default::default()
@@ -643,9 +615,6 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     
     let surface = instance.create_surface(Rc::clone(&window))
         .expect("Failed to create surface for selected adapter");
-    
-    println!("🔧 Requesting adapter...");
-    std::io::stdout().flush().unwrap();
     
     // Request the adapter again with the fresh instance/surface
     // This prevents the adapter from becoming invalid
@@ -663,23 +632,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         .expect("Failed to request adapter for selected backend");
     
     let backend_used = best_candidate.backend_name;
-    
-    // Print adapter info for debugging GPU driver issues
-    println!("🔧 GPU Adapter Info:");
-    println!("   Backend Used: {}", backend_used);
-    println!("   Name: {:?}", adapter.get_info().name);
-    println!("   Backend: {:?}", adapter.get_info().backend);
-    println!("   Device Type: {:?}", adapter.get_info().device_type);
+    let adapter_name = adapter.get_info().name.clone();
     
     // Check if it's integrated graphics (often less stable)
     let is_integrated = matches!(adapter.get_info().device_type, wgpu::DeviceType::IntegratedGpu);
-    if is_integrated {
-        println!("   ⚠ WARNING: Using integrated GPU - enabling compatibility mode");
-        println!("   Consider using a discrete GPU if available");
-    }
-    
-    println!("   If you're experiencing crashes, try updating your GPU drivers.");
-    std::io::stdout().flush().unwrap();
     
     // Use more conservative limits for integrated GPUs to avoid driver crashes
     let device_limits = if is_integrated {
@@ -690,9 +646,6 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         wgpu::Limits::downlevel_webgl2_defaults()
             .using_resolution(adapter.limits())
     };
-    
-    println!("🔧 Requesting device...");
-    std::io::stdout().flush().unwrap();
     
     let (device, queue) = adapter
         .request_device(
@@ -711,8 +664,15 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         .await
         .expect("Failed to get device");
 
-    println!("✅ Device and queue created successfully");
-    std::io::stdout().flush().unwrap();
+    // Choose emoji based on backend
+    let backend_emoji = match backend_used {
+        "Vulkan" => "⚡",
+        "DX12" => "🎮",
+        "Metal" => "🍎",
+        "OpenGL" => "🌐",
+        _ => "💻",
+    };
+    println!("{} {} on {} backend", backend_emoji, adapter_name, backend_used);
 
     // 2) Surface config
     let size = window.inner_size();
@@ -870,42 +830,17 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
 
     // 7) Create renderers
-    println!("🔧 Creating Renderer3D...");
-    std::io::stdout().flush().unwrap();
     let mut renderer_3d =
         Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
-    println!("✅ Renderer3D created successfully");
-    std::io::stdout().flush().unwrap();
-    
-    println!("🔧 Creating PrimitiveRenderer...");
-    std::io::stdout().flush().unwrap();
     let renderer_prim =
         PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
-    println!("✅ PrimitiveRenderer created successfully");
-    std::io::stdout().flush().unwrap();
-    
-    println!("🔧 Creating Renderer2D...");
-    std::io::stdout().flush().unwrap();
     let renderer_2d = Renderer2D::new();
-    println!("✅ Renderer2D created successfully");
-    std::io::stdout().flush().unwrap();
-    
-    println!("🔧 Creating RendererUI...");
-    std::io::stdout().flush().unwrap();
     let renderer_ui = RendererUI::new();
-    println!("✅ RendererUI created successfully");
-    std::io::stdout().flush().unwrap();
 
     // 8) Initialize material system with default material
-    println!("🔧 Initializing material system...");
-    std::io::stdout().flush().unwrap();
     let material_manager = initialize_material_system(&mut renderer_3d, &queue);
-    println!("✅ Material system initialized");
-    std::io::stdout().flush().unwrap();
 
     // 9) Create depth texture
-    println!("🔧 Creating depth texture...");
-    std::io::stdout().flush().unwrap();
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Depth Texture"),
         size: wgpu::Extent3d {
@@ -922,11 +857,6 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     });
 
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    println!("✅ Depth texture created");
-    std::io::stdout().flush().unwrap();
-
-    println!("🔧 Constructing Graphics struct...");
-    std::io::stdout().flush().unwrap();
     let gfx = Graphics {
         window: window.clone(),
         instance,
@@ -961,14 +891,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
             store: wgpu::StoreOp::Store,
         },
     };
-    println!("✅ Graphics struct constructed");
-    std::io::stdout().flush().unwrap();
-
-    println!("🔧 Sending Graphics event...");
-    std::io::stdout().flush().unwrap();
     let _ = proxy.send_event(gfx);
-    println!("✅ Graphics event sent successfully");
-    std::io::stdout().flush().unwrap();
 }
 
 impl Graphics {

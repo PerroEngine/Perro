@@ -1,5 +1,5 @@
 [project]
-name = "Fart"
+name = "MessAround"
 main_scene = "res://main.scn"
 # Icon is optional - if not provided, build will skip icon embedding
 icon = "res://icon.png"
@@ -8,6 +8,9 @@ version = "1.0.0"
 [performance]
 target_fps = 60
 xps = 30
+
+[root]
+script = "res://shape.pup"
 
 [input]
 # Input action mappings
