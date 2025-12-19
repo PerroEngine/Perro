@@ -1378,19 +1378,21 @@ impl Function {
 
         // Merge nodes - always merge cloned nodes, not just on external_call
         // This includes self.base (only on external_call), cloned child nodes, and node-type parameters
+        // Optimize: use array literals for stack allocation (no heap allocation at all!)
         if needs_self {
             // self.base only needs to be merged on external calls (signal handlers, etc.)
             out.push_str("\n        if external_call {\n");
-            out.push_str("            // Merge self.base\n");
-            out.push_str("            api.merge_nodes(vec![self.base.clone().to_scene_node()]);\n");
+            out.push_str("            // Merge self.base (stack-allocated array)\n");
+            out.push_str("            api.merge_nodes(&[self.base.clone().to_scene_node()]);\n");
             out.push_str("        }\n");
         }
         
         if !all_nodes_to_merge.is_empty() {
             // Always merge cloned nodes at the end of the function (regardless of external_call)
-            out.push_str("\n        // Merge cloned nodes\n");
+            // Use array literal directly (stack-allocated, no heap allocation for container)
+            out.push_str("\n        // Merge cloned nodes (stack-allocated array)\n");
             out.push_str(&format!(
-                "        api.merge_nodes(vec![{}]);\n",
+                "        api.merge_nodes(&[{}]);\n",
                 all_nodes_to_merge.join(", ")
             ));
         }
@@ -1475,9 +1477,9 @@ impl Function {
         }
 
         if !all_nodes_to_merge.is_empty() {
-            out.push_str("\n        // Merge cloned nodes\n");
+            out.push_str("\n        // Merge cloned nodes (stack-allocated array)\n");
             out.push_str(&format!(
-                "        api.merge_nodes(vec![{}]);\n",
+                "        api.merge_nodes(&[{}]);\n",
                 all_nodes_to_merge.join(", ")
             ));
         }
@@ -4750,7 +4752,7 @@ impl ScriptObject for {struct_name} {{
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {{
         if let Some(f) = DISPATCH_TABLE.get(&id) {{
             f(self, params, api);

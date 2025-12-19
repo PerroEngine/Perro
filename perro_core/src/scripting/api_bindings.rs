@@ -340,11 +340,41 @@ impl ApiCodegen for ConsoleApi {
             )
         };
 
+        // Optimize: if joined is a string literal (starts and ends with quotes), 
+        // pass it directly without &String::from() since print accepts Display.
+        // For variables, borrow them with &.
+        let arg = if joined.starts_with('"') && joined.ends_with('"') {
+            // It's already a string literal, use it directly
+            joined
+        } else if joined.starts_with("String::from(") && joined.ends_with(')') {
+            // Extract the inner string literal from String::from("...")
+            let inner = &joined["String::from(".len()..joined.len() - 1].trim();
+            if inner.starts_with('"') && inner.ends_with('"') {
+                // Use the string literal directly (optimization: avoid String::from allocation)
+                inner.to_string()
+            } else {
+                // Fallback: use as-is
+                joined
+            }
+        } else {
+            // For variables or format!() expressions, borrow them
+            // Check if it's a simple identifier (variable name) - if so, borrow it
+            let trimmed = joined.trim();
+            // Simple heuristic: if it's just an identifier (alphanumeric + underscore, no dots/parens),
+            // it's likely a variable and should be borrowed
+            if trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !trimmed.is_empty() {
+                format!("&{}", trimmed)
+            } else {
+                // For format!() or complex expressions, use as-is (they already produce Display types)
+                joined
+            }
+        };
+
         let line = match self {
-            ConsoleApi::Log => format!("api.print(&{})", joined),
-            ConsoleApi::Warn => format!("api.print_warn(&{})", joined),
-            ConsoleApi::Error => format!("api.print_error(&{})", joined),
-            ConsoleApi::Info => format!("api.print_info(&{})", joined),
+            ConsoleApi::Log => format!("api.print({})", arg),
+            ConsoleApi::Warn => format!("api.print_warn({})", arg),
+            ConsoleApi::Error => format!("api.print_error({})", arg),
+            ConsoleApi::Info => format!("api.print_info({})", arg),
         };
 
         if script.verbose {
@@ -579,12 +609,14 @@ impl ApiCodegen for SignalApi {
                                 .iter()
                                 .map(|a| format!("json!({a})"))
                                 .collect();
+                            // Use array literal - converted to slice automatically (zero-cost)
                             format!(
-                                "api.emit_signal_id({signal}, smallvec![{}])",
+                                "api.emit_signal_id({signal}, &[{}])",
                                 params.join(", ")
                             )
                         } else {
-                            format!("api.emit_signal_id({signal}, smallvec![])")
+                            // Empty array literal - zero allocation
+                            format!("api.emit_signal_id({signal}, &[])")
                         }
                     }
                     _ => unreachable!(),

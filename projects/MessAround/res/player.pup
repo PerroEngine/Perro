@@ -16,6 +16,9 @@ on Deadzone_AreaEntered(c: CollisionShape2D) {
     if (c.parent_id == self.id) {
         self.transform.position.y += 100
         Console.print(c.parent_id)
+        var b = "hello"
+        Console.print(b)
+        Console.print("hello")
     }
 }
 

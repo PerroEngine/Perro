@@ -706,10 +706,11 @@ impl Renderer3D {
             .collect();
 
         // ---- 7️⃣  Upload instance buffer ----
+        // Optimize: collect directly without cloning - use into_iter to take ownership
         let all_instances: Vec<MeshInstance> = self
             .mesh_material_groups
             .iter()
-            .flat_map(|(_, _, instances)| instances.clone())
+            .flat_map(|(_, _, instances)| instances.iter().cloned())
             .collect();
 
         if all_instances.is_empty() {

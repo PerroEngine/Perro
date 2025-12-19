@@ -217,12 +217,12 @@ pub struct Scene<P: ScriptProvider> {
     pub last_scene_update: Option<Instant>,
     pub delta_accum: f32,
     pub true_updates: i32,
-    pub test_val: Value,
 
     // Fixed update timing
     pub fixed_update_accumulator: f32,
     pub last_fixed_update: Option<Instant>,
-    pub nodes_with_internal_fixed_update: Vec<Uuid>,
+    // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for fixed updates)
+    pub nodes_with_internal_fixed_update: HashSet<Uuid>,
 
     // Physics (wrapped in RefCell for interior mutability through trait objects)
     pub physics_2d: std::cell::RefCell<PhysicsWorld2D>,
@@ -252,10 +252,9 @@ impl<P: ScriptProvider> Scene<P> {
             last_scene_update: Some(Instant::now()),
             delta_accum: 0.0,
             true_updates: 0,
-            test_val: Value::Null,
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
-            nodes_with_internal_fixed_update: Vec::new(),
+            nodes_with_internal_fixed_update: HashSet::new(),
             physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
         }
     }
@@ -283,10 +282,9 @@ impl<P: ScriptProvider> Scene<P> {
             last_scene_update: Some(Instant::now()),
             delta_accum: 0.0,
             true_updates: 0,
-            test_val: Value::Null,
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
-            nodes_with_internal_fixed_update: Vec::new(),
+            nodes_with_internal_fixed_update: HashSet::new(),
         }
     }
 
@@ -607,9 +605,8 @@ impl<P: ScriptProvider> Scene<P> {
             // Register node for internal fixed updates if needed
             if let Some(node_ref) = self.data.nodes.get(&node_id) {
                 if node_ref.needs_internal_fixed_update() {
-                    if !self.nodes_with_internal_fixed_update.contains(&node_id) {
-                        self.nodes_with_internal_fixed_update.push(node_id);
-                    }
+                    // Optimize: HashSet insert is O(1) and handles duplicates automatically
+                    self.nodes_with_internal_fixed_update.insert(node_id);
                 }
             }
         }
@@ -956,9 +953,8 @@ impl<P: ScriptProvider> Scene<P> {
             // Register for internal fixed updates if needed
             if let Some(node_ref) = self.data.nodes.get(&node_id) {
                 if node_ref.needs_internal_fixed_update() {
-                    if !self.nodes_with_internal_fixed_update.contains(&node_id) {
-                        self.nodes_with_internal_fixed_update.push(node_id);
-                    }
+                    // Optimize: HashSet insert is O(1) and handles duplicates automatically
+                    self.nodes_with_internal_fixed_update.insert(node_id);
                 }
             }
         }
@@ -972,9 +968,10 @@ impl<P: ScriptProvider> Scene<P> {
         self.register_collision_shapes(&inserted_ids);
     
         // Load FUR files for UI nodes
+        // Optimize: use as_ref() instead of clone() for Option<String>
         for id in &inserted_ids {
             if let Some(SceneNode::UINode(ui_node)) = self.data.nodes.get(id) {
-                if let Some(fur_path) = &ui_node.fur_path.clone() {
+                if let Some(fur_path) = ui_node.fur_path.as_ref() {
                     if let Ok(fur_elements) = self.provider.load_fur_data(fur_path) {
                         if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(id) {
                             build_ui_elements_from_fur(u, &fur_elements);
@@ -1131,16 +1128,7 @@ impl<P: ScriptProvider> Scene<P> {
         node.set_name(new_name);
     }
 
-    /// Merge a nested scene referenced by is_root_of
-    fn merge_nested_scene(&mut self, parent_node_id: Uuid, scene_path: &str) -> anyhow::Result<()> {
-        // Load the nested scene data
-        let nested_data = self.provider.load_scene_data(scene_path)?;
-        
-        // Merge it with the parent node as the target
-        self.merge_scene_data(nested_data, parent_node_id)?;
-        
-        Ok(())
-    }
+
 
     /// Check if a node name conflicts with any sibling (node with the same parent)
     fn has_sibling_name_conflict(&self, parent_id: Option<Uuid>, name: &str) -> bool {
@@ -1191,8 +1179,8 @@ impl<P: ScriptProvider> Scene<P> {
         if self.delta_accum >= 1.0 {
             let ups = self.true_updates as f32 / self.delta_accum;
             println!(
-                "🔹 UPS: {:.2}, Delta: {:.12}, Script Updates: {:.12}",
-                ups, true_delta, self.test_val
+                "🔹 UPS: {:.2}, Delta: {:.12}",
+                ups, true_delta
             );
             self.delta_accum = 0.0;
             self.true_updates = 0;
@@ -1232,8 +1220,12 @@ impl<P: ScriptProvider> Scene<P> {
                 self.physics_2d.borrow_mut().step(fixed_delta);
 
                 // Run fixed update for all scripts
-                let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
+                // Optimize: use copied() instead of cloned() (Uuid is Copy, but this is clearer)
+                // Collect keys first to avoid borrow checker issues with mutable access
+                let script_ids: Vec<Uuid> = self.scripts.keys().copied().collect();
                 for id in script_ids {
+                    // Rc::clone() is cheap (just increments ref count), but we need it per call
+                    // because ScriptApi::new takes &mut self
                     let project_ref = self.project.clone();
                     let mut project_borrow = project_ref.borrow_mut();
                     let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
@@ -1241,7 +1233,8 @@ impl<P: ScriptProvider> Scene<P> {
                 }
 
                 // Run internal fixed update for nodes that need it
-                let node_ids: Vec<Uuid> = self.nodes_with_internal_fixed_update.clone();
+                // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
+                let node_ids: Vec<Uuid> = self.nodes_with_internal_fixed_update.iter().copied().collect();
                 for node_id in node_ids {
                     let project_ref = self.project.clone();
                     let mut project_borrow = project_ref.borrow_mut();
@@ -1255,15 +1248,17 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         // Regular update - runs every frame
-        let script_ids: Vec<Uuid> = self.scripts.keys().cloned().collect();
+        // Optimize: use copied() instead of cloned() (Uuid is Copy, but this is clearer)
+        // Collect keys first to avoid borrow checker issues with mutable access
+        let script_ids: Vec<Uuid> = self.scripts.keys().copied().collect();
 
         for id in script_ids {
+            // Rc::clone() is cheap (just increments ref count), but we need it per call
+            // because ScriptApi::new takes &mut self
             let project_ref = self.project.clone();
             let mut project_borrow = project_ref.borrow_mut();
             let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
             api.call_update(id);
-            let uuid = Uuid::from_str("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48").unwrap();
-            self.test_val = api.get_script_var(uuid, "script_updates").into();
         }
 
         // Global transforms are now calculated lazily when needed (in traverse_and_render)
@@ -1296,33 +1291,24 @@ impl<P: ScriptProvider> Scene<P> {
         );
     }
 
-    fn queue_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
-        self.queued_signals.push((signal, params));
+    fn queue_signal(&mut self, signal: u64, params: &[Value]) {
+        // Convert slice to SmallVec for stack-allocated storage (≤3 params = no heap allocation)
+        let mut smallvec = SmallVec::new();
+        smallvec.extend(params.iter().cloned());
+        self.queued_signals.push((signal, smallvec));
     }
 
-    // ✅ OPTIMIZED: Use drain() to reuse Vec allocation
+    // ✅ OPTIMIZED: Use drain() to collect, then process (avoids borrow checker issues)
     fn process_queued_signals(&mut self) {
-        use std::time::Instant;
-
         if self.queued_signals.is_empty() {
             return;
         }
 
-        let start_total = Instant::now();
-        let count = self.queued_signals.len();
-
-        // Drain instead of take – reuses Vec allocation
+        // Collect drained items first to release the borrow, then process
         let signals: Vec<_> = self.queued_signals.drain(..).collect();
-
         for (signal, params) in signals {
             self.emit_signal(signal, params);
         }
-
-        let total_elapsed = start_total.elapsed();
-        // println!(
-        //     "🕓 Completed processing of {count} signal(s) in {:?}\n",
-        //     total_elapsed
-        // );
     }
 
     fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
@@ -1332,12 +1318,14 @@ impl<P: ScriptProvider> Scene<P> {
             return;
         }
 
-        // Clone the minimal subset you need (script_id + function ids)
-        let listeners: Vec<(Uuid, SmallVec<[u64; 4]>)> = script_map_opt
-            .unwrap()
-            .iter()
-            .map(|(uuid, fns)| (*uuid, fns.clone()))
-            .collect();
+        // Optimize: Collect (uuid, fn_id) pairs directly to avoid SmallVec clones
+        let script_map = script_map_opt.unwrap();
+        let mut call_list: Vec<(Uuid, u64)> = Vec::new();
+        for (uuid, fns) in script_map.iter() {
+            for &fn_id in fns.iter() {
+                call_list.push((*uuid, fn_id));
+            }
+        }
 
         // Now all borrows of self.signals are dropped ✅
         let now = Instant::now();
@@ -1352,11 +1340,10 @@ impl<P: ScriptProvider> Scene<P> {
         // Safe mutable borrow of self again
         let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
 
-        // Emit to all registered scripts
-        for (target_id, funcs) in listeners {
-            for fn_id in funcs {
-                api.call_function_id(target_id, fn_id, &params);
-            }
+        // Emit to all registered scripts - convert SmallVec to slice (zero-cost, just a reference)
+        let params_slice: &[Value] = &params;
+        for (target_id, fn_id) in call_list {
+            api.call_function_id(target_id, fn_id, params_slice);
         }
     }
 
@@ -1405,9 +1392,8 @@ impl<P: ScriptProvider> Scene<P> {
         // Register node for internal fixed updates if needed
         if let Some(node_ref) = self.data.nodes.get(&id) {
             if node_ref.needs_internal_fixed_update() {
-                if !self.nodes_with_internal_fixed_update.contains(&id) {
-                    self.nodes_with_internal_fixed_update.push(id);
-                }
+                // Optimize: HashSet insert is O(1) and handles duplicates automatically
+                self.nodes_with_internal_fixed_update.insert(id);
             }
         }
 
@@ -1540,6 +1526,13 @@ impl<P: ScriptProvider> Scene<P> {
     /// Mark a node's transform as dirty (and all its children)
     /// Also marks nodes as dirty for rendering so they get picked up by get_dirty_nodes()
     pub fn mark_transform_dirty_recursive(&mut self, node_id: Uuid) {
+        // Collect children first before any mutable borrows
+        let children: Vec<Uuid> = self.data.nodes
+            .get(&node_id)
+            .map(|node| node.get_children().iter().copied().collect())
+            .unwrap_or_default();
+        
+        // Now mark this node as dirty (mutable borrow)
         if let Some(node) = self.data.nodes.get_mut(&node_id) {
             // Mark this node as dirty for rendering
             node.mark_dirty();
@@ -1548,12 +1541,11 @@ impl<P: ScriptProvider> Scene<P> {
             if let Some(node2d) = node.as_node2d_mut() {
                 node2d.transform_dirty = true;
             }
-
-            // Mark all children as dirty (recursively)
-            let children = node.get_children().clone();
-            for child_id in children {
-                self.mark_transform_dirty_recursive(child_id);
-            }
+        }
+        
+        // Recurse on children (mutable borrow of self is now released)
+        for child_id in children {
+            self.mark_transform_dirty_recursive(child_id);
         }
     }
 
@@ -1917,33 +1909,34 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         Self::instantiate_script(ctor, node_id)
     }
 
-    fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
-        let mut node_ids = Vec::new();
-        
-        for mut node in nodes {
-            let id = node.get_id();
-            node_ids.push(id);
-            node.mark_dirty();
-
+    fn merge_nodes(&mut self, nodes: &[SceneNode]) {
+        // Process nodes and mark them dirty immediately
+        // Optimize: Get ID from reference first, only clone when we need to insert/update
+        for node in nodes {
+            let id = node.get_id(); // Get ID without cloning
+            
             if let Some(existing_node) = self.data.nodes.get_mut(&id) {
-                *existing_node = node;
+                // Node exists: mark dirty and replace (need to clone for replacement)
+                existing_node.mark_dirty();
+                *existing_node = node.clone();
             } else {
-                println!("Inserting new node with ID {}: {:?} during merge", id, node);
-                self.data.nodes.insert(id, node);
+                // Node doesn't exist: clone and insert
+                let mut new_node = node.clone();
+                new_node.mark_dirty();
+                println!("Inserting new node with ID {}: {:?} during merge", id, new_node);
+                self.data.nodes.insert(id, new_node);
             }
 
             // Register node for internal fixed updates if needed (check after insertion)
             if let Some(node_ref) = self.data.nodes.get(&id) {
                 if node_ref.needs_internal_fixed_update() {
                     if !self.nodes_with_internal_fixed_update.contains(&id) {
-                        self.nodes_with_internal_fixed_update.push(id);
+                        self.nodes_with_internal_fixed_update.insert(id);
                     }
                 }
             }
-        }
-        
-        // Mark all merged nodes as transform dirty so they recalculate on next access
-        for id in node_ids {
+            
+            // Mark transform dirty immediately - no need to collect IDs first!
             self.mark_transform_dirty_recursive(id);
         }
     }
@@ -1952,7 +1945,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.connect_signal(signal, target_id, function);
     }
 
-    fn queue_signal_id(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
+    fn queue_signal_id(&mut self, signal: u64, params: &[Value]) {
         self.queue_signal(signal, params);
     }
 

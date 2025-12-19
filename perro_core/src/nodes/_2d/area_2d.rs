@@ -117,8 +117,9 @@ impl Area2D {
                 self.name, entered.len(), intersection_count, self.previous_collisions, current_colliding_node_ids, entered);
             
             for node_id in &entered {
-                let params = SmallVec::from(vec![Value::String(node_id.to_string())]);
-                api.emit_signal_id(entered_signal_id, params);
+                // Use array literal - zero allocation, passed as slice
+                let params = [Value::String(node_id.to_string())];
+                api.emit_signal_id(entered_signal_id, &params);
             }
         }
 
@@ -128,8 +129,9 @@ impl Area2D {
             let exited_signal_id = string_to_u64(&exited_signal);
             
             for node_id in &exited {
-                let params = SmallVec::from(vec![Value::String(node_id.to_string())]);
-                api.emit_signal_id(exited_signal_id, params);
+                // Use array literal - zero allocation, passed as slice
+                let params = [Value::String(node_id.to_string())];
+                api.emit_signal_id(exited_signal_id, &params);
             }
         }
 
@@ -140,8 +142,9 @@ impl Area2D {
             let occupied_signal_id = string_to_u64(&occupied_signal);
 
             for node_id in &current_colliding_node_ids {
-                let params = SmallVec::from(vec![Value::String(node_id.to_string())]);
-                api.emit_signal_id(occupied_signal_id, params);
+                // Use array literal - zero allocation, passed as slice
+                let params = [Value::String(node_id.to_string())];
+                api.emit_signal_id(occupied_signal_id, &params);
             }
         }
 

@@ -58,8 +58,9 @@ impl TextureManager {
         device: &Device,
         queue: &Queue,
     ) -> &ImageTexture {
-        let key = path.to_string();
-        if !self.textures.contains_key(&key) {
+        // Optimize: check with &str first, only allocate String if we need to insert
+        if !self.textures.contains_key(path) {
+            let key = path.to_string();
             let start = Instant::now();
 
             // Runtime mode: check static textures first, then fall back to disk/BRK
@@ -143,9 +144,10 @@ impl TextureManager {
                 );
                 texture
             };
-            self.textures.insert(key.clone(), img_texture);
+            self.textures.insert(key, img_texture);
         }
-        self.textures.get(&key).unwrap()
+        // Optimize: use path directly for lookup (no String allocation needed)
+        self.textures.get(path).unwrap()
     }
 
     pub fn get_or_create_bind_group(
@@ -155,8 +157,9 @@ impl TextureManager {
         queue: &Queue,
         layout: &BindGroupLayout,
     ) -> &wgpu::BindGroup {
-        let key = path.to_string();
-        if !self.bind_groups.contains_key(&key) {
+        // Optimize: check with &str first, only allocate String if we need to insert
+        if !self.bind_groups.contains_key(path) {
+            let key = path.to_string();
             let tex = self.get_or_load_texture_sync(path, device, queue);
             let bind_group = device.create_bind_group(&BindGroupDescriptor {
                 layout,
@@ -172,9 +175,10 @@ impl TextureManager {
                 ],
                 label: Some("Texture Instance BG"),
             });
-            self.bind_groups.insert(key.clone(), bind_group);
+            self.bind_groups.insert(key, bind_group);
         }
-        self.bind_groups.get(&key).unwrap()
+        // Optimize: use path directly for lookup (no String allocation needed)
+        self.bind_groups.get(path).unwrap()
     }
 }
 
@@ -195,20 +199,21 @@ impl MeshManager {
         device: &Device,
         queue: &Queue,
     ) -> Option<&Mesh> {
-        let key = path.to_string();
-
-        if !self.meshes.contains_key(&key) {
+        // Optimize: check with &str first, only allocate String if we need to insert
+        if !self.meshes.contains_key(path) {
+            let key = path.to_string();
             // Load mesh from file
             if let Some(mesh) = Self::load_mesh_from_file(path, device) {
                 println!("🔷 Loading mesh: {}", path);
-                self.meshes.insert(key.clone(), mesh);
+                self.meshes.insert(key, mesh);
             } else {
                 println!("⚠️ Failed to load mesh: {}", path);
                 return None;
             }
         }
 
-        self.meshes.get(&key)
+        // Optimize: use path directly for lookup (no String allocation needed)
+        self.meshes.get(path)
     }
 
     pub fn load_mesh_from_file(path: &str, device: &Device) -> Option<Mesh> {
@@ -302,6 +307,7 @@ impl MaterialManager {
             },
         };
 
+        // Optimize: only allocate String when inserting (HashMap key)
         self.materials.insert(path.to_string(), material);
         material
     }
@@ -322,7 +328,7 @@ impl MaterialManager {
         // Queue to renderer
         let slot = renderer.queue_material(mat_uuid, material);
 
-        // Cache the slot
+        // Cache the slot (only allocate String when inserting)
         self.path_to_slot.insert(path.to_string(), slot);
 
         Some(slot)
@@ -330,6 +336,7 @@ impl MaterialManager {
 
     /// Get slot ID without uploading (returns None if not uploaded yet)
     pub fn get_slot(&self, path: &str) -> Option<u32> {
+        // Optimize: use &str for lookup (no String allocation)
         self.path_to_slot.get(path).copied()
     }
 
@@ -354,7 +361,7 @@ impl MaterialManager {
         // Queue to renderer
         let slot = renderer.queue_material(mat_uuid, material);
 
-        // Cache the slot
+        // Cache the slot (only allocate String when inserting)
         self.path_to_slot.insert(path.to_string(), slot);
 
         println!("📦 Material '{}' assigned to slot {}", path, slot);

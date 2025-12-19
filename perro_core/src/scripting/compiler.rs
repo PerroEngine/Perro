@@ -2229,6 +2229,11 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             .and_then(|p| p.parent())
             .ok_or_else(|| anyhow::anyhow!("Could not determine project crate root"))?;
         let embedded_assets_dir = project_crate_root.join("embedded_assets");
+        
+        // Clean embedded_assets directory at the start to prevent accumulation of old files
+        if embedded_assets_dir.exists() {
+            fs::remove_dir_all(&embedded_assets_dir)?;
+        }
         fs::create_dir_all(&embedded_assets_dir)?;
 
         let mut processed_texture_paths: HashSet<String> = HashSet::new();
@@ -2270,11 +2275,14 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                             );
 
                             // Generate static texture data
+                            // Append extension (uppercase) to avoid collisions (e.g., icon.png vs icon.jpg)
+                            let ext_upper = ext.to_uppercase();
                             let static_texture_name = Self::sanitize_res_path_to_ident(&res_path);
+                            let static_texture_name_with_ext = format!("{}_{}", static_texture_name, ext_upper);
 
                             // Write RGBA8 bytes to a binary file in embedded_assets/
-                            // Use sanitized name for the file to avoid filesystem issues
-                            let rgba_file_name = format!("{}.rgba", static_texture_name);
+                            // Use sanitized name with extension for the file to avoid filesystem collisions
+                            let rgba_file_name = format!("{}.rgba", static_texture_name_with_ext);
                             let rgba_file_path = embedded_assets_dir.join(&rgba_file_name);
                             std::fs::write(&rgba_file_path, rgba.as_raw()).map_err(|e| {
                                 anyhow::anyhow!(
@@ -2306,8 +2314,8 @@ static {name}: StaticTextureData = StaticTextureData {{
 }};
 "#,
                                 path = res_path,
-                                name = static_texture_name,
-                                bytes_name = format!("{}_BYTES", static_texture_name),
+                                name = static_texture_name_with_ext,
+                                bytes_name = format!("{}_BYTES", static_texture_name_with_ext),
                                 include_path = include_path,
                                 width = width,
                                 height = height,
@@ -2315,7 +2323,7 @@ static {name}: StaticTextureData = StaticTextureData {{
 
                             map_insertions_code.push_str(&format!(
                                 "    m.insert(\"{}\", &{});\n",
-                                res_path, static_texture_name
+                                res_path, static_texture_name_with_ext
                             ));
                         }
                     }

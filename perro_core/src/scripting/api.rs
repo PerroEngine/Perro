@@ -1187,12 +1187,12 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_function(&mut self, id: Uuid, func: &str, params: &SmallVec<[Value; 3]>) {
+    pub fn call_function(&mut self, id: Uuid, func: &str, params: &[Value]) {
         let func_id = self.string_to_u64(func);
         self.call_function_id(id, func_id, params);
     }
 
-    pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &SmallVec<[Value; 3]>) {
+    pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &[Value]) {
         self.set_context();
         if let Some(rc_script) = self.scene.get_script(id) {
             let mut script = rc_script.borrow_mut();
@@ -1206,13 +1206,13 @@ impl<'a> ScriptApi<'a> {
     }
 
     // The human-friendly one
-    pub fn emit_signal(&mut self, name: &str, params: SmallVec<[Value; 3]>) {
+    pub fn emit_signal(&mut self, name: &str, params: &[Value]) {
         let id = self.string_to_u64(name);
         self.scene.queue_signal_id(id, params);
     }
 
     // The low-level one
-    pub fn emit_signal_id(&mut self, id: u64, params: SmallVec<[Value; 3]>) {
+    pub fn emit_signal_id(&mut self, id: u64, params: &[Value]) {
         self.scene.queue_signal_id(id, params);
     }
 
@@ -1328,7 +1328,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
+    pub fn merge_nodes(&mut self, nodes: &[SceneNode]) {
         self.scene.merge_nodes(nodes);
     }
 

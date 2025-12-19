@@ -51,7 +51,7 @@ pub trait ScriptObject: Script {
     fn get_var(&self, var_id: u64) -> Option<Value>;
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()>;
     fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>);
-    fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &SmallVec<[Value; 3]>);
+    fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &[Value]);
 
     fn set_node_id(&mut self, id: Uuid);
     fn get_node_id(&self) -> Uuid;
@@ -84,7 +84,7 @@ use std::sync::Mutex;
 /// Trait object for scene access (dyn‑safe)
 pub trait SceneAccess {
     fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode>;
-    fn merge_nodes(&mut self, nodes: Vec<SceneNode>);
+    fn merge_nodes(&mut self, nodes: &[SceneNode]);
     fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>>;
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
@@ -99,7 +99,7 @@ pub trait SceneAccess {
     ) -> Rc<RefCell<Box<dyn ScriptObject>>>;
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64);
-    fn queue_signal_id(&mut self, signal: u64, params: SmallVec<[Value; 3]>);
+    fn queue_signal_id(&mut self, signal: u64, params: &[Value]);
 
     /// Get the global transform for a node (calculates lazily if dirty)
     fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D>;

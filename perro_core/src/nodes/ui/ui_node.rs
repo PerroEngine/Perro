@@ -330,14 +330,14 @@ impl UINode {
                             signal_base, mouse_pos, left, top, right, bottom, was_hovered);
                         let signal = format!("{}_Hovered", signal_base);
                         let signal_id = string_to_u64(&signal);
-                        api.emit_signal_id(signal_id, SmallVec::new());
+                        api.emit_signal_id(signal_id, &[]);
                     } else {
                         // Mouse exited button (transition: hovered -> not hovered)
                         println!("Button not hovered: {} (mouse: {:?}, bounds: [{:.1}, {:.1}] to [{:.1}, {:.1}], was_hovered: {})", 
                             signal_base, mouse_pos, left, top, right, bottom, was_hovered);
                         let signal = format!("{}_NotHovered", signal_base);
                         let signal_id = string_to_u64(&signal);
-                        api.emit_signal_id(signal_id, SmallVec::new());
+                        api.emit_signal_id(signal_id, &[]);
                     }
                 }
                 
@@ -347,13 +347,13 @@ impl UINode {
                     println!("Button pressed: {}", signal_base);
                     let signal = format!("{}_Pressed", signal_base);
                     let signal_id = string_to_u64(&signal);
-                    api.emit_signal_id(signal_id, SmallVec::new());
+                    api.emit_signal_id(signal_id, &[]);
                 } else if !button.is_pressed && was_pressed && was_hovered {
                     // Button was just released (only if it was pressed and still hovered)
                     println!("Button released: {}", signal_base);
                     let signal = format!("{}_Released", signal_base);
                     let signal_id = string_to_u64(&signal);
-                    api.emit_signal_id(signal_id, SmallVec::new());
+                    api.emit_signal_id(signal_id, &[]);
                 }
                 
                 // Store previous frame state
