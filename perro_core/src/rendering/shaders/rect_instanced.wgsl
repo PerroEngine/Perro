@@ -116,12 +116,26 @@ fn sdf_rounded_box(p: vec2<f32>, size: vec2<f32>, corner_radii: vec4<f32>, corne
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let p = in.local_pos;
     
+    // OPTIMIZED: Pre-compute constants
+    let edge_softness = 0.8;
+    let edge_min = -edge_softness;
+    let edge_max = edge_softness;
+    
     // Calculate outer distance
     let outer_dist = sdf_rounded_box(p, in.size, in.corner_radius_xy, in.corner_radius_zw);
     
+    // OPTIMIZED: Early exit with rough bounds check before expensive smoothstep
+    // If we're way outside the bounds, discard immediately
+    let half_size = in.size * 0.5;
+    let max_radius = max(max(in.corner_radius_xy.x, in.corner_radius_xy.z), 
+                         max(in.corner_radius_zw.x, in.corner_radius_zw.z));
+    let rough_bounds = max(half_size.x, half_size.y) + max_radius + edge_softness;
+    if (abs(p.x) > rough_bounds || abs(p.y) > rough_bounds) {
+        discard;
+    }
+    
     // Anti-aliasing: smooth transition at edges
-    let edge_softness = 0.8;
-    let outer_alpha = 1.0 - smoothstep(-edge_softness, edge_softness, outer_dist);
+    let outer_alpha = 1.0 - smoothstep(edge_min, edge_max, outer_dist);
     
     // Early exit if completely outside
     if (outer_alpha <= 0.0) {
@@ -133,22 +147,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Handle border
     if (in.is_border == 1u) {
         let border_thickness = in.border_thickness;
-        let inner_size = in.size - vec2<f32>(border_thickness * 2.0);
+        let border_thickness_2 = border_thickness * 2.0;
+        let inner_size = in.size - vec2<f32>(border_thickness_2);
         
         // Make sure we don't have negative inner size
         if (inner_size.x <= 0.0 || inner_size.y <= 0.0) {
             return vec4<f32>(in.color.rgb, in.color.a * outer_alpha);
         }
         
-        // Calculate inner corner radii (reduce by border thickness)
-        let inner_corner_xy = max(in.corner_radius_xy - vec4<f32>(border_thickness), vec4<f32>(0.0));
-        let inner_corner_zw = max(in.corner_radius_zw - vec4<f32>(border_thickness), vec4<f32>(0.0));
+        // OPTIMIZED: Pre-compute border radius reduction
+        let border_reduction = vec4<f32>(border_thickness);
+        let inner_corner_xy = max(in.corner_radius_xy - border_reduction, vec4<f32>(0.0));
+        let inner_corner_zw = max(in.corner_radius_zw - border_reduction, vec4<f32>(0.0));
         
         // Calculate inner distance
         let inner_dist = sdf_rounded_box(p, inner_size, inner_corner_xy, inner_corner_zw);
         
         // Anti-aliased inner edge
-        let inner_alpha = 1.0 - smoothstep(-edge_softness, edge_softness, inner_dist);
+        let inner_alpha = 1.0 - smoothstep(edge_min, edge_max, inner_dist);
         
         // For border: render where outer_alpha > 0 AND inner_alpha < 1
         final_alpha = outer_alpha * (1.0 - inner_alpha);

@@ -36,7 +36,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 struct JoyConScript {
-    node: MeshInstance3D,
+    base: MeshInstance3D,
 }
 
 // ========================================================================
@@ -48,7 +48,7 @@ pub extern "C" fn scripts_joycon_rs_create_script() -> *mut dyn ScriptObject {
     let node = MeshInstance3D::new("JoyCon");
 
     Box::into_raw(Box::new(JoyConScript {
-        node,
+        base: node,
     })) as *mut dyn ScriptObject
 }
 
@@ -65,7 +65,7 @@ impl Script for JoyConScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
+        self.base = api.get_node_clone::<MeshInstance3D>(self.base.id);
         let mut delta = api.Time.get_delta();
         
         // Get data from all connected controllers (both Joy-Con 1 and 2)
@@ -75,7 +75,7 @@ impl Script for JoyConScript {
         
         // Default movement (if no controllers connected)
         if controllers.is_empty() {
-            self.node.transform.position.x -= (0.5f32 * delta);
+            self.base.transform.position.x -= (0.5f32 * delta);
         } else {
             // Process each controller (works with both Joy-Con V1 and V2)
             // Data is returned as JoyconState structs - direct field access!
@@ -92,7 +92,7 @@ impl Script for JoyConScript {
                 
                 // Reset transform to default when X button is pressed
                 if controller.buttons.x {
-                    self.node.transform = Transform3D::default();
+                    self.base.transform = Transform3D::default();
                 }
                 
                 // Get stick data - direct struct access
@@ -116,13 +116,13 @@ impl Script for JoyConScript {
                 
                 // Apply rotations directly - axes already match engine coordinate system
                 // Gyro is already in radians/second, so just multiply by delta
-                self.node.transform.rotate_x(gx * delta);
-                self.node.transform.rotate_y(gy * delta);
-                self.node.transform.rotate_z(gz * delta);
+                self.base.transform.rotate_x(gx * delta);
+                self.base.transform.rotate_y(gy * delta);
+                self.base.transform.rotate_z(gz * delta);
             }
         }
 
-        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        api.merge_nodes(&[self.base.clone().to_scene_node()]);
     }
 
 }
@@ -130,11 +130,11 @@ impl Script for JoyConScript {
 
 impl ScriptObject for JoyConScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -157,7 +157,7 @@ impl ScriptObject for JoyConScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

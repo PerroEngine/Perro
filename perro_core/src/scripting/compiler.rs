@@ -196,7 +196,12 @@ impl Compiler {
 
         let manifest_dir = self.crate_manifest_path.parent()?; // .perro/scripts or .perro/project
         let perro_dir = manifest_dir.parent()?; // .perro
-        let mut current = dunce::canonicalize(perro_dir).ok()?;
+        
+        // OPTIMIZED: Try canonicalize, but fall back to non-canonicalized path if it fails
+        // This handles cases where the path might not exist yet or canonicalize fails
+        let mut current = dunce::canonicalize(perro_dir)
+            .ok()
+            .unwrap_or_else(|| perro_dir.to_path_buf());
 
         loop {
             // Move up to parent first
@@ -214,9 +219,21 @@ impl Compiler {
                 if let Ok(contents) = std::fs::read_to_string(&workspace_manifest) {
                     if contents.contains("[workspace]") {
                         let target_dir = current.join("target");
-                        // Canonicalize to ensure absolute path
+                        // Canonicalize to ensure absolute path (required for CARGO_TARGET_DIR)
+                        // If canonicalize fails, use the path as-is (it should still work)
                         let target_dir_abs = dunce::canonicalize(&target_dir)
-                            .unwrap_or_else(|_| target_dir.clone());
+                            .unwrap_or_else(|_| {
+                                // If canonicalize fails, make it absolute manually
+                                if target_dir.is_absolute() {
+                                    target_dir
+                                } else {
+                                    // Try to make it absolute by joining with current dir
+                                    std::env::current_dir()
+                                        .ok()
+                                        .and_then(|cwd| cwd.join(&target_dir).canonicalize().ok())
+                                        .unwrap_or(target_dir)
+                                }
+                            });
                         eprintln!(
                             "📂 Found parent workspace at: {} (target: {})",
                             current.display(),
@@ -228,7 +245,7 @@ impl Compiler {
             }
         }
 
-        eprintln!("⚠️  Could not find parent workspace root");
+        eprintln!("⚠️  Could not find parent workspace root (searched from: {})", perro_dir.display());
         None
     }
 

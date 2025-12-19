@@ -1,4 +1,5 @@
-use std::{borrow::Cow, collections::HashMap, fmt, ops::Range, sync::Arc, time::Instant};
+use std::{borrow::Cow, fmt, ops::Range, sync::Arc, time::Instant};
+use rustc_hash::FxHashMap;
 
 use bytemuck::cast_slice;
 use wgpu::{
@@ -40,15 +41,15 @@ pub const VIRTUAL_HEIGHT: f32 = 1080.0;
 
 #[derive(Debug)]
 pub struct TextureManager {
-    textures: HashMap<String, ImageTexture>,
-    bind_groups: HashMap<String, wgpu::BindGroup>,
+    textures: FxHashMap<String, ImageTexture>,
+    bind_groups: FxHashMap<String, wgpu::BindGroup>,
 }
 
 impl TextureManager {
     pub fn new() -> Self {
         Self {
-            textures: HashMap::new(),
-            bind_groups: HashMap::new(),
+            textures: FxHashMap::default(),
+            bind_groups: FxHashMap::default(),
         }
     }
 
@@ -183,13 +184,13 @@ impl TextureManager {
 }
 
 pub struct MeshManager {
-    pub meshes: HashMap<String, Mesh>,
+    pub meshes: FxHashMap<String, Mesh>,
 }
 
 impl MeshManager {
     pub fn new() -> Self {
         Self {
-            meshes: HashMap::new(),
+            meshes: FxHashMap::default(),
         }
     }
 
@@ -247,17 +248,17 @@ impl MeshManager {
 /// Material manager that handles path → slot mapping
 pub struct MaterialManager {
     /// All loaded materials by path
-    materials: HashMap<String, MaterialUniform>,
+    materials: FxHashMap<String, MaterialUniform>,
 
     /// Cache of path → GPU slot ID
-    path_to_slot: HashMap<String, u32>,
+    path_to_slot: FxHashMap<String, u32>,
 }
 
 impl MaterialManager {
     pub fn new() -> Self {
         Self {
-            materials: HashMap::new(),
-            path_to_slot: HashMap::new(),
+            materials: FxHashMap::default(),
+            path_to_slot: FxHashMap::default(),
         }
     }
 
@@ -416,6 +417,10 @@ pub struct Graphics {
 
     // Cached render state
     cached_operations: wgpu::Operations<wgpu::Color>,
+    
+    // OPTIMIZED: Cache camera 3D matrices to avoid recalculating in render()
+    cached_camera3d_view: Option<glam::Mat4>,
+    cached_camera3d_proj: Option<glam::Mat4>,
 }
 fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> MaterialManager {
     let mut material_manager = MaterialManager::new();
@@ -778,6 +783,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let aspect_ratio = surface_config.width as f32 / surface_config.height as f32;
     let projection = glam::Mat4::perspective_rh(45.0_f32.to_radians(), aspect_ratio, 0.1, 100.0);
 
+    // OPTIMIZED: Initialize cached camera matrices
+    let cached_camera3d_view = Some(view);
+    let cached_camera3d_proj = Some(projection);
+
     let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
         view: view.to_cols_array_2d(),
         projection: projection.to_cols_array_2d(),
@@ -902,6 +911,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             store: wgpu::StoreOp::Store,
         },
+        
+        // OPTIMIZED: Initialize cached camera matrices with initial values
+        cached_camera3d_view,
+        cached_camera3d_proj,
     };
     let _ = proxy.send_event(gfx);
 }
@@ -965,7 +978,7 @@ impl Graphics {
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
     }
 
-    pub fn update_camera_2d(&self, cam: &Camera2D) {
+    pub fn update_camera_2d(&mut self, cam: &Camera2D) {
         let zoom = cam.zoom();
         let t = &cam.transform;
 
@@ -1003,6 +1016,9 @@ impl Graphics {
 
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
+        
+        // OPTIMIZED: Update viewport culling info in primitive renderer
+        self.renderer_prim.update_camera_2d(t.position, t.rotation, zoom);
     }
 
     pub fn update_camera_3d(&mut self, cam: &Camera3D) {
@@ -1024,6 +1040,10 @@ impl Graphics {
             cam.near.unwrap_or(0.1),
             cam.far.unwrap_or(100.0),
         );
+
+        // OPTIMIZED: Cache matrices for use in render() to avoid recalculation
+        self.cached_camera3d_view = Some(view);
+        self.cached_camera3d_proj = Some(projection);
 
         let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
             view: view.to_cols_array_2d(),
@@ -1099,18 +1119,25 @@ impl Graphics {
         self.renderer_3d.upload_materials_to_gpu(&self.queue);
         self.renderer_3d.upload_lights_to_gpu(&self.queue);
 
-        let t = &self.camera3d.transform;
-        let translation = glam::Mat4::from_translation(t.position.to_glam());
-        let rotation = glam::Mat4::from_quat(t.rotation.to_glam());
-        let view = (translation * rotation).inverse();
-
-        let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
-        let proj = glam::Mat4::perspective_rh(
-            self.camera3d.fov.unwrap_or(45.0_f32.to_radians()),
-            aspect_ratio,
-            self.camera3d.near.unwrap_or(0.1),
-            self.camera3d.far.unwrap_or(100.0),
-        );
+        // OPTIMIZED: Use cached camera matrices instead of recalculating
+        // Fallback to calculation if cache is invalid (shouldn't happen in normal flow)
+        let (view, proj) = if let (Some(v), Some(p)) = (self.cached_camera3d_view, self.cached_camera3d_proj) {
+            (v, p)
+        } else {
+            // Fallback: recalculate if cache is missing (shouldn't happen normally)
+            let t = &self.camera3d.transform;
+            let translation = glam::Mat4::from_translation(t.position.to_glam());
+            let rotation = glam::Mat4::from_quat(t.rotation.to_glam());
+            let view = (translation * rotation).inverse();
+            let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
+            let proj = glam::Mat4::perspective_rh(
+                self.camera3d.fov.unwrap_or(45.0_f32.to_radians()),
+                aspect_ratio,
+                self.camera3d.near.unwrap_or(0.1),
+                self.camera3d.far.unwrap_or(100.0),
+            );
+            (view, proj)
+        };
 
         self.renderer_3d.render(
             rpass,

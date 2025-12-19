@@ -414,6 +414,11 @@ builds/
 build.log
 
 icon.ico
+
+# Ignore target directories (should use workspace root target via CARGO_TARGET_DIR)
+target/
+/.perro/project/target/
+/.perro/scripts/target/
 "#
     .to_string()
 }

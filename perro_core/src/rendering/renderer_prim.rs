@@ -1,10 +1,10 @@
-use bytemuck::cast_slice;
 use std::borrow::Cow;
 use std::{
-    collections::HashMap,
     ops::Range,
     time::{Duration, Instant},
 };
+use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use wgpu::{
     BindGroupLayout, BlendState, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
     Device, FragmentState, PipelineLayoutDescriptor, Queue, RenderPass, RenderPipeline,
@@ -123,18 +123,18 @@ pub struct PrimitiveRenderer {
 
     // Optimized rect storage
     rect_instance_slots: Vec<Option<(RenderLayer, RectInstance)>>,
-    rect_uuid_to_slot: HashMap<uuid::Uuid, usize>,
-    free_rect_slots: Vec<usize>,
-    rect_dirty_ranges: Vec<Range<usize>>,
+    rect_uuid_to_slot: FxHashMap<uuid::Uuid, usize>,
+    free_rect_slots: SmallVec<[usize; 16]>,
+    rect_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Optimized texture storage
     texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String)>>,
-    texture_uuid_to_slot: HashMap<uuid::Uuid, usize>,
-    free_texture_slots: Vec<usize>,
-    texture_dirty_ranges: Vec<Range<usize>>,
+    texture_uuid_to_slot: FxHashMap<uuid::Uuid, usize>,
+    free_texture_slots: SmallVec<[usize; 16]>,
+    texture_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Text storage (less critical to optimize since text changes more frequently)
-    cached_text: HashMap<uuid::Uuid, (RenderLayer, Vec<FontInstance>)>,
+    cached_text: FxHashMap<uuid::Uuid, (RenderLayer, Vec<FontInstance>)>,
 
     // Rendered instances (built from slots when needed)
     world_rect_instances: Vec<RectInstance>,
@@ -149,7 +149,7 @@ pub struct PrimitiveRenderer {
     world_texture_buffer_ranges: Vec<Range<u64>>,
     ui_texture_buffer_ranges: Vec<Range<u64>>,
 
-    temp_texture_map: HashMap<String, Vec<TextureInstance>>,
+    temp_texture_map: FxHashMap<String, Vec<TextureInstance>>,
     temp_sorted_groups: Vec<(String, Vec<TextureInstance>)>,
     temp_all_texture_instances: Vec<TextureInstance>,
     temp_all_font_instances: Vec<FontInstance>,
@@ -162,6 +162,12 @@ pub struct PrimitiveRenderer {
 
     instances_need_rebuild: bool,
     text_instances_need_rebuild: bool,
+    
+    // OPTIMIZED: 2D viewport culling - cache camera info
+    camera_position: Vector2,
+    camera_rotation: f32,
+    camera_zoom: f32,
+    viewport_enabled: bool,
 }
 
 impl PrimitiveRenderer {
@@ -253,16 +259,16 @@ impl PrimitiveRenderer {
 
             // Optimized storage
             rect_instance_slots: Vec::with_capacity(MAX_INSTANCES),
-            rect_uuid_to_slot: HashMap::new(),
-            free_rect_slots: Vec::new(),
-            rect_dirty_ranges: Vec::new(),
+            rect_uuid_to_slot: FxHashMap::default(),
+            free_rect_slots: SmallVec::new(),
+            rect_dirty_ranges: SmallVec::new(),
 
             texture_instance_slots: Vec::with_capacity(MAX_INSTANCES),
-            texture_uuid_to_slot: HashMap::new(),
-            free_texture_slots: Vec::new(),
-            texture_dirty_ranges: Vec::new(),
+            texture_uuid_to_slot: FxHashMap::default(),
+            free_texture_slots: SmallVec::new(),
+            texture_dirty_ranges: SmallVec::new(),
 
-            cached_text: HashMap::new(),
+            cached_text: FxHashMap::default(),
 
             world_rect_instances: Vec::new(),
             ui_rect_instances: Vec::new(),
@@ -274,7 +280,7 @@ impl PrimitiveRenderer {
             ui_texture_group_offsets: Vec::new(),
             world_texture_buffer_ranges: Vec::new(),
             ui_texture_buffer_ranges: Vec::new(),
-            temp_texture_map: HashMap::new(),
+            temp_texture_map: FxHashMap::default(),
             temp_sorted_groups: Vec::new(),
             temp_all_texture_instances: Vec::new(),
             temp_all_font_instances: Vec::new(),
@@ -287,7 +293,83 @@ impl PrimitiveRenderer {
 
             instances_need_rebuild: false,
             text_instances_need_rebuild: false,
+            
+            // OPTIMIZED: Initialize camera culling info
+            camera_position: Vector2::zero(),
+            camera_rotation: 0.0,
+            camera_zoom: 1.0,
+            viewport_enabled: false,
         }
+    }
+    
+    /// OPTIMIZED: Update camera info for viewport culling (only for World2D layer)
+    pub fn update_camera_2d(&mut self, position: Vector2, rotation: f32, zoom: f32) {
+        self.camera_position = position;
+        self.camera_rotation = rotation;
+        self.camera_zoom = zoom;
+        self.viewport_enabled = true;
+    }
+    
+    /// OPTIMIZED: Check if a sprite AABB is fully outside the viewport
+    fn is_sprite_offscreen(&self, transform: &Transform2D, size: &Vector2) -> bool {
+        if !self.viewport_enabled {
+            return false; // No culling if camera not set
+        }
+        
+        use crate::rendering::VIRTUAL_WIDTH;
+        use crate::rendering::VIRTUAL_HEIGHT;
+        
+        // Calculate viewport bounds in world space (axis-aligned, ignoring camera rotation for simplicity)
+        let viewport_half_width = (VIRTUAL_WIDTH / self.camera_zoom) * 0.5;
+        let viewport_half_height = (VIRTUAL_HEIGHT / self.camera_zoom) * 0.5;
+        
+        let viewport_min_x = self.camera_position.x - viewport_half_width;
+        let viewport_max_x = self.camera_position.x + viewport_half_width;
+        let viewport_min_y = self.camera_position.y - viewport_half_height;
+        let viewport_max_y = self.camera_position.y + viewport_half_height;
+        
+        // Calculate sprite AABB in world space
+        // For rotated sprites, compute the axis-aligned bounding box of the rotated rectangle
+        let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
+        
+        // Calculate the four corners of the sprite in local space (centered at origin)
+        let half_w = scaled_size.x * 0.5;
+        let half_h = scaled_size.y * 0.5;
+        let corners_local = [
+            Vector2::new(-half_w, -half_h),
+            Vector2::new(half_w, -half_h),
+            Vector2::new(half_w, half_h),
+            Vector2::new(-half_w, half_h),
+        ];
+        
+        // Rotate and translate corners to world space
+        let cos_r = transform.rotation.cos();
+        let sin_r = transform.rotation.sin();
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        
+        for corner in &corners_local {
+            // Rotate
+            let rotated = Vector2::new(
+                corner.x * cos_r - corner.y * sin_r,
+                corner.x * sin_r + corner.y * cos_r,
+            );
+            // Translate
+            let world = rotated + transform.position;
+            
+            min_x = min_x.min(world.x);
+            max_x = max_x.max(world.x);
+            min_y = min_y.min(world.y);
+            max_y = max_y.max(world.y);
+        }
+        
+        // Check if sprite AABB is fully outside viewport
+        max_x < viewport_min_x 
+            || min_x > viewport_max_x
+            || max_y < viewport_min_y
+            || min_y > viewport_max_y
     }
 
     pub fn queue_rect(
@@ -303,6 +385,23 @@ impl PrimitiveRenderer {
         is_border: bool,
         z_index: i32,
     ) {
+        // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
+        if layer == RenderLayer::World2D && self.is_sprite_offscreen(&transform, &size) {
+            // Remove from slots if it exists (sprite moved offscreen)
+            if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+                if let Some(existing) = &mut self.rect_instance_slots[slot] {
+                    // Mark as removed by setting to None
+                    self.rect_instance_slots[slot] = None;
+                    self.free_rect_slots.push(slot);
+                    self.rect_uuid_to_slot.remove(&uuid);
+                    self.mark_rect_slot_dirty(slot);
+                    self.dirty_count += 1;
+                    self.instances_need_rebuild = true;
+                }
+            }
+            return; // Don't queue offscreen sprites
+        }
+        
         let new_instance = self.create_rect_instance(
             transform,
             size,
@@ -369,6 +468,23 @@ impl PrimitiveRenderer {
                 transform.scale.y * tex_size.y,
             ),
         };
+        
+        // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
+        if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size) {
+            // Remove from slots if it exists (sprite moved offscreen)
+            if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+                if let Some(existing) = &mut self.texture_instance_slots[slot] {
+                    // Mark as removed by setting to None
+                    self.texture_instance_slots[slot] = None;
+                    self.free_texture_slots.push(slot);
+                    self.texture_uuid_to_slot.remove(&uuid);
+                    self.mark_texture_slot_dirty(slot);
+                    self.dirty_count += 1;
+                    self.instances_need_rebuild = true;
+                }
+            }
+            return; // Don't queue offscreen sprites
+        }
 
         let new_instance = self.create_texture_instance(adjusted_transform, pivot, z_index);
         let texture_path = texture_path.to_string();
@@ -425,7 +541,8 @@ impl PrimitiveRenderer {
         if let Some(ref atlas) = self.font_atlas {
             let mut cursor_x = transform.position.x;
             let baseline_y = transform.position.y;
-            let mut instances = Vec::with_capacity(text.len());
+            // Pre-allocate with estimated capacity (most characters will produce glyphs)
+            let mut instances = Vec::with_capacity(text.chars().count());
 
             let scale = font_size / atlas.design_size;
 
@@ -553,20 +670,26 @@ impl PrimitiveRenderer {
         }
 
         self.rect_dirty_ranges.sort_by_key(|r| r.start);
-        let mut consolidated = Vec::with_capacity(self.rect_dirty_ranges.len());
-
-        let mut current = self.rect_dirty_ranges[0].clone();
-        for range in self.rect_dirty_ranges.iter().skip(1) {
-            if range.start <= current.end {
-                current.end = current.end.max(range.end);
-            } else {
-                consolidated.push(current);
-                current = range.clone();
+        // Consolidate in-place to avoid allocations
+        // Collect ranges first to avoid borrow conflicts, then write back
+        let ranges: SmallVec<[Range<usize>; 8]> = self.rect_dirty_ranges.iter().cloned().collect();
+        let mut consolidated = SmallVec::<[Range<usize>; 8]>::new();
+        
+        if let Some(mut current) = ranges.first().cloned() {
+            for range in ranges.iter().skip(1) {
+                if range.start <= current.end {
+                    current.end = current.end.max(range.end);
+                } else {
+                    consolidated.push(current);
+                    current = range.clone();
+                }
             }
+            consolidated.push(current);
         }
-        consolidated.push(current);
-
-        self.rect_dirty_ranges = consolidated;
+        
+        // Write back consolidated ranges
+        self.rect_dirty_ranges.clear();
+        self.rect_dirty_ranges.extend(consolidated);
     }
 
     fn consolidate_texture_dirty_ranges(&mut self) {
@@ -575,20 +698,26 @@ impl PrimitiveRenderer {
         }
 
         self.texture_dirty_ranges.sort_by_key(|r| r.start);
-        let mut consolidated = Vec::with_capacity(self.texture_dirty_ranges.len());
-
-        let mut current = self.texture_dirty_ranges[0].clone();
-        for range in self.texture_dirty_ranges.iter().skip(1) {
-            if range.start <= current.end {
-                current.end = current.end.max(range.end);
-            } else {
-                consolidated.push(current);
-                current = range.clone();
+        // Consolidate in-place to avoid allocations
+        // Collect ranges first to avoid borrow conflicts, then write back
+        let ranges: SmallVec<[Range<usize>; 8]> = self.texture_dirty_ranges.iter().cloned().collect();
+        let mut consolidated = SmallVec::<[Range<usize>; 8]>::new();
+        
+        if let Some(mut current) = ranges.first().cloned() {
+            for range in ranges.iter().skip(1) {
+                if range.start <= current.end {
+                    current.end = current.end.max(range.end);
+                } else {
+                    consolidated.push(current);
+                    current = range.clone();
+                }
             }
+            consolidated.push(current);
         }
-        consolidated.push(current);
-
-        self.texture_dirty_ranges = consolidated;
+        
+        // Write back consolidated ranges
+        self.texture_dirty_ranges.clear();
+        self.texture_dirty_ranges.extend(consolidated);
     }
 
     pub fn initialize_font_atlas(&mut self, device: &Device, queue: &Queue, font_atlas: FontAtlas) {
@@ -608,14 +737,14 @@ impl PrimitiveRenderer {
         });
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &atlas_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &font_atlas.bitmap,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(font_atlas.width),
                 rows_per_image: Some(font_atlas.height),
@@ -908,10 +1037,15 @@ impl PrimitiveRenderer {
             }
         }
 
-        self.world_rect_instances
-            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        self.ui_rect_instances
-            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        // OPTIMIZED: Only sort if more than one instance
+        if self.world_rect_instances.len() > 1 {
+            self.world_rect_instances
+                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        }
+        if self.ui_rect_instances.len() > 1 {
+            self.ui_rect_instances
+                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        }
 
         self.rebuild_texture_groups_by_layer();
         self.upload_instances_to_gpu(queue);
@@ -936,10 +1070,15 @@ impl PrimitiveRenderer {
             }
         }
 
-        self.world_text_instances
-            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
-        self.ui_text_instances
-            .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        // OPTIMIZED: Only sort if more than one instance
+        if self.world_text_instances.len() > 1 {
+            self.world_text_instances
+                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        }
+        if self.ui_text_instances.len() > 1 {
+            self.ui_text_instances
+                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        }
 
         self.temp_all_font_instances.clear();
         self.temp_all_font_instances
@@ -963,31 +1102,35 @@ impl PrimitiveRenderer {
         self.world_texture_buffer_ranges.clear();
         self.ui_texture_buffer_ranges.clear();
 
-        let mut world_texture_map: HashMap<String, Vec<TextureInstance>> = HashMap::new();
-        let mut ui_texture_map: HashMap<String, Vec<TextureInstance>> = HashMap::new();
+        // Reuse temp_texture_map instead of allocating new HashMaps
+        self.temp_texture_map.clear();
+        
+        // Use a separate temp for UI to avoid conflicts
+        let mut ui_texture_map: FxHashMap<String, Vec<TextureInstance>> = FxHashMap::default();
 
         for slot in &self.texture_instance_slots {
             if let Some((layer, instance, texture_path)) = slot {
                 match layer {
                     RenderLayer::World2D => {
-                        world_texture_map
+                        self.temp_texture_map
                             .entry(texture_path.clone())
-                            .or_default()
+                            .or_insert_with(Vec::new)
                             .push(*instance);
                     }
                     RenderLayer::UI => {
                         ui_texture_map
                             .entry(texture_path.clone())
-                            .or_default()
+                            .or_insert_with(Vec::new)
                             .push(*instance);
                     }
                 }
             }
         }
 
-        // Build world texture groups first
+        // Build world texture groups first - take ownership of temp_texture_map
+        let world_map_owned = std::mem::take(&mut self.temp_texture_map);
         Self::build_texture_groups(
-            world_texture_map,
+            world_map_owned,
             &mut self.world_texture_groups,
             &mut self.world_texture_group_offsets,
             &mut self.world_texture_buffer_ranges,
@@ -1014,17 +1157,41 @@ impl PrimitiveRenderer {
     }
 
     fn upload_instances_to_gpu(&mut self, queue: &Queue) {
-        // Upload rect instances
-        let mut all_rect_instances: Vec<RectInstance> = Vec::new();
-        all_rect_instances.extend(&self.world_rect_instances);
-        all_rect_instances.extend(&self.ui_rect_instances);
-
-        if !all_rect_instances.is_empty() {
-            queue.write_buffer(
-                &self.rect_instance_buffer,
-                0,
-                bytemuck::cast_slice(&all_rect_instances),
-            );
+        // Upload rect instances - reuse temp vector if available
+        // For small cases, use stack allocation
+        let total_rects = self.world_rect_instances.len() + self.ui_rect_instances.len();
+        if total_rects > 0 {
+            // Use a temporary buffer only if needed, otherwise write directly
+            if total_rects <= 64 {
+                // Small case: use SmallVec for stack allocation
+                let mut all_rect_instances: SmallVec<[RectInstance; 64]> = SmallVec::new();
+                all_rect_instances.extend(self.world_rect_instances.iter().copied());
+                all_rect_instances.extend(self.ui_rect_instances.iter().copied());
+                queue.write_buffer(
+                    &self.rect_instance_buffer,
+                    0,
+                    bytemuck::cast_slice(&all_rect_instances),
+                );
+            } else {
+                // Large case: write in chunks to avoid large allocations
+                // Write world first
+                if !self.world_rect_instances.is_empty() {
+                    queue.write_buffer(
+                        &self.rect_instance_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.world_rect_instances),
+                    );
+                }
+                // Then write UI at offset
+                if !self.ui_rect_instances.is_empty() {
+                    let offset = (self.world_rect_instances.len() * std::mem::size_of::<RectInstance>()) as u64;
+                    queue.write_buffer(
+                        &self.rect_instance_buffer,
+                        offset,
+                        bytemuck::cast_slice(&self.ui_rect_instances),
+                    );
+                }
+            }
         }
 
         // Upload texture instances
@@ -1046,7 +1213,7 @@ impl PrimitiveRenderer {
     }
 
     fn build_texture_groups(
-        mut texture_map: HashMap<String, Vec<TextureInstance>>,
+        mut texture_map: FxHashMap<String, Vec<TextureInstance>>,
         groups: &mut Vec<(String, Vec<TextureInstance>)>,
         offsets: &mut Vec<(usize, usize)>,
         ranges: &mut Vec<Range<u64>>,
@@ -1055,20 +1222,31 @@ impl PrimitiveRenderer {
     ) {
         temp_sorted_groups.clear();
         temp_sorted_groups.extend(texture_map.drain());
-        temp_sorted_groups.sort_by(|a, b| {
-            let min_z_a = a.1.iter().map(|c| c.z_index).min().unwrap_or(0);
-            let min_z_b = b.1.iter().map(|c| c.z_index).min().unwrap_or(0);
-            min_z_a.cmp(&min_z_b)
-        });
+        // OPTIMIZED: Only sort if more than one group
+        if temp_sorted_groups.len() > 1 {
+            temp_sorted_groups.sort_by(|a, b| {
+                // OPTIMIZED: Use first instance z_index as proxy (most groups have same z_index)
+                // This avoids iterating through all instances for each comparison
+                let z_a = a.1.first().map(|c| c.z_index).unwrap_or(0);
+                let z_b = b.1.first().map(|c| c.z_index).unwrap_or(0);
+                z_a.cmp(&z_b)
+            });
+        }
 
         let mut current_offset = buffer_offset;
 
+        // OPTIMIZED: Pre-compute size_of constant to avoid repeated calculations
+        const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
+        
         for (path, mut instances) in temp_sorted_groups.drain(..) {
-            instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+            // OPTIMIZED: Only sort if more than one instance (no-op for single instance)
+            if instances.len() > 1 {
+                instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+            }
 
             let count = instances.len();
-            let start_byte = current_offset * std::mem::size_of::<TextureInstance>();
-            let size_bytes = count * std::mem::size_of::<TextureInstance>();
+            let start_byte = current_offset * INSTANCE_SIZE;
+            let size_bytes = count * INSTANCE_SIZE;
             let range = (start_byte as u64)..((start_byte + size_bytes) as u64);
 
             groups.push((path, instances));

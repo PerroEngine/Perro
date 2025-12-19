@@ -4866,10 +4866,6 @@ pub fn write_to_crate(
     fs::write(&lib_rs_path, current_content)
         .map_err(|e| format!("Failed to update lib.rs: {}", e))?;
 
-    let should_compile_path = project_path.join(".perro/scripts/should_compile");
-    fs::write(should_compile_path, "true")
-        .map_err(|e| format!("Failed to write should_compile: {}", e))?;
-
     Ok(())
 }
 

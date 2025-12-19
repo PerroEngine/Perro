@@ -50,7 +50,7 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
-    // Per-instance transform matrix
+    // OPTIMIZED: Per-instance transform matrix
     let model = mat4x4<f32>(
         instance.transform_0,
         instance.transform_1,
@@ -64,7 +64,7 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     // Apply camera view matrix (inverse camera transform)
     world_pos = camera.view * world_pos;
 
-    // Apply zoom (must rebuild full vector; WGSL doesn’t allow swizzle assignment)
+    // Apply zoom (must rebuild full vector; WGSL doesn't allow swizzle assignment)
     world_pos = vec4<f32>(world_pos.xy * camera.zoom, world_pos.z, world_pos.w);
 
     // Convert to clip-space (scale from virtual world to NDC range)

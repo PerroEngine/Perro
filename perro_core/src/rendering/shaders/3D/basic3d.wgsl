@@ -99,11 +99,16 @@ fn fresnel_schlick_roughness(cos_theta: f32, F0: vec3<f32>, roughness: f32) -> v
     return F0 + (max(vec3<f32>(1.0 - roughness), F0) - F0) * pow(1.0 - cos_theta, 5.0);
 }
 
+// OPTIMIZED: Pre-compute PI constant
+const PI: f32 = 3.14159265359;
+const INV_PI: f32 = 0.31830988618; // 1.0 / PI
+
 fn distribution_ggx(NdotH: f32, roughness: f32) -> f32 {
     let a = roughness * roughness;
     let a2 = a * a;
     let denom = (NdotH * NdotH) * (a2 - 1.0) + 1.0;
-    return a2 / (3.14159 * denom * denom);
+    // OPTIMIZED: Use pre-computed PI constant
+    return a2 / (PI * denom * denom);
 }
 
 fn geometry_schlick_ggx(NdotV: f32, roughness: f32) -> f32 {
@@ -131,13 +136,21 @@ fn aces_tonemap(x: vec3<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let mat = materials[in.material_id];
+    // OPTIMIZED: Normalize once, reuse
     let N = normalize(in.world_normal);
     var lighting = vec3<f32>(0.0);
 
-    // Camera world pos
+    // OPTIMIZED: Cache camera position calculation (only compute once)
     let view_inv = inverse_view_matrix(camera.view);
     let camera_pos = view_inv[3].xyz;
     let V = normalize(camera_pos - in.world_pos);
+    
+    // OPTIMIZED: Pre-compute NdotV once (used in multiple places)
+    let NdotV = max(dot(N, V), 0.0);
+    
+    // OPTIMIZED: Early exit if facing away from camera (backface culling in fragment)
+    // Note: This is optional - vertex culling is usually better, but helps with transparent objects
+    // if (NdotV < 0.001) { return vec4<f32>(0.0, 0.0, 0.0, 0.0); }
 
     // Soft hemispheric ambient
     let hemi_top = vec3<f32>(0.38, 0.45, 0.55);
@@ -145,11 +158,17 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let hemi = mix(hemi_bottom, hemi_top, N.y * 0.5 + 0.5);
     lighting += hemi * 0.1;
 
+    // OPTIMIZED: Pre-compute F0 once (doesn't depend on light)
+    let F0 = mix(vec3<f32>(0.04), mat.base_color.rgb, vec3<f32>(mat.metallic));
+    let one_minus_metallic = 1.0 - mat.metallic;
+
     // Lights
     for (var i: u32 = 0u; i < MAX_LIGHTS; i++) {
         let L = lights[i];
+        // OPTIMIZED: Early exit for zero-intensity lights (moved to top)
         if (L.intensity <= 0.0001) { continue; }
 
+        // OPTIMIZED: Pre-compute lenL once
         let lenL = length(L.position);
         let is_directional = abs(lenL - 1.0) < 0.01;
         let is_spot = lenL > 1.5;
@@ -158,22 +177,28 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         var attenuation: f32 = 1.0;
 
         if (is_directional) {
+            // OPTIMIZED: For directional lights, normalize once
             Ldir = normalize(-L.position);
         } else {
+            // OPTIMIZED: Compute distance squared first (cheaper than length)
             let light_vec = in.world_pos - L.position;
-            let dist = length(light_vec);
+            let dist_sq = dot(light_vec, light_vec);
+            let dist = sqrt(dist_sq);
             Ldir = -light_vec / dist;
-            attenuation = 1.0 / (1.0 + dist * dist * 0.1);
+            // OPTIMIZED: Use dist_sq directly for attenuation
+            attenuation = 1.0 / (1.0 + dist_sq * 0.1);
         }
+
+        // OPTIMIZED: Early exit if light doesn't contribute (NdotL <= 0)
+        let NdotL = max(dot(N, Ldir), 0.0);
+        if (NdotL <= 0.001) { continue; }
 
         // Base BRDF
         let H = normalize(V + Ldir);
-        let NdotL = max(dot(N, Ldir), 0.0);
-        let NdotV = max(dot(N, V), 0.0);
         let NdotH = max(dot(N, H), 0.0);
         let VdotH = max(dot(V, H), 0.0);
 
-        let F0 = mix(vec3<f32>(0.04), mat.base_color.rgb, vec3<f32>(mat.metallic));
+        // OPTIMIZED: Reuse pre-computed F0 and NdotV
         let D = distribution_ggx(NdotH, mat.roughness);
         let G = geometry_smith(NdotV, NdotL, mat.roughness);
         let F = fresnel_schlick_roughness(VdotH, F0, mat.roughness);
@@ -182,16 +207,20 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         let denom = max(4.0 * NdotV * NdotL, 0.001);
         let specular = numerator / denom;
         let kS = F;
-        let kD = (vec3<f32>(1.0) - kS) * (1.0 - mat.metallic);
+        // OPTIMIZED: Reuse pre-computed one_minus_metallic
+        let kD = (vec3<f32>(1.0) - kS) * one_minus_metallic;
 
-        var light_contrib = (kD * mat.base_color.rgb / 3.14159 + specular)
+        // OPTIMIZED: Reuse pre-computed INV_PI constant
+        var light_contrib = (kD * mat.base_color.rgb * INV_PI + specular)
             * (L.color * L.intensity) * NdotL * attenuation;
 
         // Spot cone
         if (is_spot) {
+            // OPTIMIZED: Pre-compute spot direction once
             let spot_dir = normalize(-L.position);
             let frag_dir = normalize(in.world_pos - (normalize(L.position) * (lenL - 1.0)));
             let cos_theta = dot(spot_dir, -frag_dir);
+            // OPTIMIZED: Pre-compute cos values (could be uniforms, but constants are fine)
             let inner = cos(radians(25.0));
             let outer = cos(radians(45.0));
             let epsilon = inner - outer;

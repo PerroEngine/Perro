@@ -38,7 +38,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsCamPupScript {
-    node: Camera3D,
+    base: Camera3D,
     name: String,
 }
 
@@ -48,11 +48,11 @@ pub struct ScriptsCamPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_cam_pup_create_script() -> *mut dyn ScriptObject {
-    let node = Camera3D::new("ScriptsCamPup");
+    let base = Camera3D::new("ScriptsCamPup");
     let name = String::from("cheese");
 
     Box::into_raw(Box::new(ScriptsCamPupScript {
-        node,
+        base,
         name,
     })) as *mut dyn ScriptObject
 }
@@ -73,11 +73,11 @@ impl Script for ScriptsCamPupScript {
 
 impl ScriptObject for ScriptsCamPupScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -100,7 +100,7 @@ impl ScriptObject for ScriptsCamPupScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

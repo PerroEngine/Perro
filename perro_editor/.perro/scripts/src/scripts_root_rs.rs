@@ -27,7 +27,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 struct RootScript {
-    node: Node,
+    base: Node,
     /// @expose
     pub b: f32,
     /// @bitch
@@ -40,7 +40,7 @@ struct RootScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RootScript {
-        node: Node::new("Root", None),
+        base: Node::new("Root", None),
         b: 0.0f32,
         a: 0i32,
         e: String::new(),
@@ -307,17 +307,10 @@ api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
 
-        api.scene.get_scene_node(Uuid::from_str("4f6c6c9c-4e44-4e34-8a9c-0c0f0464fd48").unwrap()).unwrap().internal_fixed_update(api);
+      
         // In your script struct
 let mut was_mouse_down = false;
 
-// In update()
-let is_mouse_down = api.Input.Mouse.is_button_pressed("MouseLeft");
-if is_mouse_down && !was_mouse_down {
-    // Mouse was just clicked (transition from up to down)
-    println!("Mouse clicked!");
-}
-was_mouse_down = is_mouse_down;
     }
 }
 
@@ -352,11 +345,11 @@ mod natord {
 
 impl ScriptObject for RootScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -379,7 +372,7 @@ impl ScriptObject for RootScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

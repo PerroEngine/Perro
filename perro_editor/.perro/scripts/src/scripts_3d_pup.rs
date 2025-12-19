@@ -31,19 +31,17 @@ use perro_core::prelude::*;
 
 static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
     "b" => &["name", "a", "bob", "Expose"],
-    "init()" => &["func"],
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
-    "a" => &["b"],
-    "bob" => &["b"],
     "name" => &["b"],
+    "bob" => &["b"],
     "Expose" => &["b"],
-    "func" => &["init()"],
+    "a" => &["b"],
 };
 
 pub struct Scripts3dPupScript {
-    node: MeshInstance3D,
+    base: MeshInstance3D,
     b: f32,
 }
 
@@ -53,11 +51,11 @@ pub struct Scripts3dPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
-    let node = MeshInstance3D::new("Scripts3dPup");
+    let base = MeshInstance3D::new("Scripts3dPup");
     let b = 5f32;
 
     Box::into_raw(Box::new(Scripts3dPupScript {
-        node,
+        base,
         b,
     })) as *mut dyn ScriptObject
 }
@@ -68,16 +66,16 @@ pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for Scripts3dPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
-        self.node.transform.position.x = 3f32;
-        api.print(&String::from("Input API Test - Testing all input methods"));
+        self.base = api.get_node_clone::<MeshInstance3D>(self.base.id);
+        self.base.transform.position.x = 3f32;
+        api.print("Input API Test - Testing all input methods");
 
-        // Merge cloned nodes
-        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        // Merge cloned nodes (stack-allocated array)
+        api.merge_nodes(&[self.base.clone().to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<MeshInstance3D>(self.node.id);
+        self.base = api.get_node_clone::<MeshInstance3D>(self.base.id);
         let mut delta: f32 = api.Time.get_delta();
         let mut move_forward_action: bool = api.Input.get_action(String::from("move_forward"));
         let mut move_backward_action: bool = api.Input.get_action(String::from("move_backward"));
@@ -92,14 +90,14 @@ impl Script for Scripts3dPupScript {
         let mut move_z: f32 = ((forward_val - backward_val) * (delta * 5.0f32));
         let mut move_x: f32 = ((left_val - right_val) * (delta * 5.0f32));
         let mut move_y: f32 = (jump_val * (delta * 5.0f32));
-        self.node.transform.position.x += move_x;
-        self.node.transform.position.z += move_z;
-        self.node.transform.position.y += move_y;
+        self.base.transform.position.x += move_x;
+        self.base.transform.position.z += move_z;
+        self.base.transform.position.y += move_y;
         let mut scroll: f32 = api.Input.Mouse.get_scroll_delta();
-        self.node.transform.position.y += (scroll * (delta * 2.0f32));
+        self.base.transform.position.y += (scroll * (delta * 2.0f32));
 
-        // Merge cloned nodes
-        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        // Merge cloned nodes (stack-allocated array)
+        api.merge_nodes(&[self.base.clone().to_scene_node()]);
     }
 
 }
@@ -107,11 +105,11 @@ impl Script for Scripts3dPupScript {
 
 impl ScriptObject for Scripts3dPupScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -134,7 +132,7 @@ impl ScriptObject for Scripts3dPupScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

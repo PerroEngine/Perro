@@ -18,7 +18,7 @@ use phf::{phf_map, Map};
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RepairScript {
-        node: Node::new("Repair", None),
+        base: Node::new("Repair", None),
         toolchain_ver: String::new(),
         engine_ver: String::new(),
         editor_mode: false,
@@ -33,7 +33,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 struct RepairScript {
-    node: Node,
+    base: Node,
     toolchain_ver: String,
     engine_ver: String,
     editor_mode: bool,
@@ -332,11 +332,11 @@ impl Script for RepairScript {
 
 impl ScriptObject for RepairScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -359,7 +359,7 @@ impl ScriptObject for RepairScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

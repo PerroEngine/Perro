@@ -381,13 +381,18 @@ impl Renderer3D {
 
     pub fn upload_lights_to_gpu(&mut self, queue: &Queue) {
         if self.lights_need_rebuild {
+            // OPTIMIZED: Pre-allocate array and fill directly without intermediate Vec
             let mut gpu_lights_array = [LightUniform::default(); MAX_LIGHTS];
-            let active_lights: Vec<LightUniform> =
-                self.light_slots.iter().filter_map(|l| *l).collect();
-
-            for (i, light) in active_lights.iter().enumerate() {
-                if i < MAX_LIGHTS {
-                    gpu_lights_array[i] = *light;
+            let mut active_count = 0;
+            
+            // OPTIMIZED: Fill array directly, stopping at MAX_LIGHTS
+            for light_opt in &self.light_slots {
+                if active_count >= MAX_LIGHTS {
+                    break;
+                }
+                if let Some(light) = light_opt {
+                    gpu_lights_array[active_count] = *light;
+                    active_count += 1;
                 }
             }
 
@@ -446,13 +451,18 @@ impl Renderer3D {
 
     pub fn upload_materials_to_gpu(&mut self, queue: &Queue) {
         if self.materials_need_rebuild {
+            // OPTIMIZED: Pre-allocate array and fill directly without intermediate Vec
             let mut gpu_materials_array = [MaterialUniform::default(); MAX_MATERIALS];
-            let active_materials: Vec<MaterialUniform> =
-                self.material_slots.iter().filter_map(|m| *m).collect();
-
-            for (i, material) in active_materials.iter().enumerate() {
-                if i < MAX_MATERIALS {
-                    gpu_materials_array[i] = *material;
+            let mut active_count = 0;
+            
+            // OPTIMIZED: Fill array directly, stopping at MAX_MATERIALS
+            for material_opt in &self.material_slots {
+                if active_count >= MAX_MATERIALS {
+                    break;
+                }
+                if let Some(material) = material_opt {
+                    gpu_materials_array[active_count] = *material;
+                    active_count += 1;
                 }
             }
 
@@ -461,7 +471,6 @@ impl Renderer3D {
                 0,
                 bytemuck::cast_slice(&gpu_materials_array),
             );
-            println!("✅ Materials uploaded. Active: {}", active_materials.len());
             self.materials_need_rebuild = false;
         }
     }
@@ -680,23 +689,34 @@ impl Renderer3D {
                 .map(|mat| mat.base_color[3] < 1.0)
                 .unwrap_or(false);
 
-            instances.sort_by(|a, b| {
-                let a_pos = glam::Mat4::from_cols_array_2d(&a.model_matrix)
-                    .transform_point3(glam::Vec3::ZERO);
-                let b_pos = glam::Mat4::from_cols_array_2d(&b.model_matrix)
-                    .transform_point3(glam::Vec3::ZERO);
+            // OPTIMIZED: Only sort if more than one instance
+            if instances.len() > 1 {
+                instances.sort_by(|a, b| {
+                    // OPTIMIZED: Extract translation directly from matrix (column 3, rows 0-2)
+                    // Avoids full matrix multiplication for position extraction
+                    let a_pos = glam::Vec3::new(
+                        a.model_matrix[3][0],
+                        a.model_matrix[3][1],
+                        a.model_matrix[3][2],
+                    );
+                    let b_pos = glam::Vec3::new(
+                        b.model_matrix[3][0],
+                        b.model_matrix[3][1],
+                        b.model_matrix[3][2],
+                    );
 
-                let da = (a_pos - camera_pos).length_squared();
-                let db = (b_pos - camera_pos).length_squared();
+                    let da = (a_pos - camera_pos).length_squared();
+                    let db = (b_pos - camera_pos).length_squared();
 
-                let cmp = da.partial_cmp(&db).unwrap_or(Ordering::Equal);
+                    let cmp = da.partial_cmp(&db).unwrap_or(Ordering::Equal);
 
-                if is_transparent {
-                    cmp.reverse() // back-to-front for transparency
-                } else {
-                    cmp // front-to-back for opaque
-                }
-            });
+                    if is_transparent {
+                        cmp.reverse() // back-to-front for transparency
+                    } else {
+                        cmp // front-to-back for opaque
+                    }
+                });
+            }
         }
 
         // ---- 6️⃣  Save as final render batches ----
@@ -706,12 +726,17 @@ impl Renderer3D {
             .collect();
 
         // ---- 7️⃣  Upload instance buffer ----
-        // Optimize: collect directly without cloning - use into_iter to take ownership
-        let all_instances: Vec<MeshInstance> = self
+        // OPTIMIZED: Pre-allocate with known capacity to avoid reallocations
+        let total_instances: usize = self
             .mesh_material_groups
             .iter()
-            .flat_map(|(_, _, instances)| instances.iter().cloned())
-            .collect();
+            .map(|(_, _, instances)| instances.len())
+            .sum();
+        
+        let mut all_instances = Vec::with_capacity(total_instances);
+        for (_, _, instances) in &self.mesh_material_groups {
+            all_instances.extend_from_slice(instances);
+        }
 
         if all_instances.is_empty() {
             self.instances_need_rebuild = false;

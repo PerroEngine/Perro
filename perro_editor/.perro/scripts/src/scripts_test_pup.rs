@@ -36,7 +36,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsTestPupScript {
-    node: Sprite2D,
+    base: Sprite2D,
 }
 
 // ========================================================================
@@ -45,10 +45,10 @@ pub struct ScriptsTestPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_test_pup_create_script() -> *mut dyn ScriptObject {
-    let node = Sprite2D::new("ScriptsTestPup");
+    let base = Sprite2D::new("ScriptsTestPup");
 
     Box::into_raw(Box::new(ScriptsTestPupScript {
-        node,
+        base,
     })) as *mut dyn ScriptObject
 }
 
@@ -62,12 +62,12 @@ impl Script for ScriptsTestPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.node = api.get_node_clone::<Sprite2D>(self.node.id);
-        self.node.transform.rotation += (0.5f32 * api.Time.get_delta());
-        self.node.transform.position.x += (550f32 * api.Time.get_delta());
+        self.base = api.get_node_clone::<Sprite2D>(self.base.id);
+        self.base.transform.rotation += (0.5f32 * api.Time.get_delta());
+        self.base.transform.position.x += (550f32 * api.Time.get_delta());
 
-        // Merge cloned nodes
-        api.merge_nodes(vec![self.node.clone().to_scene_node()]);
+        // Merge cloned nodes (stack-allocated array)
+        api.merge_nodes(&[self.base.clone().to_scene_node()]);
     }
 
 }
@@ -86,11 +86,11 @@ impl ScriptsTestPupScript {
 
 impl ScriptObject for ScriptsTestPupScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -113,7 +113,7 @@ impl ScriptObject for ScriptsTestPupScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

@@ -22,7 +22,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 struct UpdaterScript {
-    node: Node,
+    base: Node,
     check_timer: f32,
     state: UpdateState,
     my_version: String,
@@ -31,7 +31,7 @@ struct UpdaterScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_updater_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(UpdaterScript {
-        node: Node::new("Updater", None),
+        base: Node::new("Updater", None),
         check_timer: 0.0,
         state: UpdateState::Initial,
         my_version: String::new(),
@@ -425,11 +425,11 @@ mod natord {
 
 impl ScriptObject for UpdaterScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -452,7 +452,7 @@ impl ScriptObject for UpdaterScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

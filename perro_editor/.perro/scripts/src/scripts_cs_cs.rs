@@ -40,7 +40,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsCsCsScript {
-    node: Node2D,
+    base: Node2D,
     speed: f32,
     health: i32,
 }
@@ -51,12 +51,12 @@ pub struct ScriptsCsCsScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
-    let node = Node2D::new("ScriptsCsCs");
+    let base = Node2D::new("ScriptsCsCs");
     let speed = 0.0f32;
     let health = 0i32;
 
     Box::into_raw(Box::new(ScriptsCsCsScript {
-        node,
+        base,
         speed,
         health,
     })) as *mut dyn ScriptObject
@@ -69,7 +69,7 @@ pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
 impl Script for ScriptsCsCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         self.speed = 10.0f32;
-        api.print(&String::from("Player initialized!"));
+        api.print("Player initialized!");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -85,7 +85,7 @@ impl Script for ScriptsCsCsScript {
 impl ScriptsCsCsScript {
     fn TakeDamage(&mut self, mut amount: i32, api: &mut ScriptApi<'_>, external_call: bool) {
         self.health -= amount;
-        api.print(&String::from("Took damage!"));
+        api.print("Took damage!");
     }
 
 }
@@ -93,11 +93,11 @@ impl ScriptsCsCsScript {
 
 impl ScriptObject for ScriptsCsCsScript {
     fn set_node_id(&mut self, id: Uuid) {
-        self.node.id = id;
+        self.base.id = id;
     }
 
     fn get_node_id(&self) -> Uuid {
-        self.node.id
+        self.base.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -120,7 +120,7 @@ impl ScriptObject for ScriptsCsCsScript {
         &mut self,
         id: u64,
         api: &mut ScriptApi<'_>,
-        params: &SmallVec<[Value; 3]>,
+        params: &[Value],
     ) {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);

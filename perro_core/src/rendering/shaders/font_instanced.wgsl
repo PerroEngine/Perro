@@ -67,7 +67,19 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // OPTIMIZED: Sample texture once
     let dist = textureSample(font_atlas, font_sampler, in.uv).r;
+    
+    // OPTIMIZED: Early exit for fully opaque/transparent pixels
+    // Most text pixels are either fully inside (dist > 0.6) or fully outside (dist < 0.4)
+    if dist > 0.6 {
+        return vec4<f32>(in.color.rgb, in.color.a);
+    }
+    if dist < 0.4 {
+        discard;
+    }
+    
+    // Only compute expensive fwidth() and smoothstep() for edge pixels
     let fw = fwidth(dist);
     let alpha = smoothstep(0.5 - fw, 0.5 + fw, dist);
     return vec4<f32>(in.color.rgb, in.color.a * alpha);

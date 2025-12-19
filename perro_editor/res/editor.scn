@@ -14,6 +14,7 @@
       "fur_path": "res://fur/editor.fur",
       "base": {
         "type": "Node",
+        "parent": "11111111-1111-1111-1111-111111111111",
         "name": "Manager UI"
       }
     },

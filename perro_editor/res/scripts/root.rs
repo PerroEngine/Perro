@@ -16,7 +16,7 @@ use smallvec::{SmallVec, smallvec};
 
 /// @PerroScript
 pub struct RootScript {
-    node: Node,
+    base: Node,
     /// @expose
     pub b: f32,
     /// @bitch
@@ -29,7 +29,7 @@ pub struct RootScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn root_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RootScript {
-        node: Node::new("Root", None),
+        base: Node::new("Root", None),
         b: 0.0f32,
         a: 0i32,
         e: String::new(),
@@ -300,13 +300,6 @@ api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
         // In your script struct
 let mut was_mouse_down = false;
 
-// In update()
-let is_mouse_down = api.Input.Mouse.is_button_pressed("MouseLeft");
-if is_mouse_down && !was_mouse_down {
-    // Mouse was just clicked (transition from up to down)
-    println!("Mouse clicked!");
-}
-was_mouse_down = is_mouse_down;
     }
 }
 

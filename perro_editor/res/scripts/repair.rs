@@ -18,7 +18,7 @@ use phf::{phf_map, Map};
 #[unsafe(no_mangle)]
 pub extern "C" fn repair_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RepairScript {
-        node: Node::new("Repair", None),
+        base: Node::new("Repair", None),
         toolchain_ver: String::new(),
         engine_ver: String::new(),
         editor_mode: false,
@@ -27,7 +27,7 @@ pub extern "C" fn repair_create_script() -> *mut dyn ScriptObject {
 
 /// @PerroScript
 pub struct RepairScript {
-    node: Node,
+    base: Node,
     toolchain_ver: String,
     engine_ver: String,
     editor_mode: bool,
