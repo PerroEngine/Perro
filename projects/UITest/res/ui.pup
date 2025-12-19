@@ -1,0 +1,7 @@
+@script UITest extends UINode
+
+
+on bob_Pressed() {
+    Console.print("chicken in the bicken")
+}
+

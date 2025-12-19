@@ -23,6 +23,8 @@ use crate::{
     vertex::Vertex,
 };
 
+use crate::rendering::image_loader;
+
 #[cfg(target_arch = "wasm32")]
 pub type Rc<T> = std::rc::Rc<T>;
 #[cfg(not(target_arch = "wasm32"))]
@@ -108,24 +110,27 @@ impl TextureManager {
                     texture
                 }
             } else {
-                // Dev mode: no static textures, load from disk/BRK
+                // Dev mode: no static textures, load from disk/BRK with optimized decoder
                 let load_start = Instant::now();
                 let img_bytes = load_asset(path).expect("Failed to read image file");
                 let load_elapsed = load_start.elapsed();
 
                 let decode_start = Instant::now();
-                let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
+                // Use optimized fast decoder (format-specific decoders for PNG/JPEG)
+                let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
+                    .expect("Failed to decode image");
                 let decode_elapsed = decode_start.elapsed();
 
                 println!(
                     "🖼️ Loading texture: {} ({}x{})",
                     path,
-                    img.width(),
-                    img.height()
+                    width,
+                    height
                 );
 
                 let upload_start = Instant::now();
-                let texture = ImageTexture::from_image(&img, device, queue);
+                // Use direct RGBA8 path (avoids DynamicImage conversion)
+                let texture = ImageTexture::from_rgba8(&rgba, device, queue);
                 let upload_elapsed = upload_start.elapsed();
 
                 let total_elapsed = start.elapsed();

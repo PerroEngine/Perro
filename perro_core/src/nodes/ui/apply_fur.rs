@@ -11,6 +11,7 @@ use crate::{
     ui_elements::{
         ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel},
         ui_text::UIText,
+        ui_button::UIButton,
     },
     ui_node::UINode,
 };
@@ -170,20 +171,27 @@ fn apply_base_attributes(
 
             "sz" => {
                 let (x, y) = parse_compound(v);
-                if let Some(xv) = x {
-                    let (f, pct) = parse_f32_percent(xv, 1.0);
+                // If only one value provided, apply to both x and y
+                let (x_val, y_val) = if y.is_none() && x.is_some() {
+                    (x, x) // Single value applies to both
+                } else {
+                    (x, y) // Two values or none
+                };
+                
+                if let Some(xv) = x_val {
+                    let (f, pct) = parse_f32_percent(xv, base.size.x);
                     if pct {
                         base.style_map.insert(SIZE_X.into(), f);
                     } else {
-                        base.transform.scale.x = f;
+                        base.size.x = f;
                     }
                 }
-                if let Some(yv) = y {
-                    let (f, pct) = parse_f32_percent(yv, 1.0);
+                if let Some(yv) = y_val {
+                    let (f, pct) = parse_f32_percent(yv, base.size.y);
                     if pct {
                         base.style_map.insert(SIZE_Y.into(), f);
                     } else {
-                        base.transform.scale.y = f;
+                        base.size.y = f;
                     }
                 }
             }
@@ -429,6 +437,153 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
 
             Some(UIElement::Text(text))
+        }
+
+        "Button" => {
+            let mut button = UIButton::default();
+            button.set_name(&fur.id);
+            apply_base_attributes(&mut button.base, &fur.attributes);
+
+            // Apply panel properties (bg, border, rounding)
+            if let Some(bg) = fur.attributes.get("bg") {
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    button.panel_props_mut().background_color = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    button.panel_props_mut().border_color = Some(c);
+                }
+            }
+            if let Some(b) = fur.attributes.get("border") {
+                button.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
+            }
+
+            // Apply corner radius (same logic as Panel)
+            let mut corner = CornerRadius::default();
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
+
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut vals = [0.0; 4];
+                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
+
+                match value.split(',').count() {
+                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
+                    2 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
+                    }
+                    3 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
+                    }
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
+                    }
+                    _ => {}
+                }
+            }
+
+            // Directional and individual corner overrides
+            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+                corner.top_left = v;
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+                corner.bottom_left = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+                corner.top_left = v;
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+                corner.top_right = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
+                corner.top_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
+                corner.bottom_right = v;
+            }
+
+            button.panel_props_mut().corner_radius = corner;
+
+            // Apply text properties - extract text from children
+            let text_content: String = fur
+                .children
+                .iter()
+                .filter_map(|n| {
+                    if let FurNode::Text(s) = n {
+                        Some(s.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<&str>>()
+                .join("");
+            
+            // Trim the text content (whitespace from parsing)
+            let trimmed_content = text_content.trim();
+            button.text_props_mut().content = trimmed_content.to_string();
+            
+            // Debug: verify text content is set
+            if !trimmed_content.is_empty() {
+                println!("Button '{}' text content: '{}' (len: {})", fur.id, trimmed_content, trimmed_content.len());
+            } else {
+                println!("WARNING: Button '{}' has empty text content! Children: {:?}", fur.id, fur.children.len());
+            }
+            
+            // Set default text color to white if not specified (visible on colored backgrounds)
+            if fur.attributes.get("text-c").is_none() {
+                button.text_props_mut().color = Color::new(255, 255, 255, 255);
+            }
+            
+            // Set a reasonable default font size for buttons if not specified
+            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
+                button.text_props_mut().font_size = 16.0; // Larger default for buttons
+            }
+            
+            println!("Button '{}' text props: content='{}', font_size={}, color={:?}", 
+                fur.id, 
+                button.text_props().content, 
+                button.text_props().font_size,
+                button.text_props().color
+            );
+
+            if let Some(fs) = fur
+                .attributes
+                .get("fsz")
+                .or(fur.attributes.get("font-size"))
+            {
+                button.text_props_mut().font_size = fs.parse().unwrap_or(button.text_props().font_size);
+            }
+
+            if let Some(tc) = fur.attributes.get("text-c") {
+                if let Ok(c) = parse_color_with_opacity(tc) {
+                    button.text_props_mut().color = c;
+                }
+            }
+
+            Some(UIElement::Button(button))
         }
 
         _ => {

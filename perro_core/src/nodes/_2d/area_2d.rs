@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Area2D {
     #[serde(rename = "type")]
     pub ty: Cow<'static, str>,
@@ -25,6 +25,16 @@ pub struct Area2D {
     /// Used to detect enter/exit events
     #[serde(skip)]
     pub previous_collisions: HashSet<Uuid>,
+}
+
+impl Default for Area2D {
+    fn default() -> Self {
+        Self {
+            ty: Cow::Borrowed("Area2D"),
+            base: Node2D::default(),
+            previous_collisions: HashSet::new(),
+        }
+    }
 }
 
 impl Area2D {
@@ -59,31 +69,32 @@ impl Area2D {
             return;
         }
 
-        // Now get the physics world reference (after we're done with mutable scene access)
-        let physics_ref = match api.scene.get_physics_2d() {
-            Some(physics) => physics,
-            None => return,
-        };
-
         // Query for collisions and collect node IDs
-        let current_colliding_node_ids = {
-            let physics = physics_ref.borrow();
-            let intersections = physics.get_intersecting_colliders(&collider_handles);
-            
-            // Collect all colliding node IDs while we have the physics borrow
-            let mut node_ids = HashSet::new();
-            for (_our_handle, other_handle) in intersections {
-                if let Some(id) = physics.get_node_id(other_handle) {
-                    node_ids.insert(id);
+        // Note: We pass the node ID from physics (typically CollisionShape2D)
+        // The codegen will handle getting the parent node if needed when converting UUID to node type
+        let (current_colliding_node_ids, intersection_count) = {
+            let physics_ref = api.scene.get_physics_2d();
+            match physics_ref {
+                Some(physics) => {
+                    let physics = physics.borrow();
+                    let intersections = physics.get_intersecting_colliders(&collider_handles);
+                    
+                    // Collect all colliding node IDs while we have the physics borrow
+                    let mut node_ids = HashSet::new();
+                    for (_our_handle, other_handle) in &intersections {
+                        if let Some(id) = physics.get_node_id(*other_handle) {
+                            node_ids.insert(id);
+                        }
+                    }
+                    (node_ids, intersections.len())
                 }
+                None => return,
             }
-            
-            node_ids
         };
 
         // Get the signal base name (e.g., "Deadzone")
         let signal_base = self.name.as_ref();
-
+        
         // Determine which colliders entered (new collisions)
         let entered: Vec<Uuid> = current_colliding_node_ids
             .difference(&self.previous_collisions)
@@ -101,6 +112,9 @@ impl Area2D {
         if !entered.is_empty() {
             let entered_signal = format!("{}_AreaEntered", signal_base);
             let entered_signal_id = string_to_u64(&entered_signal);
+            
+            eprintln!("[Area2D SIGNAL] {}: Emitting {} AreaEntered signals | intersections found: {} | previous: {:?} | current: {:?} | entered: {:?}", 
+                self.name, entered.len(), intersection_count, self.previous_collisions, current_colliding_node_ids, entered);
             
             for node_id in &entered {
                 let params = SmallVec::from(vec![Value::String(node_id.to_string())]);

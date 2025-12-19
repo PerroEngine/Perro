@@ -1,6 +1,7 @@
 pub mod app;
 pub mod font;
 pub mod graphics;
+pub mod image_loader;
 pub mod vertex;
 
 pub mod renderer_2d;

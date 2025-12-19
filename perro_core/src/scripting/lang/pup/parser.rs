@@ -46,6 +46,25 @@ impl PupParser {
     // ============================================================
 
     pub fn parse_script(&mut self) -> Result<Script, String> {
+        // Parse @script Name extends NodeType syntax
+        let script_name = if self.current_token == PupToken::At {
+            self.next_token();
+            if self.current_token == PupToken::Script {
+                self.next_token();
+                if let PupToken::Ident(name) = &self.current_token {
+                    let name = name.clone();
+                    self.next_token();
+                    Some(name)
+                } else {
+                    return Err("Expected script name after @script".into());
+                }
+            } else {
+                return Err("Expected 'script' after '@'".into());
+            }
+        } else {
+            None
+        };
+
         self.expect(PupToken::Extends)?;
         let node_type = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
@@ -57,6 +76,7 @@ impl PupParser {
         let mut script_vars = Vec::new(); // This is the unified, ordered list of all script-level variables
         let mut functions = Vec::new();
         let mut structs = Vec::new();
+        let mut on_signal_functions = Vec::new(); // Track functions defined with "on SIGNALNAME()" syntax
 
         while self.current_token != PupToken::Eof {
             match &self.current_token {
@@ -87,6 +107,23 @@ impl PupParser {
                         ));
                     }
                 }
+                PupToken::On => {
+                    // Handle "on SIGNALNAME() {}" syntax
+                    self.next_token();
+                    let signal_name = if let PupToken::Ident(name) = &self.current_token {
+                        name.clone()
+                    } else {
+                        return Err("Expected signal name after 'on'".into());
+                    };
+                    self.next_token();
+                    
+                    // Parse function with signal name as function name
+                    let mut func = self.parse_function_with_name(signal_name.clone())?;
+                    func.is_on_signal = true;
+                    func.signal_name = Some(signal_name.clone());
+                    on_signal_functions.push(signal_name);
+                    functions.push(func);
+                }
                 PupToken::Struct => {
                     let def = self.parse_struct_def()?;
                     self.parsed_structs.push(def.clone());
@@ -102,6 +139,39 @@ impl PupParser {
                 other => {
                     return Err(format!("Unexpected top-level token {:?}", other));
                 }
+            }
+        }
+
+        // Auto-generate Signal.connect calls in init function for on-signal functions
+        if !on_signal_functions.is_empty() {
+            // Find or create init function
+            let init_func = functions.iter_mut().find(|f| f.name == "init");
+            if let Some(init_func) = init_func {
+                // Add Signal.connect calls at the beginning of init
+                for signal_name in &on_signal_functions {
+                    let connect_stmt = self.create_signal_connect_stmt(signal_name.clone());
+                    init_func.body.insert(0, connect_stmt);
+                }
+            } else {
+                // Create init function if it doesn't exist
+                let mut init_body = Vec::new();
+                for signal_name in &on_signal_functions {
+                    let connect_stmt = self.create_signal_connect_stmt(signal_name.clone());
+                    init_body.push(connect_stmt);
+                }
+                functions.insert(0, Function {
+                    name: "init".to_string(),
+                    params: Vec::new(),
+                    locals: Vec::new(),
+                    body: init_body,
+                    is_trait_method: true,
+                    uses_self: false,
+                    cloned_child_nodes: Vec::new(),
+                    return_type: Type::Void,
+                    attributes: Vec::new(),
+                    is_on_signal: false,
+                    signal_name: None,
+                });
             }
         }
 
@@ -128,6 +198,7 @@ impl PupParser {
         }
 
         Ok(Script {
+            script_name,
             node_type,
             variables: script_vars, // Pass the single, unified, and ordered list to the Script AST
             functions,
@@ -265,7 +336,10 @@ impl PupParser {
             return Err("Expected function name".into());
         };
         self.next_token();
+        self.parse_function_with_name(name)
+    }
 
+    fn parse_function_with_name(&mut self, name: String) -> Result<Function, String> {
         self.expect(PupToken::LParen)?;
         let mut params = Vec::new();
         if self.current_token != PupToken::RParen {
@@ -290,7 +364,25 @@ impl PupParser {
             uses_self: false,
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type: Type::Void,
-            attributes,
+            attributes: Vec::new(), // Attributes are parsed separately for on-signal functions
+            is_on_signal: false,
+            signal_name: None,
+        })
+    }
+
+    fn create_signal_connect_stmt(&self, signal_name: String) -> Stmt {
+        use crate::scripting::ast::{Expr, Literal, TypedExpr};
+        // Create: Signal.connect("SIGNALNAME", function_name)
+        // The function name is the same as the signal name, and it's on self
+        Stmt::Expr(TypedExpr {
+            expr: Expr::ApiCall(
+                ApiModule::Signal(SignalApi::Connect),
+                vec![
+                    Expr::Literal(Literal::String(signal_name.clone())),
+                    Expr::Literal(Literal::String(signal_name)),
+                ],
+            ),
+            inferred_type: None,
         })
     }
 
@@ -1000,26 +1092,27 @@ impl PupParser {
 
                 // API sugar handling...
                 if let Expr::MemberAccess(obj, method) = &left {
-                    if let Expr::Ident(mod_name) = &**obj {
-                        if let Some(api) = PupAPI::resolve(mod_name, method) {
-                            return Ok(Expr::ApiCall(api, args));
-                        }
-                    }
-
-                    // Handle self.get_node("name") - special case for getting child nodes
-                    if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node" {
-                        if let Some(api) = PupNodeSugar::resolve_method(method) {
+                    // Check PupNodeSugar methods FIRST (before PupAPI::resolve)
+                    // This ensures methods like get_parent() on node variables get the object as first arg
+                    if let Some(api) = PupNodeSugar::resolve_method(method) {
+                        // Handle self.get_node("name") - special case for getting child nodes
+                        if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node" {
                             // args[0] should be the child name (string)
                             let mut args_full = vec![Expr::SelfAccess];
                             args_full.extend(args);
                             return Ok(Expr::ApiCall(api, args_full));
                         }
-                    }
-
-                    if let Some(api) = PupNodeSugar::resolve_method(method) {
+                        // For other NodeSugar methods (like get_parent), add obj as first arg
                         let mut args_full = vec![*obj.clone()];
                         args_full.extend(args);
                         return Ok(Expr::ApiCall(api, args_full));
+                    }
+                    
+                    // Then check PupAPI::resolve for module APIs (Time, JSON, etc.)
+                    if let Expr::Ident(mod_name) = &**obj {
+                        if let Some(api) = PupAPI::resolve(mod_name, method) {
+                            return Ok(Expr::ApiCall(api, args));
+                        }
                     }
                     if let Expr::Ident(var_name) = &**obj {
                         if let Some(var_type) = self.type_env.get(var_name) {

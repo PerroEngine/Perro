@@ -129,7 +129,7 @@ macro_rules! impl_scene_node {
                 self.is_root_of.as_deref()
             }
             fn get_parent(&self) -> Option<uuid::Uuid> {
-                self.parent
+                self.parent_id
             }
 
             fn get_children(&self) -> &Vec<uuid::Uuid> {
@@ -150,7 +150,7 @@ macro_rules! impl_scene_node {
             }
 
             fn set_parent(&mut self, p: Option<uuid::Uuid>) {
-                self.parent = p;
+                self.parent_id = p;
             }
 
             fn add_child(&mut self, c: uuid::Uuid) {
@@ -445,7 +445,7 @@ define_nodes!(
     Camera2D(false)  => crate::nodes::_2d::camera_2d::Camera2D,
 
 
-    UINode(false)   => crate::nodes::ui_node::UINode,
+    UINode(true)   => crate::nodes::ui_node::UINode,
 
 
     Node3D(false)   => crate::nodes::_3d::node_3d::Node3D,

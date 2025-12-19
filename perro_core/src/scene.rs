@@ -1478,7 +1478,7 @@ impl<P: ScriptProvider> Scene<P> {
                     return None;
                 }
             };
-            (node2d.base.parent, local, node2d.transform_dirty)
+            (node2d.base.parent_id, local, node2d.transform_dirty)
         } else {
             return None;
         };
@@ -1604,7 +1604,7 @@ impl<P: ScriptProvider> Scene<P> {
                 if let SceneNode::CollisionShape2D(collision_shape) = node {
                     // Only register if it has a shape defined
                     if let Some(shape) = collision_shape.shape {
-                        let parent_id = collision_shape.parent;
+                        let parent_id = collision_shape.parent_id;
                         to_register.push((node_id, shape, parent_id));
                     }
                 }

@@ -1,7 +1,6 @@
 use crate::{
     api_modules::*,
     ast::*,
-    node_registry::NodeType,
     prelude::string_to_u64,
     scripting::ast::{ContainerKind, NumberKind},
 };
@@ -447,6 +446,25 @@ impl ApiCodegen for NodeSugarApi {
                 };
                 format!("api.get_child_by_name({}, {})", node_expr, child_name)
             }
+            NodeSugarApi::GetParent => {
+                // node.get_parent() -> returns the parent UUID (Option<Uuid>)
+                // For self.get_parent(): self.base.parent_id
+                // For c.get_parent(): c.parent_id
+                // The cast handling will convert this to the actual node type when you do "as Sprite2D"
+                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.base".to_string()
+                } else if let Some(Expr::Ident(name)) = args.get(0) {
+                    // Check args[0] FIRST - if it's an Ident (like "c"), use it directly
+                    // This bypasses any incorrect processing in args_strs
+                    name.clone()
+                } else if let Some(node_str) = args_strs.get(0) {
+                    // Fallback: use args_strs if args[0] is not a simple Ident
+                    node_str.clone()
+                } else {
+                    "self.base".to_string()
+                };
+                format!("{}.parent_id", node_expr)
+            }
         }
     }
 }
@@ -457,6 +475,7 @@ impl ApiTypes for NodeSugarApi {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
             NodeSugarApi::GetChildByName => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - child node ID (special marker type)
+            NodeSugarApi::GetParent => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - parent node ID (special marker type)
         }
     }
     // No specific param_types for NodeSugar APIs needed by default, uses None.
@@ -525,15 +544,33 @@ impl ApiCodegen for SignalApi {
 
                 match self {
                     SignalApi::Connect => {
-                        let mut node = args_strs
-                            .get(1)
-                            .cloned()
-                            .unwrap_or_else(|| "self.base".into());
-                        if node == "self" {
-                            node = "self.base".into()
-                        }
-                        let func = strip_string_from(args_strs.get(2).unwrap());
-                        let func_id = string_to_u64(&func);
+                        // New format: Signal.connect(signal, function_reference)
+                        // function_reference can be:
+                        // - String literal (function name) -> use self.base.id
+                        // - MemberAccess (child.function) -> use child.base.id
+                        let func_expr = args.get(1).unwrap();
+                        let (node, func_name) = match func_expr {
+                            Expr::Literal(Literal::String(func_name)) => {
+                                // String literal -> function on self
+                                ("self.base".to_string(), func_name.clone())
+                            }
+                            Expr::MemberAccess(base, field) => {
+                                // MemberAccess like child.function -> use child as node
+                                let node_code = base.to_rust(false, script, None, current_func);
+                                (format!("{}.base", node_code), field.clone())
+                            }
+                            Expr::Ident(func_name) => {
+                                // Just an identifier -> function on self
+                                ("self.base".to_string(), func_name.clone())
+                            }
+                            _ => {
+                                // Fallback: treat as string literal
+                                let func = strip_string_from(args_strs.get(1).unwrap());
+                                ("self.base".to_string(), func)
+                            }
+                        };
+
+                        let func_id = string_to_u64(&func_name);
                         format!("api.connect_signal_id({signal}, {node}.id, {func_id}u64)")
                     }
                     SignalApi::Emit => {

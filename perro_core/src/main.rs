@@ -150,6 +150,28 @@ fn main() {
         match perro_core::project_creator::create_new_project(project_name, &project_path, true) {
             Ok(_) => {
                 println!("✅ Project created successfully!");
+                
+                // Set project root for script building
+                set_project_root(ProjectRoot::Disk {
+                    root: project_path.clone(),
+                    name: project_name.clone(),
+                });
+                
+                // Build scripts automatically so the project is ready to run
+                println!("📜 Building scripts...");
+                if let Err(e) = transpile(&project_path, true) {
+                    eprintln!("⚠️  Warning: Failed to transpile scripts: {}", e);
+                    eprintln!("   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts", project_path.display());
+                } else {
+                    let compiler = Compiler::new(&project_path, CompileTarget::Scripts, true);
+                    if let Err(e) = compiler.compile(BuildProfile::Dev) {
+                        eprintln!("⚠️  Warning: Failed to compile scripts: {}", e);
+                        eprintln!("   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts", project_path.display());
+                    } else {
+                        println!("✅ Scripts built successfully!");
+                    }
+                }
+                
                 std::process::exit(0);
             }
             Err(e) => {

@@ -26,8 +26,8 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_exp_vars: Option<HashMap<String, Value>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent: Option<Uuid>,
+    #[serde(rename = "parent", skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<Uuid>,
 
     #[serde(skip)]
     pub children: Option<Vec<Uuid>>,
@@ -43,7 +43,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(name: &str, parent: Option<Uuid>) -> Self {
+    pub fn new(name: &str, parent_id: Option<Uuid>) -> Self {
         Self {
             id: Uuid::new_v4(),
             local_id: Uuid::new_v4(),
@@ -52,7 +52,7 @@ impl Node {
 
             script_path: None,
             script_exp_vars: None,
-            parent,
+            parent_id,
             children: None,
             metadata: None,
 

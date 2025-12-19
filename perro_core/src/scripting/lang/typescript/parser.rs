@@ -192,6 +192,7 @@ impl TypeScriptParser {
         }
 
         Ok(Script {
+            script_name: None,
             node_type,
             variables: script_vars,
             functions,
@@ -555,6 +556,8 @@ impl TypeScriptParser {
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type,
             attributes,
+            is_on_signal: false,
+            signal_name: None,
         })
     }
 

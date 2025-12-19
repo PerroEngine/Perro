@@ -42,6 +42,15 @@ fn clear_script_members_cache() {
     SCRIPT_MEMBERS_CACHE.with(|cache| *cache.borrow_mut() = None);
 }
 
+// Helper function to check if a type name is a node type
+fn is_node_type(type_name: &str) -> bool {
+    matches!(type_name, 
+        "Node" | "Node2D" | "Sprite2D" | "Area2D" | "CollisionShape2D" | "Shape2D" | "Camera2D" |
+        "UINode" |
+        "Node3D" | "MeshInstance3D" | "Camera3D" | "DirectionalLight3D" | "OmniLight3D" | "SpotLight3D"
+    )
+}
+
 fn to_pascal_case(s: &str) -> String {
     if s.is_empty() {
         return String::new();
@@ -937,12 +946,31 @@ fn collect_cloned_node_vars(
     cloned_ui_elements: &mut Vec<(String, String, String)>, // (ui_node_var, element_name, element_var)
     script: &Script,
 ) {
-    // Check if an expression contains GetChildByName anywhere (recursively)
-    // GetChildByName always returns a cloned node that needs to be merged
+    // Check if an expression results in a cloned node that needs to be merged
+    // This includes: get_node(), get_parent() as NodeType, and any cast from UuidOption to node type
     fn expr_contains_get_node(expr: &Expr, _verbose: bool) -> bool {
         match expr {
             Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) => true,
-            Expr::Cast(inner, _) => expr_contains_get_node(inner, _verbose),
+            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) => {
+                // get_parent() returns UuidOption, which when cast to a node type results in get_node_clone
+                // So if this is part of a cast to a node type, it will be cloned
+                true
+            },
+            Expr::Cast(inner, target_type) => {
+                // Check if casting to a node type (this results in get_node_clone)
+                let is_node_type_cast = match target_type {
+                    Type::Custom(tn) => is_node_type(tn),
+                    Type::Node(_) => true,
+                    _ => false,
+                };
+                if is_node_type_cast {
+                    // This cast will result in get_node_clone, so track it
+                    true
+                } else {
+                    // Continue checking inner expression
+                    expr_contains_get_node(inner, _verbose)
+                }
+            },
             Expr::Call(target, args) => {
                 expr_contains_get_node(target, _verbose)
                     || args.iter().any(|arg| expr_contains_get_node(arg, _verbose))
@@ -1042,6 +1070,69 @@ fn collect_cloned_node_vars(
             }
             _ => {}
         }
+    }
+}
+
+/// Check if a parameter is mutated in the function body
+fn param_is_mutated(param_name: &str, body: &[Stmt]) -> bool {
+    use crate::scripting::ast::{Expr, Stmt};
+    
+    for stmt in body {
+        match stmt {
+            // Direct assignment to parameter
+            Stmt::Assign(name, _) if name == param_name => return true,
+            
+            // Assignment operations on parameter
+            Stmt::AssignOp(name, _, _) if name == param_name => return true,
+            
+            // Member assignment (e.g., param.field = value)
+            Stmt::MemberAssign(lhs, _) => {
+                if expr_refers_to_param(&lhs.expr, param_name) {
+                    return true;
+                }
+            }
+            
+            // Member assignment with operator (e.g., param.field += value)
+            Stmt::MemberAssignOp(lhs, _, _) => {
+                if expr_refers_to_param(&lhs.expr, param_name) {
+                    return true;
+                }
+            }
+            
+            // Recursively check nested blocks
+            Stmt::If { then_body, else_body, .. } => {
+                if param_is_mutated(param_name, then_body) {
+                    return true;
+                }
+                if let Some(else_body) = else_body {
+                    if param_is_mutated(param_name, else_body) {
+                        return true;
+                    }
+                }
+            }
+            
+            Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } => {
+                if param_is_mutated(param_name, body) {
+                    return true;
+                }
+            }
+            
+            _ => {}
+        }
+    }
+    
+    false
+}
+
+/// Check if an expression refers to a parameter (directly or via field access)
+fn expr_refers_to_param(expr: &Expr, param_name: &str) -> bool {
+    use crate::scripting::ast::Expr;
+    
+    match expr {
+        Expr::Ident(name) => name == param_name,
+        Expr::MemberAccess(base, _) => expr_refers_to_param(base, param_name),
+        Expr::Index(base, _) => expr_refers_to_param(base, param_name),
+        _ => false,
     }
 }
 
@@ -1259,27 +1350,45 @@ impl Function {
         // (4) Merge cloned nodes and UI elements back
         // ---------------------------------------------------
 
-        // Merge all cloned nodes together (child nodes + self.base)
-        // These were tracked during codegen when we saw VariableDecl with get_node
+        // Merge all cloned nodes together (child nodes + self.base + node parameters)
+        // Only merge cloned node variables if they're mutated (like parameters)
         let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
             .iter()
+            .filter(|var_name| {
+                // Only merge if the variable is mutated in the function body
+                param_is_mutated(var_name, &self.body)
+            })
             .map(|v| format!("{}.to_scene_node()", v))
             .collect();
 
-        // Add self.base if needed (only in external_call context)
-        if needs_self {
-            out.push_str("\n        if external_call {\n");
-            all_nodes_to_merge.push("self.base.clone().to_scene_node()".to_string());
-            if !all_nodes_to_merge.is_empty() {
-                out.push_str("            // Merge cloned nodes\n");
-                out.push_str(&format!(
-                    "            api.merge_nodes(vec![{}]);\n",
-                    all_nodes_to_merge.join(", ")
-                ));
+        // Add node-type parameters to merge list (only if they're mutated)
+        for param in &self.params {
+            let is_node_param = match &param.typ {
+                Type::Custom(tn) => is_node_type(tn),
+                Type::Node(_) => true,
+                _ => false,
+            };
+            if is_node_param {
+                // Only merge if the parameter is mutated in the function body
+                if param_is_mutated(&param.name, &self.body) {
+                    all_nodes_to_merge.push(format!("{}.clone().to_scene_node()", param.name));
+                }
             }
+        }
+
+        // Merge nodes - always merge cloned nodes, not just on external_call
+        // This includes self.base (only on external_call), cloned child nodes, and node-type parameters
+        if needs_self {
+            // self.base only needs to be merged on external calls (signal handlers, etc.)
+            out.push_str("\n        if external_call {\n");
+            out.push_str("            // Merge self.base\n");
+            out.push_str("            api.merge_nodes(vec![self.base.clone().to_scene_node()]);\n");
             out.push_str("        }\n");
-        } else if !all_nodes_to_merge.is_empty() {
-            out.push_str("\n        // Merge cloned child nodes\n");
+        }
+        
+        if !all_nodes_to_merge.is_empty() {
+            // Always merge cloned nodes at the end of the function (regardless of external_call)
+            out.push_str("\n        // Merge cloned nodes\n");
             out.push_str(&format!(
                 "        api.merge_nodes(vec![{}]);\n",
                 all_nodes_to_merge.join(", ")
@@ -2698,9 +2807,15 @@ impl Expr {
                             )
                         }
                     }
-                    Some(Type::Custom(_)) => {
+                    Some(Type::Custom(type_name)) => {
                         // typed struct: regular .field access
                         let base_code = base.to_rust(needs_self, script, None, current_func);
+
+                        // Special handling: .parent_id on node types automatically unwraps Option<Uuid>
+                        // This is safe because the engine manages parent relationships
+                        if is_node_type(&type_name) && field == "parent_id" {
+                            return format!("{}.parent_id.unwrap()", base_code);
+                        }
 
                         // Special handling for UINode.get_element - this will be handled in Call expression
                         // when it's cast to a specific type like UIText
@@ -3738,6 +3853,7 @@ impl Expr {
                             Type::Custom(name) => {
                                 // Check if this is a cast from get_child_by_name (Option<Uuid>) to a node type
                                 // Pattern: self.get_node("name") as Sprite2D
+                                // Note: get_parent() now returns Node directly, so it doesn't need special handling here
                                 if let Expr::ApiCall(
                                     ApiModule::NodeSugar(NodeSugarApi::GetChildByName),
                                     _,
@@ -3780,16 +3896,18 @@ impl Expr {
                         }
                     }
 
-                    // Option<Uuid> (from get_child_by_name) to Custom type (node type)
-                    // Pattern: self.get_node("name") as Sprite2D
+                    // Option<Uuid> (from get_child_by_name or get_parent) to Custom type (node type)
+                    // Pattern: self.get_node("name") as Sprite2D or col.get_parent() as Sprite2D
                     (Some(Type::Custom(from_name)), Type::Custom(to_name))
                         if from_name == "UuidOption" =>
                     {
-                        // get_child_by_name returns Option<Uuid>, cast to node type
-                        // Unwrap the Option - panic if child not found (user expects this behavior)
+                        // get_child_by_name and get_parent return Option<Uuid>, cast to node type
+                        // Unwrap the Option directly and pass to get_node_clone
+                        // For get_parent: c.parent_id -> api.get_node_clone::<Sprite2D>(c.parent_id.unwrap())
+                        // For get_node: self.get_node("name") -> api.get_node_clone::<Sprite2D>(self.get_node("name").unwrap())
                         format!(
-                            "{}.map(|id| api.get_node_clone::<{}>(id)).unwrap_or_else(|| panic!(\"Child node not found\"))",
-                            inner_code, to_name
+                            "api.get_node_clone::<{}>({}.unwrap())",
+                            to_name, inner_code
                         )
                     }
 
@@ -3813,6 +3931,16 @@ impl Expr {
                         }
                     }
 
+                    // Node to specific node type (e.g., Node as Sprite2D)
+                    (Some(Type::Node(_)), Type::Custom(to_name)) if is_node_type(to_name) => {
+                        // Cast from base Node to specific node type
+                        // Use get_node_clone with the specific type
+                        format!(
+                            "api.get_node_clone::<{}>({}.id)",
+                            to_name, inner_code
+                        )
+                    }
+                    
                     // Custom type to Custom type (struct casts)
                     (Some(Type::Custom(from_name)), Type::Custom(to_name)) => {
                         if from_name == to_name {
@@ -4483,6 +4611,7 @@ pub fn implement_script_boilerplate(
     //----------------------------------------------------
     // FUNCTION DISPATCH TABLE GENERATION
     //----------------------------------------------------
+    
     for func in functions {
         if func.is_trait_method {
             continue;
@@ -4534,11 +4663,32 @@ pub fn implement_script_boilerplate(
                             .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
                             .unwrap_or_default() as u64;\n"
                     ),
+                    Type::Custom(tn) if is_node_type(tn) => {
+                        // For node types, parse UUID from string and get the node
+                        format!(
+                            "let mut {param_name} = params.get({i})
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+                            .map(|id| api.get_node_clone::<{tn}>(id))
+                            .unwrap_or_else(|| Default::default());\n"
+                        )
+                    },
                     Type::Custom(tn) => format!(
                         "let {param_name} = params.get({i})
                             .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok())
                             .unwrap_or_default();\n"
                     ),
+                    Type::Node(_) => {
+                        // Handle Type::Node variant - treat as base Node type
+                        // Base Node type works for all nodes, so no type check needed
+                        format!(
+                            "let {param_name} = params.get({i})
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+                            .map(|id| api.get_node_clone::<Node>(id))
+                            .unwrap_or_else(|| Default::default());\n"
+                        )
+                    },
                     _ => format!("let {param_name} = Default::default();\n"),
                 };
                 param_parsing.push_str(&parse_code);
@@ -4907,6 +5057,8 @@ pub fn derive_rust_perro_script(
                 body: vec![],
                 locals: vec![],
                 attributes: attributes_map.get(&fn_name).cloned().unwrap_or_default(),
+                is_on_signal: false,
+                signal_name: None,
             });
         }
     }

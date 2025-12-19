@@ -53,7 +53,7 @@
         "type": "Node2D",
         "base": { "type": "Node", "name": "Player", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
         "transform": {
-          "position": { "x": -1.0, "y": 0.0 },
+          "position": { "x": 100.0, "y": 0.0 },
           "rotation": 0.0,
           "scale": { "x": 0.5, "y": 0.5 }
         }

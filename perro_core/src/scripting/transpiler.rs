@@ -223,7 +223,9 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     clean_orphaned_scripts(project_root, &script_res_paths)?;
 
     if script_paths.is_empty() {
-        println!("📜 No scripts found.");
+        println!("📜 No scripts found. Creating minimal lib.rs...");
+        // Still create a minimal lib.rs so the DLL can be built
+        rebuild_lib_rs(project_root, &std::collections::HashSet::new())?;
         return Ok(());
     }
 

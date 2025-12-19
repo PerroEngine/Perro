@@ -1,4 +1,4 @@
-extends Node
+@script Shape extends Node
 
 fn init() {
     Console.print("hello there root")

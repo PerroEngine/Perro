@@ -1,0 +1,9 @@
+[UI]
+
+
+[Button id=bob sz=20% bg=red-5 rounding=0.1 fsz=50]
+Hello
+[/Button]
+
+
+[/UI]

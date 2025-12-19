@@ -1,6 +1,4 @@
-extends Node2D
-
-
+@script P2 extends Node2D
 
 fn update() {
     var delta = Time.get_delta()

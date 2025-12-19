@@ -11,6 +11,7 @@ use crate::{
     ui_elements::{
         ui_container::{BoxContainer, GridLayout, Layout, UIPanel},
         ui_text::UIText,
+        ui_button::UIButton,
     },
 };
 
@@ -19,7 +20,8 @@ use crate::{
 pub struct BaseUIElement {
     pub id: Uuid,
     pub name: String,
-    pub parent: Option<Uuid>,
+    #[serde(rename = "parent")]
+    pub parent_id: Option<Uuid>,
     pub children: Vec<Uuid>,
 
     pub visible: bool,
@@ -46,7 +48,7 @@ impl Default for BaseUIElement {
         Self {
             id,
             name: id.to_string(),
-            parent: None,
+            parent_id: None,
             children: Vec::new(),
             visible: true,
             transform: Transform2D::default(),
@@ -140,10 +142,10 @@ macro_rules! impl_ui_element {
             }
 
             fn get_parent(&self) -> Option<uuid::Uuid> {
-                self.base.parent
+                self.base.parent_id
             }
             fn set_parent(&mut self, parent: Option<uuid::Uuid>) {
-                self.base.parent = parent;
+                self.base.parent_id = parent;
             }
 
             fn get_children(&self) -> &[uuid::Uuid] {
@@ -241,6 +243,7 @@ pub enum UIElement {
     GridLayout(GridLayout),
 
     Text(UIText),
+    Button(UIButton),
 }
 
 // Implement IntoUIInner for each UI element type
@@ -291,6 +294,15 @@ impl IntoUIInner<GridLayout> for UIElement {
                 "Cannot extract GridLayout from UIElement variant {:?}",
                 self
             ),
+        }
+    }
+}
+
+impl IntoUIInner<UIButton> for UIElement {
+    fn into_ui_inner(self) -> UIButton {
+        match self {
+            UIElement::Button(inner) => inner,
+            _ => panic!("Cannot extract UIButton from UIElement variant {:?}", self),
         }
     }
 }

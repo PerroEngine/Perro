@@ -4,6 +4,7 @@ use crate::{api_modules::ApiModule, engine_structs::EngineStruct, node_registry:
 
 #[derive(Debug, Clone)]
 pub struct Script {
+    pub script_name: Option<String>, // The script name from @script Name
     pub node_type: String,
     pub variables: Vec<Variable>,
     pub functions: Vec<Function>,
@@ -215,6 +216,8 @@ pub struct Function {
     pub cloned_child_nodes: Vec<String>, // Variable names that hold cloned child nodes (from self.get_node("name") as Type)
     pub return_type: Type,
     pub attributes: Vec<String>, // List of attribute names
+    pub is_on_signal: bool, // True if this function was defined with "on SIGNALNAME()" syntax
+    pub signal_name: Option<String>, // The signal name if this is an on-signal function
 }
 
 #[derive(Debug, Clone)]

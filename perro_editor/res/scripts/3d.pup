@@ -1,4 +1,4 @@
-extends MeshInstance3D
+@script Scripts3D extends MeshInstance3D
 
 @expose @name @a @bob var b = 5
 

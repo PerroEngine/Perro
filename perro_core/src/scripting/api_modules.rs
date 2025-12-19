@@ -50,6 +50,7 @@ pub enum NodeSugarApi {
     GetVar,
     SetVar,
     GetChildByName, // For self.get_node("name") - finds child by name and returns ID
+    GetParent, // For node.get_parent() - gets parent node ID
 }
 
 #[derive(Debug, Clone)]

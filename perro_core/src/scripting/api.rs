@@ -1318,6 +1318,16 @@ impl<'a> ScriptApi<'a> {
         None
     }
 
+    /// Get the parent node ID of a given node
+    /// Returns the parent node's ID if found, None otherwise
+    pub fn get_parent(&mut self, node_id: Uuid) -> Option<Uuid> {
+        if let Some(node) = self.scene.get_scene_node(node_id) {
+            node.get_parent()
+        } else {
+            None
+        }
+    }
+
     pub fn merge_nodes(&mut self, nodes: Vec<SceneNode>) {
         self.scene.merge_nodes(nodes);
     }

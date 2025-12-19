@@ -122,10 +122,20 @@ pub struct ImageTexture {
 }
 
 impl ImageTexture {
-    pub fn from_image(img: &image::DynamicImage, device: &Device, queue: &Queue) -> Self {
-        // Convert image to RGBA8 format and get dimensions
-        let rgba = img.to_rgba8();
-        let (width, height) = img.dimensions();
+    /// Create ImageTexture directly from RGBA8 data (faster, avoids intermediate conversions)
+    pub fn from_rgba8(rgba: &image::RgbaImage, device: &Device, queue: &Queue) -> Self {
+        let (width, height) = rgba.dimensions();
+        Self::from_rgba8_bytes(rgba.as_raw(), width, height, device, queue)
+    }
+
+    /// Create ImageTexture from raw RGBA8 bytes (most efficient)
+    pub fn from_rgba8_bytes(
+        rgba_bytes: &[u8],
+        width: u32,
+        height: u32,
+        device: &Device,
+        queue: &Queue,
+    ) -> Self {
 
         // Describe the texture
         let texture_size = Extent3d {
@@ -153,7 +163,7 @@ impl ImageTexture {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            rgba_bytes,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * width), // 4 bytes per pixel (RGBA8)
@@ -224,5 +234,11 @@ impl ImageTexture {
             height,
             sampler,
         }
+    }
+
+    pub fn from_image(img: &image::DynamicImage, device: &Device, queue: &Queue) -> Self {
+        // Convert image to RGBA8 format and get dimensions
+        let rgba = img.to_rgba8();
+        Self::from_rgba8(&rgba, device, queue)
     }
 }

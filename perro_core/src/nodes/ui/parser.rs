@@ -211,6 +211,13 @@ impl<'a> FurParser<'a> {
                 self.next_token()?;
                 Ok(FurNode::Text(Cow::Owned(t)))
             }
+            // Identifiers between element tags should be treated as text content
+            // (e.g., "Hello" in [Button]Hello[/Button])
+            Token::Identifier(ident) => {
+                let t = ident.to_string();
+                self.next_token()?;
+                Ok(FurNode::Text(Cow::Owned(t)))
+            }
             other => Err(format!("Unexpected token when parsing node: {:?}", other)),
         }
     }

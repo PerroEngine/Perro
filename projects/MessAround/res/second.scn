@@ -6,15 +6,6 @@
       "base": { "type": "Node", "name": "SubsSceneWorld"}
     },
 
-    "00000000-0000-0000-0000-000000000001": {
-      "type": "Node2D",
-      "base": { "type": "Node", "name": "RootThird", "parent": "00000000-0000-0000-0000-000000000054", "is_root_of": "res://third.scn"}
-    },
-
-       "00000000-0000-0000-0000-000000000008": {
-      "type": "Node2D",
-      "base": { "type": "Node", "name": "RootOFFour", "parent": "00000000-0000-0000-0000-000000000001", "is_root_of": "res://four.scn"}
-    },
    
     "00000000-0000-0000-0000-000000000004": {
       "type": "Sprite2D",
@@ -28,6 +19,20 @@
           "scale": { "x": 0.5, "y": 0.5 }
         }
       }
+    },
+    "00000000-0000-0000-0000-000000000005": {
+      "type": "CollisionShape2D",
+      "base": {
+        "type": "Node2D",
+        "z_index": 3,
+        "base": { "type": "Node", "name": "PlayerCollision", "parent": "00000000-0000-0000-0000-000000000004" },
+        "transform": {
+          "position": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 1.0, "y": 1.0 }
+        }
+      },
+      "shape": { "Circle": { "radius": 120.0 } }
     }
    
 }}

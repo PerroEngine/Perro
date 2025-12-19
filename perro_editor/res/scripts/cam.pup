@@ -1,4 +1,4 @@
-extends Camera3D
+@script ScriptsCam extends Camera3D
 
 @variable var name = "cheese"
 

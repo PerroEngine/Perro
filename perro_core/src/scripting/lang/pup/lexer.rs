@@ -24,6 +24,8 @@ pub enum PupToken {
     Expose,
     SelfAccess,
     Super,
+    On,
+    Script,
     Ident(String),
     Number(String),
     String(String),
@@ -195,6 +197,8 @@ impl PupLexer {
             "false" => PupToken::False,
             "self" => PupToken::SelfAccess,
             "super" => PupToken::Super,
+            "on" => PupToken::On,
+            "script" => PupToken::Script,
             _ => PupToken::Ident(s),
         }
     }

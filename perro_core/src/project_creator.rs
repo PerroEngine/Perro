@@ -38,6 +38,16 @@ pub fn create_new_project(
     fs::create_dir_all(project_path)
         .map_err(|e| format!("Failed to create project directory: {}", e))?;
 
+    // Create .perro directory structure first (needed for path calculation)
+    let perro_dir = project_path.join(".perro");
+    fs::create_dir_all(&perro_dir)
+        .map_err(|e| format!("Failed to create .perro directory: {}", e))?;
+
+    // Create .perro/project directory (needed before canonicalize in calculate_perro_core_path)
+    let project_crate_dir = perro_dir.join("project");
+    fs::create_dir_all(&project_crate_dir)
+        .map_err(|e| format!("Failed to create .perro/project directory: {}", e))?;
+
     // Calculate perro_core dependency path (after creating directory so canonicalize works)
     let perro_core_dep = if from_source {
         // Calculate relative path from project to perro_core
@@ -47,16 +57,6 @@ pub fn create_new_project(
         let version = env!("CARGO_PKG_VERSION");
         format!("perro_core = \"{}\"", version)
     };
-
-    // Create .perro directory
-    let perro_dir = project_path.join(".perro");
-    fs::create_dir_all(&perro_dir)
-        .map_err(|e| format!("Failed to create .perro directory: {}", e))?;
-
-    // Create .perro/project directory
-    let project_crate_dir = perro_dir.join("project");
-    fs::create_dir_all(&project_crate_dir)
-        .map_err(|e| format!("Failed to create .perro/project directory: {}", e))?;
 
     // Note: .perro/project/src/ directory is created by the compiler
     // We don't create it here to avoid git tracking generated files
@@ -160,8 +160,17 @@ fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
 
     // The Cargo.toml is in .perro/project/, so we need to calculate relative to that
     let project_cargo_dir = project_path.join(".perro/project");
+    
+    // Ensure the directory exists before canonicalizing
+    if !project_cargo_dir.exists() {
+        return Err(format!(
+            "Directory does not exist: {}. This should have been created before calling calculate_perro_core_path",
+            project_cargo_dir.display()
+        ));
+    }
+    
     let project_cargo_abs = dunce::canonicalize(&project_cargo_dir)
-        .map_err(|e| format!("Failed to canonicalize .perro/project path: {}", e))?;
+        .map_err(|e| format!("Failed to canonicalize .perro/project path: {} (path: {})", e, project_cargo_dir.display()))?;
 
     let mut current = project_path.to_path_buf();
     if let Ok(canon) = dunce::canonicalize(&current) {
@@ -375,14 +384,14 @@ fn generate_main_scn() -> String {
   "nodes": {
     "00000000-0000-0000-0000-000000000000": {
       "type": "Node2D",
-      "node": { "type": "Node", "name": "World" }
+      "base": { "type": "Node", "name": "World" }
     },
     "00000000-0000-0000-0000-000000000001": {
       "type": "Camera2D",
       "active": true,
-      "node_2d": {
+      "base": {
         "type": "Node2D",
-        "node": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
+        "base": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
       }
     }
   }

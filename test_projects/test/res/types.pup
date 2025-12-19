@@ -1,4 +1,4 @@
-extends Node2D
+@script Types extends Node2D
 
 // =====================================================
 // TOP-LEVEL EXPOSED & INTERNAL VARIABLES (DEPENDENCY ORDERED)

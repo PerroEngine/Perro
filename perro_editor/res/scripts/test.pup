@@ -1,4 +1,4 @@
-extends Sprite2D
+@script Test extends Sprite2D
 
 fn init() {
     bob(25)

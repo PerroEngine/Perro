@@ -402,8 +402,19 @@ pub fn run_dev() {
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
     // 8. Build runtime scene with DllScriptProvider (uses the impl-specific from_project)
-    let game_scene = Scene::<DllScriptProvider>::from_project(project_rc.clone())
-        .expect("Failed to build game scene");
+    let game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone()) {
+        Ok(scene) => scene,
+        Err(e) => {
+            eprintln!("❌ Failed to build game scene: {}", e);
+            eprintln!("   This usually means:");
+            eprintln!("   1. The script DLL is missing or corrupted");
+            eprintln!("   2. The DLL was built against a different version of perro_core");
+            eprintln!("   3. There's a function signature mismatch");
+            eprintln!("   4. The main scene is malformed");
+            eprintln!("   Try rebuilding scripts: cargo run -p perro_core -- --path <path> --scripts");
+            std::process::exit(1);
+        }
+    };
 
     // 9. Run app
     let app = App::new(

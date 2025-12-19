@@ -7,7 +7,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
-    Graphics, RenderLayer,
+    Graphics,
     font::{Font, FontAtlas, Style, Weight},
     fur_ast::FurAnchor,
     graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
@@ -927,7 +927,14 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     let cache = get_layout_cache();
     update_ui_layout_cached(ui_node, cache);
 
-    if let Some(elements) = &ui_node.elements {
+    if let Some(elements) = &mut ui_node.elements {
+        // First, sync all buttons' base properties to their panel/text
+        for (_, element) in elements.iter_mut() {
+            if let UIElement::Button(button) = element {
+                button.sync_base_to_children();
+            }
+        }
+        
         // Convert IndexMap values to Vec for parallel processing
         let elements_vec: Vec<_> = elements.iter().collect();
         let visible_elements: Vec<_> = elements_vec
@@ -942,6 +949,11 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
                 UIElement::GridLayout(_) => { /* no-op */ }
                 UIElement::Layout(_) => {}
                 UIElement::Text(text) => render_text(text, gfx),
+                UIElement::Button(button) => {
+                    // Button is already synced, just render panel and text
+                    render_panel(&button.panel, gfx);
+                    render_text(&button.text, gfx);
+                }
             }
         }
     }
@@ -958,8 +970,6 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
     let border_thickness = panel.props.border_thickness;
     let z_index = panel.z_index;
     let bg_id = panel.id;
-
-    println!("{}", z_index);
 
     gfx.renderer_ui.queue_panel(
         &mut gfx.renderer_prim,
@@ -993,8 +1003,14 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
     }
 }
 
+
 // Optimized text rendering - only regenerate atlas when font properties change
 fn render_text(text: &UIText, gfx: &mut Graphics) {
+    // Skip rendering if text content is empty
+    if text.props.content.is_empty() {
+        return;
+    }
+    
     let font_key = ("NotoSans".to_string(), 64);
     let font_cache = get_font_cache();
 
@@ -1022,9 +1038,9 @@ fn render_text(text: &UIText, gfx: &mut Graphics) {
         text.id,
         &text.props.content,
         text.props.font_size,
-        text.base.global_transform,
-        text.base.pivot,
+        text.global_transform,
+        text.pivot,
         text.props.color,
-        text.base.z_index,
+        text.z_index,
     );
 }

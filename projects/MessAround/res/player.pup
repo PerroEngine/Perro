@@ -1,11 +1,7 @@
-extends Sprite2D
+@script Player extends Sprite2D
 
 fn init() {
-    self.transform.position.x = -1000
-
-    Signal.connect("Deadzone_AreaEntered", self, ent)
-    
-    Signal.connect("Deadzone_AreaExited", self, ext)
+    self.transform.position.x = -750
 }
 
 fn update() {
@@ -15,12 +11,16 @@ fn update() {
 
 }
 
+on Deadzone_AreaEntered(c: CollisionShape2D) {
 
-fn ent() {
-    self.transform.position.y += 100
+    if (c.parent_id == self.id) {
+        self.transform.position.y += 100
+        Console.print(c.parent_id)
+    }
 }
 
-
-fn ext() {
-   self.transform.position.y -= 200
+on Deadzone_AreaExited(c: CollisionShape2D) {
+   if (c.parent_id == self.id) {
+        self.transform.position.y -= 100
+    }
 }

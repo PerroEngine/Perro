@@ -1854,12 +1854,42 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
     }
 
     fn sanitize_res_path_to_ident(res_path: &str) -> String {
-        res_path
-            .trim_start_matches("res://")
-            .replace(".scn", "")
-            .replace(".fur", "")
-            .replace("/", "_")
-            .replace("-", "_")
+        use std::path::Path;
+        
+        // Normalize path separators
+        let mut cleaned = res_path.replace('\\', "/");
+        
+        // Strip "res://" prefix
+        if cleaned.starts_with("res://") {
+            cleaned = cleaned.trim_start_matches("res://").to_string();
+        }
+        
+        // Parse the path to extract parent directory and filename
+        let path_obj = Path::new(&cleaned);
+        
+        let base_name = path_obj
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        
+        let parent_str = path_obj
+            .parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .replace('/', "_")
+            .replace('-', "_");
+        
+        // Build identifier: parent_dir_filename (if parent exists)
+        let mut identifier = String::new();
+        if !parent_str.is_empty() {
+            identifier.push_str(&parent_str);
+            identifier.push('_');
+        }
+        identifier.push_str(&base_name);
+        
+        // Sanitize: uppercase and filter to alphanumeric + underscore
+        identifier
             .to_uppercase()
             .chars()
             .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
