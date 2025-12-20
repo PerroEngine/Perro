@@ -319,8 +319,51 @@ This repository contains the **Perro engine source code**. To build and work on 
 
 ### Prerequisites
 
-- **Rust** (GNU preferred as that's what ships with the editor binary for compilation)
+- **Rust 1.92.0 or later** (GNU toolchain required - this is what ships with the editor binary for compilation)
 - **Cargo**
+
+**⚠️ Important: GNU Toolchain Required on Windows**
+
+On Windows, Rust defaults to the MSVC toolchain, but Perro requires the **GNU toolchain**. Here's how to install and set it up:
+
+```bash
+# Install the GNU toolchain (1.92.0 or later)
+rustup toolchain install stable-x86_64-pc-windows-gnu
+
+# Set GNU toolchain as default
+rustup default stable-x86_64-pc-windows-gnu
+
+# Verify you're using GNU toolchain
+rustc --version
+# Should show: rustc 1.92.0 (or later) ... (x86_64-pc-windows-gnu)
+
+# Or verify with rustup
+rustup show
+# Should show: default toolchain: stable-x86_64-pc-windows-gnu
+```
+
+**If you already have Rust installed with MSVC:**
+
+```bash
+# Install GNU toolchain for 1.92.0
+rustup toolchain install 1.92.0-x86_64-pc-windows-gnu
+
+# Set it as default
+rustup default 1.92.0-x86_64-pc-windows-gnu
+
+# Verify
+rustc --version
+```
+
+**Updating an existing GNU toolchain:**
+
+```bash
+# Update to latest stable GNU toolchain
+rustup update stable-x86_64-pc-windows-gnu
+
+# Or update your default (if already set to GNU)
+rustup update stable
+```
 
 ### Repository Structure
 
@@ -354,7 +397,11 @@ All projects share a build cache (the main workspace target/ in source mode), so
 
 ### Toolchain & Versioning
 
-The editors are pinned to specific versions of the toolchain, (eg. 1.0 => 1.90.0), toolchains will NOT always be updated each engine update, as to not clog the end user's system with multiple toolchains they don't need. (1.0 and 1.1 could support the same toolchain, even if users update it only is installed once)
+The editors are pinned to specific versions of the toolchain, (eg. 1.0 => 1.92.0), toolchains will NOT always be updated each engine update, as to not clog the end user's system with multiple toolchains they don't need. (1.0 and 1.1 could support the same toolchain, even if users update it only is installed once)
+
+**Current Requirements:**
+- **Rust 1.92.0 or later** (required for wgpu 28.0.0)
+- Default toolchain version: **1.92.0**
 
 **Project Compatibility:**
 

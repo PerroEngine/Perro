@@ -143,7 +143,7 @@ impl Compiler {
     }
 
     fn get_toolchain_dir(&self) -> Option<PathBuf> {
-        let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
+        let version = self.toolchain_version.as_deref().unwrap_or("1.92.0");
         let toolchain_name = self.platform.toolchain_name(version);
         let toolchain_path_str = format!("user://toolchains/{}", toolchain_name);
 
@@ -168,7 +168,7 @@ impl Compiler {
             return None;
         }
 
-        let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
+        let version = self.toolchain_version.as_deref().unwrap_or("1.92.0");
         let toolchain_name = self.platform.toolchain_name(version);
 
         match resolve_path("user://build-cache") {
@@ -449,7 +449,7 @@ impl Compiler {
         let toolchain_info = if self.from_source {
             "system (local development)".to_string()
         } else {
-            let version = self.toolchain_version.as_deref().unwrap_or("1.90.0");
+            let version = self.toolchain_version.as_deref().unwrap_or("1.92.0");
             let toolchain_name = self.platform.toolchain_name(version);
 
             self.get_toolchain_dir()

@@ -20,8 +20,11 @@ tree-sitter-c-sharp = "0.23.1"
 tree-sitter-typescript = "0.23.2"
 
 # Graphics & GPU
-winit = { version = "0.30.8" }
-wgpu = { version = "24.0.1"}
+winit = "0.30.12"
+wgpu = { version = "28.0.0",default-features = false, features = ["std", "wgsl","vulkan", "metal"] }
+# Note: "gles" feature removed due to wgpu-hal 28.0.0 bug with windows-result::error::Error
+# OpenGL backend disabled until wgpu fixes the compatibility issue
+
 pollster = {version ="0.4.0"}
 bytemuck = "1.10"
 glam = "0.26"
@@ -71,11 +74,11 @@ chrono = "*"
 regex = "*"
 
 # Dynamic loading
-libloading = "0.8"
+libloading = "0.8.6"
 
 # Controller input (HID and BLE)
-hidapi = "2.0"
-btleplug = "0.11"
+hidapi = "2.6.3"
+btleplug = "0.11.8"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 thiserror = "1.0"
@@ -83,3 +86,4 @@ thiserror = "1.0"
 # Physics
 rapier2d = "0.12"
 rapier3d = "0.12"
+

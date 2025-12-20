@@ -764,7 +764,7 @@ impl PrimitiveRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -1340,7 +1340,7 @@ impl PrimitiveRenderer {
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Rect Instanced Pipeline Layout"),
             bind_group_layouts: &[camera_bgl],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -1454,7 +1454,7 @@ impl PrimitiveRenderer {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -1475,7 +1475,7 @@ impl PrimitiveRenderer {
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Sprite Instanced Pipeline Layout"),
             bind_group_layouts: &[texture_bgl, camera_bgl],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -1559,7 +1559,7 @@ impl PrimitiveRenderer {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -1578,7 +1578,7 @@ impl PrimitiveRenderer {
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Font Pipeline Layout"),
             bind_group_layouts: &[font_texture_bind_group_layout, camera_bgl],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -1672,7 +1672,7 @@ impl PrimitiveRenderer {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }

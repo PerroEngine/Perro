@@ -214,7 +214,7 @@ impl Renderer3D {
                 &light_bind_group_layout,
                 &material_bind_group_layout,
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         // Build pipeline descriptor step by step to isolate the issue
@@ -305,7 +305,7 @@ impl Renderer3D {
             primitive: primitive_state,
             depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         };
 

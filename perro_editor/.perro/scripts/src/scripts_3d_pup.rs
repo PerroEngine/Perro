@@ -34,9 +34,9 @@ static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
-    "name" => &["b"],
-    "bob" => &["b"],
     "Expose" => &["b"],
+    "bob" => &["b"],
+    "name" => &["b"],
     "a" => &["b"],
 };
 

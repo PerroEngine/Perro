@@ -12,7 +12,7 @@ xps = 60
 script = "res://scripts/root.rs"
 
 [meta]
-toolchain = "1.90.0"
+toolchain = "1.92.0"
 
 
 [input]

@@ -1,4 +1,3 @@
-use image::GenericImageView;
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Device,
@@ -61,7 +60,7 @@ impl StaticTextureData {
             address_mode_w: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Nearest, // Use nearest for pixel-perfect sprites without filtering artifacts
             min_filter: FilterMode::Nearest,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -183,7 +182,7 @@ impl ImageTexture {
             address_mode_w: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Nearest, // Use nearest for pixel-perfect sprites without filtering artifacts
             min_filter: FilterMode::Nearest,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 

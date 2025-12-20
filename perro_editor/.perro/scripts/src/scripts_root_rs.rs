@@ -21,9 +21,9 @@ pub static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> 
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "bitch" => &["a"],
     "expose" => &["b"],
     "Expose" => &["b"],
-    "bitch" => &["a"],
 };
 
 struct RootScript {

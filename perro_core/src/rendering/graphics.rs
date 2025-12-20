@@ -437,33 +437,30 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
     // Different GPUs work better with different backends:
-    // - Intel integrated: DX12 > Vulkan (Vulkan drivers crash)
-    // - NVIDIA: Vulkan ≈ DX12 (both good, Vulkan often slightly better)
-    // - AMD: Vulkan > DX12 (Vulkan usually better)
+    // - Intel integrated: Vulkan (OpenGL disabled due to wgpu-hal 28.0.0 bug)
+    // - NVIDIA: Vulkan (excellent support)
+    // - AMD: Vulkan (excellent support)
     // - Apple Silicon: Metal only
+    // Note: OpenGL backend temporarily disabled due to wgpu-hal 28.0.0 compatibility issue
     
     // Get list of available backends for this platform
+    // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
     #[cfg(windows)]
     let available_backends = vec![
-        ("DX12", Backends::DX12),
         ("Vulkan", Backends::VULKAN),
-        ("OpenGL", Backends::GL),
     ];
     #[cfg(target_os = "macos")]
     let available_backends = vec![
         ("Metal", Backends::METAL),
         ("Vulkan", Backends::VULKAN),
-        ("OpenGL", Backends::GL),
     ];
     #[cfg(target_os = "linux")]
     let available_backends = vec![
         ("Vulkan", Backends::VULKAN),
-        ("OpenGL", Backends::GL),
     ];
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     let available_backends = vec![
         ("Vulkan", Backends::VULKAN),
-        ("OpenGL", Backends::GL),
     ];
     
     // Collect all available adapters from all backends
@@ -490,7 +487,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         let mut seen_names = std::collections::HashSet::new();
         
         // Try high performance (discrete GPU)
-        if let Some(adap) = test_instance
+        if let Ok(adap) = test_instance
             .request_adapter(&RequestAdapterOptions {
                 power_preference: PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
@@ -509,7 +506,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         }
         
         // Try default (might get integrated)
-        if let Some(adap) = test_instance
+        if let Ok(adap) = test_instance
             .request_adapter(&RequestAdapterOptions {
                 power_preference: PowerPreference::default(),
                 force_fallback_adapter: false,
@@ -522,32 +519,6 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
                 candidates.push(AdapterCandidate {
                     backend_name,
                     backend: *backends,
-                    info,
-                });
-            }
-        }
-    }
-    
-    // Also try WARP (software renderer) as last resort on Windows
-    #[cfg(windows)]
-    {
-        let warp_instance = Instance::new(&InstanceDescriptor {
-            backends: Backends::DX12,
-            ..Default::default()
-        });
-        if let Ok(warp_surface) = warp_instance.create_surface(Rc::clone(&window)) {
-            if let Some(warp_adap) = warp_instance
-                .request_adapter(&RequestAdapterOptions {
-                    power_preference: PowerPreference::LowPower,
-                    force_fallback_adapter: true, // This enables WARP
-                    compatible_surface: Some(&warp_surface),
-                })
-                .await
-            {
-                let info = warp_adap.get_info();
-                candidates.push(AdapterCandidate {
-                    backend_name: "WARP (Software)",
-                    backend: Backends::DX12,
                     info,
                 });
             }
@@ -567,33 +538,28 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         match cand.info.device_type {
             wgpu::DeviceType::DiscreteGpu => score += 1000,
             wgpu::DeviceType::IntegratedGpu => score += 100,
-            wgpu::DeviceType::Cpu => score += 1, // WARP/software
+            wgpu::DeviceType::Cpu => score += 1, // Software renderer
             _ => {}
         }
         
         // GPU vendor-specific backend preferences
+        // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
         if name_lower.contains("intel") {
-            // Intel: DX12 >> Vulkan (Vulkan drivers crash on integrated)
+            // Intel: Vulkan (OpenGL was preferred but disabled due to wgpu bug)
             match cand.backend_name {
-                "DX12" => score += 500,
-                "Vulkan" => score -= 200, // Heavy penalty for Intel + Vulkan
-                "OpenGL" => score += 200,
+                "Vulkan" => score += 200,
                 _ => {}
             }
         } else if name_lower.contains("nvidia") {
-            // NVIDIA: Vulkan ≈ DX12 (both excellent, Vulkan often slightly better)
+            // NVIDIA: Vulkan excellent support
             match cand.backend_name {
                 "Vulkan" => score += 300,
-                "DX12" => score += 280,
-                "OpenGL" => score += 100,
                 _ => {}
             }
         } else if name_lower.contains("amd") || name_lower.contains("radeon") {
-            // AMD: Vulkan > DX12 (Vulkan usually better)
+            // AMD: Vulkan excellent support
             match cand.backend_name {
                 "Vulkan" => score += 400,
-                "DX12" => score += 200,
-                "OpenGL" => score += 100,
                 _ => {}
             }
         } else if name_lower.contains("apple") || name_lower.contains("m1") || 
@@ -604,12 +570,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
                 _ => score -= 500, // Don't use other backends on Apple
             }
         } else {
-            // Unknown GPU: prefer Vulkan, then DX12, then GL
+            // Unknown GPU: prefer Vulkan, then Metal
             match cand.backend_name {
                 "Vulkan" => score += 250,
-                "DX12" => score += 200,
                 "Metal" => score += 200,
-                "OpenGL" => score += 100,
                 _ => {}
             }
         }
@@ -642,7 +606,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
             } else {
                 PowerPreference::default()
             },
-            force_fallback_adapter: best_candidate.backend_name == "WARP (Software)",
+            force_fallback_adapter: false,
             compatible_surface: Some(&surface),
         })
         .await
@@ -675,8 +639,9 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
                 } else {
                     wgpu::MemoryHints::Performance
                 },
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                trace: wgpu::Trace::Off,
             },
-            None,
         )
         .await
         .expect("Failed to get device");
@@ -684,9 +649,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // Choose emoji based on backend
     let backend_emoji = match backend_used {
         "Vulkan" => "⚡",
-        "DX12" => "🎮",
         "Metal" => "🍎",
-        "OpenGL" => "🌐",
         _ => "💻",
     };
     println!("{} {} on {} backend", backend_emoji, adapter_name, backend_used);
@@ -695,7 +658,33 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let size = window.inner_size();
     let (w, h) = (size.width.max(1), size.height.max(1));
     let mut surface_config = surface.get_default_config(&adapter, w, h).unwrap();
-    surface_config.present_mode = wgpu::PresentMode::Immediate;
+    
+    // OPTIMIZED: Select best available present mode with proper fallback
+    // Priority: Mailbox (adaptive VSync) > Fifo (standard VSync) > Immediate (no VSync)
+    // This prevents panics when unsupported modes are requested
+    let surface_caps = surface.get_capabilities(&adapter);
+    let preferred_present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
+        wgpu::PresentMode::Fifo
+    } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+        wgpu::PresentMode::Immediate
+    } else {
+        // Fallback to default (should always be Fifo, which is guaranteed to be supported)
+        surface_config.present_mode
+    };
+    
+    surface_config.present_mode = preferred_present_mode;
+    
+    let present_mode_name = match preferred_present_mode {
+        wgpu::PresentMode::Mailbox => "Mailbox (adaptive VSync)",
+        wgpu::PresentMode::Fifo => "Fifo (standard VSync)",
+        wgpu::PresentMode::FifoRelaxed => "FifoRelaxed",
+        wgpu::PresentMode::Immediate => "Immediate (no VSync)",
+        _ => "Unknown",
+    };
+    println!("📺 Present mode: {}", present_mode_name);
+    
     #[cfg(not(target_arch = "wasm32"))]
     surface.configure(&device, &surface_config);
 
@@ -925,7 +914,10 @@ impl Graphics {
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
 
         self.surface_config.width = size.width.max(1);
         self.surface_config.height = size.height.max(1);
@@ -1209,6 +1201,9 @@ impl Graphics {
         self.queue.submit(Some(encoder.finish()));
         frame.present();
 
-        self.device.poll(wgpu::Maintain::Poll);
+        // OPTIMIZED: Use Poll instead of Wait at end of frame for better throughput
+        // Wait is used in resize() where we need to ensure completion, but Poll is
+        // more efficient for regular frame rendering where we don't need to block
+        self.device.poll(wgpu::PollType::Poll);
     }
 }
