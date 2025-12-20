@@ -21,9 +21,9 @@ tree-sitter-typescript = "0.23.2"
 
 # Graphics & GPU
 winit = "0.30.12"
-wgpu = { version = "28.0.0",default-features = false, features = ["std", "wgsl","vulkan", "metal"] }
-# Note: "gles" feature removed due to wgpu-hal 28.0.0 bug with windows-result::error::Error
-# OpenGL backend disabled until wgpu fixes the compatibility issue
+wgpu = { version = "28.0.0", default-features = false, features = ["std", "wgsl", "vulkan", "metal", "dx12"] }
+# Note: gles feature is disabled due to wgpu-hal 28.0.0 compatibility issue with windows-core::Error
+# OpenGL backend is disabled in code as well (see rendering/graphics.rs)
 
 pollster = {version ="0.4.0"}
 bytemuck = "1.10"

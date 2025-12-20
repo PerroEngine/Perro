@@ -1220,6 +1220,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.17",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -1348,7 +1349,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -2557,6 +2558,12 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.16",
 ]
+
+[[package]]
+name = "range-alloc"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d6831663a5098ea164f89cff59c6284e95f4e3c76ce9848d4529f5ccca9bde"
 
 [[package]]
 name = "rapier2d"
@@ -3778,6 +3785,7 @@ dependencies = [
  "android_system_properties",
  "arrayvec",
  "ash",
+ "bit-set",
  "bitflags 2.10.0",
  "block",
  "bytemuck",
@@ -3793,17 +3801,20 @@ dependencies = [
  "metal",
  "naga",
  "objc",
+ "once_cell",
  "ordered-float",
  "parking_lot",
  "portable-atomic",
  "portable-atomic-util",
  "profiling",
+ "range-alloc",
  "raw-window-handle",
  "renderdoc-sys",
  "smallvec",
  "thiserror 2.0.17",
  "wgpu-types",
  "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]

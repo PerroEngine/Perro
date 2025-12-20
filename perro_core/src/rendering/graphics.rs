@@ -437,16 +437,17 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
     // Different GPUs work better with different backends:
-    // - Intel integrated: Vulkan (OpenGL disabled due to wgpu-hal 28.0.0 bug)
-    // - NVIDIA: Vulkan (excellent support)
-    // - AMD: Vulkan (excellent support)
+    // - Intel integrated: DX12 (best on Windows), Vulkan (fallback)
+    // - NVIDIA: Vulkan (excellent support), DX12 (good support)
+    // - AMD: Vulkan (excellent support), DX12 (good support)
     // - Apple Silicon: Metal only
-    // Note: OpenGL backend temporarily disabled due to wgpu-hal 28.0.0 compatibility issue
+    // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
     
     // Get list of available backends for this platform
     // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
     #[cfg(windows)]
     let available_backends = vec![
+        ("DX12", Backends::DX12),
         ("Vulkan", Backends::VULKAN),
     ];
     #[cfg(target_os = "macos")]
@@ -545,21 +546,24 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         // GPU vendor-specific backend preferences
         // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
         if name_lower.contains("intel") {
-            // Intel: Vulkan (OpenGL was preferred but disabled due to wgpu bug)
+            // Intel: DX12 (best on Windows), Vulkan (fallback)
             match cand.backend_name {
+                "DX12" => score += 300,
                 "Vulkan" => score += 200,
                 _ => {}
             }
         } else if name_lower.contains("nvidia") {
-            // NVIDIA: Vulkan excellent support
+            // NVIDIA: Vulkan excellent support, DX12 good support
             match cand.backend_name {
                 "Vulkan" => score += 300,
+                "DX12" => score += 250,
                 _ => {}
             }
         } else if name_lower.contains("amd") || name_lower.contains("radeon") {
-            // AMD: Vulkan excellent support
+            // AMD: Vulkan excellent support, DX12 good support
             match cand.backend_name {
                 "Vulkan" => score += 400,
+                "DX12" => score += 250,
                 _ => {}
             }
         } else if name_lower.contains("apple") || name_lower.contains("m1") || 
@@ -649,6 +653,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // Choose emoji based on backend
     let backend_emoji = match backend_used {
         "Vulkan" => "⚡",
+        "DX12" => "🎮",
         "Metal" => "🍎",
         _ => "💻",
     };
