@@ -43,16 +43,16 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(name: &str, parent_id: Option<Uuid>) -> Self {
+    pub fn new() -> Self {
         Self {
             id: Uuid::new_v4(),
             local_id: Uuid::new_v4(),
             ty: Cow::Borrowed("Node"),
-            name: Cow::Owned(name.into()),
+            name: Cow::Borrowed("Node"),
 
             script_path: None,
             script_exp_vars: None,
-            parent_id,
+            parent_id: None,
             children: None,
             metadata: None,
 

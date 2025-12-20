@@ -93,6 +93,7 @@
       "type": "Node2D",
       "base": { "type": "Node", "name": "SceneWithRoot", "is_root_of": "res://second.scn", "script_path": "res://p2.pup", "parent": "00000000-0000-0000-0000-000000000000"}
     },
+
     "00000000-0000-0000-0000-000000000002": {
       "type": "Camera2D",
       "active": true,

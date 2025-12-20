@@ -33,13 +33,15 @@ pub struct MeshInstance3D {
 
 // In mesh_instance_3d.rs - update the implementation
 impl MeshInstance3D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node3D::new();
+        base.name = Cow::Borrowed("MeshInstance3D");
         Self {
             ty: Cow::Borrowed("MeshInstance3D"),
             mesh_path: None,
             material_path: Some(Cow::Borrowed("__default__")), // Always start with default
             material_id: Some(0),                              // Default material is always slot 0
-            base: Node3D::new(name),
+            base,
         }
     }
 

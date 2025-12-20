@@ -53,12 +53,14 @@ pub struct UINode {
 }
 
 impl UINode {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node::new();
+        base.name = Cow::Borrowed("UINode");
         Self {
             ty: Cow::Borrowed("UINode"),
             visible: default_visible(),
             // Base node
-            base: Node::new(name, None),
+            base,
             fur_path: None,
             props: None,
             elements: None,

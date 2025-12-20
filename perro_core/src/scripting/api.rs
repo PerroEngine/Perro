@@ -1332,6 +1332,14 @@ impl<'a> ScriptApi<'a> {
         self.scene.merge_nodes(nodes);
     }
 
+    /// Remove a child from a parent node by directly mutating the scene
+    /// This works with any node type through the BaseNode trait
+    pub fn remove_child(&mut self, parent_id: Uuid, child_id: Uuid) {
+        if let Some(parent) = self.scene.get_scene_node(parent_id) {
+            parent.remove_child(&child_id);
+        }
+    }
+
     /// Get the global transform for a node (calculates lazily if dirty)
     pub fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {
         self.scene.get_global_transform(node_id)

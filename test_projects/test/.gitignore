@@ -9,3 +9,7 @@ builds/
 build.log
 
 icon.ico
+
+# Ignore profiling files
+flamegraph.folded
+flamegraph.svg

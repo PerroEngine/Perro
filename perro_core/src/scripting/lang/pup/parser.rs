@@ -954,6 +954,13 @@ impl PupParser {
                             return Ok(Expr::StructNew(type_name, pairs));
                         }
 
+                        // Check if it's a node type - if so, use StructNew with no args
+                        // Node types don't take constructor arguments (name is set via .name = "" later)
+                        if crate::scripting::codegen::is_node_type(&type_name) {
+                            // Ignore any arguments - node constructors take no parameters
+                            return Ok(Expr::StructNew(type_name, vec![]));
+                        }
+
                         // Otherwise treat `new Something()` as an API call or method
                         if let Some(api) = PupAPI::resolve(&type_name, "new") {
                             return Ok(Expr::ApiCall(api, args));

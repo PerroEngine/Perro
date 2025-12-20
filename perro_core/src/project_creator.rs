@@ -415,6 +415,10 @@ build.log
 
 icon.ico
 
+# Ignore profiling files
+flamegraph.folded
+flamegraph.svg
+
 # Ignore target directories (should use workspace root target via CARGO_TARGET_DIR)
 target/
 /.perro/project/target/

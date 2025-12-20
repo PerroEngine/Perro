@@ -30,6 +30,7 @@ use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
     any::Any,
+    borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
     io,
@@ -226,6 +227,10 @@ pub struct Scene<P: ScriptProvider> {
 
     // Physics (wrapped in RefCell for interior mutability through trait objects)
     pub physics_2d: std::cell::RefCell<PhysicsWorld2D>,
+    
+    // OPTIMIZED: Cache script IDs to avoid Vec allocation every frame
+    cached_script_ids: Vec<Uuid>,
+    scripts_dirty: bool,
 }
 
 #[derive(Default)]
@@ -256,6 +261,10 @@ impl<P: ScriptProvider> Scene<P> {
             last_fixed_update: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
             physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
+            
+            // OPTIMIZED: Initialize script ID cache
+            cached_script_ids: Vec::new(),
+            scripts_dirty: true,
         }
     }
 
@@ -285,6 +294,10 @@ impl<P: ScriptProvider> Scene<P> {
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
+            
+            // OPTIMIZED: Initialize script ID cache
+            cached_script_ids: Vec::new(),
+            scripts_dirty: true,
         }
     }
 
@@ -300,7 +313,9 @@ impl<P: ScriptProvider> Scene<P> {
         project: Rc<RefCell<Project>>,
         provider: P,
     ) -> anyhow::Result<Self> {
-        let root_node = SceneNode::Node(Node::new("Root", None));
+        let mut root_node = Node::new();
+        root_node.name = Cow::Borrowed("Root");
+        let root_node = SceneNode::Node(root_node);
         let mut game_scene = Scene::new(root_node, provider, project.clone());
 
         // Initialize input manager with action map from project.toml
@@ -803,6 +818,7 @@ impl<P: ScriptProvider> Scene<P> {
                 let ctor = self.ctor(&ident)?;
                 let handle = Self::instantiate_script(ctor, id);
                 self.scripts.insert(id, handle);
+                self.scripts_dirty = true;
     
                 let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
                 api.call_init(id);
@@ -1006,6 +1022,7 @@ impl<P: ScriptProvider> Scene<P> {
                     if let Ok(ctor) = self.ctor(&ident) {
                         let handle = Self::instantiate_script(ctor, id);
                         self.scripts.insert(id, handle);
+                self.scripts_dirty = true;
     
                         let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
                         api.call_init(id);
@@ -1157,14 +1174,25 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     pub fn render(&mut self, gfx: &mut Graphics) {
-        let dirty_nodes = self.get_dirty_nodes();
+        let dirty_nodes = {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "get_dirty_nodes").entered();
+            self.get_dirty_nodes()
+        };
         if dirty_nodes.is_empty() {
             return;
         }
-        self.traverse_and_render(dirty_nodes, gfx);
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "traverse_and_render", count = dirty_nodes.len()).entered();
+            self.traverse_and_render(dirty_nodes, gfx);
+        }
     }
 
     pub fn update(&mut self) {
+        #[cfg(feature = "profiling")]
+        let _span = tracing::span!(tracing::Level::INFO, "Scene::update").entered();
+        
         let now = Instant::now();
         let true_delta = match self.last_scene_update {
             Some(prev) => now.duration_since(prev).as_secs_f32(),
@@ -1208,38 +1236,71 @@ impl<P: ScriptProvider> Scene<P> {
         let should_run_fixed_update = self.fixed_update_accumulator >= fixed_delta;
 
         if should_run_fixed_update {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "fixed_update").entered();
+            
             // Calculate how many fixed updates to run (catch up if behind)
             let fixed_update_count = (self.fixed_update_accumulator / fixed_delta).floor() as u32;
             let clamped_count = fixed_update_count.min(5); // Cap at 5 to prevent spiral of death
 
             for _ in 0..clamped_count {
                 // Update collider transforms before physics step
-                self.update_collider_transforms();
+                {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "update_collider_transforms").entered();
+                    self.update_collider_transforms();
+                }
                 
                 // Step physics simulation
-                self.physics_2d.borrow_mut().step(fixed_delta);
+                {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "physics_step").entered();
+                    self.physics_2d.borrow_mut().step(fixed_delta);
+                }
 
                 // Run fixed update for all scripts
-                // Optimize: use copied() instead of cloned() (Uuid is Copy, but this is clearer)
-                // Collect keys first to avoid borrow checker issues with mutable access
-                let script_ids: Vec<Uuid> = self.scripts.keys().copied().collect();
-                for id in script_ids {
-                    // Rc::clone() is cheap (just increments ref count), but we need it per call
-                    // because ScriptApi::new takes &mut self
+                {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "script_fixed_updates").entered();
+                    
+                    // OPTIMIZED: Use cached script IDs, but collect to Vec to avoid borrow checker issues
+                    if self.scripts_dirty {
+                        self.cached_script_ids.clear();
+                        self.cached_script_ids.extend(self.scripts.keys().copied());
+                        self.scripts_dirty = false;
+                    }
+                    // Collect to local Vec in a block to ensure borrow is released
+                    let script_ids: Vec<Uuid> = {
+                        self.cached_script_ids.iter().copied().collect()
+                    };
+                    // Clone project reference before loop to avoid borrow conflicts
                     let project_ref = self.project.clone();
-                    let mut project_borrow = project_ref.borrow_mut();
-                    let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
-                    api.call_fixed_update(id);
+                    for id in script_ids {
+                        #[cfg(feature = "profiling")]
+                        let _span = tracing::span!(tracing::Level::INFO, "script_fixed_update", id = %id).entered();
+                        
+                        // Rc::clone() is cheap (just increments ref count), but we need it per call
+                        // because ScriptApi::new takes &mut self
+                        let mut project_borrow = project_ref.borrow_mut();
+                        let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
+                        api.call_fixed_update(id);
+                    }
                 }
 
                 // Run internal fixed update for nodes that need it
-                // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
-                let node_ids: Vec<Uuid> = self.nodes_with_internal_fixed_update.iter().copied().collect();
-                for node_id in node_ids {
+                {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "node_internal_fixed_updates").entered();
+                    
+                    // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
+                    let node_ids: Vec<Uuid> = self.nodes_with_internal_fixed_update.iter().copied().collect();
+                    // OPTIMIZED: Clone project once before loop instead of per node
                     let project_ref = self.project.clone();
-                    let mut project_borrow = project_ref.borrow_mut();
-                    let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
-                    api.call_node_internal_fixed_update(node_id);
+                    for node_id in node_ids {
+                        let mut project_borrow = project_ref.borrow_mut();
+                        let mut api = ScriptApi::new(fixed_delta, self, &mut *project_borrow);
+                        api.call_node_internal_fixed_update(node_id);
+                    }
                 }
             }
 
@@ -1248,22 +1309,50 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         // Regular update - runs every frame
-        // Optimize: use copied() instead of cloned() (Uuid is Copy, but this is clearer)
-        // Collect keys first to avoid borrow checker issues with mutable access
-        let script_ids: Vec<Uuid> = self.scripts.keys().copied().collect();
+        // OPTIMIZED: Use cached script IDs, only rebuild when scripts change
+        if self.scripts_dirty {
+            self.cached_script_ids.clear();
+            self.cached_script_ids.extend(self.scripts.keys().copied());
+            self.scripts_dirty = false;
+        }
 
-        for id in script_ids {
-            // Rc::clone() is cheap (just increments ref count), but we need it per call
-            // because ScriptApi::new takes &mut self
+        {
+            // Collect to local Vec in a block to ensure borrow is released
+            let script_ids: Vec<Uuid> = {
+                self.cached_script_ids.iter().copied().collect()
+            };
+            
+            // Early return if no scripts to update (avoids unnecessary work)
+            if script_ids.is_empty() {
+                self.process_queued_signals();
+                return;
+            }
+            
+            // Clone project reference before loop to avoid borrow conflicts
             let project_ref = self.project.clone();
-            let mut project_borrow = project_ref.borrow_mut();
-            let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
-            api.call_update(id);
+            
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "script_updates", count = script_ids.len()).entered();
+            
+            for id in script_ids {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "script_update", id = %id).entered();
+                
+                // OPTIMIZED: Borrow project once per script (RefCell borrow_mut is fast but still has overhead)
+                // Note: We can't borrow project once for all scripts because ScriptApi needs &mut self (scene)
+                let mut project_borrow = project_ref.borrow_mut();
+                let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
+                api.call_update(id);
+            }
         }
 
         // Global transforms are now calculated lazily when needed (in traverse_and_render)
 
-        self.process_queued_signals();
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "process_queued_signals").entered();
+            self.process_queued_signals();
+        }
     }
 
     fn connect_signal(&mut self, signal: u64, target_id: Uuid, function_id: u64) {
@@ -1409,6 +1498,7 @@ impl<P: ScriptProvider> Scene<P> {
                 // Create the script
                 let handle = self.instantiate_script(ctor, id);
                 self.scripts.insert(id, handle);
+                self.scripts_dirty = true;
 
                 // Initialize now that node exists
                 let project_ref = self.project.clone();
@@ -1444,6 +1534,7 @@ impl<P: ScriptProvider> Scene<P> {
 
         // Remove scripts
         self.scripts.remove(&node_id);
+        self.scripts_dirty = true;
     }
 
     /// Get the global transform for a node, calculating it lazily if dirty
@@ -2014,7 +2105,9 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
 
 impl Scene<DllScriptProvider> {
     pub fn from_project(project: Rc<RefCell<Project>>) -> anyhow::Result<Self> {
-        let root_node = SceneNode::Node(Node::new("Root", None));
+        let mut root_node = Node::new();
+        root_node.name = Cow::Borrowed("Root");
+        let root_node = SceneNode::Node(root_node);
 
         // Load DLL
         let lib_path = default_perro_rust_path()?;

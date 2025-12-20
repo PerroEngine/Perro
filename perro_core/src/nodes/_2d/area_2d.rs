@@ -38,10 +38,12 @@ impl Default for Area2D {
 }
 
 impl Area2D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node2D::new();
+        base.name = Cow::Borrowed("Area2D");
         Self {
             ty: Cow::Borrowed("Area2D"),
-            base: Node2D::new(name),
+            base,
             previous_collisions: HashSet::new(),
         }
     }

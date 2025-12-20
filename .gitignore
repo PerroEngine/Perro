@@ -1,3 +1,7 @@
 /target
 
 /out
+
+# Ignore profiling files
+flamegraph.folded
+flamegraph.svg

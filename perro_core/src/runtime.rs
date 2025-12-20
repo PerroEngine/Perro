@@ -130,6 +130,70 @@ pub fn get_static_textures()
     }
 }
 
+/// Helper to convert flamegraph folded file to SVG
+#[cfg(feature = "profiling")]
+pub fn convert_flamegraph(folded_path: &Path, svg_path: &Path) {
+    println!("📊 Converting flamegraph to SVG...");
+    
+    // Try to convert using inferno (Rust library) first
+    use inferno::flamegraph;
+    use std::fs::File;
+    use std::io::{BufReader, BufWriter};
+    use std::process::Command;
+    
+    match File::open(folded_path) {
+        Ok(folded_file) => {
+            let reader = BufReader::new(folded_file);
+            match File::create(svg_path) {
+                Ok(svg_file) => {
+                    let writer = BufWriter::new(svg_file);
+                    let mut options = flamegraph::Options::default();
+                    match flamegraph::from_reader(&mut options, reader, writer) {
+                        Ok(_) => {
+                            println!("✅ Flamegraph saved to {:?}", svg_path);
+                            // Remove the folded file after successful conversion
+                            let _ = std::fs::remove_file(folded_path);
+                            return;
+                        }
+                        Err(e) => {
+                            eprintln!("⚠️  Failed to convert with inferno: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠️  Failed to create SVG file: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("⚠️  Failed to open folded file: {}", e);
+        }
+    }
+    
+    // Fallback: Try external flamegraph command
+    let output = Command::new("flamegraph")
+        .arg(folded_path)
+        .arg("--output")
+        .arg(svg_path)
+        .output();
+    
+    match output {
+        Ok(result) if result.status.success() => {
+            println!("✅ Flamegraph saved to {:?}", svg_path);
+            // Optionally remove the folded file
+            let _ = std::fs::remove_file(folded_path);
+        }
+        Ok(_) => {
+            eprintln!("⚠️  flamegraph command failed. Install with: cargo install flamegraph");
+            eprintln!("   Or manually convert: flamegraph {:?} > {:?}", folded_path, svg_path);
+        }
+        Err(_) => {
+            eprintln!("⚠️  flamegraph command not found. Install with: cargo install flamegraph");
+            eprintln!("   Or manually convert: flamegraph {:?} > {:?}", folded_path, svg_path);
+        }
+    }
+}
+
 /// Helper to append errors to errors.log
 fn log_error(msg: &str) {
     if let Ok(exe_path) = env::current_exe() {
@@ -151,7 +215,7 @@ pub fn run_game(data: RuntimeData) {
             let log_path = folder.join("errors.log");
             let file = File::create(&log_path).expect("Failed to create error log file");
 
-            let mut file = std::sync::Mutex::new(file);
+            let file = std::sync::Mutex::new(file);
             std::panic::set_hook(Box::new(move |info| {
                 let _ = writeln!(file.lock().unwrap(), "PANIC: {}", info);
             }));
@@ -238,8 +302,11 @@ pub fn run_dev() {
 
     let args: Vec<String> = env::args().collect();
     let mut key: Option<String> = None;
-
-    // 1. Determine project root path (disk or exe dir)
+    
+    // Check for profiling flag
+    let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
+    
+    // 1. Determine project root path (disk or exe dir) - need this early for profiling paths
     let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
         let path_arg = &args[i + 1];
 
@@ -370,6 +437,63 @@ pub fn run_dev() {
 
     println!("Running project at {:?}", project_root);
 
+    // Initialize profiling if requested (after project_root is determined)
+    #[cfg(feature = "profiling")]
+    let _profiler_guard = if enable_profiling {
+        use tracing_flame::FlameLayer;
+        use tracing_subscriber::{prelude::*, registry::Registry};
+        use std::process::Command;
+        
+        // Create paths at project root
+        let folded_path = project_root.join("flamegraph.folded");
+        let svg_path = project_root.join("flamegraph.svg");
+        
+        let (flame_layer, guard) = FlameLayer::with_file(&folded_path).unwrap();
+        let subscriber = Registry::default()
+            .with(flame_layer);
+        tracing::subscriber::set_global_default(subscriber).unwrap();
+        
+        println!("🔥 Profiling enabled! Flamegraph will be written to {:?}", folded_path);
+        
+        // Create a guard that converts to SVG on exit
+        struct ProfilerGuard {
+            guard: tracing_flame::FlushGuard<std::io::BufWriter<std::fs::File>>,
+            folded_path: PathBuf,
+            svg_path: PathBuf,
+        }
+        
+        impl ProfilerGuard {
+            fn convert(&self) {
+                // Use the module-level conversion function
+                convert_flamegraph(&self.folded_path, &self.svg_path);
+            }
+        }
+        
+        impl Drop for ProfilerGuard {
+            fn drop(&mut self) {
+                // Also try to convert on drop as a fallback
+                // Note: This might be called before the file is fully flushed,
+                // but the explicit conversion after event_loop should handle it
+                self.convert();
+            }
+        }
+        
+        Some(ProfilerGuard { 
+            guard,
+            folded_path,
+            svg_path,
+        })
+    } else {
+        None
+    };
+    
+    #[cfg(not(feature = "profiling"))]
+    if enable_profiling {
+        eprintln!("⚠️  Profiling requested but not enabled!");
+        eprintln!("   Build with: cargo run -p perro_core --features profiling -- --path <path> --profile");
+        eprintln!("   Or add to Cargo.toml: [features] default = [\"profiling\"]");
+    }
+
     // 2. Bootstrap project root with placeholder name
     set_project_root(ProjectRoot::Disk {
         root: project_root.clone(),
@@ -427,4 +551,19 @@ pub fn run_dev() {
 
     let mut app = app;
     let _ = event_loop.run_app(&mut app);
+    
+    // Explicitly convert flamegraph after event loop exits
+    // Drop the guard first to flush the file, then convert
+    #[cfg(feature = "profiling")]
+    if enable_profiling {
+        if let Some(guard) = _profiler_guard {
+            // Extract paths before dropping
+            let folded_path = guard.folded_path.clone();
+            let svg_path = guard.svg_path.clone();
+            // Drop the entire guard (which drops FlushGuard and flushes the file)
+            drop(guard);
+            // Now convert the flushed file using the extracted paths
+            convert_flamegraph(&folded_path, &svg_path);
+        }
+    }
 }

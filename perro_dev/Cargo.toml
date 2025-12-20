@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 perro_core = { path = "../perro_core" }
 
+[features]
+profiling = ["perro_core/profiling"]
+
 
 [[bin]]
 name = "PerroDevRuntime"

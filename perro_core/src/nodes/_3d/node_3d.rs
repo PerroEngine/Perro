@@ -42,8 +42,10 @@ pub struct Node3D {
 }
 
 impl Node3D {
-    /// Create a new Node3D with the given name.
-    pub fn new(name: &str) -> Self {
+    /// Create a new Node3D.
+    pub fn new() -> Self {
+        let mut base = Node::new();
+        base.name = Cow::Borrowed("Node3D");
         Self {
             ty: Cow::Borrowed("Node3D"),
             transform: Transform3D::default(),
@@ -53,7 +55,7 @@ impl Node3D {
                 z: 0.5,
             },
             visible: default_visible(),
-            base: Node::new(name, None),
+            base,
         }
     }
 

@@ -21,13 +21,15 @@ pub struct OmniLight3D {
 }
 
 impl OmniLight3D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node3D::new();
+        base.name = Cow::Borrowed("OmniLight3D");
         Self {
             ty: Cow::Borrowed("OmniLight3D"),
             color: Color::default(),
             intensity: 1.0,
             range: 10.0,
-            base: Node3D::new(name),
+            base,
         }
     }
 }

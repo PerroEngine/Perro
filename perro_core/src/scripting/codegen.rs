@@ -43,7 +43,7 @@ fn clear_script_members_cache() {
 }
 
 // Helper function to check if a type name is a node type
-fn is_node_type(type_name: &str) -> bool {
+pub fn is_node_type(type_name: &str) -> bool {
     matches!(type_name, 
         "Node" | "Node2D" | "Sprite2D" | "Area2D" | "CollisionShape2D" | "Shape2D" | "Camera2D" |
         "UINode" |
@@ -604,21 +604,13 @@ impl Script {
         } else {
             &script.node_type
         };
-        if node_type == "Node" {
-            write!(
-                out,
-                "    let base = {}::new(\"{}\", None);\n",
-                node_type, pascal_struct_name
-            )
-            .unwrap();
-        } else {
-            write!(
-                out,
-                "    let base = {}::new(\"{}\");\n",
-                node_type, pascal_struct_name
-            )
-            .unwrap();
-        }
+        // All node constructors now take no arguments (name defaults to type name)
+        write!(
+            out,
+            "    let base = {}::new();\n",
+            node_type
+        )
+        .unwrap();
 
         // MEMBER_TO_ATTRIBUTES_MAP is generated at the top, not here in the create function
 
@@ -875,6 +867,8 @@ fn analyze_self_usage(script: &mut Script) {
 
     // Step 1.5: Collect cloned child nodes for each function (before mutating)
     // collect_cloned_node_vars takes &Script (immutable), so we can call it here
+    // Note: This collects ALL nodes, including loop-scoped ones. Loop-scoped nodes
+    // are handled separately in the loop codegen, so they won't be merged at function level.
     let cloned_nodes_per_func: Vec<Vec<String>> = script
         .functions
         .iter()
@@ -1031,12 +1025,23 @@ fn collect_cloned_node_vars(
         None
     }
 
+    fn is_new_node_expr(expr: &Expr) -> bool {
+        // Check if this expression creates a new node (StructNew with node type)
+        match expr {
+            Expr::StructNew(ty, _) => is_node_type(ty),
+            _ => false,
+        }
+    }
+
     for stmt in stmts {
         match stmt {
             Stmt::VariableDecl(var) => {
                 if let Some(value) = &var.value {
                     // Check if the expression contains GetChildByName - if so, track the variable
                     if expr_contains_get_node(&value.expr, script.verbose) {
+                        cloned_nodes.push(var.name.clone());
+                    } else if is_new_node_expr(&value.expr) {
+                        // Track newly created nodes (like var n = new Node2D())
                         cloned_nodes.push(var.name.clone());
                     } else if let Some((ui_node_var, element_name)) =
                         is_cloned_ui_element_expr(&value.expr)
@@ -1048,6 +1053,9 @@ fn collect_cloned_node_vars(
             Stmt::Assign(name, expr) => {
                 // Check if the expression contains GetChildByName - if so, track the variable
                 if expr_contains_get_node(&expr.expr, script.verbose) {
+                    cloned_nodes.push(name.clone());
+                } else if is_new_node_expr(&expr.expr) {
+                    // Track newly created nodes (like n = new Node2D())
                     cloned_nodes.push(name.clone());
                 } else if let Some((ui_node_var, element_name)) =
                     is_cloned_ui_element_expr(&expr.expr)
@@ -1117,6 +1125,35 @@ fn param_is_mutated(param_name: &str, body: &[Stmt]) -> bool {
                 }
             }
             
+            _ => {}
+        }
+    }
+    
+    false
+}
+
+/// Check if a variable is declared inside a loop (loop-scoped)
+fn is_variable_loop_scoped(var_name: &str, body: &[Stmt]) -> bool {
+    use crate::scripting::ast::{Expr, Stmt};
+    
+    for stmt in body {
+        match stmt {
+            Stmt::For { body: loop_body, .. } | Stmt::ForTraditional { body: loop_body, .. } => {
+                // Check if variable is declared inside this loop
+                for loop_stmt in loop_body {
+                    match loop_stmt {
+                        Stmt::VariableDecl(var) if var.name == var_name => {
+                            // Variable is declared in loop - it's loop-scoped
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
+                // Recursively check nested loops
+                if is_variable_loop_scoped(var_name, loop_body) {
+                    return true;
+                }
+            }
             _ => {}
         }
     }
@@ -1340,6 +1377,30 @@ impl Function {
         collect_cloned_node_vars(&self.body, &mut Vec::new(), &mut cloned_ui_elements, script);
 
         // ---------------------------------------------------
+        // (2.5) Check if any loops create nodes - if so, declare loop_nodes_to_merge once
+        // Also collect all loop-scoped variable names to exclude from function-level merge
+        // ---------------------------------------------------
+        let mut has_loop_nodes = false;
+        let mut all_loop_scoped_vars = std::collections::HashSet::new();
+        for stmt in &self.body {
+            if let Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } = stmt {
+                let mut loop_node_vars = Vec::new();
+                let mut loop_ui_elements = Vec::new();
+                collect_cloned_node_vars(body, &mut loop_node_vars, &mut loop_ui_elements, script);
+                if !loop_node_vars.is_empty() {
+                    has_loop_nodes = true;
+                    // Collect all loop-scoped variable names
+                    for var_name in &loop_node_vars {
+                        all_loop_scoped_vars.insert(var_name.clone());
+                    }
+                }
+            }
+        }
+        if has_loop_nodes {
+            out.push_str("        let mut loop_nodes_to_merge: Vec<SceneNode> = Vec::new();\n");
+        }
+
+        // ---------------------------------------------------
         // (3) Emit body
         // ---------------------------------------------------
         for stmt in &self.body {
@@ -1352,10 +1413,20 @@ impl Function {
 
         // Merge all cloned nodes together (child nodes + self.base + node parameters)
         // Only merge cloned node variables if they're mutated (like parameters)
+        // Exclude loop-scoped variables (they're merged within their loop scope)
         let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
             .iter()
             .filter(|var_name| {
-                // Only merge if the variable is mutated in the function body
+                // First check: exclude loop-scoped variables (they're merged after their loop)
+                // Use both the pre-computed set and the function check for safety
+                if all_loop_scoped_vars.contains(*var_name) {
+                    return false; // Definitely exclude loop-scoped vars
+                }
+                let is_loop_scoped = is_variable_loop_scoped(var_name, &self.body);
+                if is_loop_scoped {
+                    return false; // Definitely exclude loop-scoped vars
+                }
+                // Second check: only merge if the variable is mutated in the function body
                 param_is_mutated(var_name, &self.body)
             })
             .map(|v| format!("{}.to_scene_node()", v))
@@ -1459,15 +1530,52 @@ impl Function {
             .unwrap();
         }
 
+        // Check if any loops create nodes - if so, declare loop_nodes_to_merge once
+        let mut has_loop_nodes = false;
+        let mut all_loop_scoped_vars = std::collections::HashSet::new();
+        for stmt in &self.body {
+            if let Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } = stmt {
+                let mut loop_node_vars = Vec::new();
+                let mut loop_ui_elements = Vec::new();
+                collect_cloned_node_vars(body, &mut loop_node_vars, &mut loop_ui_elements, script);
+                if !loop_node_vars.is_empty() {
+                    has_loop_nodes = true;
+                    for var_name in &loop_node_vars {
+                        all_loop_scoped_vars.insert(var_name.clone());
+                    }
+                }
+            }
+        }
+        if has_loop_nodes {
+            out.push_str("        let mut loop_nodes_to_merge: Vec<SceneNode> = Vec::new();\n");
+        }
+
         // Emit body
         for stmt in &self.body {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
+        // Merge loop nodes once after all loops (if any)
+        if has_loop_nodes {
+            out.push_str("\n        // Merge nodes created in loops\n");
+            out.push_str("        if !loop_nodes_to_merge.is_empty() {\n");
+            out.push_str("            api.merge_nodes(&loop_nodes_to_merge);\n");
+            out.push_str("        }\n");
+        }
+
         // Merge all cloned nodes together (child nodes + self.base)
+        // Exclude loop-scoped variables
         let cloned_node_vars = &self.cloned_child_nodes;
         let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
             .iter()
+            .filter(|var_name| {
+                // Exclude loop-scoped variables
+                if all_loop_scoped_vars.contains(*var_name) {
+                    return false;
+                }
+                let is_loop_scoped = is_variable_loop_scoped(var_name, &self.body);
+                !is_loop_scoped
+            })
             .map(|v| format!("{}.to_scene_node()", v))
             .collect();
 
@@ -1856,9 +1964,19 @@ impl Stmt {
                 iterable,
                 body,
             } => {
+                // Check if loop body creates any nodes that need to be merged
+                let mut loop_node_vars = Vec::new();
+                let mut loop_ui_elements = Vec::new();
+                collect_cloned_node_vars(body, &mut loop_node_vars, &mut loop_ui_elements, script);
+                
                 let iter_str = iterable.to_rust(needs_self, script, current_func);
-                let mut result = format!("        for {} in {} {{\n", var_name, iter_str);
+                let mut result = String::new();
+                
+                result.push_str(&format!("        for {} in {} {{\n", var_name, iter_str));
 
+                // Track which nodes are created/modified in this iteration
+                let mut nodes_created_this_iter = Vec::new();
+                
                 for stmt in body {
                     let stmt_str = stmt.to_rust(needs_self, script, current_func);
                     // Add extra indentation for statements inside the block
@@ -1877,6 +1995,29 @@ impl Stmt {
                     if !indented.ends_with('\n') {
                         result.push('\n');
                     }
+                    
+                    // Track nodes created in this iteration (but don't push yet - wait until after modifications)
+                    match stmt {
+                        Stmt::VariableDecl(var) => {
+                            if loop_node_vars.contains(&var.name) {
+                                nodes_created_this_iter.push(var.name.clone());
+                            }
+                        }
+                        Stmt::Assign(name, _) => {
+                            if loop_node_vars.contains(name) && !nodes_created_this_iter.contains(name) {
+                                nodes_created_this_iter.push(name.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                
+                // Push all nodes created/modified in this iteration AFTER all statements (so modifications are captured)
+                // loop_nodes_to_merge is declared at function level if any loop creates nodes
+                if !loop_node_vars.is_empty() && !nodes_created_this_iter.is_empty() {
+                    for node_var in &nodes_created_this_iter {
+                        result.push_str(&format!("            loop_nodes_to_merge.push({}.to_scene_node());\n", node_var));
+                    }
                 }
 
                 result.push_str("        }\n");
@@ -1889,6 +2030,11 @@ impl Stmt {
                 increment,
                 body,
             } => {
+                // Check if loop body creates any nodes that need to be merged
+                let mut loop_node_vars = Vec::new();
+                let mut loop_ui_elements = Vec::new();
+                collect_cloned_node_vars(body, &mut loop_node_vars, &mut loop_ui_elements, script);
+                
                 let mut result = String::new();
 
                 // Init - declare variable before the loop if it's a VariableDecl
@@ -1938,6 +2084,9 @@ impl Stmt {
                 }
                 result.push_str(" {\n");
 
+                // Track which nodes are created/modified in this iteration
+                let mut nodes_created_this_iter = Vec::new();
+
                 // Body
                 for stmt in body {
                     let stmt_str = stmt.to_rust(needs_self, script, current_func);
@@ -1956,6 +2105,28 @@ impl Stmt {
                     result.push_str(&indented);
                     if !indented.ends_with('\n') {
                         result.push('\n');
+                    }
+                    
+                    // Track nodes created in this iteration (but don't push yet - wait until after modifications)
+                    match stmt {
+                        Stmt::VariableDecl(var) => {
+                            if loop_node_vars.contains(&var.name) {
+                                nodes_created_this_iter.push(var.name.clone());
+                            }
+                        }
+                        Stmt::Assign(name, _) => {
+                            if loop_node_vars.contains(name) && !nodes_created_this_iter.contains(name) {
+                                nodes_created_this_iter.push(name.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                
+                // Push all nodes created/modified in this iteration AFTER all statements (so modifications are captured)
+                if !loop_node_vars.is_empty() && !nodes_created_this_iter.is_empty() {
+                    for node_var in &nodes_created_this_iter {
+                        result.push_str(&format!("            loop_nodes_to_merge.push({}.to_scene_node());\n", node_var));
                     }
                 }
 
@@ -3224,6 +3395,11 @@ impl Expr {
             },
             Expr::StructNew(ty, args) => {
                 use std::collections::HashMap;
+
+                // Special case: For node types with no arguments, use ::new() constructor
+                if args.is_empty() && is_node_type(ty) {
+                    return format!("{}::new()", ty);
+                }
 
                 // --- Flatten structure hierarchy correctly ---
                 fn gather_flat_fields<'a>(

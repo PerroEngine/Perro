@@ -21,10 +21,12 @@ pub struct CollisionShape2D {
 }
 
 impl CollisionShape2D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node2D::new();
+        base.name = Cow::Borrowed("CollisionShape2D");
         Self {
             ty: Cow::Borrowed("CollisionShape2D"),
-            base: Node2D::new(name),
+            base,
             shape: None,
             collider_handle: None,
         }

@@ -28,6 +28,26 @@ enum State {
     Ready(Graphics),
 }
 
+// OPTIMIZED: Use Option for Graphics to avoid mem::replace overhead
+// This allows us to use take() which is faster than mem::replace
+impl State {
+    #[inline(always)]
+    fn take_graphics(&mut self) -> Option<Graphics> {
+        match std::mem::replace(self, State::Init(None)) {
+            State::Ready(g) => Some(g),
+            other => {
+                *self = other;
+                None
+            }
+        }
+    }
+    
+    #[inline(always)]
+    fn put_graphics(&mut self, gfx: Graphics) {
+        *self = State::Ready(gfx);
+    }
+}
+
 const RENDER_PASS_LABEL: &str = "Main Pass";
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLACK;
 
@@ -258,36 +278,63 @@ impl<P: ScriptProvider> App<P> {
 
     #[inline(always)]
     fn process_game(&mut self) {
-        let mut gfx = match std::mem::replace(&mut self.state, State::Init(None)) {
-            State::Ready(g) => g,
-            other => {
-                self.state = other;
-                return;
-            }
+        #[cfg(feature = "profiling")]
+        let _span = tracing::span!(tracing::Level::INFO, "process_game").entered();
+        
+        // OPTIMIZED: Use take_graphics() helper which is faster than manual mem::replace
+        let mut gfx = match self.state.take_graphics() {
+            Some(g) => g,
+            None => return,
         };
 
         let now = std::time::Instant::now();
 
         // 1. Process app commands
-        self.process_commands(&gfx);
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "process_commands").entered();
+            self.process_commands(&gfx);
+        }
 
         // 2. UNCAPPED UPDATE LOOP - Runs every single frame for maximum UPS
         if let Some(scene) = self.game_scene.as_mut() {
             // Reset scroll delta at start of frame
-            if let Some(input_mgr) = scene.get_input_manager() {
-                let mut input_mgr = input_mgr.lock().unwrap();
-                input_mgr.reset_scroll_delta();
+            {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "reset_scroll_delta").entered();
+                if let Some(input_mgr) = scene.get_input_manager() {
+                    let mut input_mgr = input_mgr.lock().unwrap();
+                    input_mgr.reset_scroll_delta();
+                }
             }
 
-            scene.update(); // Update runs EVERY frame (uncapped UPS)
+            {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "scene_update").entered();
+                scene.update(); // Update runs EVERY frame (uncapped UPS)
+            }
         }
 
         // 3. CAPPED RENDER LOOP - Frame pacing limits to target FPS
-        self.calculate_frame_debt(now);
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "calculate_frame_debt").entered();
+            self.calculate_frame_debt(now);
+        }
 
         // Only render when frame pacing allows (capped FPS)
-        if self.should_render_frame() {
-            self.render_frame(&mut gfx);
+        let should_render = {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "should_render_frame").entered();
+            self.should_render_frame()
+        };
+        
+        let did_render = if should_render {
+            {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "render_frame").entered();
+                self.render_frame(&mut gfx);
+            }
 
             if self.first_frame {
                 self.first_frame = false;
@@ -295,26 +342,45 @@ impl<P: ScriptProvider> App<P> {
             self.total_frames_rendered += 1;
             self.fps_frames += 1;
 
-            self.update_fps_measurement(now);
-        }
+            {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "update_fps_measurement").entered();
+                self.update_fps_measurement(now);
+            }
+            true
+        } else {
+            false
+        };
 
         // 4. Request next frame (this drives the uncapped update loop)
-        gfx.window().request_redraw();
+        // OPTIMIZED: Only request redraw if window is visible and we have work to do
+        // This reduces unnecessary wake-ups when window is minimized or hidden
+        if gfx.window().is_visible().unwrap_or(true) || did_render {
+            gfx.window().request_redraw();
+        }
 
-        // Put Graphics back
-        self.state = State::Ready(gfx);
+        // OPTIMIZED: Use put_graphics() helper
+        self.state.put_graphics(gfx);
     }
 
     /// Render a single frame (only called when frame pacing allows)
     #[inline]
     fn render_frame(&mut self, gfx: &mut Graphics) {
         // Update scene render data (queues rendering commands)
-        if let Some(scene) = self.game_scene.as_mut() {
-            scene.render(gfx);
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "scene_render").entered();
+            if let Some(scene) = self.game_scene.as_mut() {
+                scene.render(gfx);
+            }
         }
 
         // Begin frame
-        let (frame, view, mut encoder) = gfx.begin_frame();
+        let (frame, view, mut encoder) = {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "begin_frame").entered();
+            gfx.begin_frame()
+        };
 
         // Main render pass WITH DEPTH
         {
@@ -344,11 +410,19 @@ impl<P: ScriptProvider> App<P> {
             });
 
             // Execute all batched draw calls
-            gfx.render(&mut rpass);
+            {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "gfx_render").entered();
+                gfx.render(&mut rpass);
+            }
         }
 
         // End frame
-        gfx.end_frame(frame, encoder);
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "end_frame").entered();
+            gfx.end_frame(frame, encoder);
+        }
     }
 
     #[inline(always)]

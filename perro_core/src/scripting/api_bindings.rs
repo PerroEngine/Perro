@@ -495,6 +495,46 @@ impl ApiCodegen for NodeSugarApi {
                 };
                 format!("{}.parent_id", node_expr)
             }
+            NodeSugarApi::AddChild => {
+                // self.add_child(child) -> Update local node clones directly
+                // Set child's parent_id and add child.id to parent's children
+                // Handle reparenting: if child already has a parent, remove it from old parent
+                // Get the parent expression - could be self.base, bob, or any node variable
+                let parent_expr = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.base".to_string()
+                } else if let Some(Expr::Ident(name)) = args.get(0) {
+                    // Direct identifier like "bob"
+                    name.clone()
+                } else if let Some(node_str) = args_strs.get(0) {
+                    // More complex expression - use the generated code
+                    node_str.clone()
+                } else {
+                    "self.base".to_string()
+                };
+                let child_expr = if let Some(node_str) = args_strs.get(1) {
+                    node_str.clone()
+                } else {
+                    return "// Error: add_child requires a child node".to_string();
+                };
+                
+                // Check if child is newly created (StructNew) or existing (Ident/MemberAccess)
+                let is_newly_created = matches!(args.get(1), Some(Expr::StructNew(..)));
+                
+                if is_newly_created {
+                    // Newly created node: compile-time certain there's no old parent, skip check
+                    format!(
+                        "{{\n            // Set parent-child relationship on local clones\n            {}.parent_id = Some({}.id);\n            {}.children.get_or_insert_with(Vec::new).push({}.id);\n        }}",
+                        child_expr, parent_expr, parent_expr, child_expr
+                    )
+                } else {
+                    // Existing node: runtime check for old parent and handle reparenting
+                    // Use API function to remove child from old parent (works with any node type)
+                    format!(
+                        "{{\n            // Set parent-child relationship on local clones\n            // Handle reparenting: if child already has a parent, remove it from old parent\n            if let Some(old_parent_id) = {}.parent_id {{\n                api.remove_child(old_parent_id, {}.id);\n            }}\n            {}.parent_id = Some({}.id);\n            {}.children.get_or_insert_with(Vec::new).push({}.id);\n        }}",
+                        child_expr, child_expr, child_expr, parent_expr, parent_expr, child_expr
+                    )
+                }
+            }
         }
     }
 }
@@ -506,6 +546,7 @@ impl ApiTypes for NodeSugarApi {
             NodeSugarApi::SetVar => Some(Type::Void),
             NodeSugarApi::GetChildByName => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - child node ID (special marker type)
             NodeSugarApi::GetParent => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - parent node ID (special marker type)
+            NodeSugarApi::AddChild => Some(Type::Void),
         }
     }
     // No specific param_types for NodeSugar APIs needed by default, uses None.

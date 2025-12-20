@@ -27,6 +27,7 @@ pub type RuntimeApp = App<DllScriptProvider>;
 pub mod prelude {
     // Core engine node types
     pub use crate::nodes::*;
+    pub use crate::node_registry::SceneNode;
     pub use crate::ui_node::UINode;
 
     pub use crate::structs::*;

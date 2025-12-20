@@ -115,6 +115,7 @@ impl PupNodeSugar {
             "set_var" => Some(ApiModule::NodeSugar(NodeSugarApi::SetVar)),
             "get_node" => Some(ApiModule::NodeSugar(NodeSugarApi::GetChildByName)),
             "get_parent" => Some(ApiModule::NodeSugar(NodeSugarApi::GetParent)),
+            "add_child" => Some(ApiModule::NodeSugar(NodeSugarApi::AddChild)),
             _ => None,
         }
     }

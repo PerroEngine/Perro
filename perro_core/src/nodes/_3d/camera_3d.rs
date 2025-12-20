@@ -33,14 +33,18 @@ pub struct Camera3D {
 
 impl Camera3D {
     /// Creates a new Camera3D with standard default parameters.
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
         Self {
             ty: Cow::Borrowed("Camera3D"),
             fov: Some(70.0),
             near: Some(0.1),
             far: Some(1000.0),
             active: false,
-            base: Node3D::new(name),
+            base: {
+                let mut base = Node3D::new();
+                base.name = Cow::Borrowed("Camera3D");
+                base
+            },
         }
     }
 

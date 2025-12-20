@@ -44,9 +44,11 @@ impl Default for DirectionalLight3D {
 // ---------- Convenience constructor ----------
 
 impl DirectionalLight3D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node3D::new();
+        base.name = Cow::Borrowed("DirectionalLight3D");
         Self {
-            base: Node3D::new(name),
+            base,
             ..Default::default()
         }
     }

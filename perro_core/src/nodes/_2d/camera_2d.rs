@@ -24,12 +24,14 @@ pub struct Camera2D {
 }
 
 impl Camera2D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node2D::new();
+        base.name = Cow::Borrowed("Camera2D");
         Self {
             ty: Cow::Borrowed("Camera2D"),
             zoom: Some(1.0),
             active: false,
-            base: Node2D::new(name),
+            base,
         }
     }
 

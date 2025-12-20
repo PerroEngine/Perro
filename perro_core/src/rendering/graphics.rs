@@ -654,7 +654,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let backend_emoji = match backend_used {
         "Vulkan" => "⚡",
         "DX12" => "🎮",
-        "Metal" => "🍎",
+        "Metal" => "🍎",  
         _ => "💻",
     };
     println!("{} {} on {} backend", backend_emoji, adapter_name, backend_used);
@@ -665,15 +665,16 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let mut surface_config = surface.get_default_config(&adapter, w, h).unwrap();
     
     // OPTIMIZED: Select best available present mode with proper fallback
-    // Priority: Mailbox (adaptive VSync) > Fifo (standard VSync) > Immediate (no VSync)
-    // This prevents panics when unsupported modes are requested
+    // Priority: Immediate (no VSync) > Mailbox (adaptive VSync) > Fifo (standard VSync)
+    // Since we're doing frame pacing at the application level, we don't need VSync
+    // Using Immediate prevents double-limiting and pixel waving/jitter
     let surface_caps = surface.get_capabilities(&adapter);
-    let preferred_present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+    let preferred_present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+        wgpu::PresentMode::Immediate
+    } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
         wgpu::PresentMode::Mailbox
     } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
         wgpu::PresentMode::Fifo
-    } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
-        wgpu::PresentMode::Immediate
     } else {
         // Fallback to default (should always be Fifo, which is guaranteed to be supported)
         surface_config.present_mode
@@ -765,7 +766,8 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         }],
     });
 
-    let initial_camera_3d = Camera3D::new("MainCamera3D");
+    let mut initial_camera_3d = Camera3D::new();
+    initial_camera_3d.name = Cow::Borrowed("MainCamera3D");
 
     // Initialize 3D camera matrices
     let view = glam::Mat4::look_at_rh(
@@ -919,7 +921,9 @@ impl Graphics {
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.device.poll(wgpu::PollType::Wait {
+        // OPTIMIZED: Wait for all pending work to complete before resizing
+        // This ensures we don't resize while GPU is still using old resources
+        let _ = self.device.poll(wgpu::PollType::Wait {
             submission_index: None,
             timeout: None,
         });
@@ -1113,8 +1117,16 @@ impl Graphics {
     /// Main render method that coordinates all renderers
     pub fn render(&mut self, rpass: &mut RenderPass<'_>) {
         // Upload any dirty materials/lights before rendering
-        self.renderer_3d.upload_materials_to_gpu(&self.queue);
-        self.renderer_3d.upload_lights_to_gpu(&self.queue);
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "upload_materials_to_gpu").entered();
+            self.renderer_3d.upload_materials_to_gpu(&self.queue);
+        }
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "upload_lights_to_gpu").entered();
+            self.renderer_3d.upload_lights_to_gpu(&self.queue);
+        }
 
         // OPTIMIZED: Use cached camera matrices instead of recalculating
         // Fallback to calculation if cache is invalid (shouldn't happen in normal flow)
@@ -1136,37 +1148,49 @@ impl Graphics {
             (view, proj)
         };
 
-        self.renderer_3d.render(
-            rpass,
-            &self.mesh_manager,
-            &self.camera3d_bind_group,
-            &view,
-            &proj,
-            &self.device,
-            &self.queue,
-        );
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "renderer_3d_render").entered();
+            self.renderer_3d.render(
+                rpass,
+                &self.mesh_manager,
+                &self.camera3d_bind_group,
+                &view,
+                &proj,
+                &self.device,
+                &self.queue,
+            );
+        }
 
         // Render 2D world objects
-        self.renderer_2d.render(
-            &mut self.renderer_prim,
-            rpass,
-            &mut self.texture_manager,
-            &self.device,
-            &self.queue,
-            &self.camera_bind_group,
-            &self.vertex_buffer,
-        );
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "renderer_2d_render").entered();
+            self.renderer_2d.render(
+                &mut self.renderer_prim,
+                rpass,
+                &mut self.texture_manager,
+                &self.device,
+                &self.queue,
+                &self.camera_bind_group,
+                &self.vertex_buffer,
+            );
+        }
 
         // Render UI on top
-        self.renderer_ui.render(
-            &mut self.renderer_prim,
-            rpass,
-            &mut self.texture_manager,
-            &self.device,
-            &self.queue,
-            &self.camera_bind_group,
-            &self.vertex_buffer,
-        );
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "renderer_ui_render").entered();
+            self.renderer_ui.render(
+                &mut self.renderer_prim,
+                rpass,
+                &mut self.texture_manager,
+                &self.device,
+                &self.queue,
+                &self.camera_bind_group,
+                &self.vertex_buffer,
+            );
+        }
     }
 
     pub fn begin_frame(
@@ -1176,30 +1200,35 @@ impl Graphics {
         wgpu::TextureView,
         wgpu::CommandEncoder,
     ) {
-        let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.surface_config);
-                return self.begin_frame();
+        // OPTIMIZED: Use loop instead of recursion to avoid stack growth on repeated errors
+        loop {
+            match self.surface.get_current_texture() {
+                Ok(frame) => {
+                    let view = frame
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+                    let encoder = self
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Main Encoder"),
+                        });
+                    return (frame, view, encoder);
+                }
+                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    // Surface needs reconfiguration - reconfigure and retry
+                    self.surface.configure(&self.device, &self.surface_config);
+                    // Continue loop to retry
+                }
+                Err(wgpu::SurfaceError::OutOfMemory) => {
+                    eprintln!("OutOfMemory: GPU may be lost");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Surface error: {:?}, retrying...", e);
+                    // Continue loop to retry (may be transient)
+                }
             }
-            Err(wgpu::SurfaceError::OutOfMemory) => {
-                eprintln!("OutOfMemory: GPU may be lost");
-                std::process::exit(1);
-            }
-            Err(e) => {
-                eprintln!("Surface error: {:?}", e);
-                return self.begin_frame();
-            }
-        };
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Main Encoder"),
-            });
-        (frame, view, encoder)
+        }
     }
 
     pub fn end_frame(&mut self, frame: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
@@ -1209,6 +1238,6 @@ impl Graphics {
         // OPTIMIZED: Use Poll instead of Wait at end of frame for better throughput
         // Wait is used in resize() where we need to ensure completion, but Poll is
         // more efficient for regular frame rendering where we don't need to block
-        self.device.poll(wgpu::PollType::Poll);
+        let _ = self.device.poll(wgpu::PollType::Poll);
     }
 }

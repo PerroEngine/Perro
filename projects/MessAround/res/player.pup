@@ -2,6 +2,15 @@
 
 fn init() {
     self.transform.position.x = -750
+    for (i in 0..1000) {
+        var n = new Node2D()
+        self.add_child(n) 
+    }
+
+    for (i in 0..100) {
+        var n = new Sprite2D()
+        self.add_child(n) 
+    }
 }
 
 fn update() {

@@ -65,7 +65,9 @@ fn default_transform_dirty() -> bool {
 }
 
 impl Node2D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node::new();
+        base.name = Cow::Borrowed("Node2D");
         Self {
             ty: Cow::Borrowed("Node2D"),
             transform: Transform2D::default(),
@@ -78,7 +80,7 @@ impl Node2D {
 
             visible: default_visible(),
             // Base node
-            base: Node::new(name, None),
+            base,
         }
     }
     pub fn get_visible(&self) -> bool {
@@ -115,7 +117,11 @@ impl Default for Node2D {
             pivot: Vector2 { x: 0.5, y: 0.5 },
             z_index: 0,
             visible: default_visible(),
-            base: Node::new("", None),
+            base: {
+                let mut base = Node::new();
+                base.name = Cow::Borrowed("Node2D");
+                base
+            },
         }
     }
 }

@@ -72,9 +72,11 @@ impl Default for SpotLight3D {
 // ---------- Convenience Constructor ----------
 
 impl SpotLight3D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node3D::new();
+        base.name = Cow::Borrowed("SpotLight3D");
         Self {
-            base: Node3D::new(name),
+            base,
             ..Default::default()
         }
     }

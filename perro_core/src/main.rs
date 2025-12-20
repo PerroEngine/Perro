@@ -181,6 +181,45 @@ fn main() {
         }
     }
 
+    // Handle --convert-flamegraph command (convert existing folded file to SVG)
+    if args.contains(&"--convert-flamegraph".to_string()) {
+        let path_flag_i = args.iter().position(|a| a == "--path");
+        let path_arg = path_flag_i
+            .and_then(|i| args.get(i + 1))
+            .unwrap_or_else(|| {
+                eprintln!("❌ Missing required flag: --path <path or --editor>");
+                eprintln!("   Usage: cargo run -p perro_core --features profiling -- --path <path> --convert-flamegraph");
+                eprintln!("   (This converts an existing flamegraph.folded file to SVG without running the game)");
+                std::process::exit(1);
+            });
+
+        let project_root = resolve_project_root(path_arg);
+        let folded_path = project_root.join("flamegraph.folded");
+        let svg_path = project_root.join("flamegraph.svg");
+        
+        if !folded_path.exists() {
+            eprintln!("❌ Flamegraph folded file not found at: {:?}", folded_path);
+            eprintln!("   Run with --profile first to generate the folded file");
+            std::process::exit(1);
+        }
+        
+        println!("📊 Converting {:?} to {:?}...", folded_path, svg_path);
+        
+        #[cfg(feature = "profiling")]
+        {
+            perro_core::runtime::convert_flamegraph(&folded_path, &svg_path);
+        }
+        
+        #[cfg(not(feature = "profiling"))]
+        {
+            eprintln!("❌ Profiling feature not enabled!");
+            eprintln!("   Build with: cargo run -p perro_core --features profiling -- --path <path> --convert-flamegraph");
+            std::process::exit(1);
+        }
+        
+        return;
+    }
+
     // Handle --run command (just run, no compilation)
     if args.contains(&"--run".to_string()) {
         let path_flag_i = args.iter().position(|a| a == "--path");
@@ -212,6 +251,68 @@ fn main() {
         // Spawn perro_dev with the same path
         let mut cmd = Command::new("cargo");
         cmd.args(&["run", "-p", "perro_dev", "--", "--path", path_arg]);
+        cmd.stdout(std::process::Stdio::inherit());
+        cmd.stderr(std::process::Stdio::inherit());
+
+        let status = cmd.status().expect("Failed to start perro_dev");
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    // Handle --profile command (build scripts + run with headless profiling)
+    // --flamegraph is kept as an alias for backwards compatibility
+    let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
+    
+    if enable_profiling {
+        let path_flag_i = args.iter().position(|a| a == "--path");
+        let path_arg = path_flag_i
+            .and_then(|i| args.get(i + 1))
+            .unwrap_or_else(|| {
+                eprintln!("❌ Missing required flag: --path <path or --editor>");
+                eprintln!("   Usage: cargo run -p perro_core --features profiling -- --path <path> --profile");
+                std::process::exit(1);
+            });
+
+        let project_root = resolve_project_root(path_arg);
+        println!("📁 Using project root: {}", project_root.display());
+
+        // Verify project.toml exists at the resolved path
+        let project_toml_path = project_root.join("project.toml");
+        if !project_toml_path.exists() {
+            eprintln!(
+                "❌ project.toml not found at: {}",
+                project_toml_path.display()
+            );
+            eprintln!("   Resolved from input: {}", path_arg);
+            eprintln!("   Project root: {}", project_root.display());
+            std::process::exit(1);
+        }
+
+        // Register in engine core
+        set_project_root(ProjectRoot::Disk {
+            root: project_root.clone(),
+            name: "Perro Engine".into(),
+        });
+
+        // Build scripts first
+        println!("📜 Building scripts…");
+        if let Err(e) = transpile(&project_root, true) {
+            eprintln!("❌ Transpile failed: {}", e);
+            std::process::exit(1);
+        }
+
+        let compiler = Compiler::new(&project_root, CompileTarget::Scripts, true);
+        if let Err(e) = compiler.compile(BuildProfile::Dev) {
+            eprintln!("❌ Script compile failed: {}", e);
+            std::process::exit(1);
+        }
+
+        println!("✅ Scripts built! Starting dev runner with profiling…");
+        println!("🔥 Profiling enabled! Flamegraph will be written to {:?}", project_root.join("flamegraph.folded"));
+
+        // Spawn perro_dev with profiling enabled (headless mode)
+        // Pass the profiling feature through to perro_dev
+        let mut cmd = Command::new("cargo");
+        cmd.args(&["run", "-p", "perro_dev", "--features", "profiling", "--", "--path", path_arg, "--profile"]);
         cmd.stdout(std::process::Stdio::inherit());
         cmd.stderr(std::process::Stdio::inherit());
 

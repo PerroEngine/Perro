@@ -39,10 +39,12 @@ pub enum ShapeType {
 }
 
 impl Shape2D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node2D::new();
+        base.name = Cow::Borrowed("Shape2D");
         Self {
             ty: Cow::Borrowed("Shape2D"),
-            base: Node2D::new(name),
+            base,
             shape_type: None,
             color: None,
             filled: false,

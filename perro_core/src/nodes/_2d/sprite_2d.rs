@@ -21,12 +21,14 @@ pub struct Sprite2D {
 }
 
 impl Sprite2D {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
+        let mut base = Node2D::new();
+        base.name = Cow::Borrowed("Sprite2D");
         Self {
             ty: Cow::Borrowed("Sprite2D"),
             texture_path: None,
             region: None,
-            base: Node2D::new(name),
+            base,
         }
     }
 }
