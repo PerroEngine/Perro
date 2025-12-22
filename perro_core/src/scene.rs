@@ -2,6 +2,7 @@ use crate::{
     Graphics,
     Node,
     RenderLayer,
+    ShapeType2D,
     Transform3D,
     Vector2,
     api::ScriptApi,
@@ -48,10 +49,21 @@ use wgpu::RenderPass;
 //
 
 /// Pure serializable scene data (no runtime state)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SceneData {
     pub root_id: Uuid,
     pub nodes: IndexMap<Uuid, SceneNode>,
+}
+
+impl Clone for SceneData {
+    fn clone(&self) -> Self {
+        Self {
+            root_id: self.root_id,
+            nodes: self.nodes.iter().map(|(id, node)| {
+                (*id, node.clone())
+            }).collect(),
+        }
+    }
 }
 
 impl Serialize for SceneData {
@@ -59,16 +71,29 @@ impl Serialize for SceneData {
     where
         S: Serializer,
     {
-        // Create a plain serializable map of local_id → node
-        let mut node_map: IndexMap<Uuid, &SceneNode> = IndexMap::with_capacity(self.nodes.len());
-        for node in self.nodes.values() {
-            node_map.insert(node.get_local_id(), node);
-        }
-
-        // Begin the struct
+        use serde::ser::SerializeMap;
         let mut state = serializer.serialize_struct("SceneData", 2)?;
         state.serialize_field("root_id", &self.root_id)?;
-        state.serialize_field("nodes", &node_map)?;
+        
+        struct NodesMap<'a> {
+            nodes: &'a IndexMap<Uuid, SceneNode>,
+        }
+        
+        impl<'a> Serialize for NodesMap<'a> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                use serde::ser::SerializeMap;
+                let mut map = serializer.serialize_map(Some(self.nodes.len()))?;
+                for (id, node) in self.nodes.iter() {
+                    map.serialize_entry(&node.get_local_id(), node)?;
+                }
+                map.end()
+            }
+        }
+        
+        state.serialize_field("nodes", &NodesMap { nodes: &self.nodes })?;
         state.end()
     }
 }
@@ -104,7 +129,8 @@ impl<'de> Deserialize<'de> for SceneData {
                 // (transform_dirty is skipped during serialization, so it defaults to false)
                 node.mark_transform_dirty_if_node2d();
 
-                if let Some(parent_local) = node.get_parent() {
+                let parent_local = node.get_parent();
+                if !parent_local.is_nil() {
                     parent_children
                         .entry(parent_local)
                         .or_default()
@@ -182,7 +208,8 @@ impl SceneData {
             node.get_children_mut().clear();
 
             // Collect relationships during same iteration
-            if let Some(parent_id) = node.get_parent() {
+            let parent_id = node.get_parent();
+            if !parent_id.is_nil() {
                 parent_children.entry(parent_id).or_default().push(node_id);
             }
         }
@@ -208,7 +235,7 @@ pub struct Scene<P: ScriptProvider> {
     pub(crate) data: SceneData,
     pub signals: SignalBus,
     queued_signals: Vec<(u64, SmallVec<[Value; 3]>)>,
-    pub scripts: HashMap<Uuid, Rc<RefCell<Box<dyn ScriptObject>>>>,
+    pub scripts: HashMap<Uuid, Box<dyn ScriptObject>>,
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
@@ -231,6 +258,10 @@ pub struct Scene<P: ScriptProvider> {
     // OPTIMIZED: Cache script IDs to avoid Vec allocation every frame
     cached_script_ids: Vec<Uuid>,
     scripts_dirty: bool,
+    
+    // OPTIMIZED: Separate vectors for scripts with update/fixed_update to avoid checking all scripts
+    scripts_with_update: Vec<Uuid>,
+    scripts_with_fixed_update: Vec<Uuid>,
 }
 
 #[derive(Default)]
@@ -265,6 +296,10 @@ impl<P: ScriptProvider> Scene<P> {
             // OPTIMIZED: Initialize script ID cache
             cached_script_ids: Vec::new(),
             scripts_dirty: true,
+            
+            // OPTIMIZED: Initialize separate vectors for update/fixed_update scripts
+            scripts_with_update: Vec::new(),
+            scripts_with_fixed_update: Vec::new(),
         }
     }
 
@@ -298,6 +333,10 @@ impl<P: ScriptProvider> Scene<P> {
             // OPTIMIZED: Initialize script ID cache
             cached_script_ids: Vec::new(),
             scripts_dirty: true,
+            
+            // OPTIMIZED: Initialize separate vectors for update/fixed_update scripts
+            scripts_with_update: Vec::new(),
+            scripts_with_fixed_update: Vec::new(),
         }
     }
 
@@ -495,12 +534,12 @@ impl<P: ScriptProvider> Scene<P> {
             .nodes
             .get(&subscene_root_local_id)
             .map(|n| id_map[&n.get_local_id()]);
-    
+        
         println!(
             "📍 Subscene root: local={}, new={:?}, will attach to parent={}",
             subscene_root_local_id, subscene_root_new_id, parent_id
         );
-    
+        
         // Check if root has is_root_of (determines if we skip the root later)
         let root_is_root_of = other
             .nodes
@@ -521,9 +560,10 @@ impl<P: ScriptProvider> Scene<P> {
             node.set_id(new_id);
             node.clear_children();
             node.mark_transform_dirty_if_node2d();
-    
+
             // Determine parent relationship
-            if let Some(parent_local) = node.get_parent() {
+            let parent_local = node.get_parent();
+            if !parent_local.is_nil() {
                 // Parent is specified in JSON - remap it
                 if let Some(&mapped_parent) = id_map.get(&parent_local) {
                     node.set_parent(Some(mapped_parent));
@@ -594,7 +634,7 @@ impl<P: ScriptProvider> Scene<P> {
     
         for mut node in other.nodes.into_values() {
             let node_id = node.get_id();
-    
+
             // Skip root if it has is_root_of (will be replaced by nested scene content)
             if let Some(skip_id) = skip_root_id {
                 if node_id == skip_id {
@@ -602,18 +642,23 @@ impl<P: ScriptProvider> Scene<P> {
                     continue;
                 }
             }
-    
+
             node.mark_dirty();
             node.mark_transform_dirty_if_node2d();
-    
-            // Resolve name conflicts (only check siblings - nodes with the same parent)
+
+            // Resolve name conflicts (check siblings AND parent/ancestor)
             let node_name = node.get_name();
             let parent_id = node.get_parent();
-            if self.has_sibling_name_conflict(parent_id, node_name) {
+            
+            // Check if name conflicts with siblings OR with parent/ancestors
+            let has_sibling_conflict = self.has_sibling_name_conflict(parent_id, node_name);
+            let has_parent_conflict = self.has_parent_or_ancestor_name_conflict(parent_id, node_name);
+            
+            if has_sibling_conflict || has_parent_conflict {
                 let resolved_name = self.resolve_name_conflict(parent_id, node_name);
                 Self::set_node_name(&mut node, resolved_name);
             }
-    
+
             self.data.nodes.insert(node_id, node);
             inserted_ids.push(node_id);
     
@@ -714,33 +759,18 @@ impl<P: ScriptProvider> Scene<P> {
         const FUR_PARALLEL_THRESHOLD: usize = 5;
     
         // Collect FUR paths
-        let fur_paths: Vec<(Uuid, String)> = if inserted_ids.len() >= FUR_PARALLEL_THRESHOLD {
-            inserted_ids
-                .par_iter()
-                .filter_map(|id| {
-                    self.data.nodes.get(id).and_then(|node| {
-                        if let SceneNode::UINode(u) = node {
-                            u.fur_path.as_ref().map(|path| (*id, path.to_string()))
-                        } else {
-                            None
-                        }
-                    })
+        let fur_paths: Vec<(Uuid, String)> = inserted_ids
+            .iter()
+            .filter_map(|id| {
+                self.data.nodes.get(id).and_then(|node| {
+                    if let SceneNode::UINode(u) = node {
+                        u.fur_path.as_ref().map(|path| (*id, path.to_string()))
+                    } else {
+                        None
+                    }
                 })
-                .collect()
-        } else {
-            inserted_ids
-                .iter()
-                .filter_map(|id| {
-                    self.data.nodes.get(id).and_then(|node| {
-                        if let SceneNode::UINode(u) = node {
-                            u.fur_path.as_ref().map(|path| (*id, path.to_string()))
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect()
-        };
+            })
+            .collect();
     
         // Load FUR data
         let fur_loads: Vec<(Uuid, Result<Vec<FurElement>, _>)> =
@@ -764,10 +794,12 @@ impl<P: ScriptProvider> Scene<P> {
     
         // Apply FUR results
         for (id, result) in fur_loads {
-            if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(&id) {
-                match result {
-                    Ok(fur_elements) => build_ui_elements_from_fur(u, &fur_elements),
-                    Err(err) => eprintln!("⚠️ Error loading FUR for {}: {}", id, err),
+            if let Some(node) = self.data.nodes.get_mut(&id) {
+                if let SceneNode::UINode(u) = node {
+                    match result {
+                        Ok(fur_elements) => build_ui_elements_from_fur(u, &fur_elements),
+                        Err(err) => eprintln!("⚠️ Error loading FUR for {}: {}", id, err),
+                    }
                 }
             }
         }
@@ -780,27 +812,15 @@ impl<P: ScriptProvider> Scene<P> {
         let script_start = Instant::now();
     
         // Collect script paths
-        let script_targets: Vec<(Uuid, String)> = if inserted_ids.len() > 10 {
-            inserted_ids
-                .par_iter()
-                .filter_map(|id| {
-                    self.data
-                        .nodes
-                        .get(id)
-                        .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
-                })
-                .collect()
-        } else {
-            inserted_ids
-                .iter()
-                .filter_map(|id| {
-                    self.data
-                        .nodes
-                        .get(id)
-                        .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
-                })
-                .collect()
-        };
+        let script_targets: Vec<(Uuid, String)> = inserted_ids
+            .iter()
+            .filter_map(|id| {
+                self.data
+                    .nodes
+                    .get(id)
+                    .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
+            })
+            .collect();
     
         // Initialize scripts
         if !script_targets.is_empty() {
@@ -817,6 +837,17 @@ impl<P: ScriptProvider> Scene<P> {
                     .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
                 let ctor = self.ctor(&ident)?;
                 let handle = Self::instantiate_script(ctor, id);
+                
+                // Check flags and add to appropriate vectors
+                let flags = handle.script_flags();
+                
+                if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                    self.scripts_with_update.push(id);
+                }
+                if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
+                    self.scripts_with_fixed_update.push(id);
+                }
+                
                 self.scripts.insert(id, handle);
                 self.scripts_dirty = true;
     
@@ -893,9 +924,10 @@ impl<P: ScriptProvider> Scene<P> {
             node.set_id(new_id);
             node.clear_children();
             node.mark_transform_dirty_if_node2d();
-    
+
             // Remap parent
-            if let Some(parent_local) = node.get_parent() {
+            let parent_local = node.get_parent();
+            if !parent_local.is_nil() {
                 if let Some(&mapped_parent) = id_map.get(&parent_local) {
                     node.set_parent(Some(mapped_parent));
                     parent_children
@@ -906,7 +938,7 @@ impl<P: ScriptProvider> Scene<P> {
             }
             // If no parent (this is the subscene root), its parent is already set
             // in the main scene (the node with is_root_of)
-    
+
             // Remap script_exp_vars
             if let Some(mut script_vars) = node.get_script_exp_vars() {
                 Self::remap_script_exp_vars_uuids(&mut script_vars, &id_map);
@@ -986,11 +1018,11 @@ impl<P: ScriptProvider> Scene<P> {
         // Load FUR files for UI nodes
         // Optimize: use as_ref() instead of clone() for Option<String>
         for id in &inserted_ids {
-            if let Some(SceneNode::UINode(ui_node)) = self.data.nodes.get(id) {
-                if let Some(fur_path) = ui_node.fur_path.as_ref() {
-                    if let Ok(fur_elements) = self.provider.load_fur_data(fur_path) {
-                        if let Some(SceneNode::UINode(u)) = self.data.nodes.get_mut(id) {
-                            build_ui_elements_from_fur(u, &fur_elements);
+            if let Some(node) = self.data.nodes.get_mut(id) {
+                if let SceneNode::UINode(ui_node) = node {
+                    if let Some(fur_path) = ui_node.fur_path.as_ref() {
+                        if let Ok(fur_elements) = self.provider.load_fur_data(fur_path) {
+                            build_ui_elements_from_fur(ui_node, &fur_elements);
                         }
                     }
                 }
@@ -1004,7 +1036,7 @@ impl<P: ScriptProvider> Scene<P> {
                 self.data
                     .nodes
                     .get(id)
-                    .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
+                    .and_then(|n| n.get_script_path().map(|p: &str| (*id, p.to_string())))
             })
             .collect();
     
@@ -1021,8 +1053,19 @@ impl<P: ScriptProvider> Scene<P> {
                 if let Ok(ident) = script_path_to_identifier(&script_path) {
                     if let Ok(ctor) = self.ctor(&ident) {
                         let handle = Self::instantiate_script(ctor, id);
+                        
+                        // Check flags and add to appropriate vectors
+                        let flags = handle.script_flags();
+                        
+                        if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                            self.scripts_with_update.push(id);
+                        }
+                        if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
+                            self.scripts_with_fixed_update.push(id);
+                        }
+                        
                         self.scripts.insert(id, handle);
-                self.scripts_dirty = true;
+                        self.scripts_dirty = true;
     
                         let mut api = ScriptApi::new(dt, self, &mut *project_borrow);
                         api.call_init(id);
@@ -1075,9 +1118,14 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Find all root nodes (nodes with no parent)
         let root_nodes: Vec<Uuid> = self.data.nodes
-            .values()
-            .filter(|node| node.get_parent().is_none())
-            .map(|node| node.get_id())
+            .iter()
+            .filter_map(|(id, node)| {
+                if node.get_parent().is_nil() {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
             .collect();
         
         // Print each root and its children recursively
@@ -1148,20 +1196,48 @@ impl<P: ScriptProvider> Scene<P> {
 
 
     /// Check if a node name conflicts with any sibling (node with the same parent)
-    fn has_sibling_name_conflict(&self, parent_id: Option<Uuid>, name: &str) -> bool {
+    fn has_sibling_name_conflict(&self, parent_id: Uuid, name: &str) -> bool {
         self.data.nodes.values().any(|n| {
             n.get_parent() == parent_id && n.get_name() == name
         })
     }
 
+    /// Check if a node name conflicts with its parent or any ancestor
+    fn has_parent_or_ancestor_name_conflict(&self, parent_id: Uuid, name: &str) -> bool {
+        let mut current_id = parent_id;
+        
+        // Walk up the tree checking each ancestor
+        loop {
+            if let Some(ancestor) = self.data.nodes.get(&current_id) {
+                if ancestor.get_name() == name {
+                    return true;
+                }
+                
+                // Move to parent
+                let next_parent = ancestor.get_parent();
+                if next_parent == current_id {
+                    // Reached root (parent points to itself)
+                    break;
+                }
+                current_id = next_parent;
+            } else {
+                // Parent doesn't exist in scene yet
+                break;
+            }
+        }
+        
+        false
+    }
+
     /// Resolve name conflicts by appending a digit suffix
-    /// Only checks for conflicts among siblings (nodes with the same parent)
-    fn resolve_name_conflict(&self, parent_id: Option<Uuid>, base_name: &str) -> String {
+    /// Checks for conflicts among siblings AND with parent/ancestors
+    fn resolve_name_conflict(&self, parent_id: Uuid, base_name: &str) -> String {
         let mut counter = 1;
         let mut candidate = format!("{}{}", base_name, counter);
         
-        // Check if any sibling (node with the same parent) has this name
-        while self.has_sibling_name_conflict(parent_id, &candidate) {
+        // Check if candidate conflicts with siblings OR parent/ancestors
+        while self.has_sibling_name_conflict(parent_id, &candidate) 
+            || self.has_parent_or_ancestor_name_conflict(parent_id, &candidate) {
             counter += 1;
             candidate = format!("{}{}", base_name, counter);
         }
@@ -1206,9 +1282,10 @@ impl<P: ScriptProvider> Scene<P> {
 
         if self.delta_accum >= 1.0 {
             let ups = self.true_updates as f32 / self.delta_accum;
+            let avg_delta = self.delta_accum / self.true_updates as f32;
             println!(
-                "🔹 UPS: {:.2}, Delta: {:.12}",
-                ups, true_delta
+                "🔹 UPS: {:.2}, Avg Delta: {:.6}, Current Delta: {:.6}",
+                ups, avg_delta, true_delta
             );
             self.delta_accum = 0.0;
             self.true_updates = 0;
@@ -1263,16 +1340,17 @@ impl<P: ScriptProvider> Scene<P> {
                     #[cfg(feature = "profiling")]
                     let _span = tracing::span!(tracing::Level::INFO, "script_fixed_updates").entered();
                     
-                    // OPTIMIZED: Use cached script IDs, but collect to Vec to avoid borrow checker issues
+                    // OPTIMIZED: Rebuild cached_script_ids when dirty (update/fixed_update vectors are maintained incrementally)
                     if self.scripts_dirty {
                         self.cached_script_ids.clear();
                         self.cached_script_ids.extend(self.scripts.keys().copied());
                         self.scripts_dirty = false;
                     }
-                    // Collect to local Vec in a block to ensure borrow is released
-                    let script_ids: Vec<Uuid> = {
-                        self.cached_script_ids.iter().copied().collect()
-                    };
+                    
+                    // OPTIMIZED: Use pre-filtered vector of scripts with fixed_update
+                    // Collect script IDs to avoid borrow checker issues
+                    let script_ids: Vec<Uuid> = self.scripts_with_fixed_update.iter().copied().collect();
+                    
                     // Clone project reference before loop to avoid borrow conflicts
                     let project_ref = self.project.clone();
                     for id in script_ids {
@@ -1309,7 +1387,8 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         // Regular update - runs every frame
-        // OPTIMIZED: Use cached script IDs, only rebuild when scripts change
+        // OPTIMIZED: update/fixed_update vectors are maintained incrementally at insertion/removal time
+        // Only rebuild cached_script_ids when dirty (if not already done in fixed_update section)
         if self.scripts_dirty {
             self.cached_script_ids.clear();
             self.cached_script_ids.extend(self.scripts.keys().copied());
@@ -1317,10 +1396,9 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         {
-            // Collect to local Vec in a block to ensure borrow is released
-            let script_ids: Vec<Uuid> = {
-                self.cached_script_ids.iter().copied().collect()
-            };
+            // OPTIMIZED: Use pre-filtered vector of scripts with update
+            // Collect script IDs to avoid borrow checker issues
+            let script_ids: Vec<Uuid> = self.scripts_with_update.iter().copied().collect();
             
             // Early return if no scripts to update (avoids unnecessary work)
             if script_ids.is_empty() {
@@ -1380,7 +1458,8 @@ impl<P: ScriptProvider> Scene<P> {
         );
     }
 
-    fn queue_signal(&mut self, signal: u64, params: &[Value]) {
+    /// Emit signal deferred - queue for processing at end of frame
+    fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]) {
         // Convert slice to SmallVec for stack-allocated storage (≤3 params = no heap allocation)
         let mut smallvec = SmallVec::new();
         smallvec.extend(params.iter().cloned());
@@ -1396,26 +1475,41 @@ impl<P: ScriptProvider> Scene<P> {
         // Collect drained items first to release the borrow, then process
         let signals: Vec<_> = self.queued_signals.drain(..).collect();
         for (signal, params) in signals {
-            self.emit_signal(signal, params);
+            self.emit_signal_impl(signal, &params);
         }
     }
 
-    fn emit_signal(&mut self, signal: u64, params: SmallVec<[Value; 3]>) {
+    /// Emit signal instantly - zero allocation, direct function call
+    /// Params are passed as compile-time static slice, never stored
+    fn emit_signal_id(&mut self, signal: u64, params: &[Value]) {
+        self.emit_signal_impl(signal, params);
+    }
+
+    /// Internal implementation - emits signal immediately to all connected handlers
+    /// Params passed as slice reference - zero allocation when called from emit_signal_id
+    /// OPTIMIZED: Uses SmallVec for stack allocation when listener count is small
+    fn emit_signal_impl(&mut self, signal: u64, params: &[Value]) {
+        let start_time = Instant::now();
+        
         // Copy out listeners before mutable borrow
         let script_map_opt = self.signals.connections.get(&signal);
         if script_map_opt.is_none() {
             return;
         }
 
-        // Optimize: Collect (uuid, fn_id) pairs directly to avoid SmallVec clones
+        // OPTIMIZED: Use SmallVec with inline capacity of 4 listeners
+        // Most signals have 1-3 listeners, so this avoids heap allocation in common case
+        // For signals with >4 listeners, only allocates once
         let script_map = script_map_opt.unwrap();
-        let mut call_list: Vec<(Uuid, u64)> = Vec::new();
+        let mut call_list = SmallVec::<[(Uuid, u64); 4]>::new();
         for (uuid, fns) in script_map.iter() {
             for &fn_id in fns.iter() {
                 call_list.push((*uuid, fn_id));
             }
         }
 
+        let setup_time = start_time.elapsed();
+        
         // Now all borrows of self.signals are dropped ✅
         let now = Instant::now();
         let true_delta = self
@@ -1429,21 +1523,31 @@ impl<P: ScriptProvider> Scene<P> {
         // Safe mutable borrow of self again
         let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
 
-        // Emit to all registered scripts - convert SmallVec to slice (zero-cost, just a reference)
-        let params_slice: &[Value] = &params;
-        for (target_id, fn_id) in call_list {
-            api.call_function_id(target_id, fn_id, params_slice);
+        let call_start = Instant::now();
+        
+        // OPTIMIZED: Set context once and use fast-path calls
+        api.set_context();
+        
+        // OPTIMIZED: Use internal fast-path that skips redundant context operations
+        for (target_id, fn_id) in call_list.iter() {
+            api.call_function_id_fast(*target_id, *fn_id, params);
         }
+        
+        // Clear context once after all calls
+        ScriptApi::clear_context();
+        
+        let call_time = call_start.elapsed();
+        let total_time = start_time.elapsed();
+        
+        eprintln!("[SIGNAL TIMING - Scene] Signal ID: {} | Listeners: {} | Setup: {:?} | Calls: {:?} | Total: {:?}", 
+            signal, call_list.len(), setup_time, call_time, total_time);
     }
 
-    pub fn instantiate_script(ctor: CreateFn, node_id: Uuid) -> Rc<RefCell<Box<dyn ScriptObject>>> {
+    pub fn instantiate_script(ctor: CreateFn, node_id: Uuid) -> Box<dyn ScriptObject> {
         let raw = ctor();
         let mut boxed: Box<dyn ScriptObject> = unsafe { Box::from_raw(raw) };
-        boxed.set_node_id(node_id);
-
-        let handle: Rc<RefCell<Box<dyn ScriptObject>>> = Rc::new(RefCell::new(boxed));
-
-        handle
+        boxed.set_id(node_id);
+        boxed
     }
 
     pub fn add_node_to_scene(&mut self, mut node: SceneNode) -> anyhow::Result<()> {
@@ -1487,34 +1591,46 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         // node is moved already, so get it back immutably from scene
-        if let Some(node_ref) = self.data.nodes.get(&id) {
-            if let Some(script_path) = node_ref.get_script_path() {
-                println!("   ✅ Found script_path: {}", script_path);
+        let script_path_opt = self.data.nodes.get(&id)
+            .and_then(|node_ref| node_ref.get_script_path().map(|s| s.to_string()));
+        
+        if let Some(script_path) = script_path_opt {
+            println!("   ✅ Found script_path: {}", script_path);
 
-                let identifier = script_path_to_identifier(script_path)
-                    .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
-                let ctor = self.ctor(&identifier)?;
+            let identifier = script_path_to_identifier(&script_path)
+                .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
+            let ctor = self.ctor(&identifier)?;
 
-                // Create the script
-                let handle = self.instantiate_script(ctor, id);
-                self.scripts.insert(id, handle);
-                self.scripts_dirty = true;
-
-                // Initialize now that node exists
-                let project_ref = self.project.clone();
-                let mut project_borrow = project_ref.borrow_mut();
-
-                let now = Instant::now();
-                let true_delta = match self.last_scene_update {
-                    Some(prev) => now.duration_since(prev).as_secs_f32(),
-                    None => 0.0,
-                };
-
-                let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
-                api.call_init(id);
-
-                println!("   ✅ Script initialized");
+            // Create the script
+            let handle = self.instantiate_script(ctor, id);
+            
+            // Check flags and add to appropriate vectors
+            let flags = handle.script_flags();
+            
+            if flags.has_update() && !self.scripts_with_update.contains(&id) {
+                self.scripts_with_update.push(id);
             }
+            if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
+                self.scripts_with_fixed_update.push(id);
+            }
+            
+            self.scripts.insert(id, handle);
+            self.scripts_dirty = true;
+
+            // Initialize now that node exists
+            let project_ref = self.project.clone();
+            let mut project_borrow = project_ref.borrow_mut();
+
+            let now = Instant::now();
+            let true_delta = match self.last_scene_update {
+                Some(prev) => now.duration_since(prev).as_secs_f32(),
+                None => 0.0,
+            };
+
+            let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow);
+            api.call_init(id);
+
+            println!("   ✅ Script initialized");
         }
 
         Ok(())
@@ -1532,9 +1648,13 @@ impl<P: ScriptProvider> Scene<P> {
         // Remove from scene
         self.data.nodes.remove(&node_id);
 
-        // Remove scripts
-        self.scripts.remove(&node_id);
-        self.scripts_dirty = true;
+        // Remove scripts - actually delete them from scene
+        if self.scripts.remove(&node_id).is_some() {
+            // Remove from update/fixed_update vectors (actual deletion)
+            self.scripts_with_update.retain(|&script_id| script_id != node_id);
+            self.scripts_with_fixed_update.retain(|&script_id| script_id != node_id);
+            self.scripts_dirty = true;
+        }
     }
 
     /// Get the global transform for a node, calculating it lazily if dirty
@@ -1569,9 +1689,9 @@ impl<P: ScriptProvider> Scene<P> {
 
         // Need to recalculate - get parent's global transform (recursively)
         // If parent is not Node2D-based, use identity transform
-        let parent_global = if let Some(pid) = parent_id {
+        let parent_global = if !parent_id.is_nil() {
             // Try to get parent's global transform, but if parent is not Node2D-based, use identity
-            self.get_global_transform(pid).unwrap_or_else(|| {
+            self.get_global_transform(parent_id).unwrap_or_else(|| {
                 // Parent exists but is not Node2D-based (e.g., regular Node) - use identity transform
                 crate::structs2d::Transform2D::default()
             })
@@ -1660,7 +1780,19 @@ impl<P: ScriptProvider> Scene<P> {
             })
             .collect();
         
+        // Mark all collision shapes as dirty to force recalculation
+        // This ensures their global transforms are recalculated even if the dirty flag
+        // wasn't set (e.g., if parent moved but child wasn't marked dirty)
+        for node_id in &node_ids {
+            if let Some(node) = self.data.nodes.get_mut(node_id) {
+                if let Some(node2d) = node.as_node2d_mut() {
+                    node2d.transform_dirty = true;
+                }
+            }
+        }
+        
         // Get global transforms (requires mutable access)
+        // Now that we've marked them dirty, get_global_transform will recalculate
         let mut to_update: Vec<(Uuid, [f32; 2], f32)> = Vec::new();
         for node_id in node_ids {
             if let Some(global) = self.get_global_transform(node_id) {
@@ -1687,7 +1819,11 @@ impl<P: ScriptProvider> Scene<P> {
                 if let SceneNode::CollisionShape2D(collision_shape) = node {
                     // Only register if it has a shape defined
                     if let Some(shape) = collision_shape.shape {
-                        let parent_id = collision_shape.parent_id;
+                        let parent_id = if collision_shape.parent_id.is_nil() {
+                            None
+                        } else {
+                            Some(collision_shape.parent_id)
+                        };
                         to_register.push((node_id, shape, parent_id));
                     }
                 }
@@ -1773,13 +1909,22 @@ impl<P: ScriptProvider> Scene<P> {
         const PARALLEL_THRESHOLD: usize = 50;
 
         if self.data.nodes.len() >= PARALLEL_THRESHOLD {
+            // Note: IndexMap doesn't implement IntoParallelRefIterator, so we use regular iter
             self.data
                 .nodes
-                .par_iter()
+                .iter()
                 .filter_map(|(id, node)| {
                     // Include if dirty (for rendering changes)
+                    // OR if it's a Node2D with a dirty transform (needs recalculation)
                     if node.is_dirty() {
                         Some(*id)
+                    } else if let Some(node2d) = node.as_node2d() {
+                        // Include Node2D nodes with dirty transforms so they get recalculated and rendered
+                        if node2d.transform_dirty {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -1791,8 +1936,16 @@ impl<P: ScriptProvider> Scene<P> {
                 .iter()
                 .filter_map(|(id, node)| {
                     // Include if dirty (for rendering changes)
+                    // OR if it's a Node2D with a dirty transform (needs recalculation)
                     if node.is_dirty() {
                         Some(*id)
+                    } else if let Some(node2d) = node.as_node2d() {
+                        // Include Node2D nodes with dirty transforms so they get recalculated and rendered
+                        if node2d.transform_dirty {
+                            Some(*id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -1800,6 +1953,7 @@ impl<P: ScriptProvider> Scene<P> {
                 .collect()
         }
     }
+
 
     fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
         for node_id in dirty_nodes {
@@ -1817,6 +1971,8 @@ impl<P: ScriptProvider> Scene<P> {
             };
             
             if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                // Get timestamp from the borrowed node
+                let timestamp = node.get_created_timestamp();
                 match node {
                     //2D Nodes
                     SceneNode::Sprite2D(sprite) => {
@@ -1834,6 +1990,7 @@ impl<P: ScriptProvider> Scene<P> {
                                         global_transform,
                                         sprite.pivot,
                                         sprite.z_index,
+                                        timestamp,
                                     );
                                 }
                             }
@@ -1856,7 +2013,7 @@ impl<P: ScriptProvider> Scene<P> {
                                     let is_border = !shape.filled;
 
                                     match shape_type {
-                                        crate::nodes::_2d::shape_2d::ShapeType::Rectangle { width, height } => {
+                                        ShapeType2D::Rectangle { width, height } => {
                                             gfx.renderer_2d.queue_rect(
                                                 &mut gfx.renderer_prim,
                                                 node_id,
@@ -1868,9 +2025,10 @@ impl<P: ScriptProvider> Scene<P> {
                                                 border_thickness,
                                                 is_border,
                                                 z_index,
+                                                timestamp,
                                             );
                                         }
-                                        crate::nodes::_2d::shape_2d::ShapeType::Circle { radius } => {
+                                        ShapeType2D::Circle { radius } => {
                                             // For circles, render as a square with corner radius = radius
                                             let size = radius * 2.0;
                                             gfx.renderer_2d.queue_rect(
@@ -1889,6 +2047,38 @@ impl<P: ScriptProvider> Scene<P> {
                                                 border_thickness,
                                                 is_border,
                                                 z_index,
+                                                timestamp,
+                                            );
+                                        }
+                                        ShapeType2D::Square { size } => {
+                                            gfx.renderer_2d.queue_rect(
+                                                &mut gfx.renderer_prim,
+                                                node_id,
+                                                transform,
+                                                crate::Vector2::new(size, size),
+                                                pivot,
+                                                color,
+                                                None,
+                                                border_thickness,
+                                                is_border,
+                                                z_index,
+                                                timestamp,
+                                            );
+                                        }
+                                        ShapeType2D::Triangle { base, height } => {
+                                            // Triangles rendered as rectangles for now
+                                            gfx.renderer_2d.queue_rect(
+                                                &mut gfx.renderer_prim,
+                                                node_id,
+                                                transform,
+                                                crate::Vector2::new(base, height),
+                                                pivot,
+                                                color,
+                                                None,
+                                                border_thickness,
+                                                is_border,
+                                                z_index,
+                                                timestamp,
                                             );
                                         }
                                     }
@@ -1984,8 +2174,16 @@ impl<P: ScriptProvider> Scene<P> {
 //
 
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
-    fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
+    fn get_scene_node_ref(&self, id: Uuid) -> Option<&SceneNode> {
+        self.data.nodes.get(&id)
+    }
+    
+    fn get_scene_node_mut(&mut self, id: Uuid) -> Option<&mut SceneNode> {
         self.data.nodes.get_mut(&id)
+    }
+    
+    fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
+        self.get_scene_node_mut(id)
     }
 
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
@@ -1996,20 +2194,23 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         &mut self,
         ctor: CreateFn,
         node_id: Uuid,
-    ) -> Rc<RefCell<Box<dyn ScriptObject>>> {
+    ) -> Box<dyn ScriptObject> {
         Self::instantiate_script(ctor, node_id)
+    }
+
+    fn add_node_to_scene(&mut self, node: SceneNode) -> anyhow::Result<()> {
+        self.add_node_to_scene(node)
     }
 
     fn merge_nodes(&mut self, nodes: &[SceneNode]) {
         // Process nodes and mark them dirty immediately
-        // Optimize: Get ID from reference first, only clone when we need to insert/update
         for node in nodes {
             let id = node.get_id(); // Get ID without cloning
             
-            if let Some(existing_node) = self.data.nodes.get_mut(&id) {
-                // Node exists: mark dirty and replace (need to clone for replacement)
-                existing_node.mark_dirty();
-                *existing_node = node.clone();
+            if let Some(existing) = self.data.nodes.get_mut(&id) {
+                // Node exists: mark dirty and replace
+                existing.mark_dirty();
+                *existing = node.clone();
             } else {
                 // Node doesn't exist: clone and insert
                 let mut new_node = node.clone();
@@ -2036,12 +2237,36 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.connect_signal(signal, target_id, function);
     }
 
-    fn queue_signal_id(&mut self, signal: u64, params: &[Value]) {
-        self.queue_signal(signal, params);
+    fn get_signal_connections(&self, signal: u64) -> Option<&HashMap<Uuid, SmallVec<[u64; 4]>>> {
+        self.signals.connections.get(&signal)
     }
 
-    fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>> {
-        self.scripts.get(&id).cloned()
+    fn emit_signal_id(&mut self, signal: u64, params: &[Value]) {
+        self.emit_signal_id(signal, params);
+    }
+
+    fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]) {
+        self.emit_signal_id_deferred(signal, params);
+    }
+
+    fn get_script(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>> {
+        self.scripts.get_mut(&id)
+    }
+    
+    fn get_script_mut(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>> {
+        self.scripts.get_mut(&id)
+    }
+    
+    fn take_script(&mut self, id: Uuid) -> Option<Box<dyn ScriptObject>> {
+        // Just remove from HashMap, DON'T modify the filtered vectors
+        // This is used for temporary borrowing during update calls
+        self.scripts.remove(&id)
+    }
+    
+    fn insert_script(&mut self, id: Uuid, script: Box<dyn ScriptObject>) {
+        // Just insert into HashMap, DON'T modify the filtered vectors
+        // This is used for temporary put-back during update calls
+        self.scripts.insert(id, script);
     }
 
     // NEW method implementation
@@ -2067,6 +2292,10 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
 
     fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()> {
         Self::set_global_transform(self, node_id, transform)
+    }
+
+    fn mark_transform_dirty_recursive(&mut self, node_id: Uuid) {
+        Self::mark_transform_dirty_recursive(self, node_id)
     }
 }
 
@@ -2127,7 +2356,7 @@ impl Scene<DllScriptProvider> {
         let provider = DllScriptProvider::new(Some(lib));
 
         // Borrow project briefly to clone root_path & name
-        let root = {
+        let _root = {
             let project_ref = project.borrow();
 
             let root_path = project_ref
@@ -2156,7 +2385,7 @@ impl Scene<DllScriptProvider> {
         // For now, we'll skip it on Windows to avoid access violations
         #[cfg(not(windows))]
         {
-            if let Err(e) = provider.inject_project_root(&root) {
+            if let Err(e) = provider.inject_project_root(&_root) {
                 eprintln!("⚠ Warning: Failed to inject project root into DLL (this is usually okay): {}", e);
             }
         }

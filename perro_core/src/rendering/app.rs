@@ -228,7 +228,6 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    #[inline]
     fn process_commands(&mut self, gfx: &Graphics) {
         for cmd in self.command_rx.try_iter() {
             match cmd {
@@ -249,7 +248,6 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    #[inline]
     fn calculate_frame_debt(&mut self, now: std::time::Instant) {
         let elapsed = (now - self.start_time).as_secs_f64();
         let target_frames = elapsed * self.target_fps as f64;
@@ -258,13 +256,11 @@ impl<P: ScriptProvider> App<P> {
         self.frame_debt = frame_debt;
     }
 
-    #[inline]
     fn should_render_frame(&self) -> bool {
         // Frame pacing: only render when we're behind by at least half a frame
         self.first_frame || self.frame_debt >= 0.5
     }
 
-    #[inline]
     fn update_fps_measurement(&mut self, now: std::time::Instant) {
         let measurement_interval = (now - self.fps_measurement_start).as_secs_f32();
         if measurement_interval >= FPS_MEASUREMENT_INTERVAL {
@@ -276,7 +272,6 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    #[inline(always)]
     fn process_game(&mut self) {
         #[cfg(feature = "profiling")]
         let _span = tracing::span!(tracing::Level::INFO, "process_game").entered();
@@ -329,7 +324,7 @@ impl<P: ScriptProvider> App<P> {
             self.should_render_frame()
         };
         
-        let did_render = if should_render {
+        if should_render {
             {
                 #[cfg(feature = "profiling")]
                 let _span = tracing::span!(tracing::Level::INFO, "render_frame").entered();
@@ -347,24 +342,16 @@ impl<P: ScriptProvider> App<P> {
                 let _span = tracing::span!(tracing::Level::INFO, "update_fps_measurement").entered();
                 self.update_fps_measurement(now);
             }
-            true
-        } else {
-            false
-        };
+        }
 
         // 4. Request next frame (this drives the uncapped update loop)
-        // OPTIMIZED: Only request redraw if window is visible and we have work to do
-        // This reduces unnecessary wake-ups when window is minimized or hidden
-        if gfx.window().is_visible().unwrap_or(true) || did_render {
-            gfx.window().request_redraw();
-        }
+        gfx.window().request_redraw();
 
         // OPTIMIZED: Use put_graphics() helper
         self.state.put_graphics(gfx);
     }
 
     /// Render a single frame (only called when frame pacing allows)
-    #[inline]
     fn render_frame(&mut self, gfx: &mut Graphics) {
         // Update scene render data (queues rendering commands)
         {
@@ -425,7 +412,6 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    #[inline(always)]
     fn resized(&mut self, size: PhysicalSize<u32>) {
         if let State::Ready(gfx) = &mut self.state {
             gfx.resize(size);

@@ -37,7 +37,7 @@ pub trait BaseNode: Any + Debug + Send {
     fn get_name(&self) -> &str;
     fn set_name(&mut self, name: String);
     fn get_is_root_of(&self) -> Option<&str>;
-    fn get_parent(&self) -> Option<Uuid>;
+    fn get_parent(&self) -> Uuid;
 
     /// Returns a reference to the children list.
     /// If the node has `None` for its children field, this returns an empty slice.
@@ -93,11 +93,22 @@ pub trait BaseNode: Any + Debug + Send {
     fn mark_transform_dirty_if_node2d(&mut self) {
         // Default implementation does nothing - only Node2D nodes override this
     }
+
+    /// Get the creation timestamp (Unix time in seconds as u64)
+    /// Used for tie-breaking when z_index values are the same (newer nodes render above older)
+    fn get_created_timestamp(&self) -> u64;
 }
 
 /// Used to unwrap `SceneNode` variants back into their concrete types.
 pub trait IntoInner<T> {
     fn into_inner(self) -> T;
+}
+
+/// Trait for converting a concrete node type into a SceneNode enum
+/// This is implemented automatically for all node types via the define_nodes! macro
+/// Note: SceneNode must be defined before this trait (it's defined in the macro)
+pub trait ToSceneNode {
+    fn to_scene_node(self) -> SceneNode;
 }
 
 /// Common macro implementing `BaseNode` for each concrete node type.
@@ -128,7 +139,7 @@ macro_rules! impl_scene_node {
             fn get_is_root_of(&self) -> Option<&str> {
                 self.is_root_of.as_deref()
             }
-            fn get_parent(&self) -> Option<uuid::Uuid> {
+            fn get_parent(&self) -> uuid::Uuid {
                 self.parent_id
             }
 
@@ -150,7 +161,7 @@ macro_rules! impl_scene_node {
             }
 
             fn set_parent(&mut self, p: Option<uuid::Uuid>) {
-                self.parent_id = p;
+                self.parent_id = p.unwrap_or(uuid::Uuid::nil());
             }
 
             fn add_child(&mut self, c: uuid::Uuid) {
@@ -205,11 +216,23 @@ macro_rules! impl_scene_node {
             fn needs_internal_fixed_update(&self) -> bool {
                 $needs_internal
             }
+
+            fn get_created_timestamp(&self) -> u64 {
+                // Access created_timestamp directly (works for Node and Node2D types via Deref)
+                // Same pattern as get_id() and get_name() - they access directly, not through base
+                self.created_timestamp
+            }
         }
 
         impl $ty {
             /// Converts this specific node into a generic `SceneNode` enum variant.
             pub fn to_scene_node(self) -> crate::nodes::node_registry::SceneNode {
+                crate::nodes::node_registry::SceneNode::$variant(self)
+            }
+        }
+        
+        impl crate::nodes::node_registry::ToSceneNode for $ty {
+            fn to_scene_node(self) -> crate::nodes::node_registry::SceneNode {
                 crate::nodes::node_registry::SceneNode::$variant(self)
             }
         }
@@ -308,7 +331,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_is_root_of(), )+ }
             }
 
-            fn get_parent(&self) -> Option<uuid::Uuid> {
+            fn get_parent(&self) -> uuid::Uuid {
                 match self { $( SceneNode::$variant(n) => n.get_parent(), )+ }
             }
 
@@ -387,6 +410,12 @@ macro_rules! define_nodes {
             fn mark_transform_dirty_if_node2d(&mut self) {
                 if let Some(node2d) = self.as_node2d_mut() {
                     node2d.transform_dirty = true;
+                }
+            }
+
+            fn get_created_timestamp(&self) -> u64 {
+                match self {
+                    $( SceneNode::$variant(n) => n.get_created_timestamp(), )+
                 }
             }
         }

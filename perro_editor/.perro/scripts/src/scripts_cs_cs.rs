@@ -40,9 +40,9 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsCsCsScript {
-    base: Node2D,
-    speed: f32,
-    health: i32,
+    id: Uuid,
+    t_var_speed: f32,
+    t_var_health: i32,
 }
 
 // ========================================================================
@@ -51,14 +51,14 @@ pub struct ScriptsCsCsScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
-    let base = Node2D::new("ScriptsCsCs");
+    let id = Uuid::nil(); // Will be set when attached to node
     let speed = 0.0f32;
     let health = 0i32;
 
     Box::into_raw(Box::new(ScriptsCsCsScript {
-        base,
-        speed,
-        health,
+        id,
+        t_var_speed,
+        t_var_health,
     })) as *mut dyn ScriptObject
 }
 
@@ -68,12 +68,12 @@ pub extern "C" fn scripts_cs_cs_create_script() -> *mut dyn ScriptObject {
 
 impl Script for ScriptsCsCsScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        self.speed = 10.0f32;
+        self.t_var_speed = 10.0f32;
         api.print("Player initialized!");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.TakeDamage(24i32, api, false);
+        self.TakeDamage(24i32, api);
     }
 
 }
@@ -83,8 +83,8 @@ impl Script for ScriptsCsCsScript {
 // ========================================================================
 
 impl ScriptsCsCsScript {
-    fn TakeDamage(&mut self, mut amount: i32, api: &mut ScriptApi<'_>, external_call: bool) {
-        self.health -= amount;
+    fn TakeDamage(&mut self, mut amount: i32, api: &mut ScriptApi<'_>) {
+        self.health -= t_var_amount;
         api.print("Took damage!");
     }
 
@@ -92,12 +92,12 @@ impl ScriptsCsCsScript {
 
 
 impl ScriptObject for ScriptsCsCsScript {
-    fn set_node_id(&mut self, id: Uuid) {
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 
-    fn get_node_id(&self) -> Uuid {
-        self.base.id
+    fn get_id(&self) -> Uuid {
+        self.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -149,6 +149,10 @@ impl ScriptObject for ScriptsCsCsScript {
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
     }
+    
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(3)
+    }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
@@ -193,10 +197,10 @@ static DISPATCH_TABLE: phf::Map<
     fn(&mut ScriptsCsCsScript, &[Value], &mut ScriptApi<'_>),
 > = phf::phf_map! {
         1329396982928406835u64 => | script: &mut ScriptsCsCsScript, params: &[Value], api: &mut ScriptApi<'_>| {
-let amount = params.get(0)
+let t_var_amount = params.get(0)
                             .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
                             .unwrap_or_default() as i32;
-            script.TakeDamage(amount, api, true);
+            script.TakeDamage(t_var_amount, api);
         },
 
     };

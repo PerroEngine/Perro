@@ -62,8 +62,18 @@ impl Variable {
             ),
             "Vec" | "Array" | "array" => Type::Container(ContainerKind::Array, vec![Type::Object]),
 
-            // Everything else
-            name => Type::Custom(name.to_string()),
+            // Check engine registry for node types
+            name => {
+                use crate::structs::engine_registry::ENGINE_REGISTRY;
+                // Check if it's a node type in the engine registry
+                if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
+                    format!("{:?}", nt) == name
+                }) {
+                    Type::Node(node_type.clone())
+                } else {
+                    Type::Custom(name.to_string())
+                }
+            }
         }
     }
 
@@ -96,7 +106,9 @@ impl Variable {
             }
             Type::Number(NumberKind::BigInt) => ("as_str", format!(".parse::<BigInt>().unwrap()")),
             Type::Bool => ("as_bool", "".into()),
-            Type::String | Type::StrRef => ("as_str", ".to_string()".into()),
+            Type::String | Type::StrRef | Type::CowStr => ("as_str", ".to_string()".into()),
+            Type::Uuid => ("as_str", ".to_string()".into()), // UUIDs are serialized as strings
+            Type::Option(_) => ("as_str", ".to_string()".into()), // Options are handled specially
             Type::Custom(type_name) if type_name == "Signal" => ("as_u64", format!(" as u64")),
 
             // Containers
@@ -176,7 +188,7 @@ impl Variable {
             }
             Type::Object => ("as_object", ".clone().into()".into()),
 
-            Type::Script => ("as_str", ".parse().unwrap()".into()),
+            Type::Signal => ("as_u64", "".into()),
             Type::Custom(type_name) => ("__CUSTOM__", type_name.clone()),
             Type::Void => panic!("Void invalid"),
             Type::Node(node_type) => ("__NODE__", "NodeType".to_owned()),
@@ -232,7 +244,10 @@ pub enum Type {
     Bool,
     String,
     StrRef,
-    Script,
+    CowStr, // Cow<'static, str> - for node name and other borrowed strings
+    Uuid, // uuid::Uuid
+    Option(Box<Type>), // Option<T>
+    Signal, // u64 - signal ID type
     Void,
 
     Container(ContainerKind, Vec<Type>),
@@ -275,6 +290,9 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
+            Type::CowStr => "std::borrow::Cow<'static, str>".to_string(),
+            Type::Uuid => "Uuid".to_string(),
+            Type::Option(inner) => format!("Option<{}>", inner.to_rust_type()),
 
             // ---- Containers ----
             Type::Container(ContainerKind::Map, params) => {
@@ -310,11 +328,13 @@ impl Type {
             // ---- "Object" (serde_json::Value) ----
             Type::Object => "Value".to_string(),
 
-            Type::Script => "Option<ScriptType>".to_string(),
-            Type::Custom(name) if name == "Signal" => "u64".to_string(),
+            Type::Signal => "u64".to_string(),
             Type::Custom(name) => name.clone(),
+            Type::Node(_) => "Uuid".to_string(), // Nodes are now Uuid IDs
+            Type::EngineStruct(es) => {
+                format!("{:?}", es)
+            },
             Type::Void => "()".to_string(),
-            _ => "".to_string(),
         }
     }
 
@@ -332,9 +352,12 @@ impl Type {
             Type::Number(NumberKind::BigInt) => "BigInt::from_str(\"0\").unwrap()".to_string(),
 
             Type::Bool => "false".into(),
-            Type::Script => "None".into(),
+            Type::Signal => "0u64".into(),
             Type::String => "String::new()".into(),
             Type::StrRef => "\"\"".into(),
+            Type::CowStr => "std::borrow::Cow::Borrowed(\"\")".into(),
+            Type::Uuid => "Uuid::nil()".into(),
+            Type::Option(_) => "None".into(),
 
             Type::Object => "json!({})".into(),
 
@@ -348,8 +371,16 @@ impl Type {
                 format!("[{}; {}]", elem_val, size)
             }
 
-            Type::Custom(_) | Type::EngineStruct(_) | Type::Node(_) => {
+            Type::Custom(_) => {
                 "Default::default()".to_string()
+            }
+            Type::EngineStruct(es) => {
+                // Engine structs implement Default, so use that
+                format!("{}::default()", format!("{:?}", es))
+            }
+            Type::Node(_) => {
+                // Nodes are Uuid IDs, use nil since it will be set later
+                "Uuid::nil()".to_string()
             }
             Type::Void => panic!("Cannot make default for void"),
         }
@@ -382,6 +413,18 @@ impl Type {
             // float → Decimal
             (Type::Number(Float(_)), Type::Number(Decimal)) => true,
 
+            // String type conversions
+            // String -> CowStr (owned string can become Cow::Owned)
+            (Type::String, Type::CowStr) => true,
+            // StrRef -> CowStr (borrowed string can become Cow::Borrowed)
+            (Type::StrRef, Type::CowStr) => true,
+            // CowStr -> String (Cow can be converted to owned String)
+            (Type::CowStr, Type::String) => true,
+            // Node types all convert to Uuid (they are Uuid IDs)
+            (Type::Node(_), Type::Uuid) => true,
+            // Uuid can be treated as any Node type (for type checking)
+            (Type::Uuid, Type::Node(_)) => true,
+
             _ => false,
         }
     }
@@ -393,6 +436,8 @@ impl Type {
         match self {
             // all numeric primitives are Copy
             Number(Signed(_)) | Number(Unsigned(_)) | Number(Float(_)) | Bool => true,
+            // Uuid is also Copy
+            Uuid => true,
             _ => false,
         }
     }

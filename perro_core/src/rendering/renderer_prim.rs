@@ -122,19 +122,19 @@ pub struct PrimitiveRenderer {
     font_bind_group: Option<wgpu::BindGroup>,
 
     // Optimized rect storage
-    rect_instance_slots: Vec<Option<(RenderLayer, RectInstance)>>,
+    rect_instance_slots: Vec<Option<(RenderLayer, RectInstance, u64)>>, // Added timestamp for sorting
     rect_uuid_to_slot: FxHashMap<uuid::Uuid, usize>,
     free_rect_slots: SmallVec<[usize; 16]>,
     rect_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Optimized texture storage
-    texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String)>>,
+    texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String, Vector2, u64)>>, // Added texture size and timestamp for sorting
     texture_uuid_to_slot: FxHashMap<uuid::Uuid, usize>,
     free_texture_slots: SmallVec<[usize; 16]>,
     texture_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Text storage (less critical to optimize since text changes more frequently)
-    cached_text: FxHashMap<uuid::Uuid, (RenderLayer, Vec<FontInstance>)>,
+    cached_text: FxHashMap<uuid::Uuid, (RenderLayer, Vec<FontInstance>, u64)>, // Added timestamp for sorting
 
     // Rendered instances (built from slots when needed)
     world_rect_instances: Vec<RectInstance>,
@@ -371,6 +371,90 @@ impl PrimitiveRenderer {
             || max_y < viewport_min_y
             || min_y > viewport_max_y
     }
+    
+    /// Extract Transform2D from TextureInstance matrix
+    fn texture_instance_to_transform(instance: &TextureInstance) -> Transform2D {
+        // Extract transform from matrix (column-major order)
+        let m = [
+            instance.transform_0[0], instance.transform_1[0], instance.transform_2[0], instance.transform_3[0],
+            instance.transform_0[1], instance.transform_1[1], instance.transform_2[1], instance.transform_3[1],
+            instance.transform_0[2], instance.transform_1[2], instance.transform_2[2], instance.transform_3[2],
+            instance.transform_0[3], instance.transform_1[3], instance.transform_2[3], instance.transform_3[3],
+        ];
+        let mat = glam::Mat4::from_cols_array(&m);
+        
+        // Extract position (translation is in the last column)
+        let position = Vector2::new(mat.w_axis.x, mat.w_axis.y);
+        
+        // Extract rotation from the 2x2 rotation/scale matrix
+        let scale_x = Vector2::new(mat.x_axis.x, mat.x_axis.y).length();
+        let scale_y = Vector2::new(mat.y_axis.x, mat.y_axis.y).length();
+        let scale = Vector2::new(scale_x, scale_y);
+        
+        // Extract rotation (atan2 of first column normalized)
+        let rotation = (mat.x_axis.y / scale_x).atan2(mat.x_axis.x / scale_x);
+        
+        Transform2D { position, rotation, scale }
+    }
+    
+    /// Calculate axis-aligned bounding box (AABB) for an object with given transform and size
+    fn calculate_aabb(transform: &Transform2D, size: &Vector2) -> (f32, f32, f32, f32) {
+        // Calculate scaled size
+        let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
+        let half_w = scaled_size.x * 0.5;
+        let half_h = scaled_size.y * 0.5;
+        
+        // For simplicity, use axis-aligned bounding box (ignoring rotation for now)
+        // This is a conservative approximation - if rotation is significant, the AABB will be larger
+        let min_x = transform.position.x - half_w;
+        let max_x = transform.position.x + half_w;
+        let min_y = transform.position.y - half_h;
+        let max_y = transform.position.y + half_h;
+        
+        (min_x, min_y, max_x, max_y)
+    }
+    
+    /// Check if AABB a completely contains AABB b
+    fn aabb_contains(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
+        // a contains b if a's bounds completely enclose b's bounds
+        a.0 <= b.0 && a.1 <= b.1 && a.2 >= b.2 && a.3 >= b.3
+    }
+    
+    /// Check if a visual object is occluded by any texture instances with higher z_index
+    /// Returns (is_occluded, occluder_info) where occluder_info is for debug printing
+    fn is_visual_occluded_by_textures(
+        &self,
+        visual_transform: &Transform2D,
+        visual_size: &Vector2,
+        visual_z_index: i32,
+        visual_type: &str,
+    ) -> (bool, Option<String>) {
+        let visual_aabb = Self::calculate_aabb(visual_transform, visual_size);
+        
+        // Check against all texture instances with higher z_index
+        for slot in &self.texture_instance_slots {
+            if let Some((layer, texture_instance, texture_path, _texture_size, _timestamp)) = slot {
+                // Only check World2D layer textures
+                if *layer == RenderLayer::World2D && texture_instance.z_index > visual_z_index {
+                    // Extract transform from texture instance (scale already includes texture size)
+                    let texture_transform = Self::texture_instance_to_transform(texture_instance);
+                    // Use the scale from the transform as the size (it already includes texture size)
+                    let texture_size = texture_transform.scale;
+                    let texture_aabb = Self::calculate_aabb(&texture_transform, &texture_size);
+                    
+                    if Self::aabb_contains(texture_aabb, visual_aabb) {
+                        let occluder_info = format!(
+                            "{} (z={}) occluded by sprite '{}' (z={})",
+                            visual_type, visual_z_index, texture_path, texture_instance.z_index
+                        );
+                        return (true, Some(occluder_info));
+                    }
+                }
+            }
+        }
+        
+        (false, None)
+    }
 
     pub fn queue_rect(
         &mut self,
@@ -384,6 +468,7 @@ impl PrimitiveRenderer {
         border_thickness: f32,
         is_border: bool,
         z_index: i32,
+        created_timestamp: u64,
     ) {
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&transform, &size) {
@@ -402,6 +487,25 @@ impl PrimitiveRenderer {
             return; // Don't queue offscreen sprites
         }
         
+        // OPTIMIZED: Occlusion culling - skip shapes that are completely covered by sprites with higher z_index
+        if layer == RenderLayer::World2D {
+            let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &size, z_index, "shape");
+            if is_occluded {
+                // Remove from slots if it exists (shape is occluded)
+                if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+                    if let Some(_existing) = &mut self.rect_instance_slots[slot] {
+                        self.rect_instance_slots[slot] = None;
+                        self.free_rect_slots.push(slot);
+                        self.rect_uuid_to_slot.remove(&uuid);
+                        self.mark_rect_slot_dirty(slot);
+                        self.dirty_count += 1;
+                        self.instances_need_rebuild = true;
+                    }
+                }
+                return; // Don't queue occluded shapes
+            }
+        }
+        
         let new_instance = self.create_rect_instance(
             transform,
             size,
@@ -411,6 +515,7 @@ impl PrimitiveRenderer {
             border_thickness,
             is_border,
             z_index,
+            created_timestamp,
         );
 
         // Check if this rect already exists
@@ -420,6 +525,7 @@ impl PrimitiveRenderer {
                 if existing.0 != layer || existing.1 != new_instance {
                     existing.0 = layer;
                     existing.1 = new_instance;
+                    // Keep existing timestamp
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -435,7 +541,7 @@ impl PrimitiveRenderer {
                 new_slot
             };
 
-            self.rect_instance_slots[slot] = Some((layer, new_instance));
+            self.rect_instance_slots[slot] = Some((layer, new_instance, created_timestamp));
             self.rect_uuid_to_slot.insert(uuid, slot);
             self.mark_rect_slot_dirty(slot);
             self.dirty_count += 1;
@@ -451,6 +557,7 @@ impl PrimitiveRenderer {
         transform: Transform2D,
         pivot: Vector2,
         z_index: i32,
+        created_timestamp: u64,
         texture_manager: &mut crate::rendering::TextureManager,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -473,7 +580,7 @@ impl PrimitiveRenderer {
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size) {
             // Remove from slots if it exists (sprite moved offscreen)
             if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
-                if let Some(existing) = &mut self.texture_instance_slots[slot] {
+                if let Some(_existing) = &mut self.texture_instance_slots[slot] {
                     // Mark as removed by setting to None
                     self.texture_instance_slots[slot] = None;
                     self.free_texture_slots.push(slot);
@@ -485,8 +592,27 @@ impl PrimitiveRenderer {
             }
             return; // Don't queue offscreen sprites
         }
+        
+        // OPTIMIZED: Occlusion culling - skip sprites that are completely covered by other sprites with higher z_index
+        if layer == RenderLayer::World2D {
+            let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &tex_size, z_index, "sprite");
+            if is_occluded {
+                // Remove from slots if it exists (sprite is occluded)
+                if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+                    if let Some(_existing) = &mut self.texture_instance_slots[slot] {
+                        self.texture_instance_slots[slot] = None;
+                        self.free_texture_slots.push(slot);
+                        self.texture_uuid_to_slot.remove(&uuid);
+                        self.mark_texture_slot_dirty(slot);
+                        self.dirty_count += 1;
+                        self.instances_need_rebuild = true;
+                    }
+                }
+                return; // Don't queue occluded sprites
+            }
+        }
 
-        let new_instance = self.create_texture_instance(adjusted_transform, pivot, z_index);
+        let new_instance = self.create_texture_instance(adjusted_transform, pivot, z_index, created_timestamp);
         let texture_path = texture_path.to_string();
 
         // The rest stays exactly the same
@@ -505,6 +631,8 @@ impl PrimitiveRenderer {
                     existing.0 = layer;
                     existing.1 = new_instance;
                     existing.2 = texture_path;
+                    existing.3 = tex_size; // Update texture size
+                    // Keep existing timestamp (existing.4)
                     self.mark_texture_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -519,7 +647,7 @@ impl PrimitiveRenderer {
                 new_slot
             };
 
-            self.texture_instance_slots[slot] = Some((layer, new_instance, texture_path));
+            self.texture_instance_slots[slot] = Some((layer, new_instance, texture_path, tex_size, created_timestamp));
             self.texture_uuid_to_slot.insert(uuid, slot);
             self.mark_texture_slot_dirty(slot);
             self.dirty_count += 1;
@@ -537,7 +665,26 @@ impl PrimitiveRenderer {
         _pivot: Vector2,
         color: crate::structs::Color,
         z_index: i32,
+        created_timestamp: u64,
     ) {
+        // OPTIMIZED: Occlusion culling for text - estimate text size and check occlusion
+        if layer == RenderLayer::World2D {
+            // Estimate text bounding box (rough approximation)
+            // Average character width is about 0.6 * font_size, height is font_size
+            let estimated_width = text.len() as f32 * font_size * 0.6;
+            let estimated_height = font_size;
+            let text_size = Vector2::new(estimated_width, estimated_height);
+            
+            let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &text_size, z_index, "text");
+            if is_occluded {
+                // Remove from text cache if it exists
+                if self.cached_text.remove(&uuid).is_some() {
+                    self.text_instances_need_rebuild = true;
+                }
+                return; // Don't queue occluded text
+            }
+        }
+        
         if let Some(ref atlas) = self.font_atlas {
             let mut cursor_x = transform.position.x;
             let baseline_y = transform.position.y;
@@ -608,7 +755,7 @@ impl PrimitiveRenderer {
             };
 
             if needs_update {
-                self.cached_text.insert(uuid, (layer, instances));
+                self.cached_text.insert(uuid, (layer, instances, created_timestamp));
                 self.text_instances_need_rebuild = true;
             }
         }
@@ -907,6 +1054,7 @@ impl PrimitiveRenderer {
         border_thickness: f32,
         is_border: bool,
         z_index: i32,
+        created_timestamp: u64,
     ) -> RectInstance {
         fn srgb_to_linear(c: f32) -> f32 {
             if c <= 0.04045 {
@@ -989,6 +1137,7 @@ impl PrimitiveRenderer {
         transform: Transform2D,
         pivot: Vector2,
         z_index: i32,
+        created_timestamp: u64,
     ) -> TextureInstance {
         let transform_array = transform.to_mat4().to_cols_array();
         TextureInstance {
@@ -1028,24 +1177,30 @@ impl PrimitiveRenderer {
         self.world_rect_instances.clear();
         self.ui_rect_instances.clear();
 
+        // Collect instances with their timestamps for sorting
+        let mut world_with_ts: Vec<(RectInstance, u64)> = Vec::new();
+        let mut ui_with_ts: Vec<(RectInstance, u64)> = Vec::new();
+        
         for slot in &self.rect_instance_slots {
-            if let Some((layer, instance)) = slot {
+            if let Some((layer, instance, timestamp)) = slot {
                 match layer {
-                    RenderLayer::World2D => self.world_rect_instances.push(*instance),
-                    RenderLayer::UI => self.ui_rect_instances.push(*instance),
+                    RenderLayer::World2D => world_with_ts.push((*instance, *timestamp)),
+                    RenderLayer::UI => ui_with_ts.push((*instance, *timestamp)),
                 }
             }
         }
 
-        // OPTIMIZED: Only sort if more than one instance
-        if self.world_rect_instances.len() > 1 {
-            self.world_rect_instances
-                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        // Sort by z_index first, then by timestamp (newer nodes render above older when z_index is same)
+        if world_with_ts.len() > 1 {
+            world_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
         }
-        if self.ui_rect_instances.len() > 1 {
-            self.ui_rect_instances
-                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        if ui_with_ts.len() > 1 {
+            ui_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
         }
+        
+        // Extract just the instances after sorting
+        self.world_rect_instances = world_with_ts.into_iter().map(|(inst, _)| inst).collect();
+        self.ui_rect_instances = ui_with_ts.into_iter().map(|(inst, _)| inst).collect();
 
         self.rebuild_texture_groups_by_layer();
         self.upload_instances_to_gpu(queue);
@@ -1059,26 +1214,30 @@ impl PrimitiveRenderer {
         self.world_text_instances.clear();
         self.ui_text_instances.clear();
 
-        for (layer, instances) in self.cached_text.values() {
+        let mut world_with_ts: Vec<(FontInstance, u64)> = Vec::new();
+        let mut ui_with_ts: Vec<(FontInstance, u64)> = Vec::new();
+        
+        for (layer, instances, timestamp) in self.cached_text.values() {
             match layer {
                 RenderLayer::World2D => {
-                    self.world_text_instances.extend(instances.iter().cloned());
+                    world_with_ts.extend(instances.iter().map(|inst| (*inst, *timestamp)));
                 }
                 RenderLayer::UI => {
-                    self.ui_text_instances.extend(instances.iter().cloned());
+                    ui_with_ts.extend(instances.iter().map(|inst| (*inst, *timestamp)));
                 }
             }
         }
 
-        // OPTIMIZED: Only sort if more than one instance
-        if self.world_text_instances.len() > 1 {
-            self.world_text_instances
-                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        // Sort by z_index first, then by timestamp (newer nodes render above older when z_index is same)
+        if world_with_ts.len() > 1 {
+            world_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
         }
-        if self.ui_text_instances.len() > 1 {
-            self.ui_text_instances
-                .sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        if ui_with_ts.len() > 1 {
+            ui_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
         }
+        
+        self.world_text_instances = world_with_ts.into_iter().map(|(inst, _)| inst).collect();
+        self.ui_text_instances = ui_with_ts.into_iter().map(|(inst, _)| inst).collect();
 
         self.temp_all_font_instances.clear();
         self.temp_all_font_instances
@@ -1109,7 +1268,7 @@ impl PrimitiveRenderer {
         let mut ui_texture_map: FxHashMap<String, Vec<TextureInstance>> = FxHashMap::default();
 
         for slot in &self.texture_instance_slots {
-            if let Some((layer, instance, texture_path)) = slot {
+            if let Some((layer, instance, texture_path, _tex_size, _timestamp)) = slot {
                 match layer {
                     RenderLayer::World2D => {
                         self.temp_texture_map
@@ -1230,6 +1389,8 @@ impl PrimitiveRenderer {
                 let z_a = a.1.first().map(|c| c.z_index).unwrap_or(0);
                 let z_b = b.1.first().map(|c| c.z_index).unwrap_or(0);
                 z_a.cmp(&z_b)
+                // Note: Timestamp sorting for texture groups would require storing timestamps separately
+                // For now, just sort by z_index within groups
             });
         }
 
@@ -1240,6 +1401,7 @@ impl PrimitiveRenderer {
         
         for (path, mut instances) in temp_sorted_groups.drain(..) {
             // OPTIMIZED: Only sort if more than one instance (no-op for single instance)
+            // Sort by z_index (timestamp sorting handled at higher level for texture groups)
             if instances.len() > 1 {
                 instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
             }

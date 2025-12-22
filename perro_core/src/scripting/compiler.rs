@@ -193,6 +193,7 @@ impl Compiler {
     fn find_parent_workspace_target_dir(&self) -> Option<PathBuf> {
         // The manifest is at: perro_editor\.perro\project\Cargo.toml or .perro\scripts\Cargo.toml
         // Start from .perro (parent of scripts/project) and walk up from there
+        // IMPORTANT: Skip any .perro subdirectories (like .perro/project) as they are not the root workspace
 
         let manifest_dir = self.crate_manifest_path.parent()?; // .perro/scripts or .perro/project
         let perro_dir = manifest_dir.parent()?; // .perro
@@ -210,6 +211,18 @@ impl Compiler {
             } else {
                 // Hit filesystem root
                 break;
+            }
+
+            // Skip if we're still inside a .perro directory (like .perro/project)
+            // Check if any component of the path is ".perro"
+            if current.components().any(|c| {
+                if let std::path::Component::Normal(name) = c {
+                    name == ".perro"
+                } else {
+                    false
+                }
+            }) {
+                continue;
             }
 
             // Look for Cargo.toml that defines a workspace
@@ -1758,14 +1771,22 @@ impl Compiler {
                 node_str = node_str.replace(": {},", ": HashMap::new(),");
                 
                 // Fix enum variants that need qualification
-                // ShapeType variants (for Shape2D)
+                // ShapeType2D variants (for Shape2D)
                 let shape_type_rectangle_regex = Regex::new(r"shape_type:\s*Some\s*\(\s*Rectangle\s*\{")?;
                 let shape_type_circle_regex = Regex::new(r"shape_type:\s*Some\s*\(\s*Circle\s*\{")?;
+                let shape_type_square_regex = Regex::new(r"shape_type:\s*Some\s*\(\s*Square\s*\{")?;
+                let shape_type_triangle_regex = Regex::new(r"shape_type:\s*Some\s*\(\s*Triangle\s*\{")?;
                 node_str = shape_type_rectangle_regex
-                    .replace_all(&node_str, "shape_type: Some(ShapeType::Rectangle {")
+                    .replace_all(&node_str, "shape_type: Some(ShapeType2D::Rectangle {")
                     .to_string();
                 node_str = shape_type_circle_regex
-                    .replace_all(&node_str, "shape_type: Some(ShapeType::Circle {")
+                    .replace_all(&node_str, "shape_type: Some(ShapeType2D::Circle {")
+                    .to_string();
+                node_str = shape_type_square_regex
+                    .replace_all(&node_str, "shape_type: Some(ShapeType2D::Square {")
+                    .to_string();
+                node_str = shape_type_triangle_regex
+                    .replace_all(&node_str, "shape_type: Some(ShapeType2D::Triangle {")
                     .to_string();
                 
                 // ColliderShape variants (for CollisionShape2D)

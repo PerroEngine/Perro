@@ -59,6 +59,7 @@ pub enum SignalApi {
     New,
     Connect,
     Emit,
+    EmitDeferred,
 }
 
 #[derive(Debug, Clone)]

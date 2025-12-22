@@ -344,12 +344,12 @@ mod natord {
 
 
 impl ScriptObject for RootScript {
-    fn set_node_id(&mut self, id: Uuid) {
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 
-    fn get_node_id(&self) -> Uuid {
-        self.base.id
+    fn get_id(&self) -> Uuid {
+        self.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -400,6 +400,10 @@ impl ScriptObject for RootScript {
             .get(member)
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
+    }
+    
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(3)
     }
 }
 

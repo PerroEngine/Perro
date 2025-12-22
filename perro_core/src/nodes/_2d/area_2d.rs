@@ -51,14 +51,14 @@ impl Area2D {
     pub fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
         let children = self.get_children().clone();
 
-        // First, collect all collider handles from children (needs mutable scene access)
+        // First, collect all collider handles from children (uses RefCell for immutable access)
         let mut collider_handles = Vec::new();
         {
             let children_ids: Vec<Uuid> = children.iter().copied().collect();
             for child_id in children_ids {
-                if let Some(child_node) = api.scene.get_scene_node(child_id) {
+                if let Some(child_node) = api.scene.get_scene_node_ref(child_id) {
                     // Check if it's a CollisionShape2D
-                    if let SceneNode::CollisionShape2D(shape) = child_node {
+                    if let SceneNode::CollisionShape2D(shape) = &*child_node {
                         if let Some(handle) = shape.collider_handle {
                             collider_handles.push(handle);
                         }

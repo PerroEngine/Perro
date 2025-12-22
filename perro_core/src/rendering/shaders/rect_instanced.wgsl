@@ -65,8 +65,8 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     // Convert to NDC using precomputed scaling
     let ndc_pos = world_pos4.xy * camera.ndc_scale;
     
-    // Depth from z_index
-    let depth = f32(instance.z_index) * 0.001;
+    // Depth from z_index (inverted: higher z_index = lower depth = renders on top)
+    let depth = 1.0 - f32(instance.z_index) * 0.001;
 
     // For SDF calculations, we need center-relative position (no pivot offset)
     let fragment_local_pos = vertex.position * instance.size;

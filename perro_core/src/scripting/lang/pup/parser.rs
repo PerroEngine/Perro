@@ -1308,11 +1308,21 @@ impl PupParser {
             "big_int" | "big" | "bigint" => Type::Number(NumberKind::BigInt),
             "bool" => Type::Bool,
             "string" => Type::String,
-            "script" => Type::Script,
+            "signal" => Type::Signal,
             "Map" | "map" => Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
             "Array" | "array" => Type::Container(ContainerKind::Array, vec![Type::Object]),
             "Object" | "object" => Type::Object,
-            _ => Type::Custom(t),
+            _ => {
+                // Check engine registry for node types
+                use crate::structs::engine_registry::ENGINE_REGISTRY;
+                if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
+                    format!("{:?}", nt) == t
+                }) {
+                    Type::Node(node_type.clone())
+                } else {
+                    Type::Custom(t)
+                }
+            }
         }
     }
 }

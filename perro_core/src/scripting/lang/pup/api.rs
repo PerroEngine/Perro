@@ -130,6 +130,7 @@ impl PupSignal {
             "new" => Some(ApiModule::Signal(SignalApi::New)),
             "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
             "emit" => Some(ApiModule::Signal(SignalApi::Emit)),
+            "emit_deferred" => Some(ApiModule::Signal(SignalApi::EmitDeferred)),
             _ => None,
         }
     }

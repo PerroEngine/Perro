@@ -69,7 +69,7 @@ impl UIButton {
         self.text.base.name = format!("{}_text", self.base.name);
         
         self.panel.base.parent_id = self.base.parent_id;
-        self.text.base.parent_id = Some(self.base.id);
+        self.text.base.parent_id = self.base.id;
         
         self.panel.base.visible = self.base.visible;
         self.text.base.visible = self.base.visible;

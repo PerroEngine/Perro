@@ -151,6 +151,13 @@ impl TextureManager {
         self.textures.get(path).unwrap()
     }
 
+    /// Get texture size if texture is already loaded (doesn't load if missing)
+    pub fn get_texture_size_if_loaded(&self, path: &str) -> Option<crate::Vector2> {
+        self.textures.get(path).map(|tex| {
+            crate::Vector2::new(tex.width as f32, tex.height as f32)
+        })
+    }
+
     pub fn get_or_create_bind_group(
         &mut self,
         path: &str,

@@ -15,6 +15,8 @@ use regex::Regex;
 use crate::api_modules::*;
 use crate::ast::*;
 use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Type};
+use crate::node_registry::NodeType;
+use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::{
     asset_io::{ProjectRoot, get_project_root},
     prelude::string_to_u64,
@@ -44,11 +46,49 @@ fn clear_script_members_cache() {
 
 // Helper function to check if a type name is a node type
 pub fn is_node_type(type_name: &str) -> bool {
-    matches!(type_name, 
-        "Node" | "Node2D" | "Sprite2D" | "Area2D" | "CollisionShape2D" | "Shape2D" | "Camera2D" |
-        "UINode" |
-        "Node3D" | "MeshInstance3D" | "Camera3D" | "DirectionalLight3D" | "OmniLight3D" | "SpotLight3D"
-    )
+    // Check engine registry for node types
+    ENGINE_REGISTRY.node_defs.keys().any(|node_type| {
+        format!("{:?}", node_type) == type_name
+    })
+}
+
+// Helper function to convert a type name string to NodeType
+fn string_to_node_type(type_name: &str) -> Option<NodeType> {
+    ENGINE_REGISTRY.node_defs.keys().find(|node_type| {
+        format!("{:?}", node_type) == type_name
+    }).cloned()
+}
+
+/// Check if a Type is a node type
+pub fn type_is_node(typ: &Type) -> bool {
+    matches!(typ, Type::Node(_))
+}
+
+/// Rename a variable: if it's a node type, add _id suffix; otherwise add t_var_ prefix
+/// Special case: if the variable name is "id" (which scripts have), prefix with t_var_
+pub fn rename_variable(var_name: &str, typ: Option<&Type>) -> String {
+    // Special case: "id" is reserved for script's node ID
+    if var_name == "id" {
+        return "t_var_id".to_string();
+    }
+    
+    // If it's a node type, add _id suffix
+    if let Some(typ) = typ {
+        if type_is_node(typ) {
+            return format!("{}_id", var_name);
+        }
+    }
+    
+    // Otherwise, add t_var_ prefix
+    format!("t_var_{}", var_name)
+}
+
+/// Get the node type from a Type, if it's a Node type
+pub fn get_node_type(typ: &Type) -> Option<&NodeType> {
+    match typ {
+        Type::Node(nt) => Some(nt),
+        _ => None,
+    }
 }
 
 fn to_pascal_case(s: &str) -> String {
@@ -229,8 +269,14 @@ impl Script {
                 _ => api.return_type(),
             },
             Expr::StructNew(ty_name, _fields) => {
-                // The result of `new Struct(...)` is `Type::Custom("Struct")`
-                Some(Custom(ty_name.clone()))
+                // Check if it's a node type - if so, return Type::Node(...)
+                // This allows rename_variable to correctly add _id suffix
+                if let Some(node_type) = string_to_node_type(ty_name) {
+                    Some(Type::Node(node_type))
+                } else {
+                    // The result of `new Struct(...)` is `Type::Custom("Struct")`
+                    Some(Custom(ty_name.clone()))
+                }
             }
             Expr::SelfAccess => Some(Custom(self.node_type.clone())),
             Expr::ObjectLiteral(_) => Some(Type::Object),
@@ -373,6 +419,12 @@ impl Script {
         }
 
         match base_type {
+            // --- For node types ---
+            Type::Node(node_type) => {
+                // Look up the field type in the ENGINE_REGISTRY
+                ENGINE_REGISTRY.get_field_type_node(node_type, member)
+            }
+
             // --- For custom structs ---
             Type::Custom(type_name) => {
                 if type_name == &self.node_type {
@@ -386,7 +438,7 @@ impl Script {
                 get_struct_field_type_recursive(&self.structs, type_name, member)
             }
 
-            // Container/Primitive types don’t support `.member`
+            // Container/Primitive types don't support `.member`
             _ => None,
         }
     }
@@ -561,17 +613,13 @@ impl Script {
         out.push_str("};\n\n");
 
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
-        // Use "Node" as default if node_type is empty
-        let node_type = if script.node_type.is_empty() {
-            "Node"
-        } else {
-            &script.node_type
-        };
-        write!(out, "    base: {},\n", node_type).unwrap();
+        // Scripts now use id: Uuid instead of base: NodeType
+        write!(out, "    id: Uuid,\n").unwrap();
 
         // Use `all_script_vars` for defining struct fields to ensure the correct order
         for var in all_script_vars {
-            write!(out, "    {}: {},\n", var.name, var.rust_type()).unwrap();
+            let renamed_name = rename_variable(&var.name, var.typ.as_ref());
+            write!(out, "    {}: {},\n", renamed_name, var.rust_type()).unwrap();
         }
 
         out.push_str("}\n\n");
@@ -598,17 +646,10 @@ impl Script {
         )
         .unwrap();
 
-        // Optional: handle base init
-        let node_type = if script.node_type.is_empty() {
-            "Node"
-        } else {
-            &script.node_type
-        };
-        // All node constructors now take no arguments (name defaults to type name)
+        // Initialize id - will be set when script is attached to a node
         write!(
             out,
-            "    let base = {}::new();\n",
-            node_type
+            "    let id = Uuid::nil(); // Will be set when attached to node\n"
         )
         .unwrap();
 
@@ -684,10 +725,11 @@ impl Script {
         .unwrap();
 
         // Fill in struct fields using locals (safe to reference one another now)
-        write!(out, "        base,\n").unwrap();
+        write!(out, "        id,\n").unwrap();
         // Use `all_script_vars` here again for consistent ordering
         for var in all_script_vars {
-            write!(out, "        {},\n", var.name).unwrap();
+            let renamed_name = rename_variable(&var.name, var.typ.as_ref());
+            write!(out, "        {},\n", renamed_name).unwrap();
         }
 
         out.push_str("    })) as *mut dyn ScriptObject\n");
@@ -766,14 +808,115 @@ impl Script {
     }
 }
 
+/// Extract node information from a member access expression
+/// Returns (node_id_expr, node_type_name, field_path, closure_var_name) if it's a node member access
+/// field_path is the full path like "transform.position.x"
+fn extract_node_member_info(
+    expr: &Expr,
+    script: &Script,
+    current_func: Option<&Function>,
+) -> Option<(String, String, String, String)> {
+    fn extract_recursive(
+        expr: &Expr,
+        script: &Script,
+        current_func: Option<&Function>,
+        field_path: &mut Vec<String>,
+    ) -> Option<(String, String, String)> {
+        match expr {
+            Expr::MemberAccess(base, field) => {
+                field_path.push(field.clone());
+                extract_recursive(base, script, current_func, field_path)
+            }
+            Expr::SelfAccess => {
+                // self.transform.position.x
+                let path: Vec<String> = field_path.iter().rev().cloned().collect();
+                Some(("self.id".to_string(), script.node_type.clone(), path.join(".")))
+            }
+            Expr::Ident(var_name) => {
+                // Check if it's a node variable
+                let (var_type_ref, inferred_type_owned) = if let Some(func) = current_func {
+                    let var_type_ref = func.locals.iter()
+                        .find(|v| v.name == *var_name)
+                        .and_then(|v| v.typ.as_ref())
+                        .or_else(|| {
+                            func.params.iter()
+                                .find(|p| p.name == *var_name)
+                                .map(|p| &p.typ)
+                        });
+                    
+                    let inferred = if var_type_ref.is_none() {
+                        func.locals.iter()
+                            .find(|v| v.name == *var_name)
+                            .and_then(|v| v.value.as_ref())
+                            .and_then(|val| script.infer_expr_type(&val.expr, current_func))
+                    } else {
+                        None
+                    };
+                    
+                    (var_type_ref, inferred)
+                } else {
+                    (script.get_variable_type(var_name), None)
+                };
+                
+                // Check if it's a node type
+                let var_type = var_type_ref.or_else(|| inferred_type_owned.as_ref());
+                if let Some(typ) = var_type {
+                    if type_is_node(typ) {
+                        let renamed = rename_variable(var_name, Some(typ));
+                        let node_type_name = match typ {
+                            Type::Node(nt) => format!("{:?}", nt),
+                            _ => return None,
+                        };
+                        let path: Vec<String> = field_path.iter().rev().cloned().collect();
+                        let closure_var = format!("t_var_{}", var_name);
+                        Some((renamed, node_type_name, path.join(".")))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+    
+    let mut field_path = Vec::new();
+    if let Some((node_id, node_type, path)) = extract_recursive(expr, script, current_func, &mut field_path) {
+        // Check if the first field is a script member (for self access)
+        if let Expr::MemberAccess(base, field) = expr {
+            if matches!(base.as_ref(), Expr::SelfAccess) {
+                let is_script_member = script.variables.iter().any(|v| v.name == *field)
+                    || script.functions.iter().any(|f| f.name == *field);
+                if is_script_member {
+                    return None;
+                }
+            }
+        }
+        
+        let closure_var = if node_id == "self.id" {
+            "self_node".to_string()
+        } else {
+            // For node variables, node_id is like "bob_id", closure var should be "bob"
+            // Extract original variable name by removing "_id" suffix
+            let var_name = node_id.strip_suffix("_id").unwrap_or(&node_id);
+            var_name.to_string()
+        };
+        
+        Some((node_id, node_type, path, closure_var))
+    } else {
+        None
+    }
+}
+
 fn expr_accesses_node(expr: &Expr, script: &Script) -> bool {
     match expr {
         Expr::SelfAccess => true, // `this` alone means accessing the node
         Expr::MemberAccess(base, field) => {
             // Check if this is `this.node` or `this.node.something`
             if matches!(base.as_ref(), Expr::SelfAccess) {
-                // If field is "base", then we're accessing self.base
-                if field == "base" {
+                // If field is "id", then we're accessing self.id
+                if field == "id" {
                     return true;
                 }
                 // If field is a script member, it's NOT accessing the node
@@ -1226,12 +1369,6 @@ impl StructDef {
         .unwrap();
         writeln!(out, "pub struct {} {{", self.name).unwrap();
 
-        if let Some(base) = &self.base {
-            if !base.is_empty() {
-                writeln!(out, "    pub base: {},", base).unwrap();
-            }
-        }
-
         for field in &self.fields {
             writeln!(out, "    pub {}: {},", field.name, field.typ.to_rust_type()).unwrap();
         }
@@ -1246,23 +1383,6 @@ impl StructDef {
         )
         .unwrap();
         writeln!(out, "        write!(f, \"{{{{ \")?;").unwrap();
-
-        // --- flatten base display if present ---
-        if let Some(_base) = &self.base {
-            writeln!(out, "        // Flatten base Display").unwrap();
-            writeln!(out, "        let base_str = format!(\"{{}}\", self.base);").unwrap();
-            writeln!(
-                out,
-                "        let base_inner = base_str.trim_matches(|c| c == '{{' || c == '}}').trim();"
-            )
-            .unwrap();
-            writeln!(out, "        if !base_inner.is_empty() {{").unwrap();
-            writeln!(out, "            write!(f, \"{{}}\", base_inner)?;").unwrap();
-            if !self.fields.is_empty() {
-                writeln!(out, "            write!(f, \", \")?;").unwrap();
-            }
-            writeln!(out, "        }}").unwrap();
-        }
 
         // --- print own fields ---
         for (i, field) in self.fields.iter().enumerate() {
@@ -1289,21 +1409,6 @@ impl StructDef {
             writeln!(out, "}}\n").unwrap();
         }
 
-        // === Deref Implementations (for base inheritance-style field access) ===
-        if let Some(base) = &self.base {
-            writeln!(out, "impl std::ops::Deref for {} {{", self.name).unwrap();
-            writeln!(out, "    type Target = {};", base).unwrap();
-            writeln!(out, "    fn deref(&self) -> &Self::Target {{ &self.base }}",).unwrap();
-            writeln!(out, "}}\n").unwrap();
-
-            writeln!(out, "impl std::ops::DerefMut for {} {{", self.name).unwrap();
-            writeln!(
-                out,
-                "    fn deref_mut(&mut self) -> &mut Self::Target {{ &mut self.base }}",
-            )
-            .unwrap();
-            writeln!(out, "}}\n").unwrap();
-        }
 
         out
     }
@@ -1322,17 +1427,25 @@ impl Function {
             let joined = self
                 .params
                 .iter()
-                .map(|p| match &p.typ {
-                    // Strings: passed as owned String
-                    Type::String => format!("mut {}: String", p.name),
+                .map(|p| {
+                    // Check if it's a node type - if so, rename to {name}_id and use Uuid
+                    if type_is_node(&p.typ) {
+                        let renamed = rename_variable(&p.name, Some(&p.typ));
+                        format!("mut {}: Uuid", renamed)
+                    } else {
+                        match &p.typ {
+                            // Strings: passed as owned String
+                            Type::String => format!("mut {}: String", p.name),
 
-                    // Custom structs and script types: passed as owned and mutable
-                    Type::Custom(name) => {
-                        format!("mut {}: {}", p.name, name)
+                            // Custom structs and script types: passed as owned and mutable
+                            Type::Custom(name) => {
+                                format!("mut {}: {}", p.name, name)
+                            }
+
+                            // Plain primitives: passed by value
+                            _ => format!("mut {}: {}", p.name, p.typ.to_rust_type()),
+                        }
                     }
-
-                    // Plain primitives: passed by value
-                    _ => format!("mut {}: {}", p.name, p.typ.to_rust_type()),
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -1340,7 +1453,7 @@ impl Function {
             write!(param_list, ", {}", joined).unwrap();
         }
 
-        param_list.push_str(", api: &mut ScriptApi<'_>, external_call: bool");
+        param_list.push_str(", api: &mut ScriptApi<'_>");
 
         writeln!(out, "    fn {}({}) {{", self.name, param_list).unwrap();
 
@@ -1348,22 +1461,6 @@ impl Function {
         // (1) Insert additional preamble if the method uses self/api
         // ---------------------------------------------------
         let needs_self = self.uses_self;
-        let node_type_str = if node_type.is_empty() {
-            "Node"
-        } else {
-            node_type
-        };
-
-        if needs_self {
-            writeln!(out, "        if external_call {{").unwrap();
-            writeln!(
-                out,
-                "            self.base = api.get_node_clone::<{}>(self.base.id);",
-                node_type_str
-            )
-            .unwrap();
-            writeln!(out, "        }}").unwrap();
-        }
 
         // ---------------------------------------------------
         // (2) Use cloned child nodes that were already collected during analysis
@@ -1377,28 +1474,8 @@ impl Function {
         collect_cloned_node_vars(&self.body, &mut Vec::new(), &mut cloned_ui_elements, script);
 
         // ---------------------------------------------------
-        // (2.5) Check if any loops create nodes - if so, declare loop_nodes_to_merge once
-        // Also collect all loop-scoped variable names to exclude from function-level merge
+        // (2.5) No longer need to track loop nodes for merging
         // ---------------------------------------------------
-        let mut has_loop_nodes = false;
-        let mut all_loop_scoped_vars = std::collections::HashSet::new();
-        for stmt in &self.body {
-            if let Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } = stmt {
-                let mut loop_node_vars = Vec::new();
-                let mut loop_ui_elements = Vec::new();
-                collect_cloned_node_vars(body, &mut loop_node_vars, &mut loop_ui_elements, script);
-                if !loop_node_vars.is_empty() {
-                    has_loop_nodes = true;
-                    // Collect all loop-scoped variable names
-                    for var_name in &loop_node_vars {
-                        all_loop_scoped_vars.insert(var_name.clone());
-                    }
-                }
-            }
-        }
-        if has_loop_nodes {
-            out.push_str("        let mut loop_nodes_to_merge: Vec<SceneNode> = Vec::new();\n");
-        }
 
         // ---------------------------------------------------
         // (3) Emit body
@@ -1408,65 +1485,8 @@ impl Function {
         }
 
         // ---------------------------------------------------
-        // (4) Merge cloned nodes and UI elements back
+        // (4) No longer need to merge nodes - we use mutate_node for assignments
         // ---------------------------------------------------
-
-        // Merge all cloned nodes together (child nodes + self.base + node parameters)
-        // Only merge cloned node variables if they're mutated (like parameters)
-        // Exclude loop-scoped variables (they're merged within their loop scope)
-        let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
-            .iter()
-            .filter(|var_name| {
-                // First check: exclude loop-scoped variables (they're merged after their loop)
-                // Use both the pre-computed set and the function check for safety
-                if all_loop_scoped_vars.contains(*var_name) {
-                    return false; // Definitely exclude loop-scoped vars
-                }
-                let is_loop_scoped = is_variable_loop_scoped(var_name, &self.body);
-                if is_loop_scoped {
-                    return false; // Definitely exclude loop-scoped vars
-                }
-                // Second check: only merge if the variable is mutated in the function body
-                param_is_mutated(var_name, &self.body)
-            })
-            .map(|v| format!("{}.to_scene_node()", v))
-            .collect();
-
-        // Add node-type parameters to merge list (only if they're mutated)
-        for param in &self.params {
-            let is_node_param = match &param.typ {
-                Type::Custom(tn) => is_node_type(tn),
-                Type::Node(_) => true,
-                _ => false,
-            };
-            if is_node_param {
-                // Only merge if the parameter is mutated in the function body
-                if param_is_mutated(&param.name, &self.body) {
-                    all_nodes_to_merge.push(format!("{}.clone().to_scene_node()", param.name));
-                }
-            }
-        }
-
-        // Merge nodes - always merge cloned nodes, not just on external_call
-        // This includes self.base (only on external_call), cloned child nodes, and node-type parameters
-        // Optimize: use array literals for stack allocation (no heap allocation at all!)
-        if needs_self {
-            // self.base only needs to be merged on external calls (signal handlers, etc.)
-            out.push_str("\n        if external_call {\n");
-            out.push_str("            // Merge self.base (stack-allocated array)\n");
-            out.push_str("            api.merge_nodes(&[self.base.clone().to_scene_node()]);\n");
-            out.push_str("        }\n");
-        }
-        
-        if !all_nodes_to_merge.is_empty() {
-            // Always merge cloned nodes at the end of the function (regardless of external_call)
-            // Use array literal directly (stack-allocated, no heap allocation for container)
-            out.push_str("\n        // Merge cloned nodes (stack-allocated array)\n");
-            out.push_str(&format!(
-                "        api.merge_nodes(&[{}]);\n",
-                all_nodes_to_merge.join(", ")
-            ));
-        }
 
         // Merge cloned UI elements back into their UINodes
         if !cloned_ui_elements.is_empty() {
@@ -1515,82 +1535,13 @@ impl Function {
         .unwrap();
 
         let needs_self = self.uses_self;
-        let node_type_str = if node_type.is_empty() {
-            "Node"
-        } else {
-            node_type
-        };
-
-        if needs_self {
-            writeln!(
-                out,
-                "        self.base = api.get_node_clone::<{}>(self.base.id);",
-                node_type_str
-            )
-            .unwrap();
-        }
-
-        // Check if any loops create nodes - if so, declare loop_nodes_to_merge once
-        let mut has_loop_nodes = false;
-        let mut all_loop_scoped_vars = std::collections::HashSet::new();
-        for stmt in &self.body {
-            if let Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } = stmt {
-                let mut loop_node_vars = Vec::new();
-                let mut loop_ui_elements = Vec::new();
-                collect_cloned_node_vars(body, &mut loop_node_vars, &mut loop_ui_elements, script);
-                if !loop_node_vars.is_empty() {
-                    has_loop_nodes = true;
-                    for var_name in &loop_node_vars {
-                        all_loop_scoped_vars.insert(var_name.clone());
-                    }
-                }
-            }
-        }
-        if has_loop_nodes {
-            out.push_str("        let mut loop_nodes_to_merge: Vec<SceneNode> = Vec::new();\n");
-        }
 
         // Emit body
         for stmt in &self.body {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
-        // Merge loop nodes once after all loops (if any)
-        if has_loop_nodes {
-            out.push_str("\n        // Merge nodes created in loops\n");
-            out.push_str("        if !loop_nodes_to_merge.is_empty() {\n");
-            out.push_str("            api.merge_nodes(&loop_nodes_to_merge);\n");
-            out.push_str("        }\n");
-        }
-
-        // Merge all cloned nodes together (child nodes + self.base)
-        // Exclude loop-scoped variables
-        let cloned_node_vars = &self.cloned_child_nodes;
-        let mut all_nodes_to_merge: Vec<String> = cloned_node_vars
-            .iter()
-            .filter(|var_name| {
-                // Exclude loop-scoped variables
-                if all_loop_scoped_vars.contains(*var_name) {
-                    return false;
-                }
-                let is_loop_scoped = is_variable_loop_scoped(var_name, &self.body);
-                !is_loop_scoped
-            })
-            .map(|v| format!("{}.to_scene_node()", v))
-            .collect();
-
-        // Add self.base if needed
-        if needs_self {
-            all_nodes_to_merge.push("self.base.clone().to_scene_node()".to_string());
-        }
-
-        if !all_nodes_to_merge.is_empty() {
-            out.push_str("\n        // Merge cloned nodes (stack-allocated array)\n");
-            out.push_str(&format!(
-                "        api.merge_nodes(&[{}]);\n",
-                all_nodes_to_merge.join(", ")
-            ));
-        }
+        // No longer need to merge nodes - we use mutate_node for assignments
 
         out.push_str("    }\n\n");
         out
@@ -1671,13 +1622,12 @@ impl Stmt {
 
                     // Don't clone if the expression already produces an owned value (e.g., from unwrap_or_default, from_str, etc.)
                     // This is important for generic functions like FromPrimitive::from_f32 where cloning breaks type inference
-                    // Also don't clone if it's a get_node_clone call - that already returns an owned value
+                    // Also don't clone if the expression already produces an owned value
                     let already_owned = raw_expr.contains(".unwrap_or_default()")
                         || raw_expr.contains(".unwrap()")
                         || raw_expr.contains("::from_str")
                         || raw_expr.contains("::from(")
                         || raw_expr.contains("::new(")
-                        || raw_expr.contains("get_node_clone")
                         || raw_expr.contains("get_element_clone");
 
                     if (needs_clone || needs_clone_fallback) && !already_owned {
@@ -1692,33 +1642,39 @@ impl Stmt {
                 };
 
                 // Add type annotation if variable has explicit type OR if we can infer from the expression
+                let inferred_type = if let Some(expr) = &var.value {
+                    script.infer_expr_type(&expr.expr, current_func)
+                } else {
+                    None
+                };
+                
                 let type_annotation = if let Some(typ) = &var.typ {
                     format!(": {}", typ.to_rust_type())
-                } else if let Some(expr) = &var.value {
-                    // Try to infer type from the expression if no explicit type was provided
-                    if let Some(inferred_type) = script.infer_expr_type(&expr.expr, current_func) {
-                        format!(": {}", inferred_type.to_rust_type())
-                    } else {
-                        String::new()
-                    }
+                } else if let Some(ref inferred) = inferred_type {
+                    format!(": {}", inferred.to_rust_type())
                 } else {
                     String::new()
                 };
 
+                // Use inferred type for renaming if var.typ is None
+                let type_for_renaming = var.typ.as_ref().or(inferred_type.as_ref());
+                let renamed_name = rename_variable(&var.name, type_for_renaming);
                 if expr_str.is_empty() {
-                    format!("        let mut {}{};\n", var.name, type_annotation)
+                    format!("        let mut {}{};\n", renamed_name, type_annotation)
                 } else {
                     format!(
                         "        let mut {}{} = {};\n",
-                        var.name, type_annotation, expr_str
+                        renamed_name, type_annotation, expr_str
                     )
                 }
             }
             Stmt::Assign(name, expr) => {
+                let var_type = script.get_variable_type(name);
+                let renamed_name = rename_variable(name, var_type);
                 let target = if script.is_struct_field(name) && !name.starts_with("self.") {
-                    format!("self.{}", name)
+                    format!("self.{}", renamed_name)
                 } else {
-                    name.clone()
+                    renamed_name
                 };
 
                 let target_type = self.get_target_type(name, script, current_func);
@@ -1830,72 +1786,147 @@ impl Stmt {
             }
 
             Stmt::MemberAssign(lhs_expr, rhs_expr) => {
-                let lhs_code = lhs_expr.to_rust(needs_self, script, current_func);
-                let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
-                let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
-
-                let mut rhs_code =
-                    rhs_expr
-                        .expr
-                        .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
-
-                let final_rhs = if let Some(lhs_ty) = &lhs_type {
-                    if let Some(rhs_ty) = &rhs_type {
-                        if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
-                            script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                // Check if this is a node member assignment (like self.transform.position.x = value)
+                if let Some((node_id, node_type, field_path, closure_var)) = 
+                    extract_node_member_info(&lhs_expr.expr, script, current_func) 
+                {
+                    // This is a node member assignment - use mutate_node
+                    let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
+                    let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
+                    
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+                    
+                    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+                        if let Some(rhs_ty) = &rhs_type {
+                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                            } else {
+                                rhs_code
+                            }
                         } else {
                             rhs_code
                         }
                     } else {
                         rhs_code
+                    };
+                    
+                    format!(
+                        "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                        node_id, closure_var, node_type, closure_var, field_path, final_rhs
+                    )
+                } else {
+                    // Regular member assignment (not a node)
+                    let lhs_code = lhs_expr.to_rust(needs_self, script, current_func);
+                    let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
+                    let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
+
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+
+                    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+                        if let Some(rhs_ty) = &rhs_type {
+                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                            } else {
+                                rhs_code
+                            }
+                        } else {
+                            rhs_code
+                        }
+                    } else {
+                        rhs_code
+                    };
+
+                    let should_clone = matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
+                        && rhs_type.as_ref().map_or(false, |ty| ty.requires_clone());
+
+                    if should_clone {
+                        format!("        {lhs_code} = {}.clone();\n", final_rhs)
+                    } else {
+                        format!("        {lhs_code} = {final_rhs};\n")
                     }
-                } else {
-                    rhs_code
-                };
-
-                let should_clone = matches!(rhs_expr.expr, Expr::Ident(_) | Expr::MemberAccess(..))
-                    && rhs_type.as_ref().map_or(false, |ty| ty.requires_clone());
-
-                if should_clone {
-                    format!("        {lhs_code} = {}.clone();\n", final_rhs)
-                } else {
-                    format!("        {lhs_code} = {final_rhs};\n")
                 }
             }
 
             Stmt::MemberAssignOp(lhs_expr, op, rhs_expr) => {
-                let lhs_code = lhs_expr.to_rust(needs_self, script, current_func);
-                let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
-
-                let mut rhs_code =
-                    rhs_expr
-                        .expr
-                        .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
-
-                if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
-                    return format!("        {lhs_code}.push_str({rhs_code}.as_str());\n");
-                }
-
-                let final_rhs = if let Some(lhs_ty) = &lhs_type {
-                    let rhs_ty = script.infer_expr_type(&rhs_expr.expr, current_func);
-                    if let Some(rhs_ty) = rhs_ty {
-                        if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != *lhs_ty {
-                            script.generate_implicit_cast_for_expr(&rhs_code, &rhs_ty, lhs_ty)
+                // Check if this is a node member assignment (like self.transform.position.x += value)
+                if let Some((node_id, node_type, field_path, closure_var)) = 
+                    extract_node_member_info(&lhs_expr.expr, script, current_func) 
+                {
+                    // This is a node member assignment - use mutate_node
+                    let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
+                    
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+                    
+                    if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
+                        return format!(
+                            "        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
+                            node_id, closure_var, node_type, closure_var, field_path, rhs_code
+                        );
+                    }
+                    
+                    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+                        let rhs_ty = script.infer_expr_type(&rhs_expr.expr, current_func);
+                        if let Some(rhs_ty) = &rhs_ty {
+                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                            } else {
+                                rhs_code
+                            }
                         } else {
                             rhs_code
                         }
                     } else {
                         rhs_code
-                    }
+                    };
+                    
+                    format!(
+                        "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
+                        node_id, closure_var, node_type, closure_var, field_path, op.to_rust_assign(), final_rhs
+                    )
                 } else {
-                    rhs_code
-                };
+                    // Regular member assignment (not a node)
+                    let lhs_code = lhs_expr.to_rust(needs_self, script, current_func);
+                    let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
 
-                format!(
-                    "        {lhs_code} {}= {};\n",
-                    op.to_rust_assign(),
-                    final_rhs
-                )
+                    let mut rhs_code =
+                        rhs_expr
+                            .expr
+                            .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+
+                    if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
+                        return format!("        {lhs_code}.push_str({rhs_code}.as_str());\n");
+                    }
+
+                    let final_rhs = if let Some(lhs_ty) = &lhs_type {
+                        let rhs_ty = script.infer_expr_type(&rhs_expr.expr, current_func);
+                        if let Some(rhs_ty) = rhs_ty {
+                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != *lhs_ty {
+                                script.generate_implicit_cast_for_expr(&rhs_code, &rhs_ty, lhs_ty)
+                            } else {
+                                rhs_code
+                            }
+                        } else {
+                            rhs_code
+                        }
+                    } else {
+                        rhs_code
+                    };
+
+                    format!(
+                        "        {lhs_code} {}= {};\n",
+                        op.to_rust_assign(),
+                        final_rhs
+                    )
+                }
             }
 
             Stmt::Pass => String::new(),
@@ -2012,13 +2043,7 @@ impl Stmt {
                     }
                 }
                 
-                // Push all nodes created/modified in this iteration AFTER all statements (so modifications are captured)
-                // loop_nodes_to_merge is declared at function level if any loop creates nodes
-                if !loop_node_vars.is_empty() && !nodes_created_this_iter.is_empty() {
-                    for node_var in &nodes_created_this_iter {
-                        result.push_str(&format!("            loop_nodes_to_merge.push({}.to_scene_node());\n", node_var));
-                    }
-                }
+                // No longer need to track nodes for merging - we use mutate_node for assignments
 
                 result.push_str("        }\n");
                 result
@@ -2126,7 +2151,7 @@ impl Stmt {
                 // Push all nodes created/modified in this iteration AFTER all statements (so modifications are captured)
                 if !loop_node_vars.is_empty() && !nodes_created_this_iter.is_empty() {
                     for node_var in &nodes_created_this_iter {
-                        result.push_str(&format!("            loop_nodes_to_merge.push({}.to_scene_node());\n", node_var));
+                        // No longer need to track nodes for merging - we use mutate_node for assignments
                     }
                 }
 
@@ -2530,6 +2555,28 @@ impl Stmt {
                 format!("Decimal::from({})", expr)
             }
 
+            // String type conversions
+            (String, CowStr) => {
+                format!("std::borrow::Cow::Owned({})", expr)
+            }
+            (StrRef, CowStr) => {
+                format!("std::borrow::Cow::Borrowed({})", expr)
+            }
+            (CowStr, String) => {
+                format!("{}.into_owned()", expr)
+            }
+            (CowStr, StrRef) => {
+                format!("{}.as_ref()", expr)
+            }
+            // Node types -> Uuid (nodes are Uuid IDs)
+            (Node(_), Uuid) => {
+                expr.to_string() // Already a Uuid, no conversion needed
+            }
+            // Uuid -> Node type (for type checking, just pass through)
+            (Uuid, Node(_)) => {
+                expr.to_string() // Already a Uuid, no conversion needed
+            }
+
             _ => {
                 eprintln!(
                     "Warning: Unhandled cast from {:?} to {:?}",
@@ -2723,6 +2770,7 @@ impl Expr {
             || expr_code.starts_with("vec![")
             || expr_code.contains("serde_json::from_value::<")
             || expr_code.contains(".parse::<")
+            || expr_code.contains(".unwrap()")  // unwrap() produces owned value
             || expr_code.contains('{')
         // struct literal produces an owned value
         {
@@ -2761,11 +2809,66 @@ impl Expr {
 
                 // Check against `script_vars` to see if it's a field
                 let is_field = script.variables.iter().any(|v| v.name == *name);
+                
+                // Get variable type for renaming
+                // If var.typ is None, infer from the variable's value expression
+                // We need to handle inferred types separately since we can't return a ref to a temp
+                let (var_type_ref, inferred_type_owned) = if is_local {
+                    let var_type_ref = current_func.and_then(|f| {
+                        f.locals.iter()
+                            .find(|v| v.name == *name)
+                            .and_then(|v| {
+                                // First try explicit type
+                                v.typ.as_ref()
+                            })
+                            .or_else(|| {
+                                f.params.iter()
+                                    .find(|p| p.name == *name)
+                                    .map(|p| &p.typ)
+                            })
+                    });
+                    
+                    let inferred = if var_type_ref.is_none() {
+                        // If no explicit type, infer from value expression
+                        current_func.and_then(|f| {
+                            f.locals.iter()
+                                .find(|v| v.name == *name)
+                                .and_then(|v| v.value.as_ref())
+                                .and_then(|val| script.infer_expr_type(&val.expr, current_func))
+                        })
+                    } else {
+                        None
+                    };
+                    
+                    (var_type_ref, inferred)
+                } else if is_field {
+                    let var_type_ref = script.get_variable_type(name);
+                    
+                    let inferred = if var_type_ref.is_none() {
+                        // If no explicit type, infer from value expression
+                        script.variables.iter()
+                            .find(|v| v.name == *name)
+                            .and_then(|v| v.value.as_ref())
+                            .and_then(|val| script.infer_expr_type(&val.expr, current_func))
+                    } else {
+                        None
+                    };
+                    
+                    (var_type_ref, inferred)
+                } else {
+                    (None, None)
+                };
+                
+                // Use explicit type if available, otherwise use inferred type
+                let var_type = var_type_ref.or_else(|| inferred_type_owned.as_ref());
+
+                // Rename variable with t_var_ prefix or _id suffix
+                let renamed_name = rename_variable(name, var_type);
 
                 let ident_code = if !is_local && is_field && !name.starts_with("self.") {
-                    format!("self.{}", name)
+                    format!("self.{}", renamed_name)
                 } else {
-                    name.clone()
+                    renamed_name
                 };
 
                 // ✨ Add this: wrap in json! if going to Value/Object
@@ -2984,15 +3087,85 @@ impl Expr {
                         // typed struct: regular .field access
                         let base_code = base.to_rust(needs_self, script, None, current_func);
 
-                        // Special handling: .parent_id on node types automatically unwraps Option<Uuid>
-                        // This is safe because the engine manages parent relationships
-                        if is_node_type(&type_name) && field == "parent_id" {
-                            return format!("{}.parent_id.unwrap()", base_code);
+                        // Check if this is a node type and the base is a node ID variable (UUID)
+                        if is_node_type(&type_name) {
+                            // Check if base_code is a node ID variable (ends with _id or is self.id)
+                            // Node variables are renamed to {name}_id, and self.id is the script's node ID
+                            let is_node_id_var = base_code.ends_with("_id") || base_code == "self.id";
+                            
+                            if is_node_id_var {
+                                // Use api.read_node to access node properties
+                                // Check if the result type requires cloning
+                                if let Some(node_type) = string_to_node_type(type_name.as_str()) {
+                                    let base_node_type = Type::Node(node_type);
+                                    let result_type = script.get_member_type(&base_node_type, field);
+                                    let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
+                                    
+                                    // Check if the result type is Option<T> - if so, unwrap inside the closure
+                                    let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
+                                    
+                                    // Extract variable name from node_id (e.g., "c_id" -> "c")
+                                    let param_name = if base_code.ends_with("_id") {
+                                        &base_code[..base_code.len() - 3]
+                                    } else {
+                                        "n"
+                                    };
+                                    
+                                    let field_access = if is_option {
+                                        format!("{}.{}.unwrap()", param_name, field)
+                                    } else if needs_clone {
+                                        format!("{}.{}.clone()", param_name, field)
+                                    } else {
+                                        format!("{}.{}", param_name, field)
+                                    };
+                                    
+                                    return format!("api.read_node({}, |{}: &{}| {})", base_code, param_name, type_name, field_access);
+                                }
+                            }
                         }
 
                         // Special handling for UINode.get_element - this will be handled in Call expression
                         // when it's cast to a specific type like UIText
                         format!("{}.{}", base_code, field)
+                    }
+                    Some(Type::Node(node_type)) => {
+                        // Node type: check if base is a node ID variable
+                        let base_code = base.to_rust(needs_self, script, None, current_func);
+                        let is_node_id_var = base_code.ends_with("_id") || base_code == "self.id";
+                        
+                        if is_node_id_var {
+                            // Get the node type name from the base type
+                            let node_type_name = format!("{:?}", node_type);
+                            
+                            // Use api.read_node and check if cloning is needed
+                            let base_node_type = Type::Node(node_type.clone());
+                            let result_type = script.get_member_type(&base_node_type, field);
+                            let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
+                            
+                            // Check if the result type is Option<T> - if so, unwrap inside the closure
+                            let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
+                            
+                            // Extract variable name from node_id (e.g., "c_id" -> "c", "self.id" -> "self_node")
+                            let param_name = if base_code.ends_with("_id") {
+                                &base_code[..base_code.len() - 3]
+                            } else if base_code == "self.id" {
+                                "self_node"
+                            } else {
+                                "n"
+                            };
+                            
+                            let field_access = if is_option {
+                                format!("{}.{}.unwrap()", param_name, field)
+                            } else if needs_clone {
+                                format!("{}.{}.clone()", param_name, field)
+                            } else {
+                                format!("{}.{}", param_name, field)
+                            };
+                            
+                            format!("api.read_node({}, |{}: &{}| {})", base_code, param_name, node_type_name, field_access)
+                        } else {
+                            format!("{}.{}", base_code, field)
+                        }
                     }
                     _ => {
                         // fallback, assume normal member access
@@ -3002,13 +3175,12 @@ impl Expr {
                 }
             }
             Expr::SelfAccess => {
-                if needs_self {
-                    "self.base".to_string()
-                } else {
-                    "self".to_string()
-                }
+                "self".to_string()
             }
-            Expr::BaseAccess => "self.base".to_string(),
+            Expr::BaseAccess => {
+                // BaseAccess is deprecated - use self directly
+                "self".to_string()
+            }
             Expr::Call(target, args) => {
                 // ==============================================================
                 // Extract the target function name, if possible
@@ -3072,7 +3244,7 @@ impl Expr {
                             // ----------------------------------------------------------
                             (Expr::Ident(_) | Expr::MemberAccess(..), Some(Type::String))
                             | (Expr::Ident(_) | Expr::MemberAccess(..), Some(Type::Custom(_)))
-                            | (Expr::Ident(_) | Expr::MemberAccess(..), Some(Type::Script)) => {
+                            | (Expr::Ident(_) | Expr::MemberAccess(..), Some(Type::Signal)) => {
                                 // Owned strings and structs cloned
                                 format!("{}.clone()", code)
                             }
@@ -3094,7 +3266,7 @@ impl Expr {
                             )
                             | (
                                 Expr::BinaryOp(..) | Expr::Call(..) | Expr::Cast(..),
-                                Some(Type::Script),
+                                Some(Type::Signal),
                             ) => {
                                 // Complex expressions producing owned objects → clone
                                 format!("({}).clone()", code)
@@ -3135,18 +3307,18 @@ impl Expr {
                         format!("{}({})", target_str, args_rust.join(", "))
                     }
                 } else if is_local_function {
-                    // Local script functions: add api, false
+                    // Local script functions: add api
                     if args_rust.is_empty() {
-                        format!("{}(api, false);", target_str)
+                        format!("{}(api);", target_str)
                     } else {
-                        format!("{}({}, api, false);", target_str, args_rust.join(", "))
+                        format!("{}({}, api);", target_str, args_rust.join(", "))
                     }
                 } else {
                     // Fallback: treat as external function with api
                     if args_rust.is_empty() {
-                        format!("{}(api, false);", target_str)
+                        format!("{}(api);", target_str)
                     } else {
-                        format!("{}({}, api, false);", target_str, args_rust.join(", "))
+                        format!("{}({}, api);", target_str, args_rust.join(", "))
                     }
                 }
             }
@@ -3396,9 +3568,10 @@ impl Expr {
             Expr::StructNew(ty, args) => {
                 use std::collections::HashMap;
 
-                // Special case: For node types with no arguments, use ::new() constructor
+                // Special case: For node types with no arguments, use api.create_node::<Type>()
+                // This returns a Uuid, not a node instance
                 if args.is_empty() && is_node_type(ty) {
-                    return format!("{}::new()", ty);
+                    return format!("api.create_node::<{}>()", ty);
                 }
 
                 // --- Flatten structure hierarchy correctly ---
@@ -3791,6 +3964,32 @@ impl Expr {
                         format!("{}.to_string()", inner_code)
                     }
 
+                    // String type conversions
+                    // String -> CowStr (owned string to Cow::Owned)
+                    (Some(Type::String), Type::CowStr) => {
+                        format!("std::borrow::Cow::Owned({})", inner_code)
+                    }
+                    // StrRef -> CowStr (borrowed string to Cow::Borrowed)
+                    (Some(Type::StrRef), Type::CowStr) => {
+                        format!("std::borrow::Cow::Borrowed({})", inner_code)
+                    }
+                    // CowStr -> String (Cow to owned String)
+                    (Some(Type::CowStr), Type::String) => {
+                        format!("{}.into_owned()", inner_code)
+                    }
+                    // CowStr -> StrRef (Cow to &str - only if Borrowed)
+                    (Some(Type::CowStr), Type::StrRef) => {
+                        format!("{}.as_ref()", inner_code)
+                    }
+                    // Node types -> Uuid (nodes are Uuid IDs)
+                    (Some(Type::Node(_)), Type::Uuid) => {
+                        inner_code // Already a Uuid, no conversion needed
+                    }
+                    // Uuid -> Node type (for type checking, just pass through)
+                    (Some(Type::Uuid), Type::Node(_)) => {
+                        inner_code // Already a Uuid, no conversion needed
+                    }
+
                     // BigInt → Signed Integer
                     (
                         Some(Type::Number(NumberKind::BigInt)),
@@ -4113,9 +4312,15 @@ impl Expr {
                     (Some(Type::Node(_)), Type::Custom(to_name)) if is_node_type(to_name) => {
                         // Cast from base Node to specific node type
                         // Use get_node_clone with the specific type
+                        // If inner_code is "self", use self.id. Otherwise, it's already a node ID variable (bob_id)
+                        let node_id = if inner_code == "self" {
+                            "self.id".to_string()
+                        } else {
+                            inner_code.clone()
+                        };
                         format!(
-                            "api.get_node_clone::<{}>({}.id)",
-                            to_name, inner_code
+                            "api.get_node_clone::<{}>({})",
+                            to_name, node_id
                         )
                     }
                     
@@ -4424,6 +4629,23 @@ pub fn implement_script_boilerplate(
 
     let mut public_var_count = 0;
     let mut exposed_var_count = 0;
+    
+    // Detect which lifecycle methods are implemented
+    let has_init = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "init");
+    let has_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "update");
+    let has_fixed_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "fixed_update");
+    
+    // Build the flags value
+    let mut flags_value = 0u8;
+    if has_init {
+        flags_value |= 1; // ScriptFlags::HAS_INIT
+    }
+    if has_update {
+        flags_value |= 2; // ScriptFlags::HAS_UPDATE
+    }
+    if has_fixed_update {
+        flags_value |= 4; // ScriptFlags::HAS_FIXED_UPDATE
+    }
 
     //----------------------------------------------------
     // Generate VAR GET, SET, APPLY tables
@@ -4803,7 +5025,8 @@ pub fn implement_script_boilerplate(
 
         if !func.params.is_empty() {
             for (i, param) in func.params.iter().enumerate() {
-                let param_name = &param.name;
+                // Rename parameter: node types get _id suffix, others keep original name
+                let param_name = rename_variable(&param.name, Some(&param.typ));
                 let parse_code = match &param.typ {
                     Type::String => format!(
                         "let {param_name} = params.get({i})
@@ -4842,13 +5065,12 @@ pub fn implement_script_boilerplate(
                             .unwrap_or_default() as u64;\n"
                     ),
                     Type::Custom(tn) if is_node_type(tn) => {
-                        // For node types, parse UUID from string and get the node
+                        // For node types, parse UUID from string (nodes are just UUIDs)
                         format!(
-                            "let mut {param_name} = params.get({i})
+                            "let {param_name} = params.get({i})
                             .and_then(|v| v.as_str())
-                            .and_then(|s| uuid::Uuid::parse_str(s).ok())
-                            .map(|id| api.get_node_clone::<{tn}>(id))
-                            .unwrap_or_else(|| Default::default());\n"
+                            .and_then(|s| Uuid::parse_str(s).ok())
+                            .unwrap_or_default();\n"
                         )
                     },
                     Type::Custom(tn) => format!(
@@ -4857,14 +5079,12 @@ pub fn implement_script_boilerplate(
                             .unwrap_or_default();\n"
                     ),
                     Type::Node(_) => {
-                        // Handle Type::Node variant - treat as base Node type
-                        // Base Node type works for all nodes, so no type check needed
+                        // Handle Type::Node variant - nodes are just UUIDs
                         format!(
                             "let {param_name} = params.get({i})
                             .and_then(|v| v.as_str())
-                            .and_then(|s| uuid::Uuid::parse_str(s).ok())
-                            .map(|id| api.get_node_clone::<Node>(id))
-                            .unwrap_or_else(|| Default::default());\n"
+                            .and_then(|s| Uuid::parse_str(s).ok())
+                            .unwrap_or_default();\n"
                         )
                     },
                     _ => format!("let {param_name} = Default::default();\n"),
@@ -4875,7 +5095,7 @@ pub fn implement_script_boilerplate(
             param_list = func
                 .params
                 .iter()
-                .map(|p| p.name.as_str())
+                .map(|p| rename_variable(&p.name, Some(&p.typ)))
                 .collect::<Vec<_>>()
                 .join(", ");
             param_list.push_str(", ");
@@ -4884,7 +5104,7 @@ pub fn implement_script_boilerplate(
         write!(
             dispatch_entries,
             "        {func_id}u64 => | script: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
-{param_parsing}            script.{func_name}({param_list}api, true);
+{param_parsing}            script.{func_name}({param_list}api);
         }},\n"
         )
         .unwrap();
@@ -4900,12 +5120,12 @@ pub fn implement_script_boilerplate(
         out,
         r#"
 impl ScriptObject for {struct_name} {{
-    fn set_node_id(&mut self, id: Uuid) {{
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {{
+        self.id = id;
     }}
 
-    fn get_node_id(&self) -> Uuid {{
-        self.base.id
+    fn get_id(&self) -> Uuid {{
+        self.id
     }}
 
     fn get_var(&self, var_id: u64) -> Option<Value> {{
@@ -4957,6 +5177,10 @@ impl ScriptObject for {struct_name} {{
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
     }}
+    
+    fn script_flags(&self) -> ScriptFlags {{
+        ScriptFlags::new({flags_value})
+    }}
 }}
 
 // =========================== Static PHF Dispatch Tables ===========================
@@ -4988,6 +5212,7 @@ static DISPATCH_TABLE: phf::Map<
         set_entries = set_entries,
         apply_entries = apply_entries,
         dispatch_entries = dispatch_entries,
+        flags_value = flags_value,
     )
     .unwrap();
 
@@ -5162,7 +5387,45 @@ pub fn derive_rust_perro_script(
     // Extract function names from impl blocks
     let mut functions = Vec::new();
 
-    // Find impl StructNameScript { ... } blocks (not trait impl blocks)
+    // FIRST: Parse trait methods from impl Script for StructName { ... } block
+    // Use a simpler approach: find the impl block start, then scan for trait methods
+    let impl_script_marker = format!("impl Script for {}", actual_struct_name);
+    if let Some(start_pos) = code.find(&impl_script_marker) {
+        // Find the opening brace
+        if let Some(brace_pos) = code[start_pos..].find('{') {
+            let block_start = start_pos + brace_pos;
+            
+            // Search for trait methods after this point (they must be before the next impl block or EOF)
+            let next_impl_pos = code[block_start..].find("impl ")
+                .map(|p| block_start + p)
+                .unwrap_or(code.len());
+            
+            let search_region = &code[block_start..next_impl_pos];
+            
+            // Find init, update, fixed_update methods
+            let fn_re = Regex::new(r"fn\s+(init|update|fixed_update)\s*\(").unwrap();
+
+            for fn_cap in fn_re.captures_iter(search_region) {
+                let fn_name = fn_cap[1].to_string();
+
+                functions.push(Function {
+                    name: fn_name.clone(),
+                    is_trait_method: true,  // Mark as trait method for flag detection
+                    params: vec![],
+                    return_type: Type::Void,
+                    uses_self: false,
+                    cloned_child_nodes: Vec::new(),
+                    body: vec![],
+                    locals: vec![],
+                    attributes: vec![],
+                    is_on_signal: false,
+                    signal_name: None,
+                });
+            }
+        }
+    }
+
+    // SECOND: Find impl StructNameScript { ... } blocks (non-trait methods)
     let impl_block_re = Regex::new(&format!(
         r"impl\s+{}\s*\{{([^}}]*(?:\{{[^}}]*\}}[^}}]*)*)\}}",
         regex::escape(&format!("{}Script", to_pascal_case(struct_name)))

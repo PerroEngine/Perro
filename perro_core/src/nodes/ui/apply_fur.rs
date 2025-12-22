@@ -652,7 +652,7 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
     for el in elems {
         let flat = convert_fur_element_to_ui_elements(el, None);
         for (uuid, e) in flat {
-            if e.get_parent().is_none() {
+            if e.get_parent().is_nil() {
                 root_ids.push(uuid);
             }
             elements.insert(uuid, e);

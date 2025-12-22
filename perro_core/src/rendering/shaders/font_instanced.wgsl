@@ -50,7 +50,8 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 
     let world = transform * vec4<f32>(vertex.position, 0.0, 1.0);
     let ndc = world.xy * camera.ndc_scale;
-    let depth = f32(instance.z_index) * 0.001;
+    // Depth from z_index (inverted: higher z_index = lower depth = renders on top)
+    let depth = 1.0 - f32(instance.z_index) * 0.001;
 
     var out: VertexOutput;
     out.pos = vec4<f32>(ndc, depth, 1.0);

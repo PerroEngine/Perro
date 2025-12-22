@@ -166,13 +166,15 @@ fn find_percentage_reference_ancestor(
     let mut current = elements.get(current_id)?;
 
     // Walk up the parent chain
-    while let Some(parent_id) = current.get_parent() {
+    let mut parent_id = current.get_parent();
+    while !parent_id.is_nil() {
         if let Some(parent) = elements.get(&parent_id) {
             // Check if parent is NOT a layout container
             match parent {
                 UIElement::Layout(_) | UIElement::GridLayout(_) => {
                     // Skip layout containers, continue up the chain
                     current = parent;
+                    parent_id = current.get_parent();
                     continue;
                 }
                 _ => {
@@ -637,9 +639,9 @@ pub fn update_global_transforms_with_layout(
 ) {
     // Get parent info - FIXED: Use the working version's logic
     let (parent_size, parent_z) = {
-        let parent_id = elements.get(current_id).and_then(|el| el.get_parent());
+        let parent_id = elements.get(current_id).map(|el| el.get_parent()).unwrap_or(Uuid::nil());
 
-        if let Some(parent_id) = parent_id {
+        if !parent_id.is_nil() {
             if let Some(parent) = elements.get(&parent_id) {
                 (*parent.get_size(), parent.get_z_index())
             } else {
@@ -927,6 +929,9 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     let cache = get_layout_cache();
     update_ui_layout_cached(ui_node, cache);
 
+    // Get timestamp from UINode's base node
+    let timestamp = ui_node.base.created_timestamp;
+
     if let Some(elements) = &mut ui_node.elements {
         // First, sync all buttons' base properties to their panel/text
         for (_, element) in elements.iter_mut() {
@@ -945,21 +950,21 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
         for (_, element) in visible_elements {
             match element {
                 UIElement::BoxContainer(_) => { /* no-op */ }
-                UIElement::Panel(panel) => render_panel(panel, gfx),
+                UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
                 UIElement::GridLayout(_) => { /* no-op */ }
                 UIElement::Layout(_) => {}
-                UIElement::Text(text) => render_text(text, gfx),
+                UIElement::Text(text) => render_text(text, gfx, timestamp),
                 UIElement::Button(button) => {
                     // Button is already synced, just render panel and text
-                    render_panel(&button.panel, gfx);
-                    render_text(&button.text, gfx);
+                    render_panel(&button.panel, gfx, timestamp);
+                    render_text(&button.text, gfx, timestamp);
                 }
             }
         }
     }
 }
 
-fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
+fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
     let background_color = panel
         .props
         .background_color
@@ -982,6 +987,7 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
         0.0,
         false,
         z_index,
+        timestamp,
     );
 
     if border_thickness > 0.0 {
@@ -998,6 +1004,7 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
                 border_thickness,
                 true,
                 z_index + 1,
+                timestamp,
             );
         }
     }
@@ -1005,7 +1012,7 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics) {
 
 
 // Optimized text rendering - only regenerate atlas when font properties change
-fn render_text(text: &UIText, gfx: &mut Graphics) {
+fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
     // Skip rendering if text content is empty
     if text.props.content.is_empty() {
         return;
@@ -1042,5 +1049,6 @@ fn render_text(text: &UIText, gfx: &mut Graphics) {
         text.pivot,
         text.props.color,
         text.z_index,
+        timestamp,
     );
 }

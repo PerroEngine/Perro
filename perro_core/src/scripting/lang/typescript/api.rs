@@ -102,6 +102,7 @@ impl TypeScriptSignal {
             "new" | "create" => Some(ApiModule::Signal(SignalApi::New)),
             "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
             "emit" => Some(ApiModule::Signal(SignalApi::Emit)),
+            "emitDeferred" | "emit_deferred" => Some(ApiModule::Signal(SignalApi::EmitDeferred)),
             _ => None,
         }
     }

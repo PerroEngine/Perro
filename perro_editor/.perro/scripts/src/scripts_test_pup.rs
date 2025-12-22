@@ -36,7 +36,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsTestPupScript {
-    base: Sprite2D,
+    id: Uuid,
 }
 
 // ========================================================================
@@ -45,10 +45,10 @@ pub struct ScriptsTestPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_test_pup_create_script() -> *mut dyn ScriptObject {
-    let base = Sprite2D::new("ScriptsTestPup");
+    let id = Uuid::nil(); // Will be set when attached to node
 
     Box::into_raw(Box::new(ScriptsTestPupScript {
-        base,
+        id,
     })) as *mut dyn ScriptObject
 }
 
@@ -58,16 +58,12 @@ pub extern "C" fn scripts_test_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for ScriptsTestPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        self.bob(25i32, api, false);
+        self.bob(25i32, api);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.base = api.get_node_clone::<Sprite2D>(self.base.id);
-        self.base.transform.rotation += (0.5f32 * api.Time.get_delta());
-        self.base.transform.position.x += (550f32 * api.Time.get_delta());
-
-        // Merge cloned nodes (stack-allocated array)
-        api.merge_nodes(&[self.base.clone().to_scene_node()]);
+        api.mutate_node(self.id, |self_node: &mut Sprite2D| { self_node.transform.rotation += (0.5f32 * api.Time.get_delta()); });
+        api.mutate_node(self.id, |self_node: &mut Sprite2D| { self_node.transform.position.x += (550f32 * api.Time.get_delta()); });
     }
 
 }
@@ -77,20 +73,20 @@ impl Script for ScriptsTestPupScript {
 // ========================================================================
 
 impl ScriptsTestPupScript {
-    fn bob(&mut self, mut i: i32, api: &mut ScriptApi<'_>, external_call: bool) {
-        api.print(&i);
+    fn bob(&mut self, mut i: i32, api: &mut ScriptApi<'_>) {
+        api.print(&t_var_i);
     }
 
 }
 
 
 impl ScriptObject for ScriptsTestPupScript {
-    fn set_node_id(&mut self, id: Uuid) {
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 
-    fn get_node_id(&self) -> Uuid {
-        self.base.id
+    fn get_id(&self) -> Uuid {
+        self.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -142,6 +138,10 @@ impl ScriptObject for ScriptsTestPupScript {
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
     }
+    
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(3)
+    }
 }
 
 // =========================== Static PHF Dispatch Tables ===========================
@@ -166,10 +166,10 @@ static DISPATCH_TABLE: phf::Map<
     fn(&mut ScriptsTestPupScript, &[Value], &mut ScriptApi<'_>),
 > = phf::phf_map! {
         21748447695211092u64 => | script: &mut ScriptsTestPupScript, params: &[Value], api: &mut ScriptApi<'_>| {
-let i = params.get(0)
+let t_var_i = params.get(0)
                             .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
                             .unwrap_or_default() as i32;
-            script.bob(i, api, true);
+            script.bob(t_var_i, api);
         },
 
     };

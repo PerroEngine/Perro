@@ -1,5 +1,6 @@
 use crate::nodes::_2d::node_2d::Node2D;
 use crate::structs::Color;
+use crate::structs2d::ShapeType2D;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -14,7 +15,7 @@ pub struct Shape2D {
 
     /// Shape type
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shape_type: Option<ShapeType>,
+    pub shape_type: Option<ShapeType2D>,
 
     /// Color for the shape
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -32,11 +33,6 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum ShapeType {
-    Rectangle { width: f32, height: f32 },
-    Circle { radius: f32 },
-}
 
 impl Shape2D {
     pub fn new() -> Self {
@@ -51,11 +47,11 @@ impl Shape2D {
         }
     }
 
-    pub fn set_shape_type(&mut self, shape_type: ShapeType) {
+    pub fn set_shape_type(&mut self, shape_type: ShapeType2D) {
         self.shape_type = Some(shape_type);
     }
 
-    pub fn get_shape_type(&self) -> Option<ShapeType> {
+    pub fn get_shape_type(&self) -> Option<ShapeType2D> {
         self.shape_type
     }
 }

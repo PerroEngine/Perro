@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+use once_cell::sync::Lazy;
 use crate::{ast::*, engine_structs::EngineStruct, node_registry::NodeType};
 
 #[derive(Debug, Clone)]
@@ -11,6 +11,9 @@ pub struct EngineRegistry {
     pub node_bases: HashMap<NodeType, NodeType>,
     pub struct_bases: HashMap<EngineStruct, EngineStruct>,
 }
+
+/// Global engine registry - initialized once, used during transpilation
+pub static ENGINE_REGISTRY: Lazy<EngineRegistry> = Lazy::new(|| EngineRegistry::new());
 
 impl EngineRegistry {
     pub fn new() -> Self {
@@ -65,36 +68,195 @@ impl EngineRegistry {
             ],
         );
 
+        // ShapeType2D is an enum - enums can't have fields like structs
+        // We register it as an EngineStruct for type checking, but it has no fields
+        // The enum variants are: Rectangle { width, height }, Circle { radius }, Square { size }, Triangle { base, height }
+
+        // 3D structs
+        reg.register_struct(
+            EngineStruct::Vector3,
+            None,
+            vec![
+                ("x", Type::Number(NumberKind::Float(32))),
+                ("y", Type::Number(NumberKind::Float(32))),
+                ("z", Type::Number(NumberKind::Float(32))),
+            ],
+        );
+
+        reg.register_struct(
+            EngineStruct::Quaternion,
+            None,
+            vec![
+                ("x", Type::Number(NumberKind::Float(32))),
+                ("y", Type::Number(NumberKind::Float(32))),
+                ("z", Type::Number(NumberKind::Float(32))),
+                ("w", Type::Number(NumberKind::Float(32))),
+            ],
+        );
+
+        reg.register_struct(
+            EngineStruct::Transform3D,
+            None,
+            vec![
+                ("position", Type::EngineStruct(EngineStruct::Vector3)),
+                ("rotation", Type::EngineStruct(EngineStruct::Quaternion)),
+                ("scale", Type::EngineStruct(EngineStruct::Vector3)),
+            ],
+        );
+
         //--------------------------------
         // Nodes
         //--------------------------------
+        // Base Node type - all nodes inherit from this
+        // Note: local_id, dirty, script_exp_vars, metadata are internal and not registered
         reg.register_node(
             NodeType::Node,
             None,
-            vec![("name", Type::String), ("id", Type::Custom("Uuid".into()))],
+            vec![
+                ("name", Type::CowStr), // Cow<'static, str>
+                ("id", Type::Uuid),
+                ("parent_id", Type::Uuid), // Uuid::nil() used for "no parent"
+                ("children", Type::Container(ContainerKind::Array, vec![Type::Uuid])),
+                ("script_path", Type::Option(Box::new(Type::CowStr))),
+                ("is_root_of", Type::Option(Box::new(Type::CowStr))),
+            ],
         );
 
+        // Node2D - inherits from Node, adds transform
+        // Note: global_transform and transform_dirty are runtime-only and not registered
         reg.register_node(
             NodeType::Node2D,
             Some(NodeType::Node),
-            vec![("transform", Type::EngineStruct(EngineStruct::Transform2D))],
+            vec![
+                ("transform", Type::EngineStruct(EngineStruct::Transform2D)),
+                ("pivot", Type::EngineStruct(EngineStruct::Vector2)),
+                ("visible", Type::Bool),
+                ("z_index", Type::Number(NumberKind::Signed(32))),
+            ],
         );
 
+        // Sprite2D - inherits from Node2D
         reg.register_node(
             NodeType::Sprite2D,
             Some(NodeType::Node2D),
             vec![
-                ("texture", Type::EngineStruct(EngineStruct::ImageTexture)),
-                ("color", Type::EngineStruct(EngineStruct::Color)),
+                ("texture_path", Type::Option(Box::new(Type::CowStr))),
+                ("region", Type::Option(Box::new(Type::Container(ContainerKind::FixedArray(4), vec![Type::Number(NumberKind::Float(32))])))),
             ],
         );
 
+        // Area2D - inherits from Node2D
+        reg.register_node(
+            NodeType::Area2D,
+            Some(NodeType::Node2D),
+            vec![],
+        );
+
+        // CollisionShape2D - inherits from Node2D
+        reg.register_node(
+            NodeType::CollisionShape2D,
+            Some(NodeType::Node2D),
+            vec![
+                ("shape", Type::Option(Box::new(Type::Custom("ColliderShape".into())))),
+            ],
+        );
+
+        // Shape2D - inherits from Node2D
+        reg.register_node(
+            NodeType::Shape2D,
+            Some(NodeType::Node2D),
+            vec![
+                ("shape_type", Type::Option(Box::new(Type::EngineStruct(EngineStruct::ShapeType2D)))),
+                ("color", Type::Option(Box::new(Type::EngineStruct(EngineStruct::Color)))),
+                ("filled", Type::Bool),
+            ],
+        );
+
+        // Camera2D - inherits from Node2D
+        reg.register_node(
+            NodeType::Camera2D,
+            Some(NodeType::Node2D),
+            vec![
+                ("zoom", Type::Option(Box::new(Type::Number(NumberKind::Float(32))))),
+                ("active", Type::Bool),
+            ],
+        );
+
+        // UINode - inherits from Node
         reg.register_node(
             NodeType::UINode,
             Some(NodeType::Node),
             vec![
                 ("visible", Type::Bool),
-                ("fur_path", Type::Custom("Option<String>".into())),
+                ("fur_path", Type::Option(Box::new(Type::CowStr))),
+            ],
+        );
+
+        // Node3D - inherits from Node
+        reg.register_node(
+            NodeType::Node3D,
+            Some(NodeType::Node),
+            vec![
+                ("transform", Type::EngineStruct(EngineStruct::Transform3D)),
+                ("pivot", Type::EngineStruct(EngineStruct::Vector3)),
+                ("visible", Type::Bool),
+            ],
+        );
+
+        // MeshInstance3D - inherits from Node3D
+        reg.register_node(
+            NodeType::MeshInstance3D,
+            Some(NodeType::Node3D),
+            vec![
+                ("mesh_path", Type::Option(Box::new(Type::CowStr))),
+                ("material_path", Type::Option(Box::new(Type::CowStr))),
+                ("material_id", Type::Option(Box::new(Type::Number(NumberKind::Unsigned(32))))),
+            ],
+        );
+
+        // Camera3D - inherits from Node3D
+        reg.register_node(
+            NodeType::Camera3D,
+            Some(NodeType::Node3D),
+            vec![
+                ("fov", Type::Option(Box::new(Type::Number(NumberKind::Float(32))))),
+                ("near", Type::Option(Box::new(Type::Number(NumberKind::Float(32))))),
+                ("far", Type::Option(Box::new(Type::Number(NumberKind::Float(32))))),
+                ("active", Type::Bool),
+            ],
+        );
+
+        // DirectionalLight3D - inherits from Node3D
+        reg.register_node(
+            NodeType::DirectionalLight3D,
+            Some(NodeType::Node3D),
+            vec![
+                ("color", Type::EngineStruct(EngineStruct::Color)),
+                ("intensity", Type::Number(NumberKind::Float(32))),
+            ],
+        );
+
+        // OmniLight3D - inherits from Node3D
+        reg.register_node(
+            NodeType::OmniLight3D,
+            Some(NodeType::Node3D),
+            vec![
+                ("color", Type::EngineStruct(EngineStruct::Color)),
+                ("intensity", Type::Number(NumberKind::Float(32))),
+                ("range", Type::Number(NumberKind::Float(32))),
+            ],
+        );
+
+        // SpotLight3D - inherits from Node3D
+        reg.register_node(
+            NodeType::SpotLight3D,
+            Some(NodeType::Node3D),
+            vec![
+                ("color", Type::EngineStruct(EngineStruct::Color)),
+                ("intensity", Type::Number(NumberKind::Float(32))),
+                ("range", Type::Number(NumberKind::Float(32))),
+                ("inner_angle", Type::Number(NumberKind::Float(32))),
+                ("outer_angle", Type::Number(NumberKind::Float(32))),
             ],
         );
 

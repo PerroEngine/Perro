@@ -37,7 +37,7 @@ version = "1.4"
 [package]
 build = "build.rs"
 edition = "2024"
-name = "Fart"
+name = "MessAround"
 version = "0.1.0"
 
 [profile.release]

@@ -416,7 +416,8 @@ impl ApiCodegen for ScriptTypeApi {
 
 impl ApiTypes for ScriptTypeApi {
     fn return_type(&self) -> Option<Type> {
-        Some(Type::Script)
+        // ScriptTypeApi removed - scripts are no longer a type
+        None
     }
     // No specific param_types for ScriptType APIs needed by default, uses None.
 }
@@ -437,23 +438,47 @@ impl ApiCodegen for NodeSugarApi {
         match self {
             NodeSugarApi::GetVar => {
                 let (node, name) = (args_strs.get(0), args_strs.get(1));
+                let node_id = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
+                } else if let Some(node_str) = node {
+                    if node_str == "self" {
+                        "self.id".to_string()
+                    } else {
+                        // Node variable is already in _id form (bob_id) or is self.bob_id
+                        node_str.clone()
+                    }
+                } else {
+                    "self.id".to_string()
+                };
                 format!(
-                    "api.get_script_var(&{}.id, {})",
-                    node.map(|s| s.as_str()).unwrap_or("self"),
+                    "api.get_script_var(&{}, {})",
+                    node_id,
                     name.map(|s| s.as_str()).unwrap_or("\"\"")
                 )
             }
             NodeSugarApi::SetVar => {
                 let (node, name, val) = (args_strs.get(0), args_strs.get(1), args_strs.get(2));
+                let node_id = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
+                } else if let Some(node_str) = node {
+                    if node_str == "self" {
+                        "self.id".to_string()
+                    } else {
+                        // Node variable is already in _id form (bob_id) or is self.bob_id
+                        node_str.clone()
+                    }
+                } else {
+                    "self.id".to_string()
+                };
                 format!(
-                    "api.set_script_var(&{}.id, {}, {})",
-                    node.map(|s| s.as_str()).unwrap_or("self"),
+                    "api.set_script_var(&{}, {}, {})",
+                    node_id,
                     name.map(|s| s.as_str()).unwrap_or("\"\""),
                     val.map(|s| s.as_str()).unwrap_or("Value::Null")
                 )
             }
             NodeSugarApi::GetChildByName => {
-                // self.get_node("name") -> api.get_child_by_name(self.base.id, "name")
+                // self.get_node("name") -> api.get_child_by_name(self.id, "name")
                 // Returns the child node's ID (Option<Uuid>), which can then be used with get_node_clone
                 // Extract the string literal value from args[1] if it's a Literal::String
                 let child_name =
@@ -468,21 +493,26 @@ impl ApiCodegen for NodeSugarApi {
                             .unwrap_or_else(|| "\"\"".to_string())
                     };
                 let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.base.id".to_string()
+                    "self.id".to_string()
                 } else if let Some(node_str) = args_strs.get(0) {
-                    format!("{}.id", node_str)
+                    if node_str == "self" {
+                        "self.id".to_string()
+                    } else {
+                        // Node variable is already in _id form (bob_id) or is self.bob_id
+                        node_str.clone()
+                    }
                 } else {
-                    "self.base.id".to_string()
+                    "self.id".to_string()
                 };
                 format!("api.get_child_by_name({}, {})", node_expr, child_name)
             }
             NodeSugarApi::GetParent => {
                 // node.get_parent() -> returns the parent UUID (Option<Uuid>)
-                // For self.get_parent(): self.base.parent_id
+                // For self.get_parent(): self.parent_id
                 // For c.get_parent(): c.parent_id
                 // The cast handling will convert this to the actual node type when you do "as Sprite2D"
                 let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.base".to_string()
+                    "self".to_string()
                 } else if let Some(Expr::Ident(name)) = args.get(0) {
                     // Check args[0] FIRST - if it's an Ident (like "c"), use it directly
                     // This bypasses any incorrect processing in args_strs
@@ -491,49 +521,45 @@ impl ApiCodegen for NodeSugarApi {
                     // Fallback: use args_strs if args[0] is not a simple Ident
                     node_str.clone()
                 } else {
-                    "self.base".to_string()
+                    "self".to_string()
                 };
                 format!("{}.parent_id", node_expr)
             }
             NodeSugarApi::AddChild => {
-                // self.add_child(child) -> Update local node clones directly
-                // Set child's parent_id and add child.id to parent's children
-                // Handle reparenting: if child already has a parent, remove it from old parent
-                // Get the parent expression - could be self.base, bob, or any node variable
-                let parent_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.base".to_string()
+                // self.add_child(child) -> api.reparent(parent_id, child_id)
+                // Extract parent ID from AST
+                let parent_id = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
                 } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    // Direct identifier like "bob"
-                    name.clone()
+                    // Direct identifier like "bob" -> bob_id
+                    format!("{}_id", name)
                 } else if let Some(node_str) = args_strs.get(0) {
-                    // More complex expression - use the generated code
-                    node_str.clone()
+                    // Complex expression - if it's already an ID, use as-is
+                    if node_str.ends_with("_id") || node_str.ends_with(".id") {
+                        node_str.clone()
+                    } else {
+                        format!("{}_id", node_str)
+                    }
                 } else {
-                    "self.base".to_string()
+                    "self.id".to_string()
                 };
-                let child_expr = if let Some(node_str) = args_strs.get(1) {
-                    node_str.clone()
+                
+                // Extract child ID from AST (same logic as parent)
+                let child_id = if let Some(Expr::Ident(name)) = args.get(1) {
+                    // Direct identifier like "bob" -> bob_id
+                    format!("{}_id", name)
+                } else if let Some(node_str) = args_strs.get(1) {
+                    // Complex expression - if it's already an ID, use as-is
+                    if node_str.ends_with("_id") || node_str.ends_with(".id") {
+                        node_str.clone()
+                    } else {
+                        format!("{}_id", node_str)
+                    }
                 } else {
                     return "// Error: add_child requires a child node".to_string();
                 };
                 
-                // Check if child is newly created (StructNew) or existing (Ident/MemberAccess)
-                let is_newly_created = matches!(args.get(1), Some(Expr::StructNew(..)));
-                
-                if is_newly_created {
-                    // Newly created node: compile-time certain there's no old parent, skip check
-                    format!(
-                        "{{\n            // Set parent-child relationship on local clones\n            {}.parent_id = Some({}.id);\n            {}.children.get_or_insert_with(Vec::new).push({}.id);\n        }}",
-                        child_expr, parent_expr, parent_expr, child_expr
-                    )
-                } else {
-                    // Existing node: runtime check for old parent and handle reparenting
-                    // Use API function to remove child from old parent (works with any node type)
-                    format!(
-                        "{{\n            // Set parent-child relationship on local clones\n            // Handle reparenting: if child already has a parent, remove it from old parent\n            if let Some(old_parent_id) = {}.parent_id {{\n                api.remove_child(old_parent_id, {}.id);\n            }}\n            {}.parent_id = Some({}.id);\n            {}.children.get_or_insert_with(Vec::new).push({}.id);\n        }}",
-                        child_expr, child_expr, child_expr, parent_expr, parent_expr, child_expr
-                    )
-                }
+                format!("api.reparent({}, {})", parent_id, child_id)
             }
         }
     }
@@ -602,7 +628,7 @@ impl ApiCodegen for SignalApi {
                 let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 prehash_if_literal(&signal)
             }
-            SignalApi::Connect | SignalApi::Emit => {
+            SignalApi::Connect | SignalApi::Emit | SignalApi::EmitDeferred => {
                 // -- Fix: Accept both u64 and Type::Custom("Signal") as passthrough variables
                 let arg_expr = args.get(0).unwrap();
                 let arg_type = script.infer_expr_type(arg_expr, current_func);
@@ -617,32 +643,39 @@ impl ApiCodegen for SignalApi {
                     SignalApi::Connect => {
                         // New format: Signal.connect(signal, function_reference)
                         // function_reference can be:
-                        // - String literal (function name) -> use self.base.id
-                        // - MemberAccess (child.function) -> use child.base.id
+                        // - String literal (function name) -> use self.id
+                        // - MemberAccess (bob.function) -> use bob_id (node variable is already bob_id)
+                        // - Ident (function) -> use self.id
                         let func_expr = args.get(1).unwrap();
-                        let (node, func_name) = match func_expr {
+                        let (node_code, func_name) = match func_expr {
                             Expr::Literal(Literal::String(func_name)) => {
                                 // String literal -> function on self
-                                ("self.base".to_string(), func_name.clone())
+                                ("self".to_string(), func_name.clone())
                             }
                             Expr::MemberAccess(base, field) => {
-                                // MemberAccess like child.function -> use child as node
+                                // MemberAccess like bob.function -> node_code is already bob_id
                                 let node_code = base.to_rust(false, script, None, current_func);
-                                (format!("{}.base", node_code), field.clone())
+                                (node_code, field.clone())
                             }
                             Expr::Ident(func_name) => {
                                 // Just an identifier -> function on self
-                                ("self.base".to_string(), func_name.clone())
+                                ("self".to_string(), func_name.clone())
                             }
                             _ => {
                                 // Fallback: treat as string literal
                                 let func = strip_string_from(args_strs.get(1).unwrap());
-                                ("self.base".to_string(), func)
+                                ("self".to_string(), func)
                             }
                         };
 
                         let func_id = string_to_u64(&func_name);
-                        format!("api.connect_signal_id({signal}, {node}.id, {func_id}u64)")
+                        // If node_code is "self", use self.id. Otherwise, node_code is already the node ID variable (bob_id or self.bob_id)
+                        let node_id = if node_code == "self" {
+                            "self.id".to_string()
+                        } else {
+                            node_code
+                        };
+                        format!("api.connect_signal_id({signal}, {}, {func_id}u64)", node_id)
                     }
                     SignalApi::Emit => {
                         if args_strs.len() > 1 {
@@ -658,6 +691,22 @@ impl ApiCodegen for SignalApi {
                         } else {
                             // Empty array literal - zero allocation
                             format!("api.emit_signal_id({signal}, &[])")
+                        }
+                    }
+                    SignalApi::EmitDeferred => {
+                        if args_strs.len() > 1 {
+                            let params: Vec<String> = args_strs[1..]
+                                .iter()
+                                .map(|a| format!("json!({a})"))
+                                .collect();
+                            // Use array literal - converted to slice automatically (zero-cost)
+                            format!(
+                                "api.emit_signal_id_deferred({signal}, &[{}])",
+                                params.join(", ")
+                            )
+                        } else {
+                            // Empty array literal - zero allocation
+                            format!("api.emit_signal_id_deferred({signal}, &[])")
                         }
                     }
                     _ => unreachable!(),
@@ -678,7 +727,7 @@ impl ApiTypes for SignalApi {
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
             SignalApi::New => Some(vec![Type::String]),
-            SignalApi::Emit => Some(vec![Type::Custom("Signal".to_string()), Type::Object]),
+            SignalApi::Emit | SignalApi::EmitDeferred => Some(vec![Type::Custom("Signal".to_string()), Type::Object]),
             SignalApi::Connect => Some(vec![Type::Custom("Signal".to_string())]),
         }
     }

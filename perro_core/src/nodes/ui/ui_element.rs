@@ -15,13 +15,18 @@ use crate::{
     },
 };
 
+// Helper function for serde default
+fn uuid_nil() -> Uuid {
+    Uuid::nil()
+}
+
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaseUIElement {
     pub id: Uuid,
     pub name: String,
-    #[serde(rename = "parent")]
-    pub parent_id: Option<Uuid>,
+    #[serde(rename = "parent", default = "uuid_nil", skip_serializing_if = "Uuid::is_nil")]
+    pub parent_id: Uuid,
     pub children: Vec<Uuid>,
 
     pub visible: bool,
@@ -48,7 +53,7 @@ impl Default for BaseUIElement {
         Self {
             id,
             name: id.to_string(),
-            parent_id: None,
+            parent_id: Uuid::nil(),
             children: Vec::new(),
             visible: true,
             transform: Transform2D::default(),
@@ -76,7 +81,7 @@ pub trait BaseElement {
     fn get_visible(&self) -> bool;
     fn set_visible(&mut self, visible: bool);
 
-    fn get_parent(&self) -> Option<Uuid>;
+    fn get_parent(&self) -> Uuid;
     fn set_parent(&mut self, parent: Option<Uuid>);
 
     fn get_children(&self) -> &[Uuid];
@@ -141,11 +146,11 @@ macro_rules! impl_ui_element {
                 self.base.visible = visible;
             }
 
-            fn get_parent(&self) -> Option<uuid::Uuid> {
+            fn get_parent(&self) -> uuid::Uuid {
                 self.base.parent_id
             }
             fn set_parent(&mut self, parent: Option<uuid::Uuid>) {
-                self.base.parent_id = parent;
+                self.base.parent_id = parent.unwrap_or(uuid::Uuid::nil());
             }
 
             fn get_children(&self) -> &[uuid::Uuid] {

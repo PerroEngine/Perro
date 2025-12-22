@@ -57,6 +57,11 @@ impl StaticScriptProvider {
     }
 }
 
+// Safety: StaticScriptProvider is Sync because the &'static SceneData references
+// are only accessed from the main thread. The RefCell<SceneNode> inside SceneData
+// is not shared between threads, so it's safe to mark this as Sync.
+unsafe impl Sync for StaticScriptProvider {}
+
 impl ScriptProvider for StaticScriptProvider {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
         self.ctors

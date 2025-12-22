@@ -1140,49 +1140,73 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     pub fn call_init(&mut self, script_id: Uuid) {
         self.set_context();
-        if let Some(script_rc) = self.scene.get_script(script_id) {
-            script_rc.borrow_mut().engine_init(self);
+        // Take/insert pattern needed to avoid borrow checker issues
+        // (take_script/insert_script don't modify filtered vectors, just HashMap)
+        if let Some(mut script) = self.scene.take_script(script_id) {
+            // Check if script has init implemented before calling
+            if script.script_flags().has_init() {
+                script.engine_init(self);
+            }
+            self.scene.insert_script(script_id, script);
         }
         Self::clear_context();
     }
 
     pub fn call_update(&mut self, id: Uuid) {
         self.set_context();
-        if let Some(rc_script) = self.scene.get_script(id) {
-            let mut script = rc_script.borrow_mut();
-            script.engine_update(self);
+        // Take/insert pattern needed to avoid borrow checker issues
+        // (take_script/insert_script don't modify filtered vectors, just HashMap)
+        if let Some(mut script) = self.scene.take_script(id) {
+            // Check if script has update implemented before calling
+            if script.script_flags().has_update() {
+                script.engine_update(self);
+            }
+            self.scene.insert_script(id, script);
         }
         Self::clear_context();
     }
 
     pub fn call_fixed_update(&mut self, id: Uuid) {
         self.set_context();
-        if let Some(rc_script) = self.scene.get_script(id) {
-            let mut script = rc_script.borrow_mut();
-            script.engine_fixed_update(self);
+        // Take/insert pattern needed to avoid borrow checker issues
+        // (take_script/insert_script don't modify filtered vectors, just HashMap)
+        if let Some(mut script) = self.scene.take_script(id) {
+            // Check if script has fixed_update implemented before calling
+            if script.script_flags().has_fixed_update() {
+                script.engine_fixed_update(self);
+            }
+            self.scene.insert_script(id, script);
         }
         Self::clear_context();
     }
 
     pub fn call_node_internal_fixed_update(&mut self, node_id: Uuid) {
-        // Get the node reference and convert to raw pointer
-        // Converting to raw pointer ends the borrow, so we can use self afterward
-        let node_ptr = if let Some(node) = self.scene.get_scene_node(node_id) {
-            node as *mut SceneNode
-        } else {
-            return;
+        // We need to get the node and call the method, but we can't hold a RefMut
+        // while also borrowing self mutably. So we check if update is needed first,
+        // then drop that borrow before calling the method.
+        let needs_update = {
+            self.scene.get_scene_node_ref(node_id)
+                .map(|node_ref| {
+                    node_ref.needs_internal_fixed_update()
+                })
+                .unwrap_or(false)
         };
-
-        // SAFETY: node_ptr is valid and points to a node in the scene.
-        // The borrow from get_scene_node ended when we converted to a raw pointer.
-        // We can now use self freely, and convert the raw pointer back to a reference.
-        // This is safe because:
-        // 1. The node pointer is valid (it came from a valid mutable reference)
-        // 2. The node won't be removed while we're using it (we control the call site)
-        // 3. internal_fixed_update won't access the same node_id through the API
-        unsafe {
-            if let Some(node) = node_ptr.as_mut() {
-                node.internal_fixed_update(self);
+        
+        if needs_update {
+            // We need to split the borrows: get a RefMut from the scene while also
+            // having &mut self. Since RefMut borrows from the RefCell inside the scene's
+            // data (not from the &mut dyn SceneAccess itself), we can use unsafe code
+            // to split the borrows safely. The RefMut will be dropped at the end of
+            // the block, ensuring the borrow is released.
+            unsafe {
+                // Get a raw pointer to the scene to split the borrows
+                let scene_ptr: *mut dyn SceneAccess = &mut *self.scene;
+                if let Some(node) = (*scene_ptr).get_scene_node_mut(node_id) {
+                    // The RefMut borrows from the RefCell, not from the SceneAccess trait object,
+                    // so it's safe to use &mut self here as long as we don't access self.scene
+                    // through the mutable reference while the RefMut is alive.
+                    node.internal_fixed_update(self);
+                }
             }
         }
     }
@@ -1194,26 +1218,94 @@ impl<'a> ScriptApi<'a> {
 
     pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &[Value]) {
         self.set_context();
-        if let Some(rc_script) = self.scene.get_script(id) {
-            let mut script = rc_script.borrow_mut();
+        // Safely take script out, call method, put it back
+        if let Some(mut script) = self.scene.take_script(id) {
             script.call_function(func, self, params);
+            self.scene.insert_script(id, script);
         }
         Self::clear_context();
+    }
+    
+    /// Internal fast-path call that skips context setup (used when context already set)
+    #[inline]
+    pub(crate) fn call_function_id_fast(&mut self, id: Uuid, func: u64, params: &[Value]) {
+        // Safely take script out, call method, put it back (no context overhead)
+        if let Some(mut script) = self.scene.take_script(id) {
+            script.call_function(func, self, params);
+            self.scene.insert_script(id, script);
+        }
     }
 
     pub fn string_to_u64(&mut self, string: &str) -> u64 {
         string_to_u64(string)
     }
 
-    // The human-friendly one
+    // ========== INSTANT SIGNALS (zero-allocation, immediate) ==========
+    
+    /// Emit signal instantly - handlers called immediately
+    /// Params passed as compile-time slice, zero allocation
     pub fn emit_signal(&mut self, name: &str, params: &[Value]) {
         let id = self.string_to_u64(name);
-        self.scene.queue_signal_id(id, params);
+        self.emit_signal_id(id, params);
     }
 
-    // The low-level one
+    /// Emit signal instantly by ID - handlers called immediately
+    /// Params passed as compile-time slice, zero allocation
+    /// OPTIMIZED: Handles emission in existing API context to avoid double-borrow
+    /// OPTIMIZED: Set context once and batch all calls to minimize overhead
     pub fn emit_signal_id(&mut self, id: u64, params: &[Value]) {
-        self.scene.queue_signal_id(id, params);
+        let start = std::time::Instant::now();
+        
+        // Copy out listeners before calling functions
+        let script_map_opt = self.scene.get_signal_connections(id);
+        if script_map_opt.is_none() {
+            return;
+        }
+
+        // OPTIMIZED: Use SmallVec with inline capacity of 4 listeners
+        // Most signals have 1-3 listeners, so this avoids heap allocation in common case
+        let script_map = script_map_opt.unwrap();
+        let mut call_list = SmallVec::<[(Uuid, u64); 4]>::new();
+        for (uuid, fns) in script_map.iter() {
+            for &fn_id in fns.iter() {
+                call_list.push((*uuid, fn_id));
+            }
+        }
+
+        let setup_time = start.elapsed();
+        let call_start = std::time::Instant::now();
+
+        // OPTIMIZED: Set context once for all calls instead of per-call
+        self.set_context();
+        
+        // OPTIMIZED: Use fast-path calls that skip redundant context operations
+        for (target_id, fn_id) in call_list.iter() {
+            self.call_function_id_fast(*target_id, *fn_id, params);
+        }
+        
+        // Clear context once after all calls
+        Self::clear_context();
+        
+        let call_time = call_start.elapsed();
+        let total_time = start.elapsed();
+        
+        eprintln!("[SIGNAL TIMING] Signal ID: {} | Listeners: {} | Setup: {:?} | Calls: {:?} | Total: {:?}", 
+            id, call_list.len(), setup_time, call_time, total_time);
+    }
+
+    // ========== DEFERRED SIGNALS (queued, processed at frame end) ==========
+    
+    /// Emit signal deferred - queued and processed at end of frame
+    /// Use when emitting during iteration or need frame-end processing
+    pub fn emit_signal_deferred(&mut self, name: &str, params: &[Value]) {
+        let id = self.string_to_u64(name);
+        self.scene.emit_signal_id_deferred(id, params);
+    }
+
+    /// Emit signal deferred by ID - queued and processed at end of frame
+    /// Use when emitting during iteration or need frame-end processing
+    pub fn emit_signal_id_deferred(&mut self, id: u64, params: &[Value]) {
+        self.scene.emit_signal_id_deferred(id, params);
     }
 
     pub fn connect_signal(&mut self, name: &str, target: Uuid, function: &'static str) {
@@ -1246,7 +1338,7 @@ impl<'a> ScriptApi<'a> {
         // Construct script without registering it
         let raw = ctor();
         let mut boxed: ScriptType = unsafe { Box::from_raw(raw) };
-        boxed.set_node_id(Uuid::nil()); // explicitly detached
+        boxed.set_id(Uuid::nil()); // explicitly detached
 
         // run init() safely using a temporary sub‑APIs
         // note: doesn’t touch scene.scripts, only passes mut ref
@@ -1288,19 +1380,108 @@ impl<'a> ScriptApi<'a> {
     {
         let node_enum = self
             .scene
-            .get_scene_node(id)
+            .get_scene_node_ref(id)
             .unwrap_or_else(|| panic!("Node {} not found", id))
             .clone();
         node_enum.into_inner()
+    }
+    
+    /// Read a value from a node using a closure - no clones needed!
+    /// The closure receives &T where T is the node type and returns a Copy value
+    /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent_id);`
+    pub fn read_node<T: 'static, R: Copy>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
+        let node = self.scene.get_scene_node_ref(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        
+        let typed_node = node.as_any().downcast_ref::<T>()
+            .unwrap_or_else(|| panic!("Node {} is not of type {}", node_id, std::any::type_name::<T>()));
+        
+        f(typed_node)
+    }
+    
+    /// Mutate a node directly with a closure - no clones needed!
+    /// The closure receives &mut T where T is the node type
+    /// Returns true if the node was found and successfully mutated, false otherwise
+    /// Example: `api.mutate_node::<Node2D>(node_id, |n| n.transform.position.x = 5.0);`
+    pub fn mutate_node<T: 'static, F>(&mut self, id: Uuid, f: F)
+    where
+        F: FnOnce(&mut T),
+    {
+        // Get mutable access to the node
+        let node = self.scene.get_scene_node_mut(id)
+            .unwrap_or_else(|| panic!("Node {} not found", id));
+        
+        // Try to downcast to the requested type and mutate in place
+        let typed_node = node.as_any_mut().downcast_mut::<T>()
+            .unwrap_or_else(|| panic!("Node {} is not of type {}", id, std::any::type_name::<T>()));
+        
+        f(typed_node); // mutate in place
+        
+        // Mark dirty after modification
+        node.mark_dirty();
+        node.mark_transform_dirty_if_node2d();
+        
+        // If this is a Node2D, mark transform dirty recursively (including children)
+        // This ensures children's global transforms are recalculated when parent moves
+        if node.as_node2d().is_some() {
+            self.scene.mark_transform_dirty_recursive(id);
+        }
+    }
+    
+    /// Create a new node of the specified type and add it to the scene
+    /// Returns the ID of the newly created node
+    /// Example: `let node_id = api.create_node::<Node2D>();`
+    pub fn create_node<T>(&mut self) -> Uuid
+    where
+        T: Default,
+        T: crate::nodes::node_registry::ToSceneNode,
+    {
+        let node: T = Default::default();
+        let scene_node = node.to_scene_node();
+        let id = scene_node.get_id();
+        
+        // Add to scene
+        self.scene.add_node_to_scene(scene_node)
+            .unwrap_or_else(|e| panic!("Failed to add node to scene: {}", e));
+        
+        id
+    }
+    
+    /// Reparent a child node to a new parent
+    /// Handles removing from old parent if it exists
+    /// Example: `api.reparent(parent_id, child_id);`
+    pub fn reparent(&mut self, new_parent_id: Uuid, child_id: Uuid) {
+        // Don't reparent to nil parent
+        if new_parent_id.is_nil() {
+            return;
+        }
+        
+        // Get the child's current parent_id (returns Uuid, nil if no parent)
+        let old_parent_id = self.scene.get_scene_node_ref(child_id)
+            .unwrap_or_else(|| panic!("Child node {} not found", child_id))
+            .get_parent();
+        
+        // Remove from old parent if it has one (this also sets child's parent_id to nil)
+        if !old_parent_id.is_nil() {
+            self.remove_child(old_parent_id, child_id);
+        }
+        
+        // Set the child's parent_id to the new parent
+        if let Some(child_node) = self.scene.get_scene_node_mut(child_id) {
+            child_node.set_parent(Some(new_parent_id));
+        }
+        
+        // Add child to the new parent's children list
+        if let Some(parent_node) = self.scene.get_scene_node_mut(new_parent_id) {
+            parent_node.add_child(child_id);
+        }
     }
 
     /// Get a child node by name, searching through the parent's children
     /// Returns the child node's ID if found, None otherwise
     pub fn get_child_by_name(&mut self, parent_id: Uuid, child_name: &str) -> Option<Uuid> {
-        // Collect children first to avoid multiple mutable borrows
-        // We need to drop the mutable borrow of parent_node before we can borrow again
         let children: Vec<Uuid> = {
-            if let Some(parent_node) = self.scene.get_scene_node(parent_id) {
+            if let Some(parent_node) = self.scene.get_scene_node_ref(parent_id) {
                 parent_node.get_children().iter().copied().collect()
             } else {
                 return None;
@@ -1309,7 +1490,7 @@ impl<'a> ScriptApi<'a> {
 
         // Now iterate over the collected children (no borrows held)
         for child_id in children {
-            if let Some(child_node) = self.scene.get_scene_node(child_id) {
+            if let Some(child_node) = self.scene.get_scene_node_ref(child_id) {
                 if child_node.get_name() == child_name {
                     return Some(child_id);
                 }
@@ -1319,12 +1500,12 @@ impl<'a> ScriptApi<'a> {
     }
 
     /// Get the parent node ID of a given node
-    /// Returns the parent node's ID if found, None otherwise
-    pub fn get_parent(&mut self, node_id: Uuid) -> Option<Uuid> {
-        if let Some(node) = self.scene.get_scene_node(node_id) {
+    /// Returns the parent node's ID (Uuid::nil() if node not found or has no parent)
+    pub fn get_parent(&mut self, node_id: Uuid) -> Uuid {
+        if let Some(node) = self.scene.get_scene_node_ref(node_id) {
             node.get_parent()
         } else {
-            None
+            Uuid::nil()
         }
     }
 
@@ -1334,9 +1515,17 @@ impl<'a> ScriptApi<'a> {
 
     /// Remove a child from a parent node by directly mutating the scene
     /// This works with any node type through the BaseNode trait
+    /// Remove a child from its parent
+    /// Sets the child's parent_id to nil and removes it from parent's children list
     pub fn remove_child(&mut self, parent_id: Uuid, child_id: Uuid) {
-        if let Some(parent) = self.scene.get_scene_node(parent_id) {
+        // Remove from parent's children list
+        if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
             parent.remove_child(&child_id);
+        }
+        
+        // Set child's parent_id to nil
+        if let Some(child) = self.scene.get_scene_node_mut(child_id) {
+            child.set_parent(None);
         }
     }
 
@@ -1350,6 +1539,13 @@ impl<'a> ScriptApi<'a> {
         self.scene.set_global_transform(node_id, transform)
     }
 
+    /// Set a script variable by name
+    /// 
+    /// **Warning**: Do NOT call this with `self.id` from within the same script's update/init methods!
+    /// Scripts are temporarily removed during update, so accessing your own vars will return None.
+    /// Instead, access your own fields directly (e.g., `self.my_field = value;`)
+    /// 
+    /// This is intended for cross-script communication only.
     pub fn set_script_var(&mut self, node_id: Uuid, name: &str, val: Value) -> Option<()> {
         let var_id = string_to_u64(name);
 
@@ -1357,13 +1553,26 @@ impl<'a> ScriptApi<'a> {
     }
 
     pub fn set_script_var_id(&mut self, node_id: Uuid, var_id: u64, val: Value) -> Option<()> {
-        let rc_script = self.scene.get_script(node_id)?;
-        let mut script = rc_script.borrow_mut();
-
-        script.set_var(var_id, val)?;
-        Some(())
+        // Safely take script out, call method, put it back
+        if let Some(mut script) = self.scene.take_script(node_id) {
+            let result = script.set_var(var_id, val);
+            self.scene.insert_script(node_id, script);
+            result?;
+            Some(())
+        } else {
+            // Script not found - may be currently taken out during its own update
+            // This is expected if you try to access self.id from within a script
+            None
+        }
     }
 
+    /// Get a script variable by name
+    /// 
+    /// **Warning**: Do NOT call this with `self.id` from within the same script's update/init methods!
+    /// Scripts are temporarily removed during update, so accessing your own vars will return Value::Null.
+    /// Instead, access your own fields directly (e.g., `let x = self.my_field;`)
+    /// 
+    /// This is intended for cross-script communication only.
     pub fn get_script_var(&mut self, id: Uuid, name: &str) -> Value {
         let var_id = string_to_u64(name);
 
@@ -1371,11 +1580,16 @@ impl<'a> ScriptApi<'a> {
     }
 
     pub fn get_script_var_id(&mut self, id: Uuid, var_id: u64) -> Value {
-        if let Some(rc_script) = self.scene.get_script(id) {
-            let script = rc_script.borrow_mut();
-            return script.get_var(var_id).unwrap_or_default();
+        // Safely take script out, call method, put it back
+        if let Some(script) = self.scene.take_script(id) {
+            let result = script.get_var(var_id).unwrap_or_default();
+            self.scene.insert_script(id, script);
+            result
+        } else {
+            // Script not found - may be currently taken out during its own update
+            // This is expected if you try to access self.id from within a script
+            Value::Null
         }
-        Value::Null
     }
 
     //prints

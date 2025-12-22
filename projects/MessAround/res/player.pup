@@ -2,15 +2,7 @@
 
 fn init() {
     self.transform.position.x = -750
-    for (i in 0..1000) {
-        var n = new Node2D()
-        self.add_child(n) 
-    }
 
-    for (i in 0..100) {
-        var n = new Sprite2D()
-        self.add_child(n) 
-    }
 }
 
 fn update() {
@@ -20,14 +12,10 @@ fn update() {
 
 }
 
-on Deadzone_AreaEntered(c: CollisionShape2D) {
-
-    if (c.parent_id == self.id) {
+on Deadzone_AreaEntered(collision: CollisionShape2D) {
+var b = collision.parent_id
+    if (collision.parent_id == self.id) {
         self.transform.position.y += 100
-        Console.print(c.parent_id)
-        var b = "hello"
-        Console.print(b)
-        Console.print("hello")
     }
 }
 

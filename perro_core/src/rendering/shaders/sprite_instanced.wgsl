@@ -70,8 +70,8 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     // Convert to clip-space (scale from virtual world to NDC range)
     let ndc_pos = world_pos.xy * camera.ndc_scale;
 
-    // Depth from z-index
-    let depth = f32(instance.z_index) * 0.001;
+    // Depth from z-index (inverted: higher z_index = lower depth = renders on top)
+    let depth = 1.0 - f32(instance.z_index) * 0.001;
 
     var out: VertexOutput;
     out.clip_position = vec4<f32>(ndc_pos, depth, 1.0);

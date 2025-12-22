@@ -1,7 +1,7 @@
 #![allow(improper_ctypes_definitions)]
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 use std::sync::mpsc::Sender;
-use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 use std::{fmt, io};
 
 use serde_json::Value;
@@ -13,6 +13,39 @@ use crate::api::ScriptApi;
 use crate::app_command::AppCommand;
 use crate::fur_ast::FurElement;
 use crate::node_registry::SceneNode;
+
+/// Bitflags to track which lifecycle methods are implemented by a script
+/// This allows the engine to skip calling methods that are not implemented,
+/// reducing overhead significantly when scripts only implement a subset of methods
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptFlags(u8);
+
+impl ScriptFlags {
+    pub const NONE: u8 = 0;
+    pub const HAS_INIT: u8 = 1 << 0;
+    pub const HAS_UPDATE: u8 = 1 << 1;
+    pub const HAS_FIXED_UPDATE: u8 = 1 << 2;
+    
+    #[inline(always)]
+    pub const fn new(flags: u8) -> Self {
+        ScriptFlags(flags)
+    }
+    
+    #[inline(always)]
+    pub const fn has_init(self) -> bool {
+        self.0 & Self::HAS_INIT != 0
+    }
+    
+    #[inline(always)]
+    pub const fn has_update(self) -> bool {
+        self.0 & Self::HAS_UPDATE != 0
+    }
+    
+    #[inline(always)]
+    pub const fn has_fixed_update(self) -> bool {
+        self.0 & Self::HAS_FIXED_UPDATE != 0
+    }
+}
 
 pub trait ScriptProvider: Sync {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
@@ -53,12 +86,16 @@ pub trait ScriptObject: Script {
     fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>);
     fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &[Value]);
 
-    fn set_node_id(&mut self, id: Uuid);
-    fn get_node_id(&self) -> Uuid;
+    fn set_id(&mut self, id: Uuid);
+    fn get_id(&self) -> Uuid;
 
     fn attributes_of(&self, member: &str) -> Vec<String>;
     fn members_with(&self, attribute: &str) -> Vec<String>;
     fn has_attribute(&self, member: &str, attribute: &str) -> bool;
+
+    /// Returns bitflags indicating which lifecycle methods are implemented
+    /// This allows the engine to skip calling empty/default implementations
+    fn script_flags(&self) -> ScriptFlags;
 
     // Engine-facing init/update that calls the Script version
     fn engine_init(&mut self, api: &mut ScriptApi) {
@@ -82,10 +119,32 @@ use std::cell::RefCell as CellRefCell;
 use std::sync::Mutex;
 
 /// Trait object for scene access (dyn‑safe)
+/// Direct borrowing with compile-time lifetime guarantees
 pub trait SceneAccess {
-    fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode>;
+    /// Get immutable reference to a node (can have multiple at once)
+    fn get_scene_node_ref(&self, id: Uuid) -> Option<&SceneNode>;
+    
+    /// Get mutable reference to a node (compile-time borrow checking)
+    fn get_scene_node_mut(&mut self, id: Uuid) -> Option<&mut SceneNode>;
+    
+    /// Legacy method for compatibility
+    fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
+        self.get_scene_node_mut(id)
+    }
+    
     fn merge_nodes(&mut self, nodes: &[SceneNode]);
-    fn get_script(&self, id: Uuid) -> Option<Rc<RefCell<Box<dyn ScriptObject>>>>;
+    fn add_node_to_scene(&mut self, node: SceneNode) -> anyhow::Result<()>;
+    fn get_script(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>>;
+    
+    /// Get mutable reference to a script (for direct update calls)
+    fn get_script_mut(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>>;
+    
+    /// Temporarily take a script out of storage, returns None if not found
+    fn take_script(&mut self, id: Uuid) -> Option<Box<dyn ScriptObject>>;
+    
+    /// Put a script back into storage
+    fn insert_script(&mut self, id: Uuid, script: Box<dyn ScriptObject>);
+    
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>>;
@@ -96,16 +155,34 @@ pub trait SceneAccess {
         &mut self,
         ctor: CreateFn,
         node_id: Uuid,
-    ) -> Rc<RefCell<Box<dyn ScriptObject>>>;
+    ) -> Box<dyn ScriptObject>;
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64);
-    fn queue_signal_id(&mut self, signal: u64, params: &[Value]);
+    
+    /// Get signal connections for a signal ID (for direct emission within API context)
+    fn get_signal_connections(&self, signal: u64) -> Option<&std::collections::HashMap<Uuid, smallvec::SmallVec<[u64; 4]>>>;
+    
+    /// Emit signal instantly (zero-allocation, direct call)
+    /// Params are passed as compile-time slice, never stored
+    fn emit_signal_id(&mut self, signal: u64, params: &[Value]);
+    
+    /// Emit signal deferred (queued, processed at end of frame)
+    /// Use this when you need to emit during iteration or want frame-end processing
+    fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]);
+    
+    /// Legacy method - now calls emit_signal_id_deferred for safety
+    fn queue_signal_id(&mut self, signal: u64, params: &[Value]) {
+        self.emit_signal_id_deferred(signal, params);
+    }
 
     /// Get the global transform for a node (calculates lazily if dirty)
     fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D>;
     
     /// Set the global transform for a node (marks it as dirty)
     fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()>;
+    
+    /// Mark a node's transform as dirty (and all its children)
+    fn mark_transform_dirty_recursive(&mut self, node_id: Uuid);
 }
 
 //

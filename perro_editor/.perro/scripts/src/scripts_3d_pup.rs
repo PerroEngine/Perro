@@ -34,15 +34,15 @@ static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
-    "Expose" => &["b"],
-    "bob" => &["b"],
     "name" => &["b"],
     "a" => &["b"],
+    "bob" => &["b"],
+    "Expose" => &["b"],
 };
 
 pub struct Scripts3dPupScript {
-    base: MeshInstance3D,
-    b: f32,
+    id: Uuid,
+    t_var_b: f32,
 }
 
 // ========================================================================
@@ -51,12 +51,12 @@ pub struct Scripts3dPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
-    let base = MeshInstance3D::new("Scripts3dPup");
+    let id = Uuid::nil(); // Will be set when attached to node
     let b = 5f32;
 
     Box::into_raw(Box::new(Scripts3dPupScript {
-        base,
-        b,
+        id,
+        t_var_b,
     })) as *mut dyn ScriptObject
 }
 
@@ -66,50 +66,42 @@ pub extern "C" fn scripts_3d_pup_create_script() -> *mut dyn ScriptObject {
 
 impl Script for Scripts3dPupScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-        self.base = api.get_node_clone::<MeshInstance3D>(self.base.id);
-        self.base.transform.position.x = 3f32;
+        api.mutate_node(self.id, |self_node: &mut MeshInstance3D| { self_node.transform.position.x = 3f32; });
         api.print("Input API Test - Testing all input methods");
-
-        // Merge cloned nodes (stack-allocated array)
-        api.merge_nodes(&[self.base.clone().to_scene_node()]);
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.base = api.get_node_clone::<MeshInstance3D>(self.base.id);
-        let mut delta: f32 = api.Time.get_delta();
-        let mut move_forward_action: bool = api.Input.get_action(String::from("move_forward"));
-        let mut move_backward_action: bool = api.Input.get_action(String::from("move_backward"));
-        let mut move_left_action: bool = api.Input.get_action(String::from("move_left"));
-        let mut move_right_action: bool = api.Input.get_action(String::from("move_right"));
-        let mut jump_action: bool = api.Input.get_action(String::from("jump"));
-        let mut forward_val: f32 = (move_forward_action as u8 as f32);
-        let mut backward_val: f32 = (move_backward_action as u8 as f32);
-        let mut left_val: f32 = (move_left_action as u8 as f32);
-        let mut right_val: f32 = (move_right_action as u8 as f32);
-        let mut jump_val: f32 = (jump_action as u8 as f32);
-        let mut move_z: f32 = ((forward_val - backward_val) * (delta * 5.0f32));
-        let mut move_x: f32 = ((left_val - right_val) * (delta * 5.0f32));
-        let mut move_y: f32 = (jump_val * (delta * 5.0f32));
-        self.base.transform.position.x += move_x;
-        self.base.transform.position.z += move_z;
-        self.base.transform.position.y += move_y;
-        let mut scroll: f32 = api.Input.Mouse.get_scroll_delta();
-        self.base.transform.position.y += (scroll * (delta * 2.0f32));
-
-        // Merge cloned nodes (stack-allocated array)
-        api.merge_nodes(&[self.base.clone().to_scene_node()]);
+        let mut t_var_delta: f32 = api.Time.get_delta();
+        let mut t_var_move_forward_action: bool = api.Input.get_action(String::from("move_forward"));
+        let mut t_var_move_backward_action: bool = api.Input.get_action(String::from("move_backward"));
+        let mut t_var_move_left_action: bool = api.Input.get_action(String::from("move_left"));
+        let mut t_var_move_right_action: bool = api.Input.get_action(String::from("move_right"));
+        let mut t_var_jump_action: bool = api.Input.get_action(String::from("jump"));
+        let mut t_var_forward_val: f32 = (t_var_move_forward_action as u8 as f32);
+        let mut t_var_backward_val: f32 = (t_var_move_backward_action as u8 as f32);
+        let mut t_var_left_val: f32 = (t_var_move_left_action as u8 as f32);
+        let mut t_var_right_val: f32 = (t_var_move_right_action as u8 as f32);
+        let mut t_var_jump_val: f32 = (t_var_jump_action as u8 as f32);
+        let mut t_var_move_z: f32 = ((t_var_forward_val - t_var_backward_val) * (t_var_delta * 5.0f32));
+        let mut t_var_move_x: f32 = ((t_var_left_val - t_var_right_val) * (t_var_delta * 5.0f32));
+        let mut t_var_move_y: f32 = (t_var_jump_val * (t_var_delta * 5.0f32));
+        api.mutate_node(self.id, |self_node: &mut MeshInstance3D| { self_node.transform.position.x += t_var_move_x; });
+        api.mutate_node(self.id, |self_node: &mut MeshInstance3D| { self_node.transform.position.z += t_var_move_z; });
+        api.mutate_node(self.id, |self_node: &mut MeshInstance3D| { self_node.transform.position.y += t_var_move_y; });
+        let mut t_var_scroll: f32 = api.Input.Mouse.get_scroll_delta();
+        api.mutate_node(self.id, |self_node: &mut MeshInstance3D| { self_node.transform.position.y += (t_var_scroll * (t_var_delta * 2.0f32)); });
     }
 
 }
 
 
 impl ScriptObject for Scripts3dPupScript {
-    fn set_node_id(&mut self, id: Uuid) {
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 
-    fn get_node_id(&self) -> Uuid {
-        self.base.id
+    fn get_id(&self) -> Uuid {
+        self.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -160,6 +152,10 @@ impl ScriptObject for Scripts3dPupScript {
             .get(member)
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
+    }
+    
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(3)
     }
 }
 

@@ -38,8 +38,8 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsCamPupScript {
-    base: Camera3D,
-    name: String,
+    id: Uuid,
+    t_var_name: String,
 }
 
 // ========================================================================
@@ -48,12 +48,12 @@ pub struct ScriptsCamPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_cam_pup_create_script() -> *mut dyn ScriptObject {
-    let base = Camera3D::new("ScriptsCamPup");
+    let id = Uuid::nil(); // Will be set when attached to node
     let name = String::from("cheese");
 
     Box::into_raw(Box::new(ScriptsCamPupScript {
-        base,
-        name,
+        id,
+        t_var_name,
     })) as *mut dyn ScriptObject
 }
 
@@ -72,12 +72,12 @@ impl Script for ScriptsCamPupScript {
 
 
 impl ScriptObject for ScriptsCamPupScript {
-    fn set_node_id(&mut self, id: Uuid) {
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 
-    fn get_node_id(&self) -> Uuid {
-        self.base.id
+    fn get_id(&self) -> Uuid {
+        self.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -128,6 +128,10 @@ impl ScriptObject for ScriptsCamPupScript {
             .get(member)
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
+    }
+    
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(3)
     }
 }
 

@@ -36,7 +36,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 pub struct ScriptsLightPupScript {
-    base: DirectionalLight3D,
+    id: Uuid,
 }
 
 // ========================================================================
@@ -45,10 +45,10 @@ pub struct ScriptsLightPupScript {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_light_pup_create_script() -> *mut dyn ScriptObject {
-    let base = DirectionalLight3D::new("ScriptsLightPup");
+    let id = Uuid::nil(); // Will be set when attached to node
 
     Box::into_raw(Box::new(ScriptsLightPupScript {
-        base,
+        id,
     })) as *mut dyn ScriptObject
 }
 
@@ -61,26 +61,22 @@ impl Script for ScriptsLightPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.base = api.get_node_clone::<DirectionalLight3D>(self.base.id);
-        let mut delta: f32 = api.Time.get_delta();
-        self.base.transform.rotate_x(((1.1f32 * delta)));
-        self.base.transform.rotate_y(((0.9f32 * delta)));
-        self.base.transform.rotate_z(((1.0f32 * delta)));
-
-        // Merge cloned nodes (stack-allocated array)
-        api.merge_nodes(&[self.base.clone().to_scene_node()]);
+        let mut t_var_delta: f32 = api.Time.get_delta();
+        self.transform.rotate_x(((1.1f32 * t_var_delta)));
+        self.transform.rotate_y(((0.9f32 * t_var_delta)));
+        self.transform.rotate_z(((1.0f32 * t_var_delta)));
     }
 
 }
 
 
 impl ScriptObject for ScriptsLightPupScript {
-    fn set_node_id(&mut self, id: Uuid) {
-        self.base.id = id;
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 
-    fn get_node_id(&self) -> Uuid {
-        self.base.id
+    fn get_id(&self) -> Uuid {
+        self.id
     }
 
     fn get_var(&self, var_id: u64) -> Option<Value> {
@@ -131,6 +127,10 @@ impl ScriptObject for ScriptsLightPupScript {
             .get(member)
             .map(|attrs| attrs.iter().any(|a| *a == attribute))
             .unwrap_or(false)
+    }
+    
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(3)
     }
 }
 

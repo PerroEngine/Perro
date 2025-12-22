@@ -9,5 +9,5 @@ pub use area_2d::Area2D;
 pub use camera_2d::Camera2D;
 pub use collision_shape_2d::CollisionShape2D;
 pub use node_2d::Node2D;
-pub use shape_2d::{Shape2D, ShapeType};
+pub use shape_2d::Shape2D;
 pub use sprite_2d::Sprite2D;

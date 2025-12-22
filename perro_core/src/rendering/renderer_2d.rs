@@ -25,6 +25,7 @@ impl Renderer2D {
         border_thickness: f32,
         is_border: bool,
         z_index: i32,
+        created_timestamp: u64,
     ) {
         primitive_renderer.queue_rect(
             uuid,
@@ -37,6 +38,7 @@ impl Renderer2D {
             border_thickness,
             is_border,
             z_index,
+            created_timestamp,
         );
     }
 
@@ -51,6 +53,7 @@ impl Renderer2D {
         transform: Transform2D,
         pivot: Vector2,
         z_index: i32,
+        created_timestamp: u64,
     ) {
         primitive_renderer.queue_texture(
             uuid,
@@ -59,6 +62,7 @@ impl Renderer2D {
             transform,
             pivot,
             z_index,
+            created_timestamp,
             texture_manager,
             device,
             queue,
@@ -75,6 +79,7 @@ impl Renderer2D {
         pivot: Vector2,
         color: crate::structs::Color,
         z_index: i32,
+        created_timestamp: u64,
     ) {
         primitive_renderer.queue_text(
             uuid,
@@ -85,6 +90,7 @@ impl Renderer2D {
             pivot,
             color,
             z_index,
+            created_timestamp,
         );
     }
 
