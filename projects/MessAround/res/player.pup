@@ -2,6 +2,14 @@
 
 fn init() {
     self.transform.position.x = -750
+    self.transform.position.x = -710
+    var poop = 12
+    self.transform.position.y = 0
+    self.transform.position.x = -750
+    self.transform.position.x = -750
+    var name = self.name
+    self.name = name
+    var pos = self.transform.position
 
 }
 
@@ -13,14 +21,16 @@ fn update() {
 }
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
+    var pos = self.transform.position
 var b = collision.parent_id
     if (collision.parent_id == self.id) {
-        self.transform.position.y += 100
+        pos.y -= 100
+        self.transform.position = pos
     }
 }
 
 on Deadzone_AreaExited(c: CollisionShape2D) {
    if (c.parent_id == self.id) {
-        self.transform.position.y -= 100
+        self.transform.position.y += 100
     }
 }

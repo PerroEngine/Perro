@@ -961,6 +961,19 @@ impl PupParser {
                             return Ok(Expr::StructNew(type_name, vec![]));
                         }
 
+                        // Check if it's an engine struct - if so, use StructNew
+                        // Engine structs like Vector2, Color, etc. have constructors
+                        if crate::structs::engine_structs::EngineStruct::is_engine_struct(&type_name) {
+                            // Convert positional args to field pairs (we'll handle this in codegen)
+                            // For now, just store them as empty field names - codegen will handle ::new()
+                            let pairs: Vec<(String, Expr)> = args
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, expr)| (format!("_{}", i), expr))
+                                .collect();
+                            return Ok(Expr::StructNew(type_name, pairs));
+                        }
+
                         // Otherwise treat `new Something()` as an API call or method
                         if let Some(api) = PupAPI::resolve(&type_name, "new") {
                             return Ok(Expr::ApiCall(api, args));

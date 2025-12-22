@@ -16,6 +16,7 @@ use crate::api_modules::*;
 use crate::ast::*;
 use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Type};
 use crate::node_registry::NodeType;
+use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::{
     asset_io::{ProjectRoot, get_project_root},
@@ -72,9 +73,18 @@ pub fn rename_variable(var_name: &str, typ: Option<&Type>) -> String {
         return "t_var_id".to_string();
     }
     
+    // Check if already renamed (to prevent double prefixing)
+    if var_name.starts_with("t_var_") {
+        return var_name.to_string();
+    }
+    
     // If it's a node type, add _id suffix
     if let Some(typ) = typ {
         if type_is_node(typ) {
+            // Check if already has _id suffix
+            if var_name.ends_with("_id") {
+                return var_name.to_string();
+            }
             return format!("{}_id", var_name);
         }
     }
@@ -273,12 +283,23 @@ impl Script {
                 // This allows rename_variable to correctly add _id suffix
                 if let Some(node_type) = string_to_node_type(ty_name) {
                     Some(Type::Node(node_type))
+                } else if let Some(engine_struct) = EngineStructKind::from_string(ty_name) {
+                    // Engine struct constructor returns the engine struct type
+                    Some(Type::EngineStruct(engine_struct))
                 } else {
                     // The result of `new Struct(...)` is `Type::Custom("Struct")`
                     Some(Custom(ty_name.clone()))
                 }
             }
-            Expr::SelfAccess => Some(Custom(self.node_type.clone())),
+            Expr::SelfAccess => {
+                // Convert node_type string to NodeType enum
+                if let Some(node_type) = string_to_node_type(&self.node_type) {
+                    Some(Type::Node(node_type))
+                } else {
+                    // Fallback to Custom for non-standard node types
+                    Some(Custom(self.node_type.clone()))
+                }
+            }
             Expr::ObjectLiteral(_) => Some(Type::Object),
             Expr::ContainerLiteral(kind, _) => match kind {
                 ContainerKind::Array => {
@@ -349,7 +370,15 @@ impl Script {
                 }
             }
             Literal::Bool(_) => Some(Type::Bool),
-            Literal::String(_) | Literal::Interpolated(_) => Some(Type::String),
+            Literal::String(_) | Literal::Interpolated(_) => {
+                // If expected type is CowStr or StrRef, infer as that
+                // Otherwise default to String
+                match expected_type {
+                    Some(Type::CowStr) => Some(Type::CowStr),
+                    Some(Type::StrRef) => Some(Type::StrRef),
+                    _ => Some(Type::String),
+                }
+            }
         }
     }
 
@@ -425,6 +454,12 @@ impl Script {
                 ENGINE_REGISTRY.get_field_type_node(node_type, member)
             }
 
+            // --- For engine structs ---
+            Type::EngineStruct(engine_struct) => {
+                // Look up the field type in the ENGINE_REGISTRY
+                ENGINE_REGISTRY.get_field_type_struct(engine_struct, member)
+            }
+
             // --- For custom structs ---
             Type::Custom(type_name) => {
                 if type_name == &self.node_type {
@@ -477,6 +512,7 @@ impl Script {
         // Standard library imports
         out.push_str("use std::{\n");
         out.push_str("    any::Any,\n");
+        out.push_str("    borrow::Cow,\n");
         out.push_str("    cell::RefCell,\n");
         out.push_str("    collections::HashMap,\n");
         out.push_str("    ops::{Deref, DerefMut},\n");
@@ -1521,7 +1557,82 @@ impl Function {
         out.push_str("    }\n\n");
         out
     }
+}
 
+/// Post-process generated Rust code to batch consecutive api.mutate_node calls on the same node
+fn batch_consecutive_mutations(code: &str) -> String {
+    use regex::Regex;
+    
+    // Pattern to match: api.mutate_node(node_id, |closure_var: &mut NodeType| { body });
+    let re = Regex::new(r"(?m)^\s*api\.mutate_node\(([^,]+),\s*\|([^:]+):\s*&mut\s+([^|]+)\|\s*\{\s*([^}]+)\s*\}\);?\s*$").unwrap();
+    
+    let lines: Vec<&str> = code.lines().collect();
+    let mut result = String::with_capacity(code.len());
+    let mut i = 0;
+    
+    while i < lines.len() {
+        let line = lines[i];
+        
+        // Try to match a mutate_node call
+        if let Some(caps) = re.captures(line) {
+            let node_id = caps.get(1).unwrap().as_str();
+            let closure_var = caps.get(2).unwrap().as_str();
+            let node_type = caps.get(3).unwrap().as_str();
+            let first_body = caps.get(4).unwrap().as_str();
+            
+            // Collect all consecutive mutations on the same node
+            let mut bodies = vec![first_body.trim()];
+            let mut j = i + 1;
+            
+            while j < lines.len() {
+                if let Some(next_caps) = re.captures(lines[j]) {
+                    let next_node_id = next_caps.get(1).unwrap().as_str();
+                    let next_closure_var = next_caps.get(2).unwrap().as_str();
+                    let next_node_type = next_caps.get(3).unwrap().as_str();
+                    
+                    // Same node, same closure var, same type - batch it
+                    if next_node_id == node_id && next_closure_var == closure_var && next_node_type == node_type {
+                        let next_body = next_caps.get(4).unwrap().as_str();
+                        bodies.push(next_body.trim());
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            
+            // Generate batched mutation
+            if bodies.len() > 1 {
+                // Multiple mutations - batch them
+                let indent = line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+                result.push_str(&format!("{}api.mutate_node({}, |{}: &mut {}| {{\n", indent, node_id, closure_var, node_type));
+                for body in &bodies {
+                    // Remove trailing semicolon from body if present (we'll add it back)
+                    let body_trimmed = body.trim_end_matches(';').trim();
+                    result.push_str(&format!("{}    {};\n", indent, body_trimmed));
+                }
+                result.push_str(&format!("{}}});\n", indent));
+            } else {
+                // Single mutation - keep as is
+                result.push_str(line);
+                result.push('\n');
+            }
+            
+            i = j;
+        } else {
+            // Not a mutate_node call, keep as is
+            result.push_str(line);
+            result.push('\n');
+            i += 1;
+        }
+    }
+    
+    result
+}
+
+impl Function {
     // ============================================================
     // for trait-style API methods (unchanged, still fine)
     // ============================================================
@@ -1541,10 +1652,10 @@ impl Function {
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
         }
 
-        // No longer need to merge nodes - we use mutate_node for assignments
-
         out.push_str("    }\n\n");
-        out
+        
+        // Post-process to batch consecutive mutations on the same node
+        batch_consecutive_mutations(&out)
     }
 }
 
@@ -1623,12 +1734,15 @@ impl Stmt {
                     // Don't clone if the expression already produces an owned value (e.g., from unwrap_or_default, from_str, etc.)
                     // This is important for generic functions like FromPrimitive::from_f32 where cloning breaks type inference
                     // Also don't clone if the expression already produces an owned value
+                    // Note: read_node now returns Clone types, and for non-Copy types the .clone() inside the closure
+                    // already produces an owned value, so read_node calls don't need an extra .clone()
                     let already_owned = raw_expr.contains(".unwrap_or_default()")
                         || raw_expr.contains(".unwrap()")
                         || raw_expr.contains("::from_str")
                         || raw_expr.contains("::from(")
                         || raw_expr.contains("::new(")
-                        || raw_expr.contains("get_element_clone");
+                        || raw_expr.contains("get_element_clone")
+                        || raw_expr.contains("read_node(");
 
                     if (needs_clone || needs_clone_fallback) && !already_owned {
                         format!("{}.clone()", raw_expr)
@@ -1799,9 +1913,13 @@ impl Stmt {
                             .expr
                             .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
                     
+                    // For literals, we already generated the code with the expected type,
+                    // so skip implicit cast to avoid double conversion
+                    let is_literal = matches!(rhs_expr.expr, Expr::Literal(_));
+                    
                     let final_rhs = if let Some(lhs_ty) = &lhs_type {
                         if let Some(rhs_ty) = &rhs_type {
-                            if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                            if !is_literal && rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
                                 script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
                             } else {
                                 rhs_code
@@ -2557,10 +2675,10 @@ impl Stmt {
 
             // String type conversions
             (String, CowStr) => {
-                format!("std::borrow::Cow::Owned({})", expr)
+                format!("{}.into()", expr)
             }
             (StrRef, CowStr) => {
-                format!("std::borrow::Cow::Borrowed({})", expr)
+                format!("{}.into()", expr)
             }
             (CowStr, String) => {
                 format!("{}.into_owned()", expr)
@@ -2883,8 +3001,10 @@ impl Expr {
                 if let Some(Type::Object) = expected_type {
                     format!("json!({})", lit.to_rust(None))
                 } else if let Some(expected) = expected_type {
+                    // Pass expected type to literal generation
                     lit.to_rust(Some(expected))
                 } else {
+                    // No expected type, infer it
                     let inferred_type = script.infer_literal_type(lit, None);
                     lit.to_rust(inferred_type.as_ref())
                 }
@@ -3019,6 +3139,64 @@ impl Expr {
                 format!("({} {} {})", left_final, op.to_rust(), right_final)
             }
             Expr::MemberAccess(base, field) => {
+                // Special case: accessing .id on a node just returns the ID directly
+                // self.id -> self.id (already a Uuid on the script)
+                // nodeVar.id -> nodeVar_id (node variables are stored as UUIDs)
+                if field == "id" {
+                    if matches!(base.as_ref(), Expr::SelfAccess) {
+                        return "self.id".to_string();
+                    } else if let Expr::Ident(var_name) = base.as_ref() {
+                        // Check if this is a node variable
+                        let var_type = script.infer_expr_type(base, current_func);
+                        let is_node = match &var_type {
+                            Some(Type::Node(_)) => true,
+                            Some(Type::Custom(type_name)) => is_node_type(type_name),
+                            _ => false,
+                        };
+                        
+                        if is_node {
+                            // Node variable - the variable itself is already the ID
+                            return rename_variable(var_name, var_type.as_ref());
+                        }
+                    }
+                }
+                
+                // Check if this is a node member access chain (like self.transform.position)
+                // If so, wrap the entire chain in api.read_node
+                if let Some((node_id, node_type, field_path, closure_var)) = 
+                    extract_node_member_info(&Expr::MemberAccess(base.clone(), field.clone()), script, current_func) 
+                {
+                    // This is accessing node fields - use api.read_node
+                    // Determine if we need to clone the result
+                    if let Some(node_type_enum) = string_to_node_type(&node_type) {
+                        let node_type_obj = Type::Node(node_type_enum);
+                        
+                        // Split the field path to check the final result type
+                        let fields: Vec<&str> = field_path.split('.').collect();
+                        
+                        // Walk through the field chain to get the final type
+                        let mut current_type = node_type_obj.clone();
+                        for field_name in &fields {
+                            if let Some(next_type) = script.get_member_type(&current_type, field_name) {
+                                current_type = next_type;
+                            }
+                        }
+                        
+                        let needs_clone = current_type.requires_clone();
+                        let is_option = matches!(current_type, Type::Option(_));
+                        
+                        let field_access = if is_option {
+                            format!("{}.{}.unwrap()", closure_var, field_path)
+                        } else if needs_clone {
+                            format!("{}.{}.clone()", closure_var, field_path)
+                        } else {
+                            format!("{}.{}", closure_var, field_path)
+                        };
+                        
+                        return format!("api.read_node({}, |{}: &{}| {})", node_id, closure_var, node_type, field_access);
+                    }
+                }
+                
                 // Special case: if base is SelfAccess and field is a script variable,
                 // generate self.field instead of self.node.field
                 if matches!(base.as_ref(), Expr::SelfAccess) {
@@ -3082,6 +3260,12 @@ impl Expr {
                                 field, base_code
                             )
                         }
+                    }
+                    Some(Type::EngineStruct(_engine_struct)) => {
+                        // Engine struct: regular .field access
+                        // The base should already be generated correctly (either from read_node or direct access)
+                        let base_code = base.to_rust(needs_self, script, None, current_func);
+                        format!("{}.{}", base_code, field)
                     }
                     Some(Type::Custom(type_name)) => {
                         // typed struct: regular .field access
@@ -3574,6 +3758,24 @@ impl Expr {
                     return format!("api.create_node::<{}>()", ty);
                 }
 
+                // Special case: For engine structs, use their constructor functions
+                if let Some(_engine_struct) = EngineStructKind::from_string(ty) {
+                    // Engine structs like Vector2, Transform2D, etc. use ::new() constructors
+                    if args.is_empty() {
+                        // No args: use default constructor or ::default()
+                        return format!("{}::default()", ty);
+                    } else {
+                        // With args: use ::new() constructor
+                        let arg_codes: Vec<String> = args
+                            .iter()
+                            .map(|(_, expr)| {
+                                expr.to_rust(needs_self, script, None, current_func)
+                            })
+                            .collect();
+                        return format!("{}::new({})", ty, arg_codes.join(", "));
+                    }
+                }
+
                 // --- Flatten structure hierarchy correctly ---
                 fn gather_flat_fields<'a>(
                     s: &'a StructDef,
@@ -3965,13 +4167,13 @@ impl Expr {
                     }
 
                     // String type conversions
-                    // String -> CowStr (owned string to Cow::Owned)
+                    // String -> CowStr (owned string to Cow)
                     (Some(Type::String), Type::CowStr) => {
-                        format!("std::borrow::Cow::Owned({})", inner_code)
+                        format!("{}.into()", inner_code)
                     }
-                    // StrRef -> CowStr (borrowed string to Cow::Borrowed)
+                    // StrRef -> CowStr (borrowed string to Cow)
                     (Some(Type::StrRef), Type::CowStr) => {
-                        format!("std::borrow::Cow::Borrowed({})", inner_code)
+                        format!("{}.into()", inner_code)
                     }
                     // CowStr -> String (Cow to owned String)
                     (Some(Type::CowStr), Type::String) => {
@@ -4360,11 +4562,17 @@ impl Expr {
                     }
 
                     _ => {
-                        eprintln!(
-                            "Warning: Unhandled cast from {:?} to {:?}",
-                            inner_type, target_type
-                        );
-                        format!("({} as {})", inner_code, target_type.to_rust_type())
+                        // For non-primitive types, try .into() instead of as cast
+                        // This handles String -> CowStr and other conversions
+                        if matches!(target_type, Type::CowStr | Type::String | Type::Custom(_)) {
+                            format!("{}.into()", inner_code)
+                        } else {
+                            eprintln!(
+                                "Warning: Unhandled cast from {:?} to {:?}",
+                                inner_type, target_type
+                            );
+                            format!("({} as {})", inner_code, target_type.to_rust_type())
+                        }
                     }
                 }
             }
@@ -4557,7 +4765,18 @@ impl Literal {
                 _ => format!("{}f32", raw),
             },
 
-            Literal::String(s) => format!("String::from(\"{}\")", s),
+            Literal::String(s) => {
+                match expected_type {
+                    // For Cow<'static, str>, use Cow::Borrowed with string literal
+                    Some(Type::CowStr) => {
+                        format!("Cow::Borrowed(\"{}\")", s)
+                    }
+                    // For StrRef (&str), use string literal
+                    Some(Type::StrRef) => format!("\"{}\"", s),
+                    // For String or unknown, create owned String
+                    _ => format!("String::from(\"{}\")", s),
+                }
+            }
 
             Literal::Bool(b) => b.to_string(),
 

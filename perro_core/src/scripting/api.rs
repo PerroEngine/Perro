@@ -1386,10 +1386,13 @@ impl<'a> ScriptApi<'a> {
         node_enum.into_inner()
     }
     
-    /// Read a value from a node using a closure - no clones needed!
-    /// The closure receives &T where T is the node type and returns a Copy value
+    /// Read a value from a node using a closure
+    /// The closure receives &T where T is the node type and returns any Clone value (including Copy types)
+    /// For Copy types like primitives, no actual cloning happens at runtime
+    /// For non-Copy types like String/Cow, the value is cloned out of the node
     /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent_id);`
-    pub fn read_node<T: 'static, R: Copy>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
+    /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
+    pub fn read_node<T: 'static, R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
         let node = self.scene.get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         

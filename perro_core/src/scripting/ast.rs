@@ -290,7 +290,7 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
-            Type::CowStr => "std::borrow::Cow<'static, str>".to_string(),
+            Type::CowStr => "Cow<'static, str>".to_string(),
             Type::Uuid => "Uuid".to_string(),
             Type::Option(inner) => format!("Option<{}>", inner.to_rust_type()),
 
@@ -355,7 +355,7 @@ impl Type {
             Type::Signal => "0u64".into(),
             Type::String => "String::new()".into(),
             Type::StrRef => "\"\"".into(),
-            Type::CowStr => "std::borrow::Cow::Borrowed(\"\")".into(),
+            Type::CowStr => "Cow::Borrowed(\"\")".into(),
             Type::Uuid => "Uuid::nil()".into(),
             Type::Option(_) => "None".into(),
 
@@ -430,6 +430,7 @@ impl Type {
     }
 
     pub fn is_copy_type(&self) -> bool {
+        use crate::engine_structs::EngineStruct as ES;
         use NumberKind::*;
         use Type::*;
 
@@ -438,6 +439,16 @@ impl Type {
             Number(Signed(_)) | Number(Unsigned(_)) | Number(Float(_)) | Bool => true,
             // Uuid is also Copy
             Uuid => true,
+            // Most engine structs implement Copy, but not all
+            EngineStruct(es) => match es {
+                // These implement Copy
+                ES::Vector2 | ES::Vector3 
+                | ES::Transform2D | ES::Transform3D
+                | ES::Color | ES::Rect 
+                | ES::Quaternion | ES::ShapeType2D => true,
+                // ImageTexture contains GPU resources (TextureView, BindGroup) and does NOT implement Copy or Clone
+                ES::ImageTexture => false,
+            },
             _ => false,
         }
     }
