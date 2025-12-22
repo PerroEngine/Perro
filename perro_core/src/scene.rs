@@ -249,6 +249,9 @@ pub struct Scene<P: ScriptProvider> {
     // Fixed update timing
     pub fixed_update_accumulator: f32,
     pub last_fixed_update: Option<Instant>,
+    
+    // Render timing (for draw() methods - tracks actual frame time, not update time)
+    pub last_scene_render: Option<Instant>,
     // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for fixed updates)
     pub nodes_with_internal_fixed_update: HashSet<Uuid>,
 
@@ -259,9 +262,10 @@ pub struct Scene<P: ScriptProvider> {
     cached_script_ids: Vec<Uuid>,
     scripts_dirty: bool,
     
-    // OPTIMIZED: Separate vectors for scripts with update/fixed_update to avoid checking all scripts
+    // OPTIMIZED: Separate vectors for scripts with update/fixed_update/draw to avoid checking all scripts
     scripts_with_update: Vec<Uuid>,
     scripts_with_fixed_update: Vec<Uuid>,
+    scripts_with_draw: Vec<Uuid>,
 }
 
 #[derive(Default)]
@@ -290,6 +294,7 @@ impl<P: ScriptProvider> Scene<P> {
             true_updates: 0,
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
+            last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
             physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
             
@@ -297,9 +302,10 @@ impl<P: ScriptProvider> Scene<P> {
             cached_script_ids: Vec::new(),
             scripts_dirty: true,
             
-            // OPTIMIZED: Initialize separate vectors for update/fixed_update scripts
+            // OPTIMIZED: Initialize separate vectors for update/fixed_update/draw scripts
             scripts_with_update: Vec::new(),
             scripts_with_fixed_update: Vec::new(),
+            scripts_with_draw: Vec::new(),
         }
     }
 
@@ -328,15 +334,17 @@ impl<P: ScriptProvider> Scene<P> {
             true_updates: 0,
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
+            last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
             
             // OPTIMIZED: Initialize script ID cache
             cached_script_ids: Vec::new(),
             scripts_dirty: true,
             
-            // OPTIMIZED: Initialize separate vectors for update/fixed_update scripts
+            // OPTIMIZED: Initialize separate vectors for update/fixed_update/draw scripts
             scripts_with_update: Vec::new(),
             scripts_with_fixed_update: Vec::new(),
+            scripts_with_draw: Vec::new(),
         }
     }
 
@@ -847,6 +855,9 @@ impl<P: ScriptProvider> Scene<P> {
                 if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
                     self.scripts_with_fixed_update.push(id);
                 }
+                if flags.has_draw() && !self.scripts_with_draw.contains(&id) {
+                    self.scripts_with_draw.push(id);
+                }
                 
                 self.scripts.insert(id, handle);
                 self.scripts_dirty = true;
@@ -1063,6 +1074,9 @@ impl<P: ScriptProvider> Scene<P> {
                         if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
                             self.scripts_with_fixed_update.push(id);
                         }
+                        if flags.has_draw() && !self.scripts_with_draw.contains(&id) {
+                            self.scripts_with_draw.push(id);
+                        }
                         
                         self.scripts.insert(id, handle);
                         self.scripts_dirty = true;
@@ -1250,6 +1264,41 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     pub fn render(&mut self, gfx: &mut Graphics) {
+        // Call draw() methods on scripts that implement it (frame-synchronized visuals)
+        {
+            // Calculate render delta (time since last render call - actual frame time)
+            let now = Instant::now();
+            let render_delta = match self.last_scene_render {
+                Some(prev) => now.duration_since(prev).as_secs_f32(),
+                None => 0.0,
+            };
+            // Update render time for next frame
+            self.last_scene_render = Some(now);
+            
+            // OPTIMIZED: Use pre-filtered vector of scripts with draw
+            // Collect script IDs to avoid borrow checker issues
+            let script_ids: Vec<Uuid> = self.scripts_with_draw.iter().copied().collect();
+            
+            if !script_ids.is_empty() {
+                // Clone project reference before loop to avoid borrow conflicts
+                let project_ref = self.project.clone();
+                
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "script_draws", count = script_ids.len()).entered();
+                
+                for id in script_ids {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "script_draw", id = %id).entered();
+                    
+                    // OPTIMIZED: Borrow project once per script
+                    // Note: We can't borrow project once for all scripts because ScriptApi needs &mut self (scene)
+                    let mut project_borrow = project_ref.borrow_mut();
+                    let mut api = ScriptApi::new(render_delta, self, &mut *project_borrow);
+                    api.call_draw(id);
+                }
+            }
+        }
+        
         let dirty_nodes = {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "get_dirty_nodes").entered();
@@ -1613,6 +1662,9 @@ impl<P: ScriptProvider> Scene<P> {
             if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
                 self.scripts_with_fixed_update.push(id);
             }
+            if flags.has_draw() && !self.scripts_with_draw.contains(&id) {
+                self.scripts_with_draw.push(id);
+            }
             
             self.scripts.insert(id, handle);
             self.scripts_dirty = true;
@@ -1640,6 +1692,12 @@ impl<P: ScriptProvider> Scene<P> {
         &self.data.nodes[&self.data.root_id]
     }
 
+    /// Get reference to scripts that have draw() implemented
+    /// Used by the rendering loop to call draw on frame-synchronized scripts
+    pub fn get_scripts_with_draw(&self) -> &Vec<Uuid> {
+        &self.scripts_with_draw
+    }
+
     // Remove node and stop rendering
     pub fn remove_node(&mut self, node_id: Uuid, gfx: &mut Graphics) {
         // Stop rendering this node and all its children
@@ -1650,9 +1708,10 @@ impl<P: ScriptProvider> Scene<P> {
 
         // Remove scripts - actually delete them from scene
         if self.scripts.remove(&node_id).is_some() {
-            // Remove from update/fixed_update vectors (actual deletion)
+            // Remove from update/fixed_update/draw vectors (actual deletion)
             self.scripts_with_update.retain(|&script_id| script_id != node_id);
             self.scripts_with_fixed_update.retain(|&script_id| script_id != node_id);
+            self.scripts_with_draw.retain(|&script_id| script_id != node_id);
             self.scripts_dirty = true;
         }
     }

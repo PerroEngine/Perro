@@ -7,10 +7,14 @@ fn init() {
     self.transform.position.y = 0
     self.transform.position.x = -750
     self.transform.position.x = -750
-    var name = self.name
+    var name = "chicken"
     self.name = name
     var pos = self.transform.position
 
+}
+
+fn draw() {
+    Console.print("fart")
 }
 
 fn update() {

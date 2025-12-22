@@ -352,7 +352,7 @@ impl PupParser {
         self.expect(PupToken::RParen)?;
 
         let body = self.parse_block()?;
-        let is_trait = name == "init" || name == "update" || name == "fixed_update";
+        let is_trait = name == "init" || name == "update" || name == "fixed_update" || name == "draw";
         let locals = self.collect_locals(&body);
 
         Ok(Function {

@@ -541,7 +541,8 @@ impl TypeScriptParser {
 
         let is_trait_method = name.to_lowercase() == "init"
             || name.to_lowercase() == "update"
-            || name.to_lowercase() == "fixed_update";
+            || name.to_lowercase() == "fixed_update"
+            || name.to_lowercase() == "draw";
         let locals = self.collect_locals(&body);
 
         self.debug_node("METHOD_DECL_END", node);

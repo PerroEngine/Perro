@@ -42,9 +42,11 @@ use std::sync::{Arc, Mutex};
 #[derive(Default)]
 pub struct JsonApi;
 impl JsonApi {
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn stringify<T: Serialize>(&self, val: &T) -> String {
         serde_json::to_string(val).unwrap_or_else(|_| "{}".to_string())
     }
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn parse(&self, text: &str) -> Option<Value> {
         serde_json::from_str(text).ok()
     }
@@ -55,12 +57,14 @@ pub struct TimeApi {
     pub delta: f32,
 }
 impl TimeApi {
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_unix_time_msec(&self) -> u128 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::from_millis(0))
             .as_millis()
     }
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_unix_time(&self) -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -79,12 +83,15 @@ impl TimeApi {
             now.second()
         )
     }
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn sleep_msec(&self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
     }
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_ticks_msec(&self) -> u128 {
         self.get_unix_time_msec()
     }
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_delta(&self) -> f32 {
         self.delta
     }
@@ -161,11 +168,13 @@ impl Default for JoyConApi {
 impl JoyConApi {
     /// Set the ScriptApi pointer for this instance
     /// Called when accessed through DerefMut
+    #[cfg_attr(not(debug_assertions), inline)]
     fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
         self.api_ptr = Some(api_ptr);
     }
 
     /// Get the ScriptApi pointer - tries stored pointer, then gets from parent InputApi
+    #[cfg_attr(not(debug_assertions), inline)]
     fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
         // First try stored pointer
         if let Some(ptr) = self.api_ptr {
@@ -628,6 +637,7 @@ impl Default for KeyboardApi {
 }
 
 impl KeyboardApi {
+    #[cfg_attr(not(debug_assertions), inline)]
     fn get_api_ptr(&mut self) -> Option<*mut ScriptApi<'static>> {
         if let Some(ptr) = self.api_ptr {
             return Some(ptr);
@@ -636,6 +646,7 @@ impl KeyboardApi {
         unsafe { (*input_api_ptr).get_parent_ptr() }
     }
 
+    #[cfg_attr(not(debug_assertions), inline)]
     fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
         self.api_ptr = Some(api_ptr);
     }
@@ -717,6 +728,7 @@ impl Default for MouseApi {
 }
 
 impl MouseApi {
+    #[cfg_attr(not(debug_assertions), inline)]
     fn get_api_ptr(&mut self) -> Option<*mut ScriptApi<'static>> {
         if let Some(ptr) = self.api_ptr {
             return Some(ptr);
@@ -725,6 +737,7 @@ impl MouseApi {
         unsafe { (*input_api_ptr).get_parent_ptr() }
     }
 
+    #[cfg_attr(not(debug_assertions), inline)]
     fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
         self.api_ptr = Some(api_ptr);
     }
@@ -923,6 +936,7 @@ impl Default for InputApi {
 
 impl InputApi {
     /// Set the parent ScriptApi pointer
+    #[cfg_attr(not(debug_assertions), inline)]
     fn set_parent_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
         self.parent_api_ptr = Some(api_ptr);
         // Also set it in sub-APIs
@@ -932,6 +946,7 @@ impl InputApi {
     }
 
     /// Set the parent ScriptApi pointer (immutable version for Deref)
+    #[cfg_attr(not(debug_assertions), inline)]
     fn set_parent_ptr_immut(&self, api_ptr: *mut ScriptApi<'static>) {
         unsafe {
             let self_mut = self as *const InputApi as *mut InputApi;
@@ -943,6 +958,7 @@ impl InputApi {
     }
 
     /// Get the parent ScriptApi pointer
+    #[cfg_attr(not(debug_assertions), inline)]
     fn get_parent_ptr(&self) -> Option<*mut ScriptApi<'static>> {
         self.parent_api_ptr
     }
@@ -1043,6 +1059,7 @@ impl<'a> ScriptApi<'a> {
 
     /// Set the thread-local context for this ScriptApi
     /// This allows JoyConApi methods to access the ScriptApi
+    #[cfg_attr(not(debug_assertions), inline)]
     pub(crate) fn set_context(&mut self) {
         let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self) };
 
@@ -1051,6 +1068,7 @@ impl<'a> ScriptApi<'a> {
         });
     }
 
+    #[cfg_attr(not(debug_assertions), inline)]
     pub(crate) fn clear_context() {
         SCRIPT_API_CONTEXT.with(|ctx| {
             *ctx.borrow_mut() = None;
@@ -1060,6 +1078,7 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     // Core access
     //-------------------------------------------------
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn project(&mut self) -> &mut Project {
         self.project
     }
@@ -1180,6 +1199,20 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
+    pub fn call_draw(&mut self, id: Uuid) {
+        self.set_context();
+        // Take/insert pattern needed to avoid borrow checker issues
+        // (take_script/insert_script don't modify filtered vectors, just HashMap)
+        if let Some(mut script) = self.scene.take_script(id) {
+            // Check if script has draw implemented before calling
+            if script.script_flags().has_draw() {
+                script.engine_draw(self);
+            }
+            self.scene.insert_script(id, script);
+        }
+        Self::clear_context();
+    }
+
     pub fn call_node_internal_fixed_update(&mut self, node_id: Uuid) {
         // We need to get the node and call the method, but we can't hold a RefMut
         // while also borrowing self mutably. So we check if update is needed first,
@@ -1227,7 +1260,7 @@ impl<'a> ScriptApi<'a> {
     }
     
     /// Internal fast-path call that skips context setup (used when context already set)
-    #[inline]
+    #[cfg_attr(not(debug_assertions), inline)]
     pub(crate) fn call_function_id_fast(&mut self, id: Uuid, func: u64, params: &[Value]) {
         // Safely take script out, call method, put it back (no context overhead)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1236,6 +1269,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn string_to_u64(&mut self, string: &str) -> u64 {
         string_to_u64(string)
     }
@@ -1244,6 +1278,7 @@ impl<'a> ScriptApi<'a> {
     
     /// Emit signal instantly - handlers called immediately
     /// Params passed as compile-time slice, zero allocation
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal(&mut self, name: &str, params: &[Value]) {
         let id = self.string_to_u64(name);
         self.emit_signal_id(id, params);
@@ -1254,8 +1289,6 @@ impl<'a> ScriptApi<'a> {
     /// OPTIMIZED: Handles emission in existing API context to avoid double-borrow
     /// OPTIMIZED: Set context once and batch all calls to minimize overhead
     pub fn emit_signal_id(&mut self, id: u64, params: &[Value]) {
-        let start = std::time::Instant::now();
-        
         // Copy out listeners before calling functions
         let script_map_opt = self.scene.get_signal_connections(id);
         if script_map_opt.is_none() {
@@ -1272,9 +1305,6 @@ impl<'a> ScriptApi<'a> {
             }
         }
 
-        let setup_time = start.elapsed();
-        let call_start = std::time::Instant::now();
-
         // OPTIMIZED: Set context once for all calls instead of per-call
         self.set_context();
         
@@ -1285,18 +1315,13 @@ impl<'a> ScriptApi<'a> {
         
         // Clear context once after all calls
         Self::clear_context();
-        
-        let call_time = call_start.elapsed();
-        let total_time = start.elapsed();
-        
-        eprintln!("[SIGNAL TIMING] Signal ID: {} | Listeners: {} | Setup: {:?} | Calls: {:?} | Total: {:?}", 
-            id, call_list.len(), setup_time, call_time, total_time);
     }
 
     // ========== DEFERRED SIGNALS (queued, processed at frame end) ==========
     
     /// Emit signal deferred - queued and processed at end of frame
     /// Use when emitting during iteration or need frame-end processing
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal_deferred(&mut self, name: &str, params: &[Value]) {
         let id = self.string_to_u64(name);
         self.scene.emit_signal_id_deferred(id, params);
@@ -1304,16 +1329,19 @@ impl<'a> ScriptApi<'a> {
 
     /// Emit signal deferred by ID - queued and processed at end of frame
     /// Use when emitting during iteration or need frame-end processing
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal_id_deferred(&mut self, id: u64, params: &[Value]) {
         self.scene.emit_signal_id_deferred(id, params);
     }
 
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn connect_signal(&mut self, name: &str, target: Uuid, function: &'static str) {
         let id = string_to_u64(name);
         let fn_id = string_to_u64(function);
         self.scene.connect_signal_id(id, target, fn_id);
     }
 
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn connect_signal_id(&mut self, id: u64, target: Uuid, function_id: u64) {
         self.scene.connect_signal_id(id, target, function_id);
     }
@@ -1392,6 +1420,7 @@ impl<'a> ScriptApi<'a> {
     /// For non-Copy types like String/Cow, the value is cloned out of the node
     /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent_id);`
     /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn read_node<T: 'static, R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
         let node = self.scene.get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
@@ -1406,6 +1435,7 @@ impl<'a> ScriptApi<'a> {
     /// The closure receives &mut T where T is the node type
     /// Returns true if the node was found and successfully mutated, false otherwise
     /// Example: `api.mutate_node::<Node2D>(node_id, |n| n.transform.position.x = 5.0);`
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn mutate_node<T: 'static, F>(&mut self, id: Uuid, f: F)
     where
         F: FnOnce(&mut T),
@@ -1504,6 +1534,7 @@ impl<'a> ScriptApi<'a> {
 
     /// Get the parent node ID of a given node
     /// Returns the parent node's ID (Uuid::nil() if node not found or has no parent)
+    #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_parent(&mut self, node_id: Uuid) -> Uuid {
         if let Some(node) = self.scene.get_scene_node_ref(node_id) {
             node.get_parent()

@@ -4853,6 +4853,7 @@ pub fn implement_script_boilerplate(
     let has_init = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "init");
     let has_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "update");
     let has_fixed_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "fixed_update");
+    let has_draw = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "draw");
     
     // Build the flags value
     let mut flags_value = 0u8;
@@ -4864,6 +4865,9 @@ pub fn implement_script_boilerplate(
     }
     if has_fixed_update {
         flags_value |= 4; // ScriptFlags::HAS_FIXED_UPDATE
+    }
+    if has_draw {
+        flags_value |= 8; // ScriptFlags::HAS_DRAW
     }
 
     //----------------------------------------------------
@@ -5621,8 +5625,8 @@ pub fn derive_rust_perro_script(
             
             let search_region = &code[block_start..next_impl_pos];
             
-            // Find init, update, fixed_update methods
-            let fn_re = Regex::new(r"fn\s+(init|update|fixed_update)\s*\(").unwrap();
+            // Find init, update, fixed_update, draw methods
+            let fn_re = Regex::new(r"fn\s+(init|update|fixed_update|draw)\s*\(").unwrap();
 
             for fn_cap in fn_re.captures_iter(search_region) {
                 let fn_name = fn_cap[1].to_string();
