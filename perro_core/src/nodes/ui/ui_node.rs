@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     Node,
+    nodes::node_registry::NodeType,
     prelude::string_to_u64,
     rendering::graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
     script::Var,
@@ -30,7 +31,7 @@ fn is_default_visible(v: &bool) -> bool {
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct UINode {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fur_path: Option<Cow<'static, str>>,
@@ -57,7 +58,7 @@ impl UINode {
         let mut base = Node::new();
         base.name = Cow::Borrowed("UINode");
         Self {
-            ty: Cow::Borrowed("UINode"),
+            ty: NodeType::UINode,
             visible: default_visible(),
             // Base node
             base,

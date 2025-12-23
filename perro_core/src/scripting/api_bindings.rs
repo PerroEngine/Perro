@@ -479,7 +479,7 @@ impl ApiCodegen for NodeSugarApi {
             }
             NodeSugarApi::GetChildByName => {
                 // self.get_node("name") -> api.get_child_by_name(self.id, "name")
-                // Returns the child node's ID (Option<Uuid>), which can then be used with get_node_clone
+                // Returns the child node's ID (Option<Uuid>), which can be cast to a node type
                 // Extract the string literal value from args[1] if it's a Literal::String
                 let child_name =
                     if let Some(Expr::Literal(crate::ast::Literal::String(s))) = args.get(1) {
@@ -507,23 +507,24 @@ impl ApiCodegen for NodeSugarApi {
                 format!("api.get_child_by_name({}, {})", node_expr, child_name)
             }
             NodeSugarApi::GetParent => {
-                // node.get_parent() -> returns the parent UUID (Option<Uuid>)
-                // For self.get_parent(): self.parent_id
-                // For c.get_parent(): c.parent_id
-                // The cast handling will convert this to the actual node type when you do "as Sprite2D"
+                // node.get_parent() -> returns Option<Uuid> (None if no parent)
+                // For self.get_parent(): api.get_parent(self.id)
+                // For c.get_parent(): api.get_parent(c_id)
+                // When cast to a node type (e.g., "as Node2D"), property access will use read_node with unwrap
                 let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self".to_string()
+                    "self.id".to_string()
                 } else if let Some(Expr::Ident(name)) = args.get(0) {
                     // Check args[0] FIRST - if it's an Ident (like "c"), use it directly
                     // This bypasses any incorrect processing in args_strs
-                    name.clone()
+                    // Node variables are stored as {name}_id
+                    format!("{}_id", name)
                 } else if let Some(node_str) = args_strs.get(0) {
                     // Fallback: use args_strs if args[0] is not a simple Ident
                     node_str.clone()
                 } else {
-                    "self".to_string()
+                    "self.id".to_string()
                 };
-                format!("{}.parent_id", node_expr)
+                format!("api.get_parent({})", node_expr)
             }
             NodeSugarApi::AddChild => {
                 // self.add_child(child) -> api.reparent(parent_id, child_id)
@@ -561,6 +562,46 @@ impl ApiCodegen for NodeSugarApi {
                 
                 format!("api.reparent({}, {})", parent_id, child_id)
             }
+            NodeSugarApi::GetType => {
+                // node.get_type() -> api.get_type(node_id)
+                // Takes Uuid as first parameter
+                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
+                } else if let Some(Expr::Ident(name)) = args.get(0) {
+                    // Check if it's a temp variable (starts with __) - use as-is since it's already a Uuid
+                    if name.starts_with("__") {
+                        name.clone()
+                    } else {
+                        // Regular node variable - add _id suffix
+                        format!("{}_id", name)
+                    }
+                } else if let Some(node_str) = args_strs.get(0) {
+                    node_str.clone()
+                } else {
+                    "self.id".to_string()
+                };
+                format!("api.get_type({})", node_expr)
+            }
+            NodeSugarApi::GetParentType => {
+                // node.get_parent_type() -> api.get_parent_type(node_id)
+                // Takes Uuid as first parameter
+                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
+                } else if let Some(Expr::Ident(name)) = args.get(0) {
+                    // Check if it's a temp variable (starts with __) - use as-is since it's already a Uuid
+                    if name.starts_with("__") {
+                        name.clone()
+                    } else {
+                        // Regular node variable - add _id suffix
+                        format!("{}_id", name)
+                    }
+                } else if let Some(node_str) = args_strs.get(0) {
+                    node_str.clone()
+                } else {
+                    "self.id".to_string()
+                };
+                format!("api.get_parent_type({})", node_expr)
+            }
         }
     }
 }
@@ -571,11 +612,22 @@ impl ApiTypes for NodeSugarApi {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
             NodeSugarApi::GetChildByName => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - child node ID (special marker type)
-            NodeSugarApi::GetParent => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - parent node ID (special marker type)
+            NodeSugarApi::GetParent => Some(Type::Uuid), // Returns Uuid - parent node ID (panics if no parent)
             NodeSugarApi::AddChild => Some(Type::Void),
+            NodeSugarApi::GetType => Some(Type::Custom("NodeType".into())), // Returns NodeType
+            NodeSugarApi::GetParentType => Some(Type::Custom("NodeType".into())), // Returns NodeType
         }
     }
-    // No specific param_types for NodeSugar APIs needed by default, uses None.
+    
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            NodeSugarApi::GetType | NodeSugarApi::GetParentType => {
+                // Both take Uuid as first parameter
+                Some(vec![Type::Uuid])
+            }
+            _ => None,
+        }
+    }
 }
 
 // ===========================================================

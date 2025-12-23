@@ -1,4 +1,4 @@
-use crate::{nodes::_2d::node_2d::Node2D, physics::physics_2d::ColliderShape};
+use crate::{nodes::_2d::node_2d::Node2D, nodes::node_registry::NodeType, physics::physics_2d::ColliderShape};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct CollisionShape2D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(rename = "base")]
     pub base: Node2D,
@@ -25,7 +25,7 @@ impl CollisionShape2D {
         let mut base = Node2D::new();
         base.name = Cow::Borrowed("CollisionShape2D");
         Self {
-            ty: Cow::Borrowed("CollisionShape2D"),
+            ty: NodeType::CollisionShape2D,
             base,
             shape: None,
             collider_handle: None,

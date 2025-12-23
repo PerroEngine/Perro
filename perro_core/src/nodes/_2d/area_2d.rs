@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::{
     api::ScriptApi,
     nodes::_2d::node_2d::Node2D,
-    nodes::node_registry::{BaseNode, SceneNode},
+    nodes::node_registry::{BaseNode, NodeType, SceneNode},
     prelude::string_to_u64,
 };
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Area2D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(rename = "base")]
     pub base: Node2D,
@@ -30,7 +30,7 @@ pub struct Area2D {
 impl Default for Area2D {
     fn default() -> Self {
         Self {
-            ty: Cow::Borrowed("Area2D"),
+            ty: NodeType::Area2D,
             base: Node2D::default(),
             previous_collisions: HashSet::new(),
         }
@@ -42,7 +42,7 @@ impl Area2D {
         let mut base = Node2D::new();
         base.name = Cow::Borrowed("Area2D");
         Self {
-            ty: Cow::Borrowed("Area2D"),
+            ty: NodeType::Area2D,
             base,
             previous_collisions: HashSet::new(),
         }

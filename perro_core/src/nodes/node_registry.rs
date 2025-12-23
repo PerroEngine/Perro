@@ -3,7 +3,8 @@ use std::fmt::Debug;
 use std::{any::Any, collections::HashMap};
 use uuid::Uuid;
 
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
+
 
 /// Trait for inner node types that need internal fixed updates (e.g., Area2D for physics)
 /// Nodes implement this trait to opt into internal fixed updates.
@@ -37,16 +38,16 @@ pub trait BaseNode: Any + Debug + Send {
     fn get_name(&self) -> &str;
     fn set_name(&mut self, name: String);
     fn get_is_root_of(&self) -> Option<&str>;
-    fn get_parent(&self) -> Uuid;
+    fn get_parent(&self) -> Option<crate::nodes::node::ParentType>;
 
     /// Returns a reference to the children list.
     /// If the node has `None` for its children field, this returns an empty slice.
     fn get_children(&self) -> &Vec<Uuid>;
 
-    fn get_type(&self) -> &str;
+    fn get_type(&self) -> NodeType;
     fn get_script_path(&self) -> Option<&str>;
 
-    fn set_parent(&mut self, parent: Option<Uuid>);
+    fn set_parent(&mut self, parent: Option<crate::nodes::node::ParentType>);
     fn add_child(&mut self, child: Uuid);
     fn remove_child(&mut self, c: &Uuid);
     fn set_script_path(&mut self, path: &str);
@@ -139,8 +140,8 @@ macro_rules! impl_scene_node {
             fn get_is_root_of(&self) -> Option<&str> {
                 self.is_root_of.as_deref()
             }
-            fn get_parent(&self) -> uuid::Uuid {
-                self.parent_id
+            fn get_parent(&self) -> Option<crate::nodes::node::ParentType> {
+                self.parent.clone()
             }
 
             fn get_children(&self) -> &Vec<uuid::Uuid> {
@@ -152,16 +153,17 @@ macro_rules! impl_scene_node {
                 }
             }
 
-            fn get_type(&self) -> &str {
-                &self.ty
+            fn get_type(&self) -> NodeType {
+                // All node types now use NodeType - return it directly
+                self.ty
             }
 
             fn get_script_path(&self) -> Option<&str> {
                 self.script_path.as_deref() // This works for both Cow and Option<String>
             }
 
-            fn set_parent(&mut self, p: Option<uuid::Uuid>) {
-                self.parent_id = p.unwrap_or(uuid::Uuid::nil());
+            fn set_parent(&mut self, p: Option<crate::nodes::node::ParentType>) {
+                self.parent = p;
             }
 
             fn add_child(&mut self, c: uuid::Uuid) {
@@ -263,8 +265,43 @@ macro_rules! impl_scene_node {
 #[macro_export]
 macro_rules! define_nodes {
     ( $( $variant:ident($needs_internal:literal) => $ty:path ),+ $(,)? ) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[serde(rename_all = "PascalCase")]
         pub enum NodeType { $( $variant, )+ }
+        
+        impl Default for NodeType {
+            fn default() -> Self {
+                NodeType::Node
+            }
+        }
+        
+        impl std::fmt::Display for NodeType {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $( NodeType::$variant => write!(f, "{}", stringify!($variant)), )+
+                }
+            }
+        }
+        
+        impl std::str::FromStr for NodeType {
+            type Err = String;
+            
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $( stringify!($variant) => Ok(NodeType::$variant), )+
+                    _ => Err(format!("Unknown node type: {}", s)),
+                }
+            }
+        }
+        
+        impl NodeType {
+            /// Get the string representation as a static slice
+            pub fn type_name(&self) -> &'static str {
+                match self {
+                    $( NodeType::$variant => stringify!($variant), )+
+                }
+            }
+        }
 
         #[derive(Debug, Clone, Serialize)]
         #[serde(tag = "type")]
@@ -331,7 +368,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_is_root_of(), )+ }
             }
 
-            fn get_parent(&self) -> uuid::Uuid {
+            fn get_parent(&self) -> Option<crate::nodes::node::ParentType> {
                 match self { $( SceneNode::$variant(n) => n.get_parent(), )+ }
             }
 
@@ -339,7 +376,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_children(), )+ }
             }
 
-            fn get_type(&self) -> &str {
+            fn get_type(&self) -> NodeType {
                 match self { $( SceneNode::$variant(n) => n.get_type(), )+ }
             }
 
@@ -347,7 +384,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_script_path(), )+ }
             }
 
-            fn set_parent(&mut self, parent: Option<uuid::Uuid>) {
+            fn set_parent(&mut self, parent: Option<crate::nodes::node::ParentType>) {
                 match self { $( SceneNode::$variant(n) => n.set_parent(parent), )+ }
             }
 

@@ -9,7 +9,7 @@ use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device, Queue, RenderPass,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat,
-    VERTEX_STRIDE_ALIGNMENT, util::DeviceExt,
+    VERTEX_ALIGNMENT, util::DeviceExt,
 };
 
 use crate::{Frustum, MaterialManager, MeshManager, Transform3D};

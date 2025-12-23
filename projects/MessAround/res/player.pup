@@ -7,14 +7,16 @@ fn init() {
     self.transform.position.y = 0
     self.transform.position.x = -750
     self.transform.position.x = -750
-    var name = "chicken"
-    self.name = name
+
     var pos = self.transform.position
+
+    var par = self.get_parent() as Node2D
+    Console.print(par)
 
 }
 
 fn draw() {
-    Console.print("fart")
+    self.transform.position.y += 0.01
 }
 
 fn update() {
@@ -26,15 +28,23 @@ fn update() {
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
     var pos = self.transform.position
-var b = collision.parent_id
-    if (collision.parent_id == self.id) {
+
+    var ty = collision.get_type()
+    var pty = collision.get_parent().get_type()
+    var ptya = collision.get_parent_type()
+
+    Console.print(ty, pty, ptya)
+
+    var ppos = (collision.get_parent() as Sprite2D).transform.position
+
+    if (collision.get_parent() == self) {
         pos.y -= 100
         self.transform.position = pos
     }
 }
 
 on Deadzone_AreaExited(c: CollisionShape2D) {
-   if (c.parent_id == self.id) {
+   if (c.get_parent() == self) {
         self.transform.position.y += 100
     }
 }

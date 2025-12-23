@@ -5,12 +5,12 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Color, Node3D};
+use crate::{Color, Node3D, nodes::node_registry::NodeType};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SpotLight3D {
-    #[serde(rename = "type", default = "default_type")]
-    pub ty: Cow<'static, str>,
+    #[serde(rename = "type")]
+    pub ty: NodeType,
 
     #[serde(default = "Color::default")]
     pub color: Color,
@@ -33,10 +33,6 @@ pub struct SpotLight3D {
 
 // ---------- Default fallback values ----------
 
-fn default_type() -> Cow<'static, str> {
-    Cow::Borrowed("SpotLight3D")
-}
-
 fn default_intensity() -> f32 {
     1.0
 }
@@ -58,7 +54,7 @@ fn default_outer_angle() -> f32 {
 impl Default for SpotLight3D {
     fn default() -> Self {
         Self {
-            ty: default_type(),
+            ty: NodeType::SpotLight3D,
             color: Color::default(),
             intensity: default_intensity(),
             range: default_range(),

@@ -3,12 +3,13 @@ use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use crate::nodes::_2d::node_2d::Node2D;
+use crate::nodes::node_registry::NodeType;
 
 /// 2D Camera node. Controls world-space rendering position and zoom.
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Camera2D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     /// Zoom factor (1.0 = normal, >1.0 zoom in, <1.0 zoom out)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -28,7 +29,7 @@ impl Camera2D {
         let mut base = Node2D::new();
         base.name = Cow::Borrowed("Camera2D");
         Self {
-            ty: Cow::Borrowed("Camera2D"),
+            ty: NodeType::Camera2D,
             zoom: Some(1.0),
             active: false,
             base,

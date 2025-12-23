@@ -1,12 +1,12 @@
-use crate::{Color, nodes::_3d::node_3d::Node3D};
+use crate::{Color, nodes::_3d::node_3d::Node3D, nodes::node_registry::NodeType};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DirectionalLight3D {
-    #[serde(rename = "type", default = "default_type")]
-    pub ty: Cow<'static, str>,
+    #[serde(rename = "type")]
+    pub ty: NodeType,
 
     #[serde(default = "Color::default")]
     pub color: Color,
@@ -20,10 +20,6 @@ pub struct DirectionalLight3D {
 
 // ---------- Default fallback functions ----------
 
-fn default_type() -> Cow<'static, str> {
-    Cow::Borrowed("DirectionalLight3D")
-}
-
 fn default_intensity() -> f32 {
     1.0
 }
@@ -33,7 +29,7 @@ fn default_intensity() -> f32 {
 impl Default for DirectionalLight3D {
     fn default() -> Self {
         Self {
-            ty: default_type(),
+            ty: NodeType::DirectionalLight3D,
             color: Color::default(),
             intensity: default_intensity(),
             base: Node3D::default(),

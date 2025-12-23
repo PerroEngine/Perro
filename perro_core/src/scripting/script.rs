@@ -142,7 +142,6 @@ pub trait SceneAccess {
         self.get_scene_node_mut(id)
     }
     
-    fn merge_nodes(&mut self, nodes: &[SceneNode]);
     fn add_node_to_scene(&mut self, node: SceneNode) -> anyhow::Result<()>;
     fn get_script(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>>;
     

@@ -454,7 +454,11 @@ impl Type {
     }
 
     pub fn requires_clone(&self) -> bool {
-        !self.is_copy_type()
+        match self {
+            // Option<Copy> is also Copy, so it doesn't require clone
+            Type::Option(inner) => inner.requires_clone(),
+            _ => !self.is_copy_type(),
+        }
     }
 }
 

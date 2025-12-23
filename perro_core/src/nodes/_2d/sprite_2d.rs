@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::nodes::_2d::node_2d::Node2D;
+use crate::nodes::node_registry::NodeType;
 use serde::{Deserialize, Serialize};
 
 use std::borrow::Cow;
@@ -8,7 +9,7 @@ use std::borrow::Cow;
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Sprite2D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub texture_path: Option<Cow<'static, str>>,
@@ -25,7 +26,7 @@ impl Sprite2D {
         let mut base = Node2D::new();
         base.name = Cow::Borrowed("Sprite2D");
         Self {
-            ty: Cow::Borrowed("Sprite2D"),
+            ty: NodeType::Sprite2D,
             texture_path: None,
             region: None,
             base,

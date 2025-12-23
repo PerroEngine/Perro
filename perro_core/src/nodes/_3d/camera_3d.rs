@@ -3,12 +3,13 @@ use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use crate::nodes::_3d::node_3d::Node3D;
+use crate::nodes::node_registry::NodeType;
 
 /// 3D Camera node. Controls the view and projection for 3D rendering.
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Camera3D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     /// Field of view, in degrees (typically 70°–90°)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -35,7 +36,7 @@ impl Camera3D {
     /// Creates a new Camera3D with standard default parameters.
     pub fn new() -> Self {
         Self {
-            ty: Cow::Borrowed("Camera3D"),
+            ty: NodeType::Camera3D,
             fov: Some(70.0),
             near: Some(0.1),
             far: Some(1000.0),

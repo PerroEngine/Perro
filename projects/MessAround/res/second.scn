@@ -7,7 +7,7 @@
     },
 
    
-    "00000000-0000-0000-0000-000000000004": {
+    "00000000-0000-0000-0000-000000000098": {
       "type": "Sprite2D",
       "texture_path": "res://icon.png",
       "base": {
@@ -25,7 +25,7 @@
       "base": {
         "type": "Node2D",
         "z_index": 3,
-        "base": { "type": "Node", "name": "PlayerCollision", "parent": "00000000-0000-0000-0000-000000000004" },
+        "base": { "type": "Node", "name": "PlayerCollision", "parent": "00000000-0000-0000-0000-000000000098" },
         "transform": {
           "position": { "x": 0.0, "y": 0.0 },
           "rotation": 0.0,

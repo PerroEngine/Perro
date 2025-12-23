@@ -1,4 +1,5 @@
 use crate::nodes::_2d::node_2d::Node2D;
+use crate::nodes::node_registry::NodeType;
 use crate::structs::Color;
 use crate::structs2d::ShapeType2D;
 use serde::{Deserialize, Serialize};
@@ -8,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Shape2D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(rename = "base")]
     pub base: Node2D,
@@ -39,7 +40,7 @@ impl Shape2D {
         let mut base = Node2D::new();
         base.name = Cow::Borrowed("Shape2D");
         Self {
-            ty: Cow::Borrowed("Shape2D"),
+            ty: NodeType::Shape2D,
             base,
             shape_type: None,
             color: None,

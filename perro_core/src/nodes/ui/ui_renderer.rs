@@ -639,10 +639,10 @@ pub fn update_global_transforms_with_layout(
 ) {
     // Get parent info - FIXED: Use the working version's logic
     let (parent_size, parent_z) = {
-        let parent_id = elements.get(current_id).map(|el| el.get_parent()).unwrap_or(Uuid::nil());
+        let parent_id = elements.get(current_id).map(|el| el.get_parent());
 
-        if !parent_id.is_nil() {
-            if let Some(parent) = elements.get(&parent_id) {
+        if let Some(pid) = parent_id {
+            if let Some(parent) = elements.get(&pid) {
                 (*parent.get_size(), parent.get_z_index())
             } else {
                 (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)

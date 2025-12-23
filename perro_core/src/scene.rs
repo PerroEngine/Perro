@@ -113,7 +113,7 @@ impl<'de> Deserialize<'de> for SceneData {
         let raw = RawSceneData::deserialize(deserializer)?;
         let capacity = raw.node_count.unwrap_or(raw.nodes.len());
 
-        // We’ll use this helper closure so the logic is consistent between small/large scenes
+        // We'll use this helper closure so the logic is consistent between small/large scenes
         let process_nodes = |raw_nodes: IndexMap<Uuid, SceneNode>| -> IndexMap<Uuid, SceneNode> {
             let mut nodes = IndexMap::with_capacity(capacity);
             let mut parent_children: IndexMap<Uuid, Vec<Uuid>> =
@@ -129,10 +129,9 @@ impl<'de> Deserialize<'de> for SceneData {
                 // (transform_dirty is skipped during serialization, so it defaults to false)
                 node.mark_transform_dirty_if_node2d();
 
-                let parent_local = node.get_parent();
-                if !parent_local.is_nil() {
+                if let Some(parent) = node.get_parent() {
                     parent_children
-                        .entry(parent_local)
+                        .entry(parent.id)
                         .or_default()
                         .push(local_id);
                 }
@@ -140,11 +139,22 @@ impl<'de> Deserialize<'de> for SceneData {
                 nodes.insert(local_id, node);
             }
 
-            // Rebuild relationships deterministically
+            // Rebuild relationships deterministically and populate parent types
             for (parent_id, children) in parent_children {
-                if let Some(parent) = nodes.get_mut(&parent_id) {
+                if let Some(parent) = nodes.get(&parent_id) {
+                    // Get parent type from the parent node
+                    let parent_type_enum = parent.get_type();
+                    
                     for child_id in children {
-                        parent.add_child(child_id);
+                        if let Some(child) = nodes.get_mut(&child_id) {
+                            // Rebuild ParentType with both ID and type
+                            let parent_type = crate::nodes::node::ParentType::new(parent_id, parent_type_enum);
+                            child.set_parent(Some(parent_type));
+                        }
+                        // Add to parent's children list
+                        if let Some(parent_mut) = nodes.get_mut(&parent_id) {
+                            parent_mut.add_child(child_id);
+                        }
                     }
                 }
             }
@@ -203,25 +213,78 @@ impl SceneData {
     pub fn fix_relationships(data: &mut SceneData) {
         let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
 
+        // First, collect parent node types before mutable iteration
+        // The key in data.nodes IS the runtime ID (local_id from JSON becomes runtime_id)
+        let mut parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
+        
+        println!("🔧 fix_relationships: Processing {} nodes", data.nodes.len());
+        
+        for (&runtime_id, node) in data.nodes.iter() {
+            println!("  Node: runtime_id={}, name={}", runtime_id, node.get_name());
+            if let Some(parent) = node.get_parent() {
+                let parent_id_from_json = parent.id; // Local ID from JSON
+                println!("    Parent from JSON: {}", parent_id_from_json);
+                // Look up parent node - the key in data.nodes is the runtime ID
+                if let Some((&parent_runtime_id, parent_node)) = data.nodes.get_key_value(&parent_id_from_json) {
+                    println!("    Found parent: runtime_id={}, name={}", parent_runtime_id, parent_node.get_name());
+                    parent_types.insert(parent_runtime_id, parent_node.get_type());
+                } else {
+                    println!("    ⚠️ Parent {} not found in data.nodes!", parent_id_from_json);
+                }
+            } else {
+                println!("    No parent");
+            }
+        }
+
+        // Second pass: set runtime IDs and remap parent references to use runtime IDs
+        // Collect parent mappings first to avoid borrow checker issues
+        let mut node_parent_mappings: Vec<(Uuid, Option<Uuid>)> = Vec::new();
+        for (&node_id, node) in data.nodes.iter() {
+            let parent_runtime_id = node.get_parent().map(|p| {
+                let parent_local_id = p.id;
+                // At this stage, local_id == runtime_id (key), so use it directly
+                parent_local_id
+            });
+            node_parent_mappings.push((node_id, parent_runtime_id));
+        }
+
         for (&node_id, node) in data.nodes.iter_mut() {
-            node.set_id(node_id);
+            let old_parent_id = node.get_parent().map(|p| p.id);
+            node.set_id(node_id); // Set runtime ID to match key
             node.get_children_mut().clear();
 
-            // Collect relationships during same iteration
-            let parent_id = node.get_parent();
-            if !parent_id.is_nil() {
-                parent_children.entry(parent_id).or_default().push(node_id);
+            // Remap parent ID from local ID (from JSON) to runtime ID (key in data.nodes)
+            if let Some((_, Some(parent_runtime_id))) = node_parent_mappings.iter().find(|(id, _)| *id == node_id) {
+                println!("  Remapping parent for node {}: {} -> {}", node_id, old_parent_id.unwrap_or_default(), parent_runtime_id);
+                parent_children.entry(*parent_runtime_id).or_default().push(node_id);
+                
+                // Rebuild ParentType with the runtime ID (key) and type
+                if let Some(&parent_type_enum) = parent_types.get(parent_runtime_id) {
+                    let parent_type = crate::nodes::node::ParentType::new(*parent_runtime_id, parent_type_enum);
+                    node.set_parent(Some(parent_type));
+                    println!("    Set parent to runtime_id={}", parent_runtime_id);
+                } else {
+                    println!("    ⚠️ Parent type not found for runtime_id={}", parent_runtime_id);
+                }
             }
+            
+            // Print final state
+            let final_parent_id = node.get_parent().map(|p| p.id);
+            println!("  Final: node_id={}, parent_id={:?} (was {:?})", node_id, final_parent_id, old_parent_id);
         }
 
         // Apply batched relationships
-        for (parent_id, children) in parent_children {
-            if let Some(parent) = data.nodes.get_mut(&parent_id) {
+        for (parent_runtime_id, children) in parent_children {
+            if let Some(parent) = data.nodes.get_mut(&parent_runtime_id) {
                 for child_id in children {
                     parent.add_child(child_id);
                 }
+            } else {
+                println!("  ⚠️ Cannot add children to parent {}: not found", parent_runtime_id);
             }
         }
+        
+        println!("✅ fix_relationships complete");
     }
 }
 
@@ -561,6 +624,17 @@ impl<P: ScriptProvider> Scene<P> {
             None
         };
     
+        // First, collect parent node types from other.nodes before mutable iteration
+        let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
+        for (&local_id, node) in other.nodes.iter() {
+            if let Some(parent) = node.get_parent() {
+                let parent_local_id = parent.id;
+                if let Some(parent_node) = other.nodes.get(&parent_local_id) {
+                    other_parent_types.insert(parent_local_id, parent_node.get_type());
+                }
+            }
+        }
+
         // Remap all nodes
         for (_local_id, node) in other.nodes.iter_mut() {
             let local_id = node.get_local_id();
@@ -570,20 +644,45 @@ impl<P: ScriptProvider> Scene<P> {
             node.mark_transform_dirty_if_node2d();
 
             // Determine parent relationship
-            let parent_local = node.get_parent();
-            if !parent_local.is_nil() {
-                // Parent is specified in JSON - remap it
-                if let Some(&mapped_parent) = id_map.get(&parent_local) {
-                    node.set_parent(Some(mapped_parent));
+            if let Some(parent) = node.get_parent() {
+                let parent_local_id = parent.id;
+                println!("  Node {}: parent_local_id={}", new_id, parent_local_id);
+                // Parent is specified in JSON - remap it using id_map
+                if let Some(&mapped_parent) = id_map.get(&parent_local_id) {
+                    // Parent is in subscene - use mapped runtime ID
+                    println!("    Parent in subscene: {} -> {}", parent_local_id, mapped_parent);
+                    // Get parent type from other_parent_types (collected earlier) or from already-inserted nodes
+                    let parent_type_enum = if let Some(&parent_type) = other_parent_types.get(&parent_local_id) {
+                        parent_type
+                    } else if let Some(parent_node) = self.data.nodes.get(&mapped_parent) {
+                        parent_node.get_type()
+                    } else {
+                        // Fallback - shouldn't happen
+                        crate::node_registry::NodeType::Node
+                    };
+                    let parent_type = crate::nodes::node::ParentType::new(mapped_parent, parent_type_enum);
+                    node.set_parent(Some(parent_type));
+                    println!("    Set parent to runtime_id={}", mapped_parent);
                     parent_children
                         .entry(mapped_parent)
                         .or_default()
                         .push(new_id);
                 } else {
-                    // Parent not in subscene - might be in main scene already
-                    // Keep original parent reference
-                    node.set_parent(Some(parent_local));
-                    parent_children.entry(parent_local).or_default().push(new_id);
+                    // Parent not in subscene - check if it exists in main scene
+                    // If it exists, use its runtime ID; otherwise it's an invalid reference
+                    if let Some(parent_node) = self.data.nodes.get(&parent_local_id) {
+                        // Parent exists in main scene - use its runtime ID
+                        let parent_runtime_id = parent_node.get_id();
+                        println!("    Parent in main scene: {} -> {}", parent_local_id, parent_runtime_id);
+                        let parent_type = crate::nodes::node::ParentType::new(parent_runtime_id, parent_node.get_type());
+                        node.set_parent(Some(parent_type));
+                        println!("    Set parent to runtime_id={}", parent_runtime_id);
+                        parent_children.entry(parent_runtime_id).or_default().push(new_id);
+                    } else {
+                        // Parent doesn't exist - this is an invalid reference
+                        println!("    ⚠️ Parent {} not found in subscene or main scene!", parent_local_id);
+                        // Don't set parent - leave it as invalid
+                    }
                 }
             } else if Some(new_id) == subscene_root_new_id {
                 // This is the subscene root with no parent - attach to game's parent_id
@@ -593,7 +692,11 @@ impl<P: ScriptProvider> Scene<P> {
                         "🔗 Attaching subscene root {} to game parent {}",
                         new_id, parent_id
                     );
-                    node.set_parent(Some(parent_id));
+                    // Create ParentType with the parent's type
+                    if let Some(parent_node) = self.data.nodes.get(&parent_id) {
+                        let parent_type = crate::nodes::node::ParentType::new(parent_id, parent_node.get_type());
+                        node.set_parent(Some(parent_type));
+                    }
                     parent_children.entry(parent_id).or_default().push(new_id);
                 }
             }
@@ -656,14 +759,14 @@ impl<P: ScriptProvider> Scene<P> {
 
             // Resolve name conflicts (check siblings AND parent/ancestor)
             let node_name = node.get_name();
-            let parent_id = node.get_parent();
+            let parent_id_opt = node.get_parent().map(|p| p.id);
             
             // Check if name conflicts with siblings OR with parent/ancestors
-            let has_sibling_conflict = self.has_sibling_name_conflict(parent_id, node_name);
-            let has_parent_conflict = self.has_parent_or_ancestor_name_conflict(parent_id, node_name);
+            let has_sibling_conflict = parent_id_opt.map(|pid| self.has_sibling_name_conflict(pid, node_name)).unwrap_or(false);
+            let has_parent_conflict = self.has_parent_or_ancestor_name_conflict(parent_id_opt, node_name);
             
             if has_sibling_conflict || has_parent_conflict {
-                let resolved_name = self.resolve_name_conflict(parent_id, node_name);
+                let resolved_name = parent_id_opt.map(|pid| self.resolve_name_conflict(pid, node_name)).unwrap_or_else(|| node_name.to_string());
                 Self::set_node_name(&mut node, resolved_name);
             }
 
@@ -927,6 +1030,17 @@ impl<P: ScriptProvider> Scene<P> {
     
         // Build parent-children relationships
         let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        
+        // First, collect parent node types from other.nodes before mutable iteration
+        let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
+        for (&local_id, node) in other.nodes.iter() {
+            if let Some(parent) = node.get_parent() {
+                let parent_local_id = parent.id;
+                if let Some(parent_node) = other.nodes.get(&parent_local_id) {
+                    other_parent_types.insert(parent_local_id, parent_node.get_type());
+                }
+            }
+        }
     
         // Remap all nodes
         for (_local_id, node) in other.nodes.iter_mut() {
@@ -936,15 +1050,42 @@ impl<P: ScriptProvider> Scene<P> {
             node.clear_children();
             node.mark_transform_dirty_if_node2d();
 
-            // Remap parent
-            let parent_local = node.get_parent();
-            if !parent_local.is_nil() {
-                if let Some(&mapped_parent) = id_map.get(&parent_local) {
-                    node.set_parent(Some(mapped_parent));
+            // Remap parent using id_map (like in merge_scene_data)
+            if let Some(parent) = node.get_parent() {
+                let parent_local_id = parent.id;
+                println!("  [root_replacement] Node {}: parent_local_id={}", new_id, parent_local_id);
+                if let Some(&mapped_parent) = id_map.get(&parent_local_id) {
+                    // Parent is in subscene - use mapped runtime ID
+                    println!("    Parent in subscene: {} -> {}", parent_local_id, mapped_parent);
+                    // Get parent type from other_parent_types (collected earlier) or from already-inserted nodes
+                    let parent_type_enum = if let Some(&parent_type) = other_parent_types.get(&parent_local_id) {
+                        parent_type
+                    } else if let Some(parent_node) = self.data.nodes.get(&mapped_parent) {
+                        parent_node.get_type()
+                    } else {
+                        // Fallback - shouldn't happen
+                        crate::node_registry::NodeType::Node
+                    };
+                    let parent_type = crate::nodes::node::ParentType::new(mapped_parent, parent_type_enum);
+                    node.set_parent(Some(parent_type));
+                    println!("    Set parent to runtime_id={}", mapped_parent);
                     parent_children
                         .entry(mapped_parent)
                         .or_default()
                         .push(new_id);
+                } else {
+                    // Parent not in subscene - check if it exists in main scene
+                    if let Some(parent_node) = self.data.nodes.get(&parent_local_id) {
+                        // Parent exists in main scene - use its runtime ID
+                        let parent_runtime_id = parent_node.get_id();
+                        println!("    Parent in main scene: {} -> {}", parent_local_id, parent_runtime_id);
+                        let parent_type = crate::nodes::node::ParentType::new(parent_runtime_id, parent_node.get_type());
+                        node.set_parent(Some(parent_type));
+                        println!("    Set parent to runtime_id={}", parent_runtime_id);
+                        parent_children.entry(parent_runtime_id).or_default().push(new_id);
+                    } else {
+                        println!("    ⚠️ Parent {} not found in subscene or main scene!", parent_local_id);
+                    }
                 }
             }
             // If no parent (this is the subscene root), its parent is already set
@@ -1000,10 +1141,12 @@ impl<P: ScriptProvider> Scene<P> {
     
             // Resolve name conflicts (only check siblings - nodes with the same parent)
             let node_name = node.get_name();
-            let parent_id = node.get_parent();
-            if self.has_sibling_name_conflict(parent_id, node_name) {
-                let resolved_name = self.resolve_name_conflict(parent_id, node_name);
-                Self::set_node_name(&mut node, resolved_name);
+            let parent_id_opt = node.get_parent().map(|p| p.id);
+            if let Some(pid) = parent_id_opt {
+                if self.has_sibling_name_conflict(pid, node_name) {
+                    let resolved_name = self.resolve_name_conflict(pid, node_name);
+                    Self::set_node_name(&mut node, resolved_name);
+                }
             }
     
             self.data.nodes.insert(node_id, node);
@@ -1134,7 +1277,7 @@ impl<P: ScriptProvider> Scene<P> {
         let root_nodes: Vec<Uuid> = self.data.nodes
             .iter()
             .filter_map(|(id, node)| {
-                if node.get_parent().is_nil() {
+                if node.get_parent().is_none() {
                     Some(*id)
                 } else {
                     None
@@ -1212,28 +1355,27 @@ impl<P: ScriptProvider> Scene<P> {
     /// Check if a node name conflicts with any sibling (node with the same parent)
     fn has_sibling_name_conflict(&self, parent_id: Uuid, name: &str) -> bool {
         self.data.nodes.values().any(|n| {
-            n.get_parent() == parent_id && n.get_name() == name
+            n.get_parent().map(|p| p.id) == Some(parent_id) && n.get_name() == name
         })
     }
 
     /// Check if a node name conflicts with its parent or any ancestor
-    fn has_parent_or_ancestor_name_conflict(&self, parent_id: Uuid, name: &str) -> bool {
+    fn has_parent_or_ancestor_name_conflict(&self, parent_id: Option<Uuid>, name: &str) -> bool {
         let mut current_id = parent_id;
         
         // Walk up the tree checking each ancestor
-        loop {
-            if let Some(ancestor) = self.data.nodes.get(&current_id) {
+        while let Some(id) = current_id {
+            if let Some(ancestor) = self.data.nodes.get(&id) {
                 if ancestor.get_name() == name {
                     return true;
                 }
                 
                 // Move to parent
-                let next_parent = ancestor.get_parent();
-                if next_parent == current_id {
+                current_id = ancestor.get_parent().map(|p| p.id);
+                if current_id == Some(id) {
                     // Reached root (parent points to itself)
                     break;
                 }
-                current_id = next_parent;
             } else {
                 // Parent doesn't exist in scene yet
                 break;
@@ -1251,7 +1393,7 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Check if candidate conflicts with siblings OR parent/ancestors
         while self.has_sibling_name_conflict(parent_id, &candidate) 
-            || self.has_parent_or_ancestor_name_conflict(parent_id, &candidate) {
+            || self.has_parent_or_ancestor_name_conflict(Some(parent_id), &candidate) {
             counter += 1;
             candidate = format!("{}{}", base_name, counter);
         }
@@ -1720,7 +1862,7 @@ impl<P: ScriptProvider> Scene<P> {
     /// This recursively traverses up the parent chain until it finds a clean transform
     pub fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {
         // First, check if this node exists and get its parent
-        let (parent_id, local_transform, is_dirty) = if let Some(node) = self.data.nodes.get(&node_id) {
+        let (parent_id_opt, local_transform, is_dirty) = if let Some(node) = self.data.nodes.get(&node_id) {
             let node2d = match node.as_node2d() {
                 Some(n2d) => n2d,
                 None => {
@@ -1734,7 +1876,7 @@ impl<P: ScriptProvider> Scene<P> {
                     return None;
                 }
             };
-            (node2d.base.parent_id, local, node2d.transform_dirty)
+            (node.get_parent().map(|p| p.id), local, node2d.transform_dirty)
         } else {
             return None;
         };
@@ -1748,7 +1890,7 @@ impl<P: ScriptProvider> Scene<P> {
 
         // Need to recalculate - get parent's global transform (recursively)
         // If parent is not Node2D-based, use identity transform
-        let parent_global = if !parent_id.is_nil() {
+        let parent_global = if let Some(parent_id) = parent_id_opt {
             // Try to get parent's global transform, but if parent is not Node2D-based, use identity
             self.get_global_transform(parent_id).unwrap_or_else(|| {
                 // Parent exists but is not Node2D-based (e.g., regular Node) - use identity transform
@@ -1871,19 +2013,15 @@ impl<P: ScriptProvider> Scene<P> {
     /// Register CollisionShape2D nodes with the physics world
     fn register_collision_shapes(&mut self, node_ids: &[Uuid]) {
         // First, collect all the data we need (shape info, transforms, parent info)
-        let mut to_register: Vec<(Uuid, crate::physics::physics_2d::ColliderShape, Option<Uuid>)> = Vec::new();
+        let mut to_register: Vec<(Uuid, crate::physics::physics_2d::ColliderShape, Option<crate::nodes::node::ParentType>)> = Vec::new();
         
         for &node_id in node_ids {
             if let Some(node) = self.data.nodes.get(&node_id) {
                 if let SceneNode::CollisionShape2D(collision_shape) = node {
                     // Only register if it has a shape defined
                     if let Some(shape) = collision_shape.shape {
-                        let parent_id = if collision_shape.parent_id.is_nil() {
-                            None
-                        } else {
-                            Some(collision_shape.parent_id)
-                        };
-                        to_register.push((node_id, shape, parent_id));
+                        let parent_opt = collision_shape.get_parent();
+                        to_register.push((node_id, shape, parent_opt));
                     }
                 }
             }
@@ -1901,7 +2039,7 @@ impl<P: ScriptProvider> Scene<P> {
         let mut physics = self.physics_2d.borrow_mut();
         let mut handles_to_store: Vec<(Uuid, rapier2d::prelude::ColliderHandle, Option<Uuid>)> = Vec::new();
         
-        for (node_id, shape, parent_id) in to_register {
+        for (node_id, shape, parent_opt) in to_register {
             // Use global transform if available, otherwise use default (for first frame)
             let (world_position, world_rotation) = global_transforms
                 .get(&node_id)
@@ -1917,7 +2055,8 @@ impl<P: ScriptProvider> Scene<P> {
             );
             
             // If this collision shape is a child of an Area2D, register it
-            if let Some(pid) = parent_id {
+            if let Some(parent) = &parent_opt {
+                let pid = parent.id;
                 if let Some(parent) = self.data.nodes.get(&pid) {
                     if matches!(parent, SceneNode::Area2D(_)) {
                         physics.register_area_collider(pid, collider_handle);
@@ -1925,7 +2064,7 @@ impl<P: ScriptProvider> Scene<P> {
                 }
             }
             
-            handles_to_store.push((node_id, collider_handle, parent_id));
+            handles_to_store.push((node_id, collider_handle, parent_opt.map(|p| p.id)));
         }
         
         // Drop physics borrow before mutating nodes
@@ -2261,36 +2400,6 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.add_node_to_scene(node)
     }
 
-    fn merge_nodes(&mut self, nodes: &[SceneNode]) {
-        // Process nodes and mark them dirty immediately
-        for node in nodes {
-            let id = node.get_id(); // Get ID without cloning
-            
-            if let Some(existing) = self.data.nodes.get_mut(&id) {
-                // Node exists: mark dirty and replace
-                existing.mark_dirty();
-                *existing = node.clone();
-            } else {
-                // Node doesn't exist: clone and insert
-                let mut new_node = node.clone();
-                new_node.mark_dirty();
-                println!("Inserting new node with ID {}: {:?} during merge", id, new_node);
-                self.data.nodes.insert(id, new_node);
-            }
-
-            // Register node for internal fixed updates if needed (check after insertion)
-            if let Some(node_ref) = self.data.nodes.get(&id) {
-                if node_ref.needs_internal_fixed_update() {
-                    if !self.nodes_with_internal_fixed_update.contains(&id) {
-                        self.nodes_with_internal_fixed_update.insert(id);
-                    }
-                }
-            }
-            
-            // Mark transform dirty immediately - no need to collect IDs first!
-            self.mark_transform_dirty_recursive(id);
-        }
-    }
 
     fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64) {
         self.connect_signal(signal, target_id, function);

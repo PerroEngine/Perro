@@ -1,5 +1,6 @@
 use crate::Vector2;
 use crate::nodes::node::Node;
+use crate::nodes::node_registry::NodeType;
 use crate::structs2d::Transform2D;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -15,7 +16,7 @@ fn is_default_visible(v: &bool) -> bool {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Node2D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(
         skip_serializing_if = "Transform2D::is_default",
@@ -69,7 +70,7 @@ impl Node2D {
         let mut base = Node::new();
         base.name = Cow::Borrowed("Node2D");
         Self {
-            ty: Cow::Borrowed("Node2D"),
+            ty: NodeType::Node2D,
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
             transform_dirty: true, // New nodes start dirty
@@ -110,7 +111,7 @@ impl Node2D {
 impl Default for Node2D {
     fn default() -> Self {
         Self {
-            ty: Cow::Borrowed("Node2D"),
+            ty: NodeType::Node2D,
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
             transform_dirty: true, // Default to dirty

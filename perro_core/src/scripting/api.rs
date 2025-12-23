@@ -13,6 +13,7 @@ use std::{
     path::Path,
     process,
     rc::Rc,
+    str::FromStr,
     sync::mpsc::Sender,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -1402,23 +1403,12 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     // Scene / Node Access
     //-------------------------------------------------
-    pub fn get_node_clone<T: Clone>(&mut self, id: Uuid) -> T
-    where
-        SceneNode: IntoInner<T>,
-    {
-        let node_enum = self
-            .scene
-            .get_scene_node_ref(id)
-            .unwrap_or_else(|| panic!("Node {} not found", id))
-            .clone();
-        node_enum.into_inner()
-    }
     
     /// Read a value from a node using a closure
     /// The closure receives &T where T is the node type and returns any Clone value (including Copy types)
     /// For Copy types like primitives, no actual cloning happens at runtime
     /// For non-Copy types like String/Cow, the value is cloned out of the node
-    /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent_id);`
+    /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent);`
     /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn read_node<T: 'static, R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
@@ -1429,6 +1419,21 @@ impl<'a> ScriptApi<'a> {
             .unwrap_or_else(|| panic!("Node {} is not of type {}", node_id, std::any::type_name::<T>()));
         
         f(typed_node)
+    }
+    
+    /// Read transform-related properties from any Node2D-based node
+    /// This works with Node2D, Sprite2D, Area2D, CollisionShape2D, etc.
+    /// Safer than read_node::<Node2D> when you don't know the exact type
+    /// Example: `let pos = api.read_node2d_transform(parent_id, |n2d| n2d.transform.position);`
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn read_node2d_transform<R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
+        let node = self.scene.get_scene_node_ref(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        
+        let node2d = node.as_node2d()
+            .unwrap_or_else(|| panic!("Node {} is not a Node2D-based node", node_id));
+        
+        f(node2d)
     }
     
     /// Mutate a node directly with a closure - no clones needed!
@@ -1484,24 +1489,26 @@ impl<'a> ScriptApi<'a> {
     /// Handles removing from old parent if it exists
     /// Example: `api.reparent(parent_id, child_id);`
     pub fn reparent(&mut self, new_parent_id: Uuid, child_id: Uuid) {
-        // Don't reparent to nil parent
-        if new_parent_id.is_nil() {
-            return;
-        }
+        // Get the child's current parent (if any) - need to do this before mutable borrow
+        let old_parent_id_opt = {
+            let child_node = self.scene.get_scene_node_ref(child_id)
+                .unwrap_or_else(|| panic!("Child node {} not found", child_id));
+            child_node.get_parent().map(|p| p.id)
+        };
         
-        // Get the child's current parent_id (returns Uuid, nil if no parent)
-        let old_parent_id = self.scene.get_scene_node_ref(child_id)
-            .unwrap_or_else(|| panic!("Child node {} not found", child_id))
-            .get_parent();
-        
-        // Remove from old parent if it has one (this also sets child's parent_id to nil)
-        if !old_parent_id.is_nil() {
+        // Remove from old parent if it has one (this also sets child's parent to None)
+        if let Some(old_parent_id) = old_parent_id_opt {
             self.remove_child(old_parent_id, child_id);
         }
         
-        // Set the child's parent_id to the new parent
+        // Create ParentType for new parent (need to do this before mutable borrow)
+        let parent_type_opt = self.create_parent_type(new_parent_id);
+        
+        // Set the child's parent to the new parent (with type info)
         if let Some(child_node) = self.scene.get_scene_node_mut(child_id) {
-            child_node.set_parent(Some(new_parent_id));
+            if let Some(parent_type) = parent_type_opt {
+                child_node.set_parent(Some(parent_type));
+            }
         }
         
         // Add child to the new parent's children list
@@ -1533,31 +1540,77 @@ impl<'a> ScriptApi<'a> {
     }
 
     /// Get the parent node ID of a given node
-    /// Returns the parent node's ID (Uuid::nil() if node not found or has no parent)
+    /// Returns the parent's UUID if the node has a parent
+    /// Panics if the node is not found or has no parent
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_parent(&mut self, node_id: Uuid) -> Uuid {
-        if let Some(node) = self.scene.get_scene_node_ref(node_id) {
-            node.get_parent()
-        } else {
-            Uuid::nil()
-        }
+        let node = self.scene.get_scene_node_ref(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        node.get_parent()
+            .map(|p| p.id)
+            .unwrap_or_else(|| panic!("Node {} has no parent", node_id))
     }
-
-    pub fn merge_nodes(&mut self, nodes: &[SceneNode]) {
-        self.scene.merge_nodes(nodes);
+    
+    /// Returns the parent's NodeType if the node has a parent
+    /// Panics if the node is not found or has no parent
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn get_parent_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
+        let node = self.scene.get_scene_node_ref(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        node.get_parent()
+            .map(|p| p.node_type)
+            .unwrap_or_else(|| panic!("Node {} has no parent", node_id))
+    }
+    
+    /// Returns the NodeType of the given node
+    /// Panics if the node is not found
+    /// Useful for runtime type checking before casting
+    /// Example: `match api.get_type(node_id) { NodeType::Sprite2D => ..., _ => ... }`
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn get_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
+        let node = self.scene.get_scene_node_ref(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        // Use the node's get_type() method which now returns NodeType directly
+        node.get_type()
+    }
+    
+    /// Helper to create a ParentType from a node ID by looking up its type in the scene
+    fn create_parent_type(&self, parent_id: Uuid) -> Option<crate::nodes::node::ParentType> {
+        if let Some(parent_node) = self.scene.get_scene_node_ref(parent_id) {
+            // Get the node type - we need to match on the SceneNode enum to get the actual type
+            let node_type = match parent_node {
+                crate::nodes::node_registry::SceneNode::Node(_) => crate::node_registry::NodeType::Node,
+                crate::nodes::node_registry::SceneNode::Node2D(_) => crate::node_registry::NodeType::Node2D,
+                crate::nodes::node_registry::SceneNode::Sprite2D(_) => crate::node_registry::NodeType::Sprite2D,
+                crate::nodes::node_registry::SceneNode::Area2D(_) => crate::node_registry::NodeType::Area2D,
+                crate::nodes::node_registry::SceneNode::CollisionShape2D(_) => crate::node_registry::NodeType::CollisionShape2D,
+                crate::nodes::node_registry::SceneNode::Shape2D(_) => crate::node_registry::NodeType::Shape2D,
+                crate::nodes::node_registry::SceneNode::Camera2D(_) => crate::node_registry::NodeType::Camera2D,
+                crate::nodes::node_registry::SceneNode::UINode(_) => crate::node_registry::NodeType::UINode,
+                crate::nodes::node_registry::SceneNode::Node3D(_) => crate::node_registry::NodeType::Node3D,
+                crate::nodes::node_registry::SceneNode::MeshInstance3D(_) => crate::node_registry::NodeType::MeshInstance3D,
+                crate::nodes::node_registry::SceneNode::Camera3D(_) => crate::node_registry::NodeType::Camera3D,
+                crate::nodes::node_registry::SceneNode::DirectionalLight3D(_) => crate::node_registry::NodeType::DirectionalLight3D,
+                crate::nodes::node_registry::SceneNode::OmniLight3D(_) => crate::node_registry::NodeType::OmniLight3D,
+                crate::nodes::node_registry::SceneNode::SpotLight3D(_) => crate::node_registry::NodeType::SpotLight3D,
+            };
+            Some(crate::nodes::node::ParentType::new(parent_id, node_type))
+        } else {
+            None
+        }
     }
 
     /// Remove a child from a parent node by directly mutating the scene
     /// This works with any node type through the BaseNode trait
     /// Remove a child from its parent
-    /// Sets the child's parent_id to nil and removes it from parent's children list
+    /// Sets the child's parent to None and removes it from parent's children list
     pub fn remove_child(&mut self, parent_id: Uuid, child_id: Uuid) {
         // Remove from parent's children list
         if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
             parent.remove_child(&child_id);
         }
         
-        // Set child's parent_id to nil
+        // Set child's parent to None
         if let Some(child) = self.scene.get_scene_node_mut(child_id) {
             child.set_parent(None);
         }

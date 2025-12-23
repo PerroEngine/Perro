@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use crate::nodes::_3d::node_3d::Node3D;
+use crate::nodes::node_registry::NodeType;
 
 /// A single instance of a shared 3D mesh asset within the scene.
 ///
@@ -11,7 +12,7 @@ use crate::nodes::_3d::node_3d::Node3D;
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct MeshInstance3D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     /// Resource path for the mesh this instance uses (e.g., "res://models/cube.gltf")
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,7 +38,7 @@ impl MeshInstance3D {
         let mut base = Node3D::new();
         base.name = Cow::Borrowed("MeshInstance3D");
         Self {
-            ty: Cow::Borrowed("MeshInstance3D"),
+            ty: NodeType::MeshInstance3D,
             mesh_path: None,
             material_path: Some(Cow::Borrowed("__default__")), // Always start with default
             material_id: Some(0),                              // Default material is always slot 0

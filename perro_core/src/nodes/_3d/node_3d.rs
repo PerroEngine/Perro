@@ -1,4 +1,5 @@
 use crate::nodes::node::Node;
+use crate::nodes::node_registry::NodeType;
 use crate::structs3d::{Transform3D, Vector3};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -15,7 +16,7 @@ fn is_default_visible(v: &bool) -> bool {
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Node3D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     #[serde(
         skip_serializing_if = "Transform3D::is_default",
@@ -47,7 +48,7 @@ impl Node3D {
         let mut base = Node::new();
         base.name = Cow::Borrowed("Node3D");
         Self {
-            ty: Cow::Borrowed("Node3D"),
+            ty: NodeType::Node3D,
             transform: Transform3D::default(),
             pivot: Vector3 {
                 x: 0.5,

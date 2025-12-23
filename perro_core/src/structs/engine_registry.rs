@@ -115,7 +115,7 @@ impl EngineRegistry {
             vec![
                 ("name", Type::CowStr), // Cow<'static, str>
                 ("id", Type::Uuid),
-                ("parent_id", Type::Uuid), // Uuid::nil() used for "no parent"
+                ("parent", Type::Option(Box::new(Type::Custom("ParentType".into())))), // Option<ParentType> with id and node_type
                 ("children", Type::Container(ContainerKind::Array, vec![Type::Uuid])),
                 ("script_path", Type::Option(Box::new(Type::CowStr))),
                 ("is_root_of", Type::Option(Box::new(Type::CowStr))),

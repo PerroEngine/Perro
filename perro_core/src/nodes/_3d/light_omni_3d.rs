@@ -5,12 +5,12 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Color, Node3D};
+use crate::{Color, Node3D, nodes::node_registry::NodeType};
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct OmniLight3D {
     #[serde(rename = "type")]
-    pub ty: Cow<'static, str>,
+    pub ty: NodeType,
 
     pub color: Color,
     pub intensity: f32,
@@ -25,7 +25,7 @@ impl OmniLight3D {
         let mut base = Node3D::new();
         base.name = Cow::Borrowed("OmniLight3D");
         Self {
-            ty: Cow::Borrowed("OmniLight3D"),
+            ty: NodeType::OmniLight3D,
             color: Color::default(),
             intensity: 1.0,
             range: 10.0,
