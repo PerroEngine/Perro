@@ -62,41 +62,28 @@ fn string_to_node_type(type_name: &str) -> Option<NodeType> {
 
 /// Check if a Type is a node type
 pub fn type_is_node(typ: &Type) -> bool {
-    matches!(typ, Type::Node(_))
+    matches!(typ, Type::Node(_) | Type::DynNode)
 }
 
-/// Check if a Type represents a node UUID (Node, NodeType, or DynNode)
-/// These should all use _id suffix naming
-pub fn type_is_node_uuid(typ: &Type) -> bool {
-    matches!(typ, Type::Node(_) | Type::NodeType | Type::DynNode)
-}
 
-/// Rename a variable: if it's a node type, add _id suffix; otherwise add t_id_ prefix
-/// Special case: if the variable name is "id" (which scripts have), prefix with t_id_
+const TRANSPILED_IDENT: &str = "__t_";
+
+/// Rename a variable: if it's a node type, add _id suffix; otherwise add prefix
 pub fn rename_variable(var_name: &str, typ: Option<&Type>) -> String {
+
     // Special case: "self" should NEVER be renamed - it's always self.id
     if var_name == "self" {
         return "self.id".to_string();
     }
     
-    // Special case: "id" is reserved for script's node ID
-    if var_name == "id" {
-        return "t_id_id".to_string();
-    }
-    
-    // Special case: "api" should NEVER be renamed - it's always the API parameter
-    if var_name == "api" {
-        return "api".to_string();
-    }
-    
     // Check if already renamed (to prevent double prefixing)
-    if var_name.starts_with("t_id_") {
+    if var_name.starts_with(TRANSPILED_IDENT) {
         return var_name.to_string();
     }
     
     // If it's a node UUID type (Node, NodeType, or DynNode), add _id suffix
     if let Some(typ) = typ {
-        if type_is_node_uuid(typ) {
+        if type_is_node(typ) {
             // Check if already has _id suffix
             if var_name.ends_with("_id") {
                 return var_name.to_string();
@@ -105,8 +92,8 @@ pub fn rename_variable(var_name: &str, typ: Option<&Type>) -> String {
         }
     }
     
-    // Otherwise, add t_id_ prefix
-    format!("t_id_{}", var_name)
+    // Otherwise, transpiled identifier prefix
+    format!("{}{}",TRANSPILED_IDENT, var_name)
 }
 
 /// Get the node type from a Type, if it's a Node type
@@ -3922,7 +3909,8 @@ impl Expr {
                     extract_node_member_info(&Expr::MemberAccess(base.clone(), field.clone()), script, current_func) 
                 {
                     // This is accessing node fields - use api.read_node
-                    // Determine if we need to clone the result
+                    // Determine if we need to clone the result44
+                    
                     if let Some(node_type_enum) = string_to_node_type(&node_type) {
                         let node_type_obj = Type::Node(node_type_enum);
                         
