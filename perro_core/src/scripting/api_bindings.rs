@@ -325,7 +325,7 @@ impl ApiCodegen for ConsoleApi {
         args_strs: &[String],
         script: &Script, // Keep script here for verbose check
         _needs_self: bool,
-        _current_func: Option<&Function>,
+        current_func: Option<&Function>,
     ) -> String {
         let joined = if args_strs.len() <= 1 {
             args_strs.get(0).cloned().unwrap_or("\"\"".into())
@@ -340,47 +340,90 @@ impl ApiCodegen for ConsoleApi {
             )
         };
 
-        // Optimize: if joined is a string literal (starts and ends with quotes), 
-        // pass it directly without &String::from() since print accepts Display.
-        // For variables, borrow them with &.
-        let arg = if joined.starts_with('"') && joined.ends_with('"') {
-            // It's already a string literal, use it directly
-            joined
-        } else if joined.starts_with("String::from(") && joined.ends_with(')') {
-            // Extract the inner string literal from String::from("...")
-            let inner = &joined["String::from(".len()..joined.len() - 1].trim();
-            if inner.starts_with('"') && inner.ends_with('"') {
-                // Use the string literal directly (optimization: avoid String::from allocation)
-                inner.to_string()
+        // Check if the argument is a node (Uuid) - if so, convert to print node type instead
+        let arg = if args.len() == 1 {
+            // Check if the single argument is a node type
+            if let Some(arg_expr) = args.get(0) {
+                let arg_type = script.infer_expr_type(arg_expr, current_func);
+                if let Some(Type::Node(_)) | Some(Type::DynNode) = arg_type {
+                    // This is a node - convert to print its type instead of UUID
+                    // Use the already-processed arg string, which should be the node ID
+                    let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".to_string());
+                    // api.get_type() requires &mut self, so we must extract it to a temp variable
+                    // to avoid borrow checker errors when used as argument to api.print() (which takes &self)
+                    // Return a special marker that codegen will detect and extract
+                    format!("__EXTRACT_NODE_TYPE__({})", node_id_expr)
+                } else {
+                    // Not a node - use normal logic
+                    // Optimize: if joined is a string literal (starts and ends with quotes), 
+                    // pass it directly without &String::from() since print accepts Display.
+                    // For variables, borrow them with &.
+                    if joined.starts_with('"') && joined.ends_with('"') {
+                        // It's already a string literal, use it directly
+                        joined
+                    } else if joined.starts_with("String::from(") && joined.ends_with(')') {
+                        // Extract the inner string literal from String::from("...")
+                        let inner = &joined["String::from(".len()..joined.len() - 1].trim();
+                        if inner.starts_with('"') && inner.ends_with('"') {
+                            // Use the string literal directly (optimization: avoid String::from allocation)
+                            inner.to_string()
+                        } else {
+                            // Fallback: use as-is
+                            joined
+                        }
+                    } else {
+                        // For variables or format!() expressions, borrow them
+                        // Check if it's a simple identifier (variable name) - if so, borrow it
+                        let trimmed = joined.trim();
+                        // Simple heuristic: if it's just an identifier (alphanumeric + underscore, no dots/parens),
+                        // it's likely a variable and should be borrowed
+                        if trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !trimmed.is_empty() {
+                            format!("&{}", trimmed)
+                        } else {
+                            // For format!() or complex expressions, use as-is (they already produce Display types)
+                            joined
+                        }
+                    }
+                }
             } else {
-                // Fallback: use as-is
                 joined
             }
         } else {
-            // For variables or format!() expressions, borrow them
-            // Check if it's a simple identifier (variable name) - if so, borrow it
-            let trimmed = joined.trim();
-            // Simple heuristic: if it's just an identifier (alphanumeric + underscore, no dots/parens),
-            // it's likely a variable and should be borrowed
-            if trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !trimmed.is_empty() {
-                format!("&{}", trimmed)
-            } else {
-                // For format!() or complex expressions, use as-is (they already produce Display types)
-                joined
-            }
+            // Multiple arguments - use format!() logic (already handled above)
+            joined
         };
 
+        // Check if arg contains the extraction marker for node type
+        let (final_arg, temp_decl) = if arg.starts_with("__EXTRACT_NODE_TYPE__(") {
+            // Extract the node_id from the marker
+            let node_id = arg.strip_prefix("__EXTRACT_NODE_TYPE__(")
+                .and_then(|s| s.strip_suffix(")"))
+                .unwrap_or("Uuid::nil()");
+            let temp_var = "__node_type";
+            let decl = format!("let {} = api.get_type({});", temp_var, node_id);
+            (format!("format!(\"{{:?}}\", {})", temp_var), Some(decl))
+        } else {
+            (arg, None)
+        };
+        
         let line = match self {
-            ConsoleApi::Log => format!("api.print({})", arg),
-            ConsoleApi::Warn => format!("api.print_warn({})", arg),
-            ConsoleApi::Error => format!("api.print_error({})", arg),
-            ConsoleApi::Info => format!("api.print_info({})", arg),
+            ConsoleApi::Log => format!("api.print({})", final_arg),
+            ConsoleApi::Warn => format!("api.print_warn({})", final_arg),
+            ConsoleApi::Error => format!("api.print_error({})", final_arg),
+            ConsoleApi::Info => format!("api.print_info({})", final_arg),
+        };
+        
+        // If we have a temp declaration, prepend it
+        let final_line = if let Some(decl) = temp_decl {
+            format!("{} {}", decl, line)
+        } else {
+            line
         };
 
         if script.verbose {
-            line
+            final_line
         } else {
-            format!("// [stripped for release] {}", line)
+            format!("// [stripped for release] {}", final_line)
         }
     }
 }
@@ -611,11 +654,11 @@ impl ApiTypes for NodeSugarApi {
         match self {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
-            NodeSugarApi::GetChildByName => Some(Type::Custom("UuidOption".into())), // Returns Option<Uuid> - child node ID (special marker type)
-            NodeSugarApi::GetParent => Some(Type::Uuid), // Returns Uuid - parent node ID (panics if no parent)
+            NodeSugarApi::GetChildByName => Some(Type::DynNode), // Returns DynNode - child node ID (no type resolution)
+            NodeSugarApi::GetParent => Some(Type::DynNode), // Returns DynNode - parent node ID (no type resolution)
             NodeSugarApi::AddChild => Some(Type::Void),
-            NodeSugarApi::GetType => Some(Type::Custom("NodeType".into())), // Returns NodeType
-            NodeSugarApi::GetParentType => Some(Type::Custom("NodeType".into())), // Returns NodeType
+            NodeSugarApi::GetType => Some(Type::NodeType), // Returns NodeType
+            NodeSugarApi::GetParentType => Some(Type::NodeType), // Returns NodeType
         }
     }
     

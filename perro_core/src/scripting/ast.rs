@@ -2,6 +2,13 @@ use std::collections::HashMap;
 
 use crate::{api_modules::ApiModule, engine_structs::EngineStruct, node_registry::NodeType};
 
+/// Built-in enum variants available in the scripting language
+/// This represents enum access like NODE_TYPE.Sprite2D (SCREAMING_SNAKE_CASE for enum names)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltInEnumVariant {
+    NodeType(NodeType),
+}
+
 #[derive(Debug, Clone)]
 pub struct Script {
     pub script_name: Option<String>, // The script name from @script Name
@@ -51,6 +58,9 @@ impl Variable {
             "bool" => Type::Bool,
             "String" => Type::String,
             "&str" => Type::StrRef,
+
+            // Built-in types
+            "NodeType" => Type::NodeType,
 
             // Containers
             "object" | "Object" | "Value" | "Any" | "any" => Type::Object,
@@ -189,10 +199,12 @@ impl Variable {
             Type::Object => ("as_object", ".clone().into()".into()),
 
             Type::Signal => ("as_u64", "".into()),
+            Type::NodeType => ("as_str", ".parse::<NodeType>().unwrap()".into()), // NodeType is serialized as string
             Type::Custom(type_name) => ("__CUSTOM__", type_name.clone()),
             Type::Void => panic!("Void invalid"),
-            Type::Node(node_type) => ("__NODE__", "NodeType".to_owned()),
-            Type::EngineStruct(engine_struct) => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()),
+            Type::Node(_node_type) => ("__NODE__", "NodeType".to_owned()),
+            Type::DynNode => ("as_str", ".parse::<Uuid>().unwrap()".into()), // DynNode is Uuid, serialized as string
+            Type::EngineStruct(_engine_struct) => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()),
         }
     }
 
@@ -253,7 +265,9 @@ pub enum Type {
     Container(ContainerKind, Vec<Type>),
     Object,
 
-    Node(NodeType),
+    Node(NodeType), // Node instance type (UUID)
+    DynNode, // Dynamic node type - no type resolution at compile time, resolved to UUID at runtime
+    NodeType, // NodeType enum itself (e.g., from get_type())
     EngineStruct(EngineStruct),
     Custom(String),
 }
@@ -331,6 +345,8 @@ impl Type {
             Type::Signal => "u64".to_string(),
             Type::Custom(name) => name.clone(),
             Type::Node(_) => "Uuid".to_string(), // Nodes are now Uuid IDs
+            Type::DynNode => "Uuid".to_string(), // DynNode is also a Uuid ID
+            Type::NodeType => "NodeType".to_string(), // NodeType enum
             Type::EngineStruct(es) => {
                 format!("{:?}", es)
             },
@@ -382,6 +398,14 @@ impl Type {
                 // Nodes are Uuid IDs, use nil since it will be set later
                 "Uuid::nil()".to_string()
             }
+            Type::DynNode => {
+                // DynNode is also a Uuid ID
+                "Uuid::nil()".to_string()
+            }
+            Type::NodeType => {
+                // NodeType enum default is NodeType::Node
+                "NodeType::Node".to_string()
+            }
             Type::Void => panic!("Cannot make default for void"),
         }
     }
@@ -424,6 +448,11 @@ impl Type {
             (Type::Node(_), Type::Uuid) => true,
             // Uuid can be treated as any Node type (for type checking)
             (Type::Uuid, Type::Node(_)) => true,
+            // DynNode conversions
+            (Type::DynNode, Type::Uuid) => true,
+            (Type::Uuid, Type::DynNode) => true,
+            (Type::DynNode, Type::Node(_)) => true, // DynNode can be cast to any Node type
+            (Type::Node(_), Type::DynNode) => true, // Any Node type can become DynNode
 
             _ => false,
         }
@@ -439,6 +468,12 @@ impl Type {
             Number(Signed(_)) | Number(Unsigned(_)) | Number(Float(_)) | Bool => true,
             // Uuid is also Copy
             Uuid => true,
+            // NodeType enum is Copy (it's #[derive(Copy)])
+            Node(_) => true,
+            // DynNode is also Copy (it's a Uuid)
+            DynNode => true,
+            // NodeType enum type itself is Copy
+            NodeType => true,
             // Most engine structs implement Copy, but not all
             EngineStruct(es) => match es {
                 // These implement Copy
@@ -508,6 +543,7 @@ pub enum Expr {
     Literal(Literal),
     BinaryOp(Box<Expr>, Op, Box<Expr>),
     MemberAccess(Box<Expr>, String),
+    EnumAccess(BuiltInEnumVariant), // EnumAccess on a built-in enum variant
     SelfAccess,
     BaseAccess,
     Call(Box<Expr>, Vec<Expr>),

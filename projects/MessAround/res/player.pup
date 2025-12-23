@@ -10,7 +10,9 @@ fn init() {
 
     var pos = self.transform.position
 
-    var par = self.get_parent() as Node2D
+    var par = self.get_parent()
+    par.name = "fart"
+    par.transform.position.x = -1000
     Console.print(par)
 
 }
@@ -34,8 +36,12 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     var ptya = collision.get_parent_type()
 
     Console.print(ty, pty, ptya)
+    var ppos
+    if pty == NODE_TYPE.Sprite2D {
+        ppos = (collision.get_parent() as Sprite2D).transform.position
+    }
 
-    var ppos = (collision.get_parent() as Sprite2D).transform.position
+ 
 
     if (collision.get_parent() == self) {
         pos.y -= 100

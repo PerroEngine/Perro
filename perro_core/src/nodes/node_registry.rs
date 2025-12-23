@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{any::Any, collections::HashMap};
 use uuid::Uuid;
@@ -36,7 +37,7 @@ pub trait BaseNode: Any + Debug + Send {
     fn set_local_id(&mut self, local_id: Uuid);
 
     fn get_name(&self) -> &str;
-    fn set_name(&mut self, name: String);
+    fn set_name(&mut self, name: impl Into<Cow<'static, str>>);
     fn get_is_root_of(&self) -> Option<&str>;
     fn get_parent(&self) -> Option<crate::nodes::node::ParentType>;
 
@@ -134,8 +135,8 @@ macro_rules! impl_scene_node {
             fn get_name(&self) -> &str {
                 &self.name
             }
-            fn set_name(&mut self, name: String) {
-                self.name = std::borrow::Cow::Owned(name);
+            fn set_name(&mut self, name: impl Into<Cow<'static, str>>) {
+                self.name = name.into();
             }
             fn get_is_root_of(&self) -> Option<&str> {
                 self.is_root_of.as_deref()
@@ -360,7 +361,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_name(), )+ }
             }
 
-            fn set_name(&mut self, name: String) {
+            fn set_name(&mut self, name: impl Into<Cow<'static, str>>) {
                 match self { $( SceneNode::$variant(n) => n.set_name(name), )+ }
             }
 

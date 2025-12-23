@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use once_cell::sync::Lazy;
 use crate::{ast::*, engine_structs::EngineStruct, node_registry::NodeType};
 
@@ -360,5 +360,63 @@ impl EngineRegistry {
             };
         }
         Some(current_type)
+    }
+
+    /// Get all node types that have a specific field (including through inheritance)
+    pub fn find_nodes_with_field(&self, field: &str) -> Vec<NodeType> {
+        let mut result = Vec::new();
+        for node_type in self.node_defs.keys() {
+            if self.get_field_type_node(node_type, field).is_some() {
+                result.push(*node_type);
+            }
+        }
+        result
+    }
+
+    /// Get all descendants of a node type (including the type itself)
+    pub fn get_descendants(&self, node_type: &NodeType) -> Vec<NodeType> {
+        let mut result = vec![*node_type];
+        // Find all nodes that have this node type in their ancestry chain
+        for (child_type, base_type) in &self.node_bases {
+            if *base_type == *node_type {
+                // This is a direct child, recursively get its descendants
+                result.extend(self.get_descendants(child_type));
+            }
+        }
+        result
+    }
+
+    /// Narrow node types based on field access patterns
+    /// Returns a list of node types that have the specified field path (handles nested paths)
+    pub fn narrow_nodes_by_fields(&self, fields: &[String]) -> Vec<NodeType> {
+        if fields.is_empty() {
+            // No fields specified, return all node types
+            return self.node_defs.keys().copied().collect();
+        }
+
+        // Check if the entire field path is valid for each node type
+        // This properly handles nested paths like ["transform", "position", "x"]
+        let mut candidates = Vec::new();
+        for node_type in self.node_defs.keys() {
+            if self.check_field_path(node_type, fields).is_some() {
+                candidates.push(*node_type);
+            }
+        }
+
+        // Expand to include all descendants of matching nodes
+        let mut result_set = HashSet::new();
+        for candidate in candidates {
+            for descendant in self.get_descendants(&candidate) {
+                result_set.insert(descendant);
+            }
+        }
+        // Convert HashSet to Vec (order is not important)
+        result_set.into_iter().collect()
+    }
+
+    /// Check if a field path (e.g., ["transform", "position", "z"]) is valid for a node type
+    /// Returns Some(Type) if valid, None otherwise
+    pub fn check_field_path(&self, node_type: &NodeType, path: &[String]) -> Option<Type> {
+        self.resolve_chain_from_node(node_type, path)
     }
 }

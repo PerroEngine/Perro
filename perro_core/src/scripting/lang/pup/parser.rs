@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::api_modules::*;
 use crate::ast::*;
 use crate::lang::pup::api::{PupAPI, PupNodeSugar, normalize_type_name};
+use crate::lang::pup::enums::resolve_enum_access;
 use crate::lang::pup::lexer::{PupLexer, PupToken};
 
 pub struct PupParser {
@@ -1165,6 +1166,14 @@ impl PupParser {
                 };
 
                 self.next_token();
+                
+                // Check if this is enum access (e.g., NODE_TYPE.Sprite2D or NodeType.Sprite2D)
+                if let Expr::Ident(enum_type_name) = &left {
+                    if let Some(enum_variant) = resolve_enum_access(enum_type_name, &field_name) {
+                        return Ok(Expr::EnumAccess(enum_variant));
+                    }
+                }
+                
                 Ok(Expr::MemberAccess(Box::new(left), field_name))
             }
             PupToken::DoubleColon => {

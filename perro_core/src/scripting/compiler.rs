@@ -428,15 +428,15 @@ impl Compiler {
                 let codegen_start = Instant::now();
 
                 self.codegen_assets(project_crate_root)
-                    .map_err(|e| format!("Asset codegen failed: {}", e))?;
+                    .map_err(|e| e.to_string())?;
 
                 // Generate main.rs
                 self.codegen_main_file(project_crate_root)
-                    .map_err(|e| format!("Main.rs generation failed: {}", e))?;
+                    .map_err(|e| e.to_string())?;
 
                 // Generate build.rs
                 self.codegen_build_rs(project_crate_root)
-                    .map_err(|e| format!("Build.rs generation failed: {}", e))?;
+                    .map_err(|e| e.to_string())?;
 
                 let codegen_elapsed = codegen_start.elapsed();
                 println!("✅ Asset codegen complete (total {:.2?})", codegen_elapsed);

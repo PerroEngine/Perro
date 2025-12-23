@@ -149,3 +149,4 @@ impl Script for FPSCounterScript {
 **Implementation Date:** December 22, 2025
 **Performance:** Optimized with release-mode inlining and zero-allocation patterns
 
+

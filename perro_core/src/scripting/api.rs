@@ -1466,6 +1466,43 @@ impl<'a> ScriptApi<'a> {
         }
     }
     
+    /// Mutate a SceneNode directly using BaseNode trait methods
+    /// This works with any node type without needing to know the specific type
+    /// Only allows access to base Node fields (name, id, parent, children, etc.)
+    /// Example: `api.mutate_scene_node(node_id, |n| n.set_name("test".into()));`
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn mutate_scene_node<F>(&mut self, id: Uuid, f: F)
+    where
+        F: FnOnce(&mut crate::nodes::node_registry::SceneNode),
+    {
+        // Get mutable access to the node
+        let node = self.scene.get_scene_node_mut(id)
+            .unwrap_or_else(|| panic!("Node {} not found", id));
+        
+        f(node); // mutate in place using BaseNode methods
+        
+        // Mark dirty after modification
+        node.mark_dirty();
+        node.mark_transform_dirty_if_node2d();
+        
+        // If this is a Node2D, mark transform dirty recursively (including children)
+        if node.as_node2d().is_some() {
+            self.scene.mark_transform_dirty_recursive(id);
+        }
+    }
+    
+    /// Read a value from a SceneNode using BaseNode trait methods
+    /// This works with any node type without needing to know the specific type
+    /// Only allows access to base Node fields (name, id, parent, children, etc.)
+    /// Example: `let name = api.read_scene_node(node_id, |n| n.get_name().to_string());`
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn read_scene_node<R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::node_registry::SceneNode) -> R) -> R {
+        let node = self.scene.get_scene_node_ref(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        
+        f(node)
+    }
+    
     /// Create a new node of the specified type and add it to the scene
     /// Returns the ID of the newly created node
     /// Example: `let node_id = api.create_node::<Node2D>();`
