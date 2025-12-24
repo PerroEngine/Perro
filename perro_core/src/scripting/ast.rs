@@ -343,7 +343,16 @@ impl Type {
             Type::Object => "Value".to_string(),
 
             Type::Signal => "u64".to_string(),
-            Type::Custom(name) => name.clone(),
+            Type::Custom(name) => {
+                // Rename custom structs with __t_ prefix (but not node types or engine structs)
+                use crate::scripting::codegen::{is_node_type, rename_struct};
+                if is_node_type(name) {
+                    // Node types should be Type::Node, but handle gracefully
+                    name.clone()
+                } else {
+                    rename_struct(name)
+                }
+            },
             Type::Node(_) => "Uuid".to_string(), // Nodes are now Uuid IDs
             Type::DynNode => "Uuid".to_string(), // DynNode is also a Uuid ID
             Type::NodeType => "NodeType".to_string(), // NodeType enum

@@ -35,7 +35,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
     sync::mpsc::Sender,
@@ -2542,6 +2542,7 @@ use crate::registry::DllScriptProvider;
 use libloading::Library;
 
 pub fn default_perro_rust_path() -> io::Result<PathBuf> {
+    // Try to get project root from global state first
     match get_project_root() {
         ProjectRoot::Disk { root, .. } => {
             let mut path = root;
@@ -2567,14 +2568,44 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
     }
 }
 
+/// Get the default perro rust path using a project root path directly
+/// This avoids requiring the global project root to be set
+pub fn default_perro_rust_path_from_root(project_root: &Path) -> PathBuf {
+    let mut path = project_root.to_path_buf();
+    path.push(".perro");
+    path.push("scripts");
+    path.push("builds");
+
+    let filename = if cfg!(target_os = "windows") {
+        "scripts.dll"
+    } else if cfg!(target_os = "macos") {
+        "libscripts.dylib"
+    } else {
+        "libscripts.so"
+    };
+
+    path.push(filename);
+    path
+}
+
 impl Scene<DllScriptProvider> {
     pub fn from_project(project: Rc<RefCell<Project>>, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<Self> {
         let mut root_node = Node::new();
         root_node.name = Cow::Borrowed("Root");
         let root_node = SceneNode::Node(root_node);
 
-        // Load DLL
-        let lib_path = default_perro_rust_path()?;
+        // Load DLL - use project root from project parameter to avoid requiring global project root
+        let lib_path = {
+            let root_path = {
+                let project_ref = project.borrow();
+                project_ref
+                    .root()
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Project root path not set"))?
+                    .to_path_buf()
+            };
+            default_perro_rust_path_from_root(&root_path)
+        };
         println!("Loading script library from {:?}", lib_path);
         
         // Check if DLL exists before trying to load it

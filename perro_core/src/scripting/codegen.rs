@@ -23,6 +23,7 @@ use crate::{
     prelude::string_to_u64,
     script::Var,
 };
+use crate::scripting::source_map::SourceMapBuilder;
 
 // ============================================================================
 // Type Inference Cache - Dramatically speeds up repeated type lookups
@@ -67,6 +68,36 @@ pub fn type_is_node(typ: &Type) -> bool {
 
 
 const TRANSPILED_IDENT: &str = "__t_";
+
+/// Functions that should NOT be prefixed with __t_
+const RESERVED_FUNCTIONS: &[&str] = &["init", "update", "fixed_update", "draw"];
+
+/// Rename a function: add __t_ prefix except for reserved functions
+pub fn rename_function(func_name: &str) -> String {
+    // Check if it's a reserved function
+    if RESERVED_FUNCTIONS.contains(&func_name) {
+        return func_name.to_string();
+    }
+    
+    // Check if already renamed (to prevent double prefixing)
+    if func_name.starts_with(TRANSPILED_IDENT) {
+        return func_name.to_string();
+    }
+    
+    // Add transpiled identifier prefix
+    format!("{}{}", TRANSPILED_IDENT, func_name)
+}
+
+/// Rename a struct: add __t_ prefix
+pub fn rename_struct(struct_name: &str) -> String {
+    // Check if already renamed (to prevent double prefixing)
+    if struct_name.starts_with(TRANSPILED_IDENT) {
+        return struct_name.to_string();
+    }
+    
+    // Add transpiled identifier prefix
+    format!("{}{}", TRANSPILED_IDENT, struct_name)
+}
 
 /// Rename a variable: if it's a node type, add _id suffix; otherwise add prefix
 pub fn rename_variable(var_name: &str, typ: Option<&Type>) -> String {
@@ -832,7 +863,8 @@ impl Script {
         // Use `all_script_vars` here again for consistent ordering
         for var in all_script_vars {
             let renamed_name = rename_variable(&var.name, var.typ.as_ref());
-            write!(out, "        {},\n", renamed_name).unwrap();
+            let name = &var.name;
+            write!(out, "        {}: {},\n", renamed_name, name).unwrap();
         }
 
         out.push_str("    })) as *mut dyn ScriptObject\n");
@@ -1653,7 +1685,8 @@ impl StructDef {
             "#[derive(Default, Debug, Clone, Serialize, Deserialize)]"
         )
         .unwrap();
-        writeln!(out, "pub struct {} {{", self.name).unwrap();
+        let renamed_struct_name = rename_struct(&self.name);
+        writeln!(out, "pub struct {} {{", renamed_struct_name).unwrap();
 
         for field in &self.fields {
             writeln!(out, "    pub {}: {},", field.name, field.typ.to_rust_type()).unwrap();
@@ -1662,7 +1695,8 @@ impl StructDef {
         writeln!(out, "}}\n").unwrap();
 
         // === Display Implementation ===
-        writeln!(out, "impl std::fmt::Display for {} {{", self.name).unwrap();
+        let renamed_struct_name = rename_struct(&self.name);
+        writeln!(out, "impl std::fmt::Display for {} {{", renamed_struct_name).unwrap();
         writeln!(
             out,
             "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{"
@@ -1686,9 +1720,26 @@ impl StructDef {
         writeln!(out, "    }}").unwrap();
         writeln!(out, "}}\n").unwrap();
 
+        // === Constructor Method ===
+        let renamed_struct_name = rename_struct(&self.name);
+        writeln!(out, "impl {} {{", renamed_struct_name).unwrap();
+        write!(out, "    pub fn new(").unwrap();
+        let mut param_list = Vec::new();
+        for field in &self.fields {
+            param_list.push(format!("{}: {}", field.name, field.typ.to_rust_type()));
+        }
+        writeln!(out, "{}) -> Self {{", param_list.join(", ")).unwrap();
+        write!(out, "        Self {{").unwrap();
+        for field in &self.fields {
+            write!(out, " {}: {},", field.name, field.name).unwrap();
+        }
+        writeln!(out, " }}").unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "}}\n").unwrap();
+
         // === Method Implementations ===
         if !self.methods.is_empty() {
-            writeln!(out, "impl {} {{", self.name).unwrap();
+            writeln!(out, "impl {} {{", renamed_struct_name).unwrap();
             for m in &self.methods {
                 out.push_str(&m.to_rust_method(&self.name, script));
             }
@@ -1741,7 +1792,8 @@ impl Function {
 
         param_list.push_str(", api: &mut ScriptApi<'_>");
 
-        writeln!(out, "    fn {}({}) {{", self.name, param_list).unwrap();
+        let renamed_func_name = rename_function(&self.name);
+        writeln!(out, "    fn {}({}) {{", renamed_func_name, param_list).unwrap();
 
         // ---------------------------------------------------
         // (1) Insert additional preamble if the method uses self/api
@@ -5108,6 +5160,7 @@ impl Expr {
                         .find(|s| s.name == base_name)
                         .expect("Base struct not found");
 
+                    let renamed_base_name = rename_struct(base_name);
                     let mut parts = String::new();
 
                     // Handle deeper bases first
@@ -5117,7 +5170,7 @@ impl Expr {
                         parts.push_str(&format!("base: {}, ", inner_code));
                     }
 
-                    // Write base’s own fields
+                    // Write base's own fields
                     if let Some(local_fields) = base_fields.get(base_name) {
                         for (fname, fty, expr) in local_fields {
                             let mut expr_code =
@@ -5133,7 +5186,7 @@ impl Expr {
                         }
                     }
 
-                    format!("{} {{ {}..Default::default() }}", base_name, parts)
+                    format!("{}::new({})", renamed_base_name, parts.trim_end_matches(", "))
                 }
 
                 // --- Build final top-level struct ---
@@ -5158,7 +5211,14 @@ impl Expr {
                     code.push_str(&format!("{}: {}, ", fname, expr_code));
                 }
 
-                format!("{} {{ {}..Default::default() }}", ty, code)
+                // Use renamed struct name for custom structs (not node types or engine structs)
+                let struct_name = if is_node_type(ty) || EngineStructKind::from_string(ty).is_some() {
+                    ty.to_string()
+                } else {
+                    rename_struct(ty)
+                };
+                // Use struct literal syntax with renamed struct name
+                format!("{} {{ {}..Default::default() }}", struct_name, code)
             }
             Expr::ApiCall(module, args) => {
                 // Get expected param types (if defined for this API)
@@ -6232,6 +6292,7 @@ pub fn implement_script_boilerplate(
     //----------------------------------------------------
     for var in script_vars {
         let name = &var.name;
+        let renamed_name = rename_variable(name, var.typ.as_ref());
         let var_id = string_to_u64(name);
         let (accessor, conv) = var.json_access();
 
@@ -6248,7 +6309,7 @@ pub fn implement_script_boilerplate(
                         writeln!(
                             get_entries,
                             "        {var_id}u64 => |script: &{struct_name}| -> Option<Value> {{
-                                Some(serde_json::to_value(&script.{name}).unwrap_or_default())
+                                Some(serde_json::to_value(&script.{renamed_name}).unwrap_or_default())
                             }},"
                         )
                         .unwrap();
@@ -6258,7 +6319,7 @@ pub fn implement_script_boilerplate(
                 writeln!(
                     get_entries,
                     "        {var_id}u64 => |script: &{struct_name}| -> Option<Value> {{
-                        Some(json!(script.{name}))
+                        Some(json!(script.{renamed_name}))
                     }},"
                 )
                 .unwrap();
@@ -6288,7 +6349,7 @@ pub fn implement_script_boilerplate(
                                     set_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
-                                        script.{name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
+                                        script.{renamed_name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                         return Some(());
                                     }}
                                     None
@@ -6299,7 +6360,7 @@ pub fn implement_script_boilerplate(
                                     set_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val) {{
-                                        script.{name} = vec_typed;
+                                        script.{renamed_name} = vec_typed;
                                         return Some(());
                                     }}
                                     None
@@ -6311,7 +6372,7 @@ pub fn implement_script_boilerplate(
                                 set_entries,
                                 "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Some(v) = val.as_array() {{
-                                        script.{name} = v.clone();
+                                        script.{renamed_name} = v.clone();
                                         return Some(());
                                     }}
                                     None
@@ -6327,7 +6388,7 @@ pub fn implement_script_boilerplate(
                                 set_entries,
                                 "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val) {{
-                                        script.{name} = arr_typed;
+                                        script.{renamed_name} = arr_typed;
                                         return Some(());
                                     }}
                                     None
@@ -6342,7 +6403,7 @@ pub fn implement_script_boilerplate(
                                         for (i, el) in v.iter().enumerate().take({size}) {{
                                             out[i] = serde_json::from_value::<{elem_rs}>(el.clone()).unwrap_or_default();
                                         }}
-                                        script.{name} = out;
+                                        script.{renamed_name} = out;
                                         return Some(());
                                     }}
                                     None
@@ -6372,7 +6433,7 @@ pub fn implement_script_boilerplate(
                                     set_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
-                                        script.{name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
+                                        script.{renamed_name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                         return Some(());
                                     }}
                                     None
@@ -6383,7 +6444,7 @@ pub fn implement_script_boilerplate(
                                     set_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val) {{
-                                        script.{name} = map_typed;
+                                        script.{renamed_name} = map_typed;
                                         return Some(());
                                     }}
                                     None
@@ -6395,7 +6456,7 @@ pub fn implement_script_boilerplate(
                                 set_entries,
                                 "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                                     if let Some(v) = val.as_object() {{
-                                        script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                        script.{renamed_name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                         return Some(());
                                     }}
                                     None
@@ -6411,7 +6472,7 @@ pub fn implement_script_boilerplate(
                         set_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                             if let Ok(v) = serde_json::from_value::<{type_name}>(val) {{
-                                script.{name} = v;
+                                script.{renamed_name} = v;
                                 return Some(());
                             }}
                             None
@@ -6422,7 +6483,7 @@ pub fn implement_script_boilerplate(
                         set_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                             if let Some(v) = val.{accessor}() {{
-                                script.{name} = v{conv};
+                                script.{renamed_name} = v{conv};
                                 return Some(());
                             }}
                             None
@@ -6460,7 +6521,7 @@ pub fn implement_script_boilerplate(
                                     apply_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
-                                        script.{name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
+                                        script.{renamed_name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                     }}
                                 }},"
                                 ).unwrap();
@@ -6469,7 +6530,7 @@ pub fn implement_script_boilerplate(
                                     apply_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
-                                        script.{name} = vec_typed;
+                                        script.{renamed_name} = vec_typed;
                                     }}
                                 }},"
                                 ).unwrap();
@@ -6479,7 +6540,7 @@ pub fn implement_script_boilerplate(
                                 apply_entries,
                                 "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Some(v) = val.as_array() {{
-                                        script.{name} = v.clone();
+                                        script.{renamed_name} = v.clone();
                                     }}
                                 }},"
                             )
@@ -6494,7 +6555,7 @@ pub fn implement_script_boilerplate(
                                 apply_entries,
                                 "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val.clone()) {{
-                                        script.{name} = arr_typed;
+                                        script.{renamed_name} = arr_typed;
                                     }}
                                 }},"
                             ).unwrap();
@@ -6507,7 +6568,7 @@ pub fn implement_script_boilerplate(
                                         for (i, el) in v.iter().enumerate().take({size}) {{
                                             out[i] = serde_json::from_value::<{elem_rs}>(el.clone()).unwrap_or_default();
                                         }}
-                                        script.{name} = out;
+                                        script.{renamed_name} = out;
                                     }}
                                 }},"
                             ).unwrap();
@@ -6535,7 +6596,7 @@ pub fn implement_script_boilerplate(
                                     apply_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
-                                        script.{name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
+                                        script.{renamed_name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                     }}
                                 }},"
                                 ).unwrap();
@@ -6544,7 +6605,7 @@ pub fn implement_script_boilerplate(
                                     apply_entries,
                                     "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
-                                        script.{name} = map_typed;
+                                        script.{renamed_name} = map_typed;
                                     }}
                                 }},"
                                 ).unwrap();
@@ -6554,7 +6615,7 @@ pub fn implement_script_boilerplate(
                                 apply_entries,
                                 "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                                     if let Some(v) = val.as_object() {{
-                                        script.{name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                                        script.{renamed_name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                     }}
                                 }},"
                             ).unwrap();
@@ -6568,7 +6629,7 @@ pub fn implement_script_boilerplate(
                         apply_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                             if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
-                                script.{name} = v;
+                                script.{renamed_name} = v;
                             }}
                         }},"
                     )
@@ -6578,7 +6639,7 @@ pub fn implement_script_boilerplate(
                         apply_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
                             if let Some(v) = val.{accessor}() {{
-                                script.{name} = v{conv};
+                                script.{renamed_name} = v{conv};
                             }}
                         }},"
                     )
@@ -6599,6 +6660,7 @@ pub fn implement_script_boilerplate(
 
         let func_name = &func.name;
         let func_id = string_to_u64(func_name);
+        let renamed_func_name = rename_function(func_name);
 
         let mut param_parsing = String::new();
         let mut param_list = String::new();
@@ -6684,7 +6746,7 @@ pub fn implement_script_boilerplate(
         write!(
             dispatch_entries,
             "        {func_id}u64 => | script: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
-{param_parsing}            script.{func_name}({param_list}api);
+{param_parsing}            script.{renamed_func_name}({param_list}api);
         }},\n"
         )
         .unwrap();

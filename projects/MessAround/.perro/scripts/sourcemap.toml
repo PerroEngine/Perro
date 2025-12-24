@@ -1,0 +1,88 @@
+[scripts.player_pup]
+src = "res://player.pup"
+id = "player_pup"
+
+[[scripts.player_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 78
+
+[[scripts.player_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 78
+g_end = 82
+
+[[scripts.player_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 82
+g_end = 87
+
+[[scripts.player_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 87
+g_end = 110
+
+[[scripts.player_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 110
+g_end = 116
+
+[scripts.player_pup.names]
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+
+[scripts.p2_pup]
+src = "res://p2.pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 64
+
+[scripts.p2_pup.names]
+
+[scripts.test_engine_structs_pup]
+src = "res://test_engine_structs.pup"
+id = "test_engine_structs_pup"
+
+[[scripts.test_engine_structs_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 73
+
+[[scripts.test_engine_structs_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 73
+g_end = 78
+
+[[scripts.test_engine_structs_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 78
+g_end = 85
+
+[scripts.test_engine_structs_pup.names]
+__t_test_nested_access = "test_nested_access"
+__t_test_variable_access = "test_variable_access"
+__t_test_constructors = "test_constructors"
+
+[scripts.shape_pup]
+src = "res://shape.pup"
+id = "shape_pup"
+
+[[scripts.shape_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 63
+
+[scripts.shape_pup.names]

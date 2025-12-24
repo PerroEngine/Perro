@@ -306,13 +306,13 @@ pub fn run_game(data: RuntimeData) {
     };
 
     // Build App with pre-created Graphics
-    let app = App::new_with_graphics(
+    let app = App::new(
         &event_loop,
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
         project_rc.borrow().target_fps(),
-        Some(graphics),
+        graphics,
     );
 
     run_app(event_loop, app);
@@ -325,26 +325,13 @@ pub fn run_dev() {
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     
-    // Setup panic handler to catch access violations and provide better diagnostics
-    std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("❌ PANIC occurred!");
-        eprintln!("   Location: {:?}", panic_info.location());
-        eprintln!("   Message: {:?}", panic_info.payload().downcast_ref::<&str>());
-        eprintln!("   This might be an access violation (STATUS_ACCESS_VIOLATION)");
-        eprintln!("   Common causes:");
-        eprintln!("   - Script DLL not compiled or corrupted");
-        eprintln!("   - DLL function signature mismatch");
-        eprintln!("   - Invalid memory access in DLL");
-        eprintln!("   Try: cargo run -p perro_core -- --path <path> --scripts");
-    }));
-
     let args: Vec<String> = env::args().collect();
     let mut key: Option<String> = None;
     
     // Check for profiling flag
     let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
     
-    // 1. Determine project root path (disk or exe dir) - need this early for profiling paths
+    // 1. Determine project root path (disk or exe dir) - need this IMMEDIATELY
     let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
         let path_arg = &args[i + 1];
 
@@ -475,6 +462,13 @@ pub fn run_dev() {
 
     println!("Running project at {:?}", project_root);
 
+    // CRITICAL: Set project root IMMEDIATELY after determining it, before ANY other operations
+    // that might try to load assets (like profiling setup, graphics initialization, etc.)
+    set_project_root(ProjectRoot::Disk {
+        root: project_root.clone(),
+        name: "unknown".into(),
+    });
+
     // Initialize profiling if requested (after project_root is determined)
     #[cfg(feature = "profiling")]
     let _profiler_guard = if enable_profiling {
@@ -532,11 +526,7 @@ pub fn run_dev() {
         eprintln!("   Or add to Cargo.toml: [features] default = [\"profiling\"]");
     }
 
-    // 2. Bootstrap project root with placeholder name
-    set_project_root(ProjectRoot::Disk {
-        root: project_root.clone(),
-        name: "unknown".into(),
-    });
+    // 2. Load project manifest (project root already set above)
 
     // 3. Load project manifest (works in both disk + pak)
     let project = Project::load(Some(&project_root)).expect("Failed to load project.toml");
@@ -546,6 +536,38 @@ pub fn run_dev() {
         root: project_root.clone(),
         name: project.name().into(),
     });
+
+    // 4.5. Setup panic handler with source map support (after project_root is determined)
+    let project_root_for_panic = project_root.clone();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        eprintln!("❌ PANIC occurred!");
+        eprintln!("   Location: {:?}", panic_info.location());
+        
+        // Convert error message using source map if available
+        let mut panic_msg = String::new();
+        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            panic_msg = s.to_string();
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            panic_msg = s.clone();
+        }
+        
+        // Try to load source map and convert
+        if let Some(sm) = crate::scripting::source_map_runtime::load_source_map(&project_root_for_panic) {
+            if let Some(location) = panic_info.location() {
+                if let Some(identifier) = crate::scripting::source_map_runtime::extract_script_identifier_from_path(location.file()) {
+                    panic_msg = crate::scripting::source_map_runtime::convert_error_with_source_map(&sm, &identifier, &panic_msg);
+                }
+            }
+        }
+        
+        eprintln!("   Message: {}", panic_msg);
+        eprintln!("   This might be an access violation (STATUS_ACCESS_VIOLATION)");
+        eprintln!("   Common causes:");
+        eprintln!("   - Script DLL not compiled or corrupted");
+        eprintln!("   - DLL function signature mismatch");
+        eprintln!("   - Invalid memory access in DLL");
+        eprintln!("   Try: cargo run -p perro_core -- --path <path> --scripts");
+    }));
 
     // 5. Wrap project in Rc<RefCell<>> for shared mutable access
     let project_rc = Rc::new(RefCell::new(project));
@@ -595,7 +617,7 @@ pub fn run_dev() {
     let mut graphics = create_graphics_sync(window.clone());
 
     // 9. Build runtime scene with DllScriptProvider (now with Graphics)
-    let game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {
+    let mut game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {
         Ok(scene) => scene,
         Err(e) => {
             eprintln!("❌ Failed to build game scene: {}", e);
@@ -609,18 +631,66 @@ pub fn run_dev() {
         }
     };
 
-    // 10. Run app with pre-created Graphics
-    let app = App::new_with_graphics(
+    // 10. Render first frame before showing window (prevents black/white flash)
+    // This mimics what user_event does when graphics are created asynchronously
+    {
+        // Do initial update
+        game_scene.update(&mut graphics);
+        
+        // Queue rendering
+        game_scene.render(&mut graphics);
+        
+        // Render the frame
+        let (frame, view, mut encoder) = graphics.begin_frame();
+        let color_attachment = wgpu::RenderPassColorAttachment {
+            view: &view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        };
+        
+        let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
+            view: &graphics.depth_view,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        };
+        
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Initial Frame (Pre-Visible)"),
+                color_attachments: &[Some(color_attachment)],
+                depth_stencil_attachment: Some(depth_attachment),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            graphics.render(&mut rpass);
+        }
+        graphics.end_frame(frame, encoder);
+    }
+    
+    // Now make window visible with content already rendered (no flash!)
+    window.set_visible(true);
+
+    // 11. Run app with pre-created Graphics
+    let app = App::new(
         &event_loop,
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
         project_rc.borrow().target_fps(),
-        Some(graphics),
+        graphics,
     );
 
     let mut app = app;
     let _ = event_loop.run_app(&mut app);
+    println!("Event loop exited.");
     
     // Explicitly convert flamegraph after event loop exits
     // Drop the guard first to flush the file, then convert

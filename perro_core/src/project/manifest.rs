@@ -126,7 +126,21 @@ impl Project {
 
     /// Load project.toml from embedded or disk-based asset system.
     pub fn load(root: Option<impl AsRef<Path>>) -> io::Result<Self> {
-        let bytes = load_asset("project.toml")?;
+        // If a root path is provided, load directly from disk to avoid requiring
+        // the global project root to be set (chicken-and-egg problem)
+        let bytes = if let Some(root_path) = root.as_ref() {
+            let project_toml_path = root_path.as_ref().join("project.toml");
+            std::fs::read(&project_toml_path).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Failed to read project.toml at {}: {}", project_toml_path.display(), e),
+                )
+            })?
+        } else {
+            // No root provided, use asset system (requires project root to be set)
+            load_asset("project.toml")?
+        };
+        
         let contents = std::str::from_utf8(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let settings: ProjectSettings =

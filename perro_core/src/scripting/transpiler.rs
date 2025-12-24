@@ -13,6 +13,7 @@ use crate::{
     lang::{
         csharp::parser::CsParser, pup::parser::PupParser, typescript::parser::TypeScriptParser,
     },
+    scripting::source_map::{SourceMap, ScriptSourceMap, build_source_map_from_script},
 };
 
 /// Convert a *res:// path* or absolute path under res/
@@ -70,6 +71,8 @@ pub fn script_path_to_identifier(path: &str) -> Result<String, String> {
 
     Ok(identifier)
 }
+
+/// Embed source map into generated Rust file as a static constant
 
 /// Discover all script files in res/ directory, returns disk paths
 fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -241,6 +244,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     }
 
     let mut timings: Vec<Timing> = Vec::new();
+    let mut source_map = SourceMap::new();
 
     for path in &script_paths {
         let script_total_start = Instant::now();
@@ -268,24 +272,126 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
                 parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                script.to_rust(&identifier, project_root, None, verbose);
+                let generated_code = script.to_rust(&identifier, project_root, None, verbose);
                 transpile_time = transpile_start.elapsed();
+                
+                // Convert absolute path to res:// relative path
+                let res_path = {
+                    let res_dir = project_root.join("res");
+                    if let Ok(relative) = path.strip_prefix(&res_dir) {
+                        // Remove leading slash if present
+                        let relative_str = relative.to_string_lossy().replace('\\', "/");
+                        let clean_relative = relative_str.strip_prefix('/').unwrap_or(&relative_str);
+                        format!("res://{}", clean_relative)
+                    } else {
+                        // Fallback: try to extract from path string
+                        let path_str = path.to_string_lossy().replace('\\', "/");
+                        if let Some(res_idx) = path_str.find("/res/") {
+                            let after_res = &path_str[res_idx + 6..]; // Skip "/res/"
+                            format!("res://{}", after_res)
+                        } else {
+                            // Last resort: use filename only
+                            path.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|n| format!("res://{}", n))
+                                .unwrap_or_else(|| path.to_string_lossy().to_string())
+                        }
+                    }
+                };
+                
+                // Build source map and embed it in the generated code
+                let script_source_map = build_source_map_from_script(
+                    &res_path,
+                    &identifier,
+                    &code,
+                    &generated_code,
+                    &script,
+                );
+                source_map.add_script(identifier.clone(), script_source_map.clone());
             }
             "cs" => {
                 let mut script = CsParser::new(&code).parse_script()?;
                 parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                script.to_rust(&identifier, project_root, None, verbose);
+                let generated_code = script.to_rust(&identifier, project_root, None, verbose);
                 transpile_time = transpile_start.elapsed();
+                
+                // Convert absolute path to res:// relative path
+                let res_path = {
+                    let res_dir = project_root.join("res");
+                    if let Ok(relative) = path.strip_prefix(&res_dir) {
+                        // Remove leading slash if present
+                        let relative_str = relative.to_string_lossy().replace('\\', "/");
+                        let clean_relative = relative_str.strip_prefix('/').unwrap_or(&relative_str);
+                        format!("res://{}", clean_relative)
+                    } else {
+                        // Fallback: try to extract from path string
+                        let path_str = path.to_string_lossy().replace('\\', "/");
+                        if let Some(res_idx) = path_str.find("/res/") {
+                            let after_res = &path_str[res_idx + 6..]; // Skip "/res/"
+                            format!("res://{}", after_res)
+                        } else {
+                            // Last resort: use filename only
+                            path.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|n| format!("res://{}", n))
+                                .unwrap_or_else(|| path.to_string_lossy().to_string())
+                        }
+                    }
+                };
+                
+                // Build source map and embed it in the generated code
+                let script_source_map = build_source_map_from_script(
+                    &res_path,
+                    &identifier,
+                    &code,
+                    &generated_code,
+                    &script,
+                );
+                source_map.add_script(identifier.clone(), script_source_map.clone());
             }
             "ts" => {
                 let mut script = TypeScriptParser::new(&code).parse_script()?;
                 parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                script.to_rust(&identifier, project_root, None, verbose);
+                let generated_code = script.to_rust(&identifier, project_root, None, verbose);
                 transpile_time = transpile_start.elapsed();
+                
+                // Convert absolute path to res:// relative path
+                let res_path = {
+                    let res_dir = project_root.join("res");
+                    if let Ok(relative) = path.strip_prefix(&res_dir) {
+                        // Remove leading slash if present
+                        let relative_str = relative.to_string_lossy().replace('\\', "/");
+                        let clean_relative = relative_str.strip_prefix('/').unwrap_or(&relative_str);
+                        format!("res://{}", clean_relative)
+                    } else {
+                        // Fallback: try to extract from path string
+                        let path_str = path.to_string_lossy().replace('\\', "/");
+                        if let Some(res_idx) = path_str.find("/res/") {
+                            let after_res = &path_str[res_idx + 6..]; // Skip "/res/"
+                            format!("res://{}", after_res)
+                        } else {
+                            // Last resort: use filename only
+                            path.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|n| format!("res://{}", n))
+                                .unwrap_or_else(|| path.to_string_lossy().to_string())
+                        }
+                    }
+                };
+                
+                // Build source map and embed it in the generated code
+                let script_source_map = build_source_map_from_script(
+                    &res_path,
+                    &identifier,
+                    &code,
+                    &generated_code,
+                    &script,
+                );
+                source_map.add_script(identifier.clone(), script_source_map.clone());
             }
             "rs" => {
                 parse_time = Duration::ZERO;
@@ -336,6 +442,18 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
         total_scripts, total_io, total_parse, total_transpile, total_time
     );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+    // Write source map to file
+    let source_map_path = project_root.join(".perro/scripts/sourcemap.toml");
+    if let Ok(toml_str) = toml::to_string(&source_map) {
+        if let Err(e) = fs::write(&source_map_path, toml_str) {
+            eprintln!("⚠️  Warning: Failed to write source map: {}", e);
+        } else {
+            println!("📝 Source map written to: {}", source_map_path.display());
+        }
+    } else {
+        eprintln!("⚠️  Warning: Failed to serialize source map");
+    }
 
     Ok(())
 }

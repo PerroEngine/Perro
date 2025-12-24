@@ -993,77 +993,134 @@ impl InputApi {
 // 2️⃣ Engine API Aggregator
 //-----------------------------------------------------
 
-pub struct TextureApi;
+pub struct TextureApi {
+    // Pointer to the parent ScriptApi - set when accessed through DerefMut
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
 
 impl Default for TextureApi {
     fn default() -> Self {
-        Self
+        Self { api_ptr: None }
     }
 }
 
 impl TextureApi {
+    /// Set the ScriptApi pointer for this instance
+    /// Called when accessed through DerefMut
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    /// Set the ScriptApi pointer (immutable version for Deref)
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr_immut(&self, api_ptr: *mut ScriptApi<'static>) {
+        unsafe {
+            let self_mut = self as *const TextureApi as *mut TextureApi;
+            (*self_mut).api_ptr = Some(api_ptr);
+        }
+    }
+
+    /// Get the ScriptApi pointer
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
+        self.api_ptr
+    }
+
     /// Load a texture from a path and return its UUID
     /// This will be called from scripts as: api.Texture.load("res://path/to/texture.png")
-    /// Panics if the texture cannot be loaded or Graphics is not available
+    /// Returns None if Graphics is not available or texture cannot be loaded
     pub fn load(&mut self, path: &str) -> Option<Uuid> {
-        // Get ScriptApi from thread-local context (set by set_context())
-        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-        if let Some(ptr) = api_ptr {
-            unsafe {
-                let api = &mut *ptr;
-                Self::load_impl(api, path)
-            }
+        // Get ScriptApi pointer - try stored pointer first
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
         } else {
-            panic!("Texture.load() called but ScriptApi context is not available");
+            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                // Store it for next time
+                self.set_api_ptr(ptr);
+                ptr
+            } else {
+                eprintln!("[Texture.load] ERROR: No ScriptApi context available!");
+                return None;
+            }
+        };
+
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::load_impl(api, path)
         }
     }
 
     /// Internal implementation that actually does the load
-    /// Panics if Graphics is not available or texture cannot be loaded
+    /// Returns None if Graphics is not available or texture cannot be loaded
     pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> Option<Uuid> {
         if let Some(gfx) = api.gfx.as_mut() {
             Some(gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue))
         } else {
-            panic!("Texture.load(\"{}\") failed: Graphics not available", path);
+            api.print_error(&format!("Texture.load(\"{}\") failed: Graphics not available", path));
+            None
         }
     }
 
     /// Create a texture from raw RGBA8 bytes and return its UUID
-    /// Create a texture from raw RGBA8 bytes and return its UUID
-pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
-    // Get ScriptApi from thread-local context (set by set_context())
-    let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-    if let Some(ptr) = api_ptr {
+    pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
+        // Get ScriptApi pointer - try stored pointer first
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                // Store it for next time
+                self.set_api_ptr(ptr);
+                ptr
+            } else {
+                eprintln!("[Texture.create_from_bytes] ERROR: No ScriptApi context available!");
+                return None;
+            }
+        };
+
         unsafe {
-            let api = &mut *ptr;
+            let api = &mut *api_ptr;
             Self::create_from_bytes_impl(api, bytes, width, height)
         }
-    } else {
-        None
     }
-}
 
-/// Internal implementation that actually creates the texture
-pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
-    if let Some(gfx) = api.gfx.as_mut() {
-        Some(gfx.texture_manager.create_texture_from_bytes(bytes, width, height, &gfx.device, &gfx.queue))
-    } else {
-        api.print_error("Graphics not available - Texture.create_from_bytes() requires Graphics access");
-        None
+    /// Internal implementation that actually creates the texture
+    pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
+        if let Some(gfx) = api.gfx.as_mut() {
+            Some(gfx.texture_manager.create_texture_from_bytes(bytes, width, height, &gfx.device, &gfx.queue))
+        } else {
+            api.print_error("Graphics not available - Texture.create_from_bytes() requires Graphics access");
+            None
+        }
     }
-}
 
     /// Get the width of a texture by its UUID
     pub fn get_width(&self, id: Uuid) -> u32 {
-        // Get ScriptApi from thread-local context (set by set_context())
-        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-        if let Some(ptr) = api_ptr {
-            unsafe {
-                let api = &mut *ptr;
-                Self::get_width_impl(api, id)
-            }
+        // Get ScriptApi pointer - try stored pointer first
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
         } else {
-            0
+            // Fallback to thread-local (shouldn't be needed if Deref works correctly)
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                // Store it for next time (need mutable access)
+                unsafe {
+                    let self_mut = self as *const TextureApi as *mut TextureApi;
+                    (*self_mut).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                return 0;
+            }
+        };
+
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::get_width_impl(api, id)
         }
     }
 
@@ -1083,15 +1140,27 @@ pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u
 
     /// Get the height of a texture by its UUID
     pub fn get_height(&self, id: Uuid) -> u32 {
-        // Get ScriptApi from thread-local context (set by set_context())
-        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-        if let Some(ptr) = api_ptr {
-            unsafe {
-                let api = &mut *ptr;
-                Self::get_height_impl(api, id)
-            }
+        // Get ScriptApi pointer - try stored pointer first
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
         } else {
-            0
+            // Fallback to thread-local (shouldn't be needed if Deref works correctly)
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                // Store it for next time (need mutable access)
+                unsafe {
+                    let self_mut = self as *const TextureApi as *mut TextureApi;
+                    (*self_mut).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                return 0;
+            }
+        };
+
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::get_height_impl(api, id)
         }
     }
 
@@ -1109,15 +1178,27 @@ pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u
 
     /// Get the size of a texture by its UUID (returns Vector2)
     pub fn get_size(&self, id: Uuid) -> crate::Vector2 {
-        // Get ScriptApi from thread-local context (set by set_context())
-        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-        if let Some(ptr) = api_ptr {
-            unsafe {
-                let api = &mut *ptr;
-                Self::get_size_impl(api, id)
-            }
+        // Get ScriptApi pointer - try stored pointer first
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
         } else {
-            crate::Vector2::new(0.0, 0.0)
+            // Fallback to thread-local (shouldn't be needed if Deref works correctly)
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                // Store it for next time (need mutable access)
+                unsafe {
+                    let self_mut = self as *const TextureApi as *mut TextureApi;
+                    (*self_mut).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                return crate::Vector2::new(0.0, 0.0);
+            }
+        };
+
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::get_size_impl(api, id)
         }
     }
 
@@ -1151,7 +1232,7 @@ pub struct EngineApi {
 impl<'a> Deref for ScriptApi<'a> {
     type Target = EngineApi;
     fn deref(&self) -> &Self::Target {
-        // Set the parent pointer in InputApi when accessed immutably
+        // Set the parent pointer in InputApi and TextureApi when accessed immutably
         // This ensures the pointer is set even if DerefMut isn't called
         let api_ptr: *mut ScriptApi<'static> =
             unsafe { std::mem::transmute(self as *const ScriptApi<'a> as *mut ScriptApi<'static>) };
@@ -1159,6 +1240,9 @@ impl<'a> Deref for ScriptApi<'a> {
         unsafe {
             let input_api = &(*api_ptr).engine.Input;
             input_api.set_parent_ptr_immut(api_ptr);
+            
+            let texture_api = &(*api_ptr).engine.Texture;
+            texture_api.set_api_ptr_immut(api_ptr);
         }
         &self.engine
     }
@@ -1166,7 +1250,7 @@ impl<'a> Deref for ScriptApi<'a> {
 
 impl<'a> DerefMut for ScriptApi<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // Set the parent pointer in InputApi so JoyConApi can access ScriptApi
+        // Set the parent pointer in InputApi and TextureApi so they can access ScriptApi
         // Cast to 'static lifetime (safe because we control the lifetime)
         let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self) };
 
@@ -1174,6 +1258,10 @@ impl<'a> DerefMut for ScriptApi<'a> {
             // Set the pointer in InputApi
             let input_api = &mut (*api_ptr).engine.Input;
             input_api.set_parent_ptr(api_ptr);
+            
+            // Set the pointer in TextureApi
+            let texture_api = &mut (*api_ptr).engine.Texture;
+            texture_api.set_api_ptr(api_ptr);
         }
 
         // Return the reference - safe because we're returning a reference to the same memory

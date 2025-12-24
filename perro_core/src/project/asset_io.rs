@@ -76,8 +76,10 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
     }
 
     // 3. Now, match based on the current ProjectRoot for relative paths or res://
-    match get_project_root() {
-        ProjectRoot::Disk { root, name } => {
+    // Check if project root is set before calling get_project_root() to avoid panic
+    let project_root_opt = PROJECT_ROOT.read().unwrap().clone();
+    match project_root_opt {
+        Some(ProjectRoot::Disk { root, name: _ }) => {
             // When the project is disk-based (e.g., game in dev)
             if let Some(stripped) = path.strip_prefix("res://") {
                 let mut pb = root.clone();
@@ -90,7 +92,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                 ResolvedPath::Disk(pb)
             }
         }
-        ProjectRoot::Brk { data: _, name } => {
+        Some(ProjectRoot::Brk { data: _, name: _ }) => {
             // When the project is BRK-based (e.g., editor itself)
             // (user:// already handled above)
             if let Some(stripped) = path.strip_prefix("res://") {
@@ -98,6 +100,52 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
             } else {
                 // This branch now correctly means "this path is relative and should be in the BRK"
                 ResolvedPath::Brk(path.to_string())
+            }
+        }
+        None => {
+            // Project root not set yet - this can happen during early initialization
+            // For res:// paths, we can't resolve them without project root, so return an error path
+            // For other relative paths, try to resolve relative to current working directory as fallback
+            if path.starts_with("res://") {
+                // res:// paths require project root - can't resolve without it
+                // Return a path that will fail gracefully when accessed
+                eprintln!("⚠️ Warning: resolve_path called with res:// path '{}' before project root is set. This will likely fail.", path);
+                // Try to find project root by looking for project.toml in current dir or parents
+                let mut search_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let mut found_root = None;
+                for _ in 0..10 {  // Search up to 10 levels up
+                    if search_dir.join("project.toml").exists() {
+                        found_root = Some(search_dir);
+                        break;
+                    }
+                    if let Some(parent) = search_dir.parent() {
+                        search_dir = parent.to_path_buf();
+                    } else {
+                        break;
+                    }
+                }
+                
+                if let Some(root) = found_root {
+                    let stripped = path.strip_prefix("res://").unwrap();
+                    let mut pb = root;
+                    pb.push("res");
+                    pb.push(stripped);
+                    ResolvedPath::Disk(pb)
+                } else {
+                    // Last resort: use current directory
+                    let stripped = path.strip_prefix("res://").unwrap();
+                    let fallback_path = std::env::current_dir()
+                        .unwrap_or_else(|_| PathBuf::from("."))
+                        .join("res")
+                        .join(stripped);
+                    ResolvedPath::Disk(fallback_path)
+                }
+            } else {
+                // Regular relative path - use current directory as fallback
+                let fallback_path = std::env::current_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."))
+                    .join(path);
+                ResolvedPath::Disk(fallback_path)
             }
         }
     }

@@ -23,30 +23,21 @@ use crate::{
     scripting::script::SceneAccess,
 };
 
-enum State {
-    Init(Option<EventLoopProxy<Graphics>>),
-    Ready(Graphics),
-    PreCreated(Graphics), // Graphics created before App initialization
+// Graphics are always created synchronously before App initialization
+// This allows us to render the first frame before showing the window (no flash)
+struct State {
+    graphics: Option<Graphics>,
 }
 
-// OPTIMIZED: Use Option for Graphics to avoid mem::replace overhead
-// This allows us to use take() which is faster than mem::replace
 impl State {
     #[inline(always)]
     fn take_graphics(&mut self) -> Option<Graphics> {
-        match std::mem::replace(self, State::Init(None)) {
-            State::Ready(g) => Some(g),
-            State::PreCreated(g) => Some(g),
-            other => {
-                *self = other;
-                None
-            }
-        }
+        self.graphics.take()
     }
     
     #[inline(always)]
     fn put_graphics(&mut self, gfx: Graphics) {
-        *self = State::Ready(gfx);
+        self.graphics = Some(gfx);
     }
 }
 
@@ -183,23 +174,16 @@ pub struct App<P: ScriptProvider> {
 }
 
 impl<P: ScriptProvider> App<P> {
+    /// Create a new App with pre-created Graphics
+    /// Graphics must be created synchronously before calling this, so we can render
+    /// the first frame before showing the window (prevents black/white flash)
     pub fn new(
         event_loop: &EventLoop<Graphics>,
         window_title: String,
         icon_path: Option<String>,
         mut game_scene: Option<Scene<P>>,
         target_fps: f32,
-    ) -> Self {
-        Self::new_with_graphics(event_loop, window_title, icon_path, game_scene, target_fps, None)
-    }
-
-    pub fn new_with_graphics(
-        event_loop: &EventLoop<Graphics>,
-        window_title: String,
-        icon_path: Option<String>,
-        mut game_scene: Option<Scene<P>>,
-        target_fps: f32,
-        pre_created_graphics: Option<Graphics>,
+        graphics: Graphics,
     ) -> Self {
         let now = std::time::Instant::now();
 
@@ -213,11 +197,7 @@ impl<P: ScriptProvider> App<P> {
         }
 
         Self {
-            state: if let Some(gfx) = pre_created_graphics {
-                State::PreCreated(gfx)
-            } else {
-                State::Init(Some(event_loop.create_proxy()))
-            },
+            state: State { graphics: Some(graphics) },
             window_title,
             window_icon_path: icon_path,
             game_scene,
@@ -431,7 +411,7 @@ impl<P: ScriptProvider> App<P> {
 
     fn resized(&mut self, size: PhysicalSize<u32>) {
         match &mut self.state {
-            State::Ready(gfx) | State::PreCreated(gfx) => {
+            State { graphics: Some(gfx) } => {
                 gfx.resize(size);
             }
             _ => {}
@@ -441,63 +421,8 @@ impl<P: ScriptProvider> App<P> {
 
 impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if let State::Init(proxy_opt) = &mut self.state {
-            if let Some(proxy) = proxy_opt.take() {
-                #[cfg(not(target_arch = "wasm32"))]
-                let default_size = {
-                    let primary_monitor = event_loop.primary_monitor().unwrap();
-                    let monitor_size = primary_monitor.size();
-
-                    let target_width = (monitor_size.width as f32 * MONITOR_SCALE_FACTOR) as u32;
-                    let target_height = (monitor_size.height as f32 * MONITOR_SCALE_FACTOR) as u32;
-
-                    *WINDOW_CANDIDATES
-                        .iter()
-                        .min_by_key(|size| {
-                            let dw = size.width as i32 - target_width as i32;
-                            let dh = size.height as i32 - target_height as i32;
-                            (dw * dw + dh * dh) as u32
-                        })
-                        .unwrap()
-                };
-
-                let mut attrs = Window::default_attributes()
-                    .with_title(&self.window_title)
-                    .with_visible(false);
-
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    attrs = attrs.with_inner_size(default_size);
-
-                    if let Some(icon_path) = &self.window_icon_path {
-                        println!("Loading window icon from path: {}", icon_path);
-                        if let Some(icon) = load_icon(icon_path) {
-                            attrs = attrs.with_window_icon(Some(icon));
-                        }
-                    }
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                {
-                    use winit::platform::web::WindowAttributesExtWebSys;
-                    attrs = attrs.with_append(true);
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                let window =
-                    std::rc::Rc::new(event_loop.create_window(attrs).expect("create window"));
-
-                #[cfg(not(target_arch = "wasm32"))]
-                let window =
-                    std::sync::Arc::new(event_loop.create_window(attrs).expect("create window"));
-
-                #[cfg(target_arch = "wasm32")]
-                wasm_bindgen_futures::spawn_local(create_graphics(window, proxy));
-
-                #[cfg(not(target_arch = "wasm32"))]
-                pollster::block_on(create_graphics(window, proxy));
-            }
-        }
+        // Graphics are always created synchronously before App creation
+        // No async initialization needed
     }
 
     #[inline(always)]
@@ -671,6 +596,6 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         self.start_time = now;
         self.fps_measurement_start = now;
 
-        self.state = State::Ready(graphics);
+        self.state = State { graphics: Some(graphics) };
     }
 }

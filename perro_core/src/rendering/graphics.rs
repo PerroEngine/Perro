@@ -1060,25 +1060,75 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         }
     }
     
-    // Choose best adapter based on GPU vendor
-    let (chosen_backend, chosen_backend_name) = if candidates.is_empty() {
-        eprintln!("⚠️ No GPU adapters found! Falling back to first available backend.");
-        (Backends::all(), "Unknown")
-    } else {
-        // Prefer dedicated GPUs over integrated
-        let dedicated = candidates.iter().find(|c| {
-            matches!(c.info.device_type, wgpu::DeviceType::DiscreteGpu)
-        });
-        
-        if let Some(candidate) = dedicated {
-            (candidate.backend, candidate.backend_name)
-        } else {
-            // Fall back to first available
-            (candidates[0].backend, candidates[0].backend_name)
-        }
-    };
+    // Score each candidate based on GPU vendor and backend compatibility
+    if candidates.is_empty() {
+        panic!("No GPU adapter found (hardware or software)");
+    }
     
-    println!("🎮 Using graphics backend: {}", chosen_backend_name);
+    let scored: Vec<_> = candidates.into_iter().map(|cand| {
+        let mut score = 0i32;
+        let name_lower = cand.info.name.to_lowercase();
+        
+        // Prefer discrete GPUs over integrated
+        match cand.info.device_type {
+            wgpu::DeviceType::DiscreteGpu => score += 1000,
+            wgpu::DeviceType::IntegratedGpu => score += 100,
+            wgpu::DeviceType::Cpu => score += 1, // Software renderer
+            _ => {}
+        }
+        
+        // GPU vendor-specific backend preferences
+        // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
+        if name_lower.contains("intel") {
+            // Intel: DX12 (best on Windows), Vulkan (fallback)
+            match cand.backend_name {
+                "DX12" => score += 300,
+                "Vulkan" => score += 200,
+                _ => {}
+            }
+        } else if name_lower.contains("nvidia") {
+            // NVIDIA: Vulkan excellent support, DX12 good support
+            match cand.backend_name {
+                "Vulkan" => score += 300,
+                "DX12" => score += 250,
+                _ => {}
+            }
+        } else if name_lower.contains("amd") || name_lower.contains("radeon") {
+            // AMD: Vulkan excellent support, DX12 good support
+            match cand.backend_name {
+                "Vulkan" => score += 400,
+                "DX12" => score += 250,
+                _ => {}
+            }
+        } else if name_lower.contains("apple") || name_lower.contains("m1") || 
+                  name_lower.contains("m2") || name_lower.contains("m3") {
+            // Apple Silicon: Metal only
+            match cand.backend_name {
+                "Metal" => score += 1000,
+                _ => score -= 500, // Don't use other backends on Apple
+            }
+        } else {
+            // Unknown GPU: prefer Vulkan, then Metal
+            match cand.backend_name {
+                "Vulkan" => score += 250,
+                "Metal" => score += 200,
+                _ => {}
+            }
+        }
+        
+        (score, cand)
+    }).collect();
+    
+    // Sort by score (highest first) and take the best one
+    let mut scored_sorted = scored;
+    scored_sorted.sort_by(|a, b| b.0.cmp(&a.0));
+    
+    let (best_score, best_candidate) = scored_sorted.into_iter().next().unwrap();
+    
+    println!("🎮 Using graphics backend: {} (score: {})", best_candidate.backend_name, best_score);
+    
+    let chosen_backend = best_candidate.backend;
+    let chosen_backend_name = best_candidate.backend_name;
     
     // Create instance with chosen backend
     let instance = Instance::new(&InstanceDescriptor {
@@ -1135,7 +1185,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     // Create camera buffers and bind groups (same as async version)
     let camera_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("Camera Buffer"),
-        size: std::mem::size_of::<[f32; 4]>() as u64,
+        size: 96,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -1148,7 +1198,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
             ty: wgpu::BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: BufferSize::new(std::mem::size_of::<[f32; 4]>() as u64),
+                min_binding_size: BufferSize::new(96),
             },
             count: None,
         }],
@@ -1162,7 +1212,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
             resource: BindingResource::Buffer(BufferBinding {
                 buffer: &camera_buffer,
                 offset: 0,
-                size: BufferSize::new(std::mem::size_of::<[f32; 4]>() as u64),
+                size: BufferSize::new(96),
             }),
         }],
     });
@@ -1272,13 +1322,33 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         (1.0, window_aspect / virtual_aspect)
     };
     
-    let camera_data = [
-        virtual_width,
-        virtual_height,
-        scale_x * 2.0 / virtual_width,
-        scale_y * 2.0 / virtual_height,
-    ];
-    queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CameraUniform {
+        virtual_size: [f32; 2],
+        ndc_scale: [f32; 2],
+        zoom: f32,
+        _pad0: f32,
+        _pad1: [f32; 2],
+        view: [[f32; 4]; 4],
+    }
+    
+    unsafe impl bytemuck::Pod for CameraUniform {}
+    unsafe impl bytemuck::Zeroable for CameraUniform {}
+    
+    let ndc_scale = glam::vec2(scale_x * 2.0 / virtual_width, scale_y * 2.0 / virtual_height);
+    let view = glam::Mat4::IDENTITY; // Initial identity view matrix
+    
+    let cam_uniform = CameraUniform {
+        virtual_size: [virtual_width, virtual_height],
+        ndc_scale: ndc_scale.into(),
+        zoom: 1.0,
+        _pad0: 0.0,
+        _pad1: [0.0, 0.0],
+        view: view.to_cols_array_2d(),
+    };
+    
+    queue.write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
     
     // Create renderers
     let mut renderer_3d =

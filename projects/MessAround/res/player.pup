@@ -1,5 +1,7 @@
 @script Player extends Sprite2D
 
+
+
 fn init() {
     self.transform.position.x = -750
     self.transform.position.x = -710
@@ -12,7 +14,7 @@ fn init() {
 
     var par = self.get_parent()
     par.name = "fart"
-    par.texture = Texture.load("res://fart")
+
     Console.print(par)
 
 }
