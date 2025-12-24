@@ -304,6 +304,7 @@ pub fn run_game(data: RuntimeData) {
             return;
         }
     };
+    window.set_visible(true);
 
     // Build App with pre-created Graphics
     let app = App::new(
