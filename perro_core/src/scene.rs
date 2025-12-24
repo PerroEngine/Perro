@@ -8,7 +8,7 @@ use crate::{
     api::ScriptApi,
     app_command::AppCommand,
     apply_fur::{build_ui_elements_from_fur, parse_fur_file},
-    asset_io::{ProjectRoot, get_project_root, load_asset, save_asset},
+    asset_io::{ProjectRoot, get_project_root, load_asset, save_asset, set_project_root},
     fur_ast::{FurElement, FurNode},
     input::joycon::ControllerManager,
     input::manager::InputManager,
@@ -2622,7 +2622,7 @@ impl Scene<DllScriptProvider> {
         let provider = DllScriptProvider::new(Some(lib));
 
         // Borrow project briefly to clone root_path & name
-        let _root = {
+        let root = {
             let project_ref = project.borrow();
 
             let root_path = project_ref
@@ -2639,28 +2639,26 @@ impl Scene<DllScriptProvider> {
             }
         };
 
-        // Inject project root into DLL (optional - only if DLL needs it)
-        // NOTE: On Windows, this can cause STATUS_ACCESS_VIOLATION if the DLL was built
-        // against a different version of perro_core, because DLLs have separate static
-        // variable instances. Since the project root is already set in the main binary
-        // before loading the DLL, this call is redundant and can be safely skipped.
+        // CRITICAL: Set the global project root BEFORE initializing scripts
+        // This ensures that res:// paths can be resolved when scripts call Texture.load() etc.
+        set_project_root(root.clone());
+
+        // CRITICAL: On Windows, DLLs have separate static variable instances from the main binary.
+        // This means the DLL cannot see the project root set in the main binary. We MUST inject
+        // the project root into the DLL so that when script code (running in the DLL) calls
+        // resolve_path(), it can access the DLL's copy of PROJECT_ROOT.
         // 
-        // If you're experiencing access violations, try commenting out this call:
-        // provider.inject_project_root(&root)?;
-        
-        // For now, we'll skip it on Windows to avoid access violations
-        #[cfg(not(windows))]
-        {
-            if let Err(e) = provider.inject_project_root(&_root) {
-                eprintln!("⚠ Warning: Failed to inject project root into DLL (this is usually okay): {}", e);
-            }
-        }
-        
-        #[cfg(windows)]
-        {
-            // On Windows, skip the DLL call to avoid potential access violations
-            // The project root is already set in the main binary
-            eprintln!("ℹ Skipping DLL project root injection on Windows (already set in main binary)");
+        // This can potentially cause STATUS_ACCESS_VIOLATION if the DLL was built against a
+        // different version of perro_core, but if the DLL is built correctly, it should work.
+        // We handle errors gracefully to avoid crashes.
+        if let Err(e) = provider.inject_project_root(&root) {
+            eprintln!("⚠ Warning: Failed to inject project root into DLL: {}", e);
+            eprintln!("   Scripts may not be able to resolve res:// paths. This usually means:");
+            eprintln!("   1. The DLL was built against a different version of perro_core");
+            eprintln!("   2. The perro_set_project_root symbol is missing from the DLL");
+            eprintln!("   Try rebuilding scripts: cargo run -p perro_core -- --path <path> --scripts");
+        } else {
+            println!("✅ Project root injected into DLL");
         }
 
         // Now move `project` into Scene

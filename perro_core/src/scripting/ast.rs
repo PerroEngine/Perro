@@ -493,8 +493,6 @@ impl Type {
                 | ES::Quaternion | ES::ShapeType2D => true,
                 
                 ES::Texture => true,
-                // ImageTexture contains GPU resources (TextureView, BindGroup) and does NOT implement Copy or Clone
-                ES::ImageTexture => false,
                 // Texture is a Uuid handle, which implements Copy
             },
             _ => false,

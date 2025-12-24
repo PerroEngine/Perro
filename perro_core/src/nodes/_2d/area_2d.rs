@@ -115,8 +115,7 @@ impl Area2D {
             let entered_signal = format!("{}_AreaEntered", signal_base);
             let entered_signal_id = string_to_u64(&entered_signal);
             
-            eprintln!("[Area2D SIGNAL] {}: Emitting {} AreaEntered signals | intersections found: {} | previous: {:?} | current: {:?} | entered: {:?}", 
-                self.name, entered.len(), intersection_count, self.previous_collisions, current_colliding_node_ids, entered);
+         
             
             for node_id in &entered {
                 // Use array literal - zero allocation, passed as slice

@@ -14,6 +14,8 @@ use crate::asset_io::{ResolvedPath, resolve_path};
 use crate::SceneData;
 use crate::brk::build_brk;
 use crate::fur_ast::{FurElement, FurNode};
+use crate::structs::engine_registry::ENGINE_REGISTRY;
+use crate::node_registry::NodeType;
 use image::GenericImageView;
 use walkdir::WalkDir;
 
@@ -1798,6 +1800,36 @@ impl Compiler {
                 node_str = collider_shape_circle_regex
                     .replace_all(&node_str, "shape: Some(ColliderShape::Circle {")
                     .to_string();
+
+                // Fix ty and node_type fields: wrap node type names with NodeType::
+                // Use engine registry to only wrap actual node types
+                let node_type_names: HashSet<String> = ENGINE_REGISTRY
+                    .node_defs
+                    .keys()
+                    .map(|nt| format!("{:?}", nt))
+                    .collect();
+                
+                // Fix ty: field
+                let ty_field_regex = Regex::new(r"ty:\s*(\w+),")?;
+                node_str = ty_field_regex.replace_all(&node_str, |caps: &regex::Captures| {
+                    let type_name = caps.get(1).unwrap().as_str();
+                    if node_type_names.contains(type_name) {
+                        format!("ty: NodeType::{type_name},")
+                    } else {
+                        caps.get(0).unwrap().as_str().to_string()
+                    }
+                }).to_string();
+                
+                // Fix node_type: field
+                let node_type_field_regex = Regex::new(r"node_type:\s*(\w+),")?;
+                node_str = node_type_field_regex.replace_all(&node_str, |caps: &regex::Captures| {
+                    let type_name = caps.get(1).unwrap().as_str();
+                    if node_type_names.contains(type_name) {
+                        format!("node_type: NodeType::{type_name},")
+                    } else {
+                        caps.get(0).unwrap().as_str().to_string()
+                    }
+                }).to_string();
 
                 // --- Option<Vec<Uuid>>: safe bracket correction ---
                 let regex_children = Regex::new(r"children:\s*Some\s*\(\s*\[")?;

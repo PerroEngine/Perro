@@ -14,7 +14,6 @@ fn init() {
 
     var par = self.get_parent()
     par.name = "fart"
-
     Console.print(par)
 
 }
@@ -33,14 +32,13 @@ fn update() {
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
     var pos = self.transform.position
 
-    var ty = collision.get_type()
     var pty = collision.get_parent().get_type()
-    var ptya = collision.get_parent_type()
 
-    Console.print(ty, pty, ptya)
     var ppos
     if pty == NODE_TYPE.Sprite2D {
-        ppos = (collision.get_parent() as Sprite2D).transform.position
+            var tex = Texture.load("res://doug.PNG")
+            self.texture = tex
+            ppos = (collision.get_parent() as Sprite2D).transform.position
     }
 
  

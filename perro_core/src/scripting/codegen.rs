@@ -2723,15 +2723,59 @@ impl Stmt {
                         let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                         let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
                         
-                        let mut rhs_code =
+                        // Check if RHS is an ApiCall that returns Uuid/Option<Uuid> - if so, extract to temp variable
+                        let mut temp_decl_opt: Option<String> = None;
+                        let mut temp_var_opt: Option<String> = None;
+                        
+                        if let Expr::ApiCall(api_module, api_args) = &rhs_expr.expr {
+                            if let Some(return_type) = api_module.return_type() {
+                                // Check if it returns Uuid or Option<Uuid> - these need extraction before closure
+                                let return_type_ref = &return_type;
+                                if matches!(return_type_ref, Type::Uuid) || 
+                                   matches!(return_type_ref, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
+                                    // Generate the API call code
+                                    let mut api_call_str = api_module.to_rust(api_args, script, needs_self, current_func);
+                                    
+                                    // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                    api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
+                                    
+                                    // Generate temp variable name based on API type
+                                    let temp_var = match api_module {
+                                        ApiModule::Texture(TextureApi::Load) => "__texture_id".to_string(),
+                                        ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id".to_string(),
+                                        ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id".to_string(),
+                                        _ => "__temp_id".to_string(),
+                                    };
+                                    
+                                    // Determine the type annotation based on return type
+                                    let type_annotation = match return_type_ref {
+                                        Type::Uuid => ": Uuid",
+                                        Type::Option(_) => ": Option<Uuid>",
+                                        _ => "",
+                                    };
+                                    
+                                    temp_decl_opt = Some(format!("let {}{} = {};", temp_var, type_annotation, api_call_str));
+                                    temp_var_opt = Some(temp_var);
+                                }
+                            }
+                        }
+                        
+                        // If we extracted to a temp variable, use that directly and skip to_rust on original expr
+                        let mut rhs_code = if let Some(temp_var) = &temp_var_opt {
+                            // Use temp variable directly - conversion will happen below
+                            temp_var.clone()
+                        } else {
+                            // No temp variable, generate code normally
                             rhs_expr
                                 .expr
-                                .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+                                .to_rust(needs_self, script, lhs_type.as_ref(), current_func)
+                        };
                         
                         // For literals, we already generated the code with the expected type,
                         // so skip implicit cast to avoid double conversion
                         let is_literal = matches!(rhs_expr.expr, Expr::Literal(_));
                         
+                        // Apply implicit conversion if needed (especially important for temp variables)
                         let final_rhs = if let Some(lhs_ty) = &lhs_type {
                             if let Some(rhs_ty) = &rhs_type {
                                 // For literals, if they were generated with the correct expected type,
@@ -2769,9 +2813,21 @@ impl Stmt {
                             rhs_code
                         };
                         
+                        // Resolve field names in path (e.g., "texture" -> "texture_id")
+                        let resolved_field_path = if let Some(node_type_enum) = string_to_node_type(&node_type) {
+                            let field_path_vec: Vec<&str> = field_path.split('.').collect();
+                            let resolved_path: Vec<String> = field_path_vec.iter()
+                                .map(|f| ENGINE_REGISTRY.resolve_field_name(&node_type_enum, f))
+                                .collect();
+                            resolved_path.join(".")
+                        } else {
+                            field_path.clone()
+                        };
+                        
+                        let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                         format!(
-                            "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                            node_id, closure_var, node_type, closure_var, field_path, final_rhs
+                            "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                            temp_decl, node_id, closure_var, node_type, closure_var, resolved_field_path, final_rhs
                         )
                     }
                 } else {
@@ -2845,17 +2901,27 @@ impl Stmt {
                                 // If only one compatible node type, skip match and do direct mutation
                                 if compatible_node_types.len() == 1 {
                                     let node_type_name = format!("{:?}", compatible_node_types[0]);
+                                    // Resolve field names in path
+                                    let resolved_path: Vec<String> = field_path_vec.iter()
+                                        .map(|f| ENGINE_REGISTRY.resolve_field_name(&compatible_node_types[0], f))
+                                        .collect();
+                                    let resolved_field_path = resolved_path.join(".");
                                     return format!(
                                         "        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
-                                        node_id, closure_var, node_type_name, closure_var, field_path, rhs_code
+                                        node_id, closure_var, node_type_name, closure_var, resolved_field_path, rhs_code
                                     );
                                 } else {
                                     let mut match_arms = Vec::new();
                                     for node_type_enum in &compatible_node_types {
                                         let node_type_name = format!("{:?}", node_type_enum);
+                                        // Resolve field names in path for this node type
+                                        let resolved_path: Vec<String> = field_path_vec.iter()
+                                            .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type_enum, f))
+                                            .collect();
+                                        let resolved_field_path = resolved_path.join(".");
                                         match_arms.push(format!(
                                             "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }}),",
-                                            node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, rhs_code
+                                            node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, rhs_code
                                         ));
                                     }
                                     return format!(
@@ -2887,17 +2953,27 @@ impl Stmt {
                             // If only one compatible node type, skip match and do direct mutation
                             if compatible_node_types.len() == 1 {
                                 let node_type_name = format!("{:?}", compatible_node_types[0]);
+                                // Resolve field names in path
+                                let resolved_path: Vec<String> = field_path_vec.iter()
+                                    .map(|f| ENGINE_REGISTRY.resolve_field_name(&compatible_node_types[0], f))
+                                    .collect();
+                                let resolved_field_path = resolved_path.join(".");
                                 format!(
                                     "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
-                                    node_id, closure_var, node_type_name, closure_var, field_path, op.to_rust_assign(), final_rhs
+                                    node_id, closure_var, node_type_name, closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
                                 )
                             } else {
                                 let mut match_arms = Vec::new();
                                 for node_type_enum in &compatible_node_types {
                                     let node_type_name = format!("{:?}", node_type_enum);
+                                    // Resolve field names in path for this node type
+                                    let resolved_path: Vec<String> = field_path_vec.iter()
+                                        .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type_enum, f))
+                                        .collect();
+                                    let resolved_field_path = resolved_path.join(".");
                                     match_arms.push(format!(
                                         "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }}),",
-                                        node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, op.to_rust_assign(), final_rhs
+                                        node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
                                     ));
                                 }
                                 
@@ -2920,10 +2996,21 @@ impl Stmt {
                                 .expr
                                 .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
                         
+                        // Resolve field names in path (e.g., "texture" -> "texture_id")
+                        let resolved_field_path = if let Some(node_type_enum) = string_to_node_type(&node_type) {
+                            let field_path_vec: Vec<&str> = field_path.split('.').collect();
+                            let resolved_path: Vec<String> = field_path_vec.iter()
+                                .map(|f| ENGINE_REGISTRY.resolve_field_name(&node_type_enum, f))
+                                .collect();
+                            resolved_path.join(".")
+                        } else {
+                            field_path.clone()
+                        };
+                        
                         if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
                             return format!(
                                 "        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
-                                node_id, closure_var, node_type, closure_var, field_path, rhs_code
+                                node_id, closure_var, node_type, closure_var, resolved_field_path, rhs_code
                             );
                         }
                         
@@ -2944,7 +3031,7 @@ impl Stmt {
                         
                         format!(
                             "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
-                            node_id, closure_var, node_type, closure_var, field_path, op.to_rust_assign(), final_rhs
+                            node_id, closure_var, node_type, closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
                         )
                     }
                 } else {
@@ -3741,7 +3828,14 @@ impl Stmt {
     ) -> Option<Type> {
         if let Some(func) = current_func {
             if let Some(local) = func.locals.iter().find(|v| v.name == name) {
-                return local.typ.clone();
+                // First try explicit type
+                if let Some(typ) = &local.typ {
+                    return Some(typ.clone());
+                }
+                // If no explicit type, try to infer from value
+                if let Some(value) = &local.value {
+                    return script.infer_expr_type(&value.expr, current_func);
+                }
             }
             if let Some(param) = func.params.iter().find(|p| p.name == name) {
                 return Some(param.typ.clone());
@@ -4253,7 +4347,37 @@ impl Expr {
                         let needs_clone = current_type.requires_clone();
                         let is_option = matches!(current_type, Type::Option(_));
                         
-                        let field_access = if is_option {
+                        // Only unwrap if the expected type is explicitly NOT an Option
+                        // If both the field and expected type are Option, keep it as Option
+                        // If expected type is None, keep as Option (don't unwrap by default)
+                        let should_unwrap = if is_option {
+                            match expected_type {
+                                Some(Type::Option(expected_inner)) => {
+                                    // Check if the inner types match
+                                    match &current_type {
+                                        Type::Option(actual_inner) => {
+                                            // Only unwrap if inner types don't match
+                                            // If they match, keep as Option
+                                            actual_inner.as_ref() != expected_inner.as_ref()
+                                        }
+                                        _ => false, // Keep as Option if we can't determine
+                                    }
+                                }
+                                Some(_) => {
+                                    // Expected type is explicitly not an Option, so unwrap
+                                    true
+                                }
+                                None => {
+                                    // No expected type hint - keep as Option (don't unwrap by default)
+                                    // This is safer and allows the caller to handle Option as needed
+                                    false
+                                }
+                            }
+                        } else {
+                            false
+                        };
+                        
+                        let field_access = if should_unwrap {
                             format!("{}.{}.unwrap()", closure_var, resolved_field_path)
                         } else if needs_clone {
                             format!("{}.{}.clone()", closure_var, resolved_field_path)
@@ -4370,7 +4494,7 @@ impl Expr {
                                     let result_type = script.get_member_type(&base_node_type, field);
                                     let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
                                     
-                                    // Check if the result type is Option<T> - if so, unwrap inside the closure
+                                    // Check if the result type is Option<T> - only unwrap if expected type is not Option
                                     let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
                                     
                                     // Extract variable name from node_id (e.g., "c_id" -> "c", "par" -> "par")
@@ -4387,12 +4511,45 @@ impl Expr {
                                         base_code.clone()
                                     };
                                     
-                                    let field_access = if is_option {
-                                        format!("{}.{}.unwrap()", param_name, field)
-                                    } else if needs_clone {
-                                        format!("{}.{}.clone()", param_name, field)
+                                    // Resolve field name (e.g., "texture" -> "texture_id")
+                                    let resolved_field = ENGINE_REGISTRY.resolve_field_name(&node_type, field);
+                                    
+                                    // Only unwrap if the expected type is explicitly NOT an Option
+                                    // If both the field and expected type are Option, keep it as Option
+                                    // If expected type is None, keep as Option (don't unwrap by default)
+                                    let should_unwrap = if is_option {
+                                        match expected_type {
+                                            Some(Type::Option(expected_inner)) => {
+                                                // Check if the inner types match
+                                                match result_type.as_ref() {
+                                                    Some(Type::Option(actual_inner)) => {
+                                                        // Only unwrap if inner types don't match
+                                                        // If they match, keep as Option
+                                                        actual_inner.as_ref() != expected_inner.as_ref()
+                                                    }
+                                                    _ => false, // Keep as Option if we can't determine
+                                                }
+                                            }
+                                            Some(_) => {
+                                                // Expected type is explicitly not an Option, so unwrap
+                                                true
+                                            }
+                                            None => {
+                                                // No expected type hint - keep as Option (don't unwrap by default)
+                                                // This is safer and allows the caller to handle Option as needed
+                                                false
+                                            }
+                                        }
                                     } else {
-                                        format!("{}.{}", param_name, field)
+                                        false
+                                    };
+                                    
+                                    let field_access = if should_unwrap {
+                                        format!("{}.{}.unwrap()", param_name, resolved_field)
+                                    } else if needs_clone {
+                                        format!("{}.{}.clone()", param_name, resolved_field)
+                                    } else {
+                                        format!("{}.{}", param_name, resolved_field)
                                     };
                                     
                                     // Extract mutable API calls to temporary variables to avoid borrow checker issues
@@ -4436,12 +4593,15 @@ impl Expr {
                                 "n"
                             };
                             
+                            // Resolve field name (e.g., "texture" -> "texture_id")
+                            let resolved_field = ENGINE_REGISTRY.resolve_field_name(&node_type, field);
+                            
                             let field_access = if is_option {
-                                format!("{}.{}.unwrap()", param_name, field)
+                                format!("{}.{}.unwrap()", param_name, resolved_field)
                             } else if needs_clone {
-                                format!("{}.{}.clone()", param_name, field)
+                                format!("{}.{}.clone()", param_name, resolved_field)
                             } else {
-                                format!("{}.{}", param_name, field)
+                                format!("{}.{}", param_name, resolved_field)
                             };
                             
                             // Extract mutable API calls to temporary variables to avoid borrow checker issues
