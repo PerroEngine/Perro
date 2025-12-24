@@ -6,6 +6,7 @@ pub enum EngineStruct {
     Rect,
     Color,
     ImageTexture,
+    Texture,
     ShapeType2D,
     // 3D structs
     Transform3D,
@@ -26,6 +27,7 @@ impl EngineStruct {
             "Quaternion" => Some(EngineStruct::Quaternion),
             "ShapeType2D" => Some(EngineStruct::ShapeType2D),
             "ImageTexture" => Some(EngineStruct::ImageTexture),
+            "Texture" => Some(EngineStruct::Texture),
             _ => None,
         }
     }

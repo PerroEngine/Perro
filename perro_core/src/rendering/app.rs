@@ -26,6 +26,7 @@ use crate::{
 enum State {
     Init(Option<EventLoopProxy<Graphics>>),
     Ready(Graphics),
+    PreCreated(Graphics), // Graphics created before App initialization
 }
 
 // OPTIMIZED: Use Option for Graphics to avoid mem::replace overhead
@@ -35,6 +36,7 @@ impl State {
     fn take_graphics(&mut self) -> Option<Graphics> {
         match std::mem::replace(self, State::Init(None)) {
             State::Ready(g) => Some(g),
+            State::PreCreated(g) => Some(g),
             other => {
                 *self = other;
                 None
@@ -188,6 +190,17 @@ impl<P: ScriptProvider> App<P> {
         mut game_scene: Option<Scene<P>>,
         target_fps: f32,
     ) -> Self {
+        Self::new_with_graphics(event_loop, window_title, icon_path, game_scene, target_fps, None)
+    }
+
+    pub fn new_with_graphics(
+        event_loop: &EventLoop<Graphics>,
+        window_title: String,
+        icon_path: Option<String>,
+        mut game_scene: Option<Scene<P>>,
+        target_fps: f32,
+        pre_created_graphics: Option<Graphics>,
+    ) -> Self {
         let now = std::time::Instant::now();
 
         // Create command channel
@@ -200,7 +213,11 @@ impl<P: ScriptProvider> App<P> {
         }
 
         Self {
-            state: State::Init(Some(event_loop.create_proxy())),
+            state: if let Some(gfx) = pre_created_graphics {
+                State::PreCreated(gfx)
+            } else {
+                State::Init(Some(event_loop.create_proxy()))
+            },
             window_title,
             window_icon_path: icon_path,
             game_scene,
@@ -306,7 +323,7 @@ impl<P: ScriptProvider> App<P> {
             {
                 #[cfg(feature = "profiling")]
                 let _span = tracing::span!(tracing::Level::INFO, "scene_update").entered();
-                scene.update(); // Update runs EVERY frame (uncapped UPS)
+                scene.update(&mut gfx); // Update runs EVERY frame (uncapped UPS)
             }
         }
 
@@ -413,8 +430,11 @@ impl<P: ScriptProvider> App<P> {
     }
 
     fn resized(&mut self, size: PhysicalSize<u32>) {
-        if let State::Ready(gfx) = &mut self.state {
-            gfx.resize(size);
+        match &mut self.state {
+            State::Ready(gfx) | State::PreCreated(gfx) => {
+                gfx.resize(size);
+            }
+            _ => {}
         }
     }
 }
@@ -600,7 +620,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         // Render the actual first game frame before showing window
         if let Some(scene) = self.game_scene.as_mut() {
             // Do initial update
-            scene.update();
+            scene.update(&mut graphics);
 
             // Queue rendering
             scene.render(&mut graphics);

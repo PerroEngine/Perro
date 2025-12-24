@@ -1,9 +1,11 @@
 use crate::{
     api_modules::*,
     ast::*,
+    engine_structs::EngineStruct,
     prelude::string_to_u64,
     scripting::ast::{ContainerKind, NumberKind},
 };
+use super::codegen::is_node_type;
 
 // ===========================================================
 // Shared API Traits — Codegen + Types
@@ -102,6 +104,9 @@ impl ApiModule {
             ApiModule::Input(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
+            ApiModule::Texture(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
         }
     }
 
@@ -118,6 +123,7 @@ impl ApiModule {
             ApiModule::ArrayOp(api) => api.return_type(),
             ApiModule::MapOp(api) => api.return_type(),
             ApiModule::Input(api) => api.return_type(),
+            ApiModule::Texture(api) => api.return_type(),
         }
     }
 
@@ -134,6 +140,7 @@ impl ApiModule {
             ApiModule::ArrayOp(api) => api.param_types(),
             ApiModule::MapOp(api) => api.param_types(),
             ApiModule::Input(api) => api.param_types(),
+            ApiModule::Texture(api) => api.param_types(),
         };
         // Add this line:
         result
@@ -345,7 +352,40 @@ impl ApiCodegen for ConsoleApi {
             // Check if the single argument is a node type
             if let Some(arg_expr) = args.get(0) {
                 let arg_type = script.infer_expr_type(arg_expr, current_func);
-                if let Some(Type::Node(_)) | Some(Type::DynNode) = arg_type {
+                // Check if it's a node type, DynNode, or a Uuid that represents a node
+                // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
+                let is_node = match arg_type {
+                    Some(Type::Node(_)) | Some(Type::DynNode) => true,
+                    Some(Type::Uuid) => {
+                        // Check if this is a variable that came from a node API call
+                        // Variables from get_parent()/get_node() are node IDs
+                        if let Expr::Ident(var_name) = arg_expr {
+                            // Check if variable was assigned from a node API call
+                            if let Some(func) = current_func {
+                                func.locals.iter()
+                                    .find(|v| v.name == *var_name)
+                                    .and_then(|v| v.value.as_ref())
+                                    .map(|val| {
+                                        match &val.expr {
+                                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) |
+                                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) |
+                                            Expr::Cast(_, Type::Node(_)) => true,
+                                            Expr::Cast(_, Type::Custom(name)) => is_node_type(name),
+                                            _ => false,
+                                        }
+                                    })
+                                    .unwrap_or(false)
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    },
+                    _ => false,
+                };
+                
+                if is_node {
                     // This is a node - convert to print its type instead of UUID
                     // Use the already-processed arg string, which should be the node ID
                     let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".to_string());
@@ -1238,6 +1278,86 @@ impl ApiTypes for InputApi {
                 Type::Number(Float(32)),
             ]),
             _ => None,
+        }
+    }
+}
+
+// ===========================================================
+// Texture API Implementations
+// ===========================================================
+
+impl ApiCodegen for TextureApi {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            TextureApi::Load => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                // Handle string parameters: literals stay as &str, variables need & prefix
+                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
+                    // String literal - use directly as &str
+                    arg
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    // Extract string literal from String::from("...")
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        // Use the string literal directly as &str
+                        inner.to_string()
+                    } else {
+                        // Fallback: borrow the String
+                        format!("&{}", arg)
+                    }
+                } else {
+                    // Variable or complex expression - borrow it
+                    format!("&{}", arg)
+                };
+                format!("api.Texture.load({})", arg_str)
+            }
+            TextureApi::CreateFromBytes => {
+                let bytes = args_strs.get(0).cloned().unwrap_or_else(|| "vec![]".into());
+                let width = args_strs.get(1).cloned().unwrap_or_else(|| "0".into());
+                let height = args_strs.get(2).cloned().unwrap_or_else(|| "0".into());
+                format!("api.Texture.create_from_bytes({}, {}, {})", bytes, width, height)
+            }
+            TextureApi::GetWidth => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".into());
+                format!("api.Texture.get_width({})", arg)
+            }
+            TextureApi::GetHeight => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".into());
+                format!("api.Texture.get_height({})", arg)
+            }
+            TextureApi::GetSize => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".into());
+                format!("api.Texture.get_size({})", arg)
+            }
+        }
+    }
+}
+
+impl ApiTypes for TextureApi {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            TextureApi::Load | TextureApi::CreateFromBytes => Some(Type::Option(Box::new(Type::Uuid))),
+            TextureApi::GetWidth | TextureApi::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
+            TextureApi::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            TextureApi::Load => Some(vec![Type::String]),
+            TextureApi::CreateFromBytes => Some(vec![
+                Type::Container(ContainerKind::Array, vec![Type::Number(NumberKind::Unsigned(8))]),
+                Type::Number(NumberKind::Unsigned(32)),
+                Type::Number(NumberKind::Unsigned(32)),
+            ]),
+            TextureApi::GetWidth | TextureApi::GetHeight | TextureApi::GetSize => Some(vec![Type::Uuid]),
         }
     }
 }

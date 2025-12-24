@@ -8,6 +8,7 @@ pub enum ApiModule {
     NodeSugar(NodeSugarApi),
     Signal(SignalApi),
     Input(InputApi),
+    Texture(TextureApi),
 
     ArrayOp(ArrayApi),
     MapOp(MapApi),
@@ -105,4 +106,14 @@ pub enum InputApi {
     IsWheelUp,
     IsWheelDown,
     ScreenToWorld,
+}
+
+#[derive(Debug, Clone)]
+pub enum TextureApi {
+    Load, // api.Texture.load(path: String) -> Uuid
+    CreateFromBytes, // api.Texture.create_from_bytes(bytes: Array<u8>, width: u32, height: u32) -> Uuid
+    GetWidth, // api.Texture.get_width(id: Uuid) -> u32
+    GetHeight, // api.Texture.get_height(id: Uuid) -> u32
+    GetSize, // api.Texture.get_size(id: Uuid) -> Vector2
+    // Future: as_bytes, set_bytes, etc.
 }

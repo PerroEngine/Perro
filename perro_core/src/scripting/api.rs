@@ -29,11 +29,13 @@ use crate::{
     manifest::Project,
     node_registry::{BaseNode, IntoInner, SceneNode},
     prelude::string_to_u64,
+    rendering::{Graphics, TextureManager},
     script::{CreateFn, SceneAccess, Script, Var},
     transpiler::{script_path_to_identifier, transpile},
     types::ScriptType,
     ui_node::UINode,
 };
+use wgpu::{Device, Queue};
 use std::sync::{Arc, Mutex};
 
 //-----------------------------------------------------
@@ -991,6 +993,146 @@ impl InputApi {
 // 2️⃣ Engine API Aggregator
 //-----------------------------------------------------
 
+pub struct TextureApi;
+
+impl Default for TextureApi {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl TextureApi {
+    /// Load a texture from a path and return its UUID
+    /// This will be called from scripts as: api.Texture.load("res://path/to/texture.png")
+    /// Panics if the texture cannot be loaded or Graphics is not available
+    pub fn load(&mut self, path: &str) -> Option<Uuid> {
+        // Get ScriptApi from thread-local context (set by set_context())
+        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+        if let Some(ptr) = api_ptr {
+            unsafe {
+                let api = &mut *ptr;
+                Self::load_impl(api, path)
+            }
+        } else {
+            panic!("Texture.load() called but ScriptApi context is not available");
+        }
+    }
+
+    /// Internal implementation that actually does the load
+    /// Panics if Graphics is not available or texture cannot be loaded
+    pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> Option<Uuid> {
+        if let Some(gfx) = api.gfx.as_mut() {
+            Some(gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue))
+        } else {
+            panic!("Texture.load(\"{}\") failed: Graphics not available", path);
+        }
+    }
+
+    /// Create a texture from raw RGBA8 bytes and return its UUID
+    /// Create a texture from raw RGBA8 bytes and return its UUID
+pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
+    // Get ScriptApi from thread-local context (set by set_context())
+    let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+    if let Some(ptr) = api_ptr {
+        unsafe {
+            let api = &mut *ptr;
+            Self::create_from_bytes_impl(api, bytes, width, height)
+        }
+    } else {
+        None
+    }
+}
+
+/// Internal implementation that actually creates the texture
+pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
+    if let Some(gfx) = api.gfx.as_mut() {
+        Some(gfx.texture_manager.create_texture_from_bytes(bytes, width, height, &gfx.device, &gfx.queue))
+    } else {
+        api.print_error("Graphics not available - Texture.create_from_bytes() requires Graphics access");
+        None
+    }
+}
+
+    /// Get the width of a texture by its UUID
+    pub fn get_width(&self, id: Uuid) -> u32 {
+        // Get ScriptApi from thread-local context (set by set_context())
+        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+        if let Some(ptr) = api_ptr {
+            unsafe {
+                let api = &mut *ptr;
+                Self::get_width_impl(api, id)
+            }
+        } else {
+            0
+        }
+    }
+
+    /// Internal implementation
+    pub(crate) fn get_width_impl(api: &mut ScriptApi, id: Uuid) -> u32 {
+        if let Some(gfx) = api.gfx.as_mut() {
+            gfx.texture_manager
+                .get_texture_by_id(&id)
+                .map(|tex| tex.width)
+                .unwrap_or(0)
+        } else {
+            // Graphics not available, but we can still try to get from scene if texture was already loaded
+            // For now, just return 0
+            0
+        }
+    }
+
+    /// Get the height of a texture by its UUID
+    pub fn get_height(&self, id: Uuid) -> u32 {
+        // Get ScriptApi from thread-local context (set by set_context())
+        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+        if let Some(ptr) = api_ptr {
+            unsafe {
+                let api = &mut *ptr;
+                Self::get_height_impl(api, id)
+            }
+        } else {
+            0
+        }
+    }
+
+    /// Internal implementation
+    pub(crate) fn get_height_impl(api: &mut ScriptApi, id: Uuid) -> u32 {
+        if let Some(gfx) = api.gfx.as_mut() {
+            gfx.texture_manager
+                .get_texture_by_id(&id)
+                .map(|tex| tex.height)
+                .unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
+    /// Get the size of a texture by its UUID (returns Vector2)
+    pub fn get_size(&self, id: Uuid) -> crate::Vector2 {
+        // Get ScriptApi from thread-local context (set by set_context())
+        let api_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+        if let Some(ptr) = api_ptr {
+            unsafe {
+                let api = &mut *ptr;
+                Self::get_size_impl(api, id)
+            }
+        } else {
+            crate::Vector2::new(0.0, 0.0)
+        }
+    }
+
+    /// Internal implementation
+    pub(crate) fn get_size_impl(api: &mut ScriptApi, id: Uuid) -> crate::Vector2 {
+        if let Some(gfx) = api.gfx.as_mut() {
+            gfx.texture_manager
+                .get_texture_size_by_id(&id)
+                .unwrap_or_else(|| crate::Vector2::new(0.0, 0.0))
+        } else {
+            crate::Vector2::new(0.0, 0.0)
+        }
+    }
+}
+
 #[allow(non_snake_case)]
 #[derive(Default)]
 pub struct EngineApi {
@@ -999,6 +1141,7 @@ pub struct EngineApi {
     pub OS: OsApi,
     pub Process: ProcessApi,
     pub Input: InputApi,
+    pub Texture: TextureApi,
 }
 
 //-----------------------------------------------------
@@ -1008,7 +1151,7 @@ pub struct EngineApi {
 impl<'a> Deref for ScriptApi<'a> {
     type Target = EngineApi;
     fn deref(&self) -> &Self::Target {
-        // Also set the parent pointer when accessed immutably
+        // Set the parent pointer in InputApi when accessed immutably
         // This ensures the pointer is set even if DerefMut isn't called
         let api_ptr: *mut ScriptApi<'static> =
             unsafe { std::mem::transmute(self as *const ScriptApi<'a> as *mut ScriptApi<'static>) };
@@ -1028,7 +1171,7 @@ impl<'a> DerefMut for ScriptApi<'a> {
         let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self) };
 
         unsafe {
-            // Set the pointer in InputApi and all sub-APIs
+            // Set the pointer in InputApi
             let input_api = &mut (*api_ptr).engine.Input;
             input_api.set_parent_ptr(api_ptr);
         }
@@ -1045,16 +1188,23 @@ pub struct ScriptApi<'a> {
     pub(crate) scene: &'a mut dyn SceneAccess,
     project: &'a mut Project,
     engine: EngineApi,
+    pub(crate) gfx: Option<&'a mut Graphics>, // Always Some when created via new(), but Option for compatibility
 }
 
 impl<'a> ScriptApi<'a> {
-    pub fn new(delta: f32, scene: &'a mut dyn SceneAccess, project: &'a mut Project) -> Self {
+    pub fn new(
+        delta: f32,
+        scene: &'a mut dyn SceneAccess,
+        project: &'a mut Project,
+        gfx: &'a mut Graphics,
+    ) -> Self {
         let mut engine = EngineApi::default();
         engine.Time.delta = delta;
         Self {
             scene,
             project,
             engine,
+            gfx: Some(gfx),
         }
     }
 
@@ -1370,11 +1520,12 @@ impl<'a> ScriptApi<'a> {
         boxed.set_id(Uuid::nil()); // explicitly detached
 
         // run init() safely using a temporary sub‑APIs
-        // note: doesn’t touch scene.scripts, only passes mut ref
+        // note: doesn't touch scene.scripts, only passes mut ref
         {
             let project_ref = self.project as *mut _;
             let project_mut = unsafe { &mut *project_ref };
-            let mut sub_api = ScriptApi::new(0.0, self.scene, project_mut);
+            let gfx_ref = self.gfx.as_mut().expect("Graphics required for instantiate_script");
+            let mut sub_api = ScriptApi::new(0.0, self.scene, project_mut, gfx_ref);
             boxed.init(&mut sub_api);
         }
 
@@ -1516,7 +1667,8 @@ impl<'a> ScriptApi<'a> {
         let id = scene_node.get_id();
         
         // Add to scene
-        self.scene.add_node_to_scene(scene_node)
+        let gfx_ref = self.gfx.as_mut().expect("Graphics required for add_node_to_scene");
+        self.scene.add_node_to_scene(scene_node, gfx_ref)
             .unwrap_or_else(|e| panic!("Failed to add node to scene: {}", e));
         
         id

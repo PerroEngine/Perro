@@ -1,5 +1,6 @@
-use std::{borrow::Cow, fmt, ops::Range, sync::Arc, time::Instant};
+use std::{borrow::Cow, time::Instant};
 use rustc_hash::FxHashMap;
+use uuid::Uuid;
 
 use bytemuck::cast_slice;
 use wgpu::{
@@ -41,7 +42,9 @@ pub const VIRTUAL_HEIGHT: f32 = 1080.0;
 
 #[derive(Debug)]
 pub struct TextureManager {
-    textures: FxHashMap<String, ImageTexture>,
+    textures: FxHashMap<String, ImageTexture>, // path -> texture (primary storage)
+    path_to_id: FxHashMap<String, Uuid>, // path -> id (new)
+    id_to_path: FxHashMap<Uuid, String>, // id -> path (for reverse lookup)
     bind_groups: FxHashMap<String, wgpu::BindGroup>,
 }
 
@@ -49,6 +52,8 @@ impl TextureManager {
     pub fn new() -> Self {
         Self {
             textures: FxHashMap::default(),
+            path_to_id: FxHashMap::default(),
+            id_to_path: FxHashMap::default(),
             bind_groups: FxHashMap::default(),
         }
     }
@@ -145,15 +150,82 @@ impl TextureManager {
                 );
                 texture
             };
-            self.textures.insert(key, img_texture);
+            
+            // Get or create UUID for this path
+            let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(Uuid::new_v4);
+            self.id_to_path.insert(texture_id, key.clone());
+            
+            // Store by path (textures_by_id will look up through path)
+            self.textures.insert(key.clone(), img_texture);
         }
         // Optimize: use path directly for lookup (no String allocation needed)
         self.textures.get(path).unwrap()
     }
 
+    /// Get or load texture by path and return its UUID
+    /// This is the main API method for scripts - returns the UUID handle
+    pub fn get_or_load_texture_id(
+        &mut self,
+        path: &str,
+        device: &Device,
+        queue: &Queue,
+    ) -> Uuid {
+        // Load the texture (creates UUID if needed)
+        self.get_or_load_texture_sync(path, device, queue);
+        
+        // Return the UUID for this path - panic if texture wasn't loaded
+        *self.path_to_id.get(path).unwrap_or_else(|| {
+            panic!("Texture.load(\"{}\") failed: texture was not loaded or registered", path);
+        })
+    }
+
+    /// Get texture by UUID (for script access)
+    /// Returns a reference if the texture exists
+    /// Looks up path from ID, then gets texture by path
+    pub fn get_texture_by_id(&self, id: &Uuid) -> Option<&ImageTexture> {
+        // Look up path from ID, then get texture by path
+        if let Some(path) = self.id_to_path.get(id) {
+            self.textures.get(path)
+        } else {
+            None
+        }
+    }
+
+    /// Get texture path from UUID (for rendering fallback)
+    pub fn get_texture_path_from_id(&self, id: &Uuid) -> Option<&str> {
+        self.id_to_path.get(id).map(|s| s.as_str())
+    }
+
+    /// Create texture from bytes and return UUID
+    /// Creates a synthetic path for programmatically created textures
+    pub fn create_texture_from_bytes(
+        &mut self,
+        rgba_bytes: &[u8],
+        width: u32,
+        height: u32,
+        device: &Device,
+        queue: &Queue,
+    ) -> Uuid {
+        let texture = ImageTexture::from_rgba8_bytes(rgba_bytes, width, height, device, queue);
+        let texture_id = Uuid::new_v4();
+        // Create a synthetic path for programmatically created textures
+        let synthetic_path = format!("__synthetic__{}", texture_id);
+        self.path_to_id.insert(synthetic_path.clone(), texture_id);
+        self.id_to_path.insert(texture_id, synthetic_path.clone());
+        self.textures.insert(synthetic_path, texture);
+        texture_id
+    }
+
     /// Get texture size if texture is already loaded (doesn't load if missing)
     pub fn get_texture_size_if_loaded(&self, path: &str) -> Option<crate::Vector2> {
         self.textures.get(path).map(|tex| {
+            crate::Vector2::new(tex.width as f32, tex.height as f32)
+        })
+    }
+
+    /// Get texture size by UUID (for script access)
+    pub fn get_texture_size_by_id(&self, id: &Uuid) -> Option<crate::Vector2> {
+        self.get_texture_by_id(id).map(|tex| {
             crate::Vector2::new(tex.width as f32, tex.height as f32)
         })
     }
@@ -920,6 +992,355 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         cached_camera3d_proj,
     };
     let _ = proxy.send_event(gfx);
+}
+
+/// Synchronous version of create_graphics for use during initialization
+/// Returns Graphics directly instead of sending via proxy
+pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
+    use std::io::Write;
+    
+    // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
+    // Different GPUs work better with different backends:
+    // - Intel integrated: DX12 (best on Windows), Vulkan (fallback)
+    // - NVIDIA: Vulkan (excellent support), DX12 (good support)
+    // - AMD: Vulkan (excellent support), DX12 (good support)
+    // - Apple Silicon: Metal only
+    // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
+    
+    // Get list of available backends for this platform
+    #[cfg(windows)]
+    let available_backends = vec![
+        ("DX12", Backends::DX12),
+        ("Vulkan", Backends::VULKAN),
+    ];
+    #[cfg(target_os = "macos")]
+    let available_backends = vec![
+        ("Metal", Backends::METAL),
+        ("Vulkan", Backends::VULKAN),
+    ];
+    #[cfg(target_os = "linux")]
+    let available_backends = vec![
+        ("Vulkan", Backends::VULKAN),
+    ];
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let available_backends = vec![
+        ("Vulkan", Backends::VULKAN),
+    ];
+    
+    // Collect all available adapters from all backends
+    struct AdapterCandidate {
+        backend_name: &'static str,
+        backend: Backends,
+        info: wgpu::AdapterInfo,
+    }
+    
+    let mut candidates: Vec<AdapterCandidate> = Vec::new();
+    
+    for (backend_name, backends) in available_backends.iter() {
+        let instance = Instance::new(&InstanceDescriptor {
+            backends: *backends,
+            ..Default::default()
+        });
+        
+        let surface = instance.create_surface(window.clone()).unwrap();
+        
+        let adapter_options = RequestAdapterOptions {
+            power_preference: PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
+        };
+        
+        if let Ok(adapter) = pollster::block_on(instance.request_adapter(&adapter_options)) {
+            let info = adapter.get_info();
+            candidates.push(AdapterCandidate {
+                backend_name,
+                backend: *backends,
+                info,
+            });
+        }
+    }
+    
+    // Choose best adapter based on GPU vendor
+    let (chosen_backend, chosen_backend_name) = if candidates.is_empty() {
+        eprintln!("⚠️ No GPU adapters found! Falling back to first available backend.");
+        (Backends::all(), "Unknown")
+    } else {
+        // Prefer dedicated GPUs over integrated
+        let dedicated = candidates.iter().find(|c| {
+            matches!(c.info.device_type, wgpu::DeviceType::DiscreteGpu)
+        });
+        
+        if let Some(candidate) = dedicated {
+            (candidate.backend, candidate.backend_name)
+        } else {
+            // Fall back to first available
+            (candidates[0].backend, candidates[0].backend_name)
+        }
+    };
+    
+    println!("🎮 Using graphics backend: {}", chosen_backend_name);
+    
+    // Create instance with chosen backend
+    let instance = Instance::new(&InstanceDescriptor {
+        backends: chosen_backend,
+        ..Default::default()
+    });
+    
+    // Create surface
+    let surface = instance.create_surface(window.clone()).unwrap();
+    
+    // Request adapter
+    let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        compatible_surface: Some(&surface),
+        force_fallback_adapter: false,
+    }))
+    .expect("Failed to find an appropriate adapter");
+    
+    // Get device and queue
+    let (device, queue) = pollster::block_on(adapter.request_device(
+        &DeviceDescriptor {
+            label: None,
+            required_features: Features::empty(),
+            required_limits: Limits::default(),
+            memory_hints: MemoryHints::default(),
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            trace: wgpu::Trace::Off,
+        },
+    ))
+    .expect("Failed to create device");
+    
+    // Configure surface
+    let surface_caps = surface.get_capabilities(&adapter);
+    let surface_format = surface_caps
+        .formats
+        .iter()
+        .copied()
+        .find(|f| matches!(f, TextureFormat::Bgra8UnormSrgb | TextureFormat::Rgba8UnormSrgb))
+        .unwrap_or(surface_caps.formats[0]);
+    
+    let size = window.inner_size();
+    let surface_config = SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: surface_format,
+        width: size.width,
+        height: size.height,
+        present_mode: surface_caps.present_modes[0],
+        alpha_mode: surface_caps.alpha_modes[0],
+        view_formats: vec![],
+        desired_maximum_frame_latency: 2,
+    };
+    surface.configure(&device, &surface_config);
+    
+    // Create camera buffers and bind groups (same as async version)
+    let camera_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Camera Buffer"),
+        size: std::mem::size_of::<[f32; 4]>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    
+    let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Camera Bind Group Layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(std::mem::size_of::<[f32; 4]>() as u64),
+            },
+            count: None,
+        }],
+    });
+    
+    let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("Camera Bind Group"),
+        layout: &camera_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &camera_buffer,
+                offset: 0,
+                size: BufferSize::new(std::mem::size_of::<[f32; 4]>() as u64),
+            }),
+        }],
+    });
+    
+    // 3D camera setup
+    let mut initial_camera_3d = Camera3D::new();
+    initial_camera_3d.name = Cow::Borrowed("MainCamera3D");
+    
+    let camera3d_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("Camera3D Buffer"),
+        size: std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    
+    let camera3d_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Camera3D Bind Group Layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64),
+            },
+            count: None,
+        }],
+    });
+    
+    let camera3d_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("Camera3D Bind Group"),
+        layout: &camera3d_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &camera3d_buffer,
+                offset: 0,
+                size: BufferSize::new(std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64),
+            }),
+        }],
+    });
+    
+    // Initialize 3D camera matrices
+    let view = glam::Mat4::look_at_rh(
+        glam::vec3(3.0, 3.0, 3.0),
+        glam::vec3(0.0, 0.0, 0.0),
+        glam::vec3(0.0, 1.0, 0.0),
+    );
+    
+    let aspect_ratio = surface_config.width as f32 / surface_config.height as f32;
+    let projection = glam::Mat4::perspective_rh(45.0_f32.to_radians(), aspect_ratio, 0.1, 100.0);
+    
+    let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
+        view: view.to_cols_array_2d(),
+        projection: projection.to_cols_array_2d(),
+    };
+    queue.write_buffer(&camera3d_buffer, 0, bytemuck::bytes_of(&camera3d_uniform));
+    
+    let cached_camera3d_view = Some(view);
+    let cached_camera3d_proj = Some(projection);
+    
+    // Quad vertex buffer
+    let vertices: &[Vertex] = &[
+        Vertex {
+            position: [-0.5, -0.5],
+            uv: [0.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, -0.5],
+            uv: [1.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, 0.5],
+            uv: [1.0, 0.0],
+        },
+        Vertex {
+            position: [-0.5, -0.5],
+            uv: [0.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, 0.5],
+            uv: [1.0, 0.0],
+        },
+        Vertex {
+            position: [-0.5, 0.5],
+            uv: [0.0, 0.0],
+        },
+    ];
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(vertices),
+        usage: BufferUsages::VERTEX,
+    });
+    
+    // Initialize 2D camera data
+    let virtual_width = VIRTUAL_WIDTH;
+    let virtual_height = VIRTUAL_HEIGHT;
+    let window_width = surface_config.width as f32;
+    let window_height = surface_config.height as f32;
+    
+    let virtual_aspect = virtual_width / virtual_height;
+    let window_aspect = window_width / window_height;
+    
+    let (scale_x, scale_y) = if window_aspect > virtual_aspect {
+        (virtual_aspect / window_aspect, 1.0)
+    } else {
+        (1.0, window_aspect / virtual_aspect)
+    };
+    
+    let camera_data = [
+        virtual_width,
+        virtual_height,
+        scale_x * 2.0 / virtual_width,
+        scale_y * 2.0 / virtual_height,
+    ];
+    queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
+    
+    // Create renderers
+    let mut renderer_3d =
+        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
+    let renderer_prim =
+        PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
+    let renderer_2d = Renderer2D::new();
+    let renderer_ui = RendererUI::new();
+    
+    // Initialize material system with default material
+    let material_manager = initialize_material_system(&mut renderer_3d, &queue);
+    
+    // Create depth texture
+    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Depth Texture"),
+        size: wgpu::Extent3d {
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    
+    let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    
+    Graphics {
+        window: window.clone(),
+        instance,
+        surface,
+        surface_config,
+        adapter,
+        device,
+        queue,
+        texture_manager: TextureManager::new(),
+        mesh_manager: MeshManager::new(),
+        material_manager,
+        camera_buffer,
+        camera_bind_group_layout,
+        camera_bind_group,
+        vertex_buffer,
+        camera3d: initial_camera_3d,
+        camera3d_buffer,
+        camera3d_bind_group_layout,
+        camera3d_bind_group,
+        renderer_prim,
+        renderer_2d,
+        renderer_ui,
+        renderer_3d,
+        depth_texture,
+        depth_view,
+        cached_operations: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+            store: wgpu::StoreOp::Store,
+        },
+        cached_camera3d_view,
+        cached_camera3d_proj,
+    }
 }
 
 impl Graphics {

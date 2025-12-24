@@ -454,6 +454,9 @@ impl Type {
             (Type::DynNode, Type::Node(_)) => true, // DynNode can be cast to any Node type
             (Type::Node(_), Type::DynNode) => true, // Any Node type can become DynNode
 
+            // T -> Option<T> conversions (wrapping in Some)
+            (from, Type::Option(inner)) if *from == *inner.as_ref() => true,
+
             _ => false,
         }
     }
@@ -468,21 +471,22 @@ impl Type {
             Number(Signed(_)) | Number(Unsigned(_)) | Number(Float(_)) | Bool => true,
             // Uuid is also Copy
             Uuid => true,
-            // NodeType enum is Copy (it's #[derive(Copy)])
+            // Uuid
             Node(_) => true,
-            // DynNode is also Copy (it's a Uuid)
+            // Uuid
             DynNode => true,
-            // NodeType enum type itself is Copy
-            NodeType => true,
-            // Most engine structs implement Copy, but not all
+            // EngineStructs implement Copy
             EngineStruct(es) => match es {
                 // These implement Copy
                 ES::Vector2 | ES::Vector3 
                 | ES::Transform2D | ES::Transform3D
                 | ES::Color | ES::Rect 
                 | ES::Quaternion | ES::ShapeType2D => true,
+                
+                ES::Texture => true,
                 // ImageTexture contains GPU resources (TextureView, BindGroup) and does NOT implement Copy or Clone
                 ES::ImageTexture => false,
+                // Texture is a Uuid handle, which implements Copy
             },
             _ => false,
         }

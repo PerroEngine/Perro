@@ -10,6 +10,10 @@ pub struct EngineRegistry {
     // small maps to store inheritance chains
     pub node_bases: HashMap<NodeType, NodeType>,
     pub struct_bases: HashMap<EngineStruct, EngineStruct>,
+    
+    // Field name mapping: (NodeType, script_field_name) -> rust_field_name
+    // Allows scripts to use "texture" while Rust uses "texture_id"
+    pub field_name_map: HashMap<(NodeType, String), String>,
 }
 
 /// Global engine registry - initialized once, used during transpilation
@@ -22,6 +26,7 @@ impl EngineRegistry {
             struct_defs: HashMap::new(),
             node_bases: HashMap::new(),
             struct_bases: HashMap::new(),
+            field_name_map: HashMap::new(),
         };
 
         //--------------------------------
@@ -104,6 +109,14 @@ impl EngineRegistry {
             ],
         );
 
+        // Texture - represents a Uuid handle to a texture in TextureManager
+        // No fields - it's just a Type::Uuid handle (like nodes)
+        reg.register_struct(
+            EngineStruct::Texture,
+            None,
+            vec![], // No fields - it's a Uuid handle
+        );
+
         //--------------------------------
         // Nodes
         //--------------------------------
@@ -140,10 +153,14 @@ impl EngineRegistry {
             NodeType::Sprite2D,
             Some(NodeType::Node2D),
             vec![
-                ("texture_path", Type::Option(Box::new(Type::CowStr))),
+                ("texture_id", Type::Option(Box::new(Type::Uuid))), // Script-accessible texture handle
+                ("texture_path", Type::Option(Box::new(Type::CowStr))), // Internal: for scene serialization
                 ("region", Type::Option(Box::new(Type::Container(ContainerKind::FixedArray(4), vec![Type::Number(NumberKind::Float(32))])))),
             ],
         );
+        
+        // Add field name mapping: scripts see "texture", Rust uses "texture_id"
+        reg.field_name_map.insert((NodeType::Sprite2D, "texture".to_string()), "texture_id".to_string());
 
         // Area2D - inherits from Node2D
         reg.register_node(
@@ -340,8 +357,16 @@ impl EngineRegistry {
         let mut current = Some(node_kind.clone());
         while let Some(kind) = current {
             if let Some(def) = self.node_defs.get(&kind) {
+                // First, try the field name as-is (in case it's already the Rust field name)
                 if let Some(f) = def.fields.iter().find(|f| f.name == field) {
                     return Some(f.typ.clone());
+                }
+                // If not found, check if there's a field name mapping for this node type
+                // This handles script field names like "texture" -> "texture_id"
+                if let Some(mapped_field) = self.field_name_map.get(&(kind, field.to_string())) {
+                    if let Some(f) = def.fields.iter().find(|f| &f.name == mapped_field) {
+                        return Some(f.typ.clone());
+                    }
                 }
             }
             current = self.node_bases.get(&kind).cloned();
@@ -418,5 +443,15 @@ impl EngineRegistry {
     /// Returns Some(Type) if valid, None otherwise
     pub fn check_field_path(&self, node_type: &NodeType, path: &[String]) -> Option<Type> {
         self.resolve_chain_from_node(node_type, path)
+    }
+
+    /// Resolve a script field name to the actual Rust field name
+    /// Returns the mapped field name if a mapping exists, otherwise returns the original name
+    /// Example: "texture" -> "texture_id" for Sprite2D
+    pub fn resolve_field_name(&self, node_type: &NodeType, script_field: &str) -> String {
+        self.field_name_map
+            .get(&(*node_type, script_field.to_string()))
+            .cloned()
+            .unwrap_or_else(|| script_field.to_string())
     }
 }

@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::asset_io::set_key;
 use crate::asset_io::{ProjectRoot, set_project_root};
-use crate::graphics::Graphics;
+use crate::graphics::{Graphics, create_graphics_sync};
 use crate::manifest::Project;
 use crate::rendering::app::App;
 use crate::scene::{Scene, SceneData};
@@ -19,6 +19,7 @@ use once_cell::sync::Lazy;
 use phf::Map;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use winit::event_loop::EventLoop;
+use winit::window::Window;
 
 /// Static assets that are bundled with the binary
 pub struct StaticAssets {
@@ -259,13 +260,44 @@ pub fn run_game(data: RuntimeData) {
     // 5. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 6. Build runtime scene using StaticScriptProvider
+    // 6. Create window and Graphics before building scene
+    #[cfg(not(target_arch = "wasm32"))]
+    let default_size = winit::dpi::PhysicalSize::new(1280, 720); // Default size, monitor info not available before window creation
+
+    let title = project.name().to_string();
+    let mut window_attrs = Window::default_attributes()
+        .with_title(title)
+        .with_visible(false);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        window_attrs = window_attrs.with_inner_size(default_size);
+        if let Some(icon_path) = project.icon() {
+            // Load icon if needed (simplified for now)
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::WindowAttributesExtWebSys;
+        window_attrs = window_attrs.with_append(true);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    let window = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+    #[cfg(not(target_arch = "wasm32"))]
+    let window = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+
+    // Create Graphics synchronously
+    let mut graphics = create_graphics_sync(window.clone());
+
+    // 7. Build runtime scene using StaticScriptProvider (now with Graphics)
     let provider = StaticScriptProvider::new(&data);
 
     // Wrap project in Rc<RefCell>
     let project_rc = Rc::new(RefCell::new(project));
 
-    let game_scene = match Scene::from_project_with_provider(project_rc.clone(), provider) {
+    let game_scene = match Scene::from_project_with_provider(project_rc.clone(), provider, &mut graphics) {
         Ok(scene) => scene,
         Err(e) => {
             log_error(&format!("Failed to build game scene: {e}"));
@@ -273,13 +305,14 @@ pub fn run_game(data: RuntimeData) {
         }
     };
 
-    // Build App
-    let app = App::new(
+    // Build App with pre-created Graphics
+    let app = App::new_with_graphics(
         &event_loop,
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
         project_rc.borrow().target_fps(),
+        Some(graphics),
     );
 
     run_app(event_loop, app);
@@ -530,8 +563,39 @@ pub fn run_dev() {
     // 7. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 8. Build runtime scene with DllScriptProvider (uses the impl-specific from_project)
-    let game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone()) {
+    // 8. Create window and Graphics before building scene
+    #[cfg(not(target_arch = "wasm32"))]
+    let default_size = winit::dpi::PhysicalSize::new(1280, 720); // Default size, monitor info not available before window creation
+
+    let title = project_rc.borrow().name().to_string();
+    let mut window_attrs = Window::default_attributes()
+        .with_title(title)
+        .with_visible(false);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        window_attrs = window_attrs.with_inner_size(default_size);
+        if let Some(icon_path) = project_rc.borrow().icon() {
+            // Load icon if needed (simplified for now)
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::WindowAttributesExtWebSys;
+        window_attrs = window_attrs.with_append(true);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    let window = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+    #[cfg(not(target_arch = "wasm32"))]
+    let window = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+
+    // Create Graphics synchronously
+    let mut graphics = create_graphics_sync(window.clone());
+
+    // 9. Build runtime scene with DllScriptProvider (now with Graphics)
+    let game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {
         Ok(scene) => scene,
         Err(e) => {
             eprintln!("❌ Failed to build game scene: {}", e);
@@ -545,13 +609,14 @@ pub fn run_dev() {
         }
     };
 
-    // 9. Run app
-    let app = App::new(
+    // 10. Run app with pre-created Graphics
+    let app = App::new_with_graphics(
         &event_loop,
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
         project_rc.borrow().target_fps(),
+        Some(graphics),
     );
 
     let mut app = app;

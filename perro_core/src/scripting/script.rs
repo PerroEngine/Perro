@@ -142,7 +142,7 @@ pub trait SceneAccess {
         self.get_scene_node_mut(id)
     }
     
-    fn add_node_to_scene(&mut self, node: SceneNode) -> anyhow::Result<()>;
+    fn add_node_to_scene(&mut self, node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<()>;
     fn get_script(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>>;
     
     /// Get mutable reference to a script (for direct update calls)

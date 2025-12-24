@@ -175,6 +175,15 @@ impl Script {
             return "self.id".to_string();
         }
         
+        // Direct handling for common conversions to avoid type inference issues with temp variables
+        match (from, to) {
+            // T -> Option<T> conversions (wrapping in Some)
+            (from_ty, Type::Option(inner)) if from_ty == inner.as_ref() => {
+                return format!("Some({})", expr);
+            }
+            _ => {}
+        }
+        
         // Special case: if expr is "self", use SelfAccess instead of Ident
         // This ensures self is always treated as self.id, never stored as a variable
         let inner_expr = if expr == "self" {
@@ -477,8 +486,10 @@ impl Script {
         match base_type {
             // --- For node types ---
             Type::Node(node_type) => {
-                // Look up the field type in the ENGINE_REGISTRY
-                ENGINE_REGISTRY.get_field_type_node(node_type, member)
+                // Resolve script field name to Rust field name (e.g., "texture" -> "texture_id")
+                let rust_field = ENGINE_REGISTRY.resolve_field_name(node_type, member);
+                // Look up the field type in the ENGINE_REGISTRY using the resolved field name
+                ENGINE_REGISTRY.get_field_type_node(node_type, &rust_field)
             }
 
             // --- For Uuid (dynamic node) ---
@@ -486,14 +497,14 @@ impl Script {
             // if the field exists on any node type and return a common type if all match
             Type::Uuid => {
                 // Find all node types that have this field
+                // Note: find_nodes_with_field uses get_field_type_node which handles field name mapping
                 let nodes_with_field = ENGINE_REGISTRY.find_nodes_with_field(member);
                 if nodes_with_field.is_empty() {
                     return None;
                 }
                 
                 // Get the field type from the first node type (they should all be the same)
-                // If they differ, we might need more sophisticated handling, but for now
-                // this should work for common fields like "name" which is CowStr on all nodes
+                // get_field_type_node handles field name mapping (e.g., "texture" -> "texture_id")
                 if let Some(first_node) = nodes_with_field.first() {
                     ENGINE_REGISTRY.get_field_type_node(first_node, member)
                 } else {
@@ -1996,14 +2007,20 @@ impl Stmt {
 
                 // Check if the expression contains a temporary variable extraction for mutable API calls
                 // Pattern: "let __parent_id = api.get_parent(...); api.read_node(...)" or "api.get_type(...)" etc.
-                let (temp_stmt, final_expr_str) = if expr_str.contains("let __") && expr_str.contains("; api.") {
+                let (temp_stmt, final_expr_str) = if expr_str.contains("let __") && (expr_str.contains("; api.") || expr_str.contains(";api.")) {
                     // Extract the temporary variable declaration and the actual expression
                     // Look for any API call after the temp declaration
-                    let semi_pos = expr_str.find("; api.");
+                    let semi_pos = expr_str.find("; api.")
+                        .or_else(|| expr_str.find(";api."));
                     if let Some(pos) = semi_pos {
-                        let temp_decl = &expr_str[..pos + 1];
-                        let actual_expr = &expr_str[pos + 2..]; // Skip "; " 
-                        (Some(temp_decl.to_string()), actual_expr.to_string())
+                        let temp_decl = expr_str[..pos + 1].trim_start().to_string();
+                        // Skip "; " or ";"
+                        let actual_expr = if expr_str.as_bytes().get(pos + 1) == Some(&b' ') {
+                            &expr_str[pos + 2..]
+                        } else {
+                            &expr_str[pos + 1..]
+                        };
+                        (Some(temp_decl), actual_expr.to_string())
                     } else {
                         (None, expr_str.clone())
                     }
@@ -2030,14 +2047,14 @@ impl Stmt {
                 let type_for_renaming = var.typ.as_ref().or(inferred_type.as_ref());
                 let renamed_name = rename_variable(&var.name, type_for_renaming);
                 
-                // If we extracted a temporary statement, prepend it
+                // If we extracted a temporary statement, prepend it on the same line
                 if let Some(ref temp_stmt) = temp_stmt {
                     if expr_str.is_empty() {
-                        format!("        {}\n        let mut {}{};\n", temp_stmt, renamed_name, type_annotation)
+                        format!("        {} let mut {}{};\n", temp_stmt.trim_end(), renamed_name, type_annotation)
                     } else {
                         format!(
-                            "        {}\n        let mut {}{} = {};\n",
-                            temp_stmt, renamed_name, type_annotation, final_expr_str
+                            "        {} let mut {}{} = {};\n",
+                            temp_stmt.trim_end(), renamed_name, type_annotation, final_expr_str
                         )
                     }
                 } else if expr_str.is_empty() {
@@ -2129,7 +2146,11 @@ impl Stmt {
                                         has_nested = true;
                                         
                                         // Generate the inner call string - this should generate "api.get_parent(...)"
-                                        let inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
+                                        let mut inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
+                                        
+                                        // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                        // The "api" identifier should NEVER be renamed - it's always the API parameter
+                                        inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                         
                                         // Generate temp variable name based on inner API
                                         let temp_var = match inner_api {
@@ -2145,16 +2166,13 @@ impl Stmt {
                                             } else {
                                                 ""
                                             };
-                                            temp_decls.push((temp_var, format!("        let {}{} = {};", temp_var, type_annotation, inner_call_str)));
+                                            temp_decls.push((temp_var, format!("let {}{} = {};", temp_var, type_annotation, inner_call_str)));
                                         }
                                         
                                         // Replace the nested call with a temp variable identifier
-                                        // If the original was a Cast, keep the cast but use the temp var
-                                        if let Expr::Cast(_, cast_type) = arg {
-                                            new_args.push(Expr::Cast(Box::new(Expr::Ident(temp_var.to_string())), cast_type.clone()));
-                                        } else {
-                                            new_args.push(Expr::Ident(temp_var.to_string()));
-                                        }
+                                        // If the original was a Cast, we don't need the cast anymore since we're extracting to a temp var
+                                        // The temp var is already a Uuid, so we can use it directly
+                                        new_args.push(Expr::Ident(temp_var.to_string()));
                                     } else {
                                         new_args.push(arg.clone());
                                     }
@@ -2169,7 +2187,8 @@ impl Stmt {
                         if has_nested && !temp_decls.is_empty() {
                             // Create a new expression with temp variables replaced
                             let new_expr = Expr::ApiCall(outer_api.clone(), new_args);
-                            let all_temp_decls = temp_decls.iter().map(|(_, decl)| decl.clone()).collect::<Vec<_>>().join("\n");
+                            // Join temp declarations with spaces to put them on the same line
+                            let all_temp_decls = temp_decls.iter().map(|(_, decl)| decl.clone()).collect::<Vec<_>>().join(" ");
                             (Some(all_temp_decls), Some(new_expr))
                         } else {
                             (None, None)
@@ -2193,7 +2212,11 @@ impl Stmt {
                                         has_nested = true;
                                         
                                         // Generate the inner call string - this should generate "api.get_parent(...)"
-                                        let inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
+                                        let mut inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
+                                        
+                                        // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                        // The "api" identifier should NEVER be renamed - it's always the API parameter
+                                        inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                         
                                         // Generate temp variable name based on inner API
                                         let temp_var = match inner_api {
@@ -2209,7 +2232,7 @@ impl Stmt {
                                             } else {
                                                 ""
                                             };
-                                            temp_decls.push((temp_var, format!("        let {}{} = {};", temp_var, type_annotation, inner_call_str)));
+                                            temp_decls.push((temp_var, format!("let {}{} = {};", temp_var, type_annotation, inner_call_str)));
                                         }
                                         
                                         // Replace the nested call with a temp variable identifier
@@ -2228,7 +2251,8 @@ impl Stmt {
                         if has_nested && !temp_decls.is_empty() {
                             // Create a new expression with temp variables replaced
                             let new_expr = Expr::Call(target.clone(), new_call_args);
-                            let all_temp_decls = temp_decls.iter().map(|(_, decl)| decl.clone()).collect::<Vec<_>>().join("\n");
+                            // Join temp declarations with spaces to put them on the same line
+                            let all_temp_decls = temp_decls.iter().map(|(_, decl)| decl.clone()).collect::<Vec<_>>().join(" ");
                             (Some(all_temp_decls), Some(new_expr))
                         } else {
                             (None, None)
@@ -2254,7 +2278,8 @@ impl Stmt {
                         let semi_pos = expr_str.find("; api.")
                             .or_else(|| expr_str.find(";api."));
                         if let Some(pos) = semi_pos {
-                            let temp_decl = format!("        {}", &expr_str[..pos + 1]);
+                            // Extract temp declaration without leading spaces
+                            let temp_decl = expr_str[..pos + 1].trim_start().to_string();
                             // Skip "; " or ";"
                             let actual_expr = if expr_str.as_bytes().get(pos + 1) == Some(&b' ') {
                                 &expr_str[pos + 2..]
@@ -2305,8 +2330,9 @@ impl Stmt {
                                     "__child_id"
                                 };
                                 
-                                // Fix the inner call - replace t_id_api with api if needed
-                                let fixed_inner_call = inner_call.replace("t_id_api.", "api.");
+                                // Fix the inner call - replace any incorrect renaming of "api" back to "api"
+                                // The "api" identifier should NEVER be renamed - it's always the API parameter
+                                let fixed_inner_call = inner_call.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                 
                                 // Check if we're trying to assign temp_var to itself (avoid "__parent_id = __parent_id")
                                 if fixed_inner_call == temp_var {
@@ -2321,7 +2347,7 @@ impl Stmt {
                                     } else {
                                         ""
                                     };
-                                    let temp_decl = format!("        let {}{} = {};", temp_var, type_annotation, fixed_inner_call);
+                                    let temp_decl = format!("let {}{} = {};", temp_var, type_annotation, fixed_inner_call);
                                     let final_expr = expr_str.replace(inner_call, temp_var);
                                     (Some(temp_decl), final_expr)
                                 }
@@ -2375,9 +2401,9 @@ impl Stmt {
                     final_expr_str
                 };
 
-                // If we have a temp declaration, prepend it before the assignment
+                // If we have a temp declaration, prepend it before the assignment on the same line
                 if let Some(temp_decl) = temp_decl_opt {
-                    format!("{}\n        {} = {};\n", temp_decl, target, final_expr)
+                    format!("        {} {} = {};\n", temp_decl, target, final_expr)
                 } else {
                     format!("        {} = {};\n", target, final_expr)
                 }
@@ -2469,13 +2495,57 @@ impl Stmt {
                             let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                             let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
                             
-                            let mut rhs_code =
+                            // Check if RHS is an ApiCall that returns Uuid/Option<Uuid> - if so, extract to temp variable
+                            let mut temp_decl_opt: Option<String> = None;
+                            let mut temp_var_opt: Option<String> = None;
+                            
+                            if let Expr::ApiCall(api_module, api_args) = &rhs_expr.expr {
+                                if let Some(return_type) = api_module.return_type() {
+                                    // Check if it returns Uuid or Option<Uuid> - these need extraction before closure
+                                    let return_type_ref = &return_type;
+                                    if matches!(return_type_ref, Type::Uuid) || 
+                                       matches!(return_type_ref, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
+                                        // Generate the API call code
+                                        let mut api_call_str = api_module.to_rust(api_args, script, needs_self, current_func);
+                                        
+                                        // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                        api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
+                                        
+                                        // Generate temp variable name based on API type
+                                        let temp_var = match api_module {
+                                            ApiModule::Texture(TextureApi::Load) => "__texture_id".to_string(),
+                                            ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id".to_string(),
+                                            ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id".to_string(),
+                                            _ => "__temp_id".to_string(),
+                                        };
+                                        
+                                        // Determine the type annotation based on return type
+                                        let type_annotation = match return_type_ref {
+                                            Type::Uuid => ": Uuid",
+                                            Type::Option(_) => ": Option<Uuid>",
+                                            _ => "",
+                                        };
+                                        
+                                        temp_decl_opt = Some(format!("let {}{} = {};", temp_var, type_annotation, api_call_str));
+                                        temp_var_opt = Some(temp_var);
+                                    }
+                                }
+                            }
+                            
+                            // If we extracted to a temp variable, use that directly and skip to_rust on original expr
+                            let mut rhs_code = if let Some(temp_var) = &temp_var_opt {
+                                // Use temp variable directly - conversion will happen below
+                                temp_var.clone()
+                            } else {
+                                // No temp variable, generate code normally
                                 rhs_expr
                                     .expr
-                                    .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
+                                    .to_rust(needs_self, script, lhs_type.as_ref(), current_func)
+                            };
                             
                             let is_literal = matches!(rhs_expr.expr, Expr::Literal(_));
                             
+                            // Apply implicit conversion if needed (especially important for temp variables)
                             let final_rhs = if let Some(lhs_ty) = &lhs_type {
                                 if let Some(rhs_ty) = &rhs_type {
                                     if !is_literal && rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
@@ -2508,43 +2578,92 @@ impl Stmt {
                                 };
                                 
                                 if let Some(setter) = setter_method {
+                                    let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                     format!(
-                                        "        api.mutate_scene_node({}, |n| {{ n.{}({}); }});\n",
-                                        node_id, setter, final_rhs
+                                        "{}        api.mutate_scene_node({}, |n| {{ n.{}({}); }});\n",
+                                        temp_decl, node_id, setter, final_rhs
                                     )
                                 } else {
                                     // Field doesn't have a setter, fall back to match statement approach
-                                    let mut match_arms = Vec::new();
-                                    for node_type_enum in &compatible_node_types {
-                                        let node_type_name = format!("{:?}", node_type_enum);
-                                        match_arms.push(format!(
-                                            "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }}),",
-                                            node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, final_rhs
-                                        ));
+                                    // If only one compatible node type, skip match and do direct mutation
+                                    if compatible_node_types.len() == 1 {
+                                        let node_type_name = format!("{:?}", compatible_node_types[0]);
+                                        // Resolve field names in path (e.g., "texture" -> "texture_id")
+                                        let resolved_path: Vec<String> = field_path_vec.iter()
+                                            .map(|f| ENGINE_REGISTRY.resolve_field_name(&compatible_node_types[0], f))
+                                            .collect();
+                                        let resolved_field_path = resolved_path.join(".");
+                                        let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                        format!(
+                                            "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                            temp_decl, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                        )
+                                    } else {
+                                        let mut match_arms = Vec::new();
+                                        for node_type_enum in &compatible_node_types {
+                                            let node_type_name = format!("{:?}", node_type_enum);
+                                            // Resolve field names in path for this node type
+                                            let resolved_path: Vec<String> = field_path_vec.iter()
+                                                .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type_enum, f))
+                                                .collect();
+                                            let resolved_field_path = resolved_path.join(".");
+                                            match_arms.push(format!(
+                                                "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }}),",
+                                                node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                            ));
+                                        }
+                                        
+                                        let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                        format!(
+                                            "{}        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
+                                            temp_decl, node_id,
+                                            match_arms.join("\n"),
+                                            node_id,
+                                            node_id,
+                                            field_path
+                                        )
                                     }
-                                    
-                                    format!(
-                                        "        match api.get_type({}) {{\n{}\n            _ => panic!(\"type doesn't have field\"),\n        }}\n",
-                                        node_id,
-                                        match_arms.join("\n")
-                                    )
                                 }
                             } else {
                                 // Generate match arms for all compatible node types
-                                let mut match_arms = Vec::new();
-                                for node_type_enum in &compatible_node_types {
-                                    let node_type_name = format!("{:?}", node_type_enum);
-                                    match_arms.push(format!(
-                                        "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }}),",
-                                        node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, final_rhs
-                                    ));
+                                // If only one compatible node type, skip match and do direct mutation
+                                if compatible_node_types.len() == 1 {
+                                    let node_type_name = format!("{:?}", compatible_node_types[0]);
+                                    // Resolve field names in path
+                                    let resolved_path: Vec<String> = field_path_vec.iter()
+                                        .map(|f| ENGINE_REGISTRY.resolve_field_name(&compatible_node_types[0], f))
+                                        .collect();
+                                    let resolved_field_path = resolved_path.join(".");
+                                    let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                    format!(
+                                        "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                        temp_decl, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                    )
+                                } else {
+                                    let mut match_arms = Vec::new();
+                                    for node_type_enum in &compatible_node_types {
+                                        let node_type_name = format!("{:?}", node_type_enum);
+                                        // Resolve field names in path for this node type
+                                        let resolved_path: Vec<String> = field_path_vec.iter()
+                                            .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type_enum, f))
+                                            .collect();
+                                        let resolved_field_path = resolved_path.join(".");
+                                        match_arms.push(format!(
+                                            "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }}),",
+                                            node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                        ));
+                                    }
+                                    
+                                    let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                    format!(
+                                        "{}        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
+                                        temp_decl, node_id,
+                                        match_arms.join("\n"),
+                                        node_id,
+                                        node_id,
+                                        field_path
+                                    )
                                 }
-                                
-                                format!(
-                                    "        match api.get_type({}) {{\n{}\n            _ => panic!(\"type doesn't have field\"),\n        }}\n",
-                                    node_id,
-                                    match_arms.join("\n")
-                                )
                             }
                         }
                     } else {
@@ -2563,8 +2682,31 @@ impl Stmt {
                         
                         let final_rhs = if let Some(lhs_ty) = &lhs_type {
                             if let Some(rhs_ty) = &rhs_type {
+                                // For literals, if they were generated with the correct expected type,
+                                // they should already be correct. Only apply cast if types don't match
+                                // and it's not a literal (literals handle their own type conversion)
                                 if !is_literal && rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
                                     script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                                } else if is_literal {
+                                    // For literals, check if the generated code needs conversion
+                                    // If lhs is Option<CowStr> but we got String::from, convert it
+                                    if matches!(lhs_ty, Type::Option(inner) if matches!(inner.as_ref(), Type::CowStr))
+                                        && rhs_code.contains("String::from(") {
+                                        // Extract the literal from String::from("...") and convert to Some(Cow::Borrowed(...))
+                                        let trimmed = rhs_code.trim();
+                                        if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                                            let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
+                                            if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                                                format!("Some(Cow::Borrowed({}))", inner_section)
+                                            } else {
+                                                script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                                            }
+                                        } else {
+                                            script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
+                                        }
+                                    } else {
+                                        rhs_code
+                                    }
                                 } else {
                                     rhs_code
                                 }
@@ -2648,19 +2790,31 @@ impl Stmt {
                                     .to_rust(needs_self, script, lhs_type.as_ref(), current_func);
                             
                             if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
-                                let mut match_arms = Vec::new();
-                                for node_type_enum in &compatible_node_types {
-                                    let node_type_name = format!("{:?}", node_type_enum);
-                                    match_arms.push(format!(
-                                        "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }}),",
-                                        node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, rhs_code
-                                    ));
+                                // If only one compatible node type, skip match and do direct mutation
+                                if compatible_node_types.len() == 1 {
+                                    let node_type_name = format!("{:?}", compatible_node_types[0]);
+                                    return format!(
+                                        "        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
+                                        node_id, closure_var, node_type_name, closure_var, field_path, rhs_code
+                                    );
+                                } else {
+                                    let mut match_arms = Vec::new();
+                                    for node_type_enum in &compatible_node_types {
+                                        let node_type_name = format!("{:?}", node_type_enum);
+                                        match_arms.push(format!(
+                                            "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }}),",
+                                            node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, rhs_code
+                                        ));
+                                    }
+                                    return format!(
+                                        "        match api.get_node_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_node_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
+                                        node_id,
+                                        match_arms.join("\n"),
+                                        node_id,
+                                        node_id,
+                                        field_path
+                                    );
                                 }
-                                return format!(
-                                    "        match api.get_node_type({}) {{\n{}\n            _ => panic!(\"type doesn't have field\"),\n        }}\n",
-                                    node_id,
-                                    match_arms.join("\n")
-                                );
                             }
                             
                             let final_rhs = if let Some(lhs_ty) = &lhs_type {
@@ -2678,20 +2832,32 @@ impl Stmt {
                                 rhs_code
                             };
                             
-                            let mut match_arms = Vec::new();
-                            for node_type_enum in &compatible_node_types {
-                                let node_type_name = format!("{:?}", node_type_enum);
-                                match_arms.push(format!(
-                                    "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }}),",
-                                    node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, op.to_rust_assign(), final_rhs
-                                ));
+                            // If only one compatible node type, skip match and do direct mutation
+                            if compatible_node_types.len() == 1 {
+                                let node_type_name = format!("{:?}", compatible_node_types[0]);
+                                format!(
+                                    "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
+                                    node_id, closure_var, node_type_name, closure_var, field_path, op.to_rust_assign(), final_rhs
+                                )
+                            } else {
+                                let mut match_arms = Vec::new();
+                                for node_type_enum in &compatible_node_types {
+                                    let node_type_name = format!("{:?}", node_type_enum);
+                                    match_arms.push(format!(
+                                        "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }}),",
+                                        node_type_name, node_id, closure_var, node_type_name, closure_var, field_path, op.to_rust_assign(), final_rhs
+                                    ));
+                                }
+                                
+                                format!(
+                                    "        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
+                                    node_id,
+                                    match_arms.join("\n"),
+                                    node_id,
+                                    node_id,
+                                    field_path
+                                )
                             }
-                            
-                            format!(
-                                "        match api.get_type({}) {{\n{}\n            _ => panic!(\"type doesn't have field\"),\n        }}\n",
-                                node_id,
-                                match_arms.join("\n")
-                            )
                         }
                     } else {
                         // This is a node member assignment - use mutate_node
@@ -3405,6 +3571,97 @@ impl Stmt {
             (CowStr, StrRef) => {
                 format!("{}.as_ref()", expr)
             }
+            // String/StrRef/CowStr -> Option<CowStr> conversions
+            (String, Option(inner)) if matches!(inner.as_ref(), CowStr) => {
+                // Check if expr is a string literal (direct or wrapped in String::from)
+                let trimmed = expr.trim();
+                if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                    // Direct string literal: "..." -> Some(Cow::Borrowed("..."))
+                    format!("Some(Cow::Borrowed({}))", expr)
+                } else if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                    // String::from("...") -> extract literal and use Cow::Borrowed
+                    let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
+                    if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                        format!("Some(Cow::Borrowed({}))", inner_section)
+                    } else {
+                        format!("Some({}.into())", expr)
+                    }
+                } else {
+                    // Variable or other expression: use .into()
+                    format!("Some({}.into())", expr)
+                }
+            }
+            (StrRef, Option(inner)) if matches!(inner.as_ref(), CowStr) => {
+                // StrRef is already &'static str, so for literals use Cow::Borrowed
+                let trimmed = expr.trim();
+                if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                    format!("Some(Cow::Borrowed({}))", expr)
+                } else {
+                    format!("Some({}.into())", expr)
+                }
+            }
+            (CowStr, Option(inner)) if matches!(inner.as_ref(), CowStr) => {
+                format!("Some({})", expr)
+            }
+            // Option unwrapping: Option<T> -> T (when assigning to non-Option field)
+            (Option(inner_from), to) if inner_from.as_ref() == to => {
+                format!("{}.unwrap_or_default()", expr)
+            }
+            // Wrapping: T -> Option<T> (when assigning T to Option<T> field)
+            (from, Option(inner_to)) if from == inner_to.as_ref() => {
+                format!("Some({})", expr)
+            }
+            // Option conversion: Option<From> -> Option<To>
+            (Option(inner_from), Option(inner_to)) => {
+                // Convert the inner type first
+                let inner_expr = format!("{}", expr);
+                let inner_from_ty = inner_from.as_ref();
+                let inner_to_ty = inner_to.as_ref();
+                
+                // Handle the inner conversion
+                let converted_inner = match (inner_from_ty, inner_to_ty) {
+                    (String, CowStr) => {
+                        // Check if expr is a string literal
+                        let trimmed = inner_expr.trim();
+                        if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                            format!("Cow::Borrowed({})", inner_expr)
+                        } else if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                            let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
+                            if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                                format!("Cow::Borrowed({})", inner_section)
+                            } else {
+                                format!("{}.into()", inner_expr)
+                            }
+                        } else {
+                            format!("{}.into()", inner_expr)
+                        }
+                    }
+                    (StrRef, CowStr) => {
+                        let trimmed = inner_expr.trim();
+                        if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                            format!("Cow::Borrowed({})", inner_expr)
+                        } else {
+                            format!("{}.into()", inner_expr)
+                        }
+                    }
+                    (CowStr, CowStr) => inner_expr,
+                    (CowStr, String) => format!("{}.into_owned()", inner_expr),
+                    (CowStr, StrRef) => format!("{}.as_ref()", inner_expr),
+                    _ if inner_from_ty == inner_to_ty => inner_expr,
+                    _ => {
+                        // For other conversions, recursively call generate_implicit_cast
+                        // Note: This is a standalone function, so we call it directly
+                        Self::generate_implicit_cast(&inner_expr, inner_from_ty, inner_to_ty)
+                    }
+                };
+                
+                // Wrap in Some() if not already wrapped
+                if converted_inner.starts_with("Some(") {
+                    converted_inner
+                } else {
+                    format!("Some({})", converted_inner)
+                }
+            }
             // Node types -> Uuid (nodes are Uuid IDs)
             (Node(_), Uuid) => {
                 expr.to_string() // Already a Uuid, no conversion needed
@@ -3917,7 +4174,23 @@ impl Expr {
                         // Split the field path to check the final result type
                         let fields: Vec<&str> = field_path.split('.').collect();
                         
-                        // Walk through the field chain to get the final type
+                        // Resolve field names in path (e.g., "texture" -> "texture_id")
+                        let resolved_fields: Vec<String> = fields.iter()
+                            .enumerate()
+                            .map(|(i, f)| {
+                                // For the first field, resolve against the node type
+                                // For subsequent fields, we'd need to resolve against the intermediate type
+                                // For now, just resolve the first field against the node type
+                                if i == 0 {
+                                    ENGINE_REGISTRY.resolve_field_name(&node_type_enum, f)
+                                } else {
+                                    f.to_string() // TODO: Resolve nested fields properly
+                                }
+                            })
+                            .collect();
+                        let resolved_field_path = resolved_fields.join(".");
+                        
+                        // Walk through the field chain to get the final type (using original field names for type checking)
                         let mut current_type = node_type_obj.clone();
                         for field_name in &fields {
                             if let Some(next_type) = script.get_member_type(&current_type, field_name) {
@@ -3929,11 +4202,11 @@ impl Expr {
                         let is_option = matches!(current_type, Type::Option(_));
                         
                         let field_access = if is_option {
-                            format!("{}.{}.unwrap()", closure_var, field_path)
+                            format!("{}.{}.unwrap()", closure_var, resolved_field_path)
                         } else if needs_clone {
-                            format!("{}.{}.clone()", closure_var, field_path)
+                            format!("{}.{}.clone()", closure_var, resolved_field_path)
                         } else {
-                            format!("{}.{}", closure_var, field_path)
+                            format!("{}.{}", closure_var, resolved_field_path)
                         };
                         
                         // Extract mutable API calls to temporary variables to avoid borrow checker issues
@@ -4172,7 +4445,11 @@ impl Expr {
                                     let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
                                     
                                     let param_name = "n";
-                                    let field_access_str = field_path_only.join(".");
+                                    // Resolve field names in the path (e.g., "texture" -> "texture_id")
+                                    let resolved_path: Vec<String> = field_path_only.iter()
+                                        .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type, f))
+                                        .collect();
+                                    let field_access_str = resolved_path.join(".");
                                     let field_access = if is_option {
                                         format!("{}.{}.unwrap()", param_name, field_access_str)
                                     } else if needs_clone {
@@ -4237,7 +4514,10 @@ impl Expr {
                                         // Direct ApiCall
                                         if let Some(return_type) = api.return_type() {
                                             if matches!(return_type, Type::Uuid) {
-                                                let inner_call_str = api.to_rust(args, script, needs_self, current_func);
+                                                let mut inner_call_str = api.to_rust(args, script, needs_self, current_func);
+                                                // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                                // The "api" identifier should NEVER be renamed - it's always the API parameter
+                                                inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                                 let temp_var = match api {
                                                     ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id",
                                                     ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id",
@@ -4258,7 +4538,10 @@ impl Expr {
                                                 if matches!(return_type, Type::Uuid) {
                                                     // Create args for the inner API call - the base becomes the first arg
                                                     let inner_api_args = vec![*inner_base.clone()];
-                                                    let inner_call_str = api.to_rust(&inner_api_args, script, needs_self, current_func);
+                                                    let mut inner_call_str = api.to_rust(&inner_api_args, script, needs_self, current_func);
+                                                    // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                                    // The "api" identifier should NEVER be renamed - it's always the API parameter
+                                                    inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                                     let temp_var = match api {
                                                         ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id",
                                                         ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id",
@@ -4890,11 +5173,29 @@ impl Expr {
                     if let Some(first_param_type) = param_types.get(0) {
                         if matches!(first_param_type, Type::Uuid) {
                             if let Some(first_arg) = args.get(0) {
-                                if let Expr::ApiCall(inner_api, inner_args) = first_arg {
+                                // Check if first_arg is a Cast containing an ApiCall, or a direct ApiCall
+                                let inner_api_call = if let Expr::Cast(inner_expr, _) = first_arg {
+                                    if let Expr::ApiCall(inner_api, inner_args) = inner_expr.as_ref() {
+                                        Some((inner_api, inner_args))
+                                    } else {
+                                        None
+                                    }
+                                } else if let Expr::ApiCall(inner_api, inner_args) = first_arg {
+                                    Some((inner_api, inner_args))
+                                } else {
+                                    None
+                                };
+                                
+                                if let Some((inner_api, inner_args)) = inner_api_call {
                                     if let Some(return_type) = inner_api.return_type() {
-                                        if matches!(return_type, Type::Uuid) {
+                                        if matches!(return_type, Type::Uuid | Type::DynNode) || 
+                                           matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
                                             // Both APIs require mutable borrows - extract inner call to temp variable
-                                            let inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
+                                            let mut inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
+                                            
+                                            // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                            // The "api" identifier should NEVER be renamed - it's always the API parameter
+                                            inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                             
                                             // Generate temp variable name based on inner API
                                             let temp_var = match inner_api {
@@ -4903,7 +5204,7 @@ impl Expr {
                                                 _ => "__temp_id".to_string(),
                                             };
                                             
-                                            temp_decl_opt = Some(format!("let {} = {};", temp_var, inner_call_str));
+                                            temp_decl_opt = Some(format!("let {}: Uuid = {};", temp_var, inner_call_str));
                                             temp_var_opt = Some(temp_var);
                                         }
                                     }
@@ -5115,14 +5416,18 @@ impl Expr {
                     }
                 }
 
-                let inner_code = inner.to_rust(needs_self, script, None, current_func);
+                let mut inner_code = inner.to_rust(needs_self, script, None, current_func);
                 
                 // Special case: if inner_code is "self" or contains t_id_self, fix it to self.id
-                let inner_code = if inner_code == "self" || inner_code.starts_with("t_id_self") {
+                inner_code = if inner_code == "self" || inner_code.starts_with("t_id_self") {
                     "self.id".to_string()
                 } else {
                     inner_code
                 };
+                
+                // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                // The "api" identifier should NEVER be renamed - it's always the API parameter
+                inner_code = inner_code.replace("__t_api.", "api.").replace("t_id_api.", "api.");
 
                 match (&inner_type, target_type) {
                     // String → Numeric Type Conversions
@@ -5180,6 +5485,17 @@ impl Expr {
                             format!("{}.into()", inner_code)
                         }
                     }
+                    // Option<String> -> Option<CowStr>
+                    (Some(Type::Option(inner_from)), Type::Option(inner_to)) 
+                        if matches!(inner_from.as_ref(), Type::String) && matches!(inner_to.as_ref(), Type::CowStr) => {
+                        // Optimize Some(String::from("...")) to Some(Cow::Borrowed("..."))
+                        if let Some(captured_str) = inner_code.strip_prefix("Some(String::from(\"")
+                            .and_then(|s| s.strip_suffix("\"))")) {
+                            format!("Some(Cow::Borrowed(\"{}\"))", captured_str)
+                        } else {
+                            format!("{}.map(|s| s.into())", inner_code)
+                        }
+                    }
                     // StrRef -> CowStr (borrowed string to Cow)
                     (Some(Type::StrRef), Type::CowStr) => {
                         format!("{}.into()", inner_code)
@@ -5207,6 +5523,10 @@ impl Expr {
                     // Uuid -> Node type (for type checking, just pass through)
                     (Some(Type::Uuid), Type::Node(_)) => {
                         inner_code // Already a Uuid, no conversion needed
+                    }
+                    // T -> Option<T> conversions (wrapping in Some)
+                    (Some(from), Type::Option(inner)) if from == inner.as_ref() => {
+                        format!("Some({})", inner_code)
                     }
                     // UuidOption (Option<Uuid>) -> Uuid
                     // This is for get_child_by_name() which returns Option<Uuid>
@@ -5803,6 +6123,10 @@ impl Literal {
                     // For Cow<'static, str>, use Cow::Borrowed with string literal
                     Some(Type::CowStr) => {
                         format!("Cow::Borrowed(\"{}\")", s)
+                    }
+                    // For Option<CowStr>, use Some(Cow::Borrowed(...))
+                    Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::CowStr) => {
+                        format!("Some(Cow::Borrowed(\"{}\"))", s)
                     }
                     // For StrRef (&str), use string literal
                     Some(Type::StrRef) => format!("\"{}\"", s),

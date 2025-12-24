@@ -19,10 +19,10 @@ impl PupAPI {
             PupScriptType::NAME => PupScriptType::resolve_method(func),
             PupSignal::NAME => PupSignal::resolve_method(func),
             PupInput::NAME => PupInput::resolve_method(func),
+            PupTexture::NAME => PupTexture::resolve_method(func),
 
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
-            PupInput::NAME => PupInput::resolve_method(func),
             _ => PupNodeSugar::resolve_method(func),
         }
     }
@@ -202,6 +202,22 @@ impl PupInput {
             "is_wheel_up" => Some(ApiModule::Input(InputApi::IsWheelUp)),
             "is_wheel_down" => Some(ApiModule::Input(InputApi::IsWheelDown)),
             "screen_to_world" => Some(ApiModule::Input(InputApi::ScreenToWorld)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupTexture;
+impl PupTexture {
+    pub const NAME: &'static str = "Texture";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "load" => Some(ApiModule::Texture(TextureApi::Load)),
+            "create_from_bytes" => Some(ApiModule::Texture(TextureApi::CreateFromBytes)),
+            "get_width" => Some(ApiModule::Texture(TextureApi::GetWidth)),
+            "get_height" => Some(ApiModule::Texture(TextureApi::GetHeight)),
+            "get_size" => Some(ApiModule::Texture(TextureApi::GetSize)),
             _ => None,
         }
     }

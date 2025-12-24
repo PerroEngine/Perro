@@ -12,7 +12,7 @@ fn init() {
 
     var par = self.get_parent()
     par.name = "fart"
-    par.transform.position.x = -1000
+    par.texture = Texture.load("res://fart")
     Console.print(par)
 
 }
