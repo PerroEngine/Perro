@@ -1343,7 +1343,8 @@ impl ApiCodegen for TextureApi {
 impl ApiTypes for TextureApi {
     fn return_type(&self) -> Option<Type> {
         match self {
-            TextureApi::Load | TextureApi::CreateFromBytes => Some(Type::Option(Box::new(Type::Uuid))),
+            TextureApi::Load => Some(Type::Option(Box::new(Type::Uuid))),
+            TextureApi::CreateFromBytes => Some(Type::Option(Box::new(Type::Uuid))),
             TextureApi::GetWidth | TextureApi::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
             TextureApi::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
         }

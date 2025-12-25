@@ -119,6 +119,9 @@ fn resolve_project_root(path_arg: &str) -> PathBuf {
 }
 
 fn main() {
+    // Name the main thread
+    perro_core::thread_utils::set_current_thread_name("Main");
+    
     let args: Vec<String> = env::args().collect();
 
     // Handle "new" command to create a new project

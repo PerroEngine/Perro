@@ -217,23 +217,19 @@ impl SceneData {
         // The key in data.nodes IS the runtime ID (local_id from JSON becomes runtime_id)
         let mut parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
         
-        println!("🔧 fix_relationships: Processing {} nodes", data.nodes.len());
+
         
         for (&runtime_id, node) in data.nodes.iter() {
-            println!("  Node: runtime_id={}, name={}", runtime_id, node.get_name());
+
             if let Some(parent) = node.get_parent() {
                 let parent_id_from_json = parent.id; // Local ID from JSON
-                println!("    Parent from JSON: {}", parent_id_from_json);
+              
                 // Look up parent node - the key in data.nodes is the runtime ID
                 if let Some((&parent_runtime_id, parent_node)) = data.nodes.get_key_value(&parent_id_from_json) {
-                    println!("    Found parent: runtime_id={}, name={}", parent_runtime_id, parent_node.get_name());
+                  
                     parent_types.insert(parent_runtime_id, parent_node.get_type());
-                } else {
-                    println!("    ⚠️ Parent {} not found in data.nodes!", parent_id_from_json);
-                }
-            } else {
-                println!("    No parent");
-            }
+                } 
+            } 
         }
 
         // Second pass: set runtime IDs and remap parent references to use runtime IDs
@@ -255,22 +251,15 @@ impl SceneData {
 
             // Remap parent ID from local ID (from JSON) to runtime ID (key in data.nodes)
             if let Some((_, Some(parent_runtime_id))) = node_parent_mappings.iter().find(|(id, _)| *id == node_id) {
-                println!("  Remapping parent for node {}: {} -> {}", node_id, old_parent_id.unwrap_or_default(), parent_runtime_id);
                 parent_children.entry(*parent_runtime_id).or_default().push(node_id);
                 
                 // Rebuild ParentType with the runtime ID (key) and type
                 if let Some(&parent_type_enum) = parent_types.get(parent_runtime_id) {
                     let parent_type = crate::nodes::node::ParentType::new(*parent_runtime_id, parent_type_enum);
                     node.set_parent(Some(parent_type));
-                    println!("    Set parent to runtime_id={}", parent_runtime_id);
-                } else {
-                    println!("    ⚠️ Parent type not found for runtime_id={}", parent_runtime_id);
-                }
+     
+                } 
             }
-            
-            // Print final state
-            let final_parent_id = node.get_parent().map(|p| p.id);
-            println!("  Final: node_id={}, parent_id={:?} (was {:?})", node_id, final_parent_id, old_parent_id);
         }
 
         // Apply batched relationships
@@ -279,12 +268,9 @@ impl SceneData {
                 for child_id in children {
                     parent.add_child(child_id);
                 }
-            } else {
-                println!("  ⚠️ Cannot add children to parent {}: not found", parent_runtime_id);
             }
         }
         
-        println!("✅ fix_relationships complete");
     }
 }
 
@@ -450,12 +436,19 @@ impl<P: ScriptProvider> Scene<P> {
                     if sprite.texture_path.is_some() && sprite.texture_id.is_none() {
                         if let Some(path) = &sprite.texture_path {
                             // Load texture and get its UUID
-                            let texture_id = gfx.texture_manager.get_or_load_texture_id(
+                            match gfx.texture_manager.get_or_load_texture_id(
                                 path,
                                 &gfx.device,
                                 &gfx.queue,
-                            );
-                            sprite.texture_id = Some(texture_id);
+                            ) {
+                                Ok(texture_id) => {
+                                    sprite.texture_id = Some(texture_id);
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to load texture '{}': {}", path, e);
+                                    // Continue without setting texture_id - sprite will render without texture
+                                }
+                            }
                         }
                     }
                 }

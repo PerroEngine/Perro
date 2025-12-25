@@ -10,6 +10,7 @@ pub mod runtime;
 pub mod scene;
 pub mod scripting;
 pub mod structs;
+pub mod thread_utils;
 pub mod types;
 
 pub use nodes::*;

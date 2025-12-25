@@ -169,6 +169,7 @@ impl PupParser {
                     uses_self: false,
                     cloned_child_nodes: Vec::new(),
                     return_type: Type::Void,
+                    span: None,
                     attributes: Vec::new(),
                     is_on_signal: false,
                     signal_name: None,
@@ -202,6 +203,8 @@ impl PupParser {
             script_name,
             node_type,
             variables: script_vars, // Pass the single, unified, and ordered list to the Script AST
+            language: Some("pup".to_string()),
+            source_file: None, // Will be set by transpiler
             functions,
             structs,
             verbose: true,
@@ -365,6 +368,7 @@ impl PupParser {
             uses_self: false,
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type: Type::Void,
+            span: None,
             attributes: Vec::new(), // Attributes are parsed separately for on-signal functions
             is_on_signal: false,
             signal_name: None,
@@ -384,6 +388,7 @@ impl PupParser {
                 ],
             ),
             inferred_type: None,
+            span: None,
         })
     }
 
@@ -407,6 +412,7 @@ impl PupParser {
         Ok(Param {
             name,
             typ: self.parse_type()?,
+            span: None,
         })
     }
 
@@ -498,6 +504,7 @@ impl PupParser {
                     TypedExpr {
                         expr: Expr::Literal(Literal::Number("1".to_string())),
                         inferred_type: None,
+                        span: None,
                     },
                 ));
             }
@@ -509,6 +516,7 @@ impl PupParser {
                     TypedExpr {
                         expr: Expr::Literal(Literal::Number("1".to_string())),
                         inferred_type: None,
+                        span: None,
                     },
                 ));
             }
@@ -521,6 +529,7 @@ impl PupParser {
         Ok(Stmt::Expr(TypedExpr {
             expr: lhs,
             inferred_type: None,
+            span: None,
         }))
     }
 
@@ -550,6 +559,7 @@ impl PupParser {
             condition: TypedExpr {
                 expr: condition,
                 inferred_type: None,
+                span: None,
             },
             then_body,
             else_body,
@@ -585,6 +595,7 @@ impl PupParser {
                 Some(TypedExpr {
                     expr: cond,
                     inferred_type: None,
+                    span: None,
                 })
             };
 
@@ -637,6 +648,7 @@ impl PupParser {
                 iterable: TypedExpr {
                     expr: iterable,
                     inferred_type: None,
+                    span: None,
                 },
                 body,
             })
@@ -647,6 +659,7 @@ impl PupParser {
         let typed_rhs = TypedExpr {
             expr: rhs,
             inferred_type: None,
+            span: None,
         };
 
         match lhs {
@@ -658,6 +671,7 @@ impl PupParser {
                 let typed_lhs = TypedExpr {
                     expr: Expr::MemberAccess(obj, field),
                     inferred_type: None,
+                    span: None,
                 };
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),
@@ -674,6 +688,7 @@ impl PupParser {
                             vec![node, field, typed_rhs.expr],
                         ),
                         inferred_type: None,
+                        span: None,
                     }))
                 } else {
                     Err("Invalid NodeSugar get_var arg count".into())
@@ -771,6 +786,7 @@ impl PupParser {
             value = Some(TypedExpr {
                 expr,
                 inferred_type: typ.clone(),
+                span: None,
             });
         }
 
@@ -786,6 +802,7 @@ impl PupParser {
             value,
             is_exposed: false,
             is_public: false,
+            span: None,
             attributes,
         })
     }

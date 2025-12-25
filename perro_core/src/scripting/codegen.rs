@@ -7156,6 +7156,7 @@ pub fn derive_rust_perro_script(
             is_exposed: true,
             is_public: is_pub,
             attributes: attributes_map.get(&name).cloned().unwrap_or_default(),
+            span: None,
         });
     }
 
@@ -7174,6 +7175,7 @@ pub fn derive_rust_perro_script(
             is_exposed: false,
             is_public: true,
             attributes: attributes_map.get(&name).cloned().unwrap_or_default(),
+            span: None,
         });
     }
 
@@ -7222,6 +7224,7 @@ pub fn derive_rust_perro_script(
                     attributes: vec![],
                     is_on_signal: false,
                     signal_name: None,
+                    span: None,
                 });
             }
         }
@@ -7275,7 +7278,7 @@ pub fn derive_rust_perro_script(
                     let name = name.trim().to_string();
                     let typ = Variable::parse_type(typ_str);
 
-                    params.push(Param { name, typ });
+                    params.push(Param { name, typ, span: None });
                 }
             }
 
@@ -7292,6 +7295,7 @@ pub fn derive_rust_perro_script(
                 params,
                 return_type,
                 uses_self: false,
+                span: None,
                 cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
                 body: vec![],
                 locals: vec![],

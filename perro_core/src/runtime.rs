@@ -215,6 +215,9 @@ fn log_error(msg: &str) {
 
 /// Main entry point for running a Perro game
 pub fn run_game(data: RuntimeData) {
+    // Name the main thread
+    crate::thread_utils::set_current_thread_name("Main");
+    
     // Setup error log file
     if let Ok(exe_path) = env::current_exe() {
         if let Some(folder) = exe_path.parent() {
@@ -283,10 +286,19 @@ pub fn run_game(data: RuntimeData) {
         window_attrs = window_attrs.with_append(true);
     }
 
+    // Note: create_window is deprecated in winit 0.30 in favor of ActiveEventLoop::create_window,
+    // but ActiveEventLoop is only available in event handlers. Since we need the window before
+    // running the app, we use the deprecated method here.
     #[cfg(target_arch = "wasm32")]
-    let window = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+    let window = {
+        #[allow(deprecated)]
+        std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"))
+    };
     #[cfg(not(target_arch = "wasm32"))]
-    let window = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+    let window = {
+        #[allow(deprecated)]
+        std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"))
+    };
 
     // Create Graphics synchronously
     let mut graphics = create_graphics_sync(window.clone());
@@ -324,6 +336,9 @@ pub fn run_game(data: RuntimeData) {
 pub fn run_dev() {
     use crate::registry::DllScriptProvider;
 
+    // Name the main thread
+    crate::thread_utils::set_current_thread_name("Main");
+    
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     
     let args: Vec<String> = env::args().collect();
@@ -541,8 +556,16 @@ pub fn run_dev() {
     // 4.5. Setup panic handler with source map support (after project_root is determined)
     let project_root_for_panic = project_root.clone();
     std::panic::set_hook(Box::new(move |panic_info| {
-        eprintln!("❌ PANIC occurred!");
-        eprintln!("   Location: {:?}", panic_info.location());
+        // Get thread name if available - try thread-local first, then Rust's thread name
+        let thread_name = crate::thread_utils::get_current_thread_name()
+            .or_else(|| std::thread::current().name().map(|n| n.to_string()))
+            .unwrap_or_else(|| "main".to_string());
+        
+        eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        eprintln!("❌ PANIC occurred in thread '{}'!", thread_name);
+        if let Some(location) = panic_info.location() {
+            eprintln!("   Location: {}:{}:{}", location.file(), location.line(), location.column());
+        }
         
         // Convert error message using source map if available
         let mut panic_msg = String::new();
@@ -553,20 +576,64 @@ pub fn run_dev() {
         }
         
         // Try to load source map and convert
+        let mut source_location_shown = false;
         if let Some(sm) = crate::scripting::source_map_runtime::load_source_map(&project_root_for_panic) {
-            if let Some(location) = panic_info.location() {
+            // First, try to get the current script identifier from thread-local (set when script is executing)
+            let script_identifier = crate::scripting::api::ScriptApi::get_current_script_identifier();
+            
+            if let Some(identifier) = script_identifier {
+                // We have the script identifier, use it to convert the error message
+                panic_msg = crate::scripting::source_map_runtime::convert_error_with_source_map(&sm, &identifier, &panic_msg);
+                
+                // Try to find the source file path
+                if let Some(script_map) = sm.scripts.get(&identifier) {
+                    // The panic location is in api.rs, not in the generated script
+                    // We can't convert the line number directly, but we can show which script it came from
+                    eprintln!("   📜 Error in script: {} (source: {})", identifier, script_map.source_path);
+                    eprintln!("   The error occurred while calling an API function from this script.");
+                    if let Some(location) = panic_info.location() {
+                        eprintln!("   API call location: {}:{}:{}", location.file(), location.line(), location.column());
+                    }
+                    source_location_shown = true;
+                }
+            } else if let Some(location) = panic_info.location() {
+                // Fallback: try to extract identifier from panic location (for panics in generated scripts)
                 if let Some(identifier) = crate::scripting::source_map_runtime::extract_script_identifier_from_path(location.file()) {
                     panic_msg = crate::scripting::source_map_runtime::convert_error_with_source_map(&sm, &identifier, &panic_msg);
+                    
+                    // Try to find the source file path and convert line number
+                    if let Some(script_map) = sm.scripts.get(&identifier) {
+                        let generated_line = location.line();
+                        if let Some(source_line) = sm.find_source_line(&identifier, generated_line) {
+                            eprintln!("   📜 At: {}:{}:{} (source location)", script_map.source_path, source_line, location.column());
+                            source_location_shown = true;
+                        } else {
+                            eprintln!("   📜 Script: {} (source: {})", identifier, script_map.source_path);
+                            eprintln!("   At: {}:{}:{} (generated location)", location.file(), generated_line, location.column());
+                            source_location_shown = true;
+                        }
+                    }
                 }
             }
         }
         
-        eprintln!("   Message: {}", panic_msg);
+        eprintln!("   💬 Message: {}", panic_msg);
+        
+        // Show generated location if we haven't shown source location
+        if !source_location_shown {
+            if let Some(location) = panic_info.location() {
+                eprintln!("   At: {}:{}:{}", location.file(), location.line(), location.column());
+            }
+        }
+        
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        
         eprintln!("   This might be an access violation (STATUS_ACCESS_VIOLATION)");
         eprintln!("   Common causes:");
         eprintln!("   - Script DLL not compiled or corrupted");
         eprintln!("   - DLL function signature mismatch");
         eprintln!("   - Invalid memory access in DLL");
+        eprintln!("   - File not found (check the path in your script)");
         eprintln!("   Try: cargo run -p perro_core -- --path <path> --scripts");
     }));
 
@@ -609,10 +676,19 @@ pub fn run_dev() {
         window_attrs = window_attrs.with_append(true);
     }
 
+    // Note: create_window is deprecated in winit 0.30 in favor of ActiveEventLoop::create_window,
+    // but ActiveEventLoop is only available in event handlers. Since we need the window before
+    // running the app, we use the deprecated method here.
     #[cfg(target_arch = "wasm32")]
-    let window = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+    let window = {
+        #[allow(deprecated)]
+        std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"))
+    };
     #[cfg(not(target_arch = "wasm32"))]
-    let window = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+    let window = {
+        #[allow(deprecated)]
+        std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"))
+    };
 
     // Create Graphics synchronously
     let mut graphics = create_graphics_sync(window.clone());

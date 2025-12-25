@@ -154,6 +154,8 @@ impl ProcessApi {
 // This allows JoyConApi methods to access the ScriptApi without lifetime issues
 thread_local! {
     static SCRIPT_API_CONTEXT: RefCell<Option<*mut ScriptApi<'static>>> = RefCell::new(None);
+    // Track the current script identifier for source map lookups in panic handler
+    static CURRENT_SCRIPT_IDENTIFIER: RefCell<Option<String>> = RefCell::new(None);
 }
 
 pub struct JoyConApi {
@@ -1029,7 +1031,7 @@ impl TextureApi {
 
     /// Load a texture from a path and return its UUID
     /// This will be called from scripts as: api.Texture.load("res://path/to/texture.png")
-    /// Returns None if Graphics is not available or texture cannot be loaded
+    /// Panics if Graphics is not available or texture cannot be loaded
     pub fn load(&mut self, path: &str) -> Option<Uuid> {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
@@ -1042,25 +1044,29 @@ impl TextureApi {
                 self.set_api_ptr(ptr);
                 ptr
             } else {
-                eprintln!("[Texture.load] ERROR: No ScriptApi context available!");
-                return None;
+                panic!("Texture.load(\"{}\") failed: No ScriptApi context available", path);
             }
         };
 
         unsafe {
             let api = &mut *api_ptr;
-            Self::load_impl(api, path)
+            Some(Self::load_impl(api, path))
         }
     }
 
     /// Internal implementation that actually does the load
-    /// Returns None if Graphics is not available or texture cannot be loaded
-    pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> Option<Uuid> {
+    /// Panics if Graphics is not available or texture cannot be loaded
+    pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> Uuid {
         if let Some(gfx) = api.gfx.as_mut() {
-            Some(gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue))
+            match gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue) {
+                Ok(id) => id,
+                Err(e) => {
+                    // Panic with error message - the panic hook will use source maps to show original location
+                    panic!("{}", e);
+                }
+            }
         } else {
-            api.print_error(&format!("Texture.load(\"{}\") failed: Graphics not available", path));
-            None
+            panic!("Graphics not available");
         }
     }
 
@@ -1314,6 +1320,32 @@ impl<'a> ScriptApi<'a> {
         });
     }
 
+    /// Set the current script identifier for source map lookups
+    fn set_script_identifier(&mut self, script_id: Uuid) {
+        // Get script path from the node
+        if let Some(node) = self.scene.get_scene_node_ref(script_id) {
+            if let Some(script_path) = node.get_script_path() {
+                if let Ok(identifier) = crate::scripting::transpiler::script_path_to_identifier(script_path) {
+                    CURRENT_SCRIPT_IDENTIFIER.with(|ident| {
+                        *ident.borrow_mut() = Some(identifier);
+                    });
+                }
+            }
+        }
+    }
+
+    /// Clear the current script identifier
+    fn clear_script_identifier() {
+        CURRENT_SCRIPT_IDENTIFIER.with(|ident| {
+            *ident.borrow_mut() = None;
+        });
+    }
+
+    /// Get the current script identifier (for panic handler)
+    pub(crate) fn get_current_script_identifier() -> Option<String> {
+        CURRENT_SCRIPT_IDENTIFIER.with(|ident| ident.borrow().clone())
+    }
+
     //-------------------------------------------------
     // Core access
     //-------------------------------------------------
@@ -1398,6 +1430,7 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     pub fn call_init(&mut self, script_id: Uuid) {
         self.set_context();
+        self.set_script_identifier(script_id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(script_id) {
@@ -1408,10 +1441,12 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(script_id, script);
         }
         Self::clear_context();
+        Self::clear_script_identifier();
     }
 
     pub fn call_update(&mut self, id: Uuid) {
         self.set_context();
+        self.set_script_identifier(id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1422,10 +1457,12 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
+        Self::clear_script_identifier();
     }
 
     pub fn call_fixed_update(&mut self, id: Uuid) {
         self.set_context();
+        self.set_script_identifier(id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1436,10 +1473,12 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
+        Self::clear_script_identifier();
     }
 
     pub fn call_draw(&mut self, id: Uuid) {
         self.set_context();
+        self.set_script_identifier(id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1450,6 +1489,7 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
+        Self::clear_script_identifier();
     }
 
     pub fn call_node_internal_fixed_update(&mut self, node_id: Uuid) {
@@ -1490,12 +1530,14 @@ impl<'a> ScriptApi<'a> {
 
     pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &[Value]) {
         self.set_context();
+        self.set_script_identifier(id);
         // Safely take script out, call method, put it back
         if let Some(mut script) = self.scene.take_script(id) {
             script.call_function(func, self, params);
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
+        Self::clear_script_identifier();
     }
     
     /// Internal fast-path call that skips context setup (used when context already set)

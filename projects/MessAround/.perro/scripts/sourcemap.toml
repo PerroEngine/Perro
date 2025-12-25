@@ -1,17 +1,6 @@
-[scripts.shape_pup]
-src = "res://shape.pup"
-id = "shape_pup"
-
-[[scripts.shape_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 63
-
-[scripts.shape_pup.names]
-
 [scripts.p2_pup]
 src = "res://p2.pup"
+lang = "pup"
 id = "p2_pup"
 
 [[scripts.p2_pup.lines]]
@@ -22,8 +11,61 @@ g_end = 64
 
 [scripts.p2_pup.names]
 
+[scripts.player_pup]
+src = "res://player.pup"
+lang = "pup"
+id = "player_pup"
+
+[[scripts.player_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 72
+
+[[scripts.player_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 72
+g_end = 76
+
+[[scripts.player_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 76
+g_end = 81
+
+[[scripts.player_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 81
+g_end = 103
+
+[[scripts.player_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 103
+g_end = 112
+
+[scripts.player_pup.names]
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+
+[scripts.shape_pup]
+src = "res://shape.pup"
+lang = "pup"
+id = "shape_pup"
+
+[[scripts.shape_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 63
+
+[scripts.shape_pup.names]
+
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
+lang = "pup"
 id = "test_engine_structs_pup"
 
 [[scripts.test_engine_structs_pup.lines]]
@@ -45,44 +87,6 @@ g_start = 78
 g_end = 85
 
 [scripts.test_engine_structs_pup.names]
-__t_test_constructors = "test_constructors"
-__t_test_variable_access = "test_variable_access"
 __t_test_nested_access = "test_nested_access"
-
-[scripts.player_pup]
-src = "res://player.pup"
-id = "player_pup"
-
-[[scripts.player_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 78
-
-[[scripts.player_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 78
-g_end = 82
-
-[[scripts.player_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 82
-g_end = 87
-
-[[scripts.player_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 87
-g_end = 109
-
-[[scripts.player_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 109
-g_end = 115
-
-[scripts.player_pup.names]
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_test_variable_access = "test_variable_access"
+__t_test_constructors = "test_constructors"

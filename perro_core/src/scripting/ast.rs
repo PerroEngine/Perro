@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{api_modules::ApiModule, engine_structs::EngineStruct, node_registry::NodeType};
+use crate::scripting::source_span::SourceSpan;
 
 /// Built-in enum variants available in the scripting language
 /// This represents enum access like NODE_TYPE.Sprite2D (SCREAMING_SNAKE_CASE for enum names)
@@ -20,6 +21,8 @@ pub struct Script {
 
     pub verbose: bool,
     pub attributes: HashMap<String, Vec<String>>, // member name -> list of attribute names
+    pub source_file: Option<String>, // Original source file path (e.g., "res://player.pup")
+    pub language: Option<String>, // Language identifier (e.g., "pup", "typescript", "csharp")
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +33,7 @@ pub struct Variable {
     pub is_public: bool,
     pub is_exposed: bool,
     pub attributes: Vec<String>, // List of attribute names
+    pub span: Option<SourceSpan>, // Source location of this variable declaration
 }
 
 impl Variable {
@@ -242,12 +246,14 @@ pub struct Function {
     pub attributes: Vec<String>, // List of attribute names
     pub is_on_signal: bool, // True if this function was defined with "on SIGNALNAME()" syntax
     pub signal_name: Option<String>, // The signal name if this is an on-signal function
+    pub span: Option<SourceSpan>, // Source location of this function definition
 }
 
 #[derive(Debug, Clone)]
 pub struct Param {
     pub name: String,
     pub typ: Type,
+    pub span: Option<SourceSpan>, // Source location of this parameter
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -548,6 +554,24 @@ pub enum Stmt {
     Pass,
 }
 
+impl Stmt {
+    /// Get the source span for this statement, if available
+    pub fn span(&self) -> Option<&SourceSpan> {
+        match self {
+            Stmt::Expr(expr) => expr.span.as_ref(),
+            Stmt::VariableDecl(var) => var.span.as_ref(),
+            Stmt::Assign(_, expr) | Stmt::AssignOp(_, _, expr) => expr.span.as_ref(),
+            Stmt::MemberAssign(lhs, _) | Stmt::MemberAssignOp(lhs, _, _) => lhs.span.as_ref(),
+            Stmt::ScriptAssign(_, _, expr) | Stmt::ScriptAssignOp(_, _, _, expr) => expr.span.as_ref(),
+            Stmt::IndexAssign(_, _, expr) | Stmt::IndexAssignOp(_, _, _, expr) => expr.span.as_ref(),
+            Stmt::If { condition, .. } => condition.span.as_ref(),
+            Stmt::For { iterable, .. } => iterable.span.as_ref(),
+            Stmt::ForTraditional { condition, .. } => condition.as_ref().and_then(|c| c.span.as_ref()),
+            Stmt::Pass => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     Ident(String),
@@ -581,6 +605,7 @@ pub enum ContainerLiteralData {
 pub struct TypedExpr {
     pub expr: Expr,
     pub inferred_type: Option<Type>, // Gets filled during type inference
+    pub span: Option<SourceSpan>, // Source location of this expression
 }
 
 #[derive(Debug, Clone)]

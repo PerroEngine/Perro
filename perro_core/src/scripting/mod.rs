@@ -11,6 +11,7 @@ pub mod ast;
 pub mod codegen;
 pub mod transpiler;
 pub mod source_map;
+pub mod source_span;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod source_map_runtime;
 

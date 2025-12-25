@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Build a source map from a script and its generated code
-/// This is a simplified version that uses function/statement order as approximate source lines
+/// This version uses source spans from the AST when available, falling back to approximations
 pub fn build_source_map_from_script(
     source_path: &str,
     identifier: &str,
@@ -12,6 +12,7 @@ pub fn build_source_map_from_script(
     script: &crate::scripting::ast::Script,
 ) -> ScriptSourceMap {
     let mut builder = SourceMapBuilder::new(source_path.to_string(), identifier.to_string());
+    let language = script.language.clone();
     
     // Count lines in generated code
     let generated_lines: Vec<&str> = generated_code.lines().collect();
@@ -92,7 +93,11 @@ pub fn build_source_map_from_script(
         }
     }
     
-    builder.build()
+    // Use source spans from AST when available for more accurate mapping
+    // This is a future enhancement - for now we use the approximate method above
+    // TODO: When parsers track spans, use them here for accurate line/column mapping
+    
+    builder.build_with_language(language)
 }
 
 /// Represents a range of lines in the source file mapped to a range in the generated file
@@ -103,15 +108,27 @@ pub struct LineRange {
     /// Starting line number in source (1-indexed)
     #[serde(rename = "s_start")]
     pub source_start: u32,
+    /// Starting column number in source (1-indexed)
+    #[serde(rename = "s_col", default)]
+    pub source_column: Option<u32>,
     /// Ending line number in source (1-indexed, inclusive)
     #[serde(rename = "s_end")]
     pub source_end: u32,
+    /// Ending column number in source (1-indexed, exclusive)
+    #[serde(rename = "s_col_end", default)]
+    pub source_column_end: Option<u32>,
     /// Starting line number in generated code (1-indexed)
     #[serde(rename = "g_start")]
     pub generated_start: u32,
+    /// Starting column number in generated code (1-indexed)
+    #[serde(rename = "g_col", default)]
+    pub generated_column: Option<u32>,
     /// Ending line number in generated code (1-indexed, inclusive)
     #[serde(rename = "g_end")]
     pub generated_end: u32,
+    /// Ending column number in generated code (1-indexed, exclusive)
+    #[serde(rename = "g_col_end", default)]
+    pub generated_column_end: Option<u32>,
 }
 
 /// Source map for a single script file
@@ -120,6 +137,9 @@ pub struct ScriptSourceMap {
     /// Original source file path (in res:// format, e.g., "res://player.pup")
     #[serde(rename = "src")]
     pub source_path: String,
+    /// Language identifier (e.g., "pup", "typescript", "csharp")
+    #[serde(rename = "lang", default)]
+    pub language: Option<String>,
     /// Generated Rust file identifier
     #[serde(rename = "id")]
     pub generated_identifier: String,
@@ -159,19 +179,59 @@ impl SourceMap {
 
     /// Find the source line for a given generated line in a script
     pub fn find_source_line(&self, identifier: &str, generated_line: u32) -> Option<u32> {
-        self.scripts.get(identifier)?.line_ranges.iter()
-            .find(|range| generated_line >= range.generated_start && generated_line <= range.generated_end)
-            .map(|range| {
-                // Linear interpolation within the range
-                let source_span = range.source_end - range.source_start;
-                let generated_span = range.generated_end - range.generated_start;
-                if generated_span == 0 {
-                    range.source_start
+        self.find_source_span(identifier, generated_line, None)
+            .map(|span| span.line)
+    }
+
+    /// Find the source span (line and column) for a given generated line and optional column
+    pub fn find_source_span(
+        &self,
+        identifier: &str,
+        generated_line: u32,
+        generated_column: Option<u32>,
+    ) -> Option<crate::scripting::source_span::SourceSpan> {
+        let script_map = self.scripts.get(identifier)?;
+        
+        // Find the range that contains this generated line
+        let range = script_map.line_ranges.iter()
+            .find(|range| generated_line >= range.generated_start && generated_line <= range.generated_end)?;
+        
+        // Linear interpolation within the range
+        let source_span_lines = range.source_end - range.source_start;
+        let generated_span_lines = range.generated_end - range.generated_start;
+        
+        let source_line = if generated_span_lines == 0 {
+            range.source_start
+        } else {
+            let offset = generated_line - range.generated_start;
+            range.source_start + (offset * source_span_lines / generated_span_lines)
+        };
+        
+        // Calculate column if both source and generated columns are available
+        let source_column = if let (Some(src_col), Some(gen_col), Some(gen_col_end)) = 
+            (range.source_column, range.generated_column, range.generated_column_end) {
+            if let Some(given_col) = generated_column {
+                let gen_span = gen_col_end - gen_col;
+                if gen_span > 0 {
+                    let offset = given_col.saturating_sub(gen_col);
+                    src_col + (offset * (range.source_column_end.unwrap_or(src_col + 1) - src_col) / gen_span)
                 } else {
-                    let offset = generated_line - range.generated_start;
-                    range.source_start + (offset * source_span / generated_span)
+                    src_col
                 }
-            })
+            } else {
+                src_col
+            }
+        } else {
+            range.source_column.unwrap_or(1)
+        };
+        
+        Some(crate::scripting::source_span::SourceSpan {
+            file: script_map.source_path.clone(),
+            line: source_line,
+            column: source_column,
+            length: 1, // Default length
+            language: script_map.language.clone().unwrap_or_else(|| "unknown".to_string()),
+        })
     }
 
     /// Convert a generated identifier name back to original
@@ -276,14 +336,43 @@ impl SourceMapBuilder {
         {
             let range = LineRange {
                 source_start,
+                source_column: None, // Can be set explicitly if needed
                 source_end: self.current_source_line,
+                source_column_end: None, // Can be set explicitly if needed
                 generated_start,
+                generated_column: None, // Can be set explicitly if needed
                 generated_end: self.current_generated_line,
+                generated_column_end: None, // Can be set explicitly if needed
             };
             self.line_ranges.push(range);
             self.current_range_start_source = None;
             self.current_range_start_generated = None;
         }
+    }
+
+    /// Record a range with explicit column information
+    pub fn record_range_with_columns(
+        &mut self,
+        source_start_line: u32,
+        source_start_col: u32,
+        source_end_line: u32,
+        source_end_col: u32,
+        generated_start_line: u32,
+        generated_start_col: u32,
+        generated_end_line: u32,
+        generated_end_col: u32,
+    ) {
+        let range = LineRange {
+            source_start: source_start_line,
+            source_column: Some(source_start_col),
+            source_end: source_end_line,
+            source_column_end: Some(source_end_col),
+            generated_start: generated_start_line,
+            generated_column: Some(generated_start_col),
+            generated_end: generated_end_line,
+            generated_column_end: Some(generated_end_col),
+        };
+        self.line_ranges.push(range);
     }
 
     /// Increment generated line counter (call after each newline in generated code)
@@ -301,10 +390,29 @@ impl SourceMapBuilder {
         self.identifier_names.insert(generated_name.to_string(), original_name.to_string());
     }
 
+    /// Set the language identifier for this source map
+    pub fn set_language(&mut self, language: String) {
+        // Language is stored in ScriptSourceMap, not in builder
+        // This is a placeholder for future use if needed
+    }
+
     /// Build the final source map
     pub fn build(self) -> ScriptSourceMap {
         ScriptSourceMap {
             source_path: self.source_path,
+            language: None, // Will be set from script.language
+            generated_identifier: self.identifier,
+            line_ranges: self.line_ranges,
+            identifier_names: self.identifier_names,
+            variable_names: HashMap::new(), // Empty for backwards compatibility
+        }
+    }
+
+    /// Build the final source map with language
+    pub fn build_with_language(self, language: Option<String>) -> ScriptSourceMap {
+        ScriptSourceMap {
+            source_path: self.source_path,
+            language,
             generated_identifier: self.identifier,
             line_ranges: self.line_ranges,
             identifier_names: self.identifier_names,

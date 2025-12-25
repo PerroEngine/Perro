@@ -5,10 +5,7 @@
 fn init() {
     self.transform.position.x = -750
     self.transform.position.x = -710
-    var poop = 12
-    self.transform.position.y = 0
-    self.transform.position.x = -750
-    self.transform.position.x = -750
+
 
     var pos = self.transform.position
 
@@ -36,7 +33,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 
     var ppos
     if pty == NODE_TYPE.Sprite2D {
-            var tex = Texture.load("res://doug.PNG")
+            var tex = Texture.load("res://fasd.PNG")
             self.texture = tex
             ppos = (collision.get_parent() as Sprite2D).transform.position
     }
@@ -44,7 +41,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
  
 
     if (collision.get_parent() == self) {
-        pos.y -= 100
+        pos.y += 100
         self.transform.position = pos
     }
 }
@@ -52,5 +49,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 on Deadzone_AreaExited(c: CollisionShape2D) {
    if (c.get_parent() == self) {
         self.transform.position.y += 100
+        self.texture = Texture.load("res://obama.jpg")
+        self.transform.scale = new Vector2(0.25,0.25)
     }
 }

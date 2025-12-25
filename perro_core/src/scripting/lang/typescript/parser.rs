@@ -196,6 +196,8 @@ impl TypeScriptParser {
             node_type,
             variables: script_vars,
             functions,
+            language: Some("typescript".to_string()),
+            source_file: None, // Will be set by transpiler
             structs,
             verbose: true,
             attributes,
@@ -328,6 +330,7 @@ impl TypeScriptParser {
                         value = Some(TypedExpr {
                             expr,
                             inferred_type: None,
+                            span: None,
                         });
                         break;
                     }
@@ -357,6 +360,7 @@ impl TypeScriptParser {
             is_exposed,
             is_public,
             attributes,
+            span: None,
         })
     }
 
@@ -556,6 +560,7 @@ impl TypeScriptParser {
             uses_self: false,
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type,
+            span: None,
             attributes,
             is_on_signal: false,
             signal_name: None,
@@ -849,7 +854,7 @@ impl TypeScriptParser {
             }
         }
 
-        Ok(Param { name, typ })
+        Ok(Param { name, typ, span: None })
     }
 
     fn parse_block(&mut self, node: tree_sitter::Node) -> Result<Vec<Stmt>, String> {
@@ -893,6 +898,7 @@ impl TypeScriptParser {
                         statements.push(Stmt::Expr(TypedExpr {
                             expr,
                             inferred_type: None,
+                            span: None,
                         }));
                     } else {
                         // If expression parsing also fails, try parsing as assignment directly
@@ -946,6 +952,7 @@ impl TypeScriptParser {
                     Ok(Stmt::Expr(TypedExpr {
                         expr,
                         inferred_type: None,
+                        span: None,
                     }))
                 } else {
                     Ok(Stmt::Pass)
@@ -997,6 +1004,7 @@ impl TypeScriptParser {
                             value = Some(TypedExpr {
                                 expr,
                                 inferred_type: None,
+                                span: None,
                             });
                             break;
                         }
@@ -1025,6 +1033,7 @@ impl TypeScriptParser {
             is_exposed: false,
             is_public: false,
             attributes: Vec::new(),
+            span: None,
         }))
     }
 
@@ -1039,6 +1048,7 @@ impl TypeScriptParser {
             Ok(Stmt::Expr(TypedExpr {
                 expr,
                 inferred_type: None,
+                span: None,
             }))
         } else {
             Err("Failed to parse expression".into())
@@ -1084,6 +1094,7 @@ impl TypeScriptParser {
         let typed_rhs = TypedExpr {
             expr: rhs,
             inferred_type: None,
+            span: None,
         };
 
         match lhs {
@@ -1095,6 +1106,7 @@ impl TypeScriptParser {
                 let typed_lhs = TypedExpr {
                     expr: Expr::MemberAccess(obj, field),
                     inferred_type: None,
+                    span: None,
                 };
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),

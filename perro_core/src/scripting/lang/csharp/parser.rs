@@ -172,6 +172,8 @@ impl CsParser {
             functions,
             structs,
             verbose: true,
+            language: Some("csharp".to_string()),
+            source_file: None, // Will be set by transpiler
             attributes,
         })
     }
@@ -337,6 +339,7 @@ impl CsParser {
                                         value = Some(TypedExpr {
                                             expr,
                                             inferred_type: None,
+                                            span: None,
                                         });
                                         break;
                                     }
@@ -370,6 +373,7 @@ impl CsParser {
             is_exposed,
             is_public,
             attributes,
+            span: None,
         })
     }
 
@@ -539,6 +543,7 @@ impl CsParser {
             uses_self: false,
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type,
+            span: None,
             attributes,
             is_on_signal: false,
             signal_name: None,
@@ -651,7 +656,7 @@ impl CsParser {
             }
         }
 
-        Ok(Param { name, typ })
+        Ok(Param { name, typ, span: None })
     }
 
     fn parse_block(&mut self, node: tree_sitter::Node) -> Result<Vec<Stmt>, String> {
@@ -709,6 +714,7 @@ impl CsParser {
                     Ok(Stmt::Expr(TypedExpr {
                         expr,
                         inferred_type: None,
+                        span: None,
                     }))
                 } else {
                     // Don't error on unknown nodes, just skip them
@@ -763,6 +769,7 @@ impl CsParser {
                                             value = Some(TypedExpr {
                                                 expr,
                                                 inferred_type: None,
+                                                span: None,
                                             });
                                             break;
                                         }
@@ -795,6 +802,7 @@ impl CsParser {
             is_exposed: false,
             is_public: false,
             attributes: Vec::new(),
+            span: None,
         }))
     }
 
@@ -807,6 +815,7 @@ impl CsParser {
                 Ok(Stmt::Expr(TypedExpr {
                     expr,
                     inferred_type: None,
+                    span: None,
                 }))
             }
         };
@@ -854,6 +863,7 @@ impl CsParser {
         let typed_rhs = TypedExpr {
             expr: rhs,
             inferred_type: None,
+            span: None,
         };
 
         match lhs {
@@ -865,6 +875,7 @@ impl CsParser {
                 let typed_lhs = TypedExpr {
                     expr: Expr::MemberAccess(obj, field),
                     inferred_type: None,
+                    span: None,
                 };
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),

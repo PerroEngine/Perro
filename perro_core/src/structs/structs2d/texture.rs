@@ -1,10 +1,50 @@
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Device,
-    Extent3d, FilterMode, Queue, Sampler, SamplerDescriptor, ShaderStages, TextureDescriptor,
-    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
-    TextureViewDescriptor,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Device, Extent3d, FilterMode,
+    Queue, Sampler, SamplerDescriptor, ShaderStages, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
 };
+
+/// Create the standard texture bind group layout
+/// This should be created once per device and reused for all textures
+pub fn create_texture_bind_group_layout(device: &Device) -> BindGroupLayout {
+    device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("texture_bind_group_layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+/// Calculate the required alignment for texture data rows (WGPU requirement)
+#[inline]
+fn align_to(value: u32, alignment: u32) -> u32 {
+    (value + alignment - 1) & !(alignment - 1)
+}
+
+/// Calculate bytes per row with proper alignment for GPU upload
+#[inline]
+fn calculate_bytes_per_row(width: u32) -> u32 {
+    // WGPU requires row pitch to be a multiple of 256 bytes
+    let bytes_per_pixel = 4u32; // RGBA8
+    let unaligned_bytes_per_row = width * bytes_per_pixel;
+    align_to(unaligned_bytes_per_row, 256)
+}
 
 /// Pre-decoded texture data for static assets (compile-time decoded RGBA8 bytes)
 #[derive(Debug, Clone)]
@@ -34,22 +74,57 @@ impl StaticTextureData {
             view_formats: &[],
         });
 
-        // Upload pre-decoded pixel data to GPU
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &self.rgba8_bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * self.width),
-                rows_per_image: Some(self.height),
-            },
-            texture_size,
-        );
+        // OPTIMIZED: Use aligned bytes per row for better GPU performance
+        let bytes_per_row = calculate_bytes_per_row(self.width);
+        let actual_bytes_per_row = 4 * self.width;
+        
+        // If alignment is needed, copy data to aligned buffer
+        if bytes_per_row != actual_bytes_per_row {
+            let total_size = (bytes_per_row * self.height) as usize;
+            let mut aligned_data = vec![0u8; total_size];
+            
+            // Copy rows with proper alignment
+            for row in 0..self.height {
+                let src_offset = (row * actual_bytes_per_row) as usize;
+                let dst_offset = (row * bytes_per_row) as usize;
+                let src_end = src_offset + actual_bytes_per_row as usize;
+                aligned_data[dst_offset..dst_offset + actual_bytes_per_row as usize]
+                    .copy_from_slice(&self.rgba8_bytes[src_offset..src_end]);
+            }
+            
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &aligned_data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(self.height),
+                },
+                texture_size,
+            );
+        } else {
+            // No alignment needed, use data directly
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &self.rgba8_bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(actual_bytes_per_row),
+                    rows_per_image: Some(self.height),
+                },
+                texture_size,
+            );
+        }
 
         let view = texture.create_view(&TextureViewDescriptor::default());
 
@@ -64,27 +139,8 @@ impl StaticTextureData {
             ..Default::default()
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("texture_bind_group_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+        // OPTIMIZED: Use shared bind group layout (should be cached by caller)
+        let bind_group_layout = create_texture_bind_group_layout(device);
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("texture_bind_group"),
@@ -135,7 +191,6 @@ impl ImageTexture {
         device: &Device,
         queue: &Queue,
     ) -> Self {
-
         // Describe the texture
         let texture_size = Extent3d {
             width,
@@ -154,22 +209,59 @@ impl ImageTexture {
             view_formats: &[],
         });
 
-        // Upload pixel data to GPU
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            rgba_bytes,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width), // 4 bytes per pixel (RGBA8)
-                rows_per_image: Some(height),
-            },
-            texture_size,
-        );
+        // OPTIMIZED: Use aligned bytes per row for better GPU performance
+        let bytes_per_row = calculate_bytes_per_row(width);
+        let actual_bytes_per_row = 4 * width;
+        
+        // If alignment is needed, copy data to aligned buffer
+        if bytes_per_row != actual_bytes_per_row {
+            let total_size = (bytes_per_row * height) as usize;
+            let mut aligned_data = vec![0u8; total_size];
+            
+            // Copy rows with proper alignment
+            for row in 0..height {
+                let src_offset = (row * actual_bytes_per_row) as usize;
+                let dst_offset = (row * bytes_per_row) as usize;
+                let src_end = src_offset + actual_bytes_per_row as usize;
+                if src_end <= rgba_bytes.len() {
+                    aligned_data[dst_offset..dst_offset + actual_bytes_per_row as usize]
+                        .copy_from_slice(&rgba_bytes[src_offset..src_end]);
+                }
+            }
+            
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &aligned_data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+                texture_size,
+            );
+        } else {
+            // No alignment needed, use data directly (zero-copy path)
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                rgba_bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(actual_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+                texture_size,
+            );
+        }
 
         // Create texture view
         let view = texture.create_view(&TextureViewDescriptor::default());
@@ -186,29 +278,8 @@ impl ImageTexture {
             ..Default::default()
         });
 
-        // You need a bind group layout that matches your shader expectations.
-        // Typically you create this once globally and reuse it, but for example:
-        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("texture_bind_group_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+        // OPTIMIZED: Use shared bind group layout (should be cached by caller)
+        let bind_group_layout = create_texture_bind_group_layout(device);
 
         // Create bind group for texture + sampler
         let bind_group = device.create_bind_group(&BindGroupDescriptor {

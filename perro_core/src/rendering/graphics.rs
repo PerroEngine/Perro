@@ -46,6 +46,8 @@ pub struct TextureManager {
     path_to_id: FxHashMap<String, Uuid>, // path -> id (new)
     id_to_path: FxHashMap<Uuid, String>, // id -> path (for reverse lookup)
     bind_groups: FxHashMap<String, wgpu::BindGroup>,
+    // OPTIMIZED: Cache bind group layout to avoid recreating for each texture
+    cached_bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
 impl TextureManager {
@@ -55,7 +57,16 @@ impl TextureManager {
             path_to_id: FxHashMap::default(),
             id_to_path: FxHashMap::default(),
             bind_groups: FxHashMap::default(),
+            cached_bind_group_layout: None,
         }
+    }
+
+    /// Get or create the cached bind group layout for textures
+    pub fn get_bind_group_layout(&mut self, device: &Device) -> &wgpu::BindGroupLayout {
+        if self.cached_bind_group_layout.is_none() {
+            self.cached_bind_group_layout = Some(crate::structs2d::create_texture_bind_group_layout(device));
+        }
+        self.cached_bind_group_layout.as_ref().unwrap()
     }
 
     pub fn get_or_load_texture_sync(
@@ -164,19 +175,115 @@ impl TextureManager {
 
     /// Get or load texture by path and return its UUID
     /// This is the main API method for scripts - returns the UUID handle
+    /// Returns an error if the texture cannot be loaded
     pub fn get_or_load_texture_id(
         &mut self,
         path: &str,
         device: &Device,
         queue: &Queue,
-    ) -> Uuid {
-        // Load the texture (creates UUID if needed)
-        self.get_or_load_texture_sync(path, device, queue);
+    ) -> Result<Uuid, String> {
+        // Check if already loaded
+        if let Some(id) = self.path_to_id.get(path) {
+            return Ok(*id);
+        }
         
-        // Return the UUID for this path - panic if texture wasn't loaded
-        *self.path_to_id.get(path).unwrap_or_else(|| {
-            panic!("Texture.load(\"{}\") failed: texture was not loaded or registered", path);
-        })
+        // Try to load the texture
+        let key = path.to_string();
+        let start = Instant::now();
+
+        // Runtime mode: check static textures first, then fall back to disk/BRK
+        // Dev mode: static textures will be None, so it loads from disk/BRK
+        let img_texture = if let Some(static_textures) = get_static_textures() {
+            if let Some(static_data) = static_textures.get(path) {
+                println!(
+                    "🖼️ Loading static texture: {} ({}x{})",
+                    path, static_data.width, static_data.height
+                );
+                // Use pre-decoded RGBA8 data to create ImageTexture
+                let texture = static_data.to_image_texture(device, queue);
+                let elapsed = start.elapsed();
+                println!(
+                    "⏱️ Static texture loaded in {:.2}ms",
+                    elapsed.as_secs_f64() * 1000.0
+                );
+                texture
+            } else {
+                // Not in static textures, load from disk/BRK
+                let load_start = Instant::now();
+                let img_bytes = load_asset(path)
+                    .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+                let load_elapsed = load_start.elapsed();
+
+                let decode_start = Instant::now();
+                let img = image::load_from_memory(&img_bytes)
+                    .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+                let decode_elapsed = decode_start.elapsed();
+
+                println!(
+                    "🖼️ Loading texture: {} ({}x{})",
+                    path,
+                    img.width(),
+                    img.height()
+                );
+
+                let upload_start = Instant::now();
+                let texture = ImageTexture::from_image(&img, device, queue);
+                let upload_elapsed = upload_start.elapsed();
+
+                let total_elapsed = start.elapsed();
+                println!(
+                    "⏱️ Runtime texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
+                    total_elapsed.as_secs_f64() * 1000.0,
+                    load_elapsed.as_secs_f64() * 1000.0,
+                    decode_elapsed.as_secs_f64() * 1000.0,
+                    upload_elapsed.as_secs_f64() * 1000.0
+                );
+                texture
+            }
+        } else {
+            // Dev mode: no static textures, load from disk/BRK with optimized decoder
+            let load_start = Instant::now();
+            let img_bytes = load_asset(path)
+                .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+            let load_elapsed = load_start.elapsed();
+
+            let decode_start = Instant::now();
+            // Use optimized fast decoder (format-specific decoders for PNG/JPEG)
+            let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
+                .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+            let decode_elapsed = decode_start.elapsed();
+
+            println!(
+                "🖼️ Loading texture: {} ({}x{})",
+                path,
+                width,
+                height
+            );
+
+            let upload_start = Instant::now();
+            // Use direct RGBA8 path (avoids DynamicImage conversion)
+            let texture = ImageTexture::from_rgba8(&rgba, device, queue);
+            let upload_elapsed = upload_start.elapsed();
+
+            let total_elapsed = start.elapsed();
+            println!(
+                "⏱️ Dev texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
+                total_elapsed.as_secs_f64() * 1000.0,
+                load_elapsed.as_secs_f64() * 1000.0,
+                decode_elapsed.as_secs_f64() * 1000.0,
+                upload_elapsed.as_secs_f64() * 1000.0
+            );
+            texture
+        };
+        
+        // Get or create UUID for this path
+        let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(Uuid::new_v4);
+        self.id_to_path.insert(texture_id, key.clone());
+        
+        // Store by path (textures_by_id will look up through path)
+        self.textures.insert(key.clone(), img_texture);
+        
+        Ok(texture_id)
     }
 
     /// Get texture by UUID (for script access)
