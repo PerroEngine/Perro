@@ -1029,8 +1029,7 @@ impl TextureApi {
         self.api_ptr
     }
 
-    /// Load a texture from a path and return its UUID
-    /// This will be called from scripts as: api.Texture.load("res://path/to/texture.png")
+    /// Load a texture from a path
     /// Panics if Graphics is not available or texture cannot be loaded
     pub fn load(&mut self, path: &str) -> Option<Uuid> {
         // Get ScriptApi pointer - try stored pointer first
@@ -1044,7 +1043,8 @@ impl TextureApi {
                 self.set_api_ptr(ptr);
                 ptr
             } else {
-                panic!("Texture.load(\"{}\") failed: No ScriptApi context available", path);
+                eprintln!("[Texture.load] ERROR: No ScriptApi context available!");
+                return None;
             }
         };
 
@@ -1061,7 +1061,6 @@ impl TextureApi {
             match gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue) {
                 Ok(id) => id,
                 Err(e) => {
-                    // Panic with error message - the panic hook will use source maps to show original location
                     panic!("{}", e);
                 }
             }

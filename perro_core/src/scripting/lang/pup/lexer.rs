@@ -71,6 +71,8 @@ pub struct PupLexer {
     input: Vec<char>,
     pos: usize,
     prev_token: Option<PupToken>,
+    line: u32,
+    column: u32,
 }
 
 impl PupLexer {
@@ -79,7 +81,17 @@ impl PupLexer {
             input: input.chars().collect(),
             pos: 0,
             prev_token: None,
+            line: 1,
+            column: 1,
         }
+    }
+    
+    pub fn current_line(&self) -> u32 {
+        self.line
+    }
+    
+    pub fn current_column(&self) -> u32 {
+        self.column
     }
 
     pub fn peek(&self) -> Option<char> {
@@ -88,6 +100,12 @@ impl PupLexer {
 
     fn advance(&mut self) -> Option<char> {
         let ch = self.peek();
+        if let Some('\n') = ch {
+            self.line += 1;
+            self.column = 1;
+        } else {
+            self.column += 1;
+        }
         self.pos += 1;
         ch
     }
@@ -205,6 +223,10 @@ impl PupLexer {
 
     pub fn next_token(&mut self) -> PupToken {
         self.skip_whitespace();
+
+        // Capture the start position of the token (after whitespace is skipped)
+        let token_start_line = self.line;
+        let token_start_column = self.column;
 
         // peek first so we can decide before consuming
         let Some(ch) = self.peek() else {

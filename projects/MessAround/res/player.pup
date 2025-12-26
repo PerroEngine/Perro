@@ -13,6 +13,8 @@ fn init() {
     par.name = "fart"
     Console.print(par)
 
+    
+
 }
 
 fn draw() {
@@ -33,7 +35,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 
     var ppos
     if pty == NODE_TYPE.Sprite2D {
-            var tex = Texture.load("res://fasd.PNG")
+            var tex = Texture.load("res://doug.PNG")
             self.texture = tex
             ppos = (collision.get_parent() as Sprite2D).transform.position
     }

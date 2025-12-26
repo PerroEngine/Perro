@@ -35,12 +35,25 @@ pub fn convert_error_with_source_map(
         }
         
         // Try to extract and convert line numbers from error messages
-        // Look for patterns like "line 123" or ":123:" or "at line 123"
-        let line_pattern = regex::Regex::new(r"(?:line\s+)?(\d+)(?::|,|\s|$)").unwrap();
+        // Be very specific - only match patterns that are clearly line numbers:
+        // - "line 123" or "line:123" or "at line 123"
+        // - ":123:" (file:line:column format)
+        // - "line 123," (with comma)
+        // Don't match standalone numbers as they might be array indices, lengths, etc.
+        let line_pattern = regex::Regex::new(r"(?:(?:^|\s)(?:line|Line)\s*:?\s*(\d+)|:(\d+):)").unwrap();
         result = line_pattern.replace_all(&result, |caps: &regex::Captures| {
-            if let Ok(gen_line) = caps[1].parse::<u32>() {
+            // Get the captured line number (could be from group 1 or 2)
+            let line_str = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("");
+            if let Ok(gen_line) = line_str.parse::<u32>() {
                 if let Some(source_line) = source_map.find_source_line(script_identifier, gen_line) {
-                    format!("line {}", source_line)
+                    // Preserve the original format
+                    if caps.get(1).is_some() {
+                        // "line 123" format
+                        format!("line {}", source_line)
+                    } else {
+                        // ":123:" format
+                        format!(":{}:", source_line)
+                    }
                 } else {
                     caps[0].to_string()
                 }
@@ -86,10 +99,29 @@ pub fn convert_panic_with_source_map(
 
 /// Extract script identifier from a file path
 pub fn extract_script_identifier_from_path(path: &str) -> Option<String> {
-    // Look for patterns like ".perro/scripts/src/{identifier}.rs"
-    let re = regex::Regex::new(r"\.perro/scripts/src/([^/]+)\.rs").ok()?;
-    re.captures(path)
-        .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().to_string())
+    // Normalize path separators to forward slashes for easier matching
+    let normalized = path.replace('\\', "/");
+    
+    // Look for patterns like:
+    // - ".perro/scripts/src/{identifier}.rs"
+    // - "src/{identifier}.rs" (relative path, common in panic messages)
+    // - Any path ending with "{identifier}.rs" in a scripts/src directory
+    let patterns = [
+        r"\.perro/scripts/src/([^/]+)\.rs",
+        r"scripts/src/([^/]+)\.rs",
+        r"src/([^/]+)\.rs",
+    ];
+    
+    for pattern in &patterns {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            if let Some(caps) = re.captures(&normalized) {
+                if let Some(m) = caps.get(1) {
+                    return Some(m.as_str().to_string());
+                }
+            }
+        }
+    }
+    
+    None
 }
 

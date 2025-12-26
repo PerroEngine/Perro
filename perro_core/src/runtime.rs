@@ -218,20 +218,21 @@ pub fn run_game(data: RuntimeData) {
     // Name the main thread
     crate::thread_utils::set_current_thread_name("Main");
     
-    // Setup error log file
-    if let Ok(exe_path) = env::current_exe() {
-        if let Some(folder) = exe_path.parent() {
-            let log_path = folder.join("errors.log");
-            let file = File::create(&log_path).expect("Failed to create error log file");
-
-            let file = std::sync::Mutex::new(file);
-            std::panic::set_hook(Box::new(move |info| {
-                let _ = writeln!(file.lock().unwrap(), "PANIC: {}", info);
-            }));
-
-            println!("Logging errors to {:?}", log_path);
+    // Set up a basic panic hook IMMEDIATELY to catch any early panics
+    // This will be replaced with a better one later, but at least we'll catch panics
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        eprintln!("❌ PANIC occurred (early hook)!");
+        if let Some(location) = panic_info.location() {
+            eprintln!("   Location: {}:{}:{}", location.file(), location.line(), location.column());
         }
-    }
+        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            eprintln!("   Message: {}", s);
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            eprintln!("   Message: {}", s);
+        }
+        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    }));
 
     let args: Vec<String> = env::args().collect();
     let mut key: Option<String> = None;
@@ -552,90 +553,6 @@ pub fn run_dev() {
         root: project_root.clone(),
         name: project.name().into(),
     });
-
-    // 4.5. Setup panic handler with source map support (after project_root is determined)
-    let project_root_for_panic = project_root.clone();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        // Get thread name if available - try thread-local first, then Rust's thread name
-        let thread_name = crate::thread_utils::get_current_thread_name()
-            .or_else(|| std::thread::current().name().map(|n| n.to_string()))
-            .unwrap_or_else(|| "main".to_string());
-        
-        eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        eprintln!("❌ PANIC occurred in thread '{}'!", thread_name);
-        if let Some(location) = panic_info.location() {
-            eprintln!("   Location: {}:{}:{}", location.file(), location.line(), location.column());
-        }
-        
-        // Convert error message using source map if available
-        let mut panic_msg = String::new();
-        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            panic_msg = s.to_string();
-        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
-            panic_msg = s.clone();
-        }
-        
-        // Try to load source map and convert
-        let mut source_location_shown = false;
-        if let Some(sm) = crate::scripting::source_map_runtime::load_source_map(&project_root_for_panic) {
-            // First, try to get the current script identifier from thread-local (set when script is executing)
-            let script_identifier = crate::scripting::api::ScriptApi::get_current_script_identifier();
-            
-            if let Some(identifier) = script_identifier {
-                // We have the script identifier, use it to convert the error message
-                panic_msg = crate::scripting::source_map_runtime::convert_error_with_source_map(&sm, &identifier, &panic_msg);
-                
-                // Try to find the source file path
-                if let Some(script_map) = sm.scripts.get(&identifier) {
-                    // The panic location is in api.rs, not in the generated script
-                    // We can't convert the line number directly, but we can show which script it came from
-                    eprintln!("   📜 Error in script: {} (source: {})", identifier, script_map.source_path);
-                    eprintln!("   The error occurred while calling an API function from this script.");
-                    if let Some(location) = panic_info.location() {
-                        eprintln!("   API call location: {}:{}:{}", location.file(), location.line(), location.column());
-                    }
-                    source_location_shown = true;
-                }
-            } else if let Some(location) = panic_info.location() {
-                // Fallback: try to extract identifier from panic location (for panics in generated scripts)
-                if let Some(identifier) = crate::scripting::source_map_runtime::extract_script_identifier_from_path(location.file()) {
-                    panic_msg = crate::scripting::source_map_runtime::convert_error_with_source_map(&sm, &identifier, &panic_msg);
-                    
-                    // Try to find the source file path and convert line number
-                    if let Some(script_map) = sm.scripts.get(&identifier) {
-                        let generated_line = location.line();
-                        if let Some(source_line) = sm.find_source_line(&identifier, generated_line) {
-                            eprintln!("   📜 At: {}:{}:{} (source location)", script_map.source_path, source_line, location.column());
-                            source_location_shown = true;
-                        } else {
-                            eprintln!("   📜 Script: {} (source: {})", identifier, script_map.source_path);
-                            eprintln!("   At: {}:{}:{} (generated location)", location.file(), generated_line, location.column());
-                            source_location_shown = true;
-                        }
-                    }
-                }
-            }
-        }
-        
-        eprintln!("   💬 Message: {}", panic_msg);
-        
-        // Show generated location if we haven't shown source location
-        if !source_location_shown {
-            if let Some(location) = panic_info.location() {
-                eprintln!("   At: {}:{}:{}", location.file(), location.line(), location.column());
-            }
-        }
-        
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-        
-        eprintln!("   This might be an access violation (STATUS_ACCESS_VIOLATION)");
-        eprintln!("   Common causes:");
-        eprintln!("   - Script DLL not compiled or corrupted");
-        eprintln!("   - DLL function signature mismatch");
-        eprintln!("   - Invalid memory access in DLL");
-        eprintln!("   - File not found (check the path in your script)");
-        eprintln!("   Try: cargo run -p perro_core -- --path <path> --scripts");
-    }));
 
     // 5. Wrap project in Rc<RefCell<>> for shared mutable access
     let project_rc = Rc::new(RefCell::new(project));

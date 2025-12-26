@@ -197,14 +197,21 @@ impl SourceMap {
             .find(|range| generated_line >= range.generated_start && generated_line <= range.generated_end)?;
         
         // Linear interpolation within the range
-        let source_span_lines = range.source_end - range.source_start;
-        let generated_span_lines = range.generated_end - range.generated_start;
+        let source_span_lines = range.source_end.saturating_sub(range.source_start);
+        let generated_span_lines = range.generated_end.saturating_sub(range.generated_start);
         
         let source_line = if generated_span_lines == 0 {
             range.source_start
+        } else if source_span_lines == 0 {
+            // If source maps to a single line but generated spans multiple lines,
+            // we can't accurately map, but we can at least return the source line
+            range.source_start
         } else {
-            let offset = generated_line - range.generated_start;
-            range.source_start + (offset * source_span_lines / generated_span_lines)
+            let offset = generated_line.saturating_sub(range.generated_start);
+            // Use floating point for better precision, then round
+            let ratio = offset as f64 / generated_span_lines as f64;
+            let source_offset = (ratio * source_span_lines as f64).round() as u32;
+            range.source_start.saturating_add(source_offset).max(range.source_start).min(range.source_end)
         };
         
         // Calculate column if both source and generated columns are available

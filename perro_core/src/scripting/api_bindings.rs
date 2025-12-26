@@ -163,7 +163,7 @@ fn generate_rust_args(
             // 1. Convert the raw AST expression `a` into its basic Rust code string.
             //    This `code_raw` is the *uncasted*, *unprefixed* base string.
             let expected_ty_hint = expected_arg_types.and_then(|v| v.get(i));
-            let mut code_raw = a.to_rust(needs_self, script, expected_ty_hint, current_func);
+            let mut code_raw = a.to_rust(needs_self, script, expected_ty_hint, current_func, None);
 
             // 2. Determine if a cast is needed and apply it to `code_raw`.
             //    This part happens first on the raw expression's representation.
@@ -789,7 +789,7 @@ impl ApiCodegen for SignalApi {
                             }
                             Expr::MemberAccess(base, field) => {
                                 // MemberAccess like bob.function -> node_code is already bob_id
-                                let node_code = base.to_rust(false, script, None, current_func);
+                                let node_code = base.to_rust(false, script, None, current_func, None);
                                 (node_code, field.clone())
                             }
                             Expr::Ident(func_name) => {
@@ -899,7 +899,7 @@ impl ApiCodegen for ArrayApi {
                     };
 
                 let mut value_code =
-                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
+                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
 
                 // If the value_code itself still indicates a JSON value AND the target is not Type::Object,
                 // we should attempt to deserialize it.
@@ -971,7 +971,7 @@ impl ApiCodegen for ArrayApi {
                     };
 
                 let mut value_code =
-                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func);
+                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
 
                 // Apply the same logic as Push for value_code conversion/cloning
                 if value_code.starts_with("json!(") && inner_type != Type::Object {
@@ -1077,9 +1077,9 @@ impl ApiCodegen for MapApi {
             MapApi::Insert => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let val_type = script.infer_map_value_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
                 let mut val_code =
-                    args[2].to_rust(needs_self, script, val_type.as_ref(), current_func);
+                    args[2].to_rust(needs_self, script, val_type.as_ref(), current_func, None);
 
                 // For dynamic maps (any value type), wrap the value in json!()
                 if let Some(Type::Object) = val_type.as_ref() {
@@ -1094,7 +1094,7 @@ impl ApiCodegen for MapApi {
             // args: [map, key]
             MapApi::Remove => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
                 if let Some(Type::String) = key_type.as_ref() {
                     format!("{}.remove({}.as_str())", args_strs[0], key_code)
                 } else {
@@ -1107,7 +1107,7 @@ impl ApiCodegen for MapApi {
                 // 1. Infer key type from map
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 // 2. Render the key argument with the right type hint
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
 
                 if let Some(Type::String) = key_type.as_ref() {
                     // for String keys, .as_str() may be appropriate
@@ -1127,7 +1127,7 @@ impl ApiCodegen for MapApi {
             // args: [map, key]
             MapApi::Contains => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
                 if let Some(Type::String) = key_type.as_ref() {
                     format!("{}.contains_key({}.as_str())", args_strs[0], key_code)
                 } else {
@@ -1316,6 +1316,7 @@ impl ApiCodegen for TextureApi {
                     // Variable or complex expression - borrow it
                     format!("&{}", arg)
                 };
+                
                 format!("api.Texture.load({})", arg_str)
             }
             TextureApi::CreateFromBytes => {
@@ -1343,8 +1344,8 @@ impl ApiCodegen for TextureApi {
 impl ApiTypes for TextureApi {
     fn return_type(&self) -> Option<Type> {
         match self {
-            TextureApi::Load => Some(Type::Option(Box::new(Type::Uuid))),
-            TextureApi::CreateFromBytes => Some(Type::Option(Box::new(Type::Uuid))),
+            TextureApi::Load => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID (like GetParent returns DynNode)
+            TextureApi::CreateFromBytes => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID
             TextureApi::GetWidth | TextureApi::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
             TextureApi::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
         }

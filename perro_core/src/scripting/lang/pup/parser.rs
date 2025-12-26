@@ -14,11 +14,19 @@ pub struct PupParser {
     pub parsed_structs: Vec<StructDef>,
     /// Pending attributes that were consumed at top level (for @AttributeName before var/fn)
     pending_attributes: Vec<String>,
+    /// Source file path for source location tracking
+    source_file: Option<String>,
+    /// Start position of the current token (for source location tracking)
+    current_token_line: u32,
+    current_token_column: u32,
 }
 
 impl PupParser {
     pub fn new(input: &str) -> Self {
         let mut lex = PupLexer::new(input);
+        // Capture position before getting first token
+        let line = lex.current_line();
+        let column = lex.current_column();
         let cur = lex.next_token();
         Self {
             lexer: lex,
@@ -26,10 +34,40 @@ impl PupParser {
             type_env: HashMap::new(),
             parsed_structs: Vec::new(),
             pending_attributes: Vec::new(),
+            source_file: None,
+            current_token_line: line,
+            current_token_column: column,
+        }
+    }
+    
+    pub fn set_source_file(&mut self, file: String) {
+        self.source_file = Some(file);
+    }
+    
+    fn current_source_span(&self) -> Option<crate::scripting::source_span::SourceSpan> {
+        self.source_file.as_ref().map(|file| {
+            crate::scripting::source_span::SourceSpan {
+                file: file.clone(),
+                line: self.lexer.current_line(),
+                column: self.lexer.current_column(),
+                length: 1,
+                language: "pup".to_string(),
+            }
+        })
+    }
+    
+    fn typed_expr(&self, expr: Expr) -> TypedExpr {
+        TypedExpr {
+            expr,
+            inferred_type: None,
+            span: self.current_source_span(),
         }
     }
 
     fn next_token(&mut self) {
+        // Capture the start position of the current token before advancing
+        self.current_token_line = self.lexer.current_line();
+        self.current_token_column = self.lexer.current_column();
         self.current_token = self.lexer.next_token();
     }
 
@@ -379,17 +417,13 @@ impl PupParser {
         use crate::scripting::ast::{Expr, Literal, TypedExpr};
         // Create: Signal.connect("SIGNALNAME", function_name)
         // The function name is the same as the signal name, and it's on self
-        Stmt::Expr(TypedExpr {
-            expr: Expr::ApiCall(
-                ApiModule::Signal(SignalApi::Connect),
-                vec![
-                    Expr::Literal(Literal::String(signal_name.clone())),
-                    Expr::Literal(Literal::String(signal_name)),
-                ],
-            ),
-            inferred_type: None,
-            span: None,
-        })
+        Stmt::Expr(self.typed_expr(Expr::ApiCall(
+            ApiModule::Signal(SignalApi::Connect),
+            vec![
+                Expr::Literal(Literal::String(signal_name.clone())),
+                Expr::Literal(Literal::String(signal_name)),
+            ],
+        )))
     }
 
     fn collect_locals(&self, body: &[Stmt]) -> Vec<Variable> {
@@ -492,6 +526,9 @@ impl PupParser {
         // by checking after parsing an identifier expression, not by peeking ahead
         // This avoids token restoration issues
 
+        // Capture position of the current token - this is where the expression starts
+        let expr_start_line = self.current_token_line;
+        let expr_start_column = self.current_token_column;
         let lhs = self.parse_expression(0)?;
 
         // Handle increment/decrement operators (i++, i--) after parsing expression
@@ -501,11 +538,7 @@ impl PupParser {
                 return Ok(Stmt::AssignOp(
                     name.clone(),
                     Op::Add,
-                    TypedExpr {
-                        expr: Expr::Literal(Literal::Number("1".to_string())),
-                        inferred_type: None,
-                        span: None,
-                    },
+                    self.typed_expr(Expr::Literal(Literal::Number("1".to_string()))),
                 ));
             }
             if self.current_token == PupToken::MinusMinus {
@@ -513,11 +546,7 @@ impl PupParser {
                 return Ok(Stmt::AssignOp(
                     name.clone(),
                     Op::Sub,
-                    TypedExpr {
-                        expr: Expr::Literal(Literal::Number("1".to_string())),
-                        inferred_type: None,
-                        span: None,
-                    },
+                    self.typed_expr(Expr::Literal(Literal::Number("1".to_string()))),
                 ));
             }
         }
@@ -526,10 +555,19 @@ impl PupParser {
             return self.make_assign_stmt(lhs, op, rhs);
         }
 
+        // Create TypedExpr with the position we captured at the start of the expression
         Ok(Stmt::Expr(TypedExpr {
             expr: lhs,
             inferred_type: None,
-            span: None,
+            span: self.source_file.as_ref().map(|file| {
+                crate::scripting::source_span::SourceSpan {
+                    file: file.clone(),
+                    line: expr_start_line,
+                    column: expr_start_column,
+                    length: 1,
+                    language: "pup".to_string(),
+                }
+            }),
         }))
     }
 
@@ -645,22 +683,14 @@ impl PupParser {
 
             Ok(Stmt::For {
                 var_name,
-                iterable: TypedExpr {
-                    expr: iterable,
-                    inferred_type: None,
-                    span: None,
-                },
+                iterable: self.typed_expr(iterable),
                 body,
             })
         }
     }
 
     fn make_assign_stmt(&mut self, lhs: Expr, op: Option<Op>, rhs: Expr) -> Result<Stmt, String> {
-        let typed_rhs = TypedExpr {
-            expr: rhs,
-            inferred_type: None,
-            span: None,
-        };
+        let typed_rhs = self.typed_expr(rhs);
 
         match lhs {
             Expr::Ident(name) => Ok(match op {
@@ -668,11 +698,7 @@ impl PupParser {
                 Some(op) => Stmt::AssignOp(name, op, typed_rhs),
             }),
             Expr::MemberAccess(obj, field) => {
-                let typed_lhs = TypedExpr {
-                    expr: Expr::MemberAccess(obj, field),
-                    inferred_type: None,
-                    span: None,
-                };
+                let typed_lhs = self.typed_expr(Expr::MemberAccess(obj, field));
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),
                     Some(op) => Stmt::MemberAssignOp(typed_lhs, op, typed_rhs),
@@ -682,14 +708,10 @@ impl PupParser {
                 if args.len() == 2 {
                     let node = args[0].clone();
                     let field = args[1].clone();
-                    Ok(Stmt::Expr(TypedExpr {
-                        expr: Expr::ApiCall(
-                            ApiModule::NodeSugar(NodeSugarApi::SetVar),
-                            vec![node, field, typed_rhs.expr],
-                        ),
-                        inferred_type: None,
-                        span: None,
-                    }))
+                    Ok(Stmt::Expr(self.typed_expr(Expr::ApiCall(
+                        ApiModule::NodeSugar(NodeSugarApi::SetVar),
+                        vec![node, field, typed_rhs.expr],
+                    ))))
                 } else {
                     Err("Invalid NodeSugar get_var arg count".into())
                 }
@@ -1138,6 +1160,7 @@ impl PupParser {
                             // args[0] should be the child name (string)
                             let mut args_full = vec![Expr::SelfAccess];
                             args_full.extend(args);
+                            // Store the position in parser state for later use when creating TypedExpr
                             return Ok(Expr::ApiCall(api, args_full));
                         }
                         // For other NodeSugar methods (like get_parent), add obj as first arg
@@ -1149,6 +1172,8 @@ impl PupParser {
                     // Then check PupAPI::resolve for module APIs (Time, JSON, etc.)
                     if let Expr::Ident(mod_name) = &**obj {
                         if let Some(api) = PupAPI::resolve(mod_name, method) {
+                            // Store position for API calls - we'll need to modify Expr to carry this
+                            // For now, the position is captured but we can't attach it to Expr
                             return Ok(Expr::ApiCall(api, args));
                         }
                     }

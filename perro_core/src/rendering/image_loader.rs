@@ -51,45 +51,6 @@ fn detect_format_from_path(path: &str) -> Option<ImageFormat> {
     }
 }
 
-/// Read JPEG dimensions from SOF (Start of Frame) marker
-/// Returns (width, height) if found, None otherwise
-fn read_jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
-    if bytes.len() < 20 {
-        return None;
-    }
-    
-    // JPEG starts with FF D8
-    if bytes[0] != 0xFF || bytes[1] != 0xD8 {
-        return None;
-    }
-    
-    // Search for SOF markers (0xFFC0-0xFFC3)
-    let mut i = 2;
-    while i < bytes.len().saturating_sub(9) {
-        if bytes[i] == 0xFF {
-            let marker = bytes[i + 1];
-            // SOF markers: 0xC0-0xC3 (baseline, extended sequential, progressive, lossless)
-            if marker >= 0xC0 && marker <= 0xC3 {
-                // SOF structure: FF [marker] [length_high] [length_low] [precision] [height_high] [height_low] [width_high] [width_low] ...
-                if i + 8 < bytes.len() {
-                    let height = ((bytes[i + 5] as u32) << 8) | (bytes[i + 6] as u32);
-                    let width = ((bytes[i + 7] as u32) << 8) | (bytes[i + 8] as u32);
-                    if width > 0 && height > 0 && width < 65536 && height < 65536 {
-                        return Some((width, height));
-                    }
-                }
-            }
-            // Skip this marker segment
-            if marker != 0xFF {
-                i += 1;
-            }
-        }
-        i += 1;
-    }
-    
-    None
-}
-
 fn detect_format_from_magic_bytes(bytes: &[u8]) -> Option<ImageFormat> {
     if bytes.len() < 12 {
         return None;
@@ -160,15 +121,6 @@ fn decode_png_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
 fn decode_jpeg_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
     use jpeg_decoder::Decoder;
 
-    // Try to read dimensions from JPEG SOF header first
-    let (width, height) = match read_jpeg_dimensions(bytes) {
-        Some(dims) => dims,
-        None => {
-            // Can't read dimensions from header, fall back to image crate
-            return decode_with_image_crate(bytes);
-        }
-    };
-
     let mut decoder = Decoder::new(bytes);
     
     // Decode the image
@@ -176,10 +128,13 @@ fn decode_jpeg_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
         .decode()
         .map_err(|e| format!("Failed to decode JPEG: {}", e))?;
     
-    // Get pixel format from decoder info, or default to RGB24
-    let pixel_format = decoder.info()
-        .map(|info| info.pixel_format)
-        .unwrap_or(jpeg_decoder::PixelFormat::RGB24);
+    // Get dimensions and pixel format from decoder info
+    let info = decoder.info()
+        .ok_or_else(|| "Failed to get JPEG decoder info".to_string())?;
+    
+    let width = info.width as u32;
+    let height = info.height as u32;
+    let pixel_format = info.pixel_format;
 
     // OPTIMIZED: Pre-allocate exact size needed for RGBA output
     let pixel_count = (width as usize)

@@ -219,7 +219,7 @@ impl Variable {
             let expected_type = self.typ.as_ref();
             // Call expr.expr.to_rust directly with the variable's type as expected_type
             expr.expr
-                .to_rust(false, script, expected_type, current_func)
+                .to_rust(false, script, expected_type, current_func, expr.span.as_ref())
         } else {
             self.default_value()
         }
