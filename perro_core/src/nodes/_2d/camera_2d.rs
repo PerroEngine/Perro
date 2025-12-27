@@ -11,9 +11,9 @@ pub struct Camera2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
 
-    /// Zoom factor (1.0 = normal, >1.0 zoom in, <1.0 zoom out)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub zoom: Option<f32>,
+    /// Zoom factor (0.0 = normal, positive = zoom in, negative = zoom out)
+    #[serde(default)]
+    pub zoom: f32,
 
     /// Whether this camera is currently active
     #[serde(default)]
@@ -30,15 +30,15 @@ impl Camera2D {
         base.name = Cow::Borrowed("Camera2D");
         Self {
             ty: NodeType::Camera2D,
-            zoom: Some(1.0),
+            zoom: 0.0,
             active: false,
             base,
         }
     }
 
-    /// Get the zoom value (defaults to 1.0)
+    /// Get the zoom value directly (0.0 = normal, positive = zoom in, negative = zoom out)
     pub fn zoom(&self) -> f32 {
-        self.zoom.unwrap_or(1.0)
+        self.zoom
     }
 }
 

@@ -6,6 +6,32 @@ use uuid::Uuid;
 
 use serde::{Serialize, Deserialize};
 
+/// Enum for specifying whether a node needs internal fixed updates
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedUpdate {
+    True,
+    False,
+}
+
+impl FixedUpdate {
+    pub fn as_bool(self) -> bool {
+        matches!(self, FixedUpdate::True)
+    }
+}
+
+/// Enum for specifying whether a node is renderable
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Renderable {
+    True,
+    False,
+}
+
+impl Renderable {
+    pub fn as_bool(self) -> bool {
+        matches!(self, Renderable::True)
+    }
+}
+
 
 /// Trait for inner node types that need internal fixed updates (e.g., Area2D for physics)
 /// Nodes implement this trait to opt into internal fixed updates.
@@ -55,13 +81,10 @@ pub trait BaseNode: Any + Debug + Send {
 
     fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>>;
     fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>);
-
-    fn is_dirty(&self) -> bool;
-    fn set_dirty(&mut self, dirty: bool);
-
-    fn mark_dirty(&mut self) {
-        self.set_dirty(true);
-    }
+    
+    /// Check if this node is renderable (actually rendered to screen)
+    /// Only renderable nodes should be added to needs_rerender
+    fn is_renderable(&self) -> bool;
 
     fn get_children_mut(&mut self) -> &mut Vec<Uuid>;
 
@@ -117,7 +140,7 @@ pub trait ToSceneNode {
 /// This version supports `Option<Vec<Uuid>>` for `children`.
 #[macro_export]
 macro_rules! impl_scene_node {
-    ($ty:ty, $variant:ident, $needs_internal:literal) => {
+    ($ty:ty, $variant:ident, $needs_internal:expr, $is_renderable:expr) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
             fn get_id(&self) -> uuid::Uuid {
                 self.id
@@ -181,13 +204,6 @@ macro_rules! impl_scene_node {
                 self.script_path = Some(std::borrow::Cow::Owned(path.to_string()));
             }
 
-            fn is_dirty(&self) -> bool {
-                self.dirty
-            }
-            fn set_dirty(&mut self, dirty: bool) {
-                self.dirty = dirty;
-            }
-
             fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
                 self.children.get_or_insert_with(Vec::new)
             }
@@ -211,19 +227,23 @@ macro_rules! impl_scene_node {
             fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
                 // If the node needs internal fixed update, call its method
                 // The node must have an `internal_fixed_update` method in its impl block
-                if $needs_internal {
+                if $needs_internal.as_bool() {
                     self.internal_fixed_update(api);
                 }
             }
 
             fn needs_internal_fixed_update(&self) -> bool {
-                $needs_internal
+                $needs_internal.as_bool()
             }
 
             fn get_created_timestamp(&self) -> u64 {
                 // Access created_timestamp directly (works for Node and Node2D types via Deref)
                 // Same pattern as get_id() and get_name() - they access directly, not through base
                 self.created_timestamp
+            }
+            
+            fn is_renderable(&self) -> bool {
+                $is_renderable.as_bool()
             }
         }
 
@@ -260,12 +280,13 @@ macro_rules! impl_scene_node {
 /// Declares all node types and generates `NodeType` + `SceneNode` enums.
 /// Also implements the `BaseNode` trait for `SceneNode` by delegating to its inner value.
 ///
-/// Syntax: `NodeName(needs_internal_fixed_update) => path::to::NodeType`
-/// where `needs_internal_fixed_update` is `true` or `false`
-/// If true, the node must have an `internal_fixed_update` method in its impl block
+/// Syntax: `NodeName(FixedUpdate::True/False, Renderable::True/False) => path::to::NodeType`
+/// where `FixedUpdate::True` means the node needs internal fixed updates
+/// and `Renderable::True` means the node is actually rendered to screen
+/// If FixedUpdate::True, the node must have an `internal_fixed_update` method in its impl block
 #[macro_export]
 macro_rules! define_nodes {
-    ( $( $variant:ident($needs_internal:literal) => $ty:path ),+ $(,)? ) => {
+    ( $( $variant:ident($needs_internal:expr, $is_renderable:expr) => $ty:path ),+ $(,)? ) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(rename_all = "PascalCase")]
         pub enum NodeType { $( $variant, )+ }
@@ -300,6 +321,13 @@ macro_rules! define_nodes {
             pub fn type_name(&self) -> &'static str {
                 match self {
                     $( NodeType::$variant => stringify!($variant), )+
+                }
+            }
+            
+            /// Check if this node type is renderable (actually rendered to screen)
+            pub fn is_renderable(&self) -> bool {
+                match self {
+                    $( NodeType::$variant => $is_renderable.as_bool(), )+
                 }
             }
         }
@@ -409,14 +437,6 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.set_script_exp_vars(vars), )+ }
             }
 
-            fn is_dirty(&self) -> bool {
-                match self { $( SceneNode::$variant(n) => n.is_dirty(), )+ }
-            }
-
-            fn set_dirty(&mut self, dirty: bool) {
-                match self { $( SceneNode::$variant(n) => n.set_dirty(dirty), )+ }
-            }
-
             fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
                 match self { $( SceneNode::$variant(n) => n.get_children_mut(), )+ }
             }
@@ -456,6 +476,12 @@ macro_rules! define_nodes {
                     $( SceneNode::$variant(n) => n.get_created_timestamp(), )+
                 }
             }
+            
+            fn is_renderable(&self) -> bool {
+                match self {
+                    $( SceneNode::$variant(_) => $is_renderable.as_bool(), )+
+                }
+            }
         }
 
         // Helper methods to extract Node2D references
@@ -493,7 +519,7 @@ macro_rules! define_nodes {
             }
         }
 
-        $( impl_scene_node!($ty, $variant, $needs_internal); )+
+        $( impl_scene_node!($ty, $variant, $needs_internal, $is_renderable); )+
     };
 }
 
@@ -501,26 +527,28 @@ macro_rules! define_nodes {
 // Register all built-in node types here
 // ─────────────────────────────────────────────
 
-//true means it has internal fixed update logic
+// Syntax: NodeName(FixedUpdate::True/False, Renderable::True/False) => path
+// FixedUpdate::True means the node needs internal fixed updates
+// Renderable::True means the node is actually rendered to screen
 define_nodes!(
-    Node(false)     => crate::nodes::node::Node,
-    Node2D(false)   => crate::nodes::_2d::node_2d::Node2D,
-    Sprite2D(false) => crate::nodes::_2d::sprite_2d::Sprite2D,
-    Area2D(true)   => crate::nodes::_2d::area_2d::Area2D,
-    CollisionShape2D(false) => crate::nodes::_2d::collision_shape_2d::CollisionShape2D,
-    Shape2D(false) => crate::nodes::_2d::shape_2d::Shape2D,
-    Camera2D(false)  => crate::nodes::_2d::camera_2d::Camera2D,
+    Node(FixedUpdate::False, Renderable::False)     => crate::nodes::node::Node,
+    Node2D(FixedUpdate::False, Renderable::False)   => crate::nodes::_2d::node_2d::Node2D,
+    Sprite2D(FixedUpdate::False, Renderable::True) => crate::nodes::_2d::sprite_2d::Sprite2D,
+    Area2D(FixedUpdate::True, Renderable::False)   => crate::nodes::_2d::area_2d::Area2D,
+    CollisionShape2D(FixedUpdate::False, Renderable::False) => crate::nodes::_2d::collision_shape_2d::CollisionShape2D,
+    Shape2D(FixedUpdate::False, Renderable::True) => crate::nodes::_2d::shape_2d::Shape2D,
+    Camera2D(FixedUpdate::False, Renderable::True)  => crate::nodes::_2d::camera_2d::Camera2D,
 
 
-    UINode(true)   => crate::nodes::ui_node::UINode,
+    UINode(FixedUpdate::True, Renderable::True)   => crate::nodes::ui_node::UINode,
 
 
-    Node3D(false)   => crate::nodes::_3d::node_3d::Node3D,
-    MeshInstance3D(false) => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
-    Camera3D(false)  => crate::nodes::_3d::camera_3d::Camera3D,
+    Node3D(FixedUpdate::False, Renderable::False)   => crate::nodes::_3d::node_3d::Node3D,
+    MeshInstance3D(FixedUpdate::False, Renderable::True) => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
+    Camera3D(FixedUpdate::False, Renderable::True)  => crate::nodes::_3d::camera_3d::Camera3D,
 
-    DirectionalLight3D(false) => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
-    OmniLight3D(false) => crate::nodes::_3d::light_omni_3d::OmniLight3D,
-    SpotLight3D(false) => crate::nodes::_3d::light_spot_3d::SpotLight3D,
+    DirectionalLight3D(FixedUpdate::False, Renderable::True) => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
+    OmniLight3D(FixedUpdate::False, Renderable::True) => crate::nodes::_3d::light_omni_3d::OmniLight3D,
+    SpotLight3D(FixedUpdate::False, Renderable::True) => crate::nodes::_3d::light_spot_3d::SpotLight3D,
 );
 

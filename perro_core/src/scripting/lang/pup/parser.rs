@@ -378,10 +378,14 @@ impl PupParser {
             return Err("Expected function name".into());
         };
         self.next_token();
-        self.parse_function_with_name(name)
+        self.parse_function_with_name_and_attributes(name, attributes)
     }
 
     fn parse_function_with_name(&mut self, name: String) -> Result<Function, String> {
+        self.parse_function_with_name_and_attributes(name, Vec::new())
+    }
+
+    fn parse_function_with_name_and_attributes(&mut self, name: String, attributes: Vec<String>) -> Result<Function, String> {
         self.expect(PupToken::LParen)?;
         let mut params = Vec::new();
         if self.current_token != PupToken::RParen {
@@ -407,14 +411,14 @@ impl PupParser {
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
             return_type: Type::Void,
             span: None,
-            attributes: Vec::new(), // Attributes are parsed separately for on-signal functions
+            attributes, // Use the parsed attributes
             is_on_signal: false,
             signal_name: None,
         })
     }
 
     fn create_signal_connect_stmt(&self, signal_name: String) -> Stmt {
-        use crate::scripting::ast::{Expr, Literal, TypedExpr};
+        use crate::scripting::ast::{Expr, Literal};
         // Create: Signal.connect("SIGNALNAME", function_name)
         // The function name is the same as the signal name, and it's on self
         Stmt::Expr(self.typed_expr(Expr::ApiCall(
@@ -786,6 +790,30 @@ impl PupParser {
                     Expr::ObjectLiteral(_) => Some(Type::Object),
                     Expr::Cast(_, target) => Some(target.clone()),
                     Expr::Ident(var_name) => self.type_env.get(var_name).cloned(),
+                    Expr::StructNew(type_name, _) => {
+                        // Check if it's a node type
+                        if crate::scripting::codegen::is_node_type(type_name) {
+                            // Convert node type name to Type::Node
+                            use crate::structs::engine_registry::ENGINE_REGISTRY;
+                            if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
+                                format!("{:?}", nt) == *type_name
+                            }) {
+                                Some(Type::Node(node_type.clone()))
+                            } else {
+                                None
+                            }
+                        } else if crate::structs::engine_structs::EngineStruct::is_engine_struct(type_name) {
+                            // Engine struct
+                            if let Some(engine_struct) = crate::structs::engine_structs::EngineStruct::from_string(type_name) {
+                                Some(Type::EngineStruct(engine_struct))
+                            } else {
+                                None
+                            }
+                        } else {
+                            // Custom struct
+                            Some(Type::Custom(type_name.clone()))
+                        }
+                    }
                     Expr::Call(inner, _) => {
                         if let Expr::MemberAccess(base, method) = &**inner {
                             if method == "new" {
@@ -1152,6 +1180,20 @@ impl PupParser {
 
                 // API sugar handling...
                 if let Expr::MemberAccess(obj, method) = &left {
+                    // Handle nested member access like Input.Keyboard.is_key_pressed
+                    // Check if obj is itself a MemberAccess (e.g., Input.Keyboard)
+                    if let Expr::MemberAccess(inner_obj, _inner_field) = &**obj {
+                        // Check if the inner object is an API module (like Input)
+                        if let Expr::Ident(mod_name) = &**inner_obj {
+                            // Check if this is an API module - try to resolve it
+                            if let Some(api) = PupAPI::resolve(mod_name, method) {
+                                // For Input.Keyboard.method or Input.Mouse.method, 
+                                // resolve it as Input.method (the API binding handles Keyboard/Mouse prefix)
+                                return Ok(Expr::ApiCall(api, args));
+                            }
+                        }
+                    }
+                    
                     // Check PupNodeSugar methods FIRST (before PupAPI::resolve)
                     // This ensures methods like get_parent() on node variables get the object as first arg
                     if let Some(api) = PupNodeSugar::resolve_method(method) {
@@ -1377,14 +1419,20 @@ impl PupParser {
             "Array" | "array" => Type::Container(ContainerKind::Array, vec![Type::Object]),
             "Object" | "object" => Type::Object,
             _ => {
-                // Check engine registry for node types
-                use crate::structs::engine_registry::ENGINE_REGISTRY;
-                if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
-                    format!("{:?}", nt) == t
-                }) {
-                    Type::Node(node_type.clone())
+                // Check if it's an engine struct first
+                use crate::structs::engine_structs::EngineStruct;
+                if let Some(engine_struct) = EngineStruct::from_string(&t) {
+                    Type::EngineStruct(engine_struct)
                 } else {
-                    Type::Custom(t)
+                    // Check engine registry for node types
+                    use crate::structs::engine_registry::ENGINE_REGISTRY;
+                    if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
+                        format!("{:?}", nt) == t
+                    }) {
+                        Type::Node(node_type.clone())
+                    } else {
+                        Type::Custom(t)
+                    }
                 }
             }
         }

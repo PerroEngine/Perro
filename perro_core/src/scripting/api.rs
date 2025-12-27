@@ -154,8 +154,6 @@ impl ProcessApi {
 // This allows JoyConApi methods to access the ScriptApi without lifetime issues
 thread_local! {
     static SCRIPT_API_CONTEXT: RefCell<Option<*mut ScriptApi<'static>>> = RefCell::new(None);
-    // Track the current script identifier for source map lookups in panic handler
-    static CURRENT_SCRIPT_IDENTIFIER: RefCell<Option<String>> = RefCell::new(None);
 }
 
 pub struct JoyConApi {
@@ -1219,6 +1217,35 @@ impl TextureApi {
     }
 }
 
+#[derive(Default)]
+pub struct MathApi;
+
+impl MathApi {
+    /// Generate a random f32 between 0.0 and 1.0
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn random(&self) -> f32 {
+        let mut rng = rand::thread_rng();
+        // Use fully qualified path to avoid reserved keyword issue
+        <rand::rngs::ThreadRng as rand::RngCore>::next_u32(&mut rng) as f32 / u32::MAX as f32
+    }
+    
+    /// Generate a random f32 between min (inclusive) and max (exclusive)
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn random_range(&self, min: f32, max: f32) -> f32 {
+        let mut rng = rand::thread_rng();
+        let random_val = <rand::rngs::ThreadRng as rand::RngCore>::next_u32(&mut rng) as f32 / u32::MAX as f32;
+        min + random_val * (max - min)
+    }
+    
+    /// Generate a random i32 between min (inclusive) and max (exclusive)
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn random_int(&self, min: i32, max: i32) -> i32 {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        Rng::gen_range(&mut rng, min..max)
+    }
+}
+
 #[allow(non_snake_case)]
 #[derive(Default)]
 pub struct EngineApi {
@@ -1228,6 +1255,7 @@ pub struct EngineApi {
     pub Process: ProcessApi,
     pub Input: InputApi,
     pub Texture: TextureApi,
+    pub Math: MathApi,
 }
 
 //-----------------------------------------------------
@@ -1319,31 +1347,6 @@ impl<'a> ScriptApi<'a> {
         });
     }
 
-    /// Set the current script identifier for source map lookups
-    fn set_script_identifier(&mut self, script_id: Uuid) {
-        // Get script path from the node
-        if let Some(node) = self.scene.get_scene_node_ref(script_id) {
-            if let Some(script_path) = node.get_script_path() {
-                if let Ok(identifier) = crate::scripting::transpiler::script_path_to_identifier(script_path) {
-                    CURRENT_SCRIPT_IDENTIFIER.with(|ident| {
-                        *ident.borrow_mut() = Some(identifier);
-                    });
-                }
-            }
-        }
-    }
-
-    /// Clear the current script identifier
-    fn clear_script_identifier() {
-        CURRENT_SCRIPT_IDENTIFIER.with(|ident| {
-            *ident.borrow_mut() = None;
-        });
-    }
-
-    /// Get the current script identifier (for panic handler)
-    pub(crate) fn get_current_script_identifier() -> Option<String> {
-        CURRENT_SCRIPT_IDENTIFIER.with(|ident| ident.borrow().clone())
-    }
 
     //-------------------------------------------------
     // Core access
@@ -1429,7 +1432,6 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     pub fn call_init(&mut self, script_id: Uuid) {
         self.set_context();
-        self.set_script_identifier(script_id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(script_id) {
@@ -1440,12 +1442,10 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(script_id, script);
         }
         Self::clear_context();
-        Self::clear_script_identifier();
     }
 
     pub fn call_update(&mut self, id: Uuid) {
         self.set_context();
-        self.set_script_identifier(id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1456,12 +1456,10 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
-        Self::clear_script_identifier();
     }
 
     pub fn call_fixed_update(&mut self, id: Uuid) {
         self.set_context();
-        self.set_script_identifier(id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1472,12 +1470,10 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
-        Self::clear_script_identifier();
     }
 
     pub fn call_draw(&mut self, id: Uuid) {
         self.set_context();
-        self.set_script_identifier(id);
         // Take/insert pattern needed to avoid borrow checker issues
         // (take_script/insert_script don't modify filtered vectors, just HashMap)
         if let Some(mut script) = self.scene.take_script(id) {
@@ -1488,7 +1484,6 @@ impl<'a> ScriptApi<'a> {
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
-        Self::clear_script_identifier();
     }
 
     pub fn call_node_internal_fixed_update(&mut self, node_id: Uuid) {
@@ -1529,14 +1524,12 @@ impl<'a> ScriptApi<'a> {
 
     pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &[Value]) {
         self.set_context();
-        self.set_script_identifier(id);
         // Safely take script out, call method, put it back
         if let Some(mut script) = self.scene.take_script(id) {
             script.call_function(func, self, params);
             self.scene.insert_script(id, script);
         }
         Self::clear_context();
-        Self::clear_script_identifier();
     }
     
     /// Internal fast-path call that skips context setup (used when context already set)
@@ -1726,22 +1719,28 @@ impl<'a> ScriptApi<'a> {
         F: FnOnce(&mut T),
     {
         // Get mutable access to the node
-        let node = self.scene.get_scene_node_mut(id)
-            .unwrap_or_else(|| panic!("Node {} not found", id));
+        {
+            let node = self.scene.get_scene_node_mut(id)
+                .unwrap_or_else(|| panic!("Node {} not found", id));
+            
+            // Try to downcast to the requested type and mutate in place
+            let typed_node = node.as_any_mut().downcast_mut::<T>()
+                .unwrap_or_else(|| panic!("Node {} is not of type {}", id, std::any::type_name::<T>()));
+            
+            f(typed_node); // mutate in place
+            
+            // Mark transform dirty if Node2D
+            node.mark_transform_dirty_if_node2d();
+        } // node borrow released here
         
-        // Try to downcast to the requested type and mutate in place
-        let typed_node = node.as_any_mut().downcast_mut::<T>()
-            .unwrap_or_else(|| panic!("Node {} is not of type {}", id, std::any::type_name::<T>()));
-        
-        f(typed_node); // mutate in place
-        
-        // Mark dirty after modification
-        node.mark_dirty();
-        node.mark_transform_dirty_if_node2d();
+        // Always call mark_needs_rerender - it will check HashSet.contains() (O(1)) 
+        // and only add if not already in the set
+        self.scene.mark_needs_rerender(id);
         
         // If this is a Node2D, mark transform dirty recursively (including children)
         // This ensures children's global transforms are recalculated when parent moves
-        if node.as_node2d().is_some() {
+        // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
+        if self.scene.get_scene_node_ref(id).and_then(|n| n.as_node2d()).is_some() {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
@@ -1756,17 +1755,23 @@ impl<'a> ScriptApi<'a> {
         F: FnOnce(&mut crate::nodes::node_registry::SceneNode),
     {
         // Get mutable access to the node
-        let node = self.scene.get_scene_node_mut(id)
-            .unwrap_or_else(|| panic!("Node {} not found", id));
+        {
+            let node = self.scene.get_scene_node_mut(id)
+                .unwrap_or_else(|| panic!("Node {} not found", id));
+            
+            f(node); // mutate in place using BaseNode methods
+            
+            // Mark transform dirty if Node2D
+            node.mark_transform_dirty_if_node2d();
+        } // node borrow released here
         
-        f(node); // mutate in place using BaseNode methods
-        
-        // Mark dirty after modification
-        node.mark_dirty();
-        node.mark_transform_dirty_if_node2d();
+        // Always call mark_needs_rerender - it will check HashSet.contains() (O(1))
+        // and only add if not already in the set
+        self.scene.mark_needs_rerender(id);
         
         // If this is a Node2D, mark transform dirty recursively (including children)
-        if node.as_node2d().is_some() {
+        // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
+        if self.scene.get_scene_node_ref(id).and_then(|n| n.as_node2d()).is_some() {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }

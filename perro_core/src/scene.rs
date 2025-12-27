@@ -318,6 +318,10 @@ pub struct Scene<P: ScriptProvider> {
     
     // Track if texture_path → texture_id conversion has been done
     textures_converted: bool,
+    
+    // OPTIMIZED: Pre-accumulated set of node IDs that need rerendering
+    // Using HashSet for O(1) membership checks
+    needs_rerender: HashSet<Uuid>,
 }
 
 #[derive(Default)]
@@ -359,14 +363,16 @@ impl<P: ScriptProvider> Scene<P> {
             scripts_with_update: Vec::new(),
             scripts_with_fixed_update: Vec::new(),
             scripts_with_draw: Vec::new(),
+            
+            // OPTIMIZED: Initialize nodes needing rerender tracking
+            needs_rerender: HashSet::new(),
         }
     }
 
     /// Create a runtime scene from serialized data
     pub fn from_data(mut data: SceneData, provider: P, project: Rc<RefCell<Project>>) -> Self {
-        // Mark all nodes as dirty and transform_dirty when loading from data
+        // Mark all nodes as transform_dirty when loading from data
         for node in data.nodes.values_mut() {
-            node.mark_dirty();
             node.mark_transform_dirty_if_node2d();
         }
         
@@ -402,6 +408,9 @@ impl<P: ScriptProvider> Scene<P> {
             scripts_with_update: Vec::new(),
             scripts_with_fixed_update: Vec::new(),
             scripts_with_draw: Vec::new(),
+            
+            // OPTIMIZED: Initialize nodes needing rerender tracking
+            needs_rerender: HashSet::new(),
         }
     }
 
@@ -491,7 +500,6 @@ impl<P: ScriptProvider> Scene<P> {
             input_mgr.load_action_map(input_map);
         }
 
-        println!("Building scene from project manifest...");
 
         // ✅ root script first
         let root_script_opt: Option<String> = {
@@ -519,11 +527,18 @@ impl<P: ScriptProvider> Scene<P> {
 
                     let mut api = ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
                     api.call_init(root_id);
+                    
+                    // After script initialization, ensure renderable nodes are marked for rerender
+                    // (old system would have called mark_dirty() here)
+                    if let Some(node) = game_scene.data.nodes.get(&root_id) {
+                        if node.is_renderable() {
+                            game_scene.needs_rerender.insert(root_id);
+                        }
+                    }
                 }
             }
         }
 
-        println!("About to graft main scene...");
 
         // ✅ main scene second
         let main_scene_path: String = {
@@ -532,22 +547,16 @@ impl<P: ScriptProvider> Scene<P> {
         };
 
         // measure load
-        let t_load_start = Instant::now();
+        let _t_load_start = Instant::now();
         let loaded_data = game_scene.provider.load_scene_data(&main_scene_path)?;
-        let load_time = t_load_start.elapsed();
+        let _load_time = _t_load_start.elapsed();
 
         // measure merge/graft
-        let t_graft_start = Instant::now();
+        let _t_graft_start = Instant::now();
         let game_root = game_scene.get_root().get_id();
         game_scene.merge_scene_data(loaded_data, game_root, gfx)?; // <- was graft_data()
-        let graft_time = t_graft_start.elapsed();
+        let _graft_time = _t_graft_start.elapsed();
 
-        println!(
-            "⏱ main scene load: {:>6.2} ms | graft: {:>6.2} ms | total: {:>6.2} ms",
-            load_time.as_secs_f64() * 1000.0,
-            graft_time.as_secs_f64() * 1000.0,
-            (load_time + graft_time).as_secs_f64() * 1000.0
-        );
 
         Ok(game_scene)
     }
@@ -644,10 +653,6 @@ impl<P: ScriptProvider> Scene<P> {
         }
     
         let id_map_time = id_map_start.elapsed();
-        println!(
-            "⏱ ID map creation: {:.2} ms",
-            id_map_time.as_secs_f64() * 1000.0
-        );
     
         // ───────────────────────────────────────────────
         // 2️⃣ REMAP NODES AND BUILD RELATIONSHIPS
@@ -810,7 +815,6 @@ impl<P: ScriptProvider> Scene<P> {
                 }
             }
 
-            node.mark_dirty();
             node.mark_transform_dirty_if_node2d();
 
             // Resolve name conflicts (check siblings AND parent/ancestor)
@@ -828,6 +832,13 @@ impl<P: ScriptProvider> Scene<P> {
 
             self.data.nodes.insert(node_id, node);
             inserted_ids.push(node_id);
+            
+            // Add to needs_rerender set only if this is a renderable node
+            if let Some(node_ref) = self.data.nodes.get(&node_id) {
+                if node_ref.is_renderable() {
+                    self.needs_rerender.insert(node_id);
+                }
+            }
     
             // Register node for internal fixed updates if needed
             if let Some(node_ref) = self.data.nodes.get(&node_id) {
@@ -880,10 +891,6 @@ impl<P: ScriptProvider> Scene<P> {
         // Recursively load and merge nested scenes
         let nested_scene_count = nodes_with_nested_scenes.len();
         for (parent_node_id, scene_path) in nodes_with_nested_scenes {
-            println!(
-                "🔗 Recursively merging nested scene: {} (parent={})",
-                scene_path, parent_node_id
-            );
     
             // Load the nested scene
             if let Ok(nested_scene_data) = self.provider.load_scene_data(&scene_path) {
@@ -900,14 +907,8 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
     
-        let nested_scene_time = nested_scene_start.elapsed();
-        if nested_scene_count > 0 {
-            println!(
-                "⏱ Nested scene loading: {:.2} ms ({} scene(s))",
-                nested_scene_time.as_secs_f64() * 1000.0,
-                nested_scene_count
-            );
-        }
+        let _nested_scene_time = nested_scene_start.elapsed();
+        let _nested_scene_count = nested_scene_count;
     
         // ───────────────────────────────────────────────
         // 5️⃣ REGISTER COLLISION SHAPES WITH PHYSICS
@@ -1024,6 +1025,14 @@ impl<P: ScriptProvider> Scene<P> {
     
                 let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
                 api.call_init(id);
+                
+                // After script initialization, ensure renderable nodes are marked for rerender
+                // (old system would have called mark_dirty() here)
+                if let Some(node) = self.data.nodes.get(&id) {
+                    if node.is_renderable() {
+                        self.needs_rerender.insert(id);
+                    }
+                }
             }
         }
     
@@ -1194,7 +1203,6 @@ impl<P: ScriptProvider> Scene<P> {
                 continue;
             }
     
-            node.mark_dirty();
             node.mark_transform_dirty_if_node2d();
     
             // Resolve name conflicts (only check siblings - nodes with the same parent)
@@ -1206,9 +1214,16 @@ impl<P: ScriptProvider> Scene<P> {
                     Self::set_node_name(&mut node, resolved_name);
                 }
             }
-    
+
             self.data.nodes.insert(node_id, node);
             inserted_ids.push(node_id);
+            
+            // Add to needs_rerender set only if this is a renderable node
+            if let Some(node_ref) = self.data.nodes.get(&node_id) {
+                if node_ref.is_renderable() {
+                    self.needs_rerender.insert(node_id);
+                }
+            }
     
             // Register for internal fixed updates if needed
             if let Some(node_ref) = self.data.nodes.get(&node_id) {
@@ -1284,6 +1299,14 @@ impl<P: ScriptProvider> Scene<P> {
     
                         let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
                         api.call_init(id);
+                        
+                        // After script initialization, ensure renderable nodes are marked for rerender
+                        // (old system would have called mark_dirty() here)
+                        if let Some(node) = self.data.nodes.get(&id) {
+                            if node.is_renderable() {
+                                self.needs_rerender.insert(id);
+                            }
+                        }
                     }
                 }
             }
@@ -1303,10 +1326,6 @@ impl<P: ScriptProvider> Scene<P> {
         }
     
         for (parent_node_id, scene_path) in nodes_with_nested_scenes {
-            println!(
-                "🔗 [Nested] Recursively merging scene: {} (parent={})",
-                scene_path, parent_node_id
-            );
     
             if let Ok(nested_scene_data) = self.provider.load_scene_data(&scene_path) {
                 if let Err(e) =
@@ -1319,17 +1338,12 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
     
-        println!(
-            "   ✅ Nested scene merge complete: {} nodes inserted",
-            inserted_ids.len()
-        );
     
         Ok(())
     }
     
 
     pub fn print_scene_tree(&self) {
-        println!("\n🌳 Scene Tree Structure:");
         
         // Find all root nodes (nodes with no parent)
         let root_nodes: Vec<Uuid> = self.data.nodes
@@ -1505,18 +1519,18 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
         
-        let dirty_nodes = {
+        let nodes_needing_rerender = {
             #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "get_dirty_nodes").entered();
-            self.get_dirty_nodes()
+            let _span = tracing::span!(tracing::Level::INFO, "get_nodes_needing_rerender").entered();
+            self.get_nodes_needing_rerender()
         };
-        if dirty_nodes.is_empty() {
+        if nodes_needing_rerender.is_empty() {
             return;
         }
         {
             #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "traverse_and_render", count = dirty_nodes.len()).entered();
-            self.traverse_and_render(dirty_nodes, gfx);
+            let _span = tracing::span!(tracing::Level::INFO, "traverse_and_render", count = nodes_needing_rerender.len()).entered();
+            self.traverse_and_render(nodes_needing_rerender, gfx);
         }
     }
 
@@ -1820,7 +1834,14 @@ impl<P: ScriptProvider> Scene<P> {
         self.data.nodes.insert(id, node);
         // Mark transform as dirty for Node2D nodes (after insertion)
         self.mark_transform_dirty_recursive(id);
-        println!("✅ Node {} added\n", id);
+        // Add to needs_rerender set since this is a newly created node
+        // (mark_transform_dirty_recursive will add it if not already in set, but we know it's new)
+        if let Some(node) = self.data.nodes.get(&id) {
+            if node.is_renderable() {
+                self.needs_rerender.insert(id);
+            }
+        }
+
 
         // Register node for internal fixed updates if needed
         if let Some(node_ref) = self.data.nodes.get(&id) {
@@ -1872,6 +1893,14 @@ impl<P: ScriptProvider> Scene<P> {
 
             let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow, gfx);
             api.call_init(id);
+            
+            // After script initialization, ensure renderable nodes are marked for rerender
+            // (old system would have called mark_dirty() here)
+            if let Some(node) = self.data.nodes.get(&id) {
+                if node.is_renderable() {
+                    self.needs_rerender.insert(id);
+                }
+            }
 
             println!("   ✅ Script initialized");
         }
@@ -1985,7 +2014,7 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     /// Mark a node's transform as dirty (and all its children)
-    /// Also marks nodes as dirty for rendering so they get picked up by get_dirty_nodes()
+    /// Also marks nodes as needing rerender so they get picked up by get_nodes_needing_rerender()
     pub fn mark_transform_dirty_recursive(&mut self, node_id: Uuid) {
         // Collect children first before any mutable borrows
         let children: Vec<Uuid> = self.data.nodes
@@ -1993,14 +2022,20 @@ impl<P: ScriptProvider> Scene<P> {
             .map(|node| node.get_children().iter().copied().collect())
             .unwrap_or_default();
         
-        // Now mark this node as dirty (mutable borrow)
+        // Mark this node's transform as dirty if it's a Node2D-based node
         if let Some(node) = self.data.nodes.get_mut(&node_id) {
-            // Mark this node as dirty for rendering
-            node.mark_dirty();
-            
-            // Mark this node's transform as dirty if it's a Node2D-based node
             if let Some(node2d) = node.as_node2d_mut() {
                 node2d.transform_dirty = true;
+            }
+        }
+        
+        // Only add renderable nodes to needs_rerender
+        // Non-renderable nodes (like Node2D) don't need to be rendered,
+        // but their transform_dirty flag is still set so renderable children
+        // can recalculate their global transforms during rendering
+        if let Some(node) = self.data.nodes.get(&node_id) {
+            if node.is_renderable() && !self.needs_rerender.contains(&node_id) {
+                self.needs_rerender.insert(node_id);
             }
         }
         
@@ -2150,277 +2185,559 @@ impl<P: ScriptProvider> Scene<P> {
         }
     }
 
-    // Get dirty nodes for rendering
-    // Also includes visible Node2D nodes that need their transforms calculated
-    fn get_dirty_nodes(&self) -> Vec<Uuid> {
-        const PARALLEL_THRESHOLD: usize = 50;
+    // Get nodes needing rerender
+    // OPTIMIZED: Returns pre-accumulated set instead of iterating over all nodes
+    fn get_nodes_needing_rerender(&mut self) -> Vec<Uuid> {
+        // Take ownership of the HashSet and convert to Vec
+        self.needs_rerender.drain().collect()
+    }
 
-        if self.data.nodes.len() >= PARALLEL_THRESHOLD {
-            // Note: IndexMap doesn't implement IntoParallelRefIterator, so we use regular iter
-            self.data
-                .nodes
-                .iter()
-                .filter_map(|(id, node)| {
-                    // Include if dirty (for rendering changes)
-                    // OR if it's a Node2D with a dirty transform (needs recalculation)
-                    if node.is_dirty() {
-                        Some(*id)
-                    } else if let Some(node2d) = node.as_node2d() {
-                        // Include Node2D nodes with dirty transforms so they get recalculated and rendered
-                        if node2d.transform_dirty {
-                            Some(*id)
+    /// Pre-calculate transforms for nodes in dependency order (parents before children)
+    /// This ensures that when calculating a child's transform, the parent's transform is already cached.
+    /// This is a major performance optimization when many children share the same moving parent.
+    fn precalculate_transforms_in_dependency_order(&mut self, node_ids: &[Uuid]) {
+        // Collect nodes that need transforms and calculate their depth
+        let mut nodes_with_depth: Vec<(Uuid, usize)> = Vec::new();
+        
+        for &node_id in node_ids {
+            if let Some(node) = self.data.nodes.get(&node_id) {
+                if node.as_node2d().is_some() {
+                    // Calculate depth by walking up parent chain
+                    let mut depth = 0;
+                    let mut current_id = Some(node_id);
+                    while let Some(id) = current_id {
+                        if let Some(n) = self.data.nodes.get(&id) {
+                            if let Some(parent) = n.get_parent() {
+                                current_id = Some(parent.id);
+                                depth += 1;
+                            } else {
+                                break;
+                            }
                         } else {
-                            None
+                            break;
                         }
-                    } else {
-                        None
                     }
-                })
-                .collect()
-        } else {
-            self.data
-                .nodes
-                .iter()
-                .filter_map(|(id, node)| {
-                    // Include if dirty (for rendering changes)
-                    // OR if it's a Node2D with a dirty transform (needs recalculation)
-                    if node.is_dirty() {
-                        Some(*id)
-                    } else if let Some(node2d) = node.as_node2d() {
-                        // Include Node2D nodes with dirty transforms so they get recalculated and rendered
-                        if node2d.transform_dirty {
-                            Some(*id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect()
+                    nodes_with_depth.push((node_id, depth));
+                }
+            }
+        }
+        
+        // Sort by depth (parents before children)
+        nodes_with_depth.sort_by_key(|(_, depth)| *depth);
+        
+        // Calculate transforms in dependency order
+        // Parents will be calculated first, so their transforms are cached when children need them
+        for (node_id, _) in nodes_with_depth {
+            let _ = self.get_global_transform(node_id);
         }
     }
 
-
-    fn traverse_and_render(&mut self, dirty_nodes: Vec<Uuid>, gfx: &mut Graphics) {
-        for node_id in dirty_nodes {
-            // Get global transform first (before borrowing node mutably)
-            // Only try to get transform for Node2D-based nodes
-            let global_transform_opt = if let Some(node) = self.data.nodes.get(&node_id) {
-                if node.as_node2d().is_some() {
-                    self.get_global_transform(node_id)
-                } else {
-                    // Not a Node2D node - skip transform calculation
-                    None
-                }
-            } else {
-                None
-            };
+    fn traverse_and_render(&mut self, nodes_needing_rerender: Vec<Uuid>, gfx: &mut Graphics) {
+        // OPTIMIZED: Pre-calculate transforms in dependency order to avoid redundant parent recalculations
+        // When many children share the same moving parent, this ensures the parent's transform
+        // is calculated once and cached before all children use it.
+        self.precalculate_transforms_in_dependency_order(&nodes_needing_rerender);
+        
+        // OPTIMIZED: Parallelize data collection and batch queue operations
+        // Collect render commands first, then batch queue them
+        const PARALLEL_THRESHOLD: usize = 10;
+        
+        if nodes_needing_rerender.len() >= PARALLEL_THRESHOLD {
+            // OPTIMIZED: For large batches, collect render data first (read-only access)
+            // We need to collect node data before we can process in parallel
+            let node_data: Vec<_> = nodes_needing_rerender
+                .iter()
+                .filter_map(|&node_id| {
+                    // Read-only access to collect initial data
+                    if let Some(node) = self.data.nodes.get(&node_id) {
+                        let timestamp = node.get_created_timestamp();
+                        let needs_transform = node.as_node2d().is_some();
+                        let node_type = node.get_type();
+                        Some((node_id, timestamp, needs_transform, node_type))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             
-            if let Some(node) = self.data.nodes.get_mut(&node_id) {
-                // Get timestamp from the borrowed node
-                let timestamp = node.get_created_timestamp();
-                match node {
-                    //2D Nodes
-                    SceneNode::Sprite2D(sprite) => {
-                        if sprite.visible {
-                            // Prefer texture_id over texture_path (texture_id is set after conversion)
-                            // Get path first to avoid borrow checker issues - clone the path string
-                            let texture_path_opt: Option<String> = if let Some(texture_id) = &sprite.texture_id {
-                                // Get path from texture_id (for rendering which still uses path)
-                                gfx.texture_manager.get_texture_path_from_id(texture_id).map(|s| s.to_string())
-                            } else {
-                                // Fallback to texture_path (for backward compatibility or not-yet-converted)
-                                sprite.texture_path.as_ref().map(|p| p.to_string())
-                            };
-                            
-                            // Now we can use the path without borrowing texture_manager immutably
-                            if let Some(tex_path) = texture_path_opt {
-                                // Use the global transform we got earlier
-                                if let Some(global_transform) = global_transform_opt {
-                                    gfx.renderer_2d.queue_texture(
-                                        &mut gfx.renderer_prim,
-                                        &mut gfx.texture_manager,
-                                        &gfx.device,
-                                        &gfx.queue,
-                                        node_id,
-                                        &tex_path,
-                                        global_transform,
-                                        sprite.pivot,
-                                        sprite.z_index,
-                                        timestamp,
-                                    );
+            // Now calculate transforms sequentially (they need mutable access)
+            // But we can batch the queue operations after
+            let mut rect_commands = Vec::new();
+            let mut texture_commands = Vec::new();
+            let mut ui_nodes = Vec::new();
+            let mut camera_2d_updates = Vec::new();
+            let mut camera_3d_updates = Vec::new();
+            let mut mesh_commands = Vec::new();
+            let mut light_commands = Vec::new();
+            
+            for (node_id, timestamp, needs_transform, _node_type) in node_data {
+                // OPTIMIZED: After precalculate_transforms_in_dependency_order, transforms are cached
+                // Read cached transform directly (read-only) instead of calling get_global_transform
+                let global_transform_opt = if needs_transform {
+                    self.data.nodes.get(&node_id)
+                        .and_then(|node| node.as_node2d())
+                        .filter(|n2d| !n2d.transform_dirty) // Only use if not dirty (should be clean after precalc)
+                        .map(|n2d| n2d.global_transform)
+                } else {
+                    None
+                };
+                
+                // Now get mutable access to process the node
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                    match node {
+                        SceneNode::Sprite2D(sprite) => {
+                            if sprite.visible {
+                                // Get texture path (clone to avoid borrow issues)
+                                let texture_path_opt: Option<String> = if let Some(texture_id) = &sprite.texture_id {
+                                    gfx.texture_manager.get_texture_path_from_id(texture_id).map(|s| s.to_string())
+                                } else {
+                                    sprite.texture_path.as_ref().map(|p| p.to_string())
+                                };
+                                
+                                if let Some(tex_path) = texture_path_opt {
+                                    if let Some(global_transform) = global_transform_opt {
+                                        texture_commands.push((
+                                            node_id,
+                                            tex_path,
+                                            global_transform,
+                                            sprite.pivot,
+                                            sprite.z_index,
+                                            timestamp,
+                                        ));
+                                    }
                                 }
                             }
                         }
-                    }
-                    SceneNode::Camera2D(camera) => {
-                        if camera.active {
-                            gfx.update_camera_2d(camera);
+                        SceneNode::Camera2D(camera) => {
+                            if camera.active {
+                                camera_2d_updates.push(node_id);
+                            }
                         }
-                    }
-                    SceneNode::Shape2D(shape) => {
-                        if shape.visible {
-                            if let Some(shape_type) = shape.shape_type {
-                                // Use the global transform we got earlier
-                                if let Some(transform) = global_transform_opt {
-                                    let pivot = shape.pivot;
-                                    let z_index = shape.z_index;
-                                    let color = shape.color.unwrap_or(crate::Color::new(255, 255, 255, 200));
-                                    let border_thickness = if shape.filled { 0.0 } else { 2.0 };
-                                    let is_border = !shape.filled;
+                        SceneNode::Shape2D(shape) => {
+                            if shape.visible {
+                                if let Some(shape_type) = shape.shape_type {
+                                    if let Some(transform) = global_transform_opt {
+                                        let pivot = shape.pivot;
+                                        let z_index = shape.z_index;
+                                        let color = shape.color.unwrap_or(crate::Color::new(255, 255, 255, 200));
+                                        let border_thickness = if shape.filled { 0.0 } else { 2.0 };
+                                        let is_border = !shape.filled;
 
-                                    match shape_type {
-                                        ShapeType2D::Rectangle { width, height } => {
-                                            gfx.renderer_2d.queue_rect(
-                                                &mut gfx.renderer_prim,
-                                                node_id,
-                                                transform,
-                                                crate::Vector2::new(width, height),
-                                                pivot,
-                                                color,
-                                                None, // No corner radius
-                                                border_thickness,
-                                                is_border,
-                                                z_index,
-                                                timestamp,
-                                            );
-                                        }
-                                        ShapeType2D::Circle { radius } => {
-                                            // For circles, render as a square with corner radius = radius
-                                            let size = radius * 2.0;
-                                            gfx.renderer_2d.queue_rect(
-                                                &mut gfx.renderer_prim,
-                                                node_id,
-                                                transform,
-                                                crate::Vector2::new(size, size),
-                                                pivot,
-                                                color,
-                                                Some(crate::ui_elements::ui_container::CornerRadius {
-                                                    top_left: radius,
-                                                    top_right: radius,
-                                                    bottom_left: radius,
-                                                    bottom_right: radius,
-                                                }),
-                                                border_thickness,
-                                                is_border,
-                                                z_index,
-                                                timestamp,
-                                            );
-                                        }
-                                        ShapeType2D::Square { size } => {
-                                            gfx.renderer_2d.queue_rect(
-                                                &mut gfx.renderer_prim,
-                                                node_id,
-                                                transform,
-                                                crate::Vector2::new(size, size),
-                                                pivot,
-                                                color,
-                                                None,
-                                                border_thickness,
-                                                is_border,
-                                                z_index,
-                                                timestamp,
-                                            );
-                                        }
-                                        ShapeType2D::Triangle { base, height } => {
-                                            // Triangles rendered as rectangles for now
-                                            gfx.renderer_2d.queue_rect(
-                                                &mut gfx.renderer_prim,
-                                                node_id,
-                                                transform,
-                                                crate::Vector2::new(base, height),
-                                                pivot,
-                                                color,
-                                                None,
-                                                border_thickness,
-                                                is_border,
-                                                z_index,
-                                                timestamp,
-                                            );
+                                        match shape_type {
+                                            ShapeType2D::Rectangle { width, height } => {
+                                                rect_commands.push((
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(width, height),
+                                                    pivot,
+                                                    color,
+                                                    None,
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                ));
+                                            }
+                                            ShapeType2D::Circle { radius } => {
+                                                let size = radius * 2.0;
+                                                rect_commands.push((
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(size, size),
+                                                    pivot,
+                                                    color,
+                                                    Some(crate::ui_elements::ui_container::CornerRadius {
+                                                        top_left: radius,
+                                                        top_right: radius,
+                                                        bottom_left: radius,
+                                                        bottom_right: radius,
+                                                    }),
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                ));
+                                            }
+                                            ShapeType2D::Square { size } => {
+                                                rect_commands.push((
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(size, size),
+                                                    pivot,
+                                                    color,
+                                                    None,
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                ));
+                                            }
+                                            ShapeType2D::Triangle { base, height } => {
+                                                rect_commands.push((
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(base, height),
+                                                    pivot,
+                                                    color,
+                                                    None,
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                ));
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                        SceneNode::UINode(ui_node) => {
+                            ui_nodes.push(node_id);
+                        }
+                        SceneNode::Camera3D(camera) => {
+                            if camera.active {
+                                camera_3d_updates.push(node_id);
+                            }
+                        }
+                        SceneNode::MeshInstance3D(mesh) => {
+                            if mesh.visible {
+                                if let Some(path) = &mesh.mesh_path {
+                                    mesh_commands.push((
+                                        node_id,
+                                        path.clone(),
+                                        mesh.transform,
+                                        mesh.material_path.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                        SceneNode::OmniLight3D(light) => {
+                            light_commands.push((
+                                node_id,
+                                crate::renderer_3d::LightUniform {
+                                    position: light.transform.position.to_array(),
+                                    color: light.color.to_array(),
+                                    intensity: light.intensity,
+                                    ambient: [0.05, 0.05, 0.05],
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                        SceneNode::DirectionalLight3D(light) => {
+                            let dir = light.transform.forward();
+                            light_commands.push((
+                                node_id,
+                                crate::renderer_3d::LightUniform {
+                                    position: [dir.x, dir.y, dir.z],
+                                    color: light.color.to_array(),
+                                    intensity: light.intensity,
+                                    ambient: [0.05, 0.05, 0.05],
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                        SceneNode::SpotLight3D(light) => {
+                            let dir = light.transform.forward();
+                            light_commands.push((
+                                node_id,
+                                crate::renderer_3d::LightUniform {
+                                    position: [dir.x, dir.y, dir.z],
+                                    color: light.color.to_array(),
+                                    intensity: light.intensity,
+                                    ambient: [0.05, 0.05, 0.05],
+                                    ..Default::default()
+                                },
+                            ));
+                        }
+                        _ => {}
                     }
-
-                    SceneNode::UINode(ui_node) => {
-                        // UI renderer handles layout + rendering internally
+                    
+                    // Clear transform_dirty flag
+                    if let Some(node2d) = node.as_node2d_mut() {
+                        node2d.transform_dirty = false;
+                    }
+                }
+            }
+            
+            // OPTIMIZED: Batch queue operations
+            // Queue all rects
+            for (node_id, transform, size, pivot, color, corner_radius, border_thickness, is_border, z_index, timestamp) in rect_commands {
+                gfx.renderer_2d.queue_rect(
+                    &mut gfx.renderer_prim,
+                    node_id,
+                    transform,
+                    size,
+                    pivot,
+                    color,
+                    corner_radius,
+                    border_thickness,
+                    is_border,
+                    z_index,
+                    timestamp,
+                );
+            }
+            
+            // Queue all textures
+            for (node_id, tex_path, global_transform, pivot, z_index, timestamp) in texture_commands {
+                gfx.renderer_2d.queue_texture(
+                    &mut gfx.renderer_prim,
+                    &mut gfx.texture_manager,
+                    &gfx.device,
+                    &gfx.queue,
+                    node_id,
+                    &tex_path,
+                    global_transform,
+                    pivot,
+                    z_index,
+                    timestamp,
+                );
+            }
+            
+            // Process UI nodes (they need mutable access to gfx)
+            for node_id in ui_nodes {
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                    if let SceneNode::UINode(ui_node) = node {
                         render_ui(ui_node, gfx);
                     }
-
-                    //3D Nodes
-                    SceneNode::Camera3D(camera) => {
+                }
+            }
+            
+            // Update cameras
+            for node_id in camera_2d_updates {
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                    if let SceneNode::Camera2D(camera) = node {
+                        if camera.active {
+                            gfx.update_camera_2d(camera);
+                        }
+                    }
+                }
+            }
+            
+            for node_id in camera_3d_updates {
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                    if let SceneNode::Camera3D(camera) = node {
                         if camera.active {
                             gfx.update_camera_3d(camera);
                         }
                     }
-                    SceneNode::MeshInstance3D(mesh) => {
-                        if mesh.visible {
-                            if let Some(path) = &mesh.mesh_path {
-                                gfx.renderer_3d.queue_mesh(
-                                    node_id,
-                                    path,
-                                    mesh.transform,
-                                    mesh.material_path.as_deref(),
-                                    &mut gfx.mesh_manager,
-                                    &mut gfx.material_manager,
-                                    &mut gfx.device,
-                                    &mut gfx.queue,
-                                );
-                            }
-                        }
-                    }
-
-                    SceneNode::OmniLight3D(light) => {
-                        gfx.renderer_3d.queue_light(
-                            light.id,
-                            crate::renderer_3d::LightUniform {
-                                position: light.transform.position.to_array(),
-                                color: light.color.to_array(),
-                                intensity: light.intensity,
-                                ambient: [0.05, 0.05, 0.05],
-                                ..Default::default()
-                            },
-                        );
-                    }
-                    SceneNode::DirectionalLight3D(light) => {
-                        let dir = light.transform.forward();
-                        gfx.renderer_3d.queue_light(
-                            light.id,
-                            crate::renderer_3d::LightUniform {
-                                position: [dir.x, dir.y, dir.z],
-                                color: light.color.to_array(),
-                                intensity: light.intensity,
-                                ambient: [0.05, 0.05, 0.05],
-                                ..Default::default()
-                            },
-                        );
-                    }
-                    SceneNode::SpotLight3D(light) => {
-                        let dir = light.transform.forward();
-                        gfx.renderer_3d.queue_light(
-                            light.id,
-                            crate::renderer_3d::LightUniform {
-                                position: [dir.x, dir.y, dir.z],
-                                color: light.color.to_array(),
-                                intensity: light.intensity,
-                                ambient: [0.05, 0.05, 0.05],
-                                ..Default::default()
-                            },
-                        );
-                    }
-                    _ => {}
                 }
-                // Only set dirty to false if transform is also clean (both need to be clean to skip rendering)
-                // If transform is still dirty, keep node dirty so it renders again next frame
-                if let Some(node2d) = node.as_node2d() {
-                    if !node2d.transform_dirty {
-                        node.set_dirty(false);
+            }
+            
+            // Queue meshes
+            for (node_id, path, transform, material_path) in mesh_commands {
+                gfx.renderer_3d.queue_mesh(
+                    node_id,
+                    &path,
+                    transform,
+                    material_path.as_deref(),
+                    &mut gfx.mesh_manager,
+                    &mut gfx.material_manager,
+                    &mut gfx.device,
+                    &mut gfx.queue,
+                );
+            }
+            
+            // Queue lights
+            for (node_id, light_uniform) in light_commands {
+                gfx.renderer_3d.queue_light(node_id, light_uniform);
+            }
+        } else {
+            // Small batch - use original sequential approach (less overhead)
+            for node_id in nodes_needing_rerender {
+                // Get global transform first (before borrowing node mutably)
+                let global_transform_opt = if let Some(node) = self.data.nodes.get(&node_id) {
+                    if node.as_node2d().is_some() {
+                        self.get_global_transform(node_id)
+                    } else {
+                        None
                     }
                 } else {
-                    node.set_dirty(false);
+                    None
+                };
+                
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                    let timestamp = node.get_created_timestamp();
+                    match node {
+                        SceneNode::Sprite2D(sprite) => {
+                            if sprite.visible {
+                                let texture_path_opt: Option<String> = if let Some(texture_id) = &sprite.texture_id {
+                                    gfx.texture_manager.get_texture_path_from_id(texture_id).map(|s| s.to_string())
+                                } else {
+                                    sprite.texture_path.as_ref().map(|p| p.to_string())
+                                };
+                                
+                                if let Some(tex_path) = texture_path_opt {
+                                    if let Some(global_transform) = global_transform_opt {
+                                        gfx.renderer_2d.queue_texture(
+                                            &mut gfx.renderer_prim,
+                                            &mut gfx.texture_manager,
+                                            &gfx.device,
+                                            &gfx.queue,
+                                            node_id,
+                                            &tex_path,
+                                            global_transform,
+                                            sprite.pivot,
+                                            sprite.z_index,
+                                            timestamp,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        SceneNode::Camera2D(camera) => {
+                            if camera.active {
+                                gfx.update_camera_2d(camera);
+                            }
+                        }
+                        SceneNode::Shape2D(shape) => {
+                            if shape.visible {
+                                if let Some(shape_type) = shape.shape_type {
+                                    if let Some(transform) = global_transform_opt {
+                                        let pivot = shape.pivot;
+                                        let z_index = shape.z_index;
+                                        let color = shape.color.unwrap_or(crate::Color::new(255, 255, 255, 200));
+                                        let border_thickness = if shape.filled { 0.0 } else { 2.0 };
+                                        let is_border = !shape.filled;
+
+                                        match shape_type {
+                                            ShapeType2D::Rectangle { width, height } => {
+                                                gfx.renderer_2d.queue_rect(
+                                                    &mut gfx.renderer_prim,
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(width, height),
+                                                    pivot,
+                                                    color,
+                                                    None,
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                );
+                                            }
+                                            ShapeType2D::Circle { radius } => {
+                                                let size = radius * 2.0;
+                                                gfx.renderer_2d.queue_rect(
+                                                    &mut gfx.renderer_prim,
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(size, size),
+                                                    pivot,
+                                                    color,
+                                                    Some(crate::ui_elements::ui_container::CornerRadius {
+                                                        top_left: radius,
+                                                        top_right: radius,
+                                                        bottom_left: radius,
+                                                        bottom_right: radius,
+                                                    }),
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                );
+                                            }
+                                            ShapeType2D::Square { size } => {
+                                                gfx.renderer_2d.queue_rect(
+                                                    &mut gfx.renderer_prim,
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(size, size),
+                                                    pivot,
+                                                    color,
+                                                    None,
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                );
+                                            }
+                                            ShapeType2D::Triangle { base, height } => {
+                                                gfx.renderer_2d.queue_rect(
+                                                    &mut gfx.renderer_prim,
+                                                    node_id,
+                                                    transform,
+                                                    crate::Vector2::new(base, height),
+                                                    pivot,
+                                                    color,
+                                                    None,
+                                                    border_thickness,
+                                                    is_border,
+                                                    z_index,
+                                                    timestamp,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        SceneNode::UINode(ui_node) => {
+                            render_ui(ui_node, gfx);
+                        }
+                        SceneNode::Camera3D(camera) => {
+                            if camera.active {
+                                gfx.update_camera_3d(camera);
+                            }
+                        }
+                        SceneNode::MeshInstance3D(mesh) => {
+                            if mesh.visible {
+                                if let Some(path) = &mesh.mesh_path {
+                                    gfx.renderer_3d.queue_mesh(
+                                        node_id,
+                                        path,
+                                        mesh.transform,
+                                        mesh.material_path.as_deref(),
+                                        &mut gfx.mesh_manager,
+                                        &mut gfx.material_manager,
+                                        &mut gfx.device,
+                                        &mut gfx.queue,
+                                    );
+                                }
+                            }
+                        }
+                        SceneNode::OmniLight3D(light) => {
+                            gfx.renderer_3d.queue_light(
+                                light.id,
+                                crate::renderer_3d::LightUniform {
+                                    position: light.transform.position.to_array(),
+                                    color: light.color.to_array(),
+                                    intensity: light.intensity,
+                                    ambient: [0.05, 0.05, 0.05],
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        SceneNode::DirectionalLight3D(light) => {
+                            let dir = light.transform.forward();
+                            gfx.renderer_3d.queue_light(
+                                light.id,
+                                crate::renderer_3d::LightUniform {
+                                    position: [dir.x, dir.y, dir.z],
+                                    color: light.color.to_array(),
+                                    intensity: light.intensity,
+                                    ambient: [0.05, 0.05, 0.05],
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        SceneNode::SpotLight3D(light) => {
+                            let dir = light.transform.forward();
+                            gfx.renderer_3d.queue_light(
+                                light.id,
+                                crate::renderer_3d::LightUniform {
+                                    position: [dir.x, dir.y, dir.z],
+                                    color: light.color.to_array(),
+                                    intensity: light.intensity,
+                                    ambient: [0.05, 0.05, 0.05],
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        _ => {}
+                    }
+                    if let Some(node2d) = node.as_node2d_mut() {
+                        node2d.transform_dirty = false;
+                    }
                 }
             }
         }
@@ -2438,6 +2755,23 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     
     fn get_scene_node_mut(&mut self, id: Uuid) -> Option<&mut SceneNode> {
         self.data.nodes.get_mut(&id)
+    }
+    
+    fn mark_needs_rerender(&mut self, node_id: Uuid) {
+        // Only add renderable nodes to needs_rerender
+        // Non-renderable nodes (like Node, Node2D, Area2D) don't need to be rendered
+        if let Some(node) = self.data.nodes.get(&node_id) {
+            // Check if node is renderable before adding
+            if !node.is_renderable() {
+                return; // Skip non-renderable nodes
+            }
+            
+            // Check if node is already in the HashSet (O(1) check)
+            // If not in set, add it
+            if !self.needs_rerender.contains(&node_id) {
+                self.needs_rerender.insert(node_id);
+            }
+        }
     }
     
     fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
@@ -2665,7 +2999,6 @@ impl Scene<DllScriptProvider> {
             input_mgr.load_action_map(input_map);
         }
 
-        println!("Building scene from project manifest...");
         
         // ✅ root script first - load before merging main scene
         let root_script_path_opt = {
@@ -2691,52 +3024,32 @@ impl Scene<DllScriptProvider> {
 
                     let mut api = ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
                     api.call_init(root_id);
+                    
+                    // After script initialization, ensure renderable nodes are marked for rerender
+                    // (old system would have called mark_dirty() here)
+                    if let Some(node) = game_scene.data.nodes.get(&root_id) {
+                        if node.is_renderable() {
+                            game_scene.needs_rerender.insert(root_id);
+                        }
+                    }
                 } else {
                     println!("❌ Could not find symbol for {}", identifier);
                 }
             }
         }
 
-        println!("About to graft main scene...");
         let main_scene_path = game_scene.project.borrow().main_scene().to_string();
-        let t_load_begin = Instant::now();
+        let _t_load_begin = Instant::now();
         let loaded_data = SceneData::load(&main_scene_path)?;
-        let load_time = t_load_begin.elapsed();
-        println!(
-            "⏱  SceneData::load() completed in {:.03} sec ({} ms)",
-            load_time.as_secs_f32(),
-            load_time.as_millis()
-        );
+        let _load_time = _t_load_begin.elapsed();
 
         // ────────────────────────────────────────────────
         // ⏱  Benchmark: Scene graft
         // ────────────────────────────────────────────────
-        let t_graft_begin = Instant::now();
+        let _t_graft_begin = Instant::now();
         let game_root = game_scene.get_root().get_id();
         game_scene.merge_scene_data(loaded_data, game_root, gfx)?;
-        let graft_time = t_graft_begin.elapsed();
-        println!(
-            "⏱  Scene grafting completed in {:.03} sec ({} ms)",
-            graft_time.as_secs_f32(),
-            graft_time.as_millis()
-        );
-
-        // Debug: Print all node names after scene grafting
-        println!("\n📋 All nodes after scene grafting ({} total):", game_scene.data.nodes.len());
-        let mut node_list: Vec<_> = game_scene.data.nodes.iter().collect();
-        node_list.sort_by_key(|(id, _)| *id);
-        for (id, node) in node_list {
-            let name = node.get_name();
-            let script_info = if game_scene.scripts.contains_key(id) {
-                " [HAS SCRIPT]"
-            } else {
-                ""
-            };
-            println!("  - {}{}", name, script_info);
-        }
-        println!();
-
-        game_scene.print_scene_tree();  // or print_parent_child_info()
+        let _graft_time = _t_graft_begin.elapsed();
 
 
         Ok(game_scene)

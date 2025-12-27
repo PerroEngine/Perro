@@ -9,6 +9,7 @@ pub enum ApiModule {
     Signal(SignalApi),
     Input(InputApi),
     Texture(TextureApi),
+    Math(MathApi),
 
     ArrayOp(ArrayApi),
     MapOp(MapApi),
@@ -116,4 +117,11 @@ pub enum TextureApi {
     GetHeight, // api.Texture.get_height(id: Uuid) -> u32
     GetSize, // api.Texture.get_size(id: Uuid) -> Vector2
     // Future: as_bytes, set_bytes, etc.
+}
+
+#[derive(Debug, Clone)]
+pub enum MathApi {
+    Random, // api.Math.random() -> f32
+    RandomRange, // api.Math.random_range(min: f32, max: f32) -> f32
+    RandomInt, // api.Math.random_int(min: i32, max: i32) -> i32
 }

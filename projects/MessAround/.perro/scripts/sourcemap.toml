@@ -1,54 +1,16 @@
-[scripts.p2_pup]
-src = "res://p2.pup"
+[scripts.camera_pup]
+src = "res://camera.pup"
 lang = "pup"
-id = "p2_pup"
+id = "camera_pup"
 
-[[scripts.p2_pup.lines]]
+[[scripts.camera_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 66
+g_end = 85
 
-[scripts.p2_pup.names]
-
-[scripts.player_pup]
-src = "res://player.pup"
-lang = "pup"
-id = "player_pup"
-
-[[scripts.player_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 74
-
-[[scripts.player_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 74
-g_end = 78
-
-[[scripts.player_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 78
-g_end = 83
-
-[[scripts.player_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 83
-g_end = 105
-
-[[scripts.player_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 105
-g_end = 116
-
-[scripts.player_pup.names]
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+[scripts.camera_pup.names]
+__t_speed = "speed"
 
 [scripts.shape_pup]
 src = "res://shape.pup"
@@ -62,6 +24,73 @@ g_start = 1
 g_end = 65
 
 [scripts.shape_pup.names]
+
+[scripts.player_pup]
+src = "res://player.pup"
+lang = "pup"
+id = "player_pup"
+
+[[scripts.player_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 81
+
+[[scripts.player_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 81
+g_end = 85
+
+[[scripts.player_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 85
+g_end = 90
+
+[[scripts.player_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 90
+g_end = 111
+
+[[scripts.player_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 111
+g_end = 122
+
+[scripts.player_pup.names]
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+tex_id = "tex"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_time = "time"
+
+[scripts.p2_pup]
+src = "res://p2.pup"
+lang = "pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 66
+
+[scripts.p2_pup.names]
+
+[scripts.root_pup]
+src = "res://root.pup"
+lang = "pup"
+id = "root_pup"
+
+[[scripts.root_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 77
+
+[scripts.root_pup.names]
 
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
@@ -87,6 +116,6 @@ g_start = 80
 g_end = 87
 
 [scripts.test_engine_structs_pup.names]
-__t_test_variable_access = "test_variable_access"
-__t_test_constructors = "test_constructors"
 __t_test_nested_access = "test_nested_access"
+__t_test_constructors = "test_constructors"
+__t_test_variable_access = "test_variable_access"

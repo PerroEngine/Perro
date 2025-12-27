@@ -65,7 +65,12 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     world_pos = camera.view * world_pos;
 
     // Apply zoom (must rebuild full vector; WGSL doesn't allow swizzle assignment)
-    world_pos = vec4<f32>(world_pos.xy * camera.zoom, world_pos.z, world_pos.w);
+    // For zoom: 0.0 = normal, positive = zoom in, negative = zoom out
+    // Formula: multiply by (1.0 + zoom)
+    //   zoom = 0.0: multiply by 1.0 = normal ✓
+    //   zoom = 1.0: multiply by 2.0 = positions 2x larger = zoom IN (user wants this)
+    //   zoom = -0.5: multiply by 0.5 = positions 0.5x smaller = zoom OUT (user wants this)
+    world_pos = vec4<f32>(world_pos.xy * (1.0 + camera.zoom), world_pos.z, world_pos.w);
 
     // Convert to clip-space (scale from virtual world to NDC range)
     let ndc_pos = world_pos.xy * camera.ndc_scale;

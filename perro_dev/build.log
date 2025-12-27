@@ -8,6 +8,6 @@ Converting ./icon.png → icon.ico
 ✔ Added 48x48 size
 ✔ Added 256x256 size
 ✔ Saved ICO to icon.ico
-✔ Wrote RC with version 1.0.0.1766778556 (icon=icon.ico)
+✔ Wrote RC with version 1.0.0.1766781058 (icon=icon.ico)
 ✔ Embedded icon + version info successfully
 === Simple Build Script Finished ===

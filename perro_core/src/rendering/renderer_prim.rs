@@ -20,7 +20,7 @@ use crate::{
     vertex::Vertex,
 };
 
-const MAX_INSTANCES: usize = 10000;
+const MAX_INSTANCES: usize = 100000;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderLayer {
@@ -1245,10 +1245,16 @@ impl PrimitiveRenderer {
         self.temp_all_font_instances.extend(&self.ui_text_instances);
 
         if !self.temp_all_font_instances.is_empty() {
+            // Clamp to MAX_INSTANCES to prevent buffer overflow
+            let instances_to_write = self.temp_all_font_instances.len().min(MAX_INSTANCES);
+            if instances_to_write < self.temp_all_font_instances.len() {
+                eprintln!("Warning: {} font instances queued, but buffer only supports {}. Truncating.", 
+                    self.temp_all_font_instances.len(), MAX_INSTANCES);
+            }
             queue.write_buffer(
                 &self.font_instance_buffer,
                 0,
-                bytemuck::cast_slice(&self.temp_all_font_instances),
+                bytemuck::cast_slice(&self.temp_all_font_instances[..instances_to_write]),
             );
         }
     }
@@ -1363,10 +1369,16 @@ impl PrimitiveRenderer {
         }
 
         if !self.temp_all_texture_instances.is_empty() {
+            // Clamp to MAX_INSTANCES to prevent buffer overflow
+            let instances_to_write = self.temp_all_texture_instances.len().min(MAX_INSTANCES);
+            if instances_to_write < self.temp_all_texture_instances.len() {
+                eprintln!("Warning: {} texture instances queued, but buffer only supports {}. Truncating.", 
+                    self.temp_all_texture_instances.len(), MAX_INSTANCES);
+            }
             queue.write_buffer(
                 &self.texture_instance_buffer,
                 0,
-                bytemuck::cast_slice(&self.temp_all_texture_instances),
+                bytemuck::cast_slice(&self.temp_all_texture_instances[..instances_to_write]),
             );
         }
     }

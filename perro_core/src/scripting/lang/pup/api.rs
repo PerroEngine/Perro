@@ -20,6 +20,7 @@ impl PupAPI {
             PupSignal::NAME => PupSignal::resolve_method(func),
             PupInput::NAME => PupInput::resolve_method(func),
             PupTexture::NAME => PupTexture::resolve_method(func),
+            PupMath::NAME => PupMath::resolve_method(func),
 
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
@@ -218,6 +219,20 @@ impl PupTexture {
             "get_width" => Some(ApiModule::Texture(TextureApi::GetWidth)),
             "get_height" => Some(ApiModule::Texture(TextureApi::GetHeight)),
             "get_size" => Some(ApiModule::Texture(TextureApi::GetSize)),
+            _ => None,
+        }
+    }
+}
+
+pub struct PupMath;
+impl PupMath {
+    pub const NAME: &'static str = "Math";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "random" => Some(ApiModule::Math(MathApi::Random)),
+            "random_range" => Some(ApiModule::Math(MathApi::RandomRange)),
+            "random_int" => Some(ApiModule::Math(MathApi::RandomInt)),
             _ => None,
         }
     }

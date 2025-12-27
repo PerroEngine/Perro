@@ -1585,7 +1585,12 @@ impl Graphics {
     }
 
     pub fn update_camera_2d(&mut self, cam: &Camera2D) {
-        let zoom = cam.zoom();
+        // Pass zoom directly to shader (0.0 = normal, positive = zoom in, negative = zoom out)
+        // The shader now divides positions by (1.0 + zoom), so:
+        //   - zoom = 0.0: divide by 1.0 = normal
+        //   - zoom > 0.0: divide by >1.0 = positions smaller = zoom IN
+        //   - zoom < 0.0: divide by <1.0 = positions larger = zoom OUT
+        let zoom = cam.zoom;
         let t = &cam.transform;
 
         let rotation = glam::Mat4::from_rotation_z(t.rotation);

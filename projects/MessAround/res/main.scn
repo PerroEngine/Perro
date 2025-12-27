@@ -99,7 +99,7 @@
       "active": true,
       "base": {
         "type": "Node2D",
-        "base": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
+        "base": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://camera.pup" }
       }
     }
   }

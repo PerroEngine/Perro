@@ -1,6 +1,8 @@
 @script Player extends Sprite2D
 
+var time = 0
 
+var tex: Texture
 
 fn init() {
     self.transform.position.x = -750
@@ -13,7 +15,10 @@ fn init() {
     par.name = "fart"
     Console.print(par)
 
-    
+    tex = Texture.load("res://obama.jpg")
+
+   
+
 
 }
 
@@ -26,6 +31,11 @@ fn update() {
 
     self.transform.position.x += 100 * delta
 
+
+    
+
+    
+
 }
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
@@ -35,7 +45,6 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 
     var ppos
     if pty == NODE_TYPE.Sprite2D {
-            var tex = Texture.load("res://doug.PNG")
             self.texture = tex
             ppos = (collision.get_parent() as Sprite2D).transform.position
     }

@@ -1,6 +1,10 @@
 struct Camera {
     virtual_size: vec2<f32>,
     ndc_scale: vec2<f32>,
+    zoom: f32,
+    _pad0: f32,
+    _pad1: vec2<f32>,
+    view: mat4x4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -60,7 +64,18 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     let adjusted_local_pos = local_vertex_pos - pivot_offset;
 
     // Transform to world space using full matrix multiplication
-    let world_pos4 = transform * vec4<f32>(adjusted_local_pos, 0.0, 1.0);
+    var world_pos4 = transform * vec4<f32>(adjusted_local_pos, 0.0, 1.0);
+
+    // Apply camera view matrix (inverse camera transform)
+    world_pos4 = camera.view * world_pos4;
+
+    // Apply zoom (must rebuild full vector; WGSL doesn't allow swizzle assignment)
+    // For zoom: 0.0 = normal, positive = zoom in, negative = zoom out
+    // Formula: multiply by (1.0 + zoom)
+    //   zoom = 0.0: multiply by 1.0 = normal ✓
+    //   zoom = 1.0: multiply by 2.0 = positions 2x larger = zoom IN ✓
+    //   zoom = -0.5: multiply by 0.5 = positions 0.5x smaller = zoom OUT ✓
+    world_pos4 = vec4<f32>(world_pos4.xy * (1.0 + camera.zoom), world_pos4.z, world_pos4.w);
 
     // Convert to NDC using precomputed scaling
     let ndc_pos = world_pos4.xy * camera.ndc_scale;

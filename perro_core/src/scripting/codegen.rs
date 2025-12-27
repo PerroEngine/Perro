@@ -203,6 +203,7 @@ impl Script {
 
     pub fn generate_implicit_cast_for_expr(&self, expr: &str, from: &Type, to: &Type) -> String {
         use Type::*;
+        use NumberKind::*;
         if from == to {
             return expr.to_string();
         }
@@ -223,6 +224,13 @@ impl Script {
             // T -> Option<T> conversions (wrapping in Some)
             (from_ty, Type::Option(inner)) if from_ty == inner.as_ref() => {
                 return format!("Some({})", expr);
+            }
+            // Integer to float conversions (explicit cast needed in Rust)
+            (Number(Signed(_) | Unsigned(_)), Number(Float(32))) => {
+                return format!("({} as f32)", expr);
+            }
+            (Number(Signed(_) | Unsigned(_)), Number(Float(64))) => {
+                return format!("({} as f64)", expr);
             }
             _ => {}
         }
@@ -250,6 +258,25 @@ impl Script {
             .iter()
             .find(|v| v.name == name)
             .and_then(|v| v.typ.as_ref())
+    }
+    
+    /// Check if an identifier is a loop variable by searching for for loops that use it
+    fn is_loop_variable(&self, name: &str, body: &[crate::scripting::ast::Stmt]) -> bool {
+        use crate::scripting::ast::Stmt;
+        for stmt in body {
+            match stmt {
+                Stmt::For { var_name: loop_var, .. } if loop_var == name => {
+                    return true;
+                }
+                Stmt::For { body: loop_body, .. } | Stmt::ForTraditional { body: loop_body, .. } => {
+                    if self.is_loop_variable(name, loop_body) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
     pub fn infer_expr_type(&self, expr: &Expr, current_func: Option<&Function>) -> Option<Type> {
@@ -279,7 +306,12 @@ impl Script {
                     else if let Some(param) = func.params.iter().find(|p| p.name == *name) {
                         Some(param.typ.clone())
                     }
-                    // 3. Script-level variable or exposed field
+                    // 3. Check if it's a loop variable (not in locals/params but used in for loop)
+                    // Loop variables from ranges are typically i32
+                    else if self.is_loop_variable(name, &func.body) {
+                        Some(Type::Number(NumberKind::Signed(32)))
+                    }
+                    // 4. Script-level variable or exposed field
                     else {
                         self.get_variable_type(name).cloned()
                     }
@@ -1024,43 +1056,151 @@ fn extract_node_member_info(
                 Some(("self.id".to_string(), script.node_type.clone(), path.join(".")))
             }
             Expr::Ident(var_name) => {
+                // Helper to find variable in nested blocks (for loops, if statements, etc.)
+                fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
+                    use crate::scripting::ast::Stmt;
+                    for stmt in body {
+                        match stmt {
+                            Stmt::VariableDecl(var) if var.name == name => {
+                                return Some(var);
+                            }
+                            Stmt::If { then_body, else_body, .. } => {
+                                if let Some(v) = find_variable_in_body(name, then_body) {
+                                    return Some(v);
+                                }
+                                if let Some(else_body) = else_body {
+                                    if let Some(v) = find_variable_in_body(name, else_body) {
+                                        return Some(v);
+                                    }
+                                }
+                            }
+                            Stmt::For { body: for_body, .. } | Stmt::ForTraditional { body: for_body, .. } => {
+                                if let Some(v) = find_variable_in_body(name, for_body) {
+                                    return Some(v);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    None
+                }
+                
                 // Check if it's a node variable
+                // First, check if the variable name ends with _id (renamed node variable)
+                // If so, look up the original variable name
+                let lookup_name = if var_name.ends_with("_id") {
+                    &var_name[..var_name.len() - 3]
+                } else {
+                    var_name
+                };
+                
                 let (var_type_ref, inferred_type_owned) = if let Some(func) = current_func {
+                    // Strategy 1: Check in function locals first
                     let var_type_ref = func.locals.iter()
-                        .find(|v| v.name == *var_name)
+                        .find(|v| v.name == *lookup_name)
                         .and_then(|v| v.typ.as_ref())
                         .or_else(|| {
                             func.params.iter()
-                                .find(|p| p.name == *var_name)
+                                .find(|p| p.name == *lookup_name)
                                 .map(|p| &p.typ)
                         });
                     
-                    let inferred = if var_type_ref.is_none() {
-                        func.locals.iter()
-                            .find(|v| v.name == *var_name)
-                            .and_then(|v| v.value.as_ref())
-                            .and_then(|val| script.infer_expr_type(&val.expr, current_func))
-                    } else {
-                        None
-                    };
+                    // Strategy 2: Check in nested blocks (for loops, if statements, etc.)
+                    let var_type_ref = var_type_ref.or_else(|| {
+                        find_variable_in_body(lookup_name, &func.body)
+                            .and_then(|v| v.typ.as_ref())
+                    });
+                    
+                    // Always try to infer from value expression, even if we have a type
+                    // This handles cases where var b = new Sprite2D() creates a node but type might not be set
+                    let inferred = func.locals.iter()
+                        .find(|v| v.name == *lookup_name)
+                        .and_then(|v| v.value.as_ref())
+                        .and_then(|val| {
+                            // First try infer_expr_type which should return Type::Node for StructNew with node types
+                            let inferred = script.infer_expr_type(&val.expr, current_func);
+                            if inferred.as_ref().map_or(false, |t| type_is_node(t)) {
+                                return inferred;
+                            }
+                            // Fallback: directly check if it's a StructNew that creates a node
+                            if let Expr::StructNew(ty_name, _) = &val.expr {
+                                if let Some(node_type) = string_to_node_type(ty_name) {
+                                    return Some(Type::Node(node_type));
+                                }
+                            }
+                            inferred
+                        })
+                        .or_else(|| {
+                            // Check in nested blocks for the variable value
+                            find_variable_in_body(lookup_name, &func.body)
+                                .and_then(|v| v.value.as_ref())
+                                .and_then(|val| {
+                                    let inferred = script.infer_expr_type(&val.expr, current_func);
+                                    if inferred.as_ref().map_or(false, |t| type_is_node(t)) {
+                                        return inferred;
+                                    }
+                                    // Fallback: directly check if it's a StructNew that creates a node
+                                    if let Expr::StructNew(ty_name, _) = &val.expr {
+                                        if let Some(node_type) = string_to_node_type(ty_name) {
+                                            return Some(Type::Node(node_type));
+                                        }
+                                    }
+                                    inferred
+                                })
+                        })
+                        .or_else(|| {
+                            // Also check if the value expression is a StructNew that creates a node
+                            // (duplicate check for robustness)
+                            func.locals.iter()
+                                .find(|v| v.name == *lookup_name)
+                                .and_then(|v| v.value.as_ref())
+                                .and_then(|val| {
+                                    if let Expr::StructNew(ty_name, _) = &val.expr {
+                                        if let Some(node_type) = string_to_node_type(ty_name) {
+                                            Some(Type::Node(node_type))
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                        })
+                        .or_else(|| {
+                            // Check in nested blocks (duplicate check for robustness)
+                            find_variable_in_body(lookup_name, &func.body)
+                                .and_then(|v| v.value.as_ref())
+                                .and_then(|val| {
+                                    if let Expr::StructNew(ty_name, _) = &val.expr {
+                                        if let Some(node_type) = string_to_node_type(ty_name) {
+                                            Some(Type::Node(node_type))
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                        });
                     
                     (var_type_ref, inferred)
                 } else {
-                    (script.get_variable_type(var_name), None)
+                    (script.get_variable_type(lookup_name), None)
                 };
                 
                 // Check if it's a node type
                 let var_type = var_type_ref.or_else(|| inferred_type_owned.as_ref());
                 if let Some(typ) = var_type {
                     if type_is_node(typ) || matches!(typ, Type::DynNode) {
-                        let renamed = rename_variable(var_name, Some(typ));
+                        // Use the original variable name for renaming (not the _id version)
+                        let renamed = rename_variable(lookup_name, Some(typ));
                         let node_type_name = match typ {
                             Type::Node(nt) => format!("{:?}", nt),
                             Type::DynNode => "__DYN_NODE__".to_string(), // Special marker for DynNode
                             _ => return None,
                         };
                         let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                        let closure_var = format!("t_id_{}", var_name);
+                        let closure_var = format!("t_id_{}", lookup_name);
                         Some((renamed, node_type_name, path.join(".")))
                     } else {
                         None
@@ -2522,10 +2662,58 @@ impl Stmt {
             }
 
             Stmt::AssignOp(name, op, expr) => {
-                let target = if script.is_struct_field(name) && !name.starts_with("self.") {
-                    format!("self.{}", name)
+                let var_type = script.get_variable_type(name);
+                let expr_type = script.infer_expr_type(&expr.expr, current_func);
+                
+                // Check if the expression returns a UUID that represents a node or texture
+                let is_direct_node_call = matches!(&expr.expr, 
+                    Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) |
+                    Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _)
+                );
+                
+                let is_direct_texture_call = matches!(&expr.expr,
+                    Expr::ApiCall(ApiModule::Texture(TextureApi::Load), _) |
+                    Expr::ApiCall(ApiModule::Texture(TextureApi::CreateFromBytes), _)
+                );
+                
+                let is_node_cast = matches!(expr_type, Some(Type::Uuid)) && 
+                    if let Expr::Cast(_, ref target_type) = expr.expr {
+                        match target_type {
+                            Type::Node(_) => true,
+                            Type::Custom(tn) => is_node_type(tn),
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
+                
+                let is_id_uuid = is_direct_node_call || is_direct_texture_call || is_node_cast;
+                
+                // Check if the return type is NodeType or DynNode
+                let is_node_type_return = matches!(expr_type, Some(Type::NodeType | Type::DynNode));
+                
+                // Determine type for renaming (same logic as Assign)
+                let is_id_type = matches!(var_type, Some(Type::Uuid)) 
+                    || matches!(expr_type.as_ref(), Some(Type::Uuid)) 
+                    || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::Uuid));
+                
+                let type_for_renaming = if is_id_uuid && is_id_type {
+                    if is_direct_texture_call {
+                        expr_type.as_ref().or(var_type)
+                    } else {
+                        Some(&Type::Node(NodeType::Node))
+                    }
+                } else if is_node_type_return || matches!(var_type, Some(Type::NodeType | Type::DynNode)) {
+                    expr_type.as_ref().or(var_type)
                 } else {
-                    name.clone()
+                    var_type
+                };
+                
+                let renamed_name = rename_variable(name, type_for_renaming);
+                let target = if script.is_struct_field(name) && !name.starts_with("self.") {
+                    format!("self.{}", renamed_name)
+                } else {
+                    renamed_name
                 };
 
                 let target_type = self.get_target_type(name, script, current_func);
@@ -2607,61 +2795,116 @@ impl Stmt {
                             let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                             let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
                             
-                            // Check if RHS is an ApiCall that returns Uuid/Option<Uuid> - if so, extract to temp variable
-                            let mut temp_decl_opt: Option<String> = None;
-                            let mut temp_var_opt: Option<String> = None;
+                            // Extract ALL API calls from RHS expression to avoid borrow checker issues
+                            // API calls inside mutate_node closures need to be extracted before the closure
+                            let mut extracted_api_calls = Vec::new();
+                            let mut temp_counter = 0;
+                            let mut temp_var_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
                             
-                            if let Expr::ApiCall(api_module, api_args) = &rhs_expr.expr {
-                                if let Some(return_type) = api_module.return_type() {
-                                    // Check if it returns Uuid, Option<Uuid>, DynNode, or Texture (EngineStruct)
-                                    // These all represent IDs that need extraction before closure
-                                    let return_type_ref = &return_type;
-                                    let needs_extraction = matches!(return_type_ref, Type::Uuid) 
-                                        || matches!(return_type_ref, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid))
-                                        || matches!(return_type_ref, Type::DynNode)
-                                        || matches!(return_type_ref, Type::EngineStruct(EngineStructKind::Texture));
-                                    
-                                    if needs_extraction {
+                            // Helper function to extract API calls from expressions
+                            fn extract_api_calls_from_expr_helper(expr: &Expr, script: &Script, current_func: Option<&Function>, 
+                                                       extracted: &mut Vec<(String, String)>, counter: &mut usize,
+                                                       temp_var_types: &mut std::collections::HashMap<String, Type>,
+                                                       needs_self: bool, expected_type: Option<&Type>) -> Expr {
+                                match expr {
+                                    // Extract API calls (like Math.random_range, Texture.load, etc.)
+                                    Expr::ApiCall(api_module, api_args) => {
+                                        // Extract ALL API calls, not just ones returning Uuid
+                                        // This prevents borrow checker issues when API calls are inside closures
+                                        let temp_var = format!("__temp_api_{}", counter);
+                                        *counter += 1;
+                                        
                                         // Generate the API call code
                                         let mut api_call_str = api_module.to_rust(api_args, script, needs_self, current_func);
                                         
                                         // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                         api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                         
-                                        // Generate temp variable name based on API type
-                                        let temp_var = match api_module {
-                                            ApiModule::Texture(TextureApi::Load) => "__texture_id".to_string(),
-                                            ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id".to_string(),
-                                            ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id".to_string(),
-                                            _ => "__temp_id".to_string(),
-                                        };
+                                        // Infer the return type for the temp variable
+                                        let inferred_type = api_module.return_type();
+                                        let type_annotation = inferred_type
+                                            .as_ref()
+                                            .map(|t| format!(": {}", t.to_rust_type()))
+                                            .unwrap_or_default();
                                         
-                                        // Determine the type annotation based on return type
-                                        // Texture (EngineStruct) and DynNode both become Option<Uuid> in Rust
-                                        let type_annotation = match return_type_ref {
-                                            Type::Uuid => ": Uuid",
-                                            Type::Option(_) => ": Option<Uuid>",
-                                            Type::DynNode => ": Uuid",
-                                            Type::EngineStruct(EngineStructKind::Texture) => ": Option<Uuid>",
-                                            _ => "",
-                                        };
+                                        // Store the type for this temp variable
+                                        if let Some(ty) = inferred_type {
+                                            temp_var_types.insert(temp_var.clone(), ty);
+                                        }
                                         
-                                        temp_decl_opt = Some(format!("let {}{} = {};", temp_var, type_annotation, api_call_str));
-                                        temp_var_opt = Some(temp_var);
+                                        extracted.push((format!("let {}{} = {};", temp_var, type_annotation, api_call_str), temp_var.clone()));
+                                        
+                                        // Return an identifier expression for the temp variable
+                                        Expr::Ident(temp_var)
                                     }
+                                    Expr::MemberAccess(base, field) => {
+                                        // Check if this member access would generate a read_node call
+                                        if let Some((node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
+                                            // This is a node member access - extract it to a temp variable
+                                            let temp_var = format!("__temp_read_{}", counter);
+                                            *counter += 1;
+                                            
+                                            // Generate the read_node call
+                                            let read_code = expr.to_rust(needs_self, script, expected_type, current_func, None);
+                                            
+                                            // Infer the type for the temp variable
+                                            let inferred_type = script.infer_expr_type(expr, current_func);
+                                            let type_annotation = inferred_type
+                                                .as_ref()
+                                                .map(|t| format!(": {}", t.to_rust_type()))
+                                                .unwrap_or_default();
+                                            
+                                            // Store the type for this temp variable so we can check if it needs cloning
+                                            if let Some(ty) = inferred_type {
+                                                temp_var_types.insert(temp_var.clone(), ty);
+                                            }
+                                            
+                                            extracted.push((format!("let {}{} = {};", temp_var, type_annotation, read_code), temp_var.clone()));
+                                            
+                                            // Return an identifier expression for the temp variable
+                                            Expr::Ident(temp_var)
+                                        } else {
+                                            // Not a node member access, recurse into base
+                                            let new_base = extract_api_calls_from_expr_helper(base, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                            Expr::MemberAccess(Box::new(new_base), field.clone())
+                                        }
+                                    }
+                                    Expr::BinaryOp(left, op, right) => {
+                                        let new_left = extract_api_calls_from_expr_helper(left, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        let new_right = extract_api_calls_from_expr_helper(right, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        Expr::BinaryOp(Box::new(new_left), op.clone(), Box::new(new_right))
+                                    }
+                                    Expr::Call(target, args) => {
+                                        let new_target = extract_api_calls_from_expr_helper(target, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        let new_args: Vec<Expr> = args.iter()
+                                            .map(|arg| extract_api_calls_from_expr_helper(arg, script, current_func, extracted, counter, temp_var_types, needs_self, None))
+                                            .collect();
+                                        Expr::Call(Box::new(new_target), new_args)
+                                    }
+                                    _ => expr.clone(),
                                 }
                             }
                             
-                            // If we extracted to a temp variable, use that directly and skip to_rust on original expr
-                            let mut rhs_code = if let Some(temp_var) = &temp_var_opt {
-                                // Use temp variable directly - conversion will happen below
-                                temp_var.clone()
+                            let modified_rhs_expr = extract_api_calls_from_expr_helper(
+                                &rhs_expr.expr, 
+                                script, 
+                                current_func, 
+                                &mut extracted_api_calls, 
+                                &mut temp_counter,
+                                &mut temp_var_types,
+                                needs_self,
+                                lhs_type.as_ref()
+                            );
+                            
+                            // Combine all temp declarations
+                            let combined_temp_decl = if !extracted_api_calls.is_empty() {
+                                Some(extracted_api_calls.iter().map(|(decl, _): &(String, String)| decl.clone()).collect::<Vec<_>>().join(" "))
                             } else {
-                                // No temp variable, generate code normally
-                                rhs_expr
-                                    .expr
-                                    .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref())
+                                None
                             };
+                            
+                            // Generate code for the (possibly modified) RHS expression
+                            let rhs_code = modified_rhs_expr.to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
                             
                             let is_literal = matches!(rhs_expr.expr, Expr::Literal(_));
                             
@@ -2698,7 +2941,7 @@ impl Stmt {
                                 };
                                 
                                 if let Some(setter) = setter_method {
-                                    let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                    let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                     format!(
                                         "{}        api.mutate_scene_node({}, |n| {{ n.{}({}); }});\n",
                                         temp_decl, node_id, setter, final_rhs
@@ -2713,7 +2956,7 @@ impl Stmt {
                                             .map(|f| ENGINE_REGISTRY.resolve_field_name(&compatible_node_types[0], f))
                                             .collect();
                                         let resolved_field_path = resolved_path.join(".");
-                                        let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                        let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                         format!(
                                             "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
                                             temp_decl, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
@@ -2733,7 +2976,7 @@ impl Stmt {
                                             ));
                                         }
                                         
-                                        let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                        let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                         format!(
                                             "{}        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
                                             temp_decl, node_id,
@@ -2754,7 +2997,7 @@ impl Stmt {
                                         .map(|f| ENGINE_REGISTRY.resolve_field_name(&compatible_node_types[0], f))
                                         .collect();
                                     let resolved_field_path = resolved_path.join(".");
-                                    let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                    let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                     format!(
                                         "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
                                         temp_decl, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
@@ -2774,7 +3017,7 @@ impl Stmt {
                                         ));
                                     }
                                     
-                                    let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                                    let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                     format!(
                                         "{}        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
                                         temp_decl, node_id,
@@ -2791,61 +3034,117 @@ impl Stmt {
                         let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                         let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
                         
-                        // Check if RHS is an ApiCall that returns Uuid/Option<Uuid> - if so, extract to temp variable
-                        let mut temp_decl_opt: Option<String> = None;
-                        let mut temp_var_opt: Option<String> = None;
+                        // Extract ALL API calls and read_node calls from RHS expression to avoid borrow checker issues
+                        // API calls inside mutate_node closures need to be extracted before the closure
+                        let mut extracted_api_calls = Vec::new();
+                        let mut temp_counter = 0;
+                        let mut temp_var_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
                         
-                        if let Expr::ApiCall(api_module, api_args) = &rhs_expr.expr {
-                            if let Some(return_type) = api_module.return_type() {
-                                // Check if it returns Uuid, Option<Uuid>, DynNode, or Texture (EngineStruct)
-                                // These all represent IDs that need extraction before closure
-                                let return_type_ref = &return_type;
-                                let needs_extraction = matches!(return_type_ref, Type::Uuid) 
-                                    || matches!(return_type_ref, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid))
-                                    || matches!(return_type_ref, Type::DynNode)
-                                    || matches!(return_type_ref, Type::EngineStruct(EngineStructKind::Texture));
-                                
-                                if needs_extraction {
+                        fn extract_api_calls_from_expr(expr: &Expr, script: &Script, current_func: Option<&Function>, 
+                                                       extracted: &mut Vec<(String, String)>, counter: &mut usize,
+                                                       temp_var_types: &mut std::collections::HashMap<String, Type>,
+                                                       needs_self: bool, expected_type: Option<&Type>) -> Expr {
+                            match expr {
+                                // Extract API calls (like Math.random_range, Texture.load, etc.)
+                                Expr::ApiCall(api_module, api_args) => {
+                                    // Extract ALL API calls, not just ones returning Uuid
+                                    // This prevents borrow checker issues when API calls are inside closures
+                                    let temp_var = format!("__temp_api_{}", counter);
+                                    *counter += 1;
+                                    
                                     // Generate the API call code
                                     let mut api_call_str = api_module.to_rust(api_args, script, needs_self, current_func);
                                     
                                     // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                     api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                     
-                                    // Generate temp variable name based on API type
-                                    let temp_var = match api_module {
-                                        ApiModule::Texture(TextureApi::Load) => "__texture_id".to_string(),
-                                        ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id".to_string(),
-                                        ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id".to_string(),
-                                        _ => "__temp_id".to_string(),
-                                    };
+                                    // Infer the return type for the temp variable
+                                    let inferred_type = api_module.return_type();
+                                    let type_annotation = inferred_type
+                                        .as_ref()
+                                        .map(|t| format!(": {}", t.to_rust_type()))
+                                        .unwrap_or_default();
                                     
-                                    // Determine the type annotation based on return type
-                                    // Texture (EngineStruct) and DynNode both become Option<Uuid> in Rust
-                                    let type_annotation = match return_type_ref {
-                                        Type::Uuid => ": Uuid",
-                                        Type::Option(_) => ": Option<Uuid>",
-                                        Type::DynNode => ": Uuid",
-                                        Type::EngineStruct(EngineStructKind::Texture) => ": Option<Uuid>",
-                                        _ => "",
-                                    };
+                                    // Store the type for this temp variable
+                                    if let Some(ty) = inferred_type {
+                                        temp_var_types.insert(temp_var.clone(), ty);
+                                    }
                                     
-                                    temp_decl_opt = Some(format!("let {}{} = {};", temp_var, type_annotation, api_call_str));
-                                    temp_var_opt = Some(temp_var);
+                                    extracted.push((format!("let {}{} = {};", temp_var, type_annotation, api_call_str), temp_var.clone()));
+                                    
+                                    // Return an identifier expression for the temp variable
+                                    Expr::Ident(temp_var)
                                 }
+                                Expr::MemberAccess(base, field) => {
+                                    // Check if this member access would generate a read_node call
+                                    if let Some((node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
+                                        // This is a node member access - extract it to a temp variable
+                                        let temp_var = format!("__temp_read_{}", counter);
+                                        *counter += 1;
+                                        
+                                        // Generate the read_node call
+                                        let read_code = expr.to_rust(needs_self, script, expected_type, current_func, None);
+                                        
+                                        // Infer the type for the temp variable
+                                        let inferred_type = script.infer_expr_type(expr, current_func);
+                                        let type_annotation = inferred_type
+                                            .as_ref()
+                                            .map(|t| format!(": {}", t.to_rust_type()))
+                                            .unwrap_or_default();
+                                        
+                                        // Store the type for this temp variable so we can check if it needs cloning
+                                        if let Some(ty) = inferred_type {
+                                            temp_var_types.insert(temp_var.clone(), ty);
+                                        }
+                                        
+                                        extracted.push((format!("let {}{} = {};", temp_var, type_annotation, read_code), temp_var.clone()));
+                                        
+                                        // Return an identifier expression for the temp variable
+                                        Expr::Ident(temp_var)
+                                    } else {
+                                        // Not a node member access, recurse into base
+                                        let new_base = extract_api_calls_from_expr(base, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        Expr::MemberAccess(Box::new(new_base), field.clone())
+                                    }
+                                }
+                                Expr::BinaryOp(left, op, right) => {
+                                    let new_left = extract_api_calls_from_expr(left, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                    let new_right = extract_api_calls_from_expr(right, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                    Expr::BinaryOp(Box::new(new_left), op.clone(), Box::new(new_right))
+                                }
+                                Expr::Call(target, args) => {
+                                    let new_target = extract_api_calls_from_expr(target, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                    let new_args: Vec<Expr> = args.iter()
+                                        .map(|arg| extract_api_calls_from_expr(arg, script, current_func, extracted, counter, temp_var_types, needs_self, None))
+                                        .collect();
+                                    Expr::Call(Box::new(new_target), new_args)
+                                }
+                                _ => expr.clone(),
                             }
                         }
                         
-                        // If we extracted to a temp variable, use that directly and skip to_rust on original expr
-                        let mut rhs_code = if let Some(temp_var) = &temp_var_opt {
-                            // Use temp variable directly - conversion will happen below
-                            temp_var.clone()
+                        // Extract API calls and read_node calls from RHS expression
+                        let modified_rhs_expr = extract_api_calls_from_expr(
+                            &rhs_expr.expr, 
+                            script, 
+                            current_func, 
+                            &mut extracted_api_calls, 
+                            &mut temp_counter,
+                            &mut temp_var_types,
+                            needs_self,
+                            lhs_type.as_ref()
+                        );
+                        
+                        // Combine all temp declarations from extracted API calls
+                        let combined_temp_decl = if !extracted_api_calls.is_empty() {
+                            Some(extracted_api_calls.iter().map(|(decl, _): &(String, String)| decl.clone()).collect::<Vec<_>>().join(" "))
                         } else {
-                            // No temp variable, generate code normally
-                            rhs_expr
-                                .expr
-                                .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref())
+                            None
                         };
+                        
+                        // Generate code for the (possibly modified) RHS expression
+                        // If API calls were extracted, the modified expression uses temp variables
+                        let rhs_code = modified_rhs_expr.to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
                         
                         // For literals, we already generated the code with the expected type,
                         // so skip implicit cast to avoid double conversion
@@ -2900,7 +3199,7 @@ impl Stmt {
                             field_path.clone()
                         };
                         
-                        let temp_decl = temp_decl_opt.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
+                        let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                         format!(
                             "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
                             temp_decl, node_id, closure_var, node_type, closure_var, resolved_field_path, final_rhs
@@ -3227,7 +3526,9 @@ impl Stmt {
                 // iterable is TypedExpr, which already passes span through
                 let mut result = String::new();
                 
-                result.push_str(&format!("        for {} in {} {{\n", var_name, iter_str));
+                // Use TRANSPILED_IDENT prefix for loop variable (e.g., i -> __t_i)
+                let loop_var_name = format!("{}{}", TRANSPILED_IDENT, var_name);
+                result.push_str(&format!("        for {} in {} {{\n", loop_var_name, iter_str));
 
                 // Track which nodes are created/modified in this iteration
                 let mut nodes_created_this_iter = Vec::new();
@@ -4112,7 +4413,33 @@ impl Expr {
         }
 
         match expr {
-            Expr::Ident(_) | Expr::MemberAccess(..) => {
+            Expr::Ident(name) => {
+                // For temp variables (__temp_*), we need to check their actual type
+                // Since they're not in the script's variable list, infer_expr_type won't find them
+                // But we know from context that most read_node results are Copy types (f32, i32, etc.)
+                // So we'll try to infer, and if we can't, we'll check if it looks like a Copy type
+                if name.starts_with("__temp_") {
+                    // Try to infer type first
+                    if let Some(ty) = script.infer_expr_type(expr, current_func) {
+                        // We have the type - check if it requires cloning
+                        ty.requires_clone()
+                    } else {
+                        // Can't infer type for temp variable
+                        // Most temp variables from read_node are Copy types (f32, i32, Vector2, etc.)
+                        // So we assume it doesn't need cloning unless we can prove otherwise
+                        // This is safe because Copy types don't need cloning
+                        false
+                    }
+                } else {
+                    // Regular variable - use normal type inference
+                    if let Some(ty) = script.infer_expr_type(expr, current_func) {
+                        ty.requires_clone()
+                    } else {
+                        false
+                    }
+                }
+            }
+            Expr::MemberAccess(..) => {
                 if let Some(ty) = script.infer_expr_type(expr, current_func) {
                     ty.requires_clone()
                 } else {
@@ -4184,6 +4511,12 @@ impl Expr {
 
                 // Check against `script_vars` to see if it's a field
                 let is_field = script.variables.iter().any(|v| v.name == *name);
+                
+                // Special case: temp variables (__temp_*) should NEVER be renamed if they're NOT user variables
+                // If a user actually named a variable __temp_*, we need to rename it to avoid collisions
+                if name.starts_with("__temp_") && !is_local && !is_field {
+                    return name.to_string();
+                }
                 
                 // Get variable type for renaming
                 // If var.typ is None, infer from the variable's value expression
@@ -4368,8 +4701,21 @@ impl Expr {
                 }
             }
             Expr::BinaryOp(left, op, right) => {
-                let left_type = script.infer_expr_type(left, current_func);
+                let mut left_type = script.infer_expr_type(left, current_func);
                 let right_type = script.infer_expr_type(right, current_func);
+                
+                // Special handling for loop variables: if left is an identifier that might be a loop variable,
+                // and we can't find its type, try to infer it from context (ranges produce i32 by default)
+                if left_type.is_none() {
+                    if let Expr::Ident(var_name) = left.as_ref() {
+                        // Check if this might be a loop variable (starts with __t_ or is a common loop var name)
+                        // Loop variables from ranges are typically i32
+                        if var_name.starts_with("__t_") || var_name == "i" || var_name == "j" || var_name == "k" {
+                            // Default to i32 for loop variables (ranges produce i32)
+                            left_type = Some(Type::Number(NumberKind::Signed(32)));
+                        }
+                    }
+                }
 
                 let dominant_type = if let Some(expected) = expected_type.cloned() {
                     Some(expected)
@@ -4455,6 +4801,27 @@ impl Expr {
                                 r_str
                             };
                             (l_cast, r_cast)
+                        }
+                        // Special case: if left is float and right is integer (even if types aren't fully inferred)
+                        (Some(Type::Number(NumberKind::Float(32))), Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), _) => {
+                            (l_str, format!("({} as f32)", r_str))
+                        }
+                        (Some(Type::Number(NumberKind::Float(64))), Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), _) => {
+                            (l_str, format!("({} as f64)", r_str))
+                        }
+                        // Fallback: if left type is unknown but right is a float, cast left to float
+                        (None, Some(Type::Number(NumberKind::Float(32))), _) => {
+                            (format!("({} as f32)", l_str), r_str)
+                        }
+                        (None, Some(Type::Number(NumberKind::Float(64))), _) => {
+                            (format!("({} as f64)", l_str), r_str)
+                        }
+                        // Fallback: if right type is unknown but left is a float, cast right to float
+                        (Some(Type::Number(NumberKind::Float(32))), None, _) => {
+                            (l_str, format!("({} as f32)", r_str))
+                        }
+                        (Some(Type::Number(NumberKind::Float(64))), None, _) => {
+                            (l_str, format!("({} as f64)", r_str))
                         }
                         _ => (l_str, r_str),
                     }
@@ -4655,7 +5022,20 @@ impl Expr {
 
                     if is_script_member {
                         // This is a script field/method, access directly on self
-                        return format!("self.{}", field);
+                        // Need to use the renamed variable/function name
+                        // Check if it's a variable or function
+                        if let Some(var) = script.variables.iter().find(|v| v.name == *field) {
+                            // It's a variable, use renamed variable name
+                            let renamed_name = rename_variable(&var.name, var.typ.as_ref());
+                            return format!("self.{}", renamed_name);
+                        } else if script.functions.iter().any(|f| f.name == *field) {
+                            // It's a function, use renamed function name
+                            let renamed_name = rename_function(field);
+                            return format!("self.{}", renamed_name);
+                        } else {
+                            // Fallback (shouldn't happen if is_script_member is true)
+                            return format!("self.{}", field);
+                        }
                     }
                     // Otherwise, it's a node field, use self.base.field
                 }
@@ -4785,6 +5165,189 @@ impl Expr {
                                     } else {
                                         return format!("api.read_node({}, |{}: &{}| {})", node_id_expr, param_name, type_name, field_access);
                                     }
+                                }
+                            }
+                        }
+                        
+                        // Also check if base_code is a UUID variable that represents a node (ends with _id)
+                        // This handles cases where var b = new Sprite2D() creates b_id: Uuid
+                        // We need to look up the original variable name to determine the node type
+                        if base_code.ends_with("_id") && base_code != "self.id" {
+                            // Extract original variable name (e.g., "b_id" -> "b")
+                            let original_var_name = &base_code[..base_code.len() - 3];
+                            
+                            // Helper to find variable in nested blocks (for loops, if statements, etc.)
+                            fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
+                                use crate::scripting::ast::Stmt;
+                                for stmt in body {
+                                    match stmt {
+                                        Stmt::VariableDecl(var) if var.name == name => {
+                                            return Some(var);
+                                        }
+                                        Stmt::If { then_body, else_body, .. } => {
+                                            if let Some(v) = find_variable_in_body(name, then_body) {
+                                                return Some(v);
+                                            }
+                                            if let Some(else_body) = else_body {
+                                                if let Some(v) = find_variable_in_body(name, else_body) {
+                                                    return Some(v);
+                                                }
+                                            }
+                                        }
+                                        Stmt::For { body: for_body, .. } | Stmt::ForTraditional { body: for_body, .. } => {
+                                            if let Some(v) = find_variable_in_body(name, for_body) {
+                                                return Some(v);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                None
+                            }
+                            
+                            // Look up the variable to see if it's a node type
+                            // Try multiple lookup strategies to handle variables in different scopes (including loop-scoped)
+                            let node_type_opt = if let Some(current_func) = current_func {
+                                // Strategy 1: Check in function locals first
+                                current_func.locals.iter()
+                                    .find(|v| v.name == *original_var_name)
+                                    .and_then(|v| {
+                                        // Check declared type
+                                        if let Some(ref typ) = v.typ {
+                                            if type_is_node(typ) {
+                                                return get_node_type(typ).cloned();
+                                            }
+                                        }
+                                        // Check inferred type from value expression
+                                        v.value.as_ref().and_then(|val| {
+                                            let inferred = script.infer_expr_type(&val.expr, Some(current_func));
+                                            if let Some(ref inferred_typ) = inferred {
+                                                if type_is_node(inferred_typ) {
+                                                    return get_node_type(inferred_typ).cloned();
+                                                }
+                                            }
+                                            // Check if value is StructNew creating a node
+                                            if let Expr::StructNew(ty_name, _) = &val.expr {
+                                                return string_to_node_type(ty_name);
+                                            }
+                                            None
+                                        })
+                                    })
+                                    // Strategy 2: Check in nested blocks (for loops, if statements, etc.)
+                                    .or_else(|| {
+                                        find_variable_in_body(original_var_name, &current_func.body)
+                                            .and_then(|v| {
+                                                // Check declared type
+                                                if let Some(ref typ) = v.typ {
+                                                    if type_is_node(typ) {
+                                                        return get_node_type(typ).cloned();
+                                                    }
+                                                }
+                                                // Check inferred type from value expression
+                                                v.value.as_ref().and_then(|val| {
+                                                    let inferred = script.infer_expr_type(&val.expr, Some(current_func));
+                                                    if let Some(ref inferred_typ) = inferred {
+                                                        if type_is_node(inferred_typ) {
+                                                            return get_node_type(inferred_typ).cloned();
+                                                        }
+                                                    }
+                                                    // Check if value is StructNew creating a node
+                                                    if let Expr::StructNew(ty_name, _) = &val.expr {
+                                                        return string_to_node_type(ty_name);
+                                                    }
+                                                    None
+                                                })
+                                            })
+                                    })
+                                    // Strategy 3: Check in params
+                                    .or_else(|| {
+                                        current_func.params.iter()
+                                            .find(|p| p.name == *original_var_name)
+                                            .and_then(|p| {
+                                                if type_is_node(&p.typ) {
+                                                    get_node_type(&p.typ).cloned()
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                    })
+                                    // Strategy 4: Try to infer type directly from the base expression
+                                    // This works even if variable isn't found in locals or nested blocks
+                                    .or_else(|| {
+                                        if let Expr::Ident(_) = base.as_ref() {
+                                            // Try to infer the type of the identifier directly
+                                            if let Some(inferred_type) = script.infer_expr_type(base, Some(current_func)) {
+                                                if type_is_node(&inferred_type) {
+                                                    return get_node_type(&inferred_type).cloned();
+                                                }
+                                            }
+                                        }
+                                        None
+                                    })
+                            } else {
+                                // Check script-level variables
+                                script.get_variable_type(original_var_name)
+                                    .and_then(|typ| {
+                                        if type_is_node(&typ) {
+                                            get_node_type(&typ).cloned()
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    // Fallback: try to infer from the base expression
+                                    .or_else(|| {
+                                        if let Expr::Ident(_) = base.as_ref() {
+                                            if let Some(inferred_type) = script.infer_expr_type(base, None) {
+                                                if type_is_node(&inferred_type) {
+                                                    return get_node_type(&inferred_type).cloned();
+                                                }
+                                            }
+                                        }
+                                        None
+                                    })
+                            };
+                            
+                            if let Some(node_type) = node_type_opt {
+                                // This is a node UUID variable - use api.read_node
+                                let node_type_name = format!("{:?}", node_type);
+                                let base_node_type = Type::Node(node_type);
+                                let result_type = script.get_member_type(&base_node_type, field);
+                                let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
+                                let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
+                                
+                                let param_name = original_var_name;
+                                let resolved_field = ENGINE_REGISTRY.resolve_field_name(&node_type, field);
+                                
+                                let should_unwrap = if is_option {
+                                    match expected_type {
+                                        Some(Type::Option(expected_inner)) => {
+                                            match result_type.as_ref() {
+                                                Some(Type::Option(actual_inner)) => {
+                                                    actual_inner.as_ref() != expected_inner.as_ref()
+                                                }
+                                                _ => false,
+                                            }
+                                        }
+                                        Some(_) => true,
+                                        None => false,
+                                    }
+                                } else {
+                                    false
+                                };
+                                
+                                let field_access = if should_unwrap {
+                                    format!("{}.{}.unwrap()", param_name, resolved_field)
+                                } else if needs_clone {
+                                    format!("{}.{}.clone()", param_name, resolved_field)
+                                } else {
+                                    format!("{}.{}", param_name, resolved_field)
+                                };
+                                
+                                let (temp_decl, actual_node_id) = extract_mutable_api_call(&base_code);
+                                if !temp_decl.is_empty() {
+                                    return format!("{}{}api.read_node({}, |{}: &{}| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, param_name, node_type_name, field_access);
+                                } else {
+                                    return format!("api.read_node({}, |{}: &{}| {})", base_code, param_name, node_type_name, field_access);
                                 }
                             }
                         }

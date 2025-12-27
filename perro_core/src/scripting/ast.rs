@@ -208,7 +208,13 @@ impl Variable {
             Type::Void => panic!("Void invalid"),
             Type::Node(_node_type) => ("__NODE__", "NodeType".to_owned()),
             Type::DynNode => ("as_str", ".parse::<Uuid>().unwrap()".into()), // DynNode is Uuid, serialized as string
-            Type::EngineStruct(_engine_struct) => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()),
+            Type::EngineStruct(es) => {
+                use crate::engine_structs::EngineStruct;
+                match es {
+                    EngineStruct::Texture => ("__CUSTOM__", "Option<Uuid>".to_string()), // Texture is Option<Uuid>, use custom deserialization
+                    _ => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()), // Other engine structs use the generic method
+                }
+            },
         }
     }
 
@@ -363,7 +369,13 @@ impl Type {
             Type::DynNode => "Uuid".to_string(), // DynNode is also a Uuid ID
             Type::NodeType => "NodeType".to_string(), // NodeType enum
             Type::EngineStruct(es) => {
-                format!("{:?}", es)
+                // Texture becomes Option<Uuid> in Rust (it's a handle, not a real struct)
+                // Other engine structs (Vector2, Color, etc.) are real structs
+                use crate::engine_structs::EngineStruct;
+                match es {
+                    EngineStruct::Texture => "Option<Uuid>".to_string(),
+                    _ => format!("{:?}", es), // Other engine structs are real types
+                }
             },
             Type::Void => "()".to_string(),
         }
@@ -406,8 +418,11 @@ impl Type {
                 "Default::default()".to_string()
             }
             Type::EngineStruct(es) => {
-                // Engine structs implement Default, so use that
-                format!("{}::default()", format!("{:?}", es))
+                use crate::engine_structs::EngineStruct;
+                match es {
+                    EngineStruct::Texture => "None".to_string(), // Texture is Option<Uuid>, default is None
+                    _ => format!("{}::default()", format!("{:?}", es)), // Other engine structs implement Default
+                }
             }
             Type::Node(_) => {
                 // Nodes are Uuid IDs, use nil since it will be set later

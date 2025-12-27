@@ -9,6 +9,9 @@ version = "1.0.0"
 target_fps = 144
 xps = 30
 
+[root]
+script = "res://root.pup"
+
 [input]
 # Input action mappings
 # Format: action_name = ["InputSource1", "InputSource2", ...]

@@ -107,6 +107,9 @@ impl ApiModule {
             ApiModule::Texture(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
+            ApiModule::Math(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
         }
     }
 
@@ -124,6 +127,7 @@ impl ApiModule {
             ApiModule::MapOp(api) => api.return_type(),
             ApiModule::Input(api) => api.return_type(),
             ApiModule::Texture(api) => api.return_type(),
+            ApiModule::Math(api) => api.return_type(),
         }
     }
 
@@ -141,6 +145,7 @@ impl ApiModule {
             ApiModule::MapOp(api) => api.param_types(),
             ApiModule::Input(api) => api.param_types(),
             ApiModule::Texture(api) => api.param_types(),
+            ApiModule::Math(api) => api.param_types(),
         };
         // Add this line:
         result
@@ -347,6 +352,134 @@ impl ApiCodegen for ConsoleApi {
             )
         };
 
+        // Helper function to find a variable in nested blocks (if, for, etc.)
+        fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
+            use crate::scripting::ast::Stmt;
+            for stmt in body {
+                match stmt {
+                    Stmt::VariableDecl(var) if var.name == name => {
+                        return Some(var);
+                    }
+                    Stmt::If { then_body, else_body, .. } => {
+                        if let Some(v) = find_variable_in_body(name, then_body) {
+                            return Some(v);
+                        }
+                        if let Some(else_body) = else_body {
+                            if let Some(v) = find_variable_in_body(name, else_body) {
+                                return Some(v);
+                            }
+                        }
+                    }
+                    Stmt::For { body: for_body, .. } | Stmt::ForTraditional { body: for_body, .. } => {
+                        if let Some(v) = find_variable_in_body(name, for_body) {
+                            return Some(v);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        // Helper function to check if a variable represents a node
+        fn check_if_node_var(var_name: &str, script: &Script, current_func: Option<&Function>) -> bool {
+            if let Some(func) = current_func {
+                // Check function local (including nested blocks)
+                let local_opt = func.locals.iter().find(|v| v.name == *var_name)
+                    .or_else(|| find_variable_in_body(var_name, &func.body));
+                
+                if let Some(local) = local_opt {
+                    let declared_is_node = local.typ.as_ref()
+                        .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
+                        .unwrap_or(false);
+                    
+                    if declared_is_node {
+                        return true;
+                    }
+                    
+                    if let Some(val) = &local.value {
+                        let inferred_type = script.infer_expr_type(&val.expr, current_func);
+                        let inferred_is_node = inferred_type.as_ref()
+                            .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
+                            .unwrap_or(false);
+                        
+                        if inferred_is_node {
+                            return true;
+                        }
+                        
+                        // Check if assigned from node expression
+                        match &val.expr {
+                            Expr::StructNew(ty, _) => return is_node_type(ty),
+                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) |
+                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) |
+                            Expr::Cast(_, Type::Node(_)) => return true,
+                            Expr::Cast(_, Type::Custom(name)) => return is_node_type(name),
+                            _ => {}
+                        }
+                    }
+                }
+                
+                // Check script-level variable
+                if let Some(script_var) = script.variables.iter().find(|v| v.name == *var_name) {
+                    let declared_is_node = script_var.typ.as_ref()
+                        .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
+                        .unwrap_or(false);
+                    
+                    if declared_is_node {
+                        return true;
+                    }
+                    
+                    if let Some(val) = &script_var.value {
+                        let inferred_type = script.infer_expr_type(&val.expr, current_func);
+                        let inferred_is_node = inferred_type.as_ref()
+                            .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
+                            .unwrap_or(false);
+                        
+                        if inferred_is_node {
+                            return true;
+                        }
+                        
+                        match &val.expr {
+                            Expr::StructNew(ty, _) => return is_node_type(ty),
+                            Expr::Cast(_, Type::Node(_)) => return true,
+                            Expr::Cast(_, Type::Custom(name)) => return is_node_type(name),
+                            _ => {}
+                        }
+                    }
+                }
+            } else {
+                // Check script-level variable
+                if let Some(script_var) = script.variables.iter().find(|v| v.name == *var_name) {
+                    let declared_is_node = script_var.typ.as_ref()
+                        .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
+                        .unwrap_or(false);
+                    
+                    if declared_is_node {
+                        return true;
+                    }
+                    
+                    if let Some(val) = &script_var.value {
+                        let inferred_type = script.infer_expr_type(&val.expr, current_func);
+                        let inferred_is_node = inferred_type.as_ref()
+                            .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
+                            .unwrap_or(false);
+                        
+                        if inferred_is_node {
+                            return true;
+                        }
+                        
+                        match &val.expr {
+                            Expr::StructNew(ty, _) => return is_node_type(ty),
+                            Expr::Cast(_, Type::Node(_)) => return true,
+                            Expr::Cast(_, Type::Custom(name)) => return is_node_type(name),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            false
+        }
+
         // Check if the argument is a node (Uuid) - if so, convert to print node type instead
         let arg = if args.len() == 1 {
             // Check if the single argument is a node type
@@ -356,27 +489,34 @@ impl ApiCodegen for ConsoleApi {
                 // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
                 let is_node = match arg_type {
                     Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                    Some(Type::Uuid) => {
-                        // Check if this is a variable that came from a node API call
-                        // Variables from get_parent()/get_node() are node IDs
+                    None | Some(Type::Uuid) => {
                         if let Expr::Ident(var_name) = arg_expr {
-                            // Check if variable was assigned from a node API call
-                            if let Some(func) = current_func {
+                            // First check the variable's declared type directly (before it gets converted to Uuid)
+                            let var_declared_type = if let Some(func) = current_func {
                                 func.locals.iter()
                                     .find(|v| v.name == *var_name)
-                                    .and_then(|v| v.value.as_ref())
-                                    .map(|val| {
-                                        match &val.expr {
-                                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) |
-                                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) |
-                                            Expr::Cast(_, Type::Node(_)) => true,
-                                            Expr::Cast(_, Type::Custom(name)) => is_node_type(name),
-                                            _ => false,
-                                        }
+                                    .and_then(|v| v.typ.as_ref())
+                                    .or_else(|| {
+                                        find_variable_in_body(var_name, &func.body)
+                                            .and_then(|v| v.typ.as_ref())
                                     })
-                                    .unwrap_or(false)
                             } else {
-                                false
+                                script.variables.iter()
+                                    .find(|v| v.name == *var_name)
+                                    .and_then(|v| v.typ.as_ref())
+                            };
+                            
+                            // If declared type is a node, it's definitely a node
+                            if let Some(typ) = var_declared_type {
+                                if matches!(typ, Type::Node(_) | Type::DynNode) {
+                                    true
+                                } else {
+                                    // Fall back to checking the variable's value expression
+                                    check_if_node_var(var_name, script, current_func)
+                                }
+                            } else {
+                                // No declared type, check the variable's value expression
+                                check_if_node_var(var_name, script, current_func)
                             }
                         } else {
                             false
@@ -429,19 +569,142 @@ impl ApiCodegen for ConsoleApi {
                 joined
             }
         } else {
-            // Multiple arguments - use format!() logic (already handled above)
-            joined
+            // Multiple arguments - check each one individually for nodes
+            // Process each argument to see if it's a node and wrap with __EXTRACT_NODE_TYPE__
+            let processed_args: Vec<String> = args.iter()
+                .zip(args_strs.iter())
+                .map(|(arg_expr, arg_str)| {
+                    let arg_type = script.infer_expr_type(arg_expr, current_func);
+                    let is_node = match arg_type {
+                        Some(Type::Node(_)) | Some(Type::DynNode) => true,
+                        None | Some(Type::Uuid) => {
+                            if let Expr::Ident(var_name) = arg_expr {
+                                // First check the variable's declared type directly (before it gets converted to Uuid)
+                                let var_declared_type = if let Some(func) = current_func {
+                                    func.locals.iter()
+                                        .find(|v| v.name == *var_name)
+                                        .and_then(|v| v.typ.as_ref())
+                                        .or_else(|| {
+                                            find_variable_in_body(var_name, &func.body)
+                                                .and_then(|v| v.typ.as_ref())
+                                        })
+                                } else {
+                                    script.variables.iter()
+                                        .find(|v| v.name == *var_name)
+                                        .and_then(|v| v.typ.as_ref())
+                                };
+                                
+                                // If declared type is a node, it's definitely a node
+                                if let Some(typ) = var_declared_type {
+                                    if matches!(typ, Type::Node(_) | Type::DynNode) {
+                                        true
+                                    } else {
+                                        // Fall back to checking the variable's value expression
+                                        check_if_node_var(var_name, script, current_func)
+                                    }
+                                } else {
+                                    // No declared type, check the variable's value expression
+                                    check_if_node_var(var_name, script, current_func)
+                                }
+                            } else {
+                                false
+                            }
+                        },
+                        _ => false,
+                    };
+                    
+                    if is_node {
+                        format!("__EXTRACT_NODE_TYPE__({})", arg_str)
+                    } else {
+                        arg_str.clone()
+                    }
+                })
+                .collect();
+            
+            // Build format string with processed arguments
+            format!(
+                "format!(\"{}\", {})",
+                (0..processed_args.len())
+                    .map(|_| "{}")
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                processed_args.join(", "),
+            )
         };
 
         // Check if arg contains the extraction marker for node type
+        // This can be either a direct marker or inside a format!() string
         let (final_arg, temp_decl) = if arg.starts_with("__EXTRACT_NODE_TYPE__(") {
-            // Extract the node_id from the marker
+            // Single argument case - direct marker
             let node_id = arg.strip_prefix("__EXTRACT_NODE_TYPE__(")
                 .and_then(|s| s.strip_suffix(")"))
                 .unwrap_or("Uuid::nil()");
             let temp_var = "__node_type";
             let decl = format!("let {} = api.get_type({});", temp_var, node_id);
             (format!("format!(\"{{:?}}\", {})", temp_var), Some(decl))
+        } else if arg.contains("__EXTRACT_NODE_TYPE__(") {
+            // Multiple arguments case - marker inside format!() string
+            // Extract all __EXTRACT_NODE_TYPE__(...) markers from the string
+            let mut temp_decls = Vec::new();
+            let mut counter = 0;
+            let mut result = String::new();
+            let mut last_pos = 0;
+            let arg_chars: Vec<char> = arg.chars().collect();
+            
+            // Find and replace all markers
+            let mut i = 0;
+            while i < arg_chars.len() {
+                // Check if we found the start of a marker
+                if i + "__EXTRACT_NODE_TYPE__(".len() <= arg_chars.len() {
+                    let marker_start: String = arg_chars[i..i + "__EXTRACT_NODE_TYPE__(".len()].iter().collect();
+                    if marker_start == "__EXTRACT_NODE_TYPE__(" {
+                        // Found a marker - find the matching closing paren
+                        let mut paren_count = 1;
+                        let mut j = i + "__EXTRACT_NODE_TYPE__(".len();
+                        let mut node_id_end = j;
+                        
+                        while j < arg_chars.len() && paren_count > 0 {
+                            if arg_chars[j] == '(' {
+                                paren_count += 1;
+                            } else if arg_chars[j] == ')' {
+                                paren_count -= 1;
+                                if paren_count == 0 {
+                                    node_id_end = j;
+                                }
+                            }
+                            j += 1;
+                        }
+                        
+                        // Extract node_id
+                        let node_id: String = arg_chars[i + "__EXTRACT_NODE_TYPE__(".len()..node_id_end].iter().collect();
+                        let temp_var = format!("__node_type_{}", counter);
+                        counter += 1;
+                        
+                        // Create the temp declaration
+                        temp_decls.push(format!("let {} = api.get_type({});", temp_var, node_id));
+                        
+                        // Add replacement
+                        result.push_str(&arg[last_pos..i]);
+                        result.push_str(&format!("format!(\"{{:?}}\", {})", temp_var));
+                        
+                        // Skip past the marker
+                        i = node_id_end + 1;
+                        last_pos = i;
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+            
+            // Add remaining string
+            result.push_str(&arg[last_pos..]);
+            
+            if !temp_decls.is_empty() {
+                let decl = temp_decls.join(" ");
+                (result, Some(decl))
+            } else {
+                (arg, None)
+            }
         } else {
             (arg, None)
         };
@@ -1360,6 +1623,60 @@ impl ApiTypes for TextureApi {
                 Type::Number(NumberKind::Unsigned(32)),
             ]),
             TextureApi::GetWidth | TextureApi::GetHeight | TextureApi::GetSize => Some(vec![Type::Uuid]),
+        }
+    }
+}
+
+// ===========================================================
+// Math API Implementations
+// ===========================================================
+
+impl ApiCodegen for MathApi {
+    fn to_rust_prepared(
+        &self,
+        _args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            MathApi::Random => "api.Math.random()".into(),
+            MathApi::RandomRange => {
+                let min = args_strs.get(0).cloned().unwrap_or_else(|| "0.0".into());
+                let max = args_strs.get(1).cloned().unwrap_or_else(|| "1.0".into());
+                format!("api.Math.random_range({}, {})", min, max)
+            }
+            MathApi::RandomInt => {
+                let min = args_strs.get(0).cloned().unwrap_or_else(|| "0".into());
+                let max = args_strs.get(1).cloned().unwrap_or_else(|| "1".into());
+                format!("api.Math.random_int({}, {})", min, max)
+            }
+        }
+    }
+}
+
+impl ApiTypes for MathApi {
+    fn return_type(&self) -> Option<Type> {
+        use NumberKind::*;
+        match self {
+            MathApi::Random | MathApi::RandomRange => Some(Type::Number(Float(32))),
+            MathApi::RandomInt => Some(Type::Number(Signed(32))),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        use NumberKind::*;
+        match self {
+            MathApi::Random => None,
+            MathApi::RandomRange => Some(vec![
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+            ]),
+            MathApi::RandomInt => Some(vec![
+                Type::Number(Signed(32)),
+                Type::Number(Signed(32)),
+            ]),
         }
     }
 }

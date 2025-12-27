@@ -194,7 +194,7 @@ impl EngineRegistry {
             NodeType::Camera2D,
             Some(NodeType::Node2D),
             vec![
-                ("zoom", Type::Option(Box::new(Type::Number(NumberKind::Float(32))))),
+                ("zoom", Type::Number(NumberKind::Float(32))),
                 ("active", Type::Bool),
             ],
         );

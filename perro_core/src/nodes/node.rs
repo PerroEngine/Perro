@@ -83,9 +83,6 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, Value>>,
 
-    #[serde(skip)]
-    pub dirty: bool,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_root_of: Option<Cow<'static, str>>,
 
@@ -114,8 +111,6 @@ impl Node {
             parent: None,
             children: None,
             metadata: None,
-
-            dirty: true,
 
             is_root_of: None,
             created_timestamp: timestamp,

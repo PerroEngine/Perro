@@ -137,6 +137,10 @@ pub trait SceneAccess {
     /// Get mutable reference to a node (compile-time borrow checking)
     fn get_scene_node_mut(&mut self, id: Uuid) -> Option<&mut SceneNode>;
     
+    /// Mark a node as needing rerender (only if not already in set)
+    /// This is used to track nodes needing rerender without iterating over all nodes
+    fn mark_needs_rerender(&mut self, node_id: Uuid);
+    
     /// Legacy method for compatibility
     fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
         self.get_scene_node_mut(id)
