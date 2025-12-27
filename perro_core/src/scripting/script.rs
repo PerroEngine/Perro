@@ -160,6 +160,12 @@ pub trait SceneAccess {
     
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
+    
+    /// Update the Node2D children cache when a child is added
+    fn update_node2d_children_cache_on_add(&mut self, parent_id: Uuid, child_id: Uuid);
+    
+    /// Update the Node2D children cache when a child is removed
+    fn update_node2d_children_cache_on_remove(&mut self, parent_id: Uuid, child_id: Uuid);
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>>;
     fn get_physics_2d(&self) -> Option<&CellRefCell<PhysicsWorld2D>>;
 

@@ -59,6 +59,123 @@
         }
       }
     },
+    "00000000-0000-0000-0000-000000000124": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player2", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 200.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000125": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player3", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 300.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000126": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player4", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 400.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000127": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player5", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 500.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000128": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player6", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 600.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000129": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player7", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 700.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000130": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player8", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 800.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000131": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player9", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 900.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
+    "00000000-0000-0000-0000-000000000132": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": { "type": "Node", "name": "Player10", "parent": "00000000-0000-0000-0000-000000000000", "script_path": "res://player.pup" },
+        "transform": {
+          "position": { "x": 1000.0, "y": 0.0 },
+          "rotation": 0.0,
+          "scale": { "x": 0.5, "y": 0.5 }
+        }
+      }
+    },
     "00000000-0000-0000-0000-000000000005": {
       "type": "CollisionShape2D",
       "base": {

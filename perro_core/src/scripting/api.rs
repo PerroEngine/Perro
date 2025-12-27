@@ -1822,6 +1822,8 @@ impl<'a> ScriptApi<'a> {
         // Remove from old parent if it has one (this also sets child's parent to None)
         if let Some(old_parent_id) = old_parent_id_opt {
             self.remove_child(old_parent_id, child_id);
+            // Update Node2D children cache for the old parent
+            self.scene.update_node2d_children_cache_on_remove(old_parent_id, child_id);
         }
         
         // Create ParentType for new parent (need to do this before mutable borrow)
@@ -1838,6 +1840,9 @@ impl<'a> ScriptApi<'a> {
         if let Some(parent_node) = self.scene.get_scene_node_mut(new_parent_id) {
             parent_node.add_child(child_id);
         }
+        
+        // Update Node2D children cache for the parent (if it's Node2D-based)
+        self.scene.update_node2d_children_cache_on_add(new_parent_id, child_id);
     }
 
     /// Get a child node by name, searching through the parent's children

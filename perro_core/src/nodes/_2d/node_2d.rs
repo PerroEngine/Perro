@@ -37,6 +37,12 @@ pub struct Node2D {
     #[serde(skip, default = "default_transform_dirty")]
     pub transform_dirty: bool,
 
+    /// Cached list of child IDs that are Node2D-based (for performance optimization)
+    /// This avoids hashmap lookups when marking transforms dirty recursively
+    /// Updated when children are added/removed
+    #[serde(skip, default)]
+    pub node2d_children_cache: Option<Vec<uuid::Uuid>>,
+
     #[serde(
         skip_serializing_if = "Vector2::is_half_half",
         default = "Vector2::default_pivot"
@@ -74,6 +80,7 @@ impl Node2D {
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
             transform_dirty: true, // New nodes start dirty
+            node2d_children_cache: None, // Cache starts empty, will be populated on demand
 
             pivot: Vector2 { x: 0.5, y: 0.5 },
 
@@ -115,6 +122,7 @@ impl Default for Node2D {
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
             transform_dirty: true, // Default to dirty
+            node2d_children_cache: None, // Cache starts empty
             pivot: Vector2 { x: 0.5, y: 0.5 },
             z_index: 0,
             visible: default_visible(),

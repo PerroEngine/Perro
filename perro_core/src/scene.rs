@@ -2016,11 +2016,49 @@ impl<P: ScriptProvider> Scene<P> {
     /// Mark a node's transform as dirty (and all its children)
     /// Also marks nodes as needing rerender so they get picked up by get_nodes_needing_rerender()
     pub fn mark_transform_dirty_recursive(&mut self, node_id: Uuid) {
-        // Collect children first before any mutable borrows
-        let children: Vec<Uuid> = self.data.nodes
-            .get(&node_id)
-            .map(|node| node.get_children().iter().copied().collect())
-            .unwrap_or_default();
+        // OPTIMIZED: Use cached Node2D children if available (avoids hashmap lookups)
+        let node2d_child_ids: Vec<Uuid> = {
+            // Check if we have a cached list of Node2D children
+            let cached = self.data.nodes
+                .get(&node_id)
+                .and_then(|node| node.as_node2d())
+                .and_then(|n2d| n2d.node2d_children_cache.as_ref());
+            
+            if let Some(cached_ids) = cached {
+                // Use cache - no hashmap lookups needed!
+                cached_ids.clone()
+            } else {
+                // Cache miss - build cache and use it
+                let child_ids: Vec<Uuid> = self.data.nodes
+                    .get(&node_id)
+                    .map(|node| node.get_children().iter().copied().collect())
+                    .unwrap_or_default();
+                
+                // Filter to only Node2D children and cache the result
+                let node2d_ids: Vec<Uuid> = child_ids.iter()
+                    .filter_map(|&child_id| {
+                        if let Some(child_node) = self.data.nodes.get(&child_id) {
+                            if child_node.as_node2d().is_some() {
+                                Some(child_id)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                // Update cache for future use
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
+                    if let Some(node2d) = node.as_node2d_mut() {
+                        node2d.node2d_children_cache = Some(node2d_ids.clone());
+                    }
+                }
+                
+                node2d_ids
+            }
+        };
         
         // Mark this node's transform as dirty if it's a Node2D-based node
         if let Some(node) = self.data.nodes.get_mut(&node_id) {
@@ -2039,9 +2077,49 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
         
-        // Recurse on children (mutable borrow of self is now released)
-        for child_id in children {
+        // OPTIMIZED: Only recurse into Node2D-based children (from cache or filtered)
+        // This avoids thousands of unnecessary recursive calls when a parent has many base Node children
+        for child_id in node2d_child_ids {
             self.mark_transform_dirty_recursive(child_id);
+        }
+    }
+    
+    /// Update the Node2D children cache for a parent node when a child is added
+    /// This keeps the cache in sync so we don't need hashmap lookups every frame
+    pub fn update_node2d_children_cache_on_add(&mut self, parent_id: Uuid, child_id: Uuid) {
+        // Check if child is Node2D first (immutable borrow)
+        let is_node2d = self.data.nodes
+            .get(&child_id)
+            .map(|child_node| child_node.as_node2d().is_some())
+            .unwrap_or(false);
+        
+        // Now update parent's cache (mutable borrow)
+        if is_node2d {
+            if let Some(parent_node) = self.data.nodes.get_mut(&parent_id) {
+                if let Some(node2d) = parent_node.as_node2d_mut() {
+                    // Add to cache if it exists, otherwise invalidate (will rebuild on next use)
+                    if let Some(ref mut cache) = node2d.node2d_children_cache {
+                        if !cache.contains(&child_id) {
+                            cache.push(child_id);
+                        }
+                    } else {
+                        // Cache doesn't exist yet - invalidate so it rebuilds on next use
+                        node2d.node2d_children_cache = None;
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Update the Node2D children cache for a parent node when a child is removed
+    fn update_node2d_children_cache_on_remove(&mut self, parent_id: Uuid, child_id: Uuid) {
+        if let Some(parent_node) = self.data.nodes.get_mut(&parent_id) {
+            if let Some(node2d) = parent_node.as_node2d_mut() {
+                // Remove from cache if it exists
+                if let Some(ref mut cache) = node2d.node2d_children_cache {
+                    cache.retain(|&id| id != child_id);
+                }
+            }
         }
     }
 
@@ -2195,6 +2273,7 @@ impl<P: ScriptProvider> Scene<P> {
     /// Pre-calculate transforms for nodes in dependency order (parents before children)
     /// This ensures that when calculating a child's transform, the parent's transform is already cached.
     /// This is a major performance optimization when many children share the same moving parent.
+    /// OPTIMIZED: Skips non-Node2D parents when calculating depth (they don't affect transform inheritance).
     fn precalculate_transforms_in_dependency_order(&mut self, node_ids: &[Uuid]) {
         // Collect nodes that need transforms and calculate their depth
         let mut nodes_with_depth: Vec<(Uuid, usize)> = Vec::new();
@@ -2203,13 +2282,21 @@ impl<P: ScriptProvider> Scene<P> {
             if let Some(node) = self.data.nodes.get(&node_id) {
                 if node.as_node2d().is_some() {
                     // Calculate depth by walking up parent chain
+                    // OPTIMIZED: Skip non-Node2D parents when calculating depth
+                    // (they don't affect transform inheritance)
                     let mut depth = 0;
                     let mut current_id = Some(node_id);
                     while let Some(id) = current_id {
                         if let Some(n) = self.data.nodes.get(&id) {
                             if let Some(parent) = n.get_parent() {
+                                // Only count Node2D parents in depth calculation
+                                // Base Node parents don't affect transform inheritance
+                                if let Some(parent_node) = self.data.nodes.get(&parent.id) {
+                                    if parent_node.as_node2d().is_some() {
+                                        depth += 1;
+                                    }
+                                }
                                 current_id = Some(parent.id);
-                                depth += 1;
                             } else {
                                 break;
                             }
@@ -2227,12 +2314,43 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Calculate transforms in dependency order
         // Parents will be calculated first, so their transforms are cached when children need them
+        // Note: Can't parallelize here because get_global_transform requires &mut self
         for (node_id, _) in nodes_with_depth {
             let _ = self.get_global_transform(node_id);
         }
     }
 
     fn traverse_and_render(&mut self, nodes_needing_rerender: Vec<Uuid>, gfx: &mut Graphics) {
+        // Internal enum for parallel render command collection
+        enum RenderCommand {
+            Texture {
+                texture_id: Option<Uuid>,
+                texture_path: Option<String>,
+                global_transform: crate::structs2d::Transform2D,
+                pivot: Vector2,
+                z_index: i32,
+            },
+            Rect {
+                transform: crate::structs2d::Transform2D,
+                size: Vector2,
+                pivot: Vector2,
+                color: crate::Color,
+                corner_radius: Option<crate::ui_elements::ui_container::CornerRadius>,
+                border_thickness: f32,
+                is_border: bool,
+                z_index: i32,
+            },
+            UINode,
+            Camera2D,
+            Camera3D,
+            Mesh {
+                path: String,
+                transform: Transform3D,
+                material_path: Option<String>,
+            },
+            Light(crate::renderer_3d::LightUniform),
+        }
+        
         // OPTIMIZED: Pre-calculate transforms in dependency order to avoid redundant parent recalculations
         // When many children share the same moving parent, this ensures the parent's transform
         // is calculated once and cached before all children use it.
@@ -2243,25 +2361,210 @@ impl<P: ScriptProvider> Scene<P> {
         const PARALLEL_THRESHOLD: usize = 10;
         
         if nodes_needing_rerender.len() >= PARALLEL_THRESHOLD {
-            // OPTIMIZED: For large batches, collect render data first (read-only access)
-            // We need to collect node data before we can process in parallel
+            // OPTIMIZED: Parallelize data collection and render command building
+            // Step 1: Collect all node data in parallel (read-only access)
             let node_data: Vec<_> = nodes_needing_rerender
-                .iter()
+                .par_iter()
                 .filter_map(|&node_id| {
                     // Read-only access to collect initial data
                     if let Some(node) = self.data.nodes.get(&node_id) {
                         let timestamp = node.get_created_timestamp();
                         let needs_transform = node.as_node2d().is_some();
                         let node_type = node.get_type();
-                        Some((node_id, timestamp, needs_transform, node_type))
+                        // OPTIMIZED: After precalculate_transforms_in_dependency_order, transforms are cached
+                        // Read cached transform directly (read-only) instead of calling get_global_transform
+                        let global_transform_opt = if needs_transform {
+                            node.as_node2d()
+                                .filter(|n2d| !n2d.transform_dirty) // Only use if not dirty (should be clean after precalc)
+                                .map(|n2d| n2d.global_transform)
+                        } else {
+                            None
+                        };
+                        Some((node_id, timestamp, needs_transform, node_type, global_transform_opt))
                     } else {
                         None
                     }
                 })
                 .collect();
             
-            // Now calculate transforms sequentially (they need mutable access)
-            // But we can batch the queue operations after
+            // Step 2: Process nodes in parallel to build render commands
+            // We'll defer texture path resolution until after parallel processing
+            let render_data: Vec<_> = node_data
+                .par_iter()
+                .filter_map(|(node_id, timestamp, _needs_transform, _node_type, global_transform_opt)| {
+                    // Read-only access to process the node
+                    if let Some(node) = self.data.nodes.get(node_id) {
+                        match node {
+                            SceneNode::Sprite2D(sprite) => {
+                                if sprite.visible {
+                                    // Collect texture info (we'll resolve path later)
+                                    let texture_id = sprite.texture_id;
+                                    let texture_path = sprite.texture_path.as_ref().map(|p| p.to_string());
+                                    if texture_id.is_some() || texture_path.is_some() {
+                                        if let Some(global_transform) = global_transform_opt {
+                                            return Some((
+                                                *node_id,
+                                                *timestamp,
+                                                RenderCommand::Texture {
+                                                    texture_id,
+                                                    texture_path,
+                                                    global_transform: *global_transform,
+                                                    pivot: sprite.pivot,
+                                                    z_index: sprite.z_index,
+                                                },
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            SceneNode::Camera2D(camera) => {
+                                if camera.active {
+                                    return Some((*node_id, *timestamp, RenderCommand::Camera2D));
+                                }
+                            }
+                            SceneNode::Shape2D(shape) => {
+                                if shape.visible {
+                                    if let Some(shape_type) = shape.shape_type {
+                                        if let Some(transform) = global_transform_opt {
+                                            let pivot = shape.pivot;
+                                            let z_index = shape.z_index;
+                                            let color = shape.color.unwrap_or(crate::Color::new(255, 255, 255, 200));
+                                            let border_thickness = if shape.filled { 0.0 } else { 2.0 };
+                                            let is_border = !shape.filled;
+
+                                            let rect_cmd = match shape_type {
+                                                ShapeType2D::Rectangle { width, height } => {
+                                                    RenderCommand::Rect {
+                                                        transform: *transform,
+                                                        size: crate::Vector2::new(width, height),
+                                                        pivot,
+                                                        color,
+                                                        corner_radius: None,
+                                                        border_thickness,
+                                                        is_border,
+                                                        z_index,
+                                                    }
+                                                }
+                                                ShapeType2D::Circle { radius } => {
+                                                    let size = radius * 2.0;
+                                                    RenderCommand::Rect {
+                                                        transform: *transform,
+                                                        size: crate::Vector2::new(size, size),
+                                                        pivot,
+                                                        color,
+                                                        corner_radius: Some(crate::ui_elements::ui_container::CornerRadius {
+                                                            top_left: radius,
+                                                            top_right: radius,
+                                                            bottom_left: radius,
+                                                            bottom_right: radius,
+                                                        }),
+                                                        border_thickness,
+                                                        is_border,
+                                                        z_index,
+                                                    }
+                                                }
+                                                ShapeType2D::Square { size } => {
+                                                    RenderCommand::Rect {
+                                                        transform: *transform,
+                                                        size: crate::Vector2::new(size, size),
+                                                        pivot,
+                                                        color,
+                                                        corner_radius: None,
+                                                        border_thickness,
+                                                        is_border,
+                                                        z_index,
+                                                    }
+                                                }
+                                                ShapeType2D::Triangle { base, height } => {
+                                                    RenderCommand::Rect {
+                                                        transform: *transform,
+                                                        size: crate::Vector2::new(base, height),
+                                                        pivot,
+                                                        color,
+                                                        corner_radius: None,
+                                                        border_thickness,
+                                                        is_border,
+                                                        z_index,
+                                                    }
+                                                }
+                                            };
+                                            return Some((*node_id, *timestamp, rect_cmd));
+                                        }
+                                    }
+                                }
+                            }
+                            SceneNode::UINode(_) => {
+                                return Some((*node_id, *timestamp, RenderCommand::UINode));
+                            }
+                            SceneNode::Camera3D(camera) => {
+                                if camera.active {
+                                    return Some((*node_id, *timestamp, RenderCommand::Camera3D));
+                                }
+                            }
+                            SceneNode::MeshInstance3D(mesh) => {
+                                if mesh.visible {
+                                    if let Some(path) = &mesh.mesh_path {
+                                        return Some((
+                                            *node_id,
+                                            *timestamp,
+                                            RenderCommand::Mesh {
+                                                path: path.to_string(),
+                                                transform: mesh.transform,
+                                                material_path: mesh.material_path.as_ref().map(|p| p.to_string()),
+                                            },
+                                        ));
+                                    }
+                                }
+                            }
+                            SceneNode::OmniLight3D(light) => {
+                                return Some((
+                                    *node_id,
+                                    *timestamp,
+                                    RenderCommand::Light(crate::renderer_3d::LightUniform {
+                                        position: light.transform.position.to_array(),
+                                        color: light.color.to_array(),
+                                        intensity: light.intensity,
+                                        ambient: [0.05, 0.05, 0.05],
+                                        ..Default::default()
+                                    }),
+                                ));
+                            }
+                            SceneNode::DirectionalLight3D(light) => {
+                                let dir = light.transform.forward();
+                                return Some((
+                                    *node_id,
+                                    *timestamp,
+                                    RenderCommand::Light(crate::renderer_3d::LightUniform {
+                                        position: [dir.x, dir.y, dir.z],
+                                        color: light.color.to_array(),
+                                        intensity: light.intensity,
+                                        ambient: [0.05, 0.05, 0.05],
+                                        ..Default::default()
+                                    }),
+                                ));
+                            }
+                            SceneNode::SpotLight3D(light) => {
+                                let dir = light.transform.forward();
+                                return Some((
+                                    *node_id,
+                                    *timestamp,
+                                    RenderCommand::Light(crate::renderer_3d::LightUniform {
+                                        position: [dir.x, dir.y, dir.z],
+                                        color: light.color.to_array(),
+                                        intensity: light.intensity,
+                                        ambient: [0.05, 0.05, 0.05],
+                                        ..Default::default()
+                                    }),
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                    None
+                })
+                .collect();
+            
+            // Step 3: Separate render commands by type and resolve texture paths
             let mut rect_commands = Vec::new();
             let mut texture_commands = Vec::new();
             let mut ui_nodes = Vec::new();
@@ -2270,189 +2573,70 @@ impl<P: ScriptProvider> Scene<P> {
             let mut mesh_commands = Vec::new();
             let mut light_commands = Vec::new();
             
-            for (node_id, timestamp, needs_transform, _node_type) in node_data {
-                // OPTIMIZED: After precalculate_transforms_in_dependency_order, transforms are cached
-                // Read cached transform directly (read-only) instead of calling get_global_transform
-                let global_transform_opt = if needs_transform {
-                    self.data.nodes.get(&node_id)
-                        .and_then(|node| node.as_node2d())
-                        .filter(|n2d| !n2d.transform_dirty) // Only use if not dirty (should be clean after precalc)
-                        .map(|n2d| n2d.global_transform)
-                } else {
-                    None
-                };
-                
-                // Now get mutable access to process the node
-                if let Some(node) = self.data.nodes.get_mut(&node_id) {
-                    match node {
-                        SceneNode::Sprite2D(sprite) => {
-                            if sprite.visible {
-                                // Get texture path (clone to avoid borrow issues)
-                                let texture_path_opt: Option<String> = if let Some(texture_id) = &sprite.texture_id {
-                                    gfx.texture_manager.get_texture_path_from_id(texture_id).map(|s| s.to_string())
-                                } else {
-                                    sprite.texture_path.as_ref().map(|p| p.to_string())
-                                };
-                                
-                                if let Some(tex_path) = texture_path_opt {
-                                    if let Some(global_transform) = global_transform_opt {
-                                        texture_commands.push((
-                                            node_id,
-                                            tex_path,
-                                            global_transform,
-                                            sprite.pivot,
-                                            sprite.z_index,
-                                            timestamp,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        SceneNode::Camera2D(camera) => {
-                            if camera.active {
-                                camera_2d_updates.push(node_id);
-                            }
-                        }
-                        SceneNode::Shape2D(shape) => {
-                            if shape.visible {
-                                if let Some(shape_type) = shape.shape_type {
-                                    if let Some(transform) = global_transform_opt {
-                                        let pivot = shape.pivot;
-                                        let z_index = shape.z_index;
-                                        let color = shape.color.unwrap_or(crate::Color::new(255, 255, 255, 200));
-                                        let border_thickness = if shape.filled { 0.0 } else { 2.0 };
-                                        let is_border = !shape.filled;
-
-                                        match shape_type {
-                                            ShapeType2D::Rectangle { width, height } => {
-                                                rect_commands.push((
-                                                    node_id,
-                                                    transform,
-                                                    crate::Vector2::new(width, height),
-                                                    pivot,
-                                                    color,
-                                                    None,
-                                                    border_thickness,
-                                                    is_border,
-                                                    z_index,
-                                                    timestamp,
-                                                ));
-                                            }
-                                            ShapeType2D::Circle { radius } => {
-                                                let size = radius * 2.0;
-                                                rect_commands.push((
-                                                    node_id,
-                                                    transform,
-                                                    crate::Vector2::new(size, size),
-                                                    pivot,
-                                                    color,
-                                                    Some(crate::ui_elements::ui_container::CornerRadius {
-                                                        top_left: radius,
-                                                        top_right: radius,
-                                                        bottom_left: radius,
-                                                        bottom_right: radius,
-                                                    }),
-                                                    border_thickness,
-                                                    is_border,
-                                                    z_index,
-                                                    timestamp,
-                                                ));
-                                            }
-                                            ShapeType2D::Square { size } => {
-                                                rect_commands.push((
-                                                    node_id,
-                                                    transform,
-                                                    crate::Vector2::new(size, size),
-                                                    pivot,
-                                                    color,
-                                                    None,
-                                                    border_thickness,
-                                                    is_border,
-                                                    z_index,
-                                                    timestamp,
-                                                ));
-                                            }
-                                            ShapeType2D::Triangle { base, height } => {
-                                                rect_commands.push((
-                                                    node_id,
-                                                    transform,
-                                                    crate::Vector2::new(base, height),
-                                                    pivot,
-                                                    color,
-                                                    None,
-                                                    border_thickness,
-                                                    is_border,
-                                                    z_index,
-                                                    timestamp,
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        SceneNode::UINode(ui_node) => {
-                            ui_nodes.push(node_id);
-                        }
-                        SceneNode::Camera3D(camera) => {
-                            if camera.active {
-                                camera_3d_updates.push(node_id);
-                            }
-                        }
-                        SceneNode::MeshInstance3D(mesh) => {
-                            if mesh.visible {
-                                if let Some(path) = &mesh.mesh_path {
-                                    mesh_commands.push((
-                                        node_id,
-                                        path.clone(),
-                                        mesh.transform,
-                                        mesh.material_path.clone(),
-                                    ));
-                                }
-                            }
-                        }
-                        SceneNode::OmniLight3D(light) => {
-                            light_commands.push((
+            for (node_id, timestamp, cmd) in render_data {
+                match cmd {
+                    RenderCommand::Texture { texture_id, texture_path, global_transform, pivot, z_index } => {
+                        // Resolve texture path (needs gfx access, so do it sequentially)
+                        let texture_path_opt: Option<String> = if let Some(texture_id) = texture_id {
+                            gfx.texture_manager.get_texture_path_from_id(&texture_id).map(|s| s.to_string())
+                        } else {
+                            texture_path.map(|p| p.to_string())
+                        };
+                        
+                        if let Some(tex_path) = texture_path_opt {
+                            texture_commands.push((
                                 node_id,
-                                crate::renderer_3d::LightUniform {
-                                    position: light.transform.position.to_array(),
-                                    color: light.color.to_array(),
-                                    intensity: light.intensity,
-                                    ambient: [0.05, 0.05, 0.05],
-                                    ..Default::default()
-                                },
+                                tex_path,
+                                global_transform,
+                                pivot,
+                                z_index,
+                                timestamp,
                             ));
                         }
-                        SceneNode::DirectionalLight3D(light) => {
-                            let dir = light.transform.forward();
-                            light_commands.push((
-                                node_id,
-                                crate::renderer_3d::LightUniform {
-                                    position: [dir.x, dir.y, dir.z],
-                                    color: light.color.to_array(),
-                                    intensity: light.intensity,
-                                    ambient: [0.05, 0.05, 0.05],
-                                    ..Default::default()
-                                },
-                            ));
-                        }
-                        SceneNode::SpotLight3D(light) => {
-                            let dir = light.transform.forward();
-                            light_commands.push((
-                                node_id,
-                                crate::renderer_3d::LightUniform {
-                                    position: [dir.x, dir.y, dir.z],
-                                    color: light.color.to_array(),
-                                    intensity: light.intensity,
-                                    ambient: [0.05, 0.05, 0.05],
-                                    ..Default::default()
-                                },
-                            ));
-                        }
-                        _ => {}
                     }
-                    
-                    // Clear transform_dirty flag
+                    RenderCommand::Rect { transform, size, pivot, color, corner_radius, border_thickness, is_border, z_index } => {
+                        rect_commands.push((
+                            node_id,
+                            transform,
+                            size,
+                            pivot,
+                            color,
+                            corner_radius,
+                            border_thickness,
+                            is_border,
+                            z_index,
+                            timestamp,
+                        ));
+                    }
+                    RenderCommand::UINode => {
+                        ui_nodes.push(node_id);
+                    }
+                    RenderCommand::Camera2D => {
+                        camera_2d_updates.push(node_id);
+                    }
+                    RenderCommand::Camera3D => {
+                        camera_3d_updates.push(node_id);
+                    }
+                    RenderCommand::Mesh { path, transform, material_path } => {
+                        mesh_commands.push((
+                            node_id,
+                            path,
+                            transform,
+                            material_path,
+                        ));
+                    }
+                    RenderCommand::Light(light_uniform) => {
+                        light_commands.push((
+                            node_id,
+                            light_uniform,
+                        ));
+                    }
+                }
+            }
+            
+            // Step 4: Clear transform_dirty flags sequentially (needs mutable access)
+            for &node_id in &nodes_needing_rerender {
+                if let Some(node) = self.data.nodes.get_mut(&node_id) {
                     if let Some(node2d) = node.as_node2d_mut() {
                         node2d.transform_dirty = false;
                     }
@@ -2858,6 +3042,14 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
 
     fn mark_transform_dirty_recursive(&mut self, node_id: Uuid) {
         Self::mark_transform_dirty_recursive(self, node_id)
+    }
+    
+    fn update_node2d_children_cache_on_add(&mut self, parent_id: Uuid, child_id: Uuid) {
+        Self::update_node2d_children_cache_on_add(self, parent_id, child_id)
+    }
+    
+    fn update_node2d_children_cache_on_remove(&mut self, parent_id: Uuid, child_id: Uuid) {
+        Self::update_node2d_children_cache_on_remove(self, parent_id, child_id)
     }
 }
 

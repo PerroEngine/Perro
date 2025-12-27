@@ -15,9 +15,13 @@ fn init() {
     par.name = "fart"
     Console.print(par)
 
-    tex = Texture.load("res://obama.jpg")
+    tex = Texture.load("res://doug.PNG")
 
-   
+    for (i in 0..100) {
+        var b = new Node()
+
+        self.add_child(b)
+    }
 
 
 }
@@ -45,6 +49,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 
     var ppos
     if pty == NODE_TYPE.Sprite2D {
+            var tex = Texture.load("res://doug.PNG")
             self.texture = tex
             ppos = (collision.get_parent() as Sprite2D).transform.position
     }
