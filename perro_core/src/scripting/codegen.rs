@@ -285,11 +285,17 @@ impl Script {
         // 🔹 check cache first for performance
         let cache_key = expr as *const Expr as usize;
         if let Some(cached) = TYPE_CACHE.with(|cache| cache.borrow().get(&cache_key).cloned()) {
+            eprintln!("[INFER_TYPE] CACHE HIT for expr {:?} -> {:?}", expr, cached);
             return cached;
         }
+        eprintln!("[INFER_TYPE] CACHE MISS for expr {:?}", expr);
 
         let result = match expr {
-            Expr::Literal(lit) => self.infer_literal_type(lit, None),
+            Expr::Literal(lit) => {
+                let inferred = self.infer_literal_type(lit, None);
+                eprintln!("[INFER_TYPE] Literal {:?} -> {:?}", lit, inferred);
+                inferred
+            },
             Expr::Ident(name) => {
                 if let Some(func) = current_func {
                     // 1. Local variable
@@ -307,8 +313,12 @@ impl Script {
                         Some(param.typ.clone())
                     }
                     // 3. Check if it's a loop variable (not in locals/params but used in for loop)
-                    // Loop variables from ranges are typically i32
+                    // Default to i32 (ranges produce i32) - this ensures deterministic caching
+                    // Binary operations will promote to f32 when needed via casting
                     else if self.is_loop_variable(name, &func.body) {
+                        // Default to i32 for loop variables from ranges
+                        // This ensures deterministic behavior - the type is always i32 initially
+                        // Binary operations will cast to f32 when used with floats
                         Some(Type::Number(NumberKind::Signed(32)))
                     }
                     // 4. Script-level variable or exposed field
@@ -456,6 +466,7 @@ impl Script {
         };
 
         // ✅ Cache the result
+        eprintln!("[INFER_TYPE] CACHING result for expr {:?} -> {:?}", expr, result);
         TYPE_CACHE.with(|cache| {
             cache.borrow_mut().insert(cache_key, result.clone());
         });
@@ -465,10 +476,13 @@ impl Script {
 
     fn infer_literal_type(&self, lit: &Literal, expected_type: Option<&Type>) -> Option<Type> {
         match lit {
-            Literal::Number(_) => {
+            Literal::Number(n) => {
+                eprintln!("[INFER_LITERAL] Number literal: {}, expected_type: {:?}", n, expected_type);
                 if let Some(expected) = expected_type {
+                    eprintln!("[INFER_LITERAL] Using expected_type: {:?}", expected);
                     Some(expected.clone())
                 } else {
+                    eprintln!("[INFER_LITERAL] Defaulting to Float(32)");
                     Some(Type::Number(NumberKind::Float(32)))
                 }
             }
@@ -4430,6 +4444,10 @@ impl Expr {
                         // This is safe because Copy types don't need cloning
                         false
                     }
+                } else if name.starts_with("__t_") {
+                    // Loop variables (transpiled identifiers) are typically i32 from ranges, which is Copy
+                    // Even if type inference returns None, we know loop variables don't need cloning
+                    false
                 } else {
                     // Regular variable - use normal type inference
                     if let Some(ty) = script.infer_expr_type(expr, current_func) {
@@ -4701,31 +4719,69 @@ impl Expr {
                 }
             }
             Expr::BinaryOp(left, op, right) => {
-                let mut left_type = script.infer_expr_type(left, current_func);
-                let right_type = script.infer_expr_type(right, current_func);
+                // For binary operations, infer types with context from the other operand
+                // This helps when one operand is a literal and the other is a typed variable (like loop variable)
+                // CRITICAL: Infer right first to get its type, then use that to help infer left
+                let right_type_first = script.infer_expr_type(right, current_func);
                 
-                // Special handling for loop variables: if left is an identifier that might be a loop variable,
-                // and we can't find its type, try to infer it from context (ranges produce i32 by default)
-                if left_type.is_none() {
-                    if let Expr::Ident(var_name) = left.as_ref() {
-                        // Check if this might be a loop variable (starts with __t_ or is a common loop var name)
-                        // Loop variables from ranges are typically i32
-                        if var_name.starts_with("__t_") || var_name == "i" || var_name == "j" || var_name == "k" {
-                            // Default to i32 for loop variables (ranges produce i32)
-                            left_type = Some(Type::Number(NumberKind::Signed(32)));
-                        }
+                // Priority 1: Use expected_type from parent context (e.g., Vector2::new expects f32)
+                // Priority 2: Use the other operand's type if it's numeric
+                // This ensures literals match what the API/struct expects, not just the operand type
+                let left_type = if let Expr::Literal(Literal::Number(n)) = left.as_ref() {
+                    // First check if we have an expected_type from parent context (most important)
+                    if let Some(Type::Number(expected_num_kind)) = expected_type {
+                        eprintln!("[BINARY_OP] Context: expected_type is numeric ({:?}), bypassing cache and inferring literal {} to match", expected_type, n);
+                        script.infer_literal_type(&Literal::Number(n.clone()), Some(&Type::Number(expected_num_kind.clone())))
+                    } else if let Some(Type::Number(ref num_kind)) = right_type_first {
+                        // Fallback: right operand is numeric - match its type
+                        eprintln!("[BINARY_OP] Context: right is numeric ({:?}), bypassing cache and inferring literal {} to match", right_type_first, n);
+                        script.infer_literal_type(&Literal::Number(n.clone()), Some(&Type::Number(num_kind.clone())))
+                    } else {
+                        // No numeric context, use normal inference (may hit cache)
+                        script.infer_expr_type(left, current_func)
                     }
-                }
+                } else {
+                    script.infer_expr_type(left, current_func)
+                };
+                
+                // Similarly for right operand
+                let right_type = if let Expr::Literal(Literal::Number(n)) = right.as_ref() {
+                    // First check if we have an expected_type from parent context (most important)
+                    if let Some(Type::Number(expected_num_kind)) = expected_type {
+                        eprintln!("[BINARY_OP] Context: expected_type is numeric ({:?}), bypassing cache and inferring literal {} to match", expected_type, n);
+                        script.infer_literal_type(&Literal::Number(n.clone()), Some(&Type::Number(expected_num_kind.clone())))
+                    } else if let Some(Type::Number(ref num_kind)) = left_type {
+                        // Fallback: left operand is numeric - match its type
+                        eprintln!("[BINARY_OP] Context: left is numeric ({:?}), bypassing cache and inferring literal {} to match", left_type, n);
+                        script.infer_literal_type(&Literal::Number(n.clone()), Some(&Type::Number(num_kind.clone())))
+                    } else {
+                        right_type_first
+                    }
+                } else {
+                    right_type_first
+                };
+                
+                // DEBUG: Track type inference
+                let left_expr_str = format!("{:?}", left);
+                let right_expr_str = format!("{:?}", right);
+                eprintln!("[BINARY_OP] Left: {} -> {:?}", left_expr_str, left_type);
+                eprintln!("[BINARY_OP] Right: {} -> {:?}", right_expr_str, right_type);
+                
+                // Loop variables are now always inferred as i32 in infer_expr_type (deterministic)
+                // The promotion/casting logic below will handle converting to f32 when used with floats
 
                 let dominant_type = if let Some(expected) = expected_type.cloned() {
+                    eprintln!("[BINARY_OP] Using expected_type: {:?}", expected);
                     Some(expected)
                 } else {
-                    match (&left_type, &right_type) {
+                    let promoted = match (&left_type, &right_type) {
                         (Some(l), Some(r)) => script.promote_types(l, r).or(Some(l.clone())),
                         (Some(l), None) => Some(l.clone()),
                         (None, Some(r)) => Some(r.clone()),
                         _ => None,
-                    }
+                    };
+                    eprintln!("[BINARY_OP] Promoted dominant_type: {:?}", promoted);
+                    promoted
                 };
 
                 // Check if left/right are len() calls BEFORE generating code
@@ -4742,72 +4798,94 @@ impl Expr {
                     left.to_rust(needs_self, script, dominant_type.as_ref(), current_func, None);
                 let right_raw =
                     right.to_rust(needs_self, script, dominant_type.as_ref(), current_func, None);
+                
+                eprintln!("[BINARY_OP] left_raw: {}", left_raw);
+                eprintln!("[BINARY_OP] right_raw: {}", right_raw);
 
                 // Also check the generated code strings for .len() calls
                 let left_is_len = left_is_len || left_raw.ends_with(".len()");
                 let right_is_len = right_is_len || right_raw.ends_with(".len()");
 
-                let (left_str, right_str) = {
-                    let mut l_str = left_raw.clone();
-                    let mut r_str = right_raw.clone();
+                let mut l_str = left_raw.clone();
+                let mut r_str = right_raw.clone();
 
-                    // If left is len() and right is u32/u64 or a literal that looks like u32, convert right to usize
-                    if left_is_len {
-                        // Check the rendered string first (most reliable)
-                        if right_raw.ends_with("u32") || right_raw.ends_with("u") {
+                // If left is len() and right is u32/u64 or a literal that looks like u32, convert right to usize
+                if left_is_len {
+                    // Check the rendered string first (most reliable)
+                    if right_raw.ends_with("u32") || right_raw.ends_with("u") {
+                        r_str = format!("({} as usize)", r_str);
+                    } else if matches!(right_type, Some(Type::Number(NumberKind::Unsigned(32))))
+                    {
+                        r_str = format!("({} as usize)", r_str);
+                    } else if matches!(right_type, Some(Type::Number(NumberKind::Unsigned(64))))
+                    {
+                        r_str = format!("({} as usize)", r_str);
+                    } else if let Expr::Literal(Literal::Number(n)) = right.as_ref() {
+                        // Check if it's a u32 literal (ends with u32 or is just a number that should be usize)
+                        if n.ends_with("u32") || n.ends_with("u") {
                             r_str = format!("({} as usize)", r_str);
-                        } else if matches!(right_type, Some(Type::Number(NumberKind::Unsigned(32))))
-                        {
-                            r_str = format!("({} as usize)", r_str);
-                        } else if matches!(right_type, Some(Type::Number(NumberKind::Unsigned(64))))
-                        {
-                            r_str = format!("({} as usize)", r_str);
-                        } else if let Expr::Literal(Literal::Number(n)) = right.as_ref() {
-                            // Check if it's a u32 literal (ends with u32 or is just a number that should be usize)
-                            if n.ends_with("u32") || n.ends_with("u") {
-                                r_str = format!("({} as usize)", r_str);
-                            }
                         }
                     }
-                    // If right is len() and left is u32/u64 or a literal, convert left to usize
-                    if right_is_len {
-                        // Check the rendered string first (most reliable)
-                        if left_raw.ends_with("u32") || left_raw.ends_with("u") {
+                }
+                // If right is len() and left is u32/u64 or a literal, convert left to usize
+                if right_is_len {
+                    // Check the rendered string first (most reliable)
+                    if left_raw.ends_with("u32") || left_raw.ends_with("u") {
+                        l_str = format!("({} as usize)", l_str);
+                    } else if matches!(&left_type, Some(Type::Number(NumberKind::Unsigned(32))))
+                    {
+                        l_str = format!("({} as usize)", l_str);
+                    } else if matches!(&left_type, Some(Type::Number(NumberKind::Unsigned(64))))
+                    {
+                        l_str = format!("({} as usize)", l_str);
+                    } else if let Expr::Literal(Literal::Number(n)) = left.as_ref() {
+                        if n.ends_with("u32") || n.ends_with("u") {
                             l_str = format!("({} as usize)", l_str);
-                        } else if matches!(left_type, Some(Type::Number(NumberKind::Unsigned(32))))
-                        {
-                            l_str = format!("({} as usize)", l_str);
-                        } else if matches!(left_type, Some(Type::Number(NumberKind::Unsigned(64))))
-                        {
-                            l_str = format!("({} as usize)", l_str);
-                        } else if let Expr::Literal(Literal::Number(n)) = left.as_ref() {
-                            if n.ends_with("u32") || n.ends_with("u") {
-                                l_str = format!("({} as usize)", l_str);
-                            }
                         }
                     }
+                }
 
-                    // Apply normal type conversions
-                    match (&left_type, &right_type, &dominant_type) {
-                        (Some(l), Some(r), Some(dom)) => {
-                            let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
-                                script.generate_implicit_cast_for_expr(&l_str, l, dom)
-                            } else {
-                                l_str
-                            };
-                            let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
-                                script.generate_implicit_cast_for_expr(&r_str, r, dom)
-                            } else {
-                                r_str
-                            };
-                            (l_cast, r_cast)
-                        }
-                        // Special case: if left is float and right is integer (even if types aren't fully inferred)
+                // Apply normal type conversions
+                // IMPORTANT: Special cases must come BEFORE the general case to ensure they match first
+                let (left_str, right_str) = match (&left_type, &right_type, &dominant_type) {
+                        // Special case: if left is float and right is integer (explicit cast for determinism)
                         (Some(Type::Number(NumberKind::Float(32))), Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), _) => {
+                            eprintln!("[BINARY_OP] MATCH: Float32 * Integer -> casting right to f32");
                             (l_str, format!("({} as f32)", r_str))
                         }
                         (Some(Type::Number(NumberKind::Float(64))), Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), _) => {
+                            eprintln!("[BINARY_OP] MATCH: Float64 * Integer -> casting right to f64");
                             (l_str, format!("({} as f64)", r_str))
+                        }
+                        // Special case: if left is integer and right is float (reverse case)
+                        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Some(Type::Number(NumberKind::Float(32))), _) => {
+                            eprintln!("[BINARY_OP] MATCH: Integer * Float32 -> casting left to f32");
+                            (format!("({} as f32)", l_str), r_str)
+                        }
+                        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Some(Type::Number(NumberKind::Float(64))), _) => {
+                            eprintln!("[BINARY_OP] MATCH: Integer * Float64 -> casting left to f64");
+                            (format!("({} as f64)", l_str), r_str)
+                        }
+                        // General case: use implicit conversion logic
+                        (Some(l), Some(r), Some(dom)) => {
+                            eprintln!("[BINARY_OP] MATCH: General case - l={:?}, r={:?}, dom={:?}", l, r, dom);
+                            let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
+                                let casted = script.generate_implicit_cast_for_expr(&l_str, l, dom);
+                                eprintln!("[BINARY_OP] Casting left: {} -> {}", l_str, casted);
+                                casted
+                            } else {
+                                eprintln!("[BINARY_OP] No cast needed for left: {} (type: {:?})", l_str, l);
+                                l_str
+                            };
+                            let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
+                                let casted = script.generate_implicit_cast_for_expr(&r_str, r, dom);
+                                eprintln!("[BINARY_OP] Casting right: {} -> {}", r_str, casted);
+                                casted
+                            } else {
+                                eprintln!("[BINARY_OP] No cast needed for right: {} (type: {:?})", r_str, r);
+                                r_str
+                            };
+                            (l_cast, r_cast)
                         }
                         // Fallback: if left type is unknown but right is a float, cast left to float
                         (None, Some(Type::Number(NumberKind::Float(32))), _) => {
@@ -4823,13 +4901,26 @@ impl Expr {
                         (Some(Type::Number(NumberKind::Float(64))), None, _) => {
                             (l_str, format!("({} as f64)", r_str))
                         }
-                        _ => (l_str, r_str),
-                    }
+                        _ => {
+                            eprintln!("[BINARY_OP] MATCH: Fallback case - no casting");
+                            (l_str, r_str)
+                        }
                 };
-
+                
+                eprintln!("[BINARY_OP] After casting: left_str={}, right_str={}", left_str, right_str);
+                
                 // Apply cloning if needed for non-Copy types (BigInt, Decimal, String, etc.)
-                let left_final = Expr::clone_if_needed(left_str, left, script, current_func);
-                let right_final = Expr::clone_if_needed(right_str, right, script, current_func);
+                let left_final = Expr::clone_if_needed(left_str.clone(), left, script, current_func);
+                let right_final = Expr::clone_if_needed(right_str.clone(), right, script, current_func);
+            
+                if left_final != left_str {
+                    eprintln!("[BINARY_OP] CLONE ADDED to left: {} -> {}", left_str, left_final);
+                }
+                if right_final != right_str {
+                    eprintln!("[BINARY_OP] CLONE ADDED to right: {} -> {}", right_str, right_final);
+                }
+                
+                eprintln!("[BINARY_OP] FINAL: left_final={}, right_final={}", left_final, right_final);
 
                 if matches!(op, Op::Add)
                     && (left_type == Some(Type::String) || right_type == Some(Type::String))
@@ -5982,17 +6073,44 @@ impl Expr {
                 }
 
                 // Special case: For engine structs, use their constructor functions
-                if let Some(_engine_struct) = EngineStructKind::from_string(ty) {
+                if let Some(engine_struct) = EngineStructKind::from_string(ty) {
                     // Engine structs like Vector2, Transform2D, etc. use ::new() constructors
                     if args.is_empty() {
                         // No args: use default constructor or ::default()
                         return format!("{}::default()", ty);
                     } else {
                         // With args: use ::new() constructor
+                        // Get the expected types for each argument from the engine struct field types
+                        // Collect expected types first to avoid temporary value issues
+                        let expected_types: Vec<Option<Type>> = args
+                            .iter()
+                            .map(|(field_name, _)| {
+                                if field_name.starts_with('_') {
+                                    // Positional argument - get field type by index
+                                    let field_index = field_name.strip_prefix("_").and_then(|s| s.parse::<usize>().ok());
+                                    if let Some(idx) = field_index {
+                                        if let Some(def) = ENGINE_REGISTRY.struct_defs.get(&engine_struct) {
+                                            def.fields.get(idx).map(|f| f.typ.clone())
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    // Named argument - get field type by name
+                                    ENGINE_REGISTRY.get_field_type_struct(&engine_struct, field_name)
+                                }
+                            })
+                            .collect();
+                        
+                        // Now generate code with expected types
                         let arg_codes: Vec<String> = args
                             .iter()
-                            .map(|(_, expr)| {
-                                expr.to_rust(needs_self, script, None, current_func, None)
+                            .zip(expected_types.iter())
+                            .map(|((_, expr), expected_type_opt)| {
+                                // Pass expected type to expression codegen
+                                expr.to_rust(needs_self, script, expected_type_opt.as_ref(), current_func, None)
                             })
                             .collect();
                         return format!("{}::new({})", ty, arg_codes.join(", "));

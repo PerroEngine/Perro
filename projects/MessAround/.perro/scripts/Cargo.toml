@@ -23,7 +23,7 @@ toml = "0.8"
 regex = "1"
 
 [profile.dev]
-opt-level = 1
+opt-level = 2
 incremental = true
 codegen-units = 256
 lto = false
@@ -31,5 +31,3 @@ debug = false
 strip = "none"
 overflow-checks = false
 panic = "abort"
-
-
