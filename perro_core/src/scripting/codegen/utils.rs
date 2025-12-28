@@ -1,0 +1,117 @@
+// Utility functions for code generation
+use crate::node_registry::NodeType;
+use crate::scripting::ast::Type;
+use crate::structs::engine_registry::ENGINE_REGISTRY;
+use crate::structs::engine_structs::EngineStruct as EngineStructKind;
+
+pub(crate) const TRANSPILED_IDENT: &str = "__t_";
+
+/// Functions that should NOT be prefixed with __t_
+const RESERVED_FUNCTIONS: &[&str] = &["init", "update", "fixed_update", "draw"];
+
+/// Check if a type name is a node type
+pub fn is_node_type(type_name: &str) -> bool {
+    ENGINE_REGISTRY.node_defs.keys().any(|node_type| {
+        format!("{:?}", node_type) == type_name
+    })
+}
+
+/// Convert a type name string to NodeType
+pub(crate) fn string_to_node_type(type_name: &str) -> Option<NodeType> {
+    ENGINE_REGISTRY.node_defs.keys().find(|node_type| {
+        format!("{:?}", node_type) == type_name
+    }).cloned()
+}
+
+/// Check if a Type is a node type
+pub fn type_is_node(typ: &Type) -> bool {
+    matches!(typ, Type::Node(_) | Type::DynNode)
+}
+
+/// Check if a type becomes Uuid or Option<Uuid> (i.e., represents an ID)
+pub(crate) fn type_becomes_id(typ: &Type) -> bool {
+    match typ {
+        Type::Node(_) | 
+        Type::DynNode | 
+        Type::EngineStruct(EngineStructKind::Texture) |
+        Type::Uuid => true,
+        Type::Option(boxed) => matches!(boxed.as_ref(), Type::Uuid),
+        _ => false,
+    }
+}
+
+/// Rename a function: add __t_ prefix except for reserved functions
+pub fn rename_function(func_name: &str) -> String {
+    if RESERVED_FUNCTIONS.contains(&func_name) {
+        return func_name.to_string();
+    }
+    
+    if func_name.starts_with(TRANSPILED_IDENT) {
+        return func_name.to_string();
+    }
+    
+    format!("{}{}", TRANSPILED_IDENT, func_name)
+}
+
+/// Rename a struct: add __t_ prefix
+pub fn rename_struct(struct_name: &str) -> String {
+    if struct_name.starts_with(TRANSPILED_IDENT) {
+        return struct_name.to_string();
+    }
+    
+    format!("{}{}", TRANSPILED_IDENT, struct_name)
+}
+
+/// Rename a variable: if it's a type that becomes Uuid or Option<Uuid>, add _id suffix; otherwise add prefix
+pub fn rename_variable(var_name: &str, typ: Option<&Type>) -> String {
+    // Special case: "self" should NEVER be renamed - it's always self.id
+    if var_name == "self" {
+        return "self.id".to_string();
+    }
+    
+    // Check if already renamed (to prevent double prefixing)
+    if var_name.starts_with(TRANSPILED_IDENT) {
+        return var_name.to_string();
+    }
+    
+    // If it's a type that becomes Uuid or Option<Uuid>, add _id suffix
+    if let Some(typ) = typ {
+        if type_becomes_id(typ) {
+            if var_name.ends_with("_id") {
+                return var_name.to_string();
+            }
+            return format!("{}_id", var_name);
+        }
+    }
+    
+    // Otherwise, transpiled identifier prefix
+    format!("{}{}", TRANSPILED_IDENT, var_name)
+}
+
+/// Get the node type from a Type, if it's a Node type
+pub fn get_node_type(typ: &Type) -> Option<&NodeType> {
+    match typ {
+        Type::Node(nt) => Some(nt),
+        _ => None,
+    }
+}
+
+/// Convert a string to PascalCase
+pub(crate) fn to_pascal_case(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
