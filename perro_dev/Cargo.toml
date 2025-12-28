@@ -36,3 +36,5 @@ overflow-checks = false
 
 [target.'cfg(windows)']
 rustflags = ["-C", "link-args=/SUBSYSTEM:WINDOWS"]
+
+

@@ -23,26 +23,50 @@ var texture_diffuse: texture_2d<f32>;
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
-// Per-vertex and per-instance inputs
+// ─────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────
+
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) uv: vec2<f32>,
 };
 
 struct InstanceInput {
-    @location(2) transform_0: vec4<f32>,
-    @location(3) transform_1: vec4<f32>,
-    @location(4) transform_2: vec4<f32>,
-    @location(5) transform_3: vec4<f32>,
-    @location(6) pivot: vec2<f32>,
-    @location(7) z_index: i32,
+    // Mat3 (column-major)
+    @location(2) transform_0: vec3<f32>,
+    @location(3) transform_1: vec3<f32>,
+    @location(4) transform_2: vec3<f32>,
+
+    @location(5) pivot: vec2<f32>,
+    @location(6) z_index: i32,
 };
 
-// Vertex -> Fragment outputs
+// ─────────────────────────────────────────────
+// Outputs
+// ─────────────────────────────────────────────
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
 };
+
+// ─────────────────────────────────────────────
+// Mat3 → Mat4 helper
+// ─────────────────────────────────────────────
+
+fn mat3_to_mat4(
+    t0: vec3<f32>,
+    t1: vec3<f32>,
+    t2: vec3<f32>,
+) -> mat4x4<f32> {
+    return mat4x4<f32>(
+        vec4<f32>(t0.xy, 0.0, t0.z),
+        vec4<f32>(t1.xy, 0.0, t1.z),
+        vec4<f32>(0.0, 0.0, 1.0, 0.0),
+        vec4<f32>(t2.xy, 0.0, 1.0),
+    );
+}
 
 // ─────────────────────────────────────────────
 // Vertex Shader
@@ -50,32 +74,30 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
-    // OPTIMIZED: Per-instance transform matrix
-    let model = mat4x4<f32>(
+    // Build transform from Mat3
+    let model = mat3_to_mat4(
         instance.transform_0,
         instance.transform_1,
         instance.transform_2,
-        instance.transform_3,
     );
 
-    // Transform the local vertex position by instance's model transform
+    // Transform local vertex position
     var world_pos = model * vec4<f32>(vertex.position, 0.0, 1.0);
 
-    // Apply camera view matrix (inverse camera transform)
+    // Apply camera view
     world_pos = camera.view * world_pos;
 
-    // Apply zoom (must rebuild full vector; WGSL doesn't allow swizzle assignment)
-    // For zoom: 0.0 = normal, positive = zoom in, negative = zoom out
-    // Formula: multiply by (1.0 + zoom)
-    //   zoom = 0.0: multiply by 1.0 = normal ✓
-    //   zoom = 1.0: multiply by 2.0 = positions 2x larger = zoom IN (user wants this)
-    //   zoom = -0.5: multiply by 0.5 = positions 0.5x smaller = zoom OUT (user wants this)
-    world_pos = vec4<f32>(world_pos.xy * (1.0 + camera.zoom), world_pos.z, world_pos.w);
+    // Apply zoom
+    world_pos = vec4<f32>(
+        world_pos.xy * (1.0 + camera.zoom),
+        world_pos.z,
+        world_pos.w,
+    );
 
-    // Convert to clip-space (scale from virtual world to NDC range)
+    // Convert to NDC
     let ndc_pos = world_pos.xy * camera.ndc_scale;
 
-    // Depth from z-index (inverted: higher z_index = lower depth = renders on top)
+    // Depth from z_index
     let depth = 1.0 - f32(instance.z_index) * 0.001;
 
     var out: VertexOutput;

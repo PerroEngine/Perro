@@ -6,7 +6,7 @@ icon = "res://icon.png"
 version = "1.0.0"
 
 [performance]
-target_fps = 144
+target_fps = 60
 xps = 30
 
 [root]

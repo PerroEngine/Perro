@@ -27,32 +27,31 @@ pub enum RenderLayer {
     World2D,
     UI,
 }
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct RectInstance {
-    transform_0: [f32; 4],
-    transform_1: [f32; 4],
-    transform_2: [f32; 4],
-    transform_3: [f32; 4],
-    color: [f32; 4],
-    size: [f32; 2],
-    pivot: [f32; 2],
-    corner_radius_xy: [f32; 4],
-    corner_radius_zw: [f32; 4],
-    border_thickness: f32,
-    is_border: u32,
-    z_index: i32,
-    _pad: f32,
+    pub transform_0: [f32; 3],
+    pub transform_1: [f32; 3],
+    pub transform_2: [f32; 3],
+
+    pub color: [f32; 4],
+    pub size: [f32; 2],
+    pub pivot: [f32; 2],
+
+    pub corner_radius_xy: [f32; 4],
+    pub corner_radius_zw: [f32; 4],
+
+    pub border_thickness: f32,
+    pub is_border: u32,
+    pub z_index: i32,
 }
 
 impl Default for RectInstance {
     fn default() -> Self {
         Self {
-            transform_0: [0.0; 4],
-            transform_1: [0.0; 4],
-            transform_2: [0.0; 4],
-            transform_3: [0.0; 4],
+            transform_0: [0.0; 3],
+            transform_1: [0.0; 3],
+            transform_2: [0.0; 3],
             color: [0.0; 4],
             size: [0.0; 2],
             pivot: [0.0; 2],
@@ -61,51 +60,49 @@ impl Default for RectInstance {
             border_thickness: 0.0,
             is_border: 0,
             z_index: 0,
-            _pad: 0.0,
         }
     }
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TextureInstance {
-    transform_0: [f32; 4],
-    transform_1: [f32; 4],
-    transform_2: [f32; 4],
-    transform_3: [f32; 4],
-    pivot: [f32; 2],
-    z_index: i32,
-    _pad: f32,
+    pub transform_0: [f32; 3],
+    pub transform_1: [f32; 3],
+    pub transform_2: [f32; 3],
+
+    pub pivot: [f32; 2],
+    pub z_index: i32,
+    pub _pad: f32,
 }
 
 impl Default for TextureInstance {
     fn default() -> Self {
         Self {
-            transform_0: [0.0; 4],
-            transform_1: [0.0; 4],
-            transform_2: [0.0; 4],
-            transform_3: [0.0; 4],
+            transform_0: [0.0; 3],
+            transform_1: [0.0; 3],
+            transform_2: [0.0; 3],
+
             pivot: [0.0; 2],
             z_index: 0,
             _pad: 0.0,
         }
     }
 }
-
 #[repr(C)]
-#[derive(PartialEq, Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct FontInstance {
-    transform_0: [f32; 4],
-    transform_1: [f32; 4],
-    transform_2: [f32; 4],
-    transform_3: [f32; 4],
-    color: [f32; 4],
-    uv_offset: [f32; 2],
-    uv_size: [f32; 2],
-    z_index: i32,
-    _pad: [f32; 3],
-}
+    pub transform_0: [f32; 3],
+    pub transform_1: [f32; 3],
+    pub transform_2: [f32; 3],
 
+    pub color: [f32; 4],
+    pub uv_offset: [f32; 2],
+    pub uv_size: [f32; 2],
+
+    pub z_index: i32,
+    pub _pad: [f32; 3],
+}
 pub struct PrimitiveRenderer {
     rect_instance_buffer: wgpu::Buffer,
     texture_instance_buffer: wgpu::Buffer,
@@ -374,27 +371,29 @@ impl PrimitiveRenderer {
     
     /// Extract Transform2D from TextureInstance matrix
     fn texture_instance_to_transform(instance: &TextureInstance) -> Transform2D {
-        // Extract transform from matrix (column-major order)
-        let m = [
-            instance.transform_0[0], instance.transform_1[0], instance.transform_2[0], instance.transform_3[0],
-            instance.transform_0[1], instance.transform_1[1], instance.transform_2[1], instance.transform_3[1],
-            instance.transform_0[2], instance.transform_1[2], instance.transform_2[2], instance.transform_3[2],
-            instance.transform_0[3], instance.transform_1[3], instance.transform_2[3], instance.transform_3[3],
-        ];
-        let mat = glam::Mat4::from_cols_array(&m);
-        
-        // Extract position (translation is in the last column)
-        let position = Vector2::new(mat.w_axis.x, mat.w_axis.y);
-        
-        // Extract rotation from the 2x2 rotation/scale matrix
-        let scale_x = Vector2::new(mat.x_axis.x, mat.x_axis.y).length();
-        let scale_y = Vector2::new(mat.y_axis.x, mat.y_axis.y).length();
+        // Reconstruct Mat3 (column-major)
+        let m = glam::Mat3::from_cols(
+            glam::Vec3::from(instance.transform_0),
+            glam::Vec3::from(instance.transform_1),
+            glam::Vec3::from(instance.transform_2),
+        );
+    
+        // Translation
+        let position = Vector2::new(m.z_axis.x, m.z_axis.y);
+    
+        // Scale (length of basis vectors)
+        let scale_x = m.x_axis.truncate().length();
+        let scale_y = m.y_axis.truncate().length();
         let scale = Vector2::new(scale_x, scale_y);
-        
-        // Extract rotation (atan2 of first column normalized)
-        let rotation = (mat.x_axis.y / scale_x).atan2(mat.x_axis.x / scale_x);
-        
-        Transform2D { position, rotation, scale }
+    
+        // Rotation (from normalized x axis)
+        let rotation = (m.x_axis.y / scale_x).atan2(m.x_axis.x / scale_x);
+    
+        Transform2D {
+            position,
+            rotation,
+            scale,
+        }
     }
     
     /// Calculate axis-aligned bounding box (AABB) for an object with given transform and size
@@ -620,12 +619,12 @@ impl PrimitiveRenderer {
             if let Some(ref mut existing) = self.texture_instance_slots[slot] {
                 // Always update if layer, instance, or texture path changed
                 // Use a more robust comparison for TextureInstance to handle floating point precision
-                let instance_changed = existing.1.transform_0 != new_instance.transform_0
-                    || existing.1.transform_1 != new_instance.transform_1
-                    || existing.1.transform_2 != new_instance.transform_2
-                    || existing.1.transform_3 != new_instance.transform_3
-                    || existing.1.pivot != new_instance.pivot
-                    || existing.1.z_index != new_instance.z_index;
+                let instance_changed =
+                existing.1.transform_0 != new_instance.transform_0
+                || existing.1.transform_1 != new_instance.transform_1
+                || existing.1.transform_2 != new_instance.transform_2
+                || existing.1.pivot != new_instance.pivot
+                || existing.1.z_index != new_instance.z_index;
 
                 if existing.0 != layer || instance_changed || existing.2 != texture_path {
                     existing.0 = layer;
@@ -728,12 +727,13 @@ impl PrimitiveRenderer {
                             scale: Vector2::new(gw, gh),
                         };
 
-                        let tfm = glyph_transform.to_mat4().to_cols_array();
+                        let tfm = glyph_transform.to_mat3().to_cols_array();
+
                         let instance = FontInstance {
-                            transform_0: [tfm[0], tfm[1], tfm[2], tfm[3]],
-                            transform_1: [tfm[4], tfm[5], tfm[6], tfm[7]],
-                            transform_2: [tfm[8], tfm[9], tfm[10], tfm[11]],
-                            transform_3: [tfm[12], tfm[13], tfm[14], tfm[15]],
+                            transform_0: [tfm[0], tfm[1], tfm[2]],
+                            transform_1: [tfm[3], tfm[4], tfm[5]],
+                            transform_2: [tfm[6], tfm[7], tfm[8]],
+                        
                             color: color_lin,
                             uv_offset: [g.u0, g.v0],
                             uv_size: [g.u1 - g.u0, g.v1 - g.v0],
@@ -1093,42 +1093,21 @@ impl PrimitiveRenderer {
 
         let mut xf_no_scale = transform.clone();
         xf_no_scale.scale = Vector2::new(1.0, 1.0);
-        let transform_array = xf_no_scale.to_mat4().to_cols_array();
+        let mat = transform.to_mat3().to_cols_array();
 
         RectInstance {
-            transform_0: [
-                transform_array[0],
-                transform_array[1],
-                transform_array[2],
-                transform_array[3],
-            ],
-            transform_1: [
-                transform_array[4],
-                transform_array[5],
-                transform_array[6],
-                transform_array[7],
-            ],
-            transform_2: [
-                transform_array[8],
-                transform_array[9],
-                transform_array[10],
-                transform_array[11],
-            ],
-            transform_3: [
-                transform_array[12],
-                transform_array[13],
-                transform_array[14],
-                transform_array[15],
-            ],
+            transform_0: [mat[0], mat[1], mat[2]],
+            transform_1: [mat[3], mat[4], mat[5]],
+            transform_2: [mat[6], mat[7], mat[8]],
+        
             color: color_lin,
             size: [scaled_size_x, scaled_size_y],
             pivot: [pivot.x, pivot.y],
             corner_radius_xy,
             corner_radius_zw,
             border_thickness,
-            is_border: if is_border { 1 } else { 0 },
+            is_border: is_border as u32,
             z_index,
-            _pad: 0.0,
         }
     }
 
@@ -1139,32 +1118,13 @@ impl PrimitiveRenderer {
         z_index: i32,
         created_timestamp: u64,
     ) -> TextureInstance {
-        let transform_array = transform.to_mat4().to_cols_array();
+        let mat = transform.to_mat3().to_cols_array();
+
         TextureInstance {
-            transform_0: [
-                transform_array[0],
-                transform_array[1],
-                transform_array[2],
-                transform_array[3],
-            ],
-            transform_1: [
-                transform_array[4],
-                transform_array[5],
-                transform_array[6],
-                transform_array[7],
-            ],
-            transform_2: [
-                transform_array[8],
-                transform_array[9],
-                transform_array[10],
-                transform_array[11],
-            ],
-            transform_3: [
-                transform_array[12],
-                transform_array[13],
-                transform_array[14],
-                transform_array[15],
-            ],
+            transform_0: [mat[0], mat[1], mat[2]],
+            transform_1: [mat[3], mat[4], mat[5]],
+            transform_2: [mat[6], mat[7], mat[8]],
+        
             pivot: [pivot.x, pivot.y],
             z_index,
             _pad: 0.0,
@@ -1544,68 +1504,27 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<RectInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute {
-                                offset: 0,
-                                shader_location: 2,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 16,
-                                shader_location: 3,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 32,
-                                shader_location: 4,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 48,
-                                shader_location: 5,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 64,
-                                shader_location: 6,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 80,
-                                shader_location: 7,
-                                format: VertexFormat::Float32x2,
-                            },
-                            VertexAttribute {
-                                offset: 88,
-                                shader_location: 8,
-                                format: VertexFormat::Float32x2,
-                            },
-                            VertexAttribute {
-                                offset: 96,
-                                shader_location: 9,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 112,
-                                shader_location: 10,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 128,
-                                shader_location: 11,
-                                format: VertexFormat::Float32,
-                            },
-                            VertexAttribute {
-                                offset: 132,
-                                shader_location: 12,
-                                format: VertexFormat::Uint32,
-                            },
-                            VertexAttribute {
-                                offset: 136,
-                                shader_location: 13,
-                                format: VertexFormat::Sint32,
-                            },
+                            // Mat3
+                            VertexAttribute { offset: 0,  shader_location: 2, format: VertexFormat::Float32x3 },
+                            VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32x3 },
+                            VertexAttribute { offset: 24, shader_location: 4, format: VertexFormat::Float32x3 },
+                    
+                            // color
+                            VertexAttribute { offset: 36, shader_location: 5, format: VertexFormat::Float32x4 },
+                    
+                            // size, pivot
+                            VertexAttribute { offset: 52, shader_location: 6, format: VertexFormat::Float32x2 },
+                            VertexAttribute { offset: 60, shader_location: 7, format: VertexFormat::Float32x2 },
+                    
+                            // corner radii
+                            VertexAttribute { offset: 68, shader_location: 8, format: VertexFormat::Float32x4 },
+                            VertexAttribute { offset: 84, shader_location: 9, format: VertexFormat::Float32x4 },
+                    
+                            VertexAttribute { offset: 100, shader_location: 10, format: VertexFormat::Float32 },
+                            VertexAttribute { offset: 104, shader_location: 11, format: VertexFormat::Uint32 },
+                            VertexAttribute { offset: 108, shader_location: 12, format: VertexFormat::Sint32 },
                         ],
-                    },
+                    }
                 ],
                 compilation_options: Default::default(),
             },
@@ -1679,38 +1598,14 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<TextureInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute {
-                                offset: 0,
-                                shader_location: 2,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 16,
-                                shader_location: 3,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 32,
-                                shader_location: 4,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 48,
-                                shader_location: 5,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 64,
-                                shader_location: 6,
-                                format: VertexFormat::Float32x2,
-                            },
-                            VertexAttribute {
-                                offset: 72,
-                                shader_location: 7,
-                                format: VertexFormat::Sint32,
-                            },
+                            VertexAttribute { offset: 0,  shader_location: 2, format: VertexFormat::Float32x3 },
+                            VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32x3 },
+                            VertexAttribute { offset: 24, shader_location: 4, format: VertexFormat::Float32x3 },
+                    
+                            VertexAttribute { offset: 36, shader_location: 5, format: VertexFormat::Float32x2 },
+                            VertexAttribute { offset: 44, shader_location: 6, format: VertexFormat::Sint32 },
                         ],
-                    },
+                    }
                 ],
                 compilation_options: Default::default(),
             },
@@ -1782,48 +1677,16 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<FontInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute {
-                                offset: 0,
-                                shader_location: 2,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 16,
-                                shader_location: 3,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 32,
-                                shader_location: 4,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 48,
-                                shader_location: 5,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 64,
-                                shader_location: 6,
-                                format: VertexFormat::Float32x4,
-                            },
-                            VertexAttribute {
-                                offset: 80,
-                                shader_location: 7,
-                                format: VertexFormat::Float32x2,
-                            },
-                            VertexAttribute {
-                                offset: 88,
-                                shader_location: 8,
-                                format: VertexFormat::Float32x2,
-                            },
-                            VertexAttribute {
-                                offset: 96,
-                                shader_location: 9,
-                                format: VertexFormat::Sint32,
-                            },
+                            VertexAttribute { offset: 0,  shader_location: 2, format: VertexFormat::Float32x3 },
+                            VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32x3 },
+                            VertexAttribute { offset: 24, shader_location: 4, format: VertexFormat::Float32x3 },
+                    
+                            VertexAttribute { offset: 36, shader_location: 5, format: VertexFormat::Float32x4 },
+                            VertexAttribute { offset: 52, shader_location: 6, format: VertexFormat::Float32x2 },
+                            VertexAttribute { offset: 60, shader_location: 7, format: VertexFormat::Float32x2 },
+                            VertexAttribute { offset: 68, shader_location: 8, format: VertexFormat::Sint32 },
                         ],
-                    },
+                    }
                 ],
                 compilation_options: Default::default(),
             },
