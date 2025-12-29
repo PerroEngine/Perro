@@ -1,3 +1,16 @@
+[scripts.shape_pup]
+src = "res://shape.pup"
+lang = "pup"
+id = "shape_pup"
+
+[[scripts.shape_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 65
+
+[scripts.shape_pup.names]
+
 [scripts.camera_pup]
 src = "res://camera.pup"
 lang = "pup"
@@ -36,9 +49,50 @@ g_start = 80
 g_end = 87
 
 [scripts.test_engine_structs_pup.names]
-__t_test_constructors = "test_constructors"
 __t_test_nested_access = "test_nested_access"
+__t_test_constructors = "test_constructors"
 __t_test_variable_access = "test_variable_access"
+
+[scripts.player_pup]
+src = "res://player.pup"
+lang = "pup"
+id = "player_pup"
+
+[[scripts.player_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 86
+
+[[scripts.player_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 86
+g_end = 90
+
+[[scripts.player_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 90
+g_end = 95
+
+[[scripts.player_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 95
+g_end = 117
+
+[[scripts.player_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 117
+g_end = 128
+
+[scripts.player_pup.names]
+tex_id = "tex"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_time = "time"
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
 
 [scripts.p2_pup]
 src = "res://p2.pup"
@@ -53,47 +107,6 @@ g_end = 66
 
 [scripts.p2_pup.names]
 
-[scripts.player_pup]
-src = "res://player.pup"
-lang = "pup"
-id = "player_pup"
-
-[[scripts.player_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 78
-
-[[scripts.player_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 78
-g_end = 82
-
-[[scripts.player_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 82
-g_end = 87
-
-[[scripts.player_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 87
-g_end = 109
-
-[[scripts.player_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 109
-g_end = 120
-
-[scripts.player_pup.names]
-__t_time = "time"
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
-tex_id = "tex"
-
 [scripts.root_pup]
 src = "res://root.pup"
 lang = "pup"
@@ -106,16 +119,3 @@ g_start = 1
 g_end = 64
 
 [scripts.root_pup.names]
-
-[scripts.shape_pup]
-src = "res://shape.pup"
-lang = "pup"
-id = "shape_pup"
-
-[[scripts.shape_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 65
-
-[scripts.shape_pup.names]

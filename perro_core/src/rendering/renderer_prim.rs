@@ -286,7 +286,7 @@ impl PrimitiveRenderer {
             last_rebuild_time: Instant::now(),
             dirty_count: 0,
             max_rebuild_interval: Duration::from_millis(16), // ~60 FPS max
-            dirty_threshold: 32,                             // Rebuild when 32+ elements are dirty
+            dirty_threshold: 100,                            // Rebuild when 100+ elements are dirty (reduced rebuild frequency)
 
             instances_need_rebuild: false,
             text_instances_need_rebuild: false,
@@ -486,24 +486,25 @@ impl PrimitiveRenderer {
             return; // Don't queue offscreen sprites
         }
         
-        // OPTIMIZED: Occlusion culling - skip shapes that are completely covered by sprites with higher z_index
-        if layer == RenderLayer::World2D {
-            let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &size, z_index, "shape");
-            if is_occluded {
-                // Remove from slots if it exists (shape is occluded)
-                if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
-                    if let Some(_existing) = &mut self.rect_instance_slots[slot] {
-                        self.rect_instance_slots[slot] = None;
-                        self.free_rect_slots.push(slot);
-                        self.rect_uuid_to_slot.remove(&uuid);
-                        self.mark_rect_slot_dirty(slot);
-                        self.dirty_count += 1;
-                        self.instances_need_rebuild = true;
-                    }
-                }
-                return; // Don't queue occluded shapes
-            }
-        }
+        // DISABLED: Occlusion culling - O(n²) performance bottleneck
+        // The GPU can handle overdraw efficiently, and modern GPUs are fast at fragment shading
+        // if layer == RenderLayer::World2D {
+        //     let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &size, z_index, "shape");
+        //     if is_occluded {
+        //         // Remove from slots if it exists (shape is occluded)
+        //         if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+        //             if let Some(_existing) = &mut self.rect_instance_slots[slot] {
+        //                 self.rect_instance_slots[slot] = None;
+        //                 self.free_rect_slots.push(slot);
+        //                 self.rect_uuid_to_slot.remove(&uuid);
+        //                 self.mark_rect_slot_dirty(slot);
+        //                 self.dirty_count += 1;
+        //                 self.instances_need_rebuild = true;
+        //             }
+        //         }
+        //         return; // Don't queue occluded shapes
+        //     }
+        // }
         
         let new_instance = self.create_rect_instance(
             transform,
@@ -561,9 +562,28 @@ impl PrimitiveRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
-        // Load or fetch cached texture info
-        let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
-        let tex_size = Vector2::new(tex.width as f32, tex.height as f32);
+        // OPTIMIZED: Only lookup texture if we don't already have it cached
+        // Check if sprite already exists and has same texture path
+        let tex_size = if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+            if let Some(existing) = &self.texture_instance_slots[slot] {
+                // If texture path matches, reuse cached texture size
+                if existing.2 == texture_path {
+                    existing.3 // Reuse cached texture size
+                } else {
+                    // Texture path changed, need to lookup new texture
+                    let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
+                    Vector2::new(tex.width as f32, tex.height as f32)
+                }
+            } else {
+                // Slot exists but is None, lookup texture
+                let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
+                Vector2::new(tex.width as f32, tex.height as f32)
+            }
+        } else {
+            // New sprite, lookup texture
+            let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
+            Vector2::new(tex.width as f32, tex.height as f32)
+        };
 
         // Create a *new* version for rendering
         let adjusted_transform = Transform2D {
@@ -592,22 +612,56 @@ impl PrimitiveRenderer {
             return; // Don't queue offscreen sprites
         }
         
-        // OPTIMIZED: Occlusion culling - skip sprites that are completely covered by other sprites with higher z_index
-        if layer == RenderLayer::World2D {
-            let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &tex_size, z_index, "sprite");
-            if is_occluded {
-                // Remove from slots if it exists (sprite is occluded)
-                if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
-                    if let Some(_existing) = &mut self.texture_instance_slots[slot] {
-                        self.texture_instance_slots[slot] = None;
-                        self.free_texture_slots.push(slot);
-                        self.texture_uuid_to_slot.remove(&uuid);
-                        self.mark_texture_slot_dirty(slot);
-                        self.dirty_count += 1;
-                        self.instances_need_rebuild = true;
+        // DISABLED: Occlusion culling - O(n²) performance bottleneck (9M comparisons for 3000 sprites)
+        // The GPU can handle overdraw efficiently, and modern GPUs are fast at fragment shading
+        // If occlusion culling is needed in the future, implement spatial indexing (quadtree/spatial hash)
+        // if layer == RenderLayer::World2D {
+        //     let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &tex_size, z_index, "sprite");
+        //     if is_occluded {
+        //         // Remove from slots if it exists (sprite is occluded)
+        //         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+        //             if let Some(_existing) = &mut self.texture_instance_slots[slot] {
+        //                 self.texture_instance_slots[slot] = None;
+        //                 self.free_texture_slots.push(slot);
+        //                 self.texture_uuid_to_slot.remove(&uuid);
+        //                 self.mark_texture_slot_dirty(slot);
+        //                 self.dirty_count += 1;
+        //                 self.instances_need_rebuild = true;
+        //             }
+        //         }
+        //         return; // Don't queue occluded sprites
+        //     }
+        // }
+
+        // OPTIMIZED: Early exit if sprite exists and transform matrix hasn't changed
+        // Compare the instance data directly (cheaper than reconstructing transform)
+        if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+            if let Some(existing) = &self.texture_instance_slots[slot] {
+                // Quick checks: texture path and layer must match
+                if existing.0 == layer && existing.2 == texture_path {
+                    // Create new instance to compare (but we need tex_size first, which we already have)
+                    let test_instance = self.create_texture_instance(
+                        Transform2D {
+                            position: transform.position,
+                            rotation: transform.rotation,
+                            scale: Vector2::new(transform.scale.x * tex_size.x, transform.scale.y * tex_size.y),
+                        },
+                        pivot,
+                        z_index,
+                        created_timestamp,
+                    );
+                    
+                    // Compare instance data directly (much faster than matrix reconstruction)
+                    if existing.1.transform_0 == test_instance.transform_0
+                        && existing.1.transform_1 == test_instance.transform_1
+                        && existing.1.transform_2 == test_instance.transform_2
+                        && existing.1.pivot == test_instance.pivot
+                        && existing.1.z_index == test_instance.z_index
+                    {
+                        // Nothing changed, skip all the expensive work
+                        return;
                     }
                 }
-                return; // Don't queue occluded sprites
             }
         }
 
@@ -666,23 +720,24 @@ impl PrimitiveRenderer {
         z_index: i32,
         created_timestamp: u64,
     ) {
-        // OPTIMIZED: Occlusion culling for text - estimate text size and check occlusion
-        if layer == RenderLayer::World2D {
-            // Estimate text bounding box (rough approximation)
-            // Average character width is about 0.6 * font_size, height is font_size
-            let estimated_width = text.len() as f32 * font_size * 0.6;
-            let estimated_height = font_size;
-            let text_size = Vector2::new(estimated_width, estimated_height);
-            
-            let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &text_size, z_index, "text");
-            if is_occluded {
-                // Remove from text cache if it exists
-                if self.cached_text.remove(&uuid).is_some() {
-                    self.text_instances_need_rebuild = true;
-                }
-                return; // Don't queue occluded text
-            }
-        }
+        // DISABLED: Occlusion culling for text - O(n²) performance bottleneck
+        // The GPU can handle overdraw efficiently
+        // if layer == RenderLayer::World2D {
+        //     // Estimate text bounding box (rough approximation)
+        //     // Average character width is about 0.6 * font_size, height is font_size
+        //     let estimated_width = text.len() as f32 * font_size * 0.6;
+        //     let estimated_height = font_size;
+        //     let text_size = Vector2::new(estimated_width, estimated_height);
+        //     
+        //     let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &text_size, z_index, "text");
+        //     if is_occluded {
+        //         // Remove from text cache if it exists
+        //         if self.cached_text.remove(&uuid).is_some() {
+        //             self.text_instances_need_rebuild = true;
+        //         }
+        //         return; // Don't queue occluded text
+        //     }
+        // }
         
         if let Some(ref atlas) = self.font_atlas {
             let mut cursor_x = transform.position.x;
@@ -1227,58 +1282,137 @@ impl PrimitiveRenderer {
         self.world_texture_buffer_ranges.clear();
         self.ui_texture_buffer_ranges.clear();
 
-        // Reuse temp_texture_map instead of allocating new HashMaps
-        self.temp_texture_map.clear();
-        
-        // Use a separate temp for UI to avoid conflicts
-        let mut ui_texture_map: FxHashMap<String, Vec<TextureInstance>> = FxHashMap::default();
+        // OPTIMIZED: Fast path for single texture (common case)
+        // First pass: verify all sprites use the same texture, collect instances
+        let mut world_instances: Vec<TextureInstance> = Vec::new();
+        let mut ui_instances: Vec<TextureInstance> = Vec::new();
+        let mut world_texture_path: Option<String> = None;
+        let mut ui_texture_path: Option<String> = None;
+        let mut world_single_texture = true;
+        let mut ui_single_texture = true;
 
         for slot in &self.texture_instance_slots {
             if let Some((layer, instance, texture_path, _tex_size, _timestamp)) = slot {
                 match layer {
                     RenderLayer::World2D => {
-                        self.temp_texture_map
-                            .entry(texture_path.clone())
-                            .or_insert_with(Vec::new)
-                            .push(*instance);
+                        if world_texture_path.is_none() {
+                            world_texture_path = Some(texture_path.clone());
+                        } else if world_texture_path.as_ref().unwrap() != texture_path {
+                            // Different texture detected, can't use fast path
+                            world_single_texture = false;
+                        }
+                        world_instances.push(*instance);
                     }
                     RenderLayer::UI => {
-                        ui_texture_map
-                            .entry(texture_path.clone())
-                            .or_insert_with(Vec::new)
-                            .push(*instance);
+                        if ui_texture_path.is_none() {
+                            ui_texture_path = Some(texture_path.clone());
+                        } else if ui_texture_path.as_ref().unwrap() != texture_path {
+                            // Different texture detected, can't use fast path
+                            ui_single_texture = false;
+                        }
+                        ui_instances.push(*instance);
                     }
                 }
             }
         }
 
-        // Build world texture groups first - take ownership of temp_texture_map
-        let world_map_owned = std::mem::take(&mut self.temp_texture_map);
-        Self::build_texture_groups(
-            world_map_owned,
-            &mut self.world_texture_groups,
-            &mut self.world_texture_group_offsets,
-            &mut self.world_texture_buffer_ranges,
-            0,
-            &mut self.temp_sorted_groups,
-        );
+        // Use fast path only if all sprites use the same texture
+        if world_single_texture && ui_single_texture {
+            // Fast path: single texture, skip hashmap grouping
+            if !world_instances.is_empty() {
+                if let Some(path) = world_texture_path {
+                    // OPTIMIZED: Only sort if more than one instance
+                    if world_instances.len() > 1 {
+                        world_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+                    }
+                    self.world_texture_groups.push((path, world_instances));
+                    self.world_texture_group_offsets.push((0, self.world_texture_groups[0].1.len()));
+                    const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
+                    let size_bytes = self.world_texture_groups[0].1.len() * INSTANCE_SIZE;
+                    self.world_texture_buffer_ranges.push(0..(size_bytes as u64));
+                }
+            }
 
-        // Calculate the offset AFTER the first call completes
-        let world_total_instances: usize = self
-            .world_texture_groups
-            .iter()
-            .map(|(_, instances)| instances.len())
-            .sum();
+            if !ui_instances.is_empty() {
+                if let Some(path) = ui_texture_path {
+                    // OPTIMIZED: Only sort if more than one instance
+                    if ui_instances.len() > 1 {
+                        ui_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+                    }
+                    let world_offset = if !self.world_texture_groups.is_empty() {
+                        self.world_texture_groups[0].1.len()
+                    } else {
+                        0
+                    };
+                    self.ui_texture_groups.push((path, ui_instances));
+                    self.ui_texture_group_offsets.push((world_offset, self.ui_texture_groups[0].1.len()));
+                    const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
+                    let start_byte = world_offset * INSTANCE_SIZE;
+                    let size_bytes = self.ui_texture_groups[0].1.len() * INSTANCE_SIZE;
+                    self.ui_texture_buffer_ranges.push((start_byte as u64)..((start_byte + size_bytes) as u64));
+                }
+            }
+        } else {
+            // Fallback: multiple textures detected, use full grouping logic
+            // Multiple textures detected, use full grouping logic
+            self.world_texture_groups.clear();
+            self.ui_texture_groups.clear();
+            self.world_texture_group_offsets.clear();
+            self.ui_texture_group_offsets.clear();
+            self.world_texture_buffer_ranges.clear();
+            self.ui_texture_buffer_ranges.clear();
 
-        // Now build UI texture groups with the calculated offset
-        Self::build_texture_groups(
-            ui_texture_map,
-            &mut self.ui_texture_groups,
-            &mut self.ui_texture_group_offsets,
-            &mut self.ui_texture_buffer_ranges,
-            world_total_instances,
-            &mut self.temp_sorted_groups,
-        );
+            // Reuse temp_texture_map instead of allocating new HashMaps
+            self.temp_texture_map.clear();
+            let mut ui_texture_map: FxHashMap<String, Vec<TextureInstance>> = FxHashMap::default();
+
+            for slot in &self.texture_instance_slots {
+                if let Some((layer, instance, texture_path, _tex_size, _timestamp)) = slot {
+                    match layer {
+                        RenderLayer::World2D => {
+                            self.temp_texture_map
+                                .entry(texture_path.clone())
+                                .or_insert_with(Vec::new)
+                                .push(*instance);
+                        }
+                        RenderLayer::UI => {
+                            ui_texture_map
+                                .entry(texture_path.clone())
+                                .or_insert_with(Vec::new)
+                                .push(*instance);
+                        }
+                    }
+                }
+            }
+
+            // Build world texture groups first - take ownership of temp_texture_map
+            let world_map_owned = std::mem::take(&mut self.temp_texture_map);
+            Self::build_texture_groups(
+                world_map_owned,
+                &mut self.world_texture_groups,
+                &mut self.world_texture_group_offsets,
+                &mut self.world_texture_buffer_ranges,
+                0,
+                &mut self.temp_sorted_groups,
+            );
+
+            // Calculate the offset AFTER the first call completes
+            let world_total_instances: usize = self
+                .world_texture_groups
+                .iter()
+                .map(|(_, instances)| instances.len())
+                .sum();
+
+            // Now build UI texture groups with the calculated offset
+            Self::build_texture_groups(
+                ui_texture_map,
+                &mut self.ui_texture_groups,
+                &mut self.ui_texture_group_offsets,
+                &mut self.ui_texture_buffer_ranges,
+                world_total_instances,
+                &mut self.temp_sorted_groups,
+            );
+        }
     }
 
     fn upload_instances_to_gpu(&mut self, queue: &Queue) {
