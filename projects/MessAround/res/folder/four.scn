@@ -15,9 +15,9 @@
         "type": "Node2D",
         "base": { "type": "Node", "name": "PlayerofFour", "parent": "00000000-0000-0000-0000-000000000001"},
         "transform": {
-          "position": { "x": 50.0, "y": -200.0 },
+          "position": [50.0, -200.0],
           "rotation": 0.0,
-          "scale": { "x": 0.25, "y": 0.25 }
+          "scale": [0.25, 0.25]
         }
       }
     }

@@ -98,11 +98,11 @@ fn apply_base_attributes(
     base.style_map.clear();
 
     // OPT: static defaults cached in BaseUIElement::default() as well
-    base.size = Vector2 { x: 32.0, y: 32.0 };
-    base.transform.scale = Vector2 { x: 1.0, y: 1.0 };
-    base.transform.position = Vector2 { x: 0.0, y: 0.0 };
+    base.size = Vector2::new(32.0, 32.0);
+    base.transform.scale = Vector2::new(1.0, 1.0);
+    base.transform.position = Vector2::new(0.0, 0.0);
     base.transform.rotation = 0.0;
-    base.pivot = Vector2 { x: 0.5, y: 0.5 };
+    base.pivot = Vector2::new(0.5, 0.5);
 
     for (key, val) in attrs.iter() {
         let v = val.trim();

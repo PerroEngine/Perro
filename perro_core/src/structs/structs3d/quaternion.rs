@@ -1,11 +1,30 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quaternion {
     pub x: f32,
     pub y: f32,
     pub z: f32,
     pub w: f32,
+}
+
+impl Serialize for Quaternion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        [self.x, self.y, self.z, self.w].serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Quaternion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let arr = <[f32; 4]>::deserialize(deserializer)?;
+        Ok(Quaternion::new(arr[0], arr[1], arr[2], arr[3]))
+    }
 }
 
 impl Quaternion {
@@ -14,25 +33,33 @@ impl Quaternion {
     }
 
     pub fn identity() -> Self {
-        Self::new(0.0, 0.0, 0.0, 1.0)
+        Self { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+    }
+
+    // Helper to convert to glam for operations
+    #[inline(always)]
+    fn to_glam(self) -> glam::Quat {
+        glam::Quat::from_xyzw(self.x, self.y, self.z, self.w)
+    }
+
+    // Helper to create from glam
+    #[inline(always)]
+    fn from_glam(q: glam::Quat) -> Self {
+        Self { x: q.x, y: q.y, z: q.z, w: q.w }
+    }
+
+    /// Converts this quaternion into a `glam::Quat` (for operations that need glam types).
+    pub fn to_glam_public(self) -> glam::Quat {
+        self.to_glam()
     }
 
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Self {
-        let quat = glam::Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll);
-        Self::from_glam(quat)
+        Self::from_glam(glam::Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll))
     }
 
     pub fn to_euler(&self) -> (f32, f32, f32) {
         let (yaw, pitch, roll) = self.to_glam().to_euler(glam::EulerRot::YXZ);
         (pitch, yaw, roll)
-    }
-
-    pub fn to_glam(self) -> glam::Quat {
-        glam::Quat::from_xyzw(self.x, self.y, self.z, self.w)
-    }
-
-    pub fn from_glam(q: glam::Quat) -> Self {
-        Self::new(q.x, q.y, q.z, q.w)
     }
 
     pub fn normalize(&self) -> Self {
@@ -48,7 +75,13 @@ impl Quaternion {
     }
 
     pub fn rotate_vec3(&self, v: crate::structs3d::Vector3) -> crate::structs3d::Vector3 {
-        crate::structs3d::Vector3::from_glam(self.to_glam() * v.to_glam())
+        let result = self.to_glam() * v.to_glam_public();
+        crate::structs3d::Vector3::from_glam_public(result)
+    }
+
+    /// Creates a `Quaternion` from a `glam::Quat`.
+    pub fn from_glam_public(q: glam::Quat) -> Self {
+        Self { x: q.x, y: q.y, z: q.z, w: q.w }
     }
 }
 

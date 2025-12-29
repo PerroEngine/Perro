@@ -97,20 +97,20 @@ impl Transform3D {
     }
 
     pub fn forward(&self) -> glam::Vec3 {
-        self.rotation.to_glam() * glam::Vec3::new(0.0, 0.0, -1.0)
+        self.rotation.to_glam_public() * glam::Vec3::new(0.0, 0.0, -1.0)
     }
     pub fn up(&self) -> glam::Vec3 {
-        self.rotation.to_glam() * glam::Vec3::new(0.0, 1.0, 0.0)
+        self.rotation.to_glam_public() * glam::Vec3::new(0.0, 1.0, 0.0)
     }
     pub fn right(&self) -> glam::Vec3 {
-        self.rotation.to_glam() * glam::Vec3::new(1.0, 0.0, 0.0)
+        self.rotation.to_glam_public() * glam::Vec3::new(1.0, 0.0, 0.0)
     }
 
     /// Returns a `glam::Mat4` representing scale→rotate→translate
     pub fn to_mat4(&self) -> Mat4 {
-        let s = Mat4::from_scale(self.scale.to_glam());
-        let r = Mat4::from_quat(self.rotation.to_glam());
-        let t = Mat4::from_translation(self.position.to_glam());
+        let s = Mat4::from_scale(self.scale.to_glam_public());
+        let r = Mat4::from_quat(self.rotation.to_glam_public());
+        let t = Mat4::from_translation(self.position.to_glam_public());
         t * r * s
     }
 }

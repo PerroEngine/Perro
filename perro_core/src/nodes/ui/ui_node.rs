@@ -240,13 +240,13 @@ impl UINode {
         }
         
         // Convert screen coordinates to UI virtual coordinates
-        // We need window size - try to get it from graphics if available
-        // For now, we'll use a simple conversion assuming we can get window size
-        // TODO: Get actual window size from graphics
-        // For UI, we convert screen pixels to virtual space (1920x1080)
-        // The conversion matches how the UI renderer works
-        let window_width = 1920.0; // Default, should get from graphics
-        let window_height = 1080.0; // Default, should get from graphics
+        // Get actual window size from graphics
+        let (window_width, window_height) = if let Some(gfx) = api.gfx.as_ref() {
+            (gfx.surface_config.width as f32, gfx.surface_config.height as f32)
+        } else {
+            // Fallback to default if graphics not available
+            (1920.0, 1080.0)
+        };
         
         // Convert screen to UI virtual coordinates
         // UI uses centered coordinate system: (0,0) is center, ranges from -width/2 to +width/2
@@ -260,13 +260,16 @@ impl UINode {
         };
         
         // Normalize screen position to [0, 1]
+        // Screen coordinates: (0,0) is top-left, Y increases downward
         let normalized_x = screen_mouse_pos.x / window_width;
         let normalized_y = screen_mouse_pos.y / window_height;
         
         // Convert to virtual space coordinates (centered at 0,0)
+        // UI coordinate system: (0,0) is center, Y increases upward (positive Y is up)
+        // So we need to invert Y: screen top (y=0) -> virtual top (y=+540)
         let mouse_pos = Vector2::new(
             (normalized_x - 0.5) * VIRTUAL_WIDTH * scale_x,
-            (normalized_y - 0.5) * VIRTUAL_HEIGHT * scale_y,
+            (0.5 - normalized_y) * VIRTUAL_HEIGHT * scale_y, // Inverted Y
         );
         
         // Get mouse button state
@@ -290,33 +293,60 @@ impl UINode {
                 // Clone to avoid borrow issues
                 let signal_base = button.get_name().to_string();
                 
-                // Get button bounds in screen space
+                // Get button bounds in virtual space
+                // Note: button.get_size() should return the resolved size (not percentage)
+                // The size is already in virtual space (1920x1080), and the renderer handles scaling
                 let button_pos = button.global_transform.position;
-                let button_size = *button.get_size();
+                let button_size = *button.get_size(); // Use size directly - don't apply scale here
                 let pivot = *button.get_pivot();
                 
-                // Calculate button bounds (accounting for pivot)
-                // Pivot is typically (0.5, 0.5) for center, which means no offset needed
-                // For other pivots, we need to adjust the bounds
-                let half_width = button_size.x * 0.5;
-                let half_height = button_size.y * 0.5;
+                // Calculate button bounds matching the shader's pivot logic
+                // Shader: pivot_offset = (pivot - 0.5) * size, then vertex_pos - pivot_offset
+                // This means: if pivot is (0.5, 0.5), position is at center
+                //            if pivot is (0.0, 0.0), position is at bottom-left
                 
-                // Calculate offset from center based on pivot
+                // Calculate the center of the button (accounting for pivot)
+                // The button_pos is at the pivot point, so we need to find the center
                 let pivot_offset_x = (pivot.x - 0.5) * button_size.x;
                 let pivot_offset_y = (pivot.y - 0.5) * button_size.y;
                 
-                let left = button_pos.x - half_width + pivot_offset_x;
-                let right = button_pos.x + half_width + pivot_offset_x;
-                let top = button_pos.y - half_height - pivot_offset_y;
-                let bottom = button_pos.y + half_height - pivot_offset_y;
+                // The center is offset from the pivot position
+                // For center pivot (0.5, 0.5): offset is 0, so center = position
+                // For bottom-left pivot (0.0, 0.0): offset is (-half_width, -half_height), so center = position + (half_width, half_height)
+                let center_x = button_pos.x - pivot_offset_x;
+                let center_y = button_pos.y - pivot_offset_y;
                 
-                // Check if mouse is over button
-                let is_hovered = mouse_pos.x >= left && mouse_pos.x <= right &&
-                                 mouse_pos.y >= top && mouse_pos.y <= bottom;
+                // Calculate bounds from center
+                let half_width = button_size.x * 0.5;
+                let half_height = button_size.y * 0.5;
+                
+                // In Y-up coordinate system:
+                // - left/right: X increases to the right (standard)
+                // - top/bottom: Y increases upward, so top has larger Y, bottom has smaller Y
+                let left = center_x - half_width;
+                let right = center_x + half_width;
+                let bottom = center_y - half_height; // Smaller Y (bottom)
+                let top = center_y + half_height;   // Larger Y (top)
                 
                 // Store previous state BEFORE updating (critical for state transitions)
                 let was_hovered = button.is_hovered;
                 let was_pressed = button.is_pressed;
+                
+                // Check if mouse is over button
+                // In Y-up system: mouse.y must be between bottom (smaller) and top (larger)
+                let is_hovered = mouse_pos.x >= left && mouse_pos.x <= right &&
+                                 mouse_pos.y >= bottom && mouse_pos.y <= top;
+                
+                // Debug: Only print on hover state changes for "bob" button
+                if signal_base == "bob" && is_hovered != was_hovered {
+                    println!("Button '{}' hover changed: {} -> {}", signal_base, was_hovered, is_hovered);
+                    println!("  Mouse: {:?}, Bounds: left={:.1}, right={:.1}, bottom={:.1}, top={:.1}", 
+                        mouse_pos, left, right, bottom, top);
+                    println!("  Button: pos={:?}, size={:?}, scale={:?}, pivot={:?}", 
+                        button_pos, button_size, button.global_transform.scale, pivot);
+                    println!("  Center: ({:.1}, {:.1}), half_size: ({:.1}, {:.1})", 
+                        center_x, center_y, half_width, half_height);
+                }
                 
                 // Debug: Print every frame
                 

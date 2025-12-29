@@ -1638,8 +1638,8 @@ impl Graphics {
 
         let t = &cam.transform;
 
-        let translation = glam::Mat4::from_translation(t.position.to_glam());
-        let rotation = glam::Mat4::from_quat(t.rotation.to_glam());
+        let translation = glam::Mat4::from_translation(t.position.to_glam_public());
+        let rotation = glam::Mat4::from_quat(t.rotation.to_glam_public());
 
         let model = translation * rotation;
         let view = model.inverse();
@@ -1745,8 +1745,8 @@ impl Graphics {
         } else {
             // Fallback: recalculate if cache is missing (shouldn't happen normally)
             let t = &self.camera3d.transform;
-            let translation = glam::Mat4::from_translation(t.position.to_glam());
-            let rotation = glam::Mat4::from_quat(t.rotation.to_glam());
+            let translation = glam::Mat4::from_translation(t.position.to_glam_public());
+            let rotation = glam::Mat4::from_quat(t.rotation.to_glam_public());
             let view = (translation * rotation).inverse();
             let aspect_ratio = self.surface_config.width as f32 / self.surface_config.height as f32;
             let proj = glam::Mat4::perspective_rh(

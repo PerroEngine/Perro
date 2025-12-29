@@ -50,11 +50,7 @@ impl Node3D {
         Self {
             ty: NodeType::Node3D,
             transform: Transform3D::default(),
-            pivot: Vector3 {
-                x: 0.5,
-                y: 0.5,
-                z: 0.5,
-            },
+            pivot: Vector3::new(0.5, 0.5, 0.5),
             visible: default_visible(),
             base,
         }

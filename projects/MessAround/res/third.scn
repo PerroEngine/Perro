@@ -18,9 +18,9 @@
         "type": "Node2D",
         "base": { "type": "Node", "name": "PlayerofThird", "parent": "00000000-0000-0000-0000-000000000001", "script_path": "res://player.pup"},
         "transform": {
-          "position": { "x": -1.0, "y": -500.0 },
+          "position": [-1.0, -500.0],
           "rotation": 0.0,
-          "scale": { "x": 0.5, "y": 0.5 }
+          "scale": [0.5, 0.5]
         }
       }
     }

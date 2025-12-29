@@ -82,7 +82,7 @@ impl Node2D {
             transform_dirty: true, // New nodes start dirty
             node2d_children_cache: None, // Cache starts empty, will be populated on demand
 
-            pivot: Vector2 { x: 0.5, y: 0.5 },
+            pivot: Vector2::new(0.5, 0.5),
 
             z_index: 0,
 
@@ -123,7 +123,7 @@ impl Default for Node2D {
             global_transform: Transform2D::default(),
             transform_dirty: true, // Default to dirty
             node2d_children_cache: None, // Cache starts empty
-            pivot: Vector2 { x: 0.5, y: 0.5 },
+            pivot: Vector2::new(0.5, 0.5),
             z_index: 0,
             visible: default_visible(),
             base: {

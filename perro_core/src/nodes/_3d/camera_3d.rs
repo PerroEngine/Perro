@@ -66,8 +66,8 @@ impl Camera3D {
 
     /// Computes the view matrix from the node's transform.
     pub fn view_matrix(&self) -> glam::Mat4 {
-        let pos = self.transform.position.to_glam();
-        let rot = self.transform.rotation.to_glam();
+        let pos = self.transform.position.to_glam_public();
+        let rot = self.transform.rotation.to_glam_public();
         glam::Mat4::from_rotation_translation(rot, pos).inverse()
     }
 

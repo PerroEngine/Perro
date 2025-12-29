@@ -571,28 +571,22 @@ impl<P: ScriptProvider> Scene<P> {
                 }
             }
             serde_json::Value::Object(obj) => {
-                // Parallel processing for large objects
-                if obj.len() > 10 {
+                if obj.len() > 1 {
                     let mut entries: Vec<_> = obj.iter_mut().collect();
                     entries.par_iter_mut().for_each(|(_, v)| {
                         Self::remap_uuids_in_json_value(v, id_map);
                     });
-                } else {
-                    for (_, v) in obj.iter_mut() {
-                        Self::remap_uuids_in_json_value(v, id_map);
-                    }
+                } else if let Some((_, v)) = obj.iter_mut().next() {
+                    Self::remap_uuids_in_json_value(v, id_map);
                 }
             }
             serde_json::Value::Array(arr) => {
-                // Parallel processing for large arrays
-                if arr.len() > 20 {
+                if arr.len() > 1 {
                     arr.par_iter_mut().for_each(|v| {
                         Self::remap_uuids_in_json_value(v, id_map);
                     });
-                } else {
-                    for v in arr.iter_mut() {
-                        Self::remap_uuids_in_json_value(v, id_map);
-                    }
+                } else if let Some(v) = arr.iter_mut().next() {
+                    Self::remap_uuids_in_json_value(v, id_map);
                 }
             }
             _ => {}
@@ -603,15 +597,13 @@ impl<P: ScriptProvider> Scene<P> {
         script_exp_vars: &mut HashMap<String, serde_json::Value>,
         id_map: &HashMap<Uuid, Uuid>,
     ) {
-        if script_exp_vars.len() > 5 {
+        if script_exp_vars.len() > 1 {
             let mut entries: Vec<_> = script_exp_vars.iter_mut().collect();
             entries.par_iter_mut().for_each(|(_, value)| {
                 Self::remap_uuids_in_json_value(value, id_map);
             });
-        } else {
-            for (_, value) in script_exp_vars.iter_mut() {
-                Self::remap_uuids_in_json_value(value, id_map);
-            }
+        } else if let Some((_, value)) = script_exp_vars.iter_mut().next() {
+            Self::remap_uuids_in_json_value(value, id_map);
         }
     }
     pub fn merge_scene_data(
@@ -630,19 +622,16 @@ impl<P: ScriptProvider> Scene<P> {
         let id_map_start = Instant::now();
         let mut id_map: HashMap<Uuid, Uuid> = HashMap::with_capacity(other.nodes.len() + 1);
     
-        const ID_MAP_PARALLEL_THRESHOLD: usize = 50;
-    
-        if other.nodes.len() >= ID_MAP_PARALLEL_THRESHOLD {
+        // Always parallelize UUID generation - overhead is negligible
+        if other.nodes.len() > 1 {
             let local_ids: Vec<Uuid> = other.nodes.keys().copied().collect();
             let new_ids: Vec<(Uuid, Uuid)> = local_ids
                 .par_iter()
                 .map(|&local_id| (local_id, Uuid::new_v4()))
                 .collect();
             id_map.extend(new_ids);
-        } else {
-            for node in other.nodes.values() {
-                id_map.insert(node.get_local_id(), Uuid::new_v4());
-            }
+        } else if let Some(node) = other.nodes.values().next() {
+            id_map.insert(node.get_local_id(), Uuid::new_v4());
         }
     
         // Ensure root is included
@@ -925,8 +914,6 @@ impl<P: ScriptProvider> Scene<P> {
         // 6️⃣ FUR LOADING (UI FILES)
         // ───────────────────────────────────────────────
         let fur_start = Instant::now();
-        const FUR_PARALLEL_THRESHOLD: usize = 5;
-    
         // Collect FUR paths
         let fur_paths: Vec<(Uuid, String)> = inserted_ids
             .iter()
@@ -940,10 +927,10 @@ impl<P: ScriptProvider> Scene<P> {
                 })
             })
             .collect();
-    
-        // Load FUR data
+        
+        // Load FUR data - always parallelize (I/O operations benefit even more)
         let fur_loads: Vec<(Uuid, Result<Vec<FurElement>, _>)> =
-            if fur_paths.len() >= FUR_PARALLEL_THRESHOLD {
+            if fur_paths.len() > 1 {
                 fur_paths
                     .par_iter()
                     .map(|(id, fur_path)| {
@@ -951,14 +938,10 @@ impl<P: ScriptProvider> Scene<P> {
                         (*id, result)
                     })
                     .collect()
+            } else if let Some((id, fur_path)) = fur_paths.first() {
+                vec![(*id, self.provider.load_fur_data(fur_path))]
             } else {
-                fur_paths
-                    .iter()
-                    .map(|(id, fur_path)| {
-                        let result = self.provider.load_fur_data(fur_path);
-                        (*id, result)
-                    })
-                    .collect()
+                Vec::new()
             };
     
         // Apply FUR results
