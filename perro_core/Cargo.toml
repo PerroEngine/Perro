@@ -114,3 +114,11 @@ optional = true
 version = "0.12"
 optional = true
 
+# Optimized release profile for library crate
+[profile.release]
+opt-level = 3            # max speed
+lto = "thin"             # thin LTO for libraries (final binary handles full LTO)
+codegen-units = 1        # full cross-crate optimization
+debug = false            # no debug info
+incremental = false      # disable incremental compilation for better optimization
+overflow-checks = false  # disable overflow checks for performance

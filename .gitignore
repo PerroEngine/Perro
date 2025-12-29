@@ -5,3 +5,4 @@
 # Ignore profiling files
 flamegraph.folded
 flamegraph.svg
+projects/PerroDevRuntime.exe

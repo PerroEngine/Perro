@@ -2,16 +2,5 @@
 
 fn init() {
 
-    var tex = Texture.load("res://obama.jpg")
-
-    
-    for (i in 0..200) {
-        var sprite = new Sprite2D()
-        sprite.texture = tex
-        sprite.transform.scale = new Vector2(0.005,0.005)
-        sprite.transform.position.x = Math.random_range(-960, 960)
-        sprite.transform.position.y = Math.random_range(-535, 535)
-        self.add_child(sprite)
-    }
 }
 

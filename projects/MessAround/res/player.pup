@@ -9,20 +9,10 @@ fn init() {
     self.transform.position.x = -710
 
 
-    var pos = self.transform.position
-
-    var par = self.get_parent()
-    par.name = "fart"
-    Console.print(par)
-
     tex = Texture.load("res://doug.PNG")
+    self.texture = tex
 
-    for (i in 0..50) {
-        var b = new Sprite2D()
-        b.texture = tex
-        b.transform.position = new Vector2(-300 * i, -100)
-        self.add_child(b)
-    }
+    
 
 
 }

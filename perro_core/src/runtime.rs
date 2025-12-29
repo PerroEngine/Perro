@@ -1,10 +1,12 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
-use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use chrono::Utc;
 
 use crate::asset_io::set_key;
 use crate::asset_io::{ProjectRoot, set_project_root};
@@ -201,16 +203,85 @@ pub fn convert_flamegraph(folded_path: &Path, svg_path: &Path) {
 }
 
 /// Helper to append errors to errors.log
+/// In release mode with windows_subsystem, console output is hidden,
+/// so we MUST write to a file that the user can check.
 fn log_error(msg: &str) {
+    let timestamp = if cfg!(not(target_arch = "wasm32")) {
+        Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()
+    } else {
+        "N/A".to_string()
+    };
+    
+    let full_msg = format!("[{}] {}\n", timestamp, msg);
+    
+    // Try to print to stderr (won't show in release mode with windows_subsystem, but doesn't hurt)
+    eprintln!("{}", full_msg.trim());
+    
+    // Try multiple locations to ensure we can write somewhere
+    let mut log_paths = Vec::new();
+    
+    // 1. Exe directory (most likely location for standalone builds)
     if let Ok(exe_path) = env::current_exe() {
         if let Some(folder) = exe_path.parent() {
-            let log_path = folder.join("errors.log");
-            if let Ok(mut file) = File::options().append(true).create(true).open(&log_path) {
-                let _ = writeln!(file, "{}", msg);
+            log_paths.push(folder.join("errors.log"));
+        }
+    }
+    
+    // 2. Current working directory
+    if let Ok(cwd) = env::current_dir() {
+        log_paths.push(cwd.join("errors.log"));
+    }
+    
+    // 3. Temp directory (fallback - always accessible)
+    let temp_dir = env::temp_dir();
+    log_paths.push(temp_dir.join("perro_errors.log"));
+    
+    // 4. User's home directory (another fallback)
+    if let Ok(home) = env::var("HOME") {
+        log_paths.push(PathBuf::from(&home).join("perro_errors.log"));
+    }
+    if let Ok(home) = env::var("USERPROFILE") {
+        log_paths.push(PathBuf::from(&home).join("perro_errors.log"));
+    }
+    
+    // Try to write to each location until one succeeds
+    let mut written = false;
+    let mut successful_path = None;
+    
+    for log_path in log_paths {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            Ok(mut file) => {
+                if writeln!(file, "{}", full_msg).is_ok() {
+                    // Force sync to ensure data is written to disk immediately
+                    let _ = file.sync_all();
+                    written = true;
+                    successful_path = Some(log_path);
+                    break;
+                }
+            }
+            Err(_) => {
+                // Try next location
+                continue;
             }
         }
     }
-    eprintln!("{}", msg);
+    
+    // If we wrote successfully, also try to create a marker file in exe dir with the path
+    if written {
+        if let (Some(path), Ok(exe_path)) = (successful_path.as_ref(), env::current_exe()) {
+            if let Some(exe_dir) = exe_path.parent() {
+                let marker_path = exe_dir.join("ERROR_LOG_LOCATION.txt");
+                let _ = std::fs::write(
+                    &marker_path,
+                    format!("Error log written to:\n{}\n\nCheck this file for error details.", path.display())
+                );
+            }
+        }
+    }
 }
 
 /// Main entry point for running a Perro game
@@ -371,14 +442,64 @@ pub fn run_dev() {
             });
 
         // Handle special flags like --editor and --test
-        if path_arg.eq_ignore_ascii_case("--editor") {
-            let editor_path = workspace_root.join("perro_editor");
-            use dunce;
-            dunce::canonicalize(&editor_path).unwrap_or(editor_path)
-        } else if path_arg.eq_ignore_ascii_case("--test") {
-            let test_path = workspace_root.join("test_projects/test");
-            use dunce;
-            dunce::canonicalize(&test_path).unwrap_or(test_path)
+        // These search for folders with those names that contain project.toml
+        // NOTE: This only happens when explicitly requested via --path --editor or --path --test
+        if path_arg.eq_ignore_ascii_case("--editor") || path_arg.eq_ignore_ascii_case("--test") {
+            let search_name = if path_arg.eq_ignore_ascii_case("--editor") {
+                "perro_editor"
+            } else {
+                "test"
+            };
+            
+            // Helper to find a project folder by name
+            let find_project_by_name = |dir: &Path, name: &str| -> Option<PathBuf> {
+                let candidate = dir.join(name);
+                if candidate.join("project.toml").exists() {
+                    return Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
+                }
+                // Also check in subdirectories
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            let candidate = path.join(name);
+                            if candidate.join("project.toml").exists() {
+                                return Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
+                            }
+                        }
+                    }
+                }
+                None
+            };
+            
+            // Search in workspace root and parent directories
+            let mut search_dirs = vec![workspace_root.clone()];
+            if let Some(parent) = workspace_root.parent() {
+                search_dirs.push(parent.to_path_buf());
+            }
+            
+            // Try to find the project folder
+            let mut found_path = None;
+            for search_dir in search_dirs {
+                if let Some(found) = find_project_by_name(&search_dir, search_name) {
+                    found_path = Some(found);
+                    break;
+                }
+            }
+            
+            if let Some(found) = found_path {
+                use dunce;
+                dunce::canonicalize(&found).unwrap_or(found)
+            } else {
+                // If not found, return error
+                let error_msg = format!(
+                    "ERROR: Could not find project folder '{}' with project.toml.\n\
+                    Searched in workspace root and parent directories.",
+                    search_name
+                );
+                log_error(&error_msg);
+                std::process::exit(1);
+            }
         } else {
             // Handle the input path
             let candidate = PathBuf::from(path_arg);
@@ -446,35 +567,111 @@ pub fn run_dev() {
             }
         }
     } else if args.contains(&"--editor".to_string()) {
-        // Dev-only: editor project path (relative to workspace root)
+        // Search for perro_editor project folder (only when --editor flag is explicitly provided)
         let exe_dir = env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| env::current_dir().expect("Failed to get working directory"));
 
-        // Step upward to crate workspace root if we're inside target/
-        let workspace_root = exe_dir
-            .ancestors()
-            .find(|p| p.join("Cargo.toml").exists())
-            .unwrap_or_else(|| exe_dir.parent().unwrap_or_else(|| Path::new(".")));
-
-        let editor_path = workspace_root.join("perro_editor");
-        dunce::canonicalize(&editor_path).unwrap_or(editor_path)
+        // Helper to find a project folder by name
+        let find_project_by_name = |dir: &Path, name: &str| -> Option<PathBuf> {
+            let candidate = dir.join(name);
+            if candidate.join("project.toml").exists() {
+                return Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
+            }
+            // Also check sibling folders
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() && path.file_name().and_then(|n| n.to_str()) == Some(name) {
+                        if path.join("project.toml").exists() {
+                            return Some(dunce::canonicalize(&path).unwrap_or(path));
+                        }
+                    }
+                }
+            }
+            None
+        };
+        
+        // Search in exe directory, parent, and workspace root
+        let mut search_dirs = vec![exe_dir.clone()];
+        if let Some(parent) = exe_dir.parent() {
+            search_dirs.push(parent.to_path_buf());
+        }
+        if let Some(ws_root) = exe_dir.ancestors().find(|p| p.join("Cargo.toml").exists()) {
+            search_dirs.push(ws_root.to_path_buf());
+        }
+        
+        // Try to find the project folder
+        let mut found_path = None;
+        for search_dir in search_dirs {
+            if let Some(found) = find_project_by_name(&search_dir, "perro_editor") {
+                found_path = Some(found);
+                break;
+            }
+        }
+        
+        if let Some(found) = found_path {
+            dunce::canonicalize(&found).unwrap_or(found)
+        } else {
+            // If not found, return error
+            let error_msg = "ERROR: Could not find 'perro_editor' project folder with project.toml.\n\
+                             Searched in exe directory, parent, and workspace root.";
+            log_error(error_msg);
+            std::process::exit(1);
+        }
     } else {
-        // Dev mode: default to editor project
+        // Default behavior: look for ANY sibling folders with project.toml (no hardcoded names)
+        // This does NOT search for perro_editor or test - only generic sibling folders
         let exe_dir = env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| env::current_dir().expect("Failed to get working directory"));
 
-        // Step upward to crate workspace root if we're inside target/
-        let workspace_root = exe_dir
-            .ancestors()
-            .find(|p| p.join("Cargo.toml").exists())
-            .unwrap_or_else(|| exe_dir.parent().unwrap_or_else(|| Path::new(".")));
+        // Helper function to find project in a directory
+        let find_project_in_dir = |dir: &Path| -> Option<PathBuf> {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let project_toml = path.join("project.toml");
+                        if project_toml.exists() {
+                            return Some(dunce::canonicalize(&path).unwrap_or(path));
+                        }
+                    }
+                }
+            }
+            None
+        };
 
-        let editor_path = workspace_root.join("perro_editor");
-        dunce::canonicalize(&editor_path).unwrap_or(editor_path)
+        // Look for sibling folders with project.toml
+        // ONLY search in the exe directory - never go up to parent/workspace
+        // Search order:
+        // 1. Exe directory itself (if it contains project.toml)
+        // 2. Sibling folders in exe directory (where exe is located)
+        
+        // First check if exe directory itself is a project
+        if exe_dir.join("project.toml").exists() {
+            println!("Found project.toml in exe directory: {:?}", exe_dir);
+            dunce::canonicalize(&exe_dir).unwrap_or(exe_dir)
+        // Then check sibling folders in exe directory (where the exe actually is)
+        } else if let Some(found) = find_project_in_dir(&exe_dir) {
+            println!("Found project at sibling folder: {:?}", found);
+            found
+        } else {
+            let error_msg = format!(
+                "ERROR: No project.toml found.\n\
+                Searched locations:\n\
+                - Exe directory: {:?}\n\
+                - Sibling folders in exe directory: {:?}\n\
+                \n\
+                Please specify --path <path> or place project.toml in a sibling folder in the same directory as the executable.",
+                exe_dir,
+                exe_dir
+            );
+            log_error(&error_msg);
+            std::process::exit(1);
+        }
     };
 
     println!("Running project at {:?}", project_root);
@@ -546,7 +743,21 @@ pub fn run_dev() {
     // 2. Load project manifest (project root already set above)
 
     // 3. Load project manifest (works in both disk + pak)
-    let project = Project::load(Some(&project_root)).expect("Failed to load project.toml");
+    let project = match Project::load(Some(&project_root)) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!(
+                "ERROR: Failed to load project.toml from {:?}\n\
+                Error: {}\n\
+                \n\
+                Please ensure project.toml exists and is valid.",
+                project_root,
+                e
+            );
+            log_error(&error_msg);
+            std::process::exit(1);
+        }
+    };
 
     // 4. Update project root with real project name
     set_project_root(ProjectRoot::Disk {
@@ -568,7 +779,14 @@ pub fn run_dev() {
     }
 
     // 7. Create event loop
-    let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
+    let event_loop = match EventLoop::<Graphics>::with_user_event().build() {
+        Ok(loop_) => loop_,
+        Err(e) => {
+            let error_msg = format!("Failed to create event loop: {}", e);
+            log_error(&error_msg);
+            std::process::exit(1);
+        }
+    };
 
     // 8. Create window and Graphics before building scene
     #[cfg(not(target_arch = "wasm32"))]
@@ -614,6 +832,8 @@ pub fn run_dev() {
     let mut game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {
         Ok(scene) => scene,
         Err(e) => {
+            let error_msg = format!("Failed to build game scene: {}", e);
+            log_error(&error_msg);
             eprintln!("❌ Failed to build game scene: {}", e);
             eprintln!("   This usually means:");
             eprintln!("   1. The script DLL is missing or corrupted");

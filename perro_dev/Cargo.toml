@@ -27,6 +27,8 @@ codegen-units = 1        # full cross-crate optimization
 panic = "abort"          # remove unwinding overhead
 debug = false            # no debug info
 strip = "symbols"        # strip symbols from final binary
+incremental = false      # disable incremental compilation for better optimization
+
 
 # Per-crate tweaks (only opt-level, debug, overflow-checks allowed here)
 [profile.release.package."*"]
