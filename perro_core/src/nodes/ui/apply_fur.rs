@@ -10,7 +10,7 @@ use crate::{
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
         ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel},
-        ui_text::UIText,
+        ui_text::{TextAlignment, TextFlow, UIText},
         ui_button::UIButton,
     },
     ui_node::UINode,
@@ -415,7 +415,8 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             text.set_name(&fur.id);
             apply_base_attributes(&mut text.base, &fur.attributes);
 
-            text.props.content = fur
+            // Extract text content from children and trim whitespace
+            let text_content: String = fur
                 .children
                 .iter()
                 .filter_map(|n| {
@@ -427,6 +428,9 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 })
                 .collect::<Vec<&str>>()
                 .join("");
+            
+            // Trim the text content to remove any leading/trailing whitespace
+            text.props.content = text_content.trim().to_string();
 
             if let Some(fs) = fur
                 .attributes
@@ -434,6 +438,48 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 .or(fur.attributes.get("font-size"))
             {
                 text.props.font_size = fs.parse().unwrap_or(text.props.font_size);
+            }
+
+            // Parse text flow alignment (how text flows relative to anchor point)
+            // align=start: text starts at anchor (flows right/down)
+            // align=center: text is centered on anchor
+            // align=end: text ends at anchor (flows left/up)
+            if let Some(align_str) = fur.attributes.get("align") {
+                text.props.align = match align_str.as_ref() {
+                    "start" | "s" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "end" | "e" => TextFlow::End,
+                    // Backward compatibility: map old values
+                    "left" | "l" | "top" | "t" => TextFlow::Start,
+                    "right" | "r" | "bottom" | "b" => TextFlow::End,
+                    _ => TextFlow::Center,
+                };
+            }
+            
+            // Backward compatibility: support old align-h and align-v
+            // These are deprecated but still work for migration
+            if let Some(align_str) = fur.attributes.get("align-h") {
+                let align = match align_str.as_ref() {
+                    "left" | "l" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "right" | "r" => TextFlow::End,
+                    _ => TextFlow::Center,
+                };
+                text.props.align = align; // Use horizontal alignment as primary
+                text.props.align_h = match align_str.as_ref() {
+                    "left" | "l" => TextAlignment::Left,
+                    "center" | "c" => TextAlignment::Center,
+                    "right" | "r" => TextAlignment::Right,
+                    _ => TextAlignment::Center,
+                };
+            }
+            if let Some(align_str) = fur.attributes.get("align-v") {
+                text.props.align_v = match align_str.as_ref() {
+                    "top" | "t" => TextAlignment::Top,
+                    "center" | "c" => TextAlignment::Center,
+                    "bottom" | "b" => TextAlignment::Bottom,
+                    _ => TextAlignment::Center,
+                };
             }
 
             Some(UIElement::Text(text))
@@ -555,6 +601,60 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             // Set default text color to white if not specified (visible on colored backgrounds)
             if fur.attributes.get("text-c").is_none() {
                 button.text_props_mut().color = Color::new(255, 255, 255, 255);
+            }
+            
+            // Parse text-anchor for buttons (controls where text is positioned within button)
+            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
+                button.text_anchor = match anchor_str.as_ref() {
+                    "tl" => FurAnchor::TopLeft,
+                    "t" => FurAnchor::Top,
+                    "tr" => FurAnchor::TopRight,
+                    "l" => FurAnchor::Left,
+                    "c" => FurAnchor::Center,
+                    "r" => FurAnchor::Right,
+                    "bl" => FurAnchor::BottomLeft,
+                    "b" => FurAnchor::Bottom,
+                    "br" => FurAnchor::BottomRight,
+                    _ => FurAnchor::Center,
+                };
+            }
+            
+            // Parse text flow alignment for buttons (how text flows relative to anchor point)
+            if let Some(align_str) = fur.attributes.get("align") {
+                button.text_props_mut().align = match align_str.as_ref() {
+                    "start" | "s" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "end" | "e" => TextFlow::End,
+                    // Backward compatibility
+                    "left" | "l" | "top" | "t" => TextFlow::Start,
+                    "right" | "r" | "bottom" | "b" => TextFlow::End,
+                    _ => TextFlow::Center,
+                };
+            }
+            
+            // Backward compatibility: support old align-h and align-v
+            if let Some(align_str) = fur.attributes.get("align-h") {
+                let align = match align_str.as_ref() {
+                    "left" | "l" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "right" | "r" => TextFlow::End,
+                    _ => TextFlow::Center,
+                };
+                button.text_props_mut().align = align;
+                button.text_props_mut().align_h = match align_str.as_ref() {
+                    "left" | "l" => TextAlignment::Left,
+                    "center" | "c" => TextAlignment::Center,
+                    "right" | "r" => TextAlignment::Right,
+                    _ => TextAlignment::Center,
+                };
+            }
+            if let Some(align_str) = fur.attributes.get("align-v") {
+                button.text_props_mut().align_v = match align_str.as_ref() {
+                    "top" | "t" => TextAlignment::Top,
+                    "center" | "c" => TextAlignment::Center,
+                    "bottom" | "b" => TextAlignment::Bottom,
+                    _ => TextAlignment::Center,
+                };
             }
             
             // Set a reasonable default font size for buttons if not specified

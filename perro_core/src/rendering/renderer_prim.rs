@@ -720,6 +720,35 @@ impl PrimitiveRenderer {
         z_index: i32,
         created_timestamp: u64,
     ) {
+        self.queue_text_aligned(
+            uuid,
+            layer,
+            text,
+            font_size,
+            transform,
+            _pivot,
+            color,
+            z_index,
+            created_timestamp,
+            crate::ui_elements::ui_text::TextAlignment::Left,
+            crate::ui_elements::ui_text::TextAlignment::Center,
+        );
+    }
+
+    pub fn queue_text_aligned(
+        &mut self,
+        uuid: uuid::Uuid,
+        layer: RenderLayer,
+        text: &str,
+        font_size: f32,
+        transform: Transform2D,
+        _pivot: Vector2,
+        color: crate::structs::Color,
+        z_index: i32,
+        created_timestamp: u64,
+        align_h: crate::ui_elements::ui_text::TextAlignment,
+        align_v: crate::ui_elements::ui_text::TextAlignment,
+    ) {
         // DISABLED: Occlusion culling for text - O(n²) performance bottleneck
         // The GPU can handle overdraw efficiently
         // if layer == RenderLayer::World2D {
@@ -740,12 +769,66 @@ impl PrimitiveRenderer {
         // }
         
         if let Some(ref atlas) = self.font_atlas {
+            let scale = font_size / atlas.design_size;
+
+            // First pass: measure text width
+            let mut text_width = 0.0;
+            for ch in text.chars() {
+                if let Some(g) = atlas.get_glyph(ch) {
+                    text_width += g.metrics.advance_width as f32 * scale;
+                }
+            }
+
+            // Adjust starting position based on horizontal alignment
             let mut cursor_x = transform.position.x;
-            let baseline_y = transform.position.y;
+            match align_h {
+                crate::ui_elements::ui_text::TextAlignment::Left => {
+                    // Start at the left edge (no adjustment needed)
+                }
+                crate::ui_elements::ui_text::TextAlignment::Center => {
+                    // Center the text: move left by half the text width
+                    cursor_x -= text_width * 0.5;
+                }
+                crate::ui_elements::ui_text::TextAlignment::Right => {
+                    // Right align: move left by the full text width
+                    cursor_x -= text_width;
+                }
+                _ => {
+                    // Top/Bottom are invalid for horizontal alignment, default to center
+                    cursor_x -= text_width * 0.5;
+                }
+            }
+
+            // Adjust vertical position based on vertical alignment
+            // For vertical alignment, we use the font's line metrics
+            // Text block extends from (baseline - ascent) to (baseline + descent)
+            let baseline_y = match align_v {
+                crate::ui_elements::ui_text::TextAlignment::Top => {
+                    // Position baseline so text top aligns with position
+                    // Top of text = baseline - ascent, so: position.y = baseline - ascent * scale
+                    transform.position.y + atlas.ascent * scale
+                }
+                crate::ui_elements::ui_text::TextAlignment::Center => {
+                    // Center vertically: position is where the center of the text block should be
+                    // Text block center = baseline + (descent - ascent) * scale * 0.5
+                    // We want center = position.y, so: baseline = position.y - (descent - ascent) * scale * 0.5
+                    // Simplifying: baseline = position.y - (descent * scale) / 2 + (ascent * scale) / 2
+                    // Or: baseline = position.y + (ascent - descent) * scale * 0.5
+                    transform.position.y + (atlas.ascent - atlas.descent) * scale * 0.5
+                }
+                crate::ui_elements::ui_text::TextAlignment::Bottom => {
+                    // Position baseline so text bottom aligns with position
+                    // Bottom of text = baseline + descent, so: position.y = baseline + descent * scale
+                    transform.position.y - atlas.descent * scale
+                }
+                _ => {
+                    // Left/Right are invalid for vertical alignment, default to center
+                    transform.position.y + (atlas.ascent - atlas.descent) * scale * 0.5
+                }
+            };
+
             // Pre-allocate with estimated capacity (most characters will produce glyphs)
             let mut instances = Vec::with_capacity(text.chars().count());
-
-            let scale = font_size / atlas.design_size;
 
             fn srgb_to_linear(c: f32) -> f32 {
                 if c <= 0.04045 {
@@ -770,11 +853,25 @@ impl PrimitiveRenderer {
                     let gh = m.height as f32 * scale;
 
                     if gw > 0.0 && gh > 0.0 {
+                        // bearing_x is xmin (typically negative or zero), offset from origin to left edge
                         let gx = cursor_x + g.bearing_x * scale;
-                        let gy = baseline_y - g.bearing_y * scale + atlas.ascent * scale;
-
+                        
+                        // In fontdue: ymin is bottom edge (negative), ymax = ymin + height (positive)
+                        // Glyph bitmap in atlas starts at top-left of bounding box
+                        // Glyph top edge Y = baseline_y + (ymin + height) * scale = baseline_y + ymax * scale
+                        // Glyph center Y = baseline_y + (ymin + height) * scale - gh * 0.5
+                        // Simplifying: center Y = baseline_y + ymin * scale + gh * 0.5
+                        // Or: center Y = baseline_y + (ymin + height/2) * scale
+                        let cy = baseline_y + g.bearing_y * scale + gh * 0.5;
+                        
+                        // bearing_x positions the left edge, center is at left + half width
                         let cx = gx + gw * 0.5;
-                        let cy = gy + gh * 0.5;
+                        
+                        // Debug first glyph only
+                        if text.chars().next() == Some(ch) {
+                            println!("First glyph: ch='{}', baseline_y={}, bearing_y={}, ascent={}, scale={}, gh={}, cy={}", 
+                                ch, baseline_y, g.bearing_y, atlas.ascent, scale, gh, cy);
+                        }
 
                         let glyph_transform = Transform2D {
                             position: Vector2::new(cx, cy),

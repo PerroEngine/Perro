@@ -1449,7 +1449,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     let cam_uniform = CameraUniform {
         virtual_size: [virtual_width, virtual_height],
         ndc_scale: ndc_scale.into(),
-        zoom: 1.0,
+        zoom: 0.0, // 0.0 = no zoom (UI should not be zoomed)
         _pad0: 0.0,
         _pad1: [0.0, 0.0],
         view: view.to_cols_array_2d(),

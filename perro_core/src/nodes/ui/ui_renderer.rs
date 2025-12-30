@@ -643,11 +643,19 @@ pub fn update_global_transforms_with_layout(
 
         if let Some(pid) = parent_id {
             if let Some(parent) = elements.get(&pid) {
-                (*parent.get_size(), parent.get_z_index())
+                let size = *parent.get_size();
+
+               
+                (size, parent.get_z_index())
             } else {
                 (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
             }
         } else {
+            // This is a root element - check its own size
+            if let Some(element) = elements.get(current_id) {
+                let size = *element.get_size();
+              
+            }
             (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
         }
     };
@@ -749,6 +757,12 @@ pub fn update_global_transforms_with_layout(
 
         // Re-borrow for the rest of the function
         if let Some(element) = elements.get_mut(current_id) {
+            // Calculate actual text size for text elements (before anchoring)
+            if let UIElement::Text(text) = element {
+                let text_size = calculate_text_size(&text.props.content, text.props.font_size);
+                element.set_size(text_size);
+            }
+            
             // Local transform
             let mut local = element.get_transform().clone();
             let child_size = *element.get_size();
@@ -761,16 +775,21 @@ pub fn update_global_transforms_with_layout(
             } else {
                 // STEP 2: Anchor positioning (only if NOT in a layout)
                 // For anchoring, we want to use the immediate parent's size for positioning
+                // The parent's local coordinate system has its center at (0,0)
+                // Parent bounds: (-parent_size.x/2, -parent_size.y/2) to (parent_size.x/2, parent_size.y/2)
+                // NOTE: If panels appear "double off", try using parent_size directly (current) or half (if coordinate system is different)
                 let anchor_reference_size = parent_size;
-
+                
                 let (anchor_x, anchor_y) = match element.get_anchor() {
                     // Corners - need to position the element so its corner aligns with parent corner
                     FurAnchor::TopLeft => {
-                        // Parent's top-left corner
+                        // Parent's top-left corner in parent's local space
                         let parent_left = -anchor_reference_size.x * 0.5;
                         let parent_top = anchor_reference_size.y * 0.5;
 
                         // Position element so its top-left corner is at parent's top-left
+                        // Child's top-left relative to its pivot: (child_size.x * (1.0 - pivot.x), -child_size.y * pivot.y)
+                        // So child's center should be at: parent_corner - child_top_left_offset
                         let offset_x = parent_left + child_size.x * (1.0 - pivot.x);
                         let offset_y = parent_top - child_size.y * pivot.y;
                         (offset_x, offset_y)
@@ -827,11 +846,37 @@ pub fn update_global_transforms_with_layout(
                 };
                 layout_offset.x = anchor_x;
                 layout_offset.y = anchor_y;
+                
+             
             }
 
             // STEP 3: Apply layout/anchor offset + user translation
             local.position.x += layout_offset.x;
             local.position.y += layout_offset.y;
+            
+            // For text elements, adjust position to account for baseline positioning
+            // Bottom anchors: move down by full height (text bottom should be at anchor)
+            // Top anchors: move down by 1.5x height (text top should be at anchor, needs more adjustment)
+            // Center: move down by 50% height (text center should be at anchor, needs slight adjustment)
+            // Other: move down by full height (same as bottom)
+            if let UIElement::Text(_) = element {
+                match element.get_anchor() {
+                    crate::fur_ast::FurAnchor::Top | 
+                    crate::fur_ast::FurAnchor::TopLeft | 
+                    crate::fur_ast::FurAnchor::TopRight => {
+                        // For top anchors, move down by 1.5x height to account for baseline
+                        local.position.y -= child_size.y * 1.5;
+                    }
+                    crate::fur_ast::FurAnchor::Center => {
+                        local.position.y -= child_size.y * 1.25;
+                    }
+                    _ => {
+                        // For bottom/other anchors, move down by full height
+                        local.position.y -= child_size.y;
+                    }
+                }
+            }
+
 
             // STEP 4: Combine with parent transform
             let mut global = Transform2D::default();
@@ -844,6 +889,8 @@ pub fn update_global_transforms_with_layout(
             global.rotation = parent_global.rotation + local.rotation;
 
             element.set_global_transform(global.clone());
+            
+     
 
             // Set inherited z-index: local z + parent z
             let local_z = element.get_z_index(); // Get the element's explicitly set z-index
@@ -859,7 +906,136 @@ pub fn update_global_transforms_with_layout(
             // Get children list before dropping the mutable borrow
             let children_ids = element.get_children().to_vec();
 
-            // STEP 6: Recurse into children with their layout positions
+            // STEP 6: Handle button children specially (panel and text are not in elements map)
+            // They should be positioned like regular children using the anchor system
+            if let UIElement::Button(button) = element {
+                // Sync button size to panel and text (they should match the button's size)
+                // This must happen after the button's size is finalized in layout
+                button.panel.base.size = button.base.size;
+                button.text.base.size = button.base.size;
+                
+                // Use the button's size as the parent size for anchor calculations
+                let button_size = button.base.size;
+                
+              
+                
+                // Helper function to calculate anchor offset (same logic as regular children)
+                // This matches the anchor calculation in update_global_transforms_with_layout
+                // The parent's center is at (0, 0) in parent's local space, regardless of pivot
+                let calculate_anchor_offset = |child_size: Vector2, child_pivot: Vector2, anchor: FurAnchor, parent_size: Vector2| -> Vector2 {
+                    match anchor {
+                        FurAnchor::TopLeft => {
+                            // Parent's top-left corner
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            // Position child so its top-left corner is at parent's top-left
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::TopRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::Top => {
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Bottom => {
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Left => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Right => {
+                            let parent_right = parent_size.x * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Center => {
+                            // Center anchor: no offset needed, pivot points align
+                            Vector2::new(0.0, 0.0)
+                        }
+                    }
+                };
+                
+                // Process panel - positioned like a child using button's anchor
+                let panel_size = button.panel.base.size;
+                let panel_pivot = button.panel.base.pivot;
+                let panel_anchor = button.panel.base.anchor;
+                let panel_local = button.panel.base.transform.clone();
+                
+                // Calculate anchor offset (same as regular children - parent center is at 0,0)
+                let panel_anchor_offset = calculate_anchor_offset(panel_size, panel_pivot, panel_anchor, button_size);
+                
+                // Apply anchor offset + local transform
+                let mut panel_local_pos = panel_local.position;
+                panel_local_pos.x += panel_anchor_offset.x;
+                panel_local_pos.y += panel_anchor_offset.y;
+                
+                // Combine with button's global transform
+                let mut panel_global = Transform2D::default();
+                panel_global.scale.x = global.scale.x * panel_local.scale.x;
+                panel_global.scale.y = global.scale.y * panel_local.scale.y;
+                panel_global.position.x = global.position.x + (panel_local_pos.x * global.scale.x);
+                panel_global.position.y = global.position.y + (panel_local_pos.y * global.scale.y);
+                panel_global.rotation = global.rotation + panel_local.rotation;
+                
+                button.panel.base.global_transform = panel_global;
+                button.panel.base.z_index = global_z;
+                
+              
+                // Process text - positioned like a child using button's text_anchor
+                let text_size = button.text.base.size;
+                let text_pivot = button.text.base.pivot;
+                let text_anchor = button.text_anchor;
+                let text_local = button.text.base.transform.clone();
+                
+                // Calculate anchor offset (same as regular children - parent center is at 0,0)
+                let text_anchor_offset = calculate_anchor_offset(text_size, text_pivot, text_anchor, button_size);
+                
+                // Apply anchor offset + local transform
+                let mut text_local_pos = text_local.position;
+                text_local_pos.x += text_anchor_offset.x;
+                text_local_pos.y += text_anchor_offset.y;
+                
+                // Combine with button's global transform
+                let mut text_global = Transform2D::default();
+                text_global.scale.x = global.scale.x * text_local.scale.x;
+                text_global.scale.y = global.scale.y * text_local.scale.y;
+                text_global.position.x = global.position.x + (text_local_pos.x * global.scale.x);
+                text_global.position.y = global.position.y + (text_local_pos.y * global.scale.y);
+                text_global.rotation = global.rotation + text_local.rotation;
+                
+                button.text.base.global_transform = text_global;
+                button.text.base.z_index = global_z + 1; // Text renders on top
+                
+              
+            }
+
+            // STEP 7: Recurse into regular children with their layout positions
             for child_id in children_ids {
                 update_global_transforms_with_layout(
                     elements,
@@ -880,6 +1056,8 @@ pub fn update_ui_layout(ui_node: &mut UINode) {
             calculate_all_content_sizes(elements, root_id);
         }
 
+     
+
         let empty_layout_map = HashMap::new();
         for root_id in root_ids {
             update_global_transforms_with_layout(
@@ -889,12 +1067,21 @@ pub fn update_ui_layout(ui_node: &mut UINode) {
                 &empty_layout_map,
                 0,
             );
+          
         }
     }
 }
 
 fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
     if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
+        // First, sync all buttons' base properties to their panel/text
+        // This must happen before layout calculation
+        for (_, element) in elements.iter_mut() {
+            if let UIElement::Button(button) = element {
+                button.sync_base_to_children();
+            }
+        }
+        
         for root_id in root_ids {
             calculate_all_content_sizes_cached(elements, root_id, cache);
         }
@@ -933,12 +1120,7 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     let timestamp = ui_node.base.created_timestamp;
 
     if let Some(elements) = &mut ui_node.elements {
-        // First, sync all buttons' base properties to their panel/text
-        for (_, element) in elements.iter_mut() {
-            if let UIElement::Button(button) = element {
-                button.sync_base_to_children();
-            }
-        }
+        // Buttons are already synced in update_ui_layout_cached, so we can render directly
         
         // Convert IndexMap values to Vec for parallel processing
         let elements_vec: Vec<_> = elements.iter().collect();
@@ -976,6 +1158,8 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
     let z_index = panel.z_index;
     let bg_id = panel.id;
 
+   
+
     gfx.renderer_ui.queue_panel(
         &mut gfx.renderer_prim,
         bg_id,
@@ -1011,6 +1195,38 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
 }
 
 
+/// Calculate text size from font metrics
+/// Returns (width, height) where height = (ascent + descent) * scale
+fn calculate_text_size(text: &str, font_size: f32) -> Vector2 {
+    use fontdue::Font as Fontdue;
+    use fontdue::FontSettings;
+    
+    const DESIGN_SIZE: f32 = 64.0; // Same as used in FontAtlas::new
+    
+    if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
+        let fd_font = Fontdue::from_bytes(font.data, FontSettings::default())
+            .expect("Invalid font data");
+        
+        // Get line metrics for height calculation
+        if let Some(line_metrics) = fd_font.horizontal_line_metrics(DESIGN_SIZE) {
+            let scale = font_size / DESIGN_SIZE;
+            let text_height = (line_metrics.ascent + line_metrics.descent) * scale;
+            
+            // Calculate text width by measuring each character
+            let mut text_width = 0.0;
+            for ch in text.chars() {
+                let (metrics, _) = fd_font.rasterize(ch, DESIGN_SIZE);
+                text_width += metrics.advance_width as f32 * scale;
+            }
+            
+            return Vector2::new(text_width, text_height);
+        }
+    }
+    
+    // Fallback: use font_size as height if we can't get metrics
+    Vector2::new(font_size * text.len() as f32 * 0.6, font_size)
+}
+
 // Optimized text rendering - only regenerate atlas when font properties change
 fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
     // Skip rendering if text content is empty
@@ -1040,7 +1256,20 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
         }
     }
 
-    gfx.renderer_ui.queue_text(
+    // Convert TextFlow to horizontal alignment only
+    // align parameter only affects horizontal text flow (left/center/right)
+    // Vertical alignment is always Center (text is positioned at the anchor point's y coordinate)
+    // Swapped: align=s (Start) means text starts at anchor (right-align for right anchors, left-align for left)
+    //          align=e (End) means text ends at anchor (left-align for right anchors, right-align for left)
+    let align_h = match text.props.align {
+        crate::ui_elements::ui_text::TextFlow::Start => crate::ui_elements::ui_text::TextAlignment::Right,  // Swapped: Start = Right (text ends at anchor, starts flowing left)
+        crate::ui_elements::ui_text::TextFlow::Center => crate::ui_elements::ui_text::TextAlignment::Center,
+        crate::ui_elements::ui_text::TextFlow::End => crate::ui_elements::ui_text::TextAlignment::Left,    // Swapped: End = Left (text starts at anchor, flows right)
+    };
+    // Vertical alignment is always Center - align parameter doesn't affect vertical positioning
+    let align_v = crate::ui_elements::ui_text::TextAlignment::Center;
+    
+    gfx.renderer_ui.queue_text_aligned(
         &mut gfx.renderer_prim,
         text.id,
         &text.props.content,
@@ -1050,5 +1279,7 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
         text.props.color,
         text.z_index,
         timestamp,
+        align_h,
+        align_v,
     );
 }

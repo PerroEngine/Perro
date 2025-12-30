@@ -1,7 +1,7 @@
 use crate::{
     rendering::{PrimitiveRenderer, RenderLayer, TextureManager},
     structs2d::{Transform2D, Vector2},
-    ui_elements::ui_container::CornerRadius,
+    ui_elements::{ui_container::CornerRadius, ui_text::TextAlignment},
 };
 use wgpu::{Device, Queue, RenderPass};
 
@@ -91,6 +91,35 @@ impl RendererUI {
             color,
             z_index,
             created_timestamp,
+        );
+    }
+
+    pub fn queue_text_aligned(
+        &mut self,
+        primitive_renderer: &mut PrimitiveRenderer,
+        uuid: uuid::Uuid,
+        text: &str,
+        font_size: f32,
+        transform: Transform2D,
+        pivot: Vector2,
+        color: crate::structs::Color,
+        z_index: i32,
+        created_timestamp: u64,
+        align_h: TextAlignment,
+        align_v: TextAlignment,
+    ) {
+        primitive_renderer.queue_text_aligned(
+            uuid,
+            RenderLayer::UI,
+            text,
+            font_size,
+            transform,
+            pivot,
+            color,
+            z_index,
+            created_timestamp,
+            align_h,
+            align_v,
         );
     }
 

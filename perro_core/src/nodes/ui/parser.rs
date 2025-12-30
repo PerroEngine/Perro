@@ -308,9 +308,7 @@ impl<'a> FurParser<'a> {
 
         // ---- RAW TEXT HANDLING - COMPLETELY BYPASS TOKENIZATION
         if tag_name == "Text" && !self_closing {
-            // NOW consume the ']' manually in the lexer
-            self.lexer.advance(); // consume ']'
-
+            // For Text elements, extract_raw_text_content will handle consuming ']' and extracting content
             let content = self.extract_raw_text_content(tag_name)?;
 
             self.element_stack.pop();
@@ -377,11 +375,15 @@ impl<'a> FurParser<'a> {
 
     // NEW METHOD: Extract text content without any tokenization
     fn extract_raw_text_content(&mut self, tag_name: &str) -> Result<String, String> {
+        // When current_token is RBracket, the lexer has already advanced past ']'
+        // So lexer.pos is already pointing at the first character of content
+        // Use it directly as content_start
+        let input = self.lexer.input;
         let content_start = self.lexer.pos;
         let closing_tag = format!("[/{}]", tag_name);
 
         // Find the closing tag position in the remaining input
-        let remaining_input = &self.lexer.input[content_start..];
+        let remaining_input = &input[content_start..];
 
         if let Some(closing_pos) = remaining_input.find(&closing_tag) {
             // Extract the EXACT raw content - no processing yet

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    fur_ast::FurAnchor,
     impl_ui_element,
+    structs2d::Vector2,
     ui_element::BaseUIElement,
     ui_elements::{
         ui_container::UIPanel,
@@ -19,6 +21,11 @@ pub struct UIButton {
     // Composed elements - the button IS a panel with text
     pub panel: UIPanel,
     pub text: UIText,
+    
+    // Text anchor - controls where text is positioned within the button
+    // Defaults to Center if not specified
+    #[serde(default)]
+    pub text_anchor: FurAnchor,
     
     // Internal state for mouse interactions (not serialized)
     #[serde(skip)]
@@ -43,6 +50,7 @@ impl Default for UIButton {
             base,
             panel,
             text,
+            text_anchor: FurAnchor::Center, // Default text anchor to center
             is_hovered: false,
             is_pressed: false,
             was_pressed_last_frame: false,
@@ -77,17 +85,21 @@ impl UIButton {
         self.panel.base.transform = self.base.transform;
         self.text.base.transform = self.base.transform;
         
-        self.panel.base.global_transform = self.base.global_transform;
-        self.text.base.global_transform = self.base.global_transform;
+        // Don't sync global_transform here - it's calculated in the layout system
+        // self.panel.base.global_transform = self.base.global_transform;
+        // self.text.base.global_transform = self.base.global_transform;
         
         self.panel.base.size = self.base.size;
         self.text.base.size = self.base.size;
         
         self.panel.base.pivot = self.base.pivot;
-        self.text.base.pivot = self.base.pivot;
+        // Text pivot is always center so text is centered on its anchor point
+        self.text.base.pivot = Vector2::new(0.5, 0.5);
         
+        // Panel uses the button's anchor (visual container)
         self.panel.base.anchor = self.base.anchor;
-        self.text.base.anchor = self.base.anchor;
+        // Text uses the button's text_anchor (defaults to center)
+        self.text.base.anchor = self.text_anchor;
         
         self.panel.base.modulate = self.base.modulate;
         self.text.base.modulate = self.base.modulate;

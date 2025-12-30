@@ -1,9 +1,35 @@
 [UI]
 
 
-[Button id=bob sz=5% bg=red-5 rounding=0.1 fsz=50]
-    Hello
-[/Button]
+[Panel id=bob sz=15% bg=red-5 rounding=0.1 anchor=c]
+    [Text fsz=25 align=c anchor=c]
+    Center
+    [/Text]
+[/Panel]
+
+[Panel id=bob2 sz=15% bg=blue-5 rounding=0.1 anchor=tl]
+    [Text fsz=25 align=c anchor=tl]TopLeft[/Text]
+[/Panel]
+
+[Panel id=bob3 sz=15% bg=green-5 rounding=0.1 anchor=tr]
+    [Text fsz=25 align=c anchor=tr]TopRight[/Text]
+[/Panel]
+
+[Panel id=bob4 sz=15% bg=yellow-5 rounding=0.1 anchor=bl]
+    [Text fsz=25 align=c anchor=bl]BottomLeft[/Text]
+[/Panel]
+
+[Panel id=bob5 sz=15% bg=purple-5 rounding=0.1 anchor=br]
+    [Text fsz=25 align=c anchor=br]BottomRight[/Text]
+[/Panel]
+
+[Panel id=bob6 sz=15% bg=orange-5 rounding=0.1 anchor=t]
+    [Text fsz=25 align=c anchor=t]Top[/Text]
+[/Panel]
+
+[Panel id=bob7 sz=15% bg=cyan-5 rounding=0.1 anchor=b]
+    [Text fsz=25 align=c anchor=b]Bottom[/Text]
+[/Panel]
 
 
 [/UI]
