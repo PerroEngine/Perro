@@ -1,7 +1,7 @@
 [UI]
 
 
-[Button id=bob sz=20% bg=red-5 rounding=0.1 fsz=50]
+[Button id=bob sz=5% bg=red-5 rounding=0.1 fsz=50]
     Hello
 [/Button]
 

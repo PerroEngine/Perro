@@ -206,192 +206,130 @@ impl DerefMut for UINode {
 
 impl UINode {
     pub fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
-        // Only process if UI is visible and has elements
         if !self.visible {
             return;
         }
-        
+    
         let elements = match &mut self.elements {
             Some(e) => e,
             None => return,
         };
-        
-        // Get mouse position in screen space (pixels)
-        let screen_mouse_pos = if let Some(mgr) = api.scene.get_input_manager() {
-            let mgr = mgr.lock().unwrap();
-            mgr.get_mouse_position()
-        } else {
-            return;
+    
+        // -----------------------------------------
+        // Mouse → VIRTUAL UI SPACE
+        // -----------------------------------------
+        let screen_mouse = match api.scene.get_input_manager() {
+            Some(mgr) => {
+                let mgr = mgr.lock().unwrap();
+                mgr.get_mouse_position()
+            }
+            None => return,
         };
-        
-        // Ignore initial (0, 0) mouse position - mouse hasn't moved yet
-        // This prevents false hover detection at startup
-        if screen_mouse_pos.x == 0.0 && screen_mouse_pos.y == 0.0 {
-            // Reset all button hover states to false on first frame
-            if let Some(elements) = &mut self.elements {
-                for (_, element) in elements.iter_mut() {
-                    if let UIElement::Button(button) = element {
-                        button.is_hovered = false;
-                        button.is_pressed = false;
-                    }
+    
+        if screen_mouse.x == 0.0 && screen_mouse.y == 0.0 {
+            for (_, el) in elements.iter_mut() {
+                if let UIElement::Button(b) = el {
+                    b.is_hovered = false;
+                    b.is_pressed = false;
                 }
             }
             return;
         }
-        
-        // Convert screen coordinates to UI virtual coordinates
-        // Get actual window size from graphics
-        let (window_width, window_height) = if let Some(gfx) = api.gfx.as_ref() {
-            (gfx.surface_config.width as f32, gfx.surface_config.height as f32)
-        } else {
-            // Fallback to default if graphics not available
-            (1920.0, 1080.0)
-        };
-        
-        // Convert screen to UI virtual coordinates
-        // UI uses centered coordinate system: (0,0) is center, ranges from -width/2 to +width/2
-        let virtual_aspect = VIRTUAL_WIDTH / VIRTUAL_HEIGHT;
-        let window_aspect = window_width / window_height;
-        
-        let (scale_x, scale_y) = if window_aspect > virtual_aspect {
-            (virtual_aspect / window_aspect, 1.0)
-        } else {
-            (1.0, window_aspect / virtual_aspect)
-        };
-        
-        // Normalize screen position to [0, 1]
-        // Screen coordinates: (0,0) is top-left, Y increases downward
-        let normalized_x = screen_mouse_pos.x / window_width;
-        let normalized_y = screen_mouse_pos.y / window_height;
-        
-        // Convert to virtual space coordinates (centered at 0,0)
-        // UI coordinate system: (0,0) is center, Y increases upward (positive Y is up)
-        // So we need to invert Y: screen top (y=0) -> virtual top (y=+540)
+    
+        let (window_w, window_h) = api
+            .gfx
+            .as_ref()
+            .map(|g| {
+                (
+                    g.surface_config.width as f32,
+                    g.surface_config.height as f32,
+                )
+            })
+            .unwrap_or((1920.0, 1080.0));
+    
         let mouse_pos = Vector2::new(
-            (normalized_x - 0.5) * VIRTUAL_WIDTH * scale_x,
-            (0.5 - normalized_y) * VIRTUAL_HEIGHT * scale_y, // Inverted Y
+            (screen_mouse.x / window_w - 0.5) * VIRTUAL_WIDTH,
+            (0.5 - screen_mouse.y / window_h) * VIRTUAL_HEIGHT,
         );
-        
-        // Get mouse button state
-        let mouse_pressed = if let Some(mgr) = api.scene.get_input_manager() {
-            let mgr = mgr.lock().unwrap();
-            use crate::input::manager::MouseButton;
-            mgr.is_mouse_button_pressed(MouseButton::Left)
-        } else {
-            false
-        };
-        
-        // Check all button elements for mouse interaction
+    
+        // -----------------------------------------
+        // Mouse button
+        // -----------------------------------------
+        let mouse_pressed = api
+            .scene
+            .get_input_manager()
+            .map(|mgr| {
+                let mgr = mgr.lock().unwrap();
+                use crate::input::manager::MouseButton;
+                mgr.is_mouse_button_pressed(MouseButton::Left)
+            })
+            .unwrap_or(false);
+    
+        // -----------------------------------------
+        // Hit testing (FINAL)
+        // -----------------------------------------
         for (_, element) in elements.iter_mut() {
-            if let UIElement::Button(button) = element {
-                // Skip if button is not visible
-                if !button.get_visible() {
-                    continue;
-                }
-                
-                // Get signal base name (button's ID/name) - needed for debug output
-                // Clone to avoid borrow issues
-                let signal_base = button.get_name().to_string();
-                
-                // Get button bounds in virtual space
-                // Note: button.get_size() should return the resolved size (not percentage)
-                // The size is already in virtual space (1920x1080), and the renderer handles scaling
-                let button_pos = button.global_transform.position;
-                let button_size = *button.get_size(); // Use size directly - don't apply scale here
-                let pivot = *button.get_pivot();
-                
-                // Calculate button bounds matching the shader's pivot logic
-                // Shader: pivot_offset = (pivot - 0.5) * size, then vertex_pos - pivot_offset
-                // This means: if pivot is (0.5, 0.5), position is at center
-                //            if pivot is (0.0, 0.0), position is at bottom-left
-                
-                // Calculate the center of the button (accounting for pivot)
-                // The button_pos is at the pivot point, so we need to find the center
-                let pivot_offset_x = (pivot.x - 0.5) * button_size.x;
-                let pivot_offset_y = (pivot.y - 0.5) * button_size.y;
-                
-                // The center is offset from the pivot position
-                // For center pivot (0.5, 0.5): offset is 0, so center = position
-                // For bottom-left pivot (0.0, 0.0): offset is (-half_width, -half_height), so center = position + (half_width, half_height)
-                let center_x = button_pos.x - pivot_offset_x;
-                let center_y = button_pos.y - pivot_offset_y;
-                
-                // Calculate bounds from center
-                let half_width = button_size.x * 0.5;
-                let half_height = button_size.y * 0.5;
-                
-                // In Y-up coordinate system:
-                // - left/right: X increases to the right (standard)
-                // - top/bottom: Y increases upward, so top has larger Y, bottom has smaller Y
-                let left = center_x - half_width;
-                let right = center_x + half_width;
-                let bottom = center_y - half_height; // Smaller Y (bottom)
-                let top = center_y + half_height;   // Larger Y (top)
-                
-                // Store previous state BEFORE updating (critical for state transitions)
-                let was_hovered = button.is_hovered;
-                let was_pressed = button.is_pressed;
-                
-                // Check if mouse is over button
-                // In Y-up system: mouse.y must be between bottom (smaller) and top (larger)
-                let is_hovered = mouse_pos.x >= left && mouse_pos.x <= right &&
-                                 mouse_pos.y >= bottom && mouse_pos.y <= top;
-                
-                // Debug: Only print on hover state changes for "bob" button
-                if signal_base == "bob" && is_hovered != was_hovered {
-                    println!("Button '{}' hover changed: {} -> {}", signal_base, was_hovered, is_hovered);
-                    println!("  Mouse: {:?}, Bounds: left={:.1}, right={:.1}, bottom={:.1}, top={:.1}", 
-                        mouse_pos, left, right, bottom, top);
-                    println!("  Button: pos={:?}, size={:?}, scale={:?}, pivot={:?}", 
-                        button_pos, button_size, button.global_transform.scale, pivot);
-                    println!("  Center: ({:.1}, {:.1}), half_size: ({:.1}, {:.1})", 
-                        center_x, center_y, half_width, half_height);
-                }
-                
-                // Debug: Print every frame
-                
-                // Update button state immediately
-                button.is_hovered = is_hovered;
-                button.is_pressed = is_hovered && mouse_pressed;
-                
-                // Emit hover signals - check state transitions
-                // Only emit if there's an actual state change
-                if is_hovered != was_hovered {
-                    if is_hovered {
-                        // Mouse entered button (transition: not hovered -> hovered)
-                        println!("Button hovered: {} (mouse: {:?}, bounds: [{:.1}, {:.1}] to [{:.1}, {:.1}], was_hovered: {})", 
-                            signal_base, mouse_pos, left, top, right, bottom, was_hovered);
-                        let signal = format!("{}_Hovered", signal_base);
-                        let signal_id = string_to_u64(&signal);
-                        api.emit_signal_id(signal_id, &[]);
-                    } else {
-                        // Mouse exited button (transition: hovered -> not hovered)
-                        println!("Button not hovered: {} (mouse: {:?}, bounds: [{:.1}, {:.1}] to [{:.1}, {:.1}], was_hovered: {})", 
-                            signal_base, mouse_pos, left, top, right, bottom, was_hovered);
-                        let signal = format!("{}_NotHovered", signal_base);
-                        let signal_id = string_to_u64(&signal);
-                        api.emit_signal_id(signal_id, &[]);
-                    }
-                }
-                
-                // Emit press/release signals
-                if button.is_pressed && !was_pressed {
-                    // Button was just pressed
-                    println!("Button pressed: {}", signal_base);
-                    let signal = format!("{}_Pressed", signal_base);
-                    let signal_id = string_to_u64(&signal);
-                    api.emit_signal_id(signal_id, &[]);
-                } else if !button.is_pressed && was_pressed && was_hovered {
-                    // Button was just released (only if it was pressed and still hovered)
-                    println!("Button released: {}", signal_base);
-                    let signal = format!("{}_Released", signal_base);
-                    let signal_id = string_to_u64(&signal);
-                    api.emit_signal_id(signal_id, &[]);
-                }
-                
-                // Store previous frame state
-                button.was_pressed_last_frame = button.is_pressed;
+            let UIElement::Button(button) = element else {
+                continue;
+            };
+    
+            if !button.get_visible() {
+                continue;
             }
+    
+            let was_hovered = button.is_hovered;
+            let was_pressed = button.is_pressed;
+    
+            // ✅ SIZE IS HALF-EXTENTS — FIX IT
+            let half_size = *button.get_size();
+            let full_size = Vector2::new(
+                half_size.x * 2.0,
+                half_size.y * 2.0,
+            );
+    
+            let center = button.global_transform.position;
+    
+            let half_w = full_size.x * 0.5;
+            let half_h = full_size.y * 0.5;
+    
+            let left = center.x - half_w;
+            let right = center.x + half_w;
+            let bottom = center.y - half_h;
+            let top = center.y + half_h;
+    
+            let is_hovered =
+                mouse_pos.x >= left &&
+                mouse_pos.x <= right &&
+                mouse_pos.y >= bottom &&
+                mouse_pos.y <= top;
+    
+            button.is_hovered = is_hovered;
+            button.is_pressed = is_hovered && mouse_pressed;
+    
+            let name = button.get_name();
+    
+            if is_hovered != was_hovered {
+                let signal = if is_hovered {
+                    format!("{}_Hovered", name)
+                } else {
+                    format!("{}_NotHovered", name)
+                };
+                api.emit_signal_id(string_to_u64(&signal), &[]);
+            }
+    
+            if button.is_pressed && !was_pressed {
+                api.emit_signal_id(
+                    string_to_u64(&format!("{}_Pressed", name)),
+                    &[],
+                );
+            } else if !button.is_pressed && was_pressed && was_hovered {
+                api.emit_signal_id(
+                    string_to_u64(&format!("{}_Released", name)),
+                    &[],
+                );
+            }
+    
+            button.was_pressed_last_frame = button.is_pressed;
         }
     }
 }

@@ -58,3 +58,4 @@ impl UIText {
         self.props.color = color;
     }
 }
+
