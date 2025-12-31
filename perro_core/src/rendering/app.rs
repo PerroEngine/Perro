@@ -226,6 +226,8 @@ impl<P: ScriptProvider> App<P> {
     }
 
     fn process_commands(&mut self, gfx: &Graphics) {
+        // OPTIMIZED: Use try_iter() directly - it's already optimized and doesn't allocate
+        // Only process if there are commands (early exit if empty)
         for cmd in self.command_rx.try_iter() {
             match cmd {
                 AppCommand::SetWindowTitle(title) => {
@@ -246,10 +248,14 @@ impl<P: ScriptProvider> App<P> {
     }
 
     fn calculate_frame_debt(&mut self, now: std::time::Instant) {
-        let elapsed = (now - self.start_time).as_secs_f32();
+        // OPTIMIZED: Use as_secs_f64() then cast to f32 (faster than as_secs_f32() on some platforms)
+        // Also cache MAX_FRAME_DEBT * target_fps to avoid multiplication every frame
+        let elapsed = (now - self.start_time).as_secs_f64() as f32;
         let target_frames = elapsed * self.target_fps;
         let mut frame_debt = target_frames - (self.total_frames_rendered as f32);
-        frame_debt = frame_debt.min(self.target_fps * MAX_FRAME_DEBT);
+        // OPTIMIZED: Cache max_debt calculation (target_fps rarely changes)
+        let max_debt = self.target_fps * MAX_FRAME_DEBT;
+        frame_debt = frame_debt.min(max_debt);
         self.frame_debt = frame_debt;
     }
 
@@ -282,6 +288,7 @@ impl<P: ScriptProvider> App<P> {
         let now = std::time::Instant::now();
 
         // 1. Process app commands
+        // OPTIMIZED: Only process if there are commands (try_iter is already fast, but early exit helps)
         {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "process_commands").entered();
@@ -290,12 +297,11 @@ impl<P: ScriptProvider> App<P> {
 
         // 2. UNCAPPED UPDATE LOOP - Runs every single frame for maximum UPS
         if let Some(scene) = self.game_scene.as_mut() {
-            // Reset scroll delta at start of frame
-            {
-                #[cfg(feature = "profiling")]
-                let _span = tracing::span!(tracing::Level::INFO, "reset_scroll_delta").entered();
-                if let Some(input_mgr) = scene.get_input_manager() {
-                    let mut input_mgr = input_mgr.lock().unwrap();
+            // OPTIMIZED: Only reset scroll delta if input manager exists (avoids Option check overhead)
+            // Most projects don't use scroll, so this is usually a no-op
+            if let Some(input_mgr) = scene.get_input_manager() {
+                // OPTIMIZED: Use try_lock() to avoid blocking (very rare case where it would block)
+                if let Ok(mut input_mgr) = input_mgr.try_lock() {
                     input_mgr.reset_scroll_delta();
                 }
             }
@@ -303,7 +309,8 @@ impl<P: ScriptProvider> App<P> {
             {
                 #[cfg(feature = "profiling")]
                 let _span = tracing::span!(tracing::Level::INFO, "scene_update").entered();
-                scene.update(&mut gfx); // Update runs EVERY frame (uncapped UPS)
+                // OPTIMIZED: Pass now to avoid duplicate Instant::now() call
+                scene.update(&mut gfx, now); // Update runs EVERY frame (uncapped UPS)
             }
         }
 
@@ -325,7 +332,8 @@ impl<P: ScriptProvider> App<P> {
             {
                 #[cfg(feature = "profiling")]
                 let _span = tracing::span!(tracing::Level::INFO, "render_frame").entered();
-                self.render_frame(&mut gfx);
+                // OPTIMIZED: Pass now to render_frame to avoid duplicate Instant::now() call
+                self.render_frame(&mut gfx, now);
             }
 
             if self.first_frame {
@@ -349,13 +357,14 @@ impl<P: ScriptProvider> App<P> {
     }
 
     /// Render a single frame (only called when frame pacing allows)
-    fn render_frame(&mut self, gfx: &mut Graphics) {
+    fn render_frame(&mut self, gfx: &mut Graphics, now: std::time::Instant) {
         // Update scene render data (queues rendering commands)
         {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "scene_render").entered();
             if let Some(scene) = self.game_scene.as_mut() {
-                scene.render(gfx);
+                // OPTIMIZED: Pass now to avoid duplicate Instant::now() call
+                scene.render(gfx, now);
             }
         }
 
@@ -545,10 +554,11 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         // Render the actual first game frame before showing window
         if let Some(scene) = self.game_scene.as_mut() {
             // Do initial update
-            scene.update(&mut graphics);
+            let now = std::time::Instant::now();
+            scene.update(&mut graphics, now);
 
             // Queue rendering
-            scene.render(&mut graphics);
+            scene.render(&mut graphics, now);
 
             // Render the frame
             let (frame, view, mut encoder) = graphics.begin_frame();

@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{OnceLock, RwLock},
 };
 use uuid::Uuid;
@@ -878,6 +878,7 @@ pub fn update_global_transforms_with_layout(
             }
 
 
+
             // STEP 4: Combine with parent transform
             let mut global = Transform2D::default();
             global.scale.x = parent_global.scale.x * local.scale.x;
@@ -893,13 +894,16 @@ pub fn update_global_transforms_with_layout(
      
 
             // Set inherited z-index: local z + parent z
+            // Clamp to prevent overflow (i32 max is 2,147,483,647, but we'll use a safer range)
             let local_z = element.get_z_index(); // Get the element's explicitly set z-index
             let global_z = if local_z != 0 {
                 // If element has explicit z-index, use it (but still inherit parent offset)
-                parent_z + local_z + 2
+                // Clamp to prevent overflow
+                (parent_z.saturating_add(local_z).saturating_add(2)).min(1000000)
             } else {
                 // Otherwise use automatic depth-based z-index
-                parent_z + 2
+                // Clamp to prevent overflow
+                (parent_z.saturating_add(2)).min(1000000)
             };
             element.set_z_index(global_z);
 
@@ -909,10 +913,13 @@ pub fn update_global_transforms_with_layout(
             // STEP 6: Handle button children specially (panel and text are not in elements map)
             // They should be positioned like regular children using the anchor system
             if let UIElement::Button(button) = element {
-                // Sync button size to panel and text (they should match the button's size)
+                // Sync button size to panel (panel should match button size for rendering)
                 // This must happen after the button's size is finalized in layout
                 button.panel.base.size = button.base.size;
-                button.text.base.size = button.base.size;
+                
+                // Calculate actual text size based on content (don't use button size for text)
+                let actual_text_size = calculate_text_size(&button.text.props.content, button.text.props.font_size);
+                button.text.base.size = actual_text_size;
                 
                 // Use the button's size as the parent size for anchor calculations
                 let button_size = button.base.size;
@@ -1004,11 +1011,11 @@ pub fn update_global_transforms_with_layout(
                 panel_global.rotation = global.rotation + panel_local.rotation;
                 
                 button.panel.base.global_transform = panel_global;
-                button.panel.base.z_index = global_z;
+                button.panel.base.z_index = global_z.min(1000000);
                 
               
                 // Process text - positioned like a child using button's text_anchor
-                let text_size = button.text.base.size;
+                let text_size = actual_text_size; // Use calculated text size, not button size
                 let text_pivot = button.text.base.pivot;
                 let text_anchor = button.text_anchor;
                 let text_local = button.text.base.transform.clone();
@@ -1021,6 +1028,25 @@ pub fn update_global_transforms_with_layout(
                 text_local_pos.x += text_anchor_offset.x;
                 text_local_pos.y += text_anchor_offset.y;
                 
+                // For button text, adjust position to account for baseline positioning
+                // Same logic as regular text elements (lines 862-878)
+                match text_anchor {
+                    crate::fur_ast::FurAnchor::Top | 
+                    crate::fur_ast::FurAnchor::TopLeft | 
+                    crate::fur_ast::FurAnchor::TopRight => {
+                        // For top anchors, move down by 1.5x height to account for baseline
+                        text_local_pos.y -= text_size.y * 1.5;
+                    }
+                    crate::fur_ast::FurAnchor::Center => {
+                        // For center, move down by 1.25x height
+                        text_local_pos.y -= text_size.y * 1.25;
+                    }
+                    _ => {
+                        // For bottom/other anchors, move down by full height
+                        text_local_pos.y -= text_size.y;
+                    }
+                }
+                
                 // Combine with button's global transform
                 let mut text_global = Transform2D::default();
                 text_global.scale.x = global.scale.x * text_local.scale.x;
@@ -1030,7 +1056,7 @@ pub fn update_global_transforms_with_layout(
                 text_global.rotation = global.rotation + text_local.rotation;
                 
                 button.text.base.global_transform = text_global;
-                button.text.base.z_index = global_z + 1; // Text renders on top
+                button.text.base.z_index = (global_z + 1).min(1000000); // Text renders on top
                 
               
             }
@@ -1111,25 +1137,72 @@ fn get_font_cache() -> &'static RwLock<HashMap<(String, u32), bool>> {
     FONT_ATLAS_INITIALIZED.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-// Updated render function with caching
+// Helper function to collect all ancestors of dirty elements (needed for layout recalculation)
+fn collect_dirty_with_ancestors(
+    elements: &IndexMap<Uuid, UIElement>,
+    dirty_ids: &HashSet<Uuid>,
+) -> HashSet<Uuid> {
+    let mut to_process = HashSet::new();
+    
+    for &dirty_id in dirty_ids {
+        // Add the dirty element itself
+        to_process.insert(dirty_id);
+        
+        // Walk up the parent chain and add all ancestors
+        let mut current_id = dirty_id;
+        while let Some(element) = elements.get(&current_id) {
+            let parent_id = element.get_parent();
+            if parent_id.is_nil() {
+                break;
+            }
+            to_process.insert(parent_id);
+            current_id = parent_id;
+        }
+    }
+    
+    to_process
+}
+
+// Updated render function with caching and dirty element optimization
 pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     let cache = get_layout_cache();
-    update_ui_layout_cached(ui_node, cache);
-
+    
     // Get timestamp from UINode's base node
     let timestamp = ui_node.base.created_timestamp;
 
-    if let Some(elements) = &mut ui_node.elements {
-        // Buttons are already synced in update_ui_layout_cached, so we can render directly
-        
-        // Convert IndexMap values to Vec for parallel processing
-        let elements_vec: Vec<_> = elements.iter().collect();
-        let visible_elements: Vec<_> = elements_vec
-            .par_iter()
-            .filter(|(_, element)| element.get_visible())
-            .collect();
+    // Check if we have any dirty elements
+    // If empty, mark all elements as dirty for initial render
+    if ui_node.needs_rerender.is_empty() {
+        ui_node.mark_all_needs_rerender();
+    }
+    
+    // Collect dirty element IDs before borrowing elements
+    let dirty_elements: Vec<Uuid> = ui_node.needs_rerender.iter().copied().collect();
+    let needs_layout = !ui_node.needs_layout_recalc.is_empty();
+    
+    if dirty_elements.is_empty() {
+        // No dirty elements, skip rendering entirely
+        return;
+    }
+    
+    // Only recalculate layout if layout actually changed (not just visual state like button hover)
+    if needs_layout {
+        update_ui_layout_cached(ui_node, cache);
+    }
 
-        for (_, element) in visible_elements {
+    // Now borrow elements for rendering
+    if let Some(elements) = &mut ui_node.elements {
+        // Collect all ancestors of dirty elements (needed for layout recalculation)
+        let dirty_set: HashSet<Uuid> = dirty_elements.iter().copied().collect();
+        let _elements_to_recalculate = collect_dirty_with_ancestors(elements, &dirty_set);
+
+        // Render ALL visible elements (they need to be queued every frame to stay visible)
+        // But we only recalculated layout for dirty ones above
+        for (_, element) in elements.iter_mut() {
+            if !element.get_visible() {
+                continue;
+            }
+            
             match element {
                 UIElement::BoxContainer(_) => { /* no-op */ }
                 UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
@@ -1137,13 +1210,45 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
                 UIElement::Layout(_) => {}
                 UIElement::Text(text) => render_text(text, gfx, timestamp),
                 UIElement::Button(button) => {
-                    // Button is already synced, just render panel and text
-                    render_panel(&button.panel, gfx, timestamp);
+                    // Get the base background color
+                    let base_bg = button.panel_props().background_color;
+                    
+                    // Determine which color to use based on button state
+                    let bg_color = if button.is_pressed {
+                        // Pressed state: use pressed_bg if specified, otherwise darken base by 20%
+                        if let Some(pressed) = button.pressed_bg {
+                            Some(pressed)
+                        } else if let Some(base) = base_bg {
+                            Some(base.darken(0.2))
+                        } else {
+                            None
+                        }
+                    } else if button.is_hovered {
+                        // Hover state: use hover_bg if specified, otherwise lighten base by 20%
+                        if let Some(hover) = button.hover_bg {
+                            Some(hover)
+                        } else if let Some(base) = base_bg {
+                            Some(base.lighten(0.2))
+                        } else {
+                            None
+                        }
+                    } else {
+                        // Normal state: use base background color
+                        base_bg
+                    };
+                    
+                    // Render panel with the appropriate color (create a temporary panel copy)
+                    let mut panel_copy = button.panel.clone();
+                    panel_copy.props.background_color = bg_color;
+                    render_panel(&panel_copy, gfx, timestamp);
                     render_text(&button.text, gfx, timestamp);
                 }
             }
         }
     }
+    
+    // Clear dirty flags after rendering (outside the elements borrow)
+    ui_node.clear_rerender_flags();
 }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {

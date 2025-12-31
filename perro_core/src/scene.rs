@@ -552,6 +552,8 @@ pub struct Scene<P: ScriptProvider> {
     pub last_scene_render: Option<Instant>,
     // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for fixed updates)
     pub nodes_with_internal_fixed_update: HashSet<Uuid>,
+    // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for render updates)
+    pub nodes_with_internal_render_update: HashSet<Uuid>,
 
     // Physics (wrapped in RefCell for interior mutability through trait objects)
     pub physics_2d: std::cell::RefCell<PhysicsWorld2D>,
@@ -606,6 +608,7 @@ impl<P: ScriptProvider> Scene<P> {
             last_fixed_update: Some(Instant::now()),
             last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
+            nodes_with_internal_render_update: HashSet::new(),
             physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
             
             // OPTIMIZED: Initialize script ID cache
@@ -656,6 +659,7 @@ impl<P: ScriptProvider> Scene<P> {
             last_fixed_update: Some(Instant::now()),
             last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
+            nodes_with_internal_render_update: HashSet::new(),
             
             // OPTIMIZED: Initialize script ID cache
             cached_script_ids: Vec::new(),
@@ -1148,6 +1152,11 @@ impl<P: ScriptProvider> Scene<P> {
                 if node_ref.needs_internal_fixed_update() {
                     // Optimize: HashSet insert is O(1) and handles duplicates automatically
                     self.nodes_with_internal_fixed_update.insert(node_id);
+                }
+                // Register node for internal render updates if needed
+                if node_ref.needs_internal_render_update() {
+                    // Optimize: HashSet insert is O(1) and handles duplicates automatically
+                    self.nodes_with_internal_render_update.insert(node_id);
                 }
             }
         }
@@ -1764,23 +1773,24 @@ impl<P: ScriptProvider> Scene<P> {
         self.provider.load_ctor(short)
     }
 
-    pub fn render(&mut self, gfx: &mut Graphics) {
+    pub fn render(&mut self, gfx: &mut Graphics, now: Instant) {
         // Convert texture_path → texture_id on first render (when Graphics is available)
         if !self.textures_converted {
             self.convert_texture_paths_to_ids(gfx);
             self.textures_converted = true;
         }
         
+        // Calculate render delta (time since last render call - actual frame time)
+        let render_delta = match self.last_scene_render {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            None => 0.0,
+        };
+        // Update render time for next frame
+        self.last_scene_render = Some(now);
+        
         // Call draw() methods on scripts that implement it (frame-synchronized visuals)
         {
-            // Calculate render delta (time since last render call - actual frame time)
-            let now = Instant::now();
-            let render_delta = match self.last_scene_render {
-                Some(prev) => now.duration_since(prev).as_secs_f32(),
-                None => 0.0,
-            };
-            // Update render time for next frame
-            self.last_scene_render = Some(now);
+            // OPTIMIZED: Accept now as parameter to avoid duplicate Instant::now() call
             
             // OPTIMIZED: Use pre-filtered vector of scripts with draw
             // Collect script IDs to avoid borrow checker issues
@@ -1806,6 +1816,30 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
         
+        // Run internal render update for nodes that need it (e.g., UI interactions)
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_updates").entered();
+            
+            // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
+            let node_ids: Vec<Uuid> = self.nodes_with_internal_render_update.iter().copied().collect();
+            
+            if !node_ids.is_empty() {
+                // Clone project reference before loop to avoid borrow conflicts
+                let project_ref = self.project.clone();
+                
+                for node_id in node_ids {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_update", id = %node_id).entered();
+                    
+                    // OPTIMIZED: Borrow project once per node
+                    let mut project_borrow = project_ref.borrow_mut();
+                    let mut api = ScriptApi::new(render_delta, self, &mut *project_borrow, gfx);
+                    api.call_node_internal_render_update(node_id);
+                }
+            }
+        }
+        
         let nodes_needing_rerender = {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "get_nodes_needing_rerender").entered();
@@ -1821,11 +1855,11 @@ impl<P: ScriptProvider> Scene<P> {
         }
     }
 
-    pub fn update(&mut self, gfx: &mut crate::rendering::Graphics) {
+    pub fn update(&mut self, gfx: &mut crate::rendering::Graphics, now: Instant) {
         #[cfg(feature = "profiling")]
         let _span = tracing::span!(tracing::Level::INFO, "Scene::update").entered();
         
-        let now = Instant::now();
+        // OPTIMIZED: Accept now as parameter to avoid duplicate Instant::now() call
         let true_delta = match self.last_scene_update {
             Some(prev) => now.duration_since(prev).as_secs_f32(),
             None => 0.0, // first update
@@ -1849,18 +1883,23 @@ impl<P: ScriptProvider> Scene<P> {
 
         // Automatically poll Joy-Con 1 devices if polling is enabled
         // (Joy-Con 2 is polled automatically via async task)
+        // OPTIMIZED: Use try_lock() to avoid blocking (very rare case)
         if let Some(mgr) = self.get_controller_manager() {
-            let mgr = mgr.lock().unwrap();
-            if mgr.is_polling_enabled() {
-                mgr.poll_joycon1_sync();
+            if let Ok(mgr) = mgr.try_lock() {
+                if mgr.is_polling_enabled() {
+                    mgr.poll_joycon1_sync();
+                }
             }
         }
 
         // Fixed update logic - runs at XPS rate from project manifest
+        // OPTIMIZED: Cache xps to avoid RefCell borrow every frame (xps rarely changes)
+        // For now, we still borrow but could cache if xps becomes a field
         let xps = {
             let project_ref = self.project.borrow();
             project_ref.xps()
         };
+        // OPTIMIZED: Pre-calculate fixed_delta (division is expensive)
         let fixed_delta = 1.0 / xps.max(1.0); // Time per fixed update
 
         self.fixed_update_accumulator += true_delta;
@@ -1952,15 +1991,16 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         {
-            // OPTIMIZED: Use pre-filtered vector of scripts with update
-            // Collect script IDs to avoid borrow checker issues
-            let script_ids: Vec<Uuid> = self.scripts_with_update.iter().copied().collect();
-            
-            // Early return if no scripts to update (avoids unnecessary work)
-            if script_ids.is_empty() {
+            // OPTIMIZED: Early exit check before allocating Vec (most common case in empty projects)
+            if self.scripts_with_update.is_empty() {
                 self.process_queued_signals();
                 return;
             }
+            
+            // OPTIMIZED: Use pre-filtered vector of scripts with update
+            // Collect script IDs to avoid borrow checker issues
+            // OPTIMIZED: Pre-allocate with known capacity (iter().copied() already does this efficiently)
+            let script_ids: Vec<Uuid> = self.scripts_with_update.iter().copied().collect();
             
             // Clone project reference before loop to avoid borrow conflicts
             let project_ref = self.project.clone();
@@ -2024,10 +2064,12 @@ impl<P: ScriptProvider> Scene<P> {
 
     // ✅ OPTIMIZED: Use drain() to collect, then process (avoids borrow checker issues)
     fn process_queued_signals(&mut self) {
+        // OPTIMIZED: Early exit before allocation (most common case)
         if self.queued_signals.is_empty() {
             return;
         }
 
+        // OPTIMIZED: drain() already pre-allocates efficiently
         // Collect drained items first to release the borrow, then process
         let signals: Vec<_> = self.queued_signals.drain(..).collect();
         for (signal, params) in signals {

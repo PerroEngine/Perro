@@ -866,12 +866,6 @@ impl PrimitiveRenderer {
                         
                         // bearing_x positions the left edge, center is at left + half width
                         let cx = gx + gw * 0.5;
-                        
-                        // Debug first glyph only
-                        if text.chars().next() == Some(ch) {
-                            println!("First glyph: ch='{}', baseline_y={}, bearing_y={}, ascent={}, scale={}, gh={}, cy={}", 
-                                ch, baseline_y, g.bearing_y, atlas.ascent, scale, gh, cy);
-                        }
 
                         let glyph_transform = Transform2D {
                             position: Vector2::new(cx, cy),

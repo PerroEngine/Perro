@@ -25,6 +25,30 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    /// Lighten a color by a percentage (0.0 to 1.0)
+    /// 0.0 = no change, 1.0 = white
+    pub fn lighten(&self, amount: f32) -> Self {
+        let amount = amount.clamp(0.0, 1.0);
+        Self {
+            r: ((self.r as f32) + (255.0 - self.r as f32) * amount) as u8,
+            g: ((self.g as f32) + (255.0 - self.g as f32) * amount) as u8,
+            b: ((self.b as f32) + (255.0 - self.b as f32) * amount) as u8,
+            a: self.a,
+        }
+    }
+
+    /// Darken a color by a percentage (0.0 to 1.0)
+    /// 0.0 = no change, 1.0 = black
+    pub fn darken(&self, amount: f32) -> Self {
+        let amount = amount.clamp(0.0, 1.0);
+        Self {
+            r: ((self.r as f32) * (1.0 - amount)) as u8,
+            g: ((self.g as f32) * (1.0 - amount)) as u8,
+            b: ((self.b as f32) * (1.0 - amount)) as u8,
+            a: self.a,
+        }
+    }
+
     pub fn to_array(&self) -> [f32; 3] {
         [
             self.r as f32 / 255.0,

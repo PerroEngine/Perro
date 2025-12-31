@@ -1,35 +1,33 @@
 [UI]
 
 
-[Panel id=bob sz=15% bg=red-5 rounding=0.1 anchor=c]
-    [Text fsz=25 align=c anchor=c]
-    Center
-    [/Text]
-[/Panel]
+[Button id=bob sz=15% bg=red-5 rounding=0.5 anchor=c fsz=25 align=c text-anchor=c]
+Center
+[/Button]
 
-[Panel id=bob2 sz=15% bg=blue-5 rounding=0.1 anchor=tl]
-    [Text fsz=25 align=c anchor=tl]TopLeft[/Text]
-[/Panel]
+[Button id=bob2 sz=15% bg=blue-5 rounding=half anchor=tl fsz=25 align=c text-anchor=tl]
+TopLeft
+[/Button]
 
-[Panel id=bob3 sz=15% bg=green-5 rounding=0.1 anchor=tr]
-    [Text fsz=25 align=c anchor=tr]TopRight[/Text]
-[/Panel]
+[Button id=bob3 sz=15% bg=green-5 rounding=third anchor=tr fsz=25 align=c text-anchor=tr]
+TopRight
+[/Button]
 
-[Panel id=bob4 sz=15% bg=yellow-5 rounding=0.1 anchor=bl]
-    [Text fsz=25 align=c anchor=bl]BottomLeft[/Text]
-[/Panel]
+[Button id=bob4 sz=15% bg=yellow-5 rounding=0.1 anchor=bl fsz=25 align=c text-anchor=bl]
+BottomLeft
+[/Button]
 
-[Panel id=bob5 sz=15% bg=purple-5 rounding=0.1 anchor=br]
-    [Text fsz=25 align=c anchor=br]BottomRight[/Text]
-[/Panel]
+[Button id=bob5 sz=15% bg=purple-5 rounding=0.1 anchor=br fsz=25 align=c text-anchor=br]
+BottomRight
+[/Button]
 
-[Panel id=bob6 sz=15% bg=orange-5 rounding=0.1 anchor=t]
-    [Text fsz=25 align=c anchor=t]Top[/Text]
-[/Panel]
+[Button id=bob6 sz=15% bg=orange-5 rounding=0.1 anchor=t fsz=25 align=c text-anchor=t]
+Top
+[/Button]
 
-[Panel id=bob7 sz=15% bg=cyan-5 rounding=0.1 anchor=b]
-    [Text fsz=25 align=c anchor=b]Bottom[/Text]
-[/Panel]
+[Button id=bob7 sz=15% bg=cyan-5 rounding=0.1 anchor=b fsz=25 align=c text-anchor=b]
+Bottom
+[/Button]
 
 
 [/UI]

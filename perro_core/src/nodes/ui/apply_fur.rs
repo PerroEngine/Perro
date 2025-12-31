@@ -496,6 +496,18 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                     button.panel_props_mut().background_color = Some(c);
                 }
             }
+            
+            // Parse hover and pressed background colors
+            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
+                if let Ok(c) = parse_color_with_opacity(hover_bg) {
+                    button.hover_bg = Some(c);
+                }
+            }
+            if let Some(pressed_bg) = fur.attributes.get("pressed-bg") {
+                if let Ok(c) = parse_color_with_opacity(pressed_bg) {
+                    button.pressed_bg = Some(c);
+                }
+            }
             if let Some(c) = fur.attributes.get("border-c") {
                 if let Ok(c) = parse_color_with_opacity(c) {
                     button.panel_props_mut().border_color = Some(c);

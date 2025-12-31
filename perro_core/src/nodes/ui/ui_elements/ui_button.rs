@@ -27,6 +27,13 @@ pub struct UIButton {
     #[serde(default)]
     pub text_anchor: FurAnchor,
     
+    // Optional hover and pressed background colors
+    // If None, will use lightened/darkened version of base bg color
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hover_bg: Option<crate::structs::Color>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pressed_bg: Option<crate::structs::Color>,
+    
     // Internal state for mouse interactions (not serialized)
     #[serde(skip)]
     pub is_hovered: bool,
@@ -51,6 +58,8 @@ impl Default for UIButton {
             panel,
             text,
             text_anchor: FurAnchor::Center, // Default text anchor to center
+            hover_bg: None,
+            pressed_bg: None,
             is_hovered: false,
             is_pressed: false,
             was_pressed_last_frame: false,

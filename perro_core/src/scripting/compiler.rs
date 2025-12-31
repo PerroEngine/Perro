@@ -1825,8 +1825,10 @@ impl Compiler {
                     .to_string();
 
                 node_str = node_str.replace(": []", ": vec![]");
-                // Handle HashSet fields (like previous_collisions in Area2D)
+                // Handle HashSet fields (like previous_collisions in Area2D, needs_rerender and needs_layout_recalc in UINode)
                 node_str = node_str.replace("previous_collisions: {},", "previous_collisions: HashSet::new(),");
+                node_str = node_str.replace("needs_rerender: {},", "needs_rerender: HashSet::new(),");
+                node_str = node_str.replace("needs_layout_recalc: {},", "needs_layout_recalc: HashSet::new(),");
                 // Handle other HashMap fields
                 node_str = node_str.replace(": {},", ": HashMap::new(),");
                 

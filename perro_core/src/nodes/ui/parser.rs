@@ -484,6 +484,10 @@ static ROUNDING_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         ("2xl", "0.6"),
         ("3xl", "0.75"),
         ("4xl", "0.85"),
+        ("half", "0.5"),
+        ("third", "0.333"),
+        ("quart", "0.25"),
+        ("3q", "0.75"),
         ("full", "1.0"),
     ]
     .iter()
@@ -502,11 +506,7 @@ static GENERAL_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         ("2xl", "48"),
         ("3xl", "64"),
         ("4xl", "96"),
-        ("full", "100%"),
-        ("half", "50%"),
-        ("third", "33.333%"),
-        ("quart", "25%"),
-        ("3q", "75%"),
+
     ]
     .iter()
     .cloned()

@@ -6,8 +6,7 @@
       "fur_path": "res://ui.fur",
       "base": {
         "type": "Node",
-        "name": "UI",
-        "script_path": "res://ui.pup"
+        "name": "UI"
       }
     }
   }

@@ -1517,6 +1517,37 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
+    pub fn call_node_internal_render_update(&mut self, node_id: Uuid) {
+        // We need to get the node and call the method, but we can't hold a RefMut
+        // while also borrowing self mutably. So we check if update is needed first,
+        // then drop that borrow before calling the method.
+        let needs_update = {
+            self.scene.get_scene_node_ref(node_id)
+                .map(|node_ref| {
+                    node_ref.needs_internal_render_update()
+                })
+                .unwrap_or(false)
+        };
+        
+        if needs_update {
+            // We need to split the borrows: get a RefMut from the scene while also
+            // having &mut self. Since RefMut borrows from the RefCell inside the scene's
+            // data (not from the &mut dyn SceneAccess itself), we can use unsafe code
+            // to split the borrows safely. The RefMut will be dropped at the end of
+            // the block, ensuring the borrow is released.
+            unsafe {
+                // Get a raw pointer to the scene to split the borrows
+                let scene_ptr: *mut dyn SceneAccess = &mut *self.scene;
+                if let Some(node) = (*scene_ptr).get_scene_node_mut(node_id) {
+                    // The RefMut borrows from the RefCell, not from the SceneAccess trait object,
+                    // so it's safe to use &mut self here as long as we don't access self.scene
+                    // through the mutable reference while the RefMut is alive.
+                    node.internal_render_update(self);
+                }
+            }
+        }
+    }
+
     pub fn call_function(&mut self, id: Uuid, func: &str, params: &[Value]) {
         let func_id = self.string_to_u64(func);
         self.call_function_id(id, func_id, params);

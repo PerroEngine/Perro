@@ -5,3 +5,8 @@ on bob_Pressed() {
     Console.print("chicken in the bicken")
 }
 
+
+on bob2_Pressed() {
+    Console.print("bob1")
+}
+

@@ -849,10 +849,11 @@ pub fn run_dev() {
     // This mimics what user_event does when graphics are created asynchronously
     {
         // Do initial update
-        game_scene.update(&mut graphics);
+        let now = std::time::Instant::now();
+        game_scene.update(&mut graphics, now);
         
         // Queue rendering
-        game_scene.render(&mut graphics);
+        game_scene.render(&mut graphics, now);
         
         // Render the frame
         let (frame, view, mut encoder) = graphics.begin_frame();

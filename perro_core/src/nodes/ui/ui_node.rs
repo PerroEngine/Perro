@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
 };
 
@@ -17,6 +17,7 @@ use crate::{
     scripting::api::ScriptApi,
     structs2d::Vector2,
     ui_element::{BaseElement, IntoUIInner, UIElement},
+    ui_elements::ui_container::CornerRadius,
 };
 use serde_json::Value;
 use smallvec::SmallVec;
@@ -50,6 +51,12 @@ pub struct UINode {
     )]
     pub visible: bool,
 
+    #[serde(skip)]
+    pub needs_rerender: HashSet<Uuid>,
+    
+    #[serde(skip)]
+    pub needs_layout_recalc: HashSet<Uuid>,
+
     pub base: Node,
 }
 
@@ -66,7 +73,34 @@ impl UINode {
             props: None,
             elements: None,
             root_ids: None,
+            needs_rerender: HashSet::new(),
+            needs_layout_recalc: HashSet::new(),
         }
+    }
+    
+    /// Mark an element as needing rerender (visual only, no layout recalculation)
+    pub fn mark_element_needs_rerender(&mut self, element_id: Uuid) {
+        self.needs_rerender.insert(element_id);
+    }
+    
+    /// Mark an element as needing layout recalculation (triggers full layout update)
+    pub fn mark_element_needs_layout(&mut self, element_id: Uuid) {
+        self.needs_rerender.insert(element_id);
+        self.needs_layout_recalc.insert(element_id);
+    }
+    
+    /// Mark all elements as needing rerender (for initial render or full refresh)
+    pub fn mark_all_needs_rerender(&mut self) {
+        if let Some(elements) = &self.elements {
+            self.needs_rerender.extend(elements.keys().copied());
+            self.needs_layout_recalc.extend(elements.keys().copied());
+        }
+    }
+    
+    /// Clear all rerender flags
+    pub fn clear_rerender_flags(&mut self) {
+        self.needs_rerender.clear();
+        self.needs_layout_recalc.clear();
     }
     pub fn get_visible(&self) -> bool {
         self.visible
@@ -204,8 +238,92 @@ impl DerefMut for UINode {
     }
 }
 
+/// Check if a point (in local space, centered at origin) is inside a rounded rectangle
+/// This accounts for corner radius and handles "full" rounding (circular/pill-shaped buttons)
+fn is_point_in_rounded_rect(
+    local_pos: Vector2,
+    size: Vector2,
+    corner_radius: CornerRadius,
+) -> bool {
+    let half_w = size.x * 0.5;
+    let half_h = size.y * 0.5;
+    
+    // Rounding values are normalized (0.0 to 1.0), where 1.0 = fully rounded
+    // The maximum possible radius is the minimum of half width and half height
+    let max_radius = half_w.min(half_h);
+    
+    // Convert normalized rounding values to actual pixel radii
+    // Values >= 0.99 are treated as "full" (100% of max radius)
+    // Other values are treated as percentages of max radius
+    let tl_radius = if corner_radius.top_left >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.top_left * max_radius
+    };
+    let tr_radius = if corner_radius.top_right >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.top_right * max_radius
+    };
+    let br_radius = if corner_radius.bottom_right >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.bottom_right * max_radius
+    };
+    let bl_radius = if corner_radius.bottom_left >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.bottom_left * max_radius
+    };
+    
+    // Quick AABB rejection test
+    if local_pos.x.abs() > half_w || local_pos.y.abs() > half_h {
+        return false;
+    }
+    
+    let abs_x = local_pos.x.abs();
+    let abs_y = local_pos.y.abs();
+    
+    // Determine which corner region we're in (if any)
+    let (corner_radius, corner_center_x, corner_center_y) = if local_pos.x >= 0.0 && local_pos.y >= 0.0 {
+        // Top-right corner
+        (tr_radius, half_w - tr_radius, half_h - tr_radius)
+    } else if local_pos.x >= 0.0 && local_pos.y < 0.0 {
+        // Bottom-right corner
+        (br_radius, half_w - br_radius, -(half_h - br_radius))
+    } else if local_pos.x < 0.0 && local_pos.y >= 0.0 {
+        // Top-left corner
+        (tl_radius, -(half_w - tl_radius), half_h - tl_radius)
+    } else {
+        // Bottom-left corner
+        (bl_radius, -(half_w - bl_radius), -(half_h - bl_radius))
+    };
+    
+    // Check if point is in the central rectangular area (not in corner region)
+    // A point is in the central area if it's not in any corner's rounded region
+    let in_corner_region = abs_x > (half_w - corner_radius) && abs_y > (half_h - corner_radius);
+    
+    if !in_corner_region {
+        // Point is in the central rectangular area
+        return true;
+    }
+    
+    // Point is in a corner region - check if it's inside the corner's circular arc
+    // If no rounding on this corner, it's inside (shouldn't happen if in_corner_region is true, but be safe)
+    if corner_radius <= 0.0 {
+        return true;
+    }
+    
+    // Check if point is inside the corner's circular arc
+    let dx = local_pos.x - corner_center_x;
+    let dy = local_pos.y - corner_center_y;
+    let dist_sq = dx * dx + dy * dy;
+    
+    dist_sq <= corner_radius * corner_radius
+}
+
 impl UINode {
-    pub fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
+    pub fn internal_render_update(&mut self, api: &mut ScriptApi) {
         if !self.visible {
             return;
         }
@@ -268,6 +386,7 @@ impl UINode {
         // -----------------------------------------
         // Hit testing (FINAL)
         // -----------------------------------------
+        let mut dirty_button_ids = Vec::new();
         for (_, element) in elements.iter_mut() {
             let UIElement::Button(button) = element else {
                 continue;
@@ -280,33 +399,44 @@ impl UINode {
             let was_hovered = button.is_hovered;
             let was_pressed = button.is_pressed;
     
-            // ✅ SIZE IS HALF-EXTENTS — FIX IT
-            let half_size = *button.get_size();
-            let full_size = Vector2::new(
-                half_size.x * 2.0,
-                half_size.y * 2.0,
+            // Size is stored as full size (not half-extents)
+            // The renderer treats it as full size and halves it internally
+            let size = *button.get_size();
+            // Apply scale from transform
+            let scaled_size = Vector2::new(
+                size.x * button.global_transform.scale.x,
+                size.y * button.global_transform.scale.y,
             );
     
             let center = button.global_transform.position;
-    
-            let half_w = full_size.x * 0.5;
-            let half_h = full_size.y * 0.5;
-    
-            let left = center.x - half_w;
-            let right = center.x + half_w;
-            let bottom = center.y - half_h;
-            let top = center.y + half_h;
-    
-            let is_hovered =
-                mouse_pos.x >= left &&
-                mouse_pos.x <= right &&
-                mouse_pos.y >= bottom &&
-                mouse_pos.y <= top;
+            let corner_radius = button.panel_props().corner_radius;
+            
+            // Convert mouse position to button's local space (centered at origin)
+            let local_pos = Vector2::new(
+                mouse_pos.x - center.x,
+                mouse_pos.y - center.y,
+            );
+            
+            // Use rounded rectangle hit test
+            let is_hovered = is_point_in_rounded_rect(
+                local_pos,
+                scaled_size,
+                corner_radius,
+            );
     
             button.is_hovered = is_hovered;
             button.is_pressed = is_hovered && mouse_pressed;
     
             let name = button.get_name();
+            
+            // Mark only this button element as needing rerender when button state changes
+            let state_changed = (is_hovered != was_hovered) || (button.is_pressed != was_pressed);
+            if state_changed {
+                // Collect ID to mark after loop (avoid borrow conflict)
+                dirty_button_ids.push(button.get_id());
+                // Also mark the UI node so it gets processed
+                api.scene.mark_needs_rerender(self.base.id);
+            }
     
             if is_hovered != was_hovered {
                 let signal = if is_hovered {
@@ -331,5 +461,16 @@ impl UINode {
     
             button.was_pressed_last_frame = button.is_pressed;
         }
+        
+        // Mark all dirty buttons after the loop (avoid borrow conflict)
+        for button_id in dirty_button_ids {
+            self.mark_element_needs_rerender(button_id);
+        }
+    }
+}
+
+impl crate::nodes::node_registry::NodeWithInternalRenderUpdate for UINode {
+    fn internal_render_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+        self.internal_render_update(api);
     }
 }
