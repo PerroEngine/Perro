@@ -1,3 +1,57 @@
+[scripts.root_pup]
+src = "res://root.pup"
+lang = "pup"
+id = "root_pup"
+
+[[scripts.root_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 64
+
+[scripts.root_pup.names]
+
+[scripts.test_engine_structs_pup]
+src = "res://test_engine_structs.pup"
+lang = "pup"
+id = "test_engine_structs_pup"
+
+[[scripts.test_engine_structs_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 75
+
+[[scripts.test_engine_structs_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 75
+g_end = 80
+
+[[scripts.test_engine_structs_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 80
+g_end = 87
+
+[scripts.test_engine_structs_pup.names]
+__t_test_variable_access = "test_variable_access"
+__t_test_nested_access = "test_nested_access"
+__t_test_constructors = "test_constructors"
+
+[scripts.shape_pup]
+src = "res://shape.pup"
+lang = "pup"
+id = "shape_pup"
+
+[[scripts.shape_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 65
+
+[scripts.shape_pup.names]
+
 [scripts.camera_pup]
 src = "res://camera.pup"
 lang = "pup"
@@ -55,61 +109,7 @@ g_start = 105
 g_end = 116
 
 [scripts.player_pup.names]
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
-__t_time = "time"
-tex_id = "tex"
 __t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-
-[scripts.root_pup]
-src = "res://root.pup"
-lang = "pup"
-id = "root_pup"
-
-[[scripts.root_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 64
-
-[scripts.root_pup.names]
-
-[scripts.shape_pup]
-src = "res://shape.pup"
-lang = "pup"
-id = "shape_pup"
-
-[[scripts.shape_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 65
-
-[scripts.shape_pup.names]
-
-[scripts.test_engine_structs_pup]
-src = "res://test_engine_structs.pup"
-lang = "pup"
-id = "test_engine_structs_pup"
-
-[[scripts.test_engine_structs_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 75
-
-[[scripts.test_engine_structs_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 75
-g_end = 80
-
-[[scripts.test_engine_structs_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 80
-g_end = 87
-
-[scripts.test_engine_structs_pup.names]
-__t_test_nested_access = "test_nested_access"
-__t_test_constructors = "test_constructors"
-__t_test_variable_access = "test_variable_access"
+tex_id = "tex"
+__t_time = "time"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"

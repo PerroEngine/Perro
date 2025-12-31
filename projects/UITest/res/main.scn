@@ -1,11 +1,14 @@
 {
-  "root_id": "00000000-0000-0000-0000-000000000000",
+  "root_index": 0,
   "nodes": {
-    "00000000-0000-0000-0000-000000000000": {
+    "0": {
       "type": "UINode",
       "fur_path": "res://ui.fur",
-      "base": { "type": "Node", "name": "UI", "script_path": "res://ui.pup" }
+      "base": {
+        "type": "Node",
+        "name": "UI",
+        "script_path": "res://ui.pup"
+      }
     }
-
   }
 }

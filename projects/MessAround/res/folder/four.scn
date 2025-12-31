@@ -1,25 +1,35 @@
 {
-  "root_id": "00000000-0000-0000-0000-000000000001",
+  "root_index": 0,
   "nodes": {
-    "00000000-0000-0000-0000-000000000001": {
+    "0": {
       "type": "Node2D",
-      "base": { "type": "Node", "name": "FWorld"}
+      "base": {
+        "type": "Node",
+        "name": "FWorld"
+      }
     },
-
-
-   
-    "00000000-0000-0000-0000-000000000012": {
+    "1": {
       "type": "Sprite2D",
       "texture_path": "res://icon.png",
       "base": {
         "type": "Node2D",
-        "base": { "type": "Node", "name": "PlayerofFour", "parent": "00000000-0000-0000-0000-000000000001"},
+        "base": {
+          "type": "Node",
+          "name": "PlayerofFour",
+          "parent": 0
+        },
         "transform": {
-          "position": [50.0, -200.0],
+          "position": [
+            50.0,
+            -200.0
+          ],
           "rotation": 0.0,
-          "scale": [0.25, 0.25]
+          "scale": [
+            0.25,
+            0.25
+          ]
         }
       }
     }
-   
-}}
+  }
+}

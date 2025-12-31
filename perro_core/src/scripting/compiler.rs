@@ -15,7 +15,7 @@ use crate::SceneData;
 use crate::brk::build_brk;
 use crate::fur_ast::{FurElement, FurNode};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
-use crate::node_registry::NodeType;
+use crate::node_registry::{NodeType, BaseNode};
 use image::GenericImageView;
 use walkdir::WalkDir;
 
@@ -1739,11 +1739,69 @@ impl Compiler {
             let mut scene_data: SceneData = SceneData::load(&current_res_path)?;
             SceneData::fix_relationships(&mut scene_data);
 
+            // Fix node IDs to use deterministic UUIDs based on indices
+            // This ensures parent/child relationships work correctly in static code
+            let index_to_uuid = scene_data.index_to_uuid().clone();
+            let mut new_index_to_uuid: std::collections::HashMap<u32, uuid::Uuid> = std::collections::HashMap::new();
+            
+            // First pass: generate deterministic UUIDs for all nodes
+            for (&idx, node) in scene_data.nodes.iter_mut() {
+                // Generate deterministic UUID: 00000000-0000-0000-0000-0000000000XX
+                let uuid_str = format!("00000000-0000-0000-0000-{:012x}", idx);
+                let uuid = uuid::Uuid::parse_str(&uuid_str)
+                    .unwrap_or_else(|_| uuid::Uuid::nil());
+                node.set_id(uuid);
+                new_index_to_uuid.insert(idx, uuid);
+            }
+            
+            // Second pass: update parent and child UUIDs to match deterministic UUIDs
+            for node in scene_data.nodes.values_mut() {
+                // Update parent UUID
+                if let Some(parent) = node.get_parent() {
+                    // Find which index this parent UUID corresponds to
+                    let parent_idx_opt = index_to_uuid.iter()
+                        .find(|&(_, &uuid)| uuid == parent.id)
+                        .map(|(&idx, _)| idx);
+                    
+                    if let Some(parent_idx) = parent_idx_opt {
+                        if let Some(&parent_uuid) = new_index_to_uuid.get(&parent_idx) {
+                            let parent_type = crate::nodes::node::ParentType::new(parent_uuid, parent.node_type);
+                            node.set_parent(Some(parent_type));
+                        }
+                    }
+                }
+                
+                // Update children UUIDs (deduplicate)
+                let children = node.get_children().clone();
+                node.clear_children();
+                let mut seen_children = HashSet::new();
+                for child_uuid in children {
+                    // Find which index this child UUID corresponds to
+                    let child_idx_opt = index_to_uuid.iter()
+                        .find(|&(_, &uuid)| uuid == child_uuid)
+                        .map(|(&idx, _)| idx);
+                    
+                    if let Some(child_idx) = child_idx_opt {
+                        if let Some(&child_uuid) = new_index_to_uuid.get(&child_idx) {
+                            // Only add if we haven't seen this UUID before
+                            if seen_children.insert(child_uuid) {
+                                node.add_child(child_uuid);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Update the index_to_uuid mapping in scene_data
+            // We need to use a helper function or rebuild the SceneData
+            // Actually, since index_to_uuid is private, we'll just ensure the nodes have correct IDs
+            // The from_nodes function will rebuild the mapping correctly
+
             let static_scene_name = Self::sanitize_res_path_to_ident(&current_res_path);
-            let root_id_str = scene_data.root_id.to_string();
+            let root_id_str = scene_data.root_index.to_string();
 
             let mut entries = String::new();
-            for (uuid, node) in &scene_data.nodes {
+            for (idx, node) in &scene_data.nodes {
                 let mut node_str = format!("{:#?}", node);
 
                 // --- UUID fixups ---
@@ -1865,14 +1923,14 @@ impl Compiler {
 
                         writeln!(
                             &mut entries,
-                            "        (uuid!(\"{}\"), SceneNode::{}({})),",
-                            uuid, variant_name, inner
+                            "        ({}, SceneNode::{}({})),",
+                            idx, variant_name, inner
                         )?;
                     } else {
                         writeln!(
                             &mut entries,
-                            "        (uuid!(\"{}\"), SceneNode::{}),",
-                            uuid,
+                            "        ({}, SceneNode::{}),",
+                            idx,
                             node_str.trim()
                         )?;
                     }
@@ -1884,14 +1942,14 @@ impl Compiler {
             static_scene_definitions_code.push_str(&format!(
                 "
 /// Auto-generated static scene for {path}
-static {name}: Lazy<SceneData> = Lazy::new(|| SceneData {{
-    root_id: uuid!(\"{root_id}\"),
-    nodes: {nodes},
-}});
+static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
+    {root_index},
+    {nodes}
+));
 ",
                 path = current_res_path,
                 name = static_scene_name,
-                root_id = root_id_str,
+                root_index = root_id_str,
                 nodes = indexmap_formatted
             ));
 

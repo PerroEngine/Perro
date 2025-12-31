@@ -58,9 +58,7 @@ pub trait NodeWithInternalFixedUpdate: BaseNode {
 /// Provides unified access and manipulation for all node variants stored in `SceneNode`.
 pub trait BaseNode: Any + Debug + Send {
     fn get_id(&self) -> Uuid;
-    fn get_local_id(&self) -> Uuid;
     fn set_id(&mut self, id: Uuid);
-    fn set_local_id(&mut self, local_id: Uuid);
 
     fn get_name(&self) -> &str;
     fn set_name(&mut self, name: impl Into<Cow<'static, str>>);
@@ -145,14 +143,8 @@ macro_rules! impl_scene_node {
             fn get_id(&self) -> uuid::Uuid {
                 self.id
             }
-            fn get_local_id(&self) -> uuid::Uuid {
-                self.local_id
-            }
             fn set_id(&mut self, id: uuid::Uuid) {
                 self.id = id;
-            }
-            fn set_local_id(&mut self, local_id: uuid::Uuid) {
-                self.local_id = local_id;
             }
 
             fn get_name(&self) -> &str {
@@ -373,16 +365,8 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_id(), )+ }
             }
 
-            fn get_local_id(&self) -> uuid::Uuid {
-                match self { $( SceneNode::$variant(n) => n.get_local_id(), )+ }
-            }
-
             fn set_id(&mut self, id: uuid::Uuid) {
                 match self { $( SceneNode::$variant(n) => n.set_id(id), )+ }
-            }
-
-            fn set_local_id(&mut self, local_id: uuid::Uuid) {
-                match self { $( SceneNode::$variant(n) => n.set_local_id(local_id), )+ }
             }
 
             fn get_name(&self) -> &str {

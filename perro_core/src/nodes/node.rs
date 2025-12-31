@@ -27,8 +27,12 @@ impl ParentType {
 }
 
 /// Custom deserializer for parent field that accepts either:
-/// - A UUID string (e.g., "00000000-0000-0000-0000-000000000000")
+/// - A u32 index (for new format with SceneData)
+/// - A UUID string (e.g., "00000000-0000-0000-0000-000000000000") - legacy format
 /// - A full ParentType object with id and type fields
+/// 
+/// Note: When deserializing from SceneData, u32 indices will be converted to UUIDs
+/// during SceneData deserialization, so this should not be called directly for SceneData.
 fn deserialize_parent<'de, D>(deserializer: D) -> Result<Option<ParentType>, D::Error>
 where
     D: Deserializer<'de>,
@@ -38,6 +42,20 @@ where
     let value = Value::deserialize(deserializer)?;
     
     match value {
+        Value::Number(n) => {
+            // u32 index - this should be converted to UUID during SceneData deserialization
+            // For now, we'll create a temporary UUID from the index
+            // This is a fallback - SceneData should handle conversion
+            if let Some(idx) = n.as_u64() {
+                // Create a deterministic UUID from the index for now
+                // SceneData will remap this properly
+                let uuid = Uuid::parse_str(&format!("{:08x}-0000-0000-0000-000000000000", idx))
+                    .unwrap_or_else(|_| Uuid::nil());
+                Ok(Some(ParentType::new(uuid, NodeType::Node)))
+            } else {
+                Err(D::Error::custom("parent index must be a u32"))
+            }
+        }
         Value::String(uuid_str) => {
             // Parse UUID string and create ParentType with default NodeType
             // The node_type will be fixed later in fix_relationships
@@ -52,7 +70,7 @@ where
             Ok(Some(parent))
         }
         Value::Null => Ok(None),
-        _ => Err(D::Error::custom("parent must be a UUID string, ParentType object, or null")),
+        _ => Err(D::Error::custom("parent must be a u32 index, UUID string, ParentType object, or null")),
     }
 }
 
@@ -60,8 +78,6 @@ where
 pub struct Node {
     #[serde(skip)]
     pub id: Uuid,
-    #[serde(skip)]
-    pub local_id: Uuid,
 
     #[serde(rename = "type")]
     pub ty: NodeType,
@@ -102,7 +118,6 @@ impl Node {
         
         Self {
             id: Uuid::new_v4(),
-            local_id: Uuid::new_v4(),
             ty: NodeType::Node,
             name: Cow::Borrowed("Node"),
 

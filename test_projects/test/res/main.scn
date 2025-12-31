@@ -1,12 +1,20 @@
 {
-  "root_id": "00000000-0000-0000-0000-000000000000",
+  "root_index": 0,
   "nodes": {
-    "00000000-0000-0000-0000-000000000000": {
+    "0": {
       "type": "Node2D",
-      "base": { "type": "Node", "name": "World" }
+      "base": {
+        "type": "Node",
+        "name": "World"
+      }
     },
-
-    "00000000-0000-0000-0000-000000000001": { "type": "Node2D", "base": { "type": "Node", "name": "Pup_001", "script_path": "res://types.pup" } }
-   
+    "1": {
+      "type": "Node2D",
+      "base": {
+        "type": "Node",
+        "name": "Pup_001",
+        "script_path": "res://types.pup"
+      }
+    }
   }
 }

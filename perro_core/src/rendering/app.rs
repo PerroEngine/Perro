@@ -54,8 +54,8 @@ const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
 ];
 
 const MONITOR_SCALE_FACTOR: f32 = 0.75;
-const FPS_MEASUREMENT_INTERVAL: f32 = 1.0;
-const MAX_FRAME_DEBT: f64 = 0.025; // 25ms worth of frames
+const FPS_MEASUREMENT_INTERVAL: f32 = 3.0;
+const MAX_FRAME_DEBT: f32 = 0.025; // 25ms worth of frames
 
 // Default Perro icon embedded at compile time
 const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
@@ -162,7 +162,7 @@ pub struct App<P: ScriptProvider> {
 
     // Frame pacing (limits rendering to target FPS)
     target_fps: f32,
-    frame_debt: f64,
+    frame_debt: f32,
     total_frames_rendered: u64,
     first_frame: bool,
 
@@ -246,10 +246,10 @@ impl<P: ScriptProvider> App<P> {
     }
 
     fn calculate_frame_debt(&mut self, now: std::time::Instant) {
-        let elapsed = (now - self.start_time).as_secs_f64();
-        let target_frames = elapsed * self.target_fps as f64;
-        let mut frame_debt = target_frames - (self.total_frames_rendered as f64);
-        frame_debt = frame_debt.min(self.target_fps as f64 * MAX_FRAME_DEBT);
+        let elapsed = (now - self.start_time).as_secs_f32();
+        let target_frames = elapsed * self.target_fps;
+        let mut frame_debt = target_frames - (self.total_frames_rendered as f32);
+        frame_debt = frame_debt.min(self.target_fps * MAX_FRAME_DEBT);
         self.frame_debt = frame_debt;
     }
 

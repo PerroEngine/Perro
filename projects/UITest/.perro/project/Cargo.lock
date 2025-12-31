@@ -3194,10 +3194,12 @@ dependencies = [
  "once_cell",
  "perro_core",
  "phf",
+ "regex",
  "rust_decimal",
  "serde",
  "serde_json",
  "smallvec",
+ "toml",
  "uuid",
 ]
 
