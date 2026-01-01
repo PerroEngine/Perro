@@ -1,13 +1,16 @@
 # 🐕 Perro Game Engine
 
+<div align="center">
+  <img src="icon.png" alt="Perro Logo" width="200"/>
+</div>
+
 **Perro** is an experimental, open-source game engine written in **Rust**, designed as a modern alternative to engines like Unreal, Godot, and Unity.
 
-It focuses on **performance, flexibility, and ease of use** with a unique multi-language scripting system:
+It focuses on **performance, flexibility, and ease of use** with a unique scripting system that transpiles to Rust for native performance:
 
-- 🐶 **Pup DSL** – a beginner-friendly, lightweight scripting language that compiles to Rust for native performance.
+- 🐶 **Pup DSL** – a beginner-friendly, lightweight scripting language that compiles to Rust for native performance. Write your gameplay logic in Pup and get the speed of Rust.
 - 🎨 **FUR (Flexible UI Rules)** – a declarative UI system with layouts, panels, and boxing for easy UI design.
-- 🌐 **Multi-Language Scripts** – write gameplay in **Pup**, **C#**, **TypeScript**, or **pure Rust** — everything transpiles to Rust under the hood.
-- 📦 **Type-Safe Transpilation** – full type checking and casting during code generation.
+- 📦 **Type-Safe Transpilation** – full type checking and casting during code generation. All scripts transpile to Rust under the hood.
 - ⚡ **Optimized Release Builds** – scripts and assets statically link into your final binary.
 - 🔗 **Decoupled Signal System** – global, name-based signals that completely decouple emitters from listeners. Use `on SIGNALNAME() {}` shorthand for automatic connections.
 
@@ -25,7 +28,6 @@ cd perro
 cargo run -p perro_dev
 ```
 
-This launches the **Perro Editor** in dev mode.
 
 ### Creating a New Project
 
@@ -56,9 +58,9 @@ cargo run -p perro_core -- --path /path/to/project --dev
 ```
 
 This automatically:
-1. Transpiles scripts (Pup/C#/TypeScript → Rust)
+1. Transpiles scripts (Pup → Rust)
 2. Compiles scripts into a DLL
-3. Runs the project with hot-reload enabled
+3. Runs the project
 
 **Manual Workflow (if you prefer more control):**
 
@@ -82,8 +84,34 @@ cargo run -p perro_core -- --path /path/to/project --run
 
 - Make changes to scripts in `res/*`
 - Re-run `--dev` or just `--scripts` + `perro_dev`
-- Changes are automatically picked up by the running game
 - Fast iteration cycle (~1–3s recompile time)
+
+### ⚠️ Source Mode Performance Considerations
+
+When building games from source, the runtime (`perro_dev`) runs in **debug mode** by default, which means it's unoptimized. This is fine for development, but if you need better performance:
+
+**If you're making engine changes:**
+- Rebuild the runtime in release mode when you make engine changes:
+  ```bash
+  cargo build --release -p perro_dev
+  ```
+- Then run the release binary:
+  ```bash
+  ./target/release/perro_dev.exe --path /path/to/project
+  ```
+
+**If you're NOT making engine changes:**
+- Precompile the runtime in release mode once:
+  ```bash
+  cargo build --release -p perro_dev
+  ```
+- Then use the release binary for all your game development:
+  ```bash
+  ./target/release/PerroDevRuntime.exe --path /path/to/project
+  ```
+- If no path is provided, the release binary must be in the same directory as a project folder with a valid `project.toml` in it.
+
+**Why?** The source mode workflow (`cargo run`) is optimized for engine development, not heavy game operations. For better performance during game development, use a release-built runtime.
 
 ### Release Build
 
@@ -113,7 +141,7 @@ This:
 ### Making Your First Game
 
 1. **Create a new project** using the CLI (see above)
-2. **Write scripts** in Pup, C#, TypeScript, or Rust in `res/` folder
+2. **Write scripts** in Pup in `res/` folder
 3. **Design scenes** by editing `res/*.scn` JSON files
 4. **Design UI** with FUR files in `res/`
 5. **Follow the development workflow** above to test and iterate
@@ -154,7 +182,7 @@ Perro uses a **global, decoupled signal system**. Signals are identified by name
 
 #### Signal Shorthand: `on SIGNALNAME() {}`
 
-The easiest way to handle signals is using the `on` keyword shorthand. This automatically creates a function and connects it to the signal in `init()`:
+The easiest way to handle signals is using the `on` keyword shorthand. This automatically creates a function and connects it to the signal at script initilization.
 
 ```pup
 @script GameManager extends Node
@@ -170,13 +198,11 @@ on pause_Pressed() {
 ```
 
 The `on` syntax automatically:
-- Creates a function with the signal name
-- Adds `Signal.connect("signal_name", function_name)` to your `init()` function
-- No need to manually write connection code!
+- Connects the code inside to the signal matching the same name.
 
 #### Manual Signal Connection
 
-You can also manually connect signals using `Signal.connect()`. The new simplified format takes just 2 arguments:
+You can also manually connect signals using `Signal.connect()`, using the signal name, and function.
 
 ```pup
 @script Player extends Sprite2D
@@ -192,9 +218,6 @@ fn init() {
     Signal.connect("enemy_Defeated", enemy.on_enemy_defeated)
     Signal.connect("bob_Pressed", bob.on_bob_pressed)
     
-    // You can use any variable that holds a node reference
-    var my_button = self.get_node("start_button")
-    Signal.connect("start_Pressed", my_button.on_start_pressed)
 }
 
 fn on_player_died() {
@@ -202,10 +225,6 @@ fn on_player_died() {
 }
 ```
 
-**Signal.connect() format:**
-- `Signal.connect(signal_name, function_reference)`
-  - If `function_reference` is a string or identifier → connects to `self`
-  - If `function_reference` is `node_var.function_name` → connects to that node variable (e.g., `bob.functionname`, `enemy.on_defeated`, `my_button.on_clicked`)
 
 #### Decoupled Signal System Example
 
@@ -239,7 +258,7 @@ on start_Pressed() {
 - The button in FUR automatically emits `start_Pressed` when clicked (based on its `id`)
 - The game manager doesn't need a reference to the button
 - The game manager doesn't even need to be in the same scene
-- Any script anywhere can listen for `start_Pressed` by name
+- Any script anywhere can listen for `start_Pressed` by name if connected
 - The signal system is completely global and decoupled
 
 This decoupling means you can:
@@ -247,24 +266,6 @@ This decoupling means you can:
 - Have game logic scripts that listen for signals without knowing where they come from
 - Easily add new listeners or emitters without modifying existing code
 - Test signals independently of their sources
-
----
-
-## 🌐 Multi-Language Scripting
-
-You can write scripts in multiple languages. Languages using **Tree Sitter** for parsing have their full syntax supported:
-
-- **Pup** (native DSL, hand-written parser)
-- **C#** (syntax via Tree Sitter CST → Perro AST; not all AST bindings implemented yet)
-- **TypeScript** (yntax via Tree Sitter CST → Perro AST; not all AST bindings implemented yet)
-- **Rust** (direct, no transpilation)
-
-The transpilation pipeline:
-
-1. **Parse** – Tree Sitter CST → Perro AST (or manual parser for Pup)
-2. **Codegen** – AST → type-checked Rust
-3. **Compile** – Rust → DLL (Dev) or static binary (Release)
-4. **Load** – DLL hot-load (Dev) or direct calls (Release)
 
 ---
 
@@ -294,12 +295,12 @@ See `perro_editor/res/fur` for real examples of FUR in use.
 
 ## 🔄 Dev vs Release
 
-### Dev Mode (Hot-Reload via DLL)
+### Dev Mode (DLL Loading)
 
 - Scripts are transpiled to Rust, compiled into a **DLL**
 - Engine loads the DLL at runtime
 - Load files from disk
-- Make changes → recompile (~1–3s) → see updates instantly without restarting
+- Make changes → recompile (~1–3s) → restart to see updates
 
 ### Release Mode (Static Linking)
 
@@ -324,7 +325,7 @@ This repository contains the **Perro engine source code**. To build and work on 
 
 **⚠️ Important: GNU Toolchain Required on Windows**
 
-On Windows, Rust defaults to the MSVC toolchain, but Perro requires the **GNU toolchain**. Here's how to install and set it up:
+Perro requires the **GNU toolchain**. Here's how to install and set it up:
 
 ```bash
 # Install the GNU toolchain (1.92.0 or later)
@@ -373,10 +374,10 @@ perro/
 ├── perro_dev/           # Dev wrapper binary (loads DLLs, runs projects with --path)
 ├── perro_editor/        # Editor game project
 │   ├── .perro/
-│   │   ├── project/     # Editor project crate
+│   │   ├── project/     # Editor project crate (final exported binary in --project mode)
 │   │   └── scripts/     # Editor scripts crate (contains transpiled rust + builds DLL)
 │   └── res/             # Resources (FUR files, scenes, assets, scripts)
-└── examples/            # Example game projects
+└── projects/            # Example game projects
 ```
 
 ### Building & Running
@@ -412,7 +413,7 @@ The editors are pinned to specific versions of the toolchain, (eg. 1.0 => 1.92.0
 
 ### Stabilized Features
 
-- ✅ Basic scripting system (Pup, C#, TS -> Rust pipeline)
+- ✅ Pup scripting system (Pup -> Rust pipeline)
 - ✅ Type checking and casting during Rust codegen
 - ✅ DLL loading & dynamic script loading
 - ✅ Static linking of scripts and assets during release
@@ -422,10 +423,13 @@ The editors are pinned to specific versions of the toolchain, (eg. 1.0 => 1.92.0
 ### In Progress / Planned
 
 - 🔄 Pup DSL expansion (control flow, standard library)
-- 🔄 C# & TypeScript AST bindings completion
 - 🔄 FUR runtime editing & editor viewer
 - 📋 Scene editor
 - 📋 Asset pipeline
+
+### Experimental Features
+
+- 🧪 **C# & TypeScript Support** – Experimental transpiler support for C# and TypeScript via Tree Sitter. These languages would be great additions once the transpiler stabilizes, but are currently experimental and not all AST bindings and behavior are implemented yet.
 
 ---
 
@@ -439,6 +443,29 @@ Contributions are welcome! You can work on:
 - **Tooling** – build system, asset pipeline
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## 💜 Support Perro
+
+Your support helps us continue developing Perro and making it accessible to everyone. With enough funding, donations can enable **full-time development** on Perro, dramatically accelerating progress and bringing features to production faster.
+
+Donations help fund:
+
+- 💼 **Full-Time Development** – Your contributions can enable dedicated, full-time work on Perro, allowing for faster feature development, more consistent updates, and quicker bug fixes
+- 🚀 **Accelerated Development** – More time for core features like the scene editor, asset pipeline, and expanded Pup DSL capabilities
+- 🛠️ **Better Tooling & Infrastructure** – Improved development tools, CI/CD pipelines, documentation, and testing infrastructure
+- 📚 **Enhanced Documentation** – Comprehensive tutorials, example projects, and detailed guides
+- 🐛 **Bug Fixes & Stability** – More time fixing bugs, improving performance, and ensuring Perro runs smoothly across platforms
+- 🌍 **Community Growth** – Supporting forums, community events, and developer outreach
+- ⚡ **Performance & Optimization** – Investing in profiling tools and optimization work
+
+**Ways to Support:**
+
+- [☕ Support on Ko-fi](https://ko-fi.com/perroengine)
+- [🌐 Support Directly](https://perroengine.com/sponsor)
+
+Every contribution, no matter the size, makes a difference! Thank you for supporting open-source game development! 🎮
 
 ---
 

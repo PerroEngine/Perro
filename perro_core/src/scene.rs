@@ -2539,25 +2539,45 @@ impl<P: ScriptProvider> Scene<P> {
 
     /// Update collider transforms to match node transforms
     fn update_collider_transforms(&mut self) {
-        // First collect node IDs that need updating
-        let node_ids: Vec<Uuid> = self.nodes
-            .iter()
-            .filter_map(|(node_id, node)| {
-                if let SceneNode::CollisionShape2D(cs) = node {
-                    if cs.collider_handle.is_some() {
-                        Some(*node_id)
+        // OPTIMIZED: Parallelize node filtering (read-only operation)
+        let node_ids: Vec<Uuid> = if self.nodes.len() >= 10 {
+            // Use parallel iteration for larger node counts
+            self.nodes
+                .par_iter()
+                .filter_map(|(node_id, node)| {
+                    if let SceneNode::CollisionShape2D(cs) = node {
+                        if cs.collider_handle.is_some() {
+                            Some(*node_id)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
-            })
-            .collect();
+                })
+                .collect()
+        } else {
+            // Sequential for small counts (overhead not worth it)
+            self.nodes
+                .iter()
+                .filter_map(|(node_id, node)| {
+                    if let SceneNode::CollisionShape2D(cs) = node {
+                        if cs.collider_handle.is_some() {
+                            Some(*node_id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
         
         // Mark all collision shapes as dirty to force recalculation
         // This ensures their global transforms are recalculated even if the dirty flag
         // wasn't set (e.g., if parent moved but child wasn't marked dirty)
+        // Note: Can't parallelize this easily due to mutable borrow requirements
         for node_id in &node_ids {
             if let Some(node) = self.nodes.get_mut(node_id) {
                 if let Some(node2d) = node.as_node2d_mut() {
@@ -2568,7 +2588,8 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Get global transforms (requires mutable access)
         // Now that we've marked them dirty, get_global_transform will recalculate
-        let mut to_update: Vec<(Uuid, [f32; 2], f32)> = Vec::new();
+        // OPTIMIZED: Pre-allocate with known capacity
+        let mut to_update: Vec<(Uuid, [f32; 2], f32)> = Vec::with_capacity(node_ids.len());
         for node_id in node_ids {
             if let Some(global) = self.get_global_transform(node_id) {
                 let position = [global.position.x, global.position.y];
@@ -2716,34 +2737,87 @@ impl<P: ScriptProvider> Scene<P> {
         let mut nodes_by_parent: std::collections::HashMap<Option<Uuid>, Vec<(Uuid, usize)>> = 
             std::collections::HashMap::with_capacity(0);
         
-        // First pass: collect nodes and their depths
-        for &node_id in node_ids {
-            if let Some(node) = self.nodes.get(&node_id) {
-                if node.as_node2d().is_some() {
-                    // Calculate depth
-                    let mut depth = 0;
-                    let mut current_id = Some(node_id);
-                    while let Some(id) = current_id {
-                        if let Some(n) = self.nodes.get(&id) {
-                            if let Some(parent) = n.get_parent() {
-                                if let Some(parent_node) = self.nodes.get(&parent.id) {
-                                    if parent_node.as_node2d().is_some() {
-                                        depth += 1;
+        // OPTIMIZED: Parallelize depth calculation for large node counts
+        // Each node's depth calculation is independent (read-only access to nodes)
+        let node_depths: Vec<(Uuid, Option<Uuid>, usize)> = if node_ids.len() >= 20 {
+            // Parallel path for larger node sets
+            node_ids
+                .par_iter()
+                .filter_map(|&node_id| {
+                    if let Some(node) = self.nodes.get(&node_id) {
+                        if node.as_node2d().is_some() {
+                            // Calculate depth (read-only traversal up parent chain)
+                            let mut depth = 0;
+                            let mut current_id = Some(node_id);
+                            while let Some(id) = current_id {
+                                if let Some(n) = self.nodes.get(&id) {
+                                    if let Some(parent) = n.get_parent() {
+                                        if let Some(parent_node) = self.nodes.get(&parent.id) {
+                                            if parent_node.as_node2d().is_some() {
+                                                depth += 1;
+                                            }
+                                        }
+                                        current_id = Some(parent.id);
+                                    } else {
+                                        break;
                                     }
+                                } else {
+                                    break;
                                 }
-                                current_id = Some(parent.id);
-                            } else {
-                                break;
                             }
+                            
+                            let parent_id = node.get_parent().map(|p| p.id);
+                            Some((node_id, parent_id, depth))
                         } else {
-                            break;
+                            None
                         }
+                    } else {
+                        None
                     }
-                    
-                    let parent_id = node.get_parent().map(|p| p.id);
-                    nodes_by_parent.entry(parent_id).or_default().push((node_id, depth));
-                }
-            }
+                })
+                .collect()
+        } else {
+            // Sequential path for small node sets (avoid parallel overhead)
+            node_ids
+                .iter()
+                .filter_map(|&node_id| {
+                    if let Some(node) = self.nodes.get(&node_id) {
+                        if node.as_node2d().is_some() {
+                            // Calculate depth
+                            let mut depth = 0;
+                            let mut current_id = Some(node_id);
+                            while let Some(id) = current_id {
+                                if let Some(n) = self.nodes.get(&id) {
+                                    if let Some(parent) = n.get_parent() {
+                                        if let Some(parent_node) = self.nodes.get(&parent.id) {
+                                            if parent_node.as_node2d().is_some() {
+                                                depth += 1;
+                                            }
+                                        }
+                                        current_id = Some(parent.id);
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                            
+                            let parent_id = node.get_parent().map(|p| p.id);
+                            Some((node_id, parent_id, depth))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+        
+        // Build the parent grouping map (sequential, but fast)
+        for (node_id, parent_id, depth) in node_depths {
+            nodes_by_parent.entry(parent_id).or_default().push((node_id, depth));
         }
         
         // Sort each sibling group by depth

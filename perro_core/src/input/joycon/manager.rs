@@ -198,7 +198,6 @@ impl ControllerManager {
     /// Scan for Joy-Con 2 devices (BLE) - synchronous wrapper
     /// Blocks on the async operation using the runtime handle with a timeout
     pub fn scan_joycon2_sync(&self) -> Result<Vec<String>, JoyConError> {
-        use std::time::Duration;
         use tokio::sync::oneshot;
         // Spawn the async operation and use a oneshot channel to get the result
         let (tx, rx) = oneshot::channel();

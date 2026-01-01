@@ -20,8 +20,8 @@ pub use scene::*;
 pub use scripting::*;
 pub use structs::*;
 
-use crate::app::App;
-use crate::registry::DllScriptProvider;
+use crate::rendering::app::App;
+use crate::scripting::DllScriptProvider;
 
 pub type RuntimeApp = App<DllScriptProvider>;
 
