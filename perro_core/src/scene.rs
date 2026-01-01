@@ -22,6 +22,7 @@ use crate::{
     ui_renderer::render_ui, // NEW import
 };
 use std::sync::Mutex;
+use once_cell::sync::OnceCell;
 
 use glam::{Mat4, Vec3};
 use indexmap::IndexMap;
@@ -299,7 +300,8 @@ impl SceneData {
     pub fn new(root: SceneNode) -> Self {
         let root_id = root.get_id();
         let mut nodes = IndexMap::new();
-        let mut index_to_uuid = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map to avoid pre-allocation
+        let mut index_to_uuid = HashMap::with_capacity(0);
         // Use index 0 for root
         index_to_uuid.insert(0, root_id);
         nodes.insert(0, root);
@@ -388,7 +390,8 @@ impl SceneData {
         }
         
         let mut runtime_nodes = FxHashMap::default();
-        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::with_capacity(0);
         
         // First pass: create nodes with new UUIDs and collect parent relationships
         println!("🔍 First pass: remapping nodes and collecting parent relationships:");
@@ -467,10 +470,12 @@ impl SceneData {
         // use UUIDs from index_to_uuid, and children are already set.
         // This function can be used to verify/rebuild relationships if needed.
         
-        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::with_capacity(0);
 
         // Collect parent node types
-        let mut parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
         
         for (&idx, node) in data.nodes.iter() {
             if let Some(parent) = node.get_parent() {
@@ -537,7 +542,9 @@ pub struct Scene<P: ScriptProvider> {
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
-    pub controller_manager: Mutex<ControllerManager>, // Controller input manager
+    // OPTIMIZED: Lazy controller manager - only create when first controller is accessed
+    // Using OnceCell for thread-safe lazy initialization
+    pub controller_manager: OnceCell<Mutex<ControllerManager>>, // Controller input manager
     pub input_manager: Mutex<InputManager>,         // Keyboard/mouse input manager
 
     pub last_scene_update: Option<Instant>,
@@ -556,7 +563,8 @@ pub struct Scene<P: ScriptProvider> {
     pub nodes_with_internal_render_update: HashSet<Uuid>,
 
     // Physics (wrapped in RefCell for interior mutability through trait objects)
-    pub physics_2d: std::cell::RefCell<PhysicsWorld2D>,
+    // OPTIMIZED: Lazy initialization - only create when first physics object is added
+    pub physics_2d: Option<std::cell::RefCell<PhysicsWorld2D>>,
     
     // OPTIMIZED: Cache script IDs to avoid Vec allocation every frame
     cached_script_ids: Vec<Uuid>,
@@ -598,7 +606,8 @@ impl<P: ScriptProvider> Scene<P> {
             provider,
             project,
             app_command_tx: None,
-            controller_manager: Mutex::new(ControllerManager::new()),
+            // OPTIMIZED: Lazy controller manager initialization
+            controller_manager: OnceCell::new(),
             input_manager: Mutex::new(InputManager::new()),
 
             last_scene_update: Some(Instant::now()),
@@ -609,7 +618,8 @@ impl<P: ScriptProvider> Scene<P> {
             last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
             nodes_with_internal_render_update: HashSet::new(),
-            physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
+            // OPTIMIZED: Lazy physics initialization - only create when needed
+            physics_2d: None,
             
             // OPTIMIZED: Initialize script ID cache
             cached_script_ids: Vec::new(),
@@ -645,11 +655,13 @@ impl<P: ScriptProvider> Scene<P> {
             signals: SignalBus::default(),
             queued_signals: Vec::new(),
             scripts: FxHashMap::default(),
-            physics_2d: std::cell::RefCell::new(PhysicsWorld2D::new()),
+            // OPTIMIZED: Lazy physics initialization - only create when needed
+            physics_2d: None,
             provider,
             project,
             app_command_tx: None,
-            controller_manager: Mutex::new(ControllerManager::new()),
+            // OPTIMIZED: Lazy controller manager initialization
+            controller_manager: OnceCell::new(),
             input_manager: Mutex::new(InputManager::new()),
 
             last_scene_update: Some(Instant::now()),
@@ -681,14 +693,39 @@ impl<P: ScriptProvider> Scene<P> {
         Ok(Scene::from_data(data, provider, project))
     }
     
+    /// Get or initialize the physics world (lazy initialization)
+    /// OPTIMIZED: Only creates physics world when first needed
+    fn get_or_init_physics_2d(&mut self) -> &mut std::cell::RefCell<PhysicsWorld2D> {
+        if self.physics_2d.is_none() {
+            println!("🔵 PhysicsWorld2D initialized (lazy) - this should NOT appear for projects without physics!");
+            self.physics_2d = Some(std::cell::RefCell::new(PhysicsWorld2D::new()));
+        }
+        self.physics_2d.as_mut().unwrap()
+    }
+    
+    /// Debug method to check if physics is initialized
+    pub fn is_physics_initialized(&self) -> bool {
+        self.physics_2d.is_some()
+    }
+    
+    /// Debug: Print physics initialization status
+    pub fn debug_physics_status(&self) {
+        if self.physics_2d.is_some() {
+            println!("⚠️ PhysicsWorld2D is INITIALIZED (should be None for projects without physics)");
+        } else {
+            println!("✅ PhysicsWorld2D is NOT initialized (correct for projects without physics)");
+        }
+    }
+    
     /// Convert runtime Scene to SceneData for serialization
     /// Assigns u32 indices to nodes based on traversal order
     pub fn to_scene_data(&self) -> SceneData {
         // Assign indices based on traversal order (root first, then children)
         let mut index = 0u32;
-        let mut uuid_to_index: HashMap<Uuid, u32> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty maps initially
+        let mut uuid_to_index: HashMap<Uuid, u32> = HashMap::with_capacity(0);
         let mut nodes = IndexMap::new();
-        let mut index_to_uuid: HashMap<u32, Uuid> = HashMap::new();
+        let mut index_to_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(0);
         
         // Traverse tree starting from root
         let mut to_process = vec![self.root_id];
@@ -973,7 +1010,8 @@ impl<P: ScriptProvider> Scene<P> {
         // 2️⃣ REMAP NODES AND BUILD RELATIONSHIPS
         // ───────────────────────────────────────────────
         let remap_start = Instant::now();
-        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::with_capacity(0);
     
         // Get the subscene root's NEW runtime ID
         let subscene_root_index = other.root_index;
@@ -993,7 +1031,8 @@ impl<P: ScriptProvider> Scene<P> {
     
         // First, collect parent node types from other.nodes before mutable iteration
         // Parent IDs in nodes are UUIDs from index_to_uuid, so we need to map them
-        let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
         for (&idx, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
                 // parent.id is a UUID from index_to_uuid, find which index it corresponds to
@@ -1406,11 +1445,13 @@ impl<P: ScriptProvider> Scene<P> {
         );
     
         // Build parent-children relationships
-        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::with_capacity(0);
         
         // First, collect parent node types from other.nodes before mutable iteration
         // Parent IDs in nodes are UUIDs from index_to_uuid, so we need to map them
-        let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map
+        let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
         for (&idx, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
                 // parent.id is a UUID from index_to_uuid, find which index it corresponds to
@@ -1924,10 +1965,17 @@ impl<P: ScriptProvider> Scene<P> {
                 }
                 
                 // Step physics simulation
+                // OPTIMIZED: Skip physics step if world doesn't exist or is empty
                 {
                     #[cfg(feature = "profiling")]
                     let _span = tracing::span!(tracing::Level::INFO, "physics_step").entered();
-                    self.physics_2d.borrow_mut().step(fixed_delta);
+                    if let Some(physics) = &mut self.physics_2d {
+                        let mut physics = physics.borrow_mut();
+                        // OPTIMIZED: Skip step if no colliders exist (saves CPU cycles)
+                        if !physics.colliders.is_empty() {
+                            physics.step(fixed_delta);
+                        }
+                    }
                 }
 
                 // Run fixed update for all scripts
@@ -2530,9 +2578,12 @@ impl<P: ScriptProvider> Scene<P> {
         }
         
         // Update physics colliders (after releasing all borrows)
-        let mut physics = self.physics_2d.borrow_mut();
-        for (node_id, position, rotation) in to_update {
-            physics.update_collider_transform(node_id, position, rotation);
+        // OPTIMIZED: Only update if physics world exists
+        if let Some(physics) = &mut self.physics_2d {
+            let mut physics = physics.borrow_mut();
+            for (node_id, position, rotation) in to_update {
+                physics.update_collider_transform(node_id, position, rotation);
+            }
         }
     }
 
@@ -2554,7 +2605,8 @@ impl<P: ScriptProvider> Scene<P> {
         }
         
         // Get global transforms for all nodes (requires mutable access)
-        let mut global_transforms: HashMap<Uuid, ([f32; 2], f32)> = HashMap::new();
+        // OPTIMIZED: Use with_capacity(0) for known-empty map initially
+        let mut global_transforms: HashMap<Uuid, ([f32; 2], f32)> = HashMap::with_capacity(0);
         for (node_id, _, _) in &to_register {
             if let Some(global) = self.get_global_transform(*node_id) {
                 global_transforms.insert(*node_id, ([global.position.x, global.position.y], global.rotation));
@@ -2562,10 +2614,33 @@ impl<P: ScriptProvider> Scene<P> {
         }
         
         // Now register with physics (after releasing all node borrows)
-        let mut physics = self.physics_2d.borrow_mut();
+        // OPTIMIZED: Lazy initialization - create physics world when first collision shape is registered
+        if to_register.is_empty() {
+            return;
+        }
+        
+        // First, check which parents are Area2D nodes (before borrowing physics)
+        // Store tuples of (node_id, shape, parent_opt, is_area2d_parent)
+        let mut registration_data: Vec<(Uuid, crate::physics::physics_2d::ColliderShape, Option<Uuid>, bool)> = Vec::new();
+        for (node_id, shape, parent_opt) in to_register {
+            let is_area2d_parent = if let Some(parent) = &parent_opt {
+                let pid = parent.id;
+                if let Some(parent_node) = self.nodes.get(&pid) {
+                    matches!(parent_node, SceneNode::Area2D(_))
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            registration_data.push((node_id, shape, parent_opt.map(|p| p.id), is_area2d_parent));
+        }
+        
+        // Now borrow physics and create all colliders
+        let mut physics = self.get_or_init_physics_2d().borrow_mut();
         let mut handles_to_store: Vec<(Uuid, rapier2d::prelude::ColliderHandle, Option<Uuid>)> = Vec::new();
         
-        for (node_id, shape, parent_opt) in to_register {
+        for (node_id, shape, parent_id_opt, is_area2d_parent) in registration_data {
             // Use global transform if available, otherwise use default (for first frame)
             let (world_position, world_rotation) = global_transforms
                 .get(&node_id)
@@ -2581,16 +2656,13 @@ impl<P: ScriptProvider> Scene<P> {
             );
             
             // If this collision shape is a child of an Area2D, register it
-            if let Some(parent) = &parent_opt {
-                let pid = parent.id;
-                if let Some(parent) = self.nodes.get(&pid) {
-                    if matches!(parent, SceneNode::Area2D(_)) {
-                        physics.register_area_collider(pid, collider_handle);
-                    }
+            if is_area2d_parent {
+                if let Some(pid) = parent_id_opt {
+                    physics.register_area_collider(pid, collider_handle);
                 }
             }
             
-            handles_to_store.push((node_id, collider_handle, parent_opt.map(|p| p.id)));
+            handles_to_store.push((node_id, collider_handle, parent_id_opt));
         }
         
         // Drop physics borrow before mutating nodes
@@ -2640,8 +2712,9 @@ impl<P: ScriptProvider> Scene<P> {
     /// OPTIMIZED: Skips non-Node2D parents when calculating depth (they don't affect transform inheritance).
     fn precalculate_transforms_in_dependency_order(&mut self, node_ids: &[Uuid]) {
         // Group nodes by parent for batch processing
+        // OPTIMIZED: Use with_capacity(0) for known-empty map initially
         let mut nodes_by_parent: std::collections::HashMap<Option<Uuid>, Vec<(Uuid, usize)>> = 
-            std::collections::HashMap::new();
+            std::collections::HashMap::with_capacity(0);
         
         // First pass: collect nodes and their depths
         for &node_id in node_ids {
@@ -3410,7 +3483,9 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>> {
-        Some(&self.controller_manager)
+        // OPTIMIZED: Lazy initialization - create on first access using OnceCell
+        self.controller_manager.get_or_init(|| Mutex::new(ControllerManager::new()));
+        self.controller_manager.get()
     }
 
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>> {
@@ -3418,7 +3493,7 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
     fn get_physics_2d(&self) -> Option<&std::cell::RefCell<PhysicsWorld2D>> {
-        Some(&self.physics_2d)
+        self.physics_2d.as_ref()
     }
 
     fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {

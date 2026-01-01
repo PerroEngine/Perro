@@ -22,5 +22,5 @@ g_start = 77
 g_end = 81
 
 [scripts.ui_pup.names]
-__t_bob2_Pressed = "bob2_Pressed"
 __t_bob_Pressed = "bob_Pressed"
+__t_bob2_Pressed = "bob2_Pressed"

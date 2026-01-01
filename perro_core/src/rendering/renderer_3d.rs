@@ -313,9 +313,12 @@ impl Renderer3D {
         // Access violations can't be caught by Rust, they're OS-level exceptions
         // If this crashes, it's almost certainly a GPU driver bug
         let pipeline = device.create_render_pipeline(&pipeline_descriptor);
+        // OPTIMIZED: Start with smaller buffer (256 instances instead of 4096)
+        // Buffer will grow dynamically as needed, saving ~300KB initially
+        const INITIAL_MESH_INSTANCE_CAPACITY: usize = 256;
         let mesh_instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Mesh Instances"),
-            size: 4096 * std::mem::size_of::<MeshInstance>() as u64, // Increased buffer size
+            size: (INITIAL_MESH_INSTANCE_CAPACITY * std::mem::size_of::<MeshInstance>()) as u64,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });

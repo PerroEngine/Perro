@@ -2,8 +2,7 @@
   "root_index": 0,
   "nodes": {
     "0": {
-      "type": "UINode",
-      "fur_path": "res://ui.fur",
+      "type": "Node2D",
       "base": {
         "type": "Node",
         "name": "UI"
