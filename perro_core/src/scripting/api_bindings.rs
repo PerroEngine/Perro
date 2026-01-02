@@ -1466,6 +1466,9 @@ impl ApiCodegen for InputApi {
                 let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.Input.get_action({})", arg)
             }
+            InputApi::ControllerEnable => {
+                "api.Input.Controller.enable()".into()
+            }
             InputApi::IsKeyPressed => {
                 let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.Input.Keyboard.is_key_pressed({})", arg)
@@ -1516,6 +1519,7 @@ impl ApiTypes for InputApi {
             | InputApi::IsButtonPressed
             | InputApi::IsWheelUp
             | InputApi::IsWheelDown => Some(Type::Bool),
+            InputApi::ControllerEnable => Some(Type::Bool),
             InputApi::GetTextInput => Some(Type::String),
             InputApi::GetMousePosition
             | InputApi::GetMousePositionWorld

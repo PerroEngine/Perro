@@ -160,6 +160,7 @@ pub trait SceneAccess {
     
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;
+    fn enable_controller_manager(&self) -> bool;
     
     /// Update the Node2D children cache when a child is added
     fn update_node2d_children_cache_on_add(&mut self, parent_id: Uuid, child_id: Uuid);

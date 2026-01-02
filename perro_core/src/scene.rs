@@ -542,9 +542,10 @@ pub struct Scene<P: ScriptProvider> {
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
-    // OPTIMIZED: Lazy controller manager - only create when first controller is accessed
+    // OPTIMIZED: Lazy controller manager - only create when explicitly enabled
     // Using OnceCell for thread-safe lazy initialization
     pub controller_manager: OnceCell<Mutex<ControllerManager>>, // Controller input manager
+    pub controller_enabled: std::sync::atomic::AtomicBool, // Flag to track if controllers are enabled
     pub input_manager: Mutex<InputManager>,         // Keyboard/mouse input manager
 
     pub last_scene_update: Option<Instant>,
@@ -608,6 +609,7 @@ impl<P: ScriptProvider> Scene<P> {
             app_command_tx: None,
             // OPTIMIZED: Lazy controller manager initialization
             controller_manager: OnceCell::new(),
+            controller_enabled: std::sync::atomic::AtomicBool::new(false),
             input_manager: Mutex::new(InputManager::new()),
 
             last_scene_update: Some(Instant::now()),
@@ -662,6 +664,7 @@ impl<P: ScriptProvider> Scene<P> {
             app_command_tx: None,
             // OPTIMIZED: Lazy controller manager initialization
             controller_manager: OnceCell::new(),
+            controller_enabled: std::sync::atomic::AtomicBool::new(false),
             input_manager: Mutex::new(InputManager::new()),
 
             last_scene_update: Some(Instant::now()),
@@ -3557,9 +3560,21 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     }
 
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>> {
+        // Only create controller manager if explicitly enabled
+        if !self.controller_enabled.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
         // OPTIMIZED: Lazy initialization - create on first access using OnceCell
         self.controller_manager.get_or_init(|| Mutex::new(ControllerManager::new()));
         self.controller_manager.get()
+    }
+    
+    fn enable_controller_manager(&self) -> bool {
+        // Enable controllers and initialize the manager
+        self.controller_enabled.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Force initialization by calling get_or_init
+        self.controller_manager.get_or_init(|| Mutex::new(ControllerManager::new()));
+        true
     }
 
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>> {

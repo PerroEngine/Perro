@@ -152,6 +152,11 @@ impl TypeScriptInput {
             // Actions
             "getAction" | "get_action" => Some(ApiModule::Input(InputApi::GetAction)),
 
+            // Controller
+            "controllerEnable" | "controller_enable" | "enableController" | "enable_controller" => {
+                Some(ApiModule::Input(InputApi::ControllerEnable))
+            }
+
             // Keyboard
             "isKeyPressed" | "is_key_pressed" | "getKeyPressed" => {
                 Some(ApiModule::Input(InputApi::IsKeyPressed))

@@ -16,7 +16,7 @@ use phf::{phf_map, Map};
 
 /// @PerroScript
 pub struct UpdaterScript {
-    base: Node,
+    id: Uuid,
     check_timer: f32,
     state: UpdateState,
     my_version: String,
@@ -25,7 +25,7 @@ pub struct UpdaterScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn updater_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(UpdaterScript {
-        base: Node::new("Updater", None),
+        id: Uuid::nil(),
         check_timer: 0.0,
         state: UpdateState::Initial,
         my_version: String::new(),

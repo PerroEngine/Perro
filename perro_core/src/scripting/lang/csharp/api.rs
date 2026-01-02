@@ -88,6 +88,11 @@ impl CSharpInput {
             // Actions
             "GetAction" => Some(ApiModule::Input(InputApi::GetAction)),
 
+            // Controller
+            "ControllerEnable" | "EnableController" => {
+                Some(ApiModule::Input(InputApi::ControllerEnable))
+            }
+
             // Keyboard
             "IsKeyPressed" | "GetKeyPressed" => Some(ApiModule::Input(InputApi::IsKeyPressed)),
             "GetTextInput" => Some(ApiModule::Input(InputApi::GetTextInput)),

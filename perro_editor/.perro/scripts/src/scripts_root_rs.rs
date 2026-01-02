@@ -16,43 +16,22 @@ use smallvec::{SmallVec, smallvec};
 
 /// @PerroScript
 pub static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
-    "b" => &["expose", "Expose"],
-    "a" => &["bitch"],
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
-    "bitch" => &["a"],
-    "expose" => &["b"],
-    "Expose" => &["b"],
 };
 
 struct RootScript {
-    base: Node,
-    /// @expose
-    pub b: f32,
-    /// @bitch
-    pub a: i32,
-    e: String,
-    pub f: F,
-    pub h: i64,
+    id: Uuid,
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RootScript {
-        base: Node::new("Root", None),
-        b: 0.0f32,
-        a: 0i32,
-        e: String::new(),
-        f: F { g: 0 },
-        h: 0,
+        id: Uuid::nil(),
     })) as *mut dyn ScriptObject
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub struct F {
-    pub g: i32,
-}
 
 impl RootScript {
 
@@ -411,61 +390,16 @@ impl ScriptObject for RootScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&RootScript) -> Option<Value>> =
     phf::phf_map! {
-        12638190499090526629u64 => |script: &RootScript| -> Option<Value> {
-                        Some(json!(script.b))
-                    },
-        12638187200555641996u64 => |script: &RootScript| -> Option<Value> {
-                        Some(json!(script.a))
-                    },
-        12638186101044013785u64 => |script: &RootScript| -> Option<Value> {
-                        Some(json!(script.f))
-                    },
-        12638197096160295895u64 => |script: &RootScript| -> Option<Value> {
-                        Some(json!(script.h))
-                    },
 
     };
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut RootScript, Value) -> Option<()>> =
     phf::phf_map! {
-        12638190499090526629u64 => |script: &mut RootScript, val: Value| -> Option<()> {
-                            if let Some(v) = val.as_f64() {
-                                script.b = v as f32;
-                                return Some(());
-                            }
-                            None
-                        },
-        12638187200555641996u64 => |script: &mut RootScript, val: Value| -> Option<()> {
-                            if let Some(v) = val.as_i64() {
-                                script.a = v as i32;
-                                return Some(());
-                            }
-                            None
-                        },
-        12638186101044013785u64 => |script: &mut RootScript, val: Value| -> Option<()> {
-                            if let Ok(v) = serde_json::from_value::<F>(val) {
-                                script.f = v;
-                                return Some(());
-                            }
-                            None
-                        },
-        12638197096160295895u64 => |script: &mut RootScript, val: Value| -> Option<()> {
-                            if let Some(v) = val.as_i64() {
-                                script.h = v as i64;
-                                return Some(());
-                            }
-                            None
-                        },
 
     };
 
 static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut RootScript, &Value)> =
     phf::phf_map! {
-        12638190499090526629u64 => |script: &mut RootScript, val: &Value| {
-                            if let Some(v) = val.as_f64() {
-                                script.b = v as f32;
-                            }
-                        },
 
     };
 

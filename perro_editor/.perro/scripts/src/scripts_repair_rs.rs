@@ -18,7 +18,7 @@ use phf::{phf_map, Map};
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_repair_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RepairScript {
-        base: Node::new("Repair", None),
+        id: Uuid::nil(),
         toolchain_ver: String::new(),
         engine_ver: String::new(),
         editor_mode: false,
@@ -33,7 +33,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 struct RepairScript {
-    base: Node,
+    id: Uuid,
     toolchain_ver: String,
     engine_ver: String,
     editor_mode: bool,

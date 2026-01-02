@@ -585,6 +585,9 @@ pub struct Graphics {
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group_layout: BindGroupLayout,
     pub camera_bind_group: wgpu::BindGroup,
+    // UI camera uses window size directly (no virtual resolution)
+    pub ui_camera_buffer: wgpu::Buffer,
+    pub ui_camera_bind_group: wgpu::BindGroup,
     pub vertex_buffer: wgpu::Buffer,
 
     pub camera3d: Camera3D,
@@ -916,6 +919,67 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         }],
     });
 
+    // 3.5) UI Camera uniform buffer (uses window size directly, no virtual resolution)
+    let ui_camera_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("UI Camera UBO"),
+        size: 96,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let ui_camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("UI Camera BG"),
+        layout: &camera_bind_group_layout, // Reuse the same layout
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &ui_camera_buffer,
+                offset: 0,
+                size: BufferSize::new(96),
+            }),
+        }],
+    });
+
+    // Initialize UI camera: stretches to fill window (no black bars) while maintaining coordinate system
+    // Virtual size defines the coordinate space (e.g., -540 is always left edge of 1080-wide space)
+    // NDC scale maps virtual coordinates directly to window, stretching to fill
+    let ui_virtual_width = VIRTUAL_WIDTH;
+    let ui_virtual_height = VIRTUAL_HEIGHT;
+    let window_width = surface_config.width as f32;
+    let window_height = surface_config.height as f32;
+    
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CameraUniform {
+        virtual_size: [f32; 2],
+        ndc_scale: [f32; 2],
+        zoom: f32,
+        _pad0: f32,
+        _pad1: [f32; 2],
+        view: [[f32; 4]; 4],
+    }
+    
+    unsafe impl bytemuck::Pod for CameraUniform {}
+    unsafe impl bytemuck::Zeroable for CameraUniform {}
+    
+    // UI camera: stretch to fill window (no black bars)
+    // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
+    let ui_scale_x = window_width / ui_virtual_width;
+    let ui_scale_y = window_height / ui_virtual_height;
+    let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+    let ui_ndc_scale = glam::vec2(2.0 / window_width, 2.0 / window_height);
+    
+    let ui_cam_uniform = CameraUniform {
+        virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
+        ndc_scale: ui_ndc_scale.into(),
+        zoom: 0.0,
+        _pad0: 0.0,
+        _pad1: [0.0, 0.0],
+        view: ui_view.to_cols_array_2d(),
+    };
+    
+    queue.write_buffer(&ui_camera_buffer, 0, bytemuck::bytes_of(&ui_cam_uniform));
+
     // 4) 3D Camera uniform buffer (128 bytes: 2x mat4)
     let camera3d_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("Camera3D UBO"),
@@ -1074,6 +1138,8 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         camera_buffer,
         camera_bind_group_layout,
         camera_bind_group,
+        ui_camera_buffer,
+        ui_camera_bind_group,
         vertex_buffer,
 
         camera3d: initial_camera_3d,
@@ -1457,6 +1523,51 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     
     queue.write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
     
+    // Initialize UI camera (uses window size directly, no virtual resolution)
+    let ui_camera_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("UI Camera UBO"),
+        size: 96,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let ui_camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("UI Camera BG"),
+        layout: &camera_bind_group_layout, // Reuse the same layout
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &ui_camera_buffer,
+                offset: 0,
+                size: BufferSize::new(96),
+            }),
+        }],
+    });
+
+    // UI camera: stretches to fill window (no black bars) while maintaining coordinate system
+    // Virtual size defines the coordinate space (e.g., -540 is always left edge of 1080-wide space)
+    // NDC scale maps virtual coordinates directly to window, stretching to fill
+    let ui_virtual_width = VIRTUAL_WIDTH;
+    let ui_virtual_height = VIRTUAL_HEIGHT;
+    
+    // UI camera: stretch to fill window (no black bars)
+    // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
+    let ui_scale_x = window_width / ui_virtual_width;
+    let ui_scale_y = window_height / ui_virtual_height;
+    let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+    let ui_ndc_scale = glam::vec2(2.0 / window_width, 2.0 / window_height);
+    
+    let ui_cam_uniform = CameraUniform {
+        virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
+        ndc_scale: ui_ndc_scale.into(),
+        zoom: 0.0,
+        _pad0: 0.0,
+        _pad1: [0.0, 0.0],
+        view: ui_view.to_cols_array_2d(),
+    };
+    
+    queue.write_buffer(&ui_camera_buffer, 0, bytemuck::bytes_of(&ui_cam_uniform));
+    
     // Create renderers
     let mut renderer_3d =
         Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
@@ -1500,6 +1611,8 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         camera_buffer,
         camera_bind_group_layout,
         camera_bind_group,
+        ui_camera_buffer,
+        ui_camera_bind_group,
         vertex_buffer,
         camera3d: initial_camera_3d,
         camera3d_buffer,
@@ -1537,6 +1650,7 @@ impl Graphics {
         self.surface_config.height = size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
         self.update_camera_uniform();
+        self.update_ui_camera_uniform();
 
         // Recreate depth texture with new size
         self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -1582,6 +1696,51 @@ impl Graphics {
 
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
+    }
+
+    fn update_ui_camera_uniform(&self) {
+        // UI camera: stretches to fill window (no black bars) while maintaining coordinate system
+        // Virtual size defines the coordinate space (e.g., -540 is always left edge of 1080-wide space)
+        // NDC scale maps virtual coordinates directly to window, stretching to fill
+        let ui_virtual_width = VIRTUAL_WIDTH;
+        let ui_virtual_height = VIRTUAL_HEIGHT;
+        let window_width = self.surface_config.width as f32;
+        let window_height = self.surface_config.height as f32;
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct CameraUniform {
+            virtual_size: [f32; 2],
+            ndc_scale: [f32; 2],
+            zoom: f32,
+            _pad0: f32,
+            _pad1: [f32; 2],
+            view: [[f32; 4]; 4],
+        }
+
+        unsafe impl bytemuck::Pod for CameraUniform {}
+        unsafe impl bytemuck::Zeroable for CameraUniform {}
+
+        // UI camera: stretch to fill window (no black bars)
+        // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
+        // view matrix scales: virtual_pos * (window/virtual) = window_pos
+        // ndc_scale converts: window_pos * (2.0/window) = NDC
+        let ui_scale_x = window_width / ui_virtual_width;
+        let ui_scale_y = window_height / ui_virtual_height;
+        let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+        let ui_ndc_scale = glam::vec2(2.0 / window_width, 2.0 / window_height);
+
+        let ui_cam_uniform = CameraUniform {
+            virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
+            ndc_scale: ui_ndc_scale.into(),
+            zoom: 0.0,
+            _pad0: 0.0,
+            _pad1: [0.0, 0.0],
+            view: ui_view.to_cols_array_2d(),
+        };
+
+        self.queue
+            .write_buffer(&self.ui_camera_buffer, 0, bytemuck::bytes_of(&ui_cam_uniform));
     }
 
     pub fn update_camera_2d(&mut self, cam: &Camera2D) {
@@ -1797,7 +1956,7 @@ impl Graphics {
                 &mut self.texture_manager,
                 &self.device,
                 &self.queue,
-                &self.camera_bind_group,
+                &self.ui_camera_bind_group, // Use UI camera that fits window directly
                 &self.vertex_buffer,
             );
         }

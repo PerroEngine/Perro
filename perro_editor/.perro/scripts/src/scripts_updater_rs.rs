@@ -22,7 +22,7 @@ static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = ph
 };
 
 struct UpdaterScript {
-    base: Node,
+    id: Uuid,
     check_timer: f32,
     state: UpdateState,
     my_version: String,
@@ -31,7 +31,7 @@ struct UpdaterScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn scripts_updater_rs_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(UpdaterScript {
-        base: Node::new("Updater", None),
+        id: Uuid::nil(),
         check_timer: 0.0,
         state: UpdateState::Initial,
         my_version: String::new(),

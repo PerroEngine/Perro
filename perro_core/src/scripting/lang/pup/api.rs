@@ -184,6 +184,11 @@ impl PupInput {
             // Actions
             "get_action" => Some(ApiModule::Input(InputApi::GetAction)),
 
+            // Controller
+            "controller_enable" | "enable_controller" => {
+                Some(ApiModule::Input(InputApi::ControllerEnable))
+            }
+
             // Keyboard
             "is_key_pressed" | "get_key_pressed" => Some(ApiModule::Input(InputApi::IsKeyPressed)),
             "get_text_input" => Some(ApiModule::Input(InputApi::GetTextInput)),

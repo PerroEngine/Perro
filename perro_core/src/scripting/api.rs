@@ -628,6 +628,65 @@ impl JoyConApi {
     }
 }
 
+pub struct ControllerApi {
+    // Pointer to the parent ScriptApi - set when accessed through DerefMut
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
+
+impl Default for ControllerApi {
+    fn default() -> Self {
+        Self { api_ptr: None }
+    }
+}
+
+impl ControllerApi {
+    /// Set the ScriptApi pointer for this instance
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    /// Get the ScriptApi pointer
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
+        if let Some(ptr) = self.api_ptr {
+            return Some(ptr);
+        }
+        // Try to get from parent InputApi
+        let controller_ptr = self as *const ControllerApi;
+        let input_api_ptr = controller_ptr as *const InputApi;
+        unsafe { (*input_api_ptr).get_parent_ptr() }
+    }
+
+    /// Enable the controller manager
+    /// This must be called before using any controller functionality
+    pub fn enable(&mut self) -> bool {
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                let self_ptr = self as *mut ControllerApi;
+                unsafe {
+                    (*self_ptr).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                return false;
+            }
+        };
+
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::enable_impl(api)
+        }
+    }
+
+    pub(crate) fn enable_impl(api: &mut ScriptApi) -> bool {
+        api.scene.enable_controller_manager()
+    }
+}
+
 pub struct KeyboardApi {
     // Pointer to the parent ScriptApi - set when accessed through DerefMut
     api_ptr: Option<*mut ScriptApi<'static>>,
@@ -919,6 +978,7 @@ impl MouseApi {
 }
 
 pub struct InputApi {
+    pub Controller: ControllerApi,
     pub JoyCon: JoyConApi,
     pub Keyboard: KeyboardApi,
     pub Mouse: MouseApi,
@@ -929,6 +989,7 @@ pub struct InputApi {
 impl Default for InputApi {
     fn default() -> Self {
         Self {
+            Controller: ControllerApi::default(),
             JoyCon: JoyConApi::default(),
             Keyboard: KeyboardApi::default(),
             Mouse: MouseApi::default(),
@@ -943,6 +1004,7 @@ impl InputApi {
     fn set_parent_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
         self.parent_api_ptr = Some(api_ptr);
         // Also set it in sub-APIs
+        self.Controller.set_api_ptr(api_ptr);
         self.JoyCon.set_api_ptr(api_ptr);
         self.Keyboard.set_api_ptr(api_ptr);
         self.Mouse.set_api_ptr(api_ptr);
@@ -954,6 +1016,7 @@ impl InputApi {
         unsafe {
             let self_mut = self as *const InputApi as *mut InputApi;
             (*self_mut).parent_api_ptr = Some(api_ptr);
+            (*self_mut).Controller.set_api_ptr(api_ptr);
             (*self_mut).JoyCon.set_api_ptr(api_ptr);
             (*self_mut).Keyboard.set_api_ptr(api_ptr);
             (*self_mut).Mouse.set_api_ptr(api_ptr);

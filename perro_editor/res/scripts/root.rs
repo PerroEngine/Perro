@@ -16,32 +16,16 @@ use smallvec::{SmallVec, smallvec};
 
 /// @PerroScript
 pub struct RootScript {
-    base: Node,
-    /// @expose
-    pub b: f32,
-    /// @bitch
-    pub a: i32,
-    e: String,
-    pub f: F,
-    pub h: i64,
+    id: Uuid,
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn root_create_script() -> *mut dyn ScriptObject {
     Box::into_raw(Box::new(RootScript {
-        base: Node::new("Root", None),
-        b: 0.0f32,
-        a: 0i32,
-        e: String::new(),
-        f: F { g: 0 },
-        h: 0,
+        id: Uuid::nil(),
     })) as *mut dyn ScriptObject
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub struct F {
-    pub g: i32,
-}
 
 impl RootScript {
 

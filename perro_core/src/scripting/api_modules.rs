@@ -94,6 +94,9 @@ pub enum InputApi {
     // Actions
     GetAction,
 
+    // Controller
+    ControllerEnable,
+
     // Keyboard
     IsKeyPressed,
     GetTextInput,

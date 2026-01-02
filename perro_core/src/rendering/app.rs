@@ -56,6 +56,7 @@ const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
 const MONITOR_SCALE_FACTOR: f32 = 0.75;
 const FPS_MEASUREMENT_INTERVAL: f32 = 3.0;
 const MAX_FRAME_DEBT: f32 = 0.025; // 25ms worth of frames
+const MAX_CATCHUP_FPS: f32 = 10.0; // Maximum FPS above target for catch-up
 
 // Default Perro icon embedded at compile time
 const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
@@ -163,6 +164,7 @@ pub struct App<P: ScriptProvider> {
     // Frame pacing (limits rendering to target FPS)
     target_fps: f32,
     frame_debt: f32,
+    last_frame_time: Option<std::time::Instant>,
     total_frames_rendered: u64,
     first_frame: bool,
 
@@ -212,6 +214,7 @@ impl<P: ScriptProvider> App<P> {
             // Frame pacing (capped)
             target_fps,
             frame_debt: 0.0,
+            last_frame_time: None,
             total_frames_rendered: 0,
             first_frame: true,
 
@@ -259,9 +262,27 @@ impl<P: ScriptProvider> App<P> {
         self.frame_debt = frame_debt;
     }
 
-    fn should_render_frame(&self) -> bool {
+    fn should_render_frame(&self, now: std::time::Instant) -> bool {
         // Frame pacing: only render when we're behind by at least half a frame
-        self.first_frame || self.frame_debt >= 0.5
+        if self.first_frame {
+            return true;
+        }
+        
+        if self.frame_debt < 0.5 {
+            return false;
+        }
+        
+        // Cap catch-up rate: even if we have debt, don't render faster than max_catchup_fps
+        if let Some(last_time) = self.last_frame_time {
+            let max_catchup_fps = self.target_fps + MAX_CATCHUP_FPS;
+            let min_frame_interval = 1.0 / max_catchup_fps;
+            let elapsed = (now - last_time).as_secs_f64() as f32;
+            if elapsed < min_frame_interval {
+                return false; // Don't render yet - would exceed max catch-up rate
+            }
+        }
+        
+        true
     }
 
     fn update_fps_measurement(&mut self, now: std::time::Instant) {
@@ -325,7 +346,7 @@ impl<P: ScriptProvider> App<P> {
         let should_render = {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "should_render_frame").entered();
-            self.should_render_frame()
+            self.should_render_frame(now)
         };
         
         if should_render {
@@ -335,6 +356,9 @@ impl<P: ScriptProvider> App<P> {
                 // OPTIMIZED: Pass now to render_frame to avoid duplicate Instant::now() call
                 self.render_frame(&mut gfx, now);
             }
+
+            // Update last frame time for catch-up rate limiting
+            self.last_frame_time = Some(now);
 
             if self.first_frame {
                 self.first_frame = false;
@@ -595,6 +619,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
             self.first_frame = false;
             self.total_frames_rendered = 1;
             self.fps_frames = 1;
+            self.last_frame_time = Some(now);
         }
 
         // Now make window visible with content already rendered

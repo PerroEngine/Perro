@@ -4,6 +4,10 @@
 struct Camera {
     virtual_size: vec2<f32>,
     ndc_scale: vec2<f32>,
+    zoom: f32,
+    _pad0: f32,
+    _pad1: vec2<f32>,
+    view: mat4x4<f32>,
 };
 
 @group(1) @binding(0)
@@ -64,7 +68,20 @@ fn vs_main(vertex: VertexInput, instance: ColorInstanceInput) -> VertexOutput {
         instance.transform_2,
     );
 
-    let world = transform * vec4<f32>(vertex.position, 0.0, 1.0);
+    // Transform to world space
+    var world = transform * vec4<f32>(vertex.position, 0.0, 1.0);
+    
+    // Apply camera view (for UI scaling)
+    world = camera.view * world;
+    
+    // Apply zoom
+    world = vec4<f32>(
+        world.xy * (1.0 + camera.zoom),
+        world.z,
+        world.w,
+    );
+    
+    // Convert to NDC
     let ndc = world.xy * camera.ndc_scale;
 
     // Depth from z_index (inverted: higher z_index = lower depth = renders on top)
