@@ -1142,6 +1142,7 @@ impl PrimitiveRenderer {
                     rpass,
                     camera_bind_group,
                     vertex_buffer,
+                    0, // World instances start at offset 0
                 );
                 self.render_textures(
                     &self.world_texture_groups,
@@ -1163,11 +1164,13 @@ impl PrimitiveRenderer {
             }
 
             RenderLayer::UI => {
+                let ui_instance_offset = self.world_rect_instances.len() as u32;
                 self.render_rects(
                     &self.ui_rect_instances,
                     rpass,
                     camera_bind_group,
                     vertex_buffer,
+                    ui_instance_offset, // UI instances start after world instances
                 );
                 self.render_textures(
                     &self.ui_texture_groups,
@@ -1507,41 +1510,25 @@ impl PrimitiveRenderer {
     }
 
     fn upload_instances_to_gpu(&mut self, queue: &Queue) {
-        // Upload rect instances - reuse temp vector if available
-        // For small cases, use stack allocation
-        let total_rects = self.world_rect_instances.len() + self.ui_rect_instances.len();
-        if total_rects > 0 {
-            // Use a temporary buffer only if needed, otherwise write directly
-            if total_rects <= 64 {
-                // Small case: use SmallVec for stack allocation
-                let mut all_rect_instances: SmallVec<[RectInstance; 64]> = SmallVec::new();
-                all_rect_instances.extend(self.world_rect_instances.iter().copied());
-                all_rect_instances.extend(self.ui_rect_instances.iter().copied());
-                queue.write_buffer(
-                    &self.rect_instance_buffer,
-                    0,
-                    bytemuck::cast_slice(&all_rect_instances),
-                );
-            } else {
-                // Large case: write in chunks to avoid large allocations
-                // Write world first
-                if !self.world_rect_instances.is_empty() {
-                    queue.write_buffer(
-                        &self.rect_instance_buffer,
-                        0,
-                        bytemuck::cast_slice(&self.world_rect_instances),
-                    );
-                }
-                // Then write UI at offset
-                if !self.ui_rect_instances.is_empty() {
-                    let offset = (self.world_rect_instances.len() * std::mem::size_of::<RectInstance>()) as u64;
-                    queue.write_buffer(
-                        &self.rect_instance_buffer,
-                        offset,
-                        bytemuck::cast_slice(&self.ui_rect_instances),
-                    );
-                }
-            }
+        // Upload rect instances
+        // Always write world first at offset 0, then UI at byte offset after world
+        // This ensures UI instances are always at instance index = world_rect_instances.len()
+        // regardless of total count, making the offset calculation consistent
+        if !self.world_rect_instances.is_empty() {
+            queue.write_buffer(
+                &self.rect_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.world_rect_instances),
+            );
+        }
+        // Write UI instances after world instances
+        if !self.ui_rect_instances.is_empty() {
+            let ui_byte_offset = (self.world_rect_instances.len() * std::mem::size_of::<RectInstance>()) as u64;
+            queue.write_buffer(
+                &self.rect_instance_buffer,
+                ui_byte_offset,
+                bytemuck::cast_slice(&self.ui_rect_instances),
+            );
         }
 
         // Upload texture instances
@@ -1622,13 +1609,14 @@ impl PrimitiveRenderer {
         rpass: &mut RenderPass<'_>,
         camera_bind_group: &wgpu::BindGroup,
         vertex_buffer: &wgpu::Buffer,
+        instance_offset: u32,
     ) {
         if !instances.is_empty() {
             rpass.set_pipeline(&self.rect_instanced_pipeline);
             rpass.set_bind_group(0, camera_bind_group, &[]);
             rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
             rpass.set_vertex_buffer(1, self.rect_instance_buffer.slice(..));
-            rpass.draw(0..6, 0..instances.len() as u32);
+            rpass.draw(0..6, instance_offset..(instance_offset + instances.len() as u32));
         }
     }
 

@@ -100,12 +100,30 @@ pub struct UIPanel {
     pub props: UIPanelProps,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UIPanelProps {
     pub background_color: Option<Color>,
     pub corner_radius: CornerRadius,
     pub border_color: Option<Color>,
     pub border_thickness: f32,
+    #[serde(default = "default_opacity")]
+    pub opacity: f32,
+}
+
+fn default_opacity() -> f32 {
+    1.0
+}
+
+impl Default for UIPanelProps {
+    fn default() -> Self {
+        Self {
+            background_color: None,
+            corner_radius: CornerRadius::default(),
+            border_color: None,
+            border_thickness: 0.0,
+            opacity: 1.0,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default)]

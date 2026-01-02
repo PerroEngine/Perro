@@ -1313,7 +1313,13 @@ impl<P: ScriptProvider> Scene<P> {
             if let Some(node) = self.nodes.get_mut(&id) {
                 if let SceneNode::UINode(u) = node {
                     match result {
-                        Ok(fur_elements) => build_ui_elements_from_fur(u, &fur_elements),
+                        Ok(fur_elements) => {
+                            build_ui_elements_from_fur(u, &fur_elements);
+                            // Mark UINode as needing rerender after elements are created
+                            if u.is_renderable() {
+                                self.needs_rerender.insert(id);
+                            }
+                        },
                         Err(err) => eprintln!("⚠️ Error loading FUR for {}: {}", id, err),
                     }
                 }
@@ -1602,6 +1608,10 @@ impl<P: ScriptProvider> Scene<P> {
                     if let Some(fur_path) = ui_node.fur_path.as_ref() {
                         if let Ok(fur_elements) = self.provider.load_fur_data(fur_path) {
                             build_ui_elements_from_fur(ui_node, &fur_elements);
+                            // Mark UINode as needing rerender after elements are created
+                            if ui_node.is_renderable() {
+                                self.needs_rerender.insert(*id);
+                            }
                         }
                     }
                 }
@@ -2216,6 +2226,7 @@ impl<P: ScriptProvider> Scene<P> {
         self.mark_transform_dirty_recursive(id);
         // Add to needs_rerender set since this is a newly created node
         // (mark_transform_dirty_recursive will add it if not already in set, but we know it's new)
+        // Also ensure UINode is marked if FUR file was just loaded (elements are now ready to render)
         if let Some(node) = self.nodes.get(&id) {
             if node.is_renderable() {
                 self.needs_rerender.insert(id);

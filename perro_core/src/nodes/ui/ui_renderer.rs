@@ -1170,6 +1170,9 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     // Get timestamp from UINode's base node
     let timestamp = ui_node.base.created_timestamp;
 
+    // Check if elements exist - if not, we can't render yet
+    let elements_exist = ui_node.elements.is_some();
+    
     // Check if we have any dirty elements
     // If empty, mark all elements as dirty for initial render
     if ui_node.needs_rerender.is_empty() {
@@ -1180,8 +1183,14 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     let dirty_elements: Vec<Uuid> = ui_node.needs_rerender.iter().copied().collect();
     let needs_layout = !ui_node.needs_layout_recalc.is_empty();
     
+    // If elements don't exist yet, return early - elements will be marked when FUR loads
+    // The UINode will be re-added to scene's needs_rerender after FUR loads
+    if !elements_exist {
+        return;
+    }
+    
+    // If no dirty elements but elements exist, skip rendering entirely
     if dirty_elements.is_empty() {
-        // No dirty elements, skip rendering entirely
         return;
     }
     
@@ -1252,18 +1261,21 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
 }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
-    let background_color = panel
+    let mut background_color = panel
         .props
         .background_color
         .clone()
         .unwrap_or(Color::new(0, 0, 0, 0));
+    let opacity = panel.props.opacity;
+    
+    // Apply opacity to background color alpha
+    background_color.a = ((background_color.a as f32 * opacity) as u8).min(255);
+    
     let corner_radius = panel.props.corner_radius;
-    let border_color = panel.props.border_color.clone();
+    let mut border_color = panel.props.border_color.clone();
     let border_thickness = panel.props.border_thickness;
     let z_index = panel.z_index;
     let bg_id = panel.id;
-
-   
 
     gfx.renderer_ui.queue_panel(
         &mut gfx.renderer_prim,
@@ -1280,7 +1292,9 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
     );
 
     if border_thickness > 0.0 {
-        if let Some(border_color) = border_color {
+        if let Some(ref mut bc) = border_color {
+            // Apply opacity to border color alpha
+            bc.a = ((bc.a as f32 * opacity) as u8).min(255);
             let border_id = Uuid::new_v5(&bg_id, b"border");
             gfx.renderer_ui.queue_panel(
                 &mut gfx.renderer_prim,
@@ -1288,7 +1302,7 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
                 panel.base.global_transform,
                 panel.base.size,
                 panel.base.pivot,
-                border_color,
+                *bc,
                 Some(corner_radius),
                 border_thickness,
                 true,

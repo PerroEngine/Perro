@@ -40,6 +40,17 @@ fn parse_f32_percent(v: &str, default: f32) -> (f32, bool) {
     (trimmed.parse::<f32>().unwrap_or(default), has_pct)
 }
 
+// Parse opacity value: supports 0-1 range or percentage (e.g., "0.5" or "50%")
+fn parse_opacity(v: &str) -> Option<f32> {
+    let trimmed = v.trim();
+    if trimmed.ends_with('%') {
+        let num_str = &trimmed[..trimmed.len() - 1];
+        num_str.parse::<f32>().ok().map(|n| (n / 100.0).clamp(0.0, 1.0))
+    } else {
+        trimmed.parse::<f32>().ok().map(|n| n.clamp(0.0, 1.0))
+    }
+}
+
 // =================== FILE PARSING ===================
 
 pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
@@ -292,6 +303,12 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 panel.props.border_thickness = b.parse().unwrap_or(0.0);
             }
 
+            if let Some(opacity_str) = fur.attributes.get("opacity") {
+                if let Some(opacity) = parse_opacity(opacity_str) {
+                    panel.props.opacity = opacity;
+                }
+            }
+
             let mut corner = CornerRadius::default();
 
             // Helper to parse a single float value
@@ -515,6 +532,12 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
             if let Some(b) = fur.attributes.get("border") {
                 button.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
+            }
+
+            if let Some(opacity_str) = fur.attributes.get("opacity") {
+                if let Some(opacity) = parse_opacity(opacity_str) {
+                    button.panel_props_mut().opacity = opacity;
+                }
             }
 
             // Apply corner radius (same logic as Panel)
@@ -770,4 +793,10 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
             elements.insert(uuid, e);
         }
     }
+    
+    // Store element count before dropping the borrow
+    let element_count = elements.len();
+    
+    // Mark all newly created elements as needing rerender so they get rendered
+    ui.mark_all_needs_rerender();
 }

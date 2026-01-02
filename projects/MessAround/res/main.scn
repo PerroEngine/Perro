@@ -8,6 +8,15 @@
         "name": "Node2DWorld"
       }
     },
+     "783": {
+      "type": "UINode",
+      "fur_path": "res://ui.fur",
+      "base": {
+        "type": "Node",
+        "name": "UI",
+        "parent": 72
+      }
+    },
     "1": {
       "type": "Area2D",
       "base": {
