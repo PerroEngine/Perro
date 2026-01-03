@@ -145,17 +145,16 @@ impl Color {
             ("cinder-8", Color::new(21, 35, 43, 255)),
             ("cinder-9", Color::new(18, 31, 39, 255)),
             ("cinder-10", Color::new(15, 28, 36, 255)),
-            ("steel-1", Color::new(160, 160, 163, 255)),  // 25% more black/stone
-            ("steel-2", Color::new(148, 148, 151, 255)),  // 25% more black/stone
-            ("steel-3", Color::new(132, 132, 135, 255)),  // 25% more black/stone
-            ("steel-4", Color::new(120, 120, 123, 255)),  // 25% more black/stone
-            ("steel-5", Color::new(91, 91, 94, 255)),    // 25% more black/stone
-            ("steel-6", Color::new(64, 64, 67, 255)),     // 25% more black/stone
-            ("steel-7", Color::new(21, 24, 28, 255)),     // 25% more black/stone
-            ("steel-8", Color::new(18, 21, 25, 255)),     // 25% more black/stone
-            ("steel-9", Color::new(15, 18, 22, 255)),     // 25% more black/stone
-            ("steel-10", Color::new(12, 15, 19, 255)),    // 25% more black/stone
-            // RED FAMILY
+            ("steel-1", Color::new(185, 188, 193, 255)),  
+            ("steel-2", Color::new(165, 168, 173, 255)), 
+            ("steel-3", Color::new(145, 148, 153, 255)),  
+            ("steel-4", Color::new(125, 128, 133, 255)),  
+            ("steel-5", Color::new(105, 108, 113, 255)),   
+            ("steel-6", Color::new(85, 88, 93, 255)),  
+            ("steel-7", Color::new(33, 36, 41, 255)),   
+            ("steel-8", Color::new(29, 32, 37, 255)),     
+            ("steel-9", Color::new(25, 28, 33, 255)),   
+            ("steel-10", Color::new(21, 24, 29, 255)),
             ("red-1", Color::new(217, 187, 187, 255)),
             ("red-2", Color::new(217, 167, 167, 255)),
             ("red-3", Color::new(217, 147, 147, 255)),
