@@ -62,7 +62,7 @@ const MAX_CATCHUP_FPS: f32 = 10.0; // Maximum FPS above target for catch-up
 const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_default_icon() -> Option<winit::window::Icon> {
+pub fn load_default_icon() -> Option<winit::window::Icon> {
     use image::imageops::FilterType;
     use winit::window::Icon;
 
@@ -88,7 +88,7 @@ fn load_default_icon() -> Option<winit::window::Icon> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_icon(path: &str) -> Option<winit::window::Icon> {
+pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
     use crate::asset_io::load_asset;
     use crate::runtime::get_static_textures;
     use image::ImageBuffer;
@@ -138,7 +138,7 @@ fn load_icon(path: &str) -> Option<winit::window::Icon> {
 
             let rgba = resized.into_rgba8();
             let (width, height) = rgba.dimensions();
-            Some(Icon::from_rgba(rgba.into_raw(), width, height).ok()?)
+            Icon::from_rgba(rgba.into_raw(), width, height).ok()
         }
         Err(err) => {
             eprintln!("❌ Failed to load/decode icon {path}: {err}");

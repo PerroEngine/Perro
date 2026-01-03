@@ -348,7 +348,14 @@ pub fn run_game(data: RuntimeData) {
     {
         window_attrs = window_attrs.with_inner_size(default_size);
         if let Some(icon_path) = project.icon() {
-            // Load icon if needed (simplified for now)
+            if let Some(icon) = crate::rendering::app::load_icon(&icon_path) {
+                window_attrs = window_attrs.with_window_icon(Some(icon));
+            }
+        } else {
+            // Use default icon if no custom icon specified
+            if let Some(icon) = crate::rendering::app::load_default_icon() {
+                window_attrs = window_attrs.with_window_icon(Some(icon));
+            }
         }
     }
 
@@ -801,7 +808,14 @@ pub fn run_dev() {
     {
         window_attrs = window_attrs.with_inner_size(default_size);
         if let Some(icon_path) = project_rc.borrow().icon() {
-            // Load icon if needed (simplified for now)
+            if let Some(icon) = crate::rendering::app::load_icon(&icon_path) {
+                window_attrs = window_attrs.with_window_icon(Some(icon));
+            }
+        } else {
+            // Use default icon if no custom icon specified
+            if let Some(icon) = crate::rendering::app::load_default_icon() {
+                window_attrs = window_attrs.with_window_icon(Some(icon));
+            }
         }
     }
 

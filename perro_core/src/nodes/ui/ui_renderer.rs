@@ -158,7 +158,8 @@ impl LayoutCache {
     }
 }
 
-/// Helper function to find the first non-layout ancestor for percentage calculations
+/// Helper function to find the parent element for percentage calculations
+/// Uses layout containers with explicit sizes, but skips auto-sizing layout containers
 fn find_percentage_reference_ancestor(
     elements: &IndexMap<Uuid, UIElement>,
     current_id: &Uuid,
@@ -169,10 +170,23 @@ fn find_percentage_reference_ancestor(
     let mut parent_id = current.get_parent();
     while !parent_id.is_nil() {
         if let Some(parent) = elements.get(&parent_id) {
-            // Check if parent is NOT a layout container
+            // Check if parent is a layout container
             match parent {
                 UIElement::Layout(_) | UIElement::GridLayout(_) => {
-                    // Skip layout containers, continue up the chain
+                    // Check if this layout container has explicit size
+                    let style_map = parent.get_style_map();
+                    let has_explicit_size = style_map.contains_key("size.x") || style_map.contains_key("size.y");
+                    
+                    if has_explicit_size {
+                        // Layout container has explicit size, use it as reference
+                        // But only if the size has been computed (non-zero)
+                        let parent_size = *parent.get_size();
+                        if parent_size.x > 0.0 || parent_size.y > 0.0 {
+                            return Some(parent_size);
+                        }
+                        // If size is zero, it might not be computed yet, so continue up the chain
+                    }
+                    // Layout container is auto-sizing or size not computed yet, skip it
                     current = parent;
                     parent_id = current.get_parent();
                     continue;
@@ -187,7 +201,7 @@ fn find_percentage_reference_ancestor(
         }
     }
 
-    // If we reach here, no non-layout parent found, use viewport
+    // If we reach here, no suitable parent found, use viewport
     Some(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT))
 }
 
@@ -216,13 +230,21 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
                     find_percentage_reference_ancestor(elements, &child_id)
                         .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
 
-                // Resolve percentages using the smart reference
+                // Resolve percentages using the smart reference (skip auto-sizing)
                 let style_map = child.get_style_map();
                 if let Some(&pct) = style_map.get("size.x") {
-                    child_size.x = percentage_reference_size.x * (pct / 100.0);
+                    if pct >= 0.0 {
+                        // Not auto-sizing, resolve percentage
+                        child_size.x = percentage_reference_size.x * (pct / 100.0);
+                    }
+                    // If pct < 0.0, it's auto-sizing - keep default size for now
                 }
                 if let Some(&pct) = style_map.get("size.y") {
-                    child_size.y = percentage_reference_size.y * (pct / 100.0);
+                    if pct >= 0.0 {
+                        // Not auto-sizing, resolve percentage
+                        child_size.y = percentage_reference_size.y * (pct / 100.0);
+                    }
+                    // If pct < 0.0, it's auto-sizing - keep default size for now
                 }
 
                 child_size
@@ -255,10 +277,15 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
 
             match container_mode {
                 ContainerMode::Horizontal => {
-                    // Width: sum of all children + gaps
+                    // Width: sum of all children + gaps (gap = average child size)
                     let total_width: f32 = resolved_child_sizes.par_iter().map(|size| size.x).sum();
+                    let avg_child_width = if !resolved_child_sizes.is_empty() {
+                        total_width / resolved_child_sizes.len() as f32
+                    } else {
+                        0.0
+                    };
                     let gap_width = if resolved_child_sizes.len() > 1 {
-                        gap.x * (resolved_child_sizes.len() - 1) as f32
+                        avg_child_width * (resolved_child_sizes.len() - 1) as f32
                     } else {
                         0.0
                     };
@@ -275,11 +302,16 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
                         .par_iter()
                         .map(|size| size.x)
                         .reduce(|| 0.0, f32::max);
-                    // Height: sum of all children + gaps
+                    // Height: sum of all children + gaps (gap = average child size)
                     let total_height: f32 =
                         resolved_child_sizes.par_iter().map(|size| size.y).sum();
+                    let avg_child_height = if !resolved_child_sizes.is_empty() {
+                        total_height / resolved_child_sizes.len() as f32
+                    } else {
+                        0.0
+                    };
                     let gap_height = if resolved_child_sizes.len() > 1 {
-                        gap.y * (resolved_child_sizes.len() - 1) as f32
+                        avg_child_height * (resolved_child_sizes.len() - 1) as f32
                     } else {
                         0.0
                     };
@@ -382,7 +414,7 @@ pub fn calculate_content_size_smart_cached(
 }
 
 pub fn calculate_layout_positions(
-    elements: &IndexMap<Uuid, UIElement>,
+    elements: &mut IndexMap<Uuid, UIElement>,
     parent_id: &Uuid,
 ) -> Vec<(Uuid, Vector2)> {
     let parent = match elements.get(parent_id) {
@@ -395,39 +427,82 @@ pub fn calculate_layout_positions(
         return Vec::new();
     }
 
-    // Get layout properties - BoxContainer doesn't do layout positioning
-    let (container_mode, gap) = match parent {
-        UIElement::Layout(layout) => (&layout.container.mode, layout.container.gap),
-        UIElement::GridLayout(grid) => (&grid.container.mode, grid.container.gap),
+    // Get layout properties and parent info before we start mutating
+    // First, resolve parent's percentage size if it has one
+    let mut resolved_parent_size = *parent.get_size();
+    let parent_style_map = parent.get_style_map();
+    
+    // Resolve parent's percentage sizes
+    if let Some(&pct_x) = parent_style_map.get("size.x") {
+        if pct_x >= 0.0 {  // Not auto-sizing
+            let percentage_reference_size =
+                find_percentage_reference_ancestor(elements, parent_id)
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+            resolved_parent_size.x = percentage_reference_size.x * (pct_x / 100.0);
+        }
+    }
+    if let Some(&pct_y) = parent_style_map.get("size.y") {
+        if pct_y >= 0.0 {  // Not auto-sizing
+            let percentage_reference_size =
+                find_percentage_reference_ancestor(elements, parent_id)
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+            resolved_parent_size.y = percentage_reference_size.y * (pct_y / 100.0);
+        }
+    }
+    
+    let (container_mode, extra_gap, parent_anchor) = match parent {
+        UIElement::Layout(layout) => (
+            layout.container.mode,  // Copy the enum
+            layout.container.gap,   // Copy the Vector2
+            *parent.get_anchor(),
+        ),
+        UIElement::GridLayout(grid) => (
+            grid.container.mode,  // Copy the enum
+            grid.container.gap,   // Copy the Vector2
+            *parent.get_anchor(),
+        ),
         UIElement::BoxContainer(_) => {
             // BoxContainer doesn't position children - they use anchors/manual positioning
             return Vec::new();
         }
         _ => return Vec::new(), // Not a layout container
     };
-
-    // Convert to Vec for parallel processing
+    
+    let parent_size = resolved_parent_size;
+    let use_content_based = parent_size.x < 1.0 && parent_size.y < 1.0;
+    
+    // Convert to Vec for processing
     let children_vec: Vec<&Uuid> = children_ids.iter().collect();
-    let child_info: Vec<(Uuid, Vector2)> = children_vec
-        .par_iter()
+    
+    // First pass: resolve all non-auto sizes and identify auto-sized children
+    let mut child_info: Vec<(Uuid, Vector2, bool, bool)> = children_vec
+        .iter()
         .filter_map(|&&child_id| {
             elements.get(&child_id).map(|child| {
                 let mut child_size = *child.get_size();
-
-                // Resolve percentages for layout positioning
-                let percentage_reference_size =
-                    find_percentage_reference_ancestor(elements, &child_id)
-                        .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
-
                 let style_map = child.get_style_map();
-                if let Some(&pct) = style_map.get("size.x") {
-                    child_size.x = percentage_reference_size.x * (pct / 100.0);
+                
+                // Check for auto-sizing: explicit "auto" (< 0.0) OR no size specified
+                let auto_x = style_map.get("size.x").map(|&v| v < 0.0).unwrap_or(true); // No size = auto
+                let auto_y = style_map.get("size.y").map(|&v| v < 0.0).unwrap_or(true); // No size = auto
+                
+                // Resolve percentages for non-auto sizes
+                // For layout children, percentages are relative to the immediate parent (layout container)
+                if !auto_x {
+                    if let Some(&pct) = style_map.get("size.x") {
+                        // Use the resolved parent size as the reference for layout children
+                        child_size.x = parent_size.x * (pct / 100.0);
+                    }
                 }
-                if let Some(&pct) = style_map.get("size.y") {
-                    child_size.y = percentage_reference_size.y * (pct / 100.0);
+                
+                if !auto_y {
+                    if let Some(&pct) = style_map.get("size.y") {
+                        // Use the resolved parent size as the reference for layout children
+                        child_size.y = parent_size.y * (pct / 100.0);
+                    }
                 }
-
-                (child_id, child_size)
+                
+                (child_id, child_size, auto_x, auto_y)
             })
         })
         .collect();
@@ -436,17 +511,187 @@ pub fn calculate_layout_positions(
         return Vec::new();
     }
 
-    match container_mode {
-        ContainerMode::Horizontal => calculate_horizontal_layout(&child_info, gap),
-        ContainerMode::Vertical => calculate_vertical_layout(&child_info, gap),
-        ContainerMode::Grid => {
-            if let UIElement::GridLayout(grid) = parent {
-                calculate_grid_layout(&child_info, gap, grid.cols)
+    // Calculate gaps and resolve auto-sizing
+    // Default gap = 1/n of parent (where n = number of children)
+    // Gap attribute adds EXTRA spacing on top
+    let mut individual_gaps: Vec<f32> = Vec::new();
+    
+    match &container_mode {
+        ContainerMode::Horizontal => {
+            let auto_count = child_info.iter().filter(|(_, _, auto_x, _)| *auto_x).count();
+            
+            if !use_content_based && parent_size.x >= 1.0 {
+                // Parent has explicit size - calculate all child sizes first
+                if auto_count > 0 {
+                    // We have auto children - calculate their sizes
+                    let total_fixed: f32 = child_info.iter()
+                        .map(|(_, size, auto_x, _)| if !*auto_x { size.x } else { 0.0 })
+                        .sum();
+                    
+                    // Remaining space for auto children (each gets 1/n of remaining)
+                    let remaining = parent_size.x - total_fixed;
+                    let auto_width = remaining / auto_count as f32;
+                    
+                    // Apply auto sizes
+                    for (_, size, auto_x, _) in child_info.iter_mut() {
+                        if *auto_x {
+                            size.x = auto_width.max(0.0);
+                        }
+                    }
+                }
             } else {
-                Vec::new()
+                // Parent is auto-sizing - use defaults for auto children
+                if auto_count > 0 {
+                    let default_width = 100.0;
+                    for (_, size, auto_x, _) in child_info.iter_mut() {
+                        if *auto_x {
+                            size.x = default_width;
+                        }
+                    }
+                }
+            }
+            
+            // Always calculate gaps after all child sizes are determined
+            // Gap is just the extra_gap attribute value (no default gap)
+            for i in 0..(child_info.len() - 1) {
+                individual_gaps.push(extra_gap.x);
+            }
+        }
+        ContainerMode::Vertical => {
+            let auto_count = child_info.iter().filter(|(_, _, _, auto_y)| *auto_y).count();
+            
+            if !use_content_based && parent_size.y >= 1.0 {
+                // Parent has explicit size - calculate all child sizes first
+                if auto_count > 0 {
+                    // We have auto children - calculate their sizes
+                    let total_fixed: f32 = child_info.iter()
+                        .map(|(_, size, _, auto_y)| if !*auto_y { size.y } else { 0.0 })
+                        .sum();
+                    
+                    // Remaining space for auto children (each gets 1/n of remaining)
+                    let remaining = parent_size.y - total_fixed;
+                    let auto_height = remaining / auto_count as f32;
+                    
+                    // Apply auto sizes
+                    for (_, size, _, auto_y) in child_info.iter_mut() {
+                        if *auto_y {
+                            size.y = auto_height.max(0.0);
+                        }
+                    }
+                }
+            } else {
+                // Parent is auto-sizing - use defaults for auto children
+                if auto_count > 0 {
+                    let default_height = 100.0;
+                    for (_, size, _, auto_y) in child_info.iter_mut() {
+                        if *auto_y {
+                            size.y = default_height;
+                        }
+                    }
+                }
+            }
+            
+            // Always calculate gaps after all child sizes are determined
+            // Gap is just the extra_gap attribute value (no default gap)
+            for i in 0..(child_info.len() - 1) {
+                individual_gaps.push(extra_gap.y);
+            }
+        }
+        ContainerMode::Grid => {
+            // Grid layout doesn't support auto-sizing in the same way
+            // Auto-sized children in grid would need special handling
+        }
+    }
+    
+    // Apply calculated sizes to the actual elements
+    for (child_id, size, _, _) in &child_info {
+        if let Some(child) = elements.get_mut(child_id) {
+            child.set_size(*size);
+        }
+    }
+    
+    // Convert to format expected by layout functions
+    let child_info_simple: Vec<(Uuid, Vector2)> = child_info
+        .into_iter()
+        .map(|(id, size, _, _)| (id, size))
+        .collect();
+    
+    // Use calculated individual gaps
+    let mut positions = match container_mode {
+        ContainerMode::Horizontal => {
+            if !individual_gaps.is_empty() {
+                calculate_horizontal_layout_with_individual_gaps(&child_info_simple, &individual_gaps)
+            } else {
+                // Fallback: use default gap calculation
+                let default_gap = Vector2::new(extra_gap.x, 0.0);
+                calculate_horizontal_layout(&child_info_simple, default_gap)
+            }
+        }
+        ContainerMode::Vertical => {
+            if !individual_gaps.is_empty() {
+                calculate_vertical_layout_with_individual_gaps(&child_info_simple, &individual_gaps)
+            } else {
+                // Fallback: use default gap calculation
+                let default_gap = Vector2::new(0.0, extra_gap.y);
+                calculate_vertical_layout(&child_info_simple, default_gap)
+            }
+        }
+        ContainerMode::Grid => {
+            // Get grid cols from parent (need to re-borrow)
+            let cols = if let Some(p) = elements.get(parent_id) {
+                if let UIElement::GridLayout(grid) = p {
+                    grid.cols
+                } else {
+                    1
+                }
+            } else {
+                1
+            };
+            calculate_grid_layout(&child_info_simple, extra_gap, cols)
+        }
+    };
+    
+    // Adjust positions based on parent anchor for horizontal layouts
+    if matches!(&container_mode, ContainerMode::Horizontal) {
+        match parent_anchor {
+            FurAnchor::Left | FurAnchor::TopLeft | FurAnchor::BottomLeft => {
+                // Left align: shift all positions to start from left edge
+                // First child's left edge should be at parent's left edge
+                if let Some((_, first_pos)) = positions.first() {
+                    if let Some((_, first_size)) = child_info_simple.first() {
+                        // First child's left edge = first_pos.x - first_size.x * 0.5
+                        // We want it at -parent_size.x * 0.5
+                        let first_left = first_pos.x - first_size.x * 0.5;
+                        let target_left = -parent_size.x * 0.5;
+                        let offset = target_left - first_left;
+                        for (_, pos) in &mut positions {
+                            pos.x += offset;
+                        }
+                    }
+                }
+            }
+            FurAnchor::Right | FurAnchor::TopRight | FurAnchor::BottomRight => {
+                // Right align: shift all positions to end at right edge
+                if let Some((_, last_pos)) = positions.last() {
+                    if let Some((_, last_size)) = child_info_simple.last() {
+                        // Last child's right edge = last_pos.x + last_size.x * 0.5
+                        // We want it at parent_size.x * 0.5
+                        let last_right = last_pos.x + last_size.x * 0.5;
+                        let target_right = parent_size.x * 0.5;
+                        let offset = target_right - last_right;
+                        for (_, pos) in &mut positions {
+                            pos.x += offset;
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Center (default) - positions are already centered
             }
         }
     }
+    
+    positions
 }
 
 // Keep your layout calculation functions exactly as they were in the working version
@@ -482,6 +727,37 @@ fn calculate_horizontal_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Ve
     positions
 }
 
+fn calculate_horizontal_layout_with_individual_gaps(children: &[(Uuid, Vector2)], gaps: &[f32]) -> Vec<(Uuid, Vector2)> {
+    let mut positions = Vec::new();
+
+    // Calculate total width needed
+    let total_child_width: f32 = children.iter().map(|(_, size)| size.x).sum();
+    let total_gap_width: f32 = gaps.iter().sum();
+    let total_content_width = total_child_width + total_gap_width;
+
+    // Start from the left edge of the content area (which is centered in the parent)
+    let start_x = -total_content_width * 0.5;
+
+    // Position each child from left to right
+    let mut current_x = start_x;
+
+    for (i, (child_id, child_size)) in children.iter().enumerate() {
+        // Position child at its left edge, then offset by half its width to center it
+        let child_x = current_x + child_size.x * 0.5;
+        let child_y = 0.0; // Center vertically in parent
+
+        positions.push((*child_id, Vector2::new(child_x, child_y)));
+
+        // Move to next position with individual gap
+        current_x += child_size.x;
+        if i < gaps.len() {
+            current_x += gaps[i];
+        }
+    }
+
+    positions
+}
+
 fn calculate_vertical_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
 
@@ -509,6 +785,37 @@ fn calculate_vertical_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Vec<
 
         // Move to next position (downward)
         current_y -= child_size.y + gap.y;
+    }
+
+    positions
+}
+
+fn calculate_vertical_layout_with_individual_gaps(children: &[(Uuid, Vector2)], gaps: &[f32]) -> Vec<(Uuid, Vector2)> {
+    let mut positions = Vec::new();
+
+    // Calculate total height needed
+    let total_child_height: f32 = children.iter().map(|(_, size)| size.y).sum();
+    let total_gap_height: f32 = gaps.iter().sum();
+    let total_content_height = total_child_height + total_gap_height;
+
+    // Start from the top edge of the content area (which is centered in the parent)
+    let start_y = total_content_height * 0.5;
+
+    // Position each child from top to bottom
+    let mut current_y = start_y;
+
+    for (i, (child_id, child_size)) in children.iter().enumerate() {
+        // Position child at its top edge, then offset by half its height to center it
+        let child_y = current_y - child_size.y * 0.5;
+        let child_x = 0.0; // Center horizontally in parent
+
+        positions.push((*child_id, Vector2::new(child_x, child_y)));
+
+        // Move to next position (downward) with individual gap
+        current_y -= child_size.y;
+        if i < gaps.len() {
+            current_y -= gaps[i];
+        }
     }
 
     positions
@@ -660,7 +967,7 @@ pub fn update_global_transforms_with_layout(
         }
     };
 
-    // Find the reference size for percentages (first non-layout ancestor)
+    // Find the reference size for percentages (parent with explicit size, or first non-layout ancestor)
     let percentage_reference_size = find_percentage_reference_ancestor(elements, current_id)
         .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
 
@@ -687,7 +994,7 @@ pub fn update_global_transforms_with_layout(
                 let fraction = *pct / 100.0;
 
                 match key.as_str() {
-                    // Size percentages now use the first non-layout ancestor
+                    // Size percentages use parent (or first non-auto-sizing layout ancestor)
                     "size.x" => {
                         element.set_size(Vector2::new(
                             percentage_reference_size.x * fraction,
@@ -857,7 +1164,7 @@ pub fn update_global_transforms_with_layout(
             // For text elements, adjust position to account for baseline positioning
             // Bottom anchors: move down by full height (text bottom should be at anchor)
             // Top anchors: move down by 1.5x height (text top should be at anchor, needs more adjustment)
-            // Center: move down by 50% height (text center should be at anchor, needs slight adjustment)
+            // Center/Left/Right: move down by 1.25x height (text center should be at anchor, needs slight adjustment)
             // Other: move down by full height (same as bottom)
             if let UIElement::Text(_) = element {
                 match element.get_anchor() {
@@ -867,7 +1174,10 @@ pub fn update_global_transforms_with_layout(
                         // For top anchors, move down by 1.5x height to account for baseline
                         local.position.y -= child_size.y * 1.5;
                     }
-                    crate::fur_ast::FurAnchor::Center => {
+                    crate::fur_ast::FurAnchor::Center |
+                    crate::fur_ast::FurAnchor::Left |
+                    crate::fur_ast::FurAnchor::Right => {
+                        // For center/left/right anchors, move down by 1.25x height to vertically center
                         local.position.y -= child_size.y * 1.25;
                     }
                     _ => {
@@ -1037,8 +1347,10 @@ pub fn update_global_transforms_with_layout(
                         // For top anchors, move down by 1.5x height to account for baseline
                         text_local_pos.y -= text_size.y * 1.5;
                     }
-                    crate::fur_ast::FurAnchor::Center => {
-                        // For center, move down by 1.25x height
+                    crate::fur_ast::FurAnchor::Center |
+                    crate::fur_ast::FurAnchor::Left |
+                    crate::fur_ast::FurAnchor::Right => {
+                        // For center/left/right anchors, move down by 1.25x height to vertically center
                         text_local_pos.y -= text_size.y * 1.25;
                     }
                     _ => {
@@ -1378,12 +1690,12 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
     // Convert TextFlow to horizontal alignment only
     // align parameter only affects horizontal text flow (left/center/right)
     // Vertical alignment is always Center (text is positioned at the anchor point's y coordinate)
-    // Swapped: align=s (Start) means text starts at anchor (right-align for right anchors, left-align for left)
-    //          align=e (End) means text ends at anchor (left-align for right anchors, right-align for left)
+    // align=start means left alignment (text starts at anchor, flows right)
+    // align=end means right alignment (text ends at anchor, flows left)
     let align_h = match text.props.align {
-        crate::ui_elements::ui_text::TextFlow::Start => crate::ui_elements::ui_text::TextAlignment::Right,  // Swapped: Start = Right (text ends at anchor, starts flowing left)
+        crate::ui_elements::ui_text::TextFlow::Start => crate::ui_elements::ui_text::TextAlignment::Left,   // Start = Left (text starts at anchor, flows right)
         crate::ui_elements::ui_text::TextFlow::Center => crate::ui_elements::ui_text::TextAlignment::Center,
-        crate::ui_elements::ui_text::TextFlow::End => crate::ui_elements::ui_text::TextAlignment::Left,    // Swapped: End = Left (text starts at anchor, flows right)
+        crate::ui_elements::ui_text::TextFlow::End => crate::ui_elements::ui_text::TextAlignment::Right,   // End = Right (text ends at anchor, flows left)
     };
     // Vertical alignment is always Center - align parameter doesn't affect vertical positioning
     let align_v = crate::ui_elements::ui_text::TextAlignment::Center;

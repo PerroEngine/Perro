@@ -5,10 +5,12 @@ use std::os::raw::c_char;
 use perro_core::script::CreateFn;
 use phf::{phf_map, Map};
 
+pub mod scripts_editor_pup;
 pub mod scripts_repair_rs;
 pub mod scripts_root_rs;
 pub mod scripts_updater_rs;
 // __PERRO_MODULES__
+use scripts_editor_pup::scripts_editor_pup_create_script;
 use scripts_repair_rs::scripts_repair_rs_create_script;
 use scripts_root_rs::scripts_root_rs_create_script;
 use scripts_updater_rs::scripts_updater_rs_create_script;
@@ -19,7 +21,8 @@ pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {
 }
 
 static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
-    "scripts_repair_rs" => scripts_repair_rs_create_script as CreateFn,
+    "scripts_editor_pup" => scripts_editor_pup_create_script as CreateFn,
+        "scripts_repair_rs" => scripts_repair_rs_create_script as CreateFn,
         "scripts_root_rs" => scripts_root_rs_create_script as CreateFn,
         "scripts_updater_rs" => scripts_updater_rs_create_script as CreateFn,
     // __PERRO_REGISTRY__

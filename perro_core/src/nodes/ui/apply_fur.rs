@@ -208,19 +208,29 @@ fn apply_base_attributes(
             }
 
             "w" | "sz-x" => {
-                let (f, pct) = parse_f32_percent(v, base.size.x);
-                if pct {
-                    base.style_map.insert(SIZE_X.into(), f);
+                if v.trim().eq_ignore_ascii_case("auto") {
+                    // Use -1.0 as sentinel value for auto-sizing
+                    base.style_map.insert(SIZE_X.into(), -1.0);
                 } else {
-                    base.size.x = f;
+                    let (f, pct) = parse_f32_percent(v, base.size.x);
+                    if pct {
+                        base.style_map.insert(SIZE_X.into(), f);
+                    } else {
+                        base.size.x = f;
+                    }
                 }
             }
             "h" | "sz-y" => {
-                let (f, pct) = parse_f32_percent(v, base.size.y);
-                if pct {
-                    base.style_map.insert(SIZE_Y.into(), f);
+                if v.trim().eq_ignore_ascii_case("auto") {
+                    // Use -1.0 as sentinel value for auto-sizing
+                    base.style_map.insert(SIZE_Y.into(), -1.0);
                 } else {
-                    base.size.y = f;
+                    let (f, pct) = parse_f32_percent(v, base.size.y);
+                    if pct {
+                        base.style_map.insert(SIZE_Y.into(), f);
+                    } else {
+                        base.size.y = f;
+                    }
                 }
             }
 
@@ -416,7 +426,12 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             };
 
             if let Some(g) = fur.attributes.get("gap") {
-                let parsed = g.parse::<f32>().unwrap_or(0.0);
+                // Gap is a single value that adds EXTRA spacing on top of default
+                let parsed = if g.trim().ends_with('%') {
+                    g.trim().trim_end_matches('%').parse::<f32>().unwrap_or(0.0)
+                } else {
+                    g.parse::<f32>().unwrap_or(0.0)
+                };
                 match layout.container.mode {
                     ContainerMode::Horizontal => layout.container.gap.x = parsed,
                     ContainerMode::Vertical => layout.container.gap.y = parsed,
@@ -458,9 +473,9 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
 
             // Parse text flow alignment (how text flows relative to anchor point)
-            // align=start: text starts at anchor (flows right/down)
+            // align=start: left alignment (text starts at anchor, flows right)
             // align=center: text is centered on anchor
-            // align=end: text ends at anchor (flows left/up)
+            // align=end: right alignment (text ends at anchor, flows left)
             if let Some(align_str) = fur.attributes.get("align") {
                 text.props.align = match align_str.as_ref() {
                     "start" | "s" => TextFlow::Start,

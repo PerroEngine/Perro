@@ -6,7 +6,8 @@
       "fur_path": "res://fur/editor.fur",
       "base": {
         "type": "Node",
-        "name": "Editor UI"
+        "name": "Editor UI",
+        "script_path": "res://scripts/editor.pup"
       }
     }
   }

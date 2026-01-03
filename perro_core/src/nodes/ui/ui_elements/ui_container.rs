@@ -22,7 +22,7 @@ impl_ui_element!(BoxContainer);
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Container {
     pub mode: ContainerMode,            // Horizontal, Vertical, Grid
-    pub gap: Vector2,                   // spacing between children
+    pub gap: Vector2,                   // extra spacing between children (added on top of default gap)
     pub distribution: DistributionMode, // pack or even spacing
 }
 

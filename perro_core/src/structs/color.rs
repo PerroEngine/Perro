@@ -145,16 +145,16 @@ impl Color {
             ("cinder-8", Color::new(21, 35, 43, 255)),
             ("cinder-9", Color::new(18, 31, 39, 255)),
             ("cinder-10", Color::new(15, 28, 36, 255)),
-            ("steel-1", Color::new(55, 58, 64, 255)),
-            ("steel-2", Color::new(48, 51, 57, 255)),
-            ("steel-3", Color::new(42, 45, 51, 255)),
-            ("steel-4", Color::new(36, 39, 45, 255)),
-            ("steel-5", Color::new(30, 33, 39, 255)),
-            ("steel-6", Color::new(26, 29, 35, 255)),
-            ("steel-7", Color::new(22, 25, 31, 255)),
-            ("steel-8", Color::new(19, 22, 28, 255)),
-            ("steel-9", Color::new(16, 19, 25, 255)),
-            ("steel-10", Color::new(12, 15, 20, 255)),
+            ("steel-1", Color::new(160, 160, 163, 255)),  // 25% more black/stone
+            ("steel-2", Color::new(148, 148, 151, 255)),  // 25% more black/stone
+            ("steel-3", Color::new(132, 132, 135, 255)),  // 25% more black/stone
+            ("steel-4", Color::new(120, 120, 123, 255)),  // 25% more black/stone
+            ("steel-5", Color::new(91, 91, 94, 255)),    // 25% more black/stone
+            ("steel-6", Color::new(64, 64, 67, 255)),     // 25% more black/stone
+            ("steel-7", Color::new(21, 24, 28, 255)),     // 25% more black/stone
+            ("steel-8", Color::new(18, 21, 25, 255)),     // 25% more black/stone
+            ("steel-9", Color::new(15, 18, 22, 255)),     // 25% more black/stone
+            ("steel-10", Color::new(12, 15, 19, 255)),    // 25% more black/stone
             // RED FAMILY
             ("red-1", Color::new(217, 187, 187, 255)),
             ("red-2", Color::new(217, 167, 167, 255)),
