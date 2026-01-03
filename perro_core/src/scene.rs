@@ -3638,7 +3638,7 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
             } else if cfg!(target_os = "macos") {
                 "libscripts.dylib"
             } else {
-                "libscripts.so"
+                "scripts.so"
             };
 
             path.push(filename);
@@ -3664,7 +3664,7 @@ pub fn default_perro_rust_path_from_root(project_root: &Path) -> PathBuf {
     } else if cfg!(target_os = "macos") {
         "libscripts.dylib"
     } else {
-        "libscripts.so"
+        "scripts.so"
     };
 
     path.push(filename);

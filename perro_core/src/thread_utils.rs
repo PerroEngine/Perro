@@ -68,7 +68,7 @@ pub fn set_current_thread_name(name: &str) {
         use std::ffi::CString;
         use std::os::raw::c_char;
         
-        extern "C" {
+        unsafe extern "C" {
             fn pthread_setname_np(thread: libc::pthread_t, name: *const c_char) -> libc::c_int;
         }
         
@@ -87,7 +87,7 @@ pub fn set_current_thread_name(name: &str) {
         use std::ffi::CString;
         use std::os::raw::c_char;
         
-        extern "C" {
+        unsafe extern "C" {
             fn pthread_setname_np(name: *const c_char) -> libc::c_int;
         }
         
