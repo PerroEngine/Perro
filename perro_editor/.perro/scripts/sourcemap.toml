@@ -22,5 +22,5 @@ g_start = 77
 g_end = 81
 
 [scripts.scripts_editor_pup.names]
-__t_file_Pressed = "file_Pressed"
 __t_two_d_Pressed = "two_d_Pressed"
+__t_file_Pressed = "file_Pressed"

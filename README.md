@@ -25,8 +25,10 @@ It focuses on **performance, flexibility, and ease of use** with a unique script
 ```bash
 git clone https://github.com/PerroEngine/Perro.git
 cd perro
-cargo run -p perro_dev
+cargo run -p perro_dev -- --path /path/to/project
 ```
+
+**⚠️ Important:** You must specify `-- --path PATH` when running `perro_dev`. The engine is primarily designed for compiling scripts and building projects, not for active development. For active game development, use the compiled release binary (see Performance section below).
 
 
 ### Creating a New Project
@@ -75,10 +77,13 @@ cargo run -p perro_core -- --path /path/to/project --scripts
 
 ```bash
 # Run project in dev mode (injects compiled scripts dynamically)
+# ⚠️ You must specify -- --path PATH when running perro_dev
 cargo run -p perro_dev -- --path /path/to/project
 OR
 cargo run -p perro_core -- --path /path/to/project --run
 ```
+
+**Note:** The `perro_dev` runtime requires the `--path` argument. The engine (`perro_core`) is mainly for compiling scripts, not for active development. For better performance during development, see the Performance section below.
 
 **Iteration Cycle:**
 
@@ -89,6 +94,13 @@ cargo run -p perro_core -- --path /path/to/project --run
 ### ⚠️ Source Mode Performance Considerations
 
 When building games from source, the runtime (`perro_dev`) runs in **debug mode** by default, which means it's unoptimized. This is fine for development, but if you need better performance:
+
+**For better performance, run in release mode:**
+
+```bash
+# Run perro_dev in release mode for better performance
+cargo run --release -p perro_dev -- --path /path/to/project
+```
 
 **If you're making engine changes:**
 - Rebuild the runtime in release mode when you make engine changes:
@@ -111,7 +123,7 @@ When building games from source, the runtime (`perro_dev`) runs in **debug mode*
   ```
 - If no path is provided, the release binary must be in the same directory as a project folder with a valid `project.toml` in it.
 
-**Why?** The source mode workflow (`cargo run`) is optimized for engine development, not heavy game operations. For better performance during game development, use a release-built runtime.
+**Why?** The source mode workflow (`cargo run`) is optimized for engine development, not heavy game operations. The engine (`perro_core`) is primarily designed for compiling scripts and building projects, not for active development. For better performance during game development, use `--release` flag or a pre-built release binary.
 
 ### Release Build
 
@@ -323,6 +335,25 @@ This repository contains the **Perro engine source code**. To build and work on 
 - **Rust 1.92.0 or later** (GNU toolchain required - this is what ships with the editor binary for compilation)
 - **Cargo**
 
+**⚠️ Linux System Dependencies**
+
+On Linux, you may need to install system dependencies before building. If you encounter errors about missing libraries (such as `libdbus-1-dev` or `libudev-dev`), run:
+
+```bash
+# Install all dependencies (recommended)
+./install-deps.sh
+
+# Or install essential packages individually
+sudo apt install -y libdbus-1-dev libudev-dev pkg-config
+```
+
+The `install-deps.sh` script will install all required dependencies for your distribution (Ubuntu/Debian, Fedora/RHEL, or Arch Linux). If you encounter GPG errors with `apt update`, the script will continue anyway and attempt to install the packages.
+
+**Common build errors:**
+- `libdbus-sys` build failure → Install `libdbus-1-dev` and `pkg-config`
+- `hidapi` build failure (Unable to find libudev) → Install `libudev-dev`
+- Missing graphics libraries → The install script includes all necessary graphics dependencies
+
 **⚠️ Important: GNU Toolchain Required on Windows**
 
 Perro requires the **GNU toolchain**. Here's how to install and set it up:
@@ -385,7 +416,11 @@ perro/
 **Open the Editor in Dev Mode:**
 
 ```bash
-cargo run -p perro_dev
+# ⚠️ You must specify -- --path PATH when running perro_dev
+cargo run -p perro_dev -- --path /path/to/project
+
+# For better performance during development:
+cargo run --release -p perro_dev -- --path /path/to/project
 ```
 
 **Build the Core Alone:**
