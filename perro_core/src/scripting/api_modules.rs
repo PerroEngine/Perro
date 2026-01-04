@@ -54,8 +54,10 @@ pub enum NodeSugarApi {
     GetChildByName, // For self.get_node("name") - finds child by name and returns ID
     GetParent, // For node.get_parent() - gets parent node ID
     AddChild, // For self.add_child(child) - adds a child node and sets parent relationship
+    ClearChildren, // For self.clear_children() - deletes all children and their descendants
     GetType, // For node.get_type() - gets the node's NodeType (takes Uuid as first param)
     GetParentType, // For node.get_parent_type() - gets the parent's NodeType (takes Uuid as first param)
+    Remove, // For node.remove() - removes the node from the scene and its parent's children list
 }
 
 #[derive(Debug, Clone)]

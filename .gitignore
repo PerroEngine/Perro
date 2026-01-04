@@ -7,3 +7,9 @@ flamegraph.folded
 flamegraph.svg
 projects/PerroDevRuntime.exe
 PerroDevRuntime
+perro_editor/perro_engine.png
+perro_editor/perro_engine.desktop
+perro_core/src/scene.rs
+perro_dev/perro_dev_runtime.desktop
+perro_dev/perro_dev_runtime.png
+perro_dev/perrodevruntime.desktop

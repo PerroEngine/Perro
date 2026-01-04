@@ -2,8 +2,8 @@ Simple Build Log
 =================
 === Simple Build Script Started ===
 Icon path: ./icon.png
-✔ Copied icon to OUT_DIR: /home/tiernandefranco/Documents/Perro/target/release/build/perro_dev-6c80d9fd562f7a82/out/icon.png
-✔ Generated embedded icon module: /home/tiernandefranco/Documents/Perro/target/release/build/perro_dev-6c80d9fd562f7a82/out/embedded_icon.rs
+✔ Copied icon to OUT_DIR: /home/tiernandefranco/Documents/Perro/target/debug/build/perro_dev-fd51e51b0b9a67f1/out/icon.png
+✔ Generated embedded icon module: /home/tiernandefranco/Documents/Perro/target/debug/build/perro_dev-fd51e51b0b9a67f1/out/embedded_icon.rs
 ✔ Copied icon to ./perro_dev_runtime.png
 ✔ Installed 16x16 icon to: /home/tiernandefranco/.local/share/icons/hicolor/16x16/apps/perro_dev_runtime.png
 ✔ Installed 22x22 icon to: /home/tiernandefranco/.local/share/icons/hicolor/22x22/apps/perro_dev_runtime.png
@@ -31,7 +31,5 @@ Icon path: ./icon.png
 ✔ Installed binary desktop file to: /home/tiernandefranco/.local/share/applications/perrodevruntime.desktop
 ✔ Updated desktop database
 ✔ Updated GTK icon cache
-✔ Created desktop file next to binary: /home/tiernandefranco/Documents/Perro/target/release/perrodevruntime.desktop
-⚠ appimagetool not found, skipping AppImage creation
-  Install with: cargo install cargo-appimage or download from https://github.com/AppImage/AppImageKit
+✔ Created desktop file next to binary: /home/tiernandefranco/Documents/Perro/target/debug/perrodevruntime.desktop
 === Simple Build Script Finished ===

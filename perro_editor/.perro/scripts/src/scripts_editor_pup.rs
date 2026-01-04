@@ -73,11 +73,11 @@ impl Script for ScriptsEditorPupScript {
 
 impl ScriptsEditorPupScript {
     fn __t_two_d_Pressed(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("2D Pressed");
+        // [stripped for release] api.print("2D Pressed");
     }
 
     fn __t_file_Pressed(&mut self, api: &mut ScriptApi<'_>) {
-        api.print("File Pressed");
+        // [stripped for release] api.print("File Pressed");
     }
 
 }

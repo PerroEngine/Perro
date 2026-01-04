@@ -816,7 +816,7 @@ impl Expr {
                         // Check if this is a node type and the base is a node ID variable (UUID or Option<Uuid>)
                         if is_node_type(&type_name) {
                             // Check if base_code is a node ID variable (ends with _id or is self.id)
-                            // OR if it's an Option<Uuid> variable (from get_parent() or get_node())
+                            // OR if it's an Option<Uuid> variable (from get_child_by_name() or get_node())
                             // Node variables are renamed to {name}_id, and self.id is the script's node ID
                             let is_node_id_var = base_code.ends_with("_id") || base_code == "self.id";
                             
@@ -2598,27 +2598,13 @@ impl Expr {
                         }
                     }
 
-                    // Option<Uuid> (from get_child_by_name or get_parent) to Custom type (node type)
-                    // Pattern: self.get_node("name") as Sprite2D or col.get_parent() as Sprite2D
+                    // Option<Uuid> (from get_child_by_name) to Custom type (node type)
+                    // Pattern: self.get_node("name") as Sprite2D
+                    // Note: get_parent() now returns Uuid directly, not Option<Uuid>
                     (Some(Type::Custom(from_name)), Type::Custom(to_name))
                         if from_name == "UuidOption" =>
                     {
-                        // Special case: self.get_parent() as NodeType
-                        // Read directly from self_node.parent.unwrap() instead of calling api.get_parent()
-                        if let Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), args) = inner.as_ref() {
-                            if let Some(Expr::SelfAccess) = args.get(0) {
-                                // This is self.get_parent() - read directly from self_node.parent
-                                let node_type_name = &script.node_type;
-                                if is_node_type(to_name) {
-                                    // Cast to node type - read parent directly
-                                    return format!(
-                                        "api.read_node(self.id, |self_node: &{}| self_node.parent.unwrap())",
-                                        node_type_name
-                                    );
-                                }
-                            }
-                        }
-                        // get_child_by_name and get_parent return Option<Uuid>, cast to node type
+                        // get_child_by_name returns Option<Uuid>, cast to node type
                         // Keep it as Option<Uuid> - property access will unwrap and use read_node/mutate_node
                         // The variable will be stored as Option<Uuid> and unwrapped when accessing properties
                         inner_code

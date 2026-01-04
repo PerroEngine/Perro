@@ -18,7 +18,7 @@ pub struct Area2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
 
-    #[serde(rename = "base")]
+
     pub base: Node2D,
 
     /// Track which colliders were intersecting in the previous frame
@@ -82,10 +82,14 @@ impl Area2D {
                     let intersections = physics.get_intersecting_colliders(&collider_handles);
                     
                     // Collect all colliding node IDs while we have the physics borrow
+                    // Filter out any node IDs that no longer exist in the scene (were deleted)
                     let mut node_ids = HashSet::new();
                     for (_our_handle, other_handle) in &intersections {
                         if let Some(id) = physics.get_node_id(*other_handle) {
-                            node_ids.insert(id);
+                            // Only add if node still exists in scene
+                            if api.scene.get_scene_node_ref(id).is_some() {
+                                node_ids.insert(id);
+                            }
                         }
                     }
                     (node_ids, intersections.len())
@@ -94,6 +98,12 @@ impl Area2D {
             }
         };
 
+        // Clean up previous_collisions - remove any nodes that no longer exist
+        // This prevents trying to access deleted nodes
+        self.previous_collisions.retain(|&node_id| {
+            api.scene.get_scene_node_ref(node_id).is_some()
+        });
+        
         // Get the signal base name (e.g., "Deadzone")
         let signal_base = self.name.as_ref();
         
@@ -111,41 +121,50 @@ impl Area2D {
             .collect();
 
         // Emit AreaEntered signals (when something enters the area)
+        // Only emit for nodes that still exist (might have been deleted during signal handler execution)
+        // IMPORTANT: Check node existence BEFORE each emission, as previous handlers may have deleted nodes
         if !entered.is_empty() {
             let entered_signal = format!("{}_AreaEntered", signal_base);
             let entered_signal_id = string_to_u64(&entered_signal);
             
-         
-            
             for node_id in &entered {
-                // Use array literal - zero allocation, passed as slice
-                let params = [Value::String(node_id.to_string())];
-                api.emit_signal_id(entered_signal_id, &params);
+                // Double-check node still exists before emitting signal
+                // (it might have been deleted by a previous signal handler in this same loop)
+                if api.scene.get_scene_node_ref(*node_id).is_some() {
+                    let params = [Value::String(node_id.to_string())];
+                    api.emit_signal_id(entered_signal_id, &params);
+                }
             }
         }
 
         // Emit AreaExited signals (when something leaves the area)
+        // Only emit for nodes that still exist
         if !exited.is_empty() {
             let exited_signal = format!("{}_AreaExited", signal_base);
             let exited_signal_id = string_to_u64(&exited_signal);
             
             for node_id in &exited {
-                // Use array literal - zero allocation, passed as slice
-                let params = [Value::String(node_id.to_string())];
-                api.emit_signal_id(exited_signal_id, &params);
+                // Double-check node still exists before emitting signal
+                if api.scene.get_scene_node_ref(*node_id).is_some() {
+                    let params = [Value::String(node_id.to_string())];
+                    api.emit_signal_id(exited_signal_id, &params);
+                }
             }
         }
 
         // Emit AreaOccupied signal for all objects currently inside the area
         // (emitted every frame for all current collisions - useful for continuous detection)
+        // Only emit for nodes that still exist
         if !current_colliding_node_ids.is_empty() {
             let occupied_signal = format!("{}_AreaOccupied", signal_base);
             let occupied_signal_id = string_to_u64(&occupied_signal);
 
             for node_id in &current_colliding_node_ids {
-                // Use array literal - zero allocation, passed as slice
-                let params = [Value::String(node_id.to_string())];
-                api.emit_signal_id(occupied_signal_id, &params);
+                // Double-check node still exists before emitting signal
+                if api.scene.get_scene_node_ref(*node_id).is_some() {
+                    let params = [Value::String(node_id.to_string())];
+                    api.emit_signal_id(occupied_signal_id, &params);
+                }
             }
         }
 

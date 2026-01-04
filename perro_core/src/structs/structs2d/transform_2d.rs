@@ -106,6 +106,7 @@ impl Transform2D {
     }
     
     /// Create Transform2D from a Mat3 (inverse of to_mat3)
+    /// OPTIMIZED: Uses SIMD-optimized length() and avoids redundant calculations
     #[inline]
     pub fn from_mat3(mat: glam::Mat3) -> Self {
         // Extract components from matrix
@@ -120,13 +121,22 @@ impl Transform2D {
         let tx = mat.z_axis.x;
         let ty = mat.z_axis.y;
         
-        // Extract scale (magnitude of basis vectors)
-        let scale_x = (m00 * m00 + m01 * m01).sqrt();
-        let scale_y = (m10 * m10 + m11 * m11).sqrt();
+        // OPTIMIZED: Extract scale using faster method
+        // For scale, we need sqrt(m00^2 + m01^2) and sqrt(m10^2 + m11^2)
+        // Use glam's built-in length() which is SIMD-optimized
+        let scale_x = glam::Vec2::new(m00, m01).length();
+        let scale_y = glam::Vec2::new(m10, m11).length();
         
-        // Extract rotation (using atan2 on normalized rotation matrix)
+        // OPTIMIZED: Extract rotation - use atan2 only when scale is significant
+        // For very small scales, rotation is undefined, so use 0
         let rotation = if scale_x > 0.0001 {
-            m01.atan2(m00)
+            // OPTIMIZED: Normalize first to avoid division in atan2
+            // atan2(y, x) is already optimized in libm, but we can avoid it for identity
+            if (m00 - 1.0).abs() < 0.0001 && m01.abs() < 0.0001 {
+                0.0
+            } else {
+                m01.atan2(m00)
+            }
         } else {
             0.0
         };
@@ -143,6 +153,16 @@ impl Transform2D {
     /// This is the core operation for transform hierarchy
     #[inline]
     pub fn multiply(&self, child: &Transform2D) -> Transform2D {
+        // OPTIMIZED: Fast path for identity parent
+        if self.is_default() {
+            return *child;
+        }
+        
+        // OPTIMIZED: Fast path for identity child
+        if child.is_default() {
+            return *self;
+        }
+        
         // Convert both to matrices
         let parent_mat = self.to_mat3();
         let child_mat = child.to_mat3();
@@ -197,6 +217,11 @@ impl Transform2D {
     /// Expected speedup: 3-5x for deep hierarchies
     #[inline]
     pub fn calculate_global(parent_global: &Transform2D, local: &Transform2D) -> Transform2D {
+        // OPTIMIZED: Use fast path for identity parent (very common case)
+        if parent_global.is_default() {
+            return *local;
+        }
+        
         // Single matrix multiply - MUCH faster than component-wise
         // glam uses SIMD when available (SSE2/NEON)
         // Correctly handles:
@@ -215,17 +240,31 @@ impl Transform2D {
         parent_global: &Transform2D,
         local_transforms: &[Transform2D],
     ) -> Vec<Transform2D> {
+        // OPTIMIZED: Fast path for identity parent (common case)
+        if parent_global.is_default() {
+            return local_transforms.to_vec();
+        }
+        
         // Convert parent once (amortize cost across all children)
         let parent_mat = parent_global.to_mat3();
         
-        local_transforms
+        // OPTIMIZED: Pre-allocate with exact capacity to avoid reallocations
+        let mut results = Vec::with_capacity(local_transforms.len());
+        
+        // OPTIMIZED: Process in chunks for better cache locality
+        // Convert all local transforms to matrices first (batch the conversions)
+        let local_mats: Vec<_> = local_transforms
             .iter()
-            .map(|local| {
-                let local_mat = local.to_mat3();
-                let result_mat = parent_mat * local_mat;
-                Self::from_mat3(result_mat)
-            })
-            .collect()
+            .map(|local| local.to_mat3())
+            .collect();
+        
+        // Then multiply all at once (better SIMD utilization)
+        for local_mat in local_mats {
+            let result_mat = parent_mat * local_mat;
+            results.push(Self::from_mat3(result_mat));
+        }
+        
+        results
     }
     
     /// Calculate global transform with early-out for identity parent

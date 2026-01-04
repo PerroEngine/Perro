@@ -2,6 +2,10 @@
 //! Perro Script API (single-file version with Deref)
 //! Provides all engine APIs (JSON, Time, OS, Process) directly under `api`
 
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
+
 use chrono::{Datelike, Local, Timelike};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1554,6 +1558,9 @@ impl<'a> ScriptApi<'a> {
         // while also borrowing self mutably. So we check if update is needed first,
         // then drop that borrow before calling the method.
         let needs_update = {
+            if self.scene.get_scene_node_ref(node_id).is_none() {
+                return;
+            }
             self.scene.get_scene_node_ref(node_id)
                 .map(|node_ref| {
                     node_ref.needs_internal_fixed_update()
@@ -1676,8 +1683,33 @@ impl<'a> ScriptApi<'a> {
         self.set_context();
         
         // OPTIMIZED: Use fast-path calls that skip redundant context operations
+        // IMPORTANT: Check if node still exists before EACH handler call
+        // (previous handler might have deleted the node)
         for (target_id, fn_id) in call_list.iter() {
-            self.call_function_id_fast(*target_id, *fn_id, params);
+            // First, check if the target node still exists (it might have been deleted)
+            if self.scene.get_scene_node_ref(*target_id).is_none() {
+                continue; // Target node was deleted, skip this handler
+            }
+            
+            // If params contain a node ID (first param is usually the collision node), check if it still exists
+            let should_call = if let Some(first_param) = params.get(0) {
+                if let Some(node_id_str) = first_param.as_str() {
+                    if let Ok(node_id) = uuid::Uuid::parse_str(node_id_str) {
+                        // Skip handler if node in params was deleted by previous handler
+                        self.scene.get_scene_node_ref(node_id).is_some()
+                    } else {
+                        true // Not a UUID param, proceed
+                    }
+                } else {
+                    true // Not a string param, proceed
+                }
+            } else {
+                true // No params, proceed
+            };
+            
+            if should_call {
+                self.call_function_id_fast(*target_id, *fn_id, params);
+            }
         }
         
         // Clear context once after all calls
@@ -1794,8 +1826,21 @@ impl<'a> ScriptApi<'a> {
     /// Example: `let pos = api.read_node2d_transform(parent_id, |n2d| n2d.transform.position);`
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn read_node2d_transform<R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
+        let target_node = uuid::Uuid::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok();
+        let is_target = target_node.map(|t| node_id == t).unwrap_or(false);
+        
+        if is_target {
+            eprintln!("🔍 [API] read_node2d_transform called for {}", node_id);
+            eprintln!("🔍 [API] Node exists: {}", self.scene.get_scene_node_ref(node_id).is_some());
+        }
+        
         let node = self.scene.get_scene_node_ref(node_id)
-            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+            .unwrap_or_else(|| {
+                if is_target {
+                    eprintln!("⚠️ [API] PANIC in read_node2d_transform for {}", node_id);
+                }
+                panic!("Node {} not found", node_id)
+            });
         
         let node2d = node.as_node2d()
             .unwrap_or_else(|| panic!("Node {} is not a Node2D-based node", node_id));
@@ -1876,8 +1921,21 @@ impl<'a> ScriptApi<'a> {
     /// Example: `let name = api.read_scene_node(node_id, |n| n.get_name().to_string());`
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn read_scene_node<R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::node_registry::SceneNode) -> R) -> R {
+        let target_node = uuid::Uuid::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok();
+        let is_target = target_node.map(|t| node_id == t).unwrap_or(false);
+        
+        if is_target {
+            eprintln!("🔍 [API] read_scene_node called for {}", node_id);
+            eprintln!("🔍 [API] Node exists: {}", self.scene.get_scene_node_ref(node_id).is_some());
+        }
+        
         let node = self.scene.get_scene_node_ref(node_id)
-            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+            .unwrap_or_else(|| {
+                if is_target {
+                    eprintln!("⚠️ [API] PANIC in read_scene_node for {}", node_id);
+                }
+                panic!("Node {} not found", node_id)
+            });
         
         f(node)
     }
@@ -1906,10 +1964,21 @@ impl<'a> ScriptApi<'a> {
     /// Handles removing from old parent if it exists
     /// Example: `api.reparent(parent_id, child_id);`
     pub fn reparent(&mut self, new_parent_id: Uuid, child_id: Uuid) {
-        // Get the child's current parent (if any) - need to do this before mutable borrow
+
+        if self.scene.get_scene_node_ref(child_id).is_none() {
+            eprintln!("⚠️ reparent: Child node {} does not exist, cannot reparent to {}", child_id, new_parent_id);
+            return;
+        }
+        
+        // Check if new parent exists
+        if self.scene.get_scene_node_ref(new_parent_id).is_none() {
+            eprintln!("⚠️ reparent: Parent node {} does not exist, cannot reparent child {}", new_parent_id, child_id);
+            return;
+        }
+        
         let old_parent_id_opt = {
             let child_node = self.scene.get_scene_node_ref(child_id)
-                .unwrap_or_else(|| panic!("Child node {} not found", child_id));
+                .expect("Child node should exist (checked above)");
             child_node.get_parent().map(|p| p.id)
         };
         
@@ -1968,6 +2037,7 @@ impl<'a> ScriptApi<'a> {
     pub fn get_parent(&mut self, node_id: Uuid) -> Uuid {
         let node = self.scene.get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        
         node.get_parent()
             .map(|p| p.id)
             .unwrap_or_else(|| panic!("Node {} has no parent", node_id))
@@ -1990,8 +2060,21 @@ impl<'a> ScriptApi<'a> {
     /// Example: `match api.get_type(node_id) { NodeType::Sprite2D => ..., _ => ... }`
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
+        let target_node = uuid::Uuid::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok();
+        let is_target = target_node.map(|t| node_id == t).unwrap_or(false);
+        
+        if is_target {
+            eprintln!("🔍 [API] get_type called for {}", node_id);
+            eprintln!("🔍 [API] Node exists: {}", self.scene.get_scene_node_ref(node_id).is_some());
+        }
+        
         let node = self.scene.get_scene_node_ref(node_id)
-            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+            .unwrap_or_else(|| {
+                if is_target {
+                    eprintln!("⚠️ [API] PANIC in get_type for {}", node_id);
+                }
+                panic!("Node {} not found", node_id)
+            });
         // Use the node's get_type() method which now returns NodeType directly
         node.get_type()
     }
@@ -2036,6 +2119,129 @@ impl<'a> ScriptApi<'a> {
         if let Some(child) = self.scene.get_scene_node_mut(child_id) {
             child.set_parent(None);
         }
+    }
+    
+    /// Clear all children of a node, recursively deleting them and all their descendants
+    /// This removes nodes from the hashmap, removes scripts, clears child lists, and updates caches
+    pub fn clear_children(&mut self, parent_id: Uuid) {
+        // Check if parent exists
+        if self.scene.get_scene_node_ref(parent_id).is_none() {
+            return;
+        }
+        
+        // Recursively collect all descendant IDs first (before any mutations)
+        // We need to collect them in a bottom-up order (all descendants before their parents)
+        // to ensure safe deletion order - this prevents stop_rendering_recursive from
+        // trying to access children that have already been deleted
+        
+        // Use a post-order traversal to collect nodes: children first, then parents
+        // This naturally gives us the correct deletion order
+        let mut all_descendant_ids = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        
+        // Stack-based post-order traversal
+        // Each element is (node_id, children_processed)
+        // Only collect children that actually exist in the scene
+        let mut stack: Vec<(Uuid, bool)> = {
+            let children = self.scene.get_scene_node_ref(parent_id)
+                .map(|node| {
+                    node.get_children().iter().copied().collect::<Vec<Uuid>>()
+                })
+                .unwrap_or_default();
+            
+            children.iter()
+                .filter(|&&id| self.scene.get_scene_node_ref(id).is_some())
+                .map(|&id| (id, false))
+                .collect()
+        };
+        
+        while let Some((node_id, children_processed)) = stack.pop() {
+            if visited.contains(&node_id) {
+                continue;
+            }
+            
+            // Check if node still exists (might have been deleted)
+            if self.scene.get_scene_node_ref(node_id).is_none() {
+                continue;
+            }
+            
+            if children_processed {
+                // All children have been processed, add this node
+                all_descendant_ids.push(node_id);
+                visited.insert(node_id);
+            } else {
+                // Mark that we're processing this node's children
+                stack.push((node_id, true));
+                
+                // Add children to stack (they'll be processed first)
+                // Only process children if node still exists
+                if let Some(node) = self.scene.get_scene_node_ref(node_id) {
+                    for child_id in node.get_children() {
+                        // Only add if child exists and hasn't been visited
+                        let child_exists = self.scene.get_scene_node_ref(*child_id).is_some();
+                        let not_visited = !visited.contains(child_id);
+                        
+                        if not_visited && child_exists {
+                            stack.push((*child_id, false));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Delete all descendants - they're already in bottom-up order (children before parents)
+        // remove_node already checks if node exists, so this is safe
+        let gfx_ref = self.gfx.as_mut().expect("Graphics required for clear_children");
+        
+        for descendant_id in all_descendant_ids.iter() {
+            // Double-check node still exists (might have been deleted as a child of another node)
+            // This can happen if a node appears in multiple branches of the tree
+            if self.scene.get_scene_node_ref(*descendant_id).is_some() {
+                self.scene.remove_node(*descendant_id, gfx_ref);
+            }
+        }
+        
+        // Clear the parent's children list (should already be empty, but ensure it's clean)
+        if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
+            parent.clear_children();
+        }
+        
+        // Update Node2D children cache for the parent (now empty)
+        self.scene.update_node2d_children_cache_on_clear(parent_id);
+    }
+
+    /// Remove a node from the scene
+    /// This recursively removes all children first, then removes the node from its parent's children list (if it has a parent), and finally deletes the node
+    /// Example: `api.remove_node(node_id);`
+    pub fn remove_node(&mut self, node_id: Uuid) {
+        // Check if node exists
+        if self.scene.get_scene_node_ref(node_id).is_none() {
+            return; // Node doesn't exist, nothing to do
+        }
+        
+        // First, recursively remove all children (this deletes all descendants)
+        self.clear_children(node_id);
+        
+        // Get the parent ID before we delete the node
+        let parent_id_opt = {
+            let node = self.scene.get_scene_node_ref(node_id);
+            node.and_then(|n| n.get_parent().map(|p| p.id))
+        };
+        
+        // Remove from parent's children list if it has a parent
+        if let Some(parent_id) = parent_id_opt {
+            // Remove from parent's children list
+            if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
+                parent.remove_child(&node_id);
+            }
+            
+            // Update Node2D children cache for the parent
+            self.scene.update_node2d_children_cache_on_remove(parent_id, node_id);
+        }
+        
+        // Now actually remove the node from the scene
+        let gfx_ref = self.gfx.as_mut().expect("Graphics required for remove_node");
+        self.scene.remove_node(node_id, gfx_ref);
     }
 
     /// Get the global transform for a node (calculates lazily if dirty)

@@ -167,6 +167,13 @@ pub trait SceneAccess {
     
     /// Update the Node2D children cache when a child is removed
     fn update_node2d_children_cache_on_remove(&mut self, parent_id: Uuid, child_id: Uuid);
+    
+    /// Clear the Node2D children cache when all children are removed
+    fn update_node2d_children_cache_on_clear(&mut self, parent_id: Uuid);
+    
+    /// Remove a node from the scene, stopping rendering and cleaning up scripts
+    fn remove_node(&mut self, node_id: Uuid, gfx: &mut crate::rendering::Graphics);
+    
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>>;
     fn get_physics_2d(&self) -> Option<&CellRefCell<PhysicsWorld2D>>;
 

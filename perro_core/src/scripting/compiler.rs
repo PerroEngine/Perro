@@ -1237,7 +1237,7 @@ impl Compiler {
                     })
             });
 
-        if let Some(icon_path) = default_icon_path {
+        let icon_bytes_available = if let Some(icon_path) = default_icon_path {
             if icon_path.exists() {
                 if let Ok(icon_bytes) = fs::read(&icon_path) {
                     writeln!(build_file, "// Default Perro icon embedded at compile time")?;
@@ -1249,10 +1249,19 @@ impl Compiler {
                     }
                     writeln!(build_file, "];")?;
                     writeln!(build_file, "")?;
+                    true
+                } else {
+                    false
                 }
+            } else {
+                false
             }
         } else {
-            // If we can't find the default icon, create an empty array (build will fail gracefully)
+            false
+        };
+
+        if !icon_bytes_available {
+            // If we can't find or read the default icon, create an empty array (build will fail gracefully)
             writeln!(
                 build_file,
                 "// Default icon not found - projects must provide their own icon"

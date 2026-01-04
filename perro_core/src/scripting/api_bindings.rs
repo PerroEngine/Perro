@@ -908,6 +908,23 @@ impl ApiCodegen for NodeSugarApi {
                 
                 format!("api.reparent({}, {})", parent_id, child_id)
             }
+            NodeSugarApi::ClearChildren => {
+                // self.clear_children() -> api.clear_children(self.id)
+                let parent_id = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
+                } else if let Some(Expr::Ident(name)) = args.get(0) {
+                    format!("{}_id", name)
+                } else if let Some(node_str) = args_strs.get(0) {
+                    if node_str.ends_with("_id") || node_str.ends_with(".id") {
+                        node_str.clone()
+                    } else {
+                        format!("{}_id", node_str)
+                    }
+                } else {
+                    "self.id".to_string()
+                };
+                format!("api.clear_children({})", parent_id)
+            }
             NodeSugarApi::GetType => {
                 // node.get_type() -> api.get_type(node_id)
                 // Takes Uuid as first parameter
@@ -948,6 +965,26 @@ impl ApiCodegen for NodeSugarApi {
                 };
                 format!("api.get_parent_type({})", node_expr)
             }
+            NodeSugarApi::Remove => {
+                // node.remove() -> api.remove_node(node_id)
+                // Removes the node from the scene and its parent's children list
+                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
+                    "self.id".to_string()
+                } else if let Some(Expr::Ident(name)) = args.get(0) {
+                    // Check if it's a temp variable (starts with __) - use as-is since it's already a Uuid
+                    if name.starts_with("__") {
+                        name.clone()
+                    } else {
+                        // Regular node variable - add _id suffix
+                        format!("{}_id", name)
+                    }
+                } else if let Some(node_str) = args_strs.get(0) {
+                    node_str.clone()
+                } else {
+                    "self.id".to_string()
+                };
+                format!("api.remove_node({})", node_expr)
+            }
         }
     }
 }
@@ -960,8 +997,10 @@ impl ApiTypes for NodeSugarApi {
             NodeSugarApi::GetChildByName => Some(Type::DynNode), // Returns DynNode - child node ID (no type resolution)
             NodeSugarApi::GetParent => Some(Type::DynNode), // Returns DynNode - parent node ID (no type resolution)
             NodeSugarApi::AddChild => Some(Type::Void),
+            NodeSugarApi::ClearChildren => Some(Type::Void), // Returns Void - no return value
             NodeSugarApi::GetType => Some(Type::NodeType), // Returns NodeType
             NodeSugarApi::GetParentType => Some(Type::NodeType), // Returns NodeType
+            NodeSugarApi::Remove => Some(Type::Void), // Returns Void - no return value
         }
     }
     

@@ -11,8 +11,8 @@ fn init() {
 
     tex = Texture.load("res://doug.PNG")
     self.texture = tex
-
-
+    
+   
 
 }
 
@@ -20,7 +20,7 @@ fn init() {
 fn update() {
     var delta = Time.get_delta()
 
-    self.transform.position.x += 100 * delta
+    self.transform.position.x += 50 * delta
 
 
     
@@ -46,6 +46,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     if (collision.get_parent() == self) {
         pos.y += 100
         self.transform.position = pos
+        self.remove()
     }
 }
 

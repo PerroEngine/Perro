@@ -32,7 +32,10 @@ impl Script {
 
         // Headers / Lints
         out.push_str("#![allow(improper_ctypes_definitions)]\n");
-        out.push_str("#![allow(unused)]\n\n");
+        out.push_str("#![allow(unused)]\n");
+        out.push_str("#![allow(non_snake_case)]\n");
+        out.push_str("#![allow(non_camel_case_types)]\n");
+        out.push_str("#![allow(non_upper_case_globals)]\n\n");
 
         // Standard library imports
         out.push_str("use std::{\n");

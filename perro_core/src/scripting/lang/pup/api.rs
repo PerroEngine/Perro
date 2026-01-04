@@ -117,8 +117,10 @@ impl PupNodeSugar {
             "get_node" => Some(ApiModule::NodeSugar(NodeSugarApi::GetChildByName)),
             "get_parent" => Some(ApiModule::NodeSugar(NodeSugarApi::GetParent)),
             "add_child" => Some(ApiModule::NodeSugar(NodeSugarApi::AddChild)),
+            "clear_children" => Some(ApiModule::NodeSugar(NodeSugarApi::ClearChildren)),
             "get_type" => Some(ApiModule::NodeSugar(NodeSugarApi::GetType)),
             "get_parent_type" => Some(ApiModule::NodeSugar(NodeSugarApi::GetParentType)),
+            "remove" => Some(ApiModule::NodeSugar(NodeSugarApi::Remove)),
             _ => None,
         }
     }

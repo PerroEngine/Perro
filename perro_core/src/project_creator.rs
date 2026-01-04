@@ -415,6 +415,9 @@ build.log
 
 icon.ico
 
+perro_engine.png
+perro_engine.desktop
+
 # Ignore profiling files
 flamegraph.folded
 flamegraph.svg

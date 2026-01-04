@@ -505,6 +505,8 @@ impl Type {
             Node(_) => true,
             // Uuid
             DynNode => true,
+            // NodeType enum implements Copy
+            NodeType => true,
             // EngineStructs implement Copy
             EngineStruct(es) => match es {
                 // These implement Copy

@@ -253,7 +253,7 @@ fn main() {
 
         // Spawn perro_dev with the same path
         let mut cmd = Command::new("cargo");
-        cmd.args(&["run", "-p", "perro_dev", "--", "--path", path_arg]);
+        cmd.args(&["run", "--release", "-p", "perro_dev", "--", "--path", path_arg]);
         cmd.stdout(std::process::Stdio::inherit());
         cmd.stderr(std::process::Stdio::inherit());
 
@@ -372,7 +372,7 @@ fn main() {
 
         // Spawn perro_dev with the same path
         let mut cmd = Command::new("cargo");
-        cmd.args(&["run", "-p", "perro_dev", "--", "--path", path_arg]);
+        cmd.args(&["run", "--release", "-p", "perro_dev", "--", "--path", path_arg]);
         cmd.stdout(std::process::Stdio::inherit());
         cmd.stderr(std::process::Stdio::inherit());
 
