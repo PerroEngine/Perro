@@ -180,7 +180,7 @@ impl CsParser {
 
     fn parse_field_declaration(&mut self, node: tree_sitter::Node) -> Result<Variable, String> {
         self.debug_node("FIELD_DECL_START", node); // Debug field declaration start
-        let mut is_public = false;
+        let is_public = false; // Currently not set from modifiers, always false
         let mut is_exposed = false;
         let mut attributes = Vec::new();
         let mut typ = None;
@@ -197,9 +197,8 @@ impl CsParser {
                     attributes = self.parse_attributes(child);
                 }
                 "modifier" => {
-                    if self.get_node_text(child) == "public" {
-                        is_public = true;
-                    }
+                    // Note: is_public is not currently used in Function struct
+                    // Public methods are identified by other means if needed
                 }
                 "variable_declaration" => {
                     // Get type - try multiple node types for array types, generic types, etc.
@@ -449,7 +448,6 @@ impl CsParser {
                     _ => None,
                 }
             }
-            Expr::Cast(_, target_type) => Some(target_type.clone()),
             _ => None,
         }
     }
@@ -491,7 +489,6 @@ impl CsParser {
 
     fn parse_method_declaration(&mut self, node: tree_sitter::Node) -> Result<Function, String> {
         self.debug_node("METHOD_DECL_START", node); // Debug method declaration start
-        let mut is_public = false;
         let mut attributes = Vec::new();
         let mut return_type = Type::Void;
         let mut name = String::new();
@@ -506,9 +503,8 @@ impl CsParser {
                     attributes = self.parse_attributes(child);
                 }
                 "modifier" => {
-                    if self.get_node_text(child) == "public" {
-                        is_public = true;
-                    }
+                    // Note: is_public is not currently used in Function struct
+                    // Public methods are identified by other means if needed
                 }
                 "type" | "predefined_type" | "void_keyword" => {
                     return_type = self.parse_type(child);
@@ -1155,11 +1151,9 @@ impl CsParser {
                 "initializer_expression" => {
                     // Check if this is an array initializer { 1, 2, 3 } or object initializer { field = value }
                     let mut init_cursor = child.walk();
-                    let mut has_assignments = false;
 
                     for init_child in child.children(&mut init_cursor) {
                         if init_child.kind() == "assignment_expression" {
-                            has_assignments = true;
                             let mut assign_cursor = init_child.walk();
                             let assign_children: Vec<tree_sitter::Node> =
                                 init_child.children(&mut assign_cursor).collect();

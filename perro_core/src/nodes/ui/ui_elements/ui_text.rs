@@ -66,7 +66,9 @@ impl Default for TextProps {
             font_size: 12.0,
             color: Color::default(),
             align: TextFlow::Center,
+            #[allow(deprecated)]
             align_h: TextAlignment::Center,
+            #[allow(deprecated)]
             align_v: TextAlignment::Center,
         }
     }
@@ -117,24 +119,28 @@ impl UIText {
 
     /// Get the horizontal alignment (deprecated - use get_align instead)
     #[deprecated(note = "Use get_align instead")]
+    #[allow(deprecated)]
     pub fn get_align_h(&self) -> TextAlignment {
         self.props.align_h
     }
 
     /// Set the horizontal alignment (deprecated - use set_align instead)
     #[deprecated(note = "Use set_align instead")]
+    #[allow(deprecated)]
     pub fn set_align_h(&mut self, align: TextAlignment) {
         self.props.align_h = align;
     }
 
     /// Get the vertical alignment (deprecated - use get_align instead)
     #[deprecated(note = "Use get_align instead")]
+    #[allow(deprecated)]
     pub fn get_align_v(&self) -> TextAlignment {
         self.props.align_v
     }
 
     /// Set the vertical alignment (deprecated - use set_align instead)
     #[deprecated(note = "Use set_align instead")]
+    #[allow(deprecated)]
     pub fn set_align_v(&mut self, align: TextAlignment) {
         self.props.align_v = align;
     }

@@ -2,12 +2,11 @@ use std::{borrow::Cow, time::Instant};
 use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
-use bytemuck::cast_slice;
 use wgpu::{
     Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
-    BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor,
+    BufferBindingType, BufferDescriptor, BufferSize, BufferUsages,
     Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, MemoryHints, PowerPreference, Queue,
-    RenderPass, RequestAdapterOptions, SurfaceConfiguration, TextureFormat, TextureViewDescriptor,
+    RenderPass, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
     util::DeviceExt,
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
@@ -384,7 +383,7 @@ impl MeshManager {
         &mut self,
         path: &str,
         device: &Device,
-        queue: &Queue,
+        _queue: &Queue,
     ) -> Option<&Mesh> {
         // Optimize: check with &str first, only allocate String if we need to insert
         if !self.meshes.contains_key(path) {
@@ -571,9 +570,11 @@ impl MaterialManager {
 pub struct Graphics {
     // Core WGPU resources
     window: Rc<Window>,
+    #[allow(dead_code)]
     instance: Instance,
     pub surface: wgpu::Surface<'static>,
     pub surface_config: SurfaceConfiguration,
+    #[allow(dead_code)]
     adapter: Adapter,
     pub device: Device,
     pub queue: Queue,
@@ -605,6 +606,7 @@ pub struct Graphics {
     pub depth_view: wgpu::TextureView,
 
     // Cached render state
+    #[allow(dead_code)]
     cached_operations: wgpu::Operations<wgpu::Color>,
     
     // OPTIMIZED: Cache camera 3D matrices to avoid recalculating in render()
@@ -622,7 +624,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 
     material_manager
 }pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphics>) {
-    use std::io::Write;
+    
     
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
     // Different GPUs work better with different backends:
@@ -1170,7 +1172,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 /// Synchronous version of create_graphics for use during initialization
 /// Returns Graphics directly instead of sending via proxy
 pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
-    use std::io::Write;
+    
     
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
     // Different GPUs work better with different backends:
@@ -1301,7 +1303,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     println!("🎮 Using graphics backend: {} (score: {})", best_candidate.backend_name, best_score);
     
     let chosen_backend = best_candidate.backend;
-    let chosen_backend_name = best_candidate.backend_name;
+    let _chosen_backend_name = best_candidate.backend_name;
     
     // Create instance with chosen backend
     let instance = Instance::new(&InstanceDescriptor {

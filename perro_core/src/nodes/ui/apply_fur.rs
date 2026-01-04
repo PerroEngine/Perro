@@ -10,7 +10,7 @@ use crate::{
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
         ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel},
-        ui_text::{TextAlignment, TextFlow, UIText},
+        ui_text::{TextFlow, UIText},
         ui_button::UIButton,
     },
     ui_node::UINode,
@@ -61,7 +61,7 @@ pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     let mut parser =
         crate::parser::FurParser::new(&code).map_err(|e| format!("Init parser: {}", e))?;
 
-    let start = Instant::now();
+    let _start = Instant::now();
     let ast = parser
         .parse()
         .map_err(|e| format!("Parse fail {}: {}", path, e))?;
@@ -267,15 +267,6 @@ fn apply_base_attributes(
 
 fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
     let tag = fur.tag_name.as_ref();
-
-    macro_rules! make {
-        ($typ:expr) => {{
-            let mut el = $typ;
-            el.set_name(&fur.id);
-            apply_base_attributes(&mut el.base, &fur.attributes);
-            UIElement::$typ(el)
-        }};
-    }
 
     match tag {
         "UI" => {
@@ -498,21 +489,8 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                     _ => TextFlow::Center,
                 };
                 text.props.align = align; // Use horizontal alignment as primary
-                text.props.align_h = match align_str.as_ref() {
-                    "left" | "l" => TextAlignment::Left,
-                    "center" | "c" => TextAlignment::Center,
-                    "right" | "r" => TextAlignment::Right,
-                    _ => TextAlignment::Center,
-                };
             }
-            if let Some(align_str) = fur.attributes.get("align-v") {
-                text.props.align_v = match align_str.as_ref() {
-                    "top" | "t" => TextAlignment::Top,
-                    "center" | "c" => TextAlignment::Center,
-                    "bottom" | "b" => TextAlignment::Bottom,
-                    _ => TextAlignment::Center,
-                };
-            }
+            // Note: align-v is deprecated and no longer used - vertical alignment is always Center
 
             Some(UIElement::Text(text))
         }
@@ -691,21 +669,8 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                     _ => TextFlow::Center,
                 };
                 button.text_props_mut().align = align;
-                button.text_props_mut().align_h = match align_str.as_ref() {
-                    "left" | "l" => TextAlignment::Left,
-                    "center" | "c" => TextAlignment::Center,
-                    "right" | "r" => TextAlignment::Right,
-                    _ => TextAlignment::Center,
-                };
             }
-            if let Some(align_str) = fur.attributes.get("align-v") {
-                button.text_props_mut().align_v = match align_str.as_ref() {
-                    "top" | "t" => TextAlignment::Top,
-                    "center" | "c" => TextAlignment::Center,
-                    "bottom" | "b" => TextAlignment::Bottom,
-                    _ => TextAlignment::Center,
-                };
-            }
+            // Note: align-v is deprecated and no longer used - vertical alignment is always Center
             
             // Set a reasonable default font size for buttons if not specified
             if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
@@ -810,7 +775,7 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
     }
     
     // Store element count before dropping the borrow
-    let element_count = elements.len();
+    let _element_count = elements.len();
     
     // Mark all newly created elements as needing rerender so they get rendered
     ui.mark_all_needs_rerender();

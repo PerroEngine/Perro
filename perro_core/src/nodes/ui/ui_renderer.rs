@@ -91,7 +91,9 @@ impl LayoutSignature {
 struct LayoutCacheEntry {
     signature: LayoutSignature,
     content_size: Vector2,
+    #[allow(dead_code)]
     layout_positions: Vec<(Uuid, Vector2)>,
+    #[allow(dead_code)]
     percentage_reference: Vector2,
 }
 
@@ -116,6 +118,7 @@ impl LayoutCache {
             .map(|entry| entry.content_size)
     }
 
+    #[allow(dead_code)]
     fn get_cached_layout_positions(
         &self,
         id: &Uuid,
@@ -127,6 +130,7 @@ impl LayoutCache {
             .map(|entry| entry.layout_positions.clone())
     }
 
+    #[allow(dead_code)]
     fn get_cached_percentage_reference(
         &self,
         id: &Uuid,
@@ -273,7 +277,7 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
         }
         UIElement::Layout(layout) => {
             let container_mode = &layout.container.mode;
-            let gap = layout.container.gap;
+            let _gap = layout.container.gap;
 
             match container_mode {
                 ContainerMode::Horizontal => {
@@ -553,7 +557,7 @@ pub fn calculate_layout_positions(
             
             // Always calculate gaps after all child sizes are determined
             // Gap is just the extra_gap attribute value (no default gap)
-            for i in 0..(child_info.len() - 1) {
+            for _i in 0..(child_info.len() - 1) {
                 individual_gaps.push(extra_gap.x);
             }
         }
@@ -593,7 +597,7 @@ pub fn calculate_layout_positions(
             
             // Always calculate gaps after all child sizes are determined
             // Gap is just the extra_gap attribute value (no default gap)
-            for i in 0..(child_info.len() - 1) {
+            for _i in 0..(child_info.len() - 1) {
                 individual_gaps.push(extra_gap.y);
             }
         }
@@ -942,7 +946,7 @@ pub fn update_global_transforms_with_layout(
     current_id: &Uuid,
     parent_global: &Transform2D,
     layout_positions: &HashMap<Uuid, Vector2>,
-    parent_z: i32,
+    _parent_z: i32,
 ) {
     // Get parent info - FIXED: Use the working version's logic
     let (parent_size, parent_z) = {
@@ -960,7 +964,7 @@ pub fn update_global_transforms_with_layout(
         } else {
             // This is a root element - check its own size
             if let Some(element) = elements.get(current_id) {
-                let size = *element.get_size();
+                let _size = *element.get_size();
               
             }
             (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)

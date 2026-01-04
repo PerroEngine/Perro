@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::{fmt, io};
 
 use serde_json::Value;
-use smallvec::SmallVec;
 use uuid::Uuid;
 
 use crate::SceneData;
@@ -81,8 +80,8 @@ impl fmt::Display for Var {
 
 /// Trait implemented by all user scripts (dyn‑safe)
 pub trait Script {
-    fn init(&mut self, api: &mut ScriptApi) {}
-    fn update(&mut self, api: &mut ScriptApi) {}
+    fn init(&mut self, _api: &mut ScriptApi) {}
+    fn update(&mut self, _api: &mut ScriptApi) {}
     fn fixed_update(&mut self, _api: &mut ScriptApi) {}
     fn draw(&mut self, _api: &mut ScriptApi) {}
 }

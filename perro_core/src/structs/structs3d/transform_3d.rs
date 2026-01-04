@@ -1,4 +1,4 @@
-use glam::{Mat4, Quat, Vec3};
+use glam::Mat4;
 use serde::{Deserialize, Serialize};
 
 use crate::{Quaternion, Vector3};

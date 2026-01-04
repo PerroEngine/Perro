@@ -1,5 +1,5 @@
 use crate::asset_io::load_asset;
-use crate::input::{InputMap, InputSource, parse_input_source};
+use crate::input::{InputMap, parse_input_source};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io;

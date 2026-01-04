@@ -6,7 +6,6 @@ use crate::input::joycon::{
     self, Calibration, CalibrationSample, InputReport, JoyCon, JoyCon2, JoyConError, JoyconSide,
     JoyconState, JoyconVersion,
 };
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
@@ -61,8 +60,10 @@ pub struct ControllerManager {
     /// Tokio runtime handle for spawning async tasks
     runtime_handle: Handle,
     /// Channel for Joy-Con 1 reports (from background thread)
+    #[allow(dead_code)]
     joycon1_report_rx: Option<std::sync::mpsc::Receiver<(String, InputReport)>>,
     /// Handle to Joy-Con 1 polling thread
+    #[allow(dead_code)]
     joycon1_polling_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -513,7 +514,7 @@ impl ControllerManager {
         let controller_data_clone = Arc::clone(&self.controller_data);
         let joycon2_devices_clone = Arc::clone(&self.joycon2_devices);
         let runtime_handle_clone = self.runtime_handle.clone();
-        let polling_enabled_clone = Arc::clone(&self.polling_enabled);
+        let _polling_enabled_clone = Arc::clone(&self.polling_enabled);
 
         // Spawn a background thread that uses block_on to run the scan
         // This is how the original joycon crate does it (everything runs inside tokio::main)
@@ -554,7 +555,7 @@ impl ControllerManager {
                             let address_clone = address.clone();
                             let devices_clone = Arc::clone(&joycon2_devices_clone);
                             let data_clone = Arc::clone(&controller_data_clone);
-                            let runtime_for_connect = runtime_handle_clone.clone();
+                            let _runtime_for_connect = runtime_handle_clone.clone();
                             
                             println!("[Joy-Con 2] Connecting to: ID={}", address_clone);
                             // We're already in an async context, so just await directly

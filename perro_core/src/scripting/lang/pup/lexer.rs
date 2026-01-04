@@ -1,5 +1,3 @@
-use crate::lang::pup::api::{PupAPI, PupNodeSugar};
-use std::collections::HashMap;
 
 // =========================================================
 // TOKENS & LEXER
@@ -135,7 +133,7 @@ impl PupLexer {
     }
 
     fn read_number(&mut self, is_negative: bool) -> PupToken {
-        let start_pos = self.pos;
+        let _start_pos = self.pos;
         let mut num_str = String::new();
 
         if is_negative {
@@ -187,7 +185,7 @@ impl PupLexer {
         PupToken::Number(num_str)
     }
 
-    fn read_ident(&mut self, first: char) -> PupToken {
+    fn read_ident(&mut self, _first: char) -> PupToken {
         let start = self.pos - 1;
         while let Some(ch) = self.peek() {
             if ch.is_alphanumeric() || ch == '_' {
@@ -225,8 +223,8 @@ impl PupLexer {
         self.skip_whitespace();
 
         // Capture the start position of the token (after whitespace is skipped)
-        let token_start_line = self.line;
-        let token_start_column = self.column;
+        let _token_start_line = self.line;
+        let _token_start_column = self.column;
 
         // peek first so we can decide before consuming
         let Some(ch) = self.peek() else {

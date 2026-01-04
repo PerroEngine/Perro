@@ -15,7 +15,7 @@ use crate::SceneData;
 use crate::brk::build_brk;
 use crate::fur_ast::{FurElement, FurNode};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
-use crate::node_registry::{NodeType, BaseNode};
+use crate::node_registry::BaseNode;
 use image::GenericImageView;
 use walkdir::WalkDir;
 

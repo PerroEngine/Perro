@@ -1,6 +1,5 @@
 // Script code generation - main to_rust method
 use crate::ast::*;
-use crate::scripting::ast::Type;
 use std::fmt::Write as _;
 use std::path::Path;
 use regex::Regex;

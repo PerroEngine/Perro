@@ -206,7 +206,7 @@ fn generate_rust_args(
 impl ApiCodegen for JSONApi {
     fn to_rust_prepared(
         &self,
-        args: &[Expr],
+        _args: &[Expr],
         args_strs: &[String],
         _script: &Script,                 // script not usually needed here
         _needs_self: bool,                // needs_self not usually needed here
@@ -251,7 +251,7 @@ impl ApiTypes for JSONApi {
 impl ApiCodegen for TimeApi {
     fn to_rust_prepared(
         &self,
-        args: &[Expr],
+        _args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -293,7 +293,7 @@ impl ApiTypes for TimeApi {
 impl ApiCodegen for OSApi {
     fn to_rust_prepared(
         &self,
-        args: &[Expr],
+        _args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -745,7 +745,7 @@ impl ApiTypes for ConsoleApi {
 impl ApiCodegen for ScriptTypeApi {
     fn to_rust_prepared(
         &self,
-        args: &[Expr],
+        _args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -1494,7 +1494,7 @@ impl ApiTypes for MapApi {
 impl ApiCodegen for InputApi {
     fn to_rust_prepared(
         &self,
-        args: &[Expr],
+        _args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,
@@ -1595,7 +1595,7 @@ impl ApiTypes for InputApi {
 impl ApiCodegen for TextureApi {
     fn to_rust_prepared(
         &self,
-        args: &[Expr],
+        _args: &[Expr],
         args_strs: &[String],
         _script: &Script,
         _needs_self: bool,

@@ -15,6 +15,7 @@ const JOYCON_GYRO_SCALE: f32 = 15.0;
 /// Remap stick percent value with deadzone and range expansion
 /// - Deadzone: 45-55% maps to 50% (center)
 /// - Values outside deadzone are remapped to use more of 0-100% range
+#[allow(dead_code)]
 pub(crate) fn remap_stick_percent(raw_percent: f32) -> u8 {
     const DEADZONE_LOW: f32 = 45.0;
     const DEADZONE_HIGH: f32 = 55.0;

@@ -11,16 +11,13 @@ pub fn implement_script_boilerplate(
     struct_name: &str,
     script_vars: &[Variable],
     functions: &[Function],
-    attributes_map: &HashMap<String, Vec<String>>,
+    _attributes_map: &HashMap<String, Vec<String>>,
 ) -> String {
     let mut out = String::with_capacity(8192);
     let mut get_entries = String::with_capacity(512);
     let mut set_entries = String::with_capacity(512);
     let mut apply_entries = String::with_capacity(512);
     let mut dispatch_entries = String::with_capacity(4096);
-
-    let mut public_var_count = 0;
-    let mut exposed_var_count = 0;
     
     // Detect which lifecycle methods are implemented
     let has_init = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "init");
@@ -54,7 +51,6 @@ pub fn implement_script_boilerplate(
 
         // If public, generate GET and SET entries
         if var.is_public {
-            public_var_count += 1;
 
             // ------------------------------
             // Special casing for Containers (GET)
@@ -251,7 +247,6 @@ pub fn implement_script_boilerplate(
 
         // If exposed, generate APPLY entries
         if var.is_exposed {
-            exposed_var_count += 1;
 
             // ------------------------------
             // Special casing for Containers (APPLY)

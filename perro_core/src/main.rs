@@ -219,8 +219,6 @@ fn main() {
             eprintln!("   Build with: cargo run -p perro_core --features profiling -- --path <path> --convert-flamegraph");
             std::process::exit(1);
         }
-        
-        return;
     }
 
     // Handle --run command (just run, no compilation)

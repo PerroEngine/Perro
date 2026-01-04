@@ -247,7 +247,7 @@ pub(crate) fn extract_mutable_api_call(node_id: &str) -> (String, String) {
         // Extract a hint from the argument if possible (e.g., "api.get_parent(collision_id)" -> "parent_collision_id")
         let temp_var = if let Some(start) = node_id.find('(') {
             let end = node_id.rfind(')').unwrap_or(node_id.len());
-            let args = &node_id[start + 1..end];
+            let _args = &node_id[start + 1..end];
             // Use a simple name based on the function
             format!("__parent_id")
         } else {
@@ -430,7 +430,7 @@ pub(crate) fn extract_node_member_info(
                             _ => return None,
                         };
                         let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                        let closure_var = format!("t_id_{}", lookup_name);
+                        let _closure_var = format!("t_id_{}", lookup_name);
                         Some((renamed, node_type_name, path.join(".")))
                     } else {
                         None
@@ -583,7 +583,7 @@ pub(crate) fn extract_node_member_info(
                 };
                 
                 // Generate the full api.get_parent(...) expression
-                let node_id_expr = format!("api.get_parent({})", arg_expr);
+                let _node_id_expr = format!("api.get_parent({})", arg_expr);
                 
                 // Cannot determine node type from get_parent() alone - return None to fail transpilation
                 // The type must be specified via casting (e.g., get_parent(x) as Sprite2D) or variable type annotation

@@ -7,13 +7,11 @@ use std::{
 use walkdir::WalkDir;
 
 use crate::{
-    asset_io::{ProjectRoot, ResolvedPath, get_project_root, load_asset, resolve_path},
     codegen::derive_rust_perro_script,
-    compiler::{BuildProfile, CompileTarget, Compiler},
     lang::{
         csharp::parser::CsParser, pup::parser::PupParser, typescript::parser::TypeScriptParser,
     },
-    scripting::source_map::{SourceMap, ScriptSourceMap, build_source_map_from_script},
+    scripting::source_map::{SourceMap, build_source_map_from_script},
 };
 
 /// Convert a *res:// path* or absolute path under res/
@@ -219,24 +217,6 @@ pub extern "C" fn {}(path: *const c_char, name: *const c_char) {{
 mod panic_handler {
 // Panic handler for script DLL - handles panics that occur in the DLL
 // Panics in DLLs don't propagate to the main binary's panic hook, so we need our own
-use std::path::PathBuf;
-
-fn strip_file_extension(path: &str) -> String {
-    // Remove file extension from paths like "res://player.pup" -> "res://player"
-    // or "player.pup" -> "player"
-    if let Some(dot_idx) = path.rfind('.') {
-        // Check if there's a slash before the dot (to avoid removing extensions from directory names)
-        if let Some(slash_idx) = path.rfind('/') {
-            if dot_idx > slash_idx {
-                return path[..dot_idx].to_string();
-            }
-        } else {
-            // No slash, just remove the extension
-            return path[..dot_idx].to_string();
-        }
-    }
-    path.to_string()
-}
 
 fn get_project_root_from_dll() -> Option<std::path::PathBuf> {
     // Try to get project root from perro_core's global state
@@ -269,7 +249,7 @@ fn get_project_root_from_dll() -> Option<std::path::PathBuf> {
     None
 }
 
-fn handle_dll_panic(panic_info: &std::panic::PanicInfo) {
+fn handle_dll_panic(panic_info: &std::panic::PanicHookInfo) {
     // Get panic message
     let mut panic_msg = String::new();
     if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
@@ -406,10 +386,12 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
 
     // For summarizing timings at the end
     struct Timing {
+        #[allow(dead_code)]
         path: String,
         io_time: Duration,
         parse_time: Duration,
         transpile_time: Duration,
+        #[allow(dead_code)]
         total_time: Duration,
     }
 

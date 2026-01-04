@@ -8,7 +8,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -74,7 +73,7 @@ impl Area2D {
         // Query for collisions and collect node IDs
         // Note: We pass the node ID from physics (typically CollisionShape2D)
         // The codegen will handle getting the parent node if needed when converting UUID to node type
-        let (current_colliding_node_ids, intersection_count) = {
+        let (current_colliding_node_ids, _intersection_count) = {
             let physics_ref = api.scene.get_physics_2d();
             match physics_ref {
                 Some(physics) => {

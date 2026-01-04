@@ -1,6 +1,6 @@
 // Function code generation
 use crate::ast::*;
-use crate::scripting::ast::{Stmt, Type};
+use crate::scripting::ast::Type;
 use std::fmt::Write as _;
 use regex::Regex;
 use super::utils::{rename_function, rename_variable, type_becomes_id};

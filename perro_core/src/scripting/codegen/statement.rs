@@ -387,7 +387,7 @@ impl Stmt {
                 };
                 
                 // Generate the expression string - use modified expression if we have one, otherwise use original
-                let mut expr_str = if let Some(ref modified) = modified_expr {
+                let expr_str = if let Some(ref modified) = modified_expr {
                     modified.to_rust(needs_self, script, target_type.as_ref(), current_func, None)
                 } else {
                     expr.expr.to_rust(needs_self, script, target_type.as_ref(), current_func, expr.span.as_ref())
@@ -712,7 +712,7 @@ impl Stmt {
                                     }
                                     Expr::MemberAccess(base, field) => {
                                         // Check if this member access would generate a read_node call
-                                        if let Some((node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
+                                        if let Some((_node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
                                             // This is a node member access - extract it to a temp variable
                                             let temp_var = format!("__temp_read_{}", counter);
                                             *counter += 1;
@@ -950,7 +950,7 @@ impl Stmt {
                                 }
                                 Expr::MemberAccess(base, field) => {
                                     // Check if this member access would generate a read_node call
-                                    if let Some((node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
+                                    if let Some((_node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
                                         // This is a node member access - extract it to a temp variable
                                         let temp_var = format!("__temp_read_{}", counter);
                                         *counter += 1;
@@ -1085,7 +1085,7 @@ impl Stmt {
                     let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                     let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
 
-                    let mut rhs_code =
+                    let rhs_code =
                         rhs_expr
                             .expr
                             .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
@@ -1141,7 +1141,7 @@ impl Stmt {
                             // Generate match arms for all compatible node types
                             let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                             
-                            let mut rhs_code =
+                            let rhs_code =
                                 rhs_expr
                                     .expr
                                     .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
@@ -1240,7 +1240,7 @@ impl Stmt {
                         // This is a node member assignment - use mutate_node
                         let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
                         
-                        let mut rhs_code =
+                        let rhs_code =
                             rhs_expr
                                 .expr
                                 .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
@@ -1289,7 +1289,7 @@ impl Stmt {
                     // lhs_expr is TypedExpr, which already passes span through
                     let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
 
-                    let mut rhs_code =
+                    let rhs_code =
                         rhs_expr
                             .expr
                             .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
@@ -1552,7 +1552,7 @@ impl Stmt {
                 
                 // Push all nodes created/modified in this iteration AFTER all statements (so modifications are captured)
                 if !loop_node_vars.is_empty() && !nodes_created_this_iter.is_empty() {
-                    for node_var in &nodes_created_this_iter {
+                    for _node_var in &nodes_created_this_iter {
                         // No longer need to track nodes for merging - we use mutate_node for assignments
                     }
                 }
@@ -1721,7 +1721,7 @@ impl Stmt {
                     let value_ty = inner_types.get(1).unwrap_or(&Type::Object);
                     let is_dynamic_map = value_ty == &Type::Object;
 
-                    let mut rhs_code =
+                    let rhs_code =
                         rhs_expr
                             .expr
                             .to_rust(needs_self, script, Some(value_ty), current_func, None);
@@ -1757,7 +1757,7 @@ impl Stmt {
                     )
                 } else {
                     // Handle array assignment
-                    let mut rhs_code =
+                    let rhs_code =
                         rhs_expr
                             .expr
                             .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
@@ -1891,7 +1891,7 @@ impl Stmt {
                         "        // TODO: Dynamic array compound assignment - cast element to type first, do operation, then assign back as json!()\n"
                     )
                 } else {
-                    let mut rhs_code =
+                    let rhs_code =
                         rhs_expr
                             .expr
                             .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
@@ -1954,7 +1954,7 @@ impl Stmt {
                 64 => format!("{}.to_i64().unwrap_or_default()", expr),
                 _ => format!("({}.to_i64().unwrap_or_default() as i{})", expr, w),
             },
-            (Number(Signed(_) | Unsigned(_)), Number(BigInt)) => format!("BigInt::from({})", expr),
+            (Number(Signed(_)), Number(BigInt)) => format!("BigInt::from({})", expr),
             (Number(Decimal), Number(Signed(w))) => match w {
                 32 => format!("{}.to_i32().unwrap_or_default()", expr),
                 64 => format!("{}.to_i64().unwrap_or_default()", expr),
@@ -2120,6 +2120,7 @@ impl Stmt {
         script.get_variable_type(name).cloned()
     }
 
+    #[allow(dead_code)]
     fn contains_self(&self) -> bool {
         match self {
             Stmt::Expr(e) => e.contains_self(),

@@ -1,6 +1,5 @@
 // StructDef code generation
 use crate::ast::*;
-use crate::scripting::ast::Type;
 use std::fmt::Write as _;
 use super::utils::rename_struct;
 

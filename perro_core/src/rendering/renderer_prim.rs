@@ -370,6 +370,7 @@ impl PrimitiveRenderer {
     }
     
     /// Extract Transform2D from TextureInstance matrix
+    #[allow(dead_code)]
     fn texture_instance_to_transform(instance: &TextureInstance) -> Transform2D {
         // Reconstruct Mat3 (column-major)
         let m = glam::Mat3::from_cols(
@@ -397,6 +398,7 @@ impl PrimitiveRenderer {
     }
     
     /// Calculate axis-aligned bounding box (AABB) for an object with given transform and size
+    #[allow(dead_code)]
     fn calculate_aabb(transform: &Transform2D, size: &Vector2) -> (f32, f32, f32, f32) {
         // Calculate scaled size
         let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
@@ -414,6 +416,7 @@ impl PrimitiveRenderer {
     }
     
     /// Check if AABB a completely contains AABB b
+    #[allow(dead_code)]
     fn aabb_contains(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
         // a contains b if a's bounds completely enclose b's bounds
         a.0 <= b.0 && a.1 <= b.1 && a.2 >= b.2 && a.3 >= b.3
@@ -421,6 +424,7 @@ impl PrimitiveRenderer {
     
     /// Check if a visual object is occluded by any texture instances with higher z_index
     /// Returns (is_occluded, occluder_info) where occluder_info is for debug printing
+    #[allow(dead_code)]
     fn is_visual_occluded_by_textures(
         &self,
         visual_transform: &Transform2D,
@@ -473,7 +477,7 @@ impl PrimitiveRenderer {
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&transform, &size) {
             // Remove from slots if it exists (sprite moved offscreen)
             if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
-                if let Some(existing) = &mut self.rect_instance_slots[slot] {
+                if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                     // Mark as removed by setting to None
                     self.rect_instance_slots[slot] = None;
                     self.free_rect_slots.push(slot);
@@ -1203,7 +1207,7 @@ impl PrimitiveRenderer {
         border_thickness: f32,
         is_border: bool,
         z_index: i32,
-        created_timestamp: u64,
+        _created_timestamp: u64,
     ) -> RectInstance {
         fn srgb_to_linear(c: f32) -> f32 {
             if c <= 0.04045 {
@@ -1240,8 +1244,6 @@ impl PrimitiveRenderer {
             cr.bottom_left * max_radius,
         ];
 
-        let mut xf_no_scale = transform.clone();
-        xf_no_scale.scale = Vector2::new(1.0, 1.0);
         let mat = transform.to_mat3().to_cols_array();
 
         RectInstance {
@@ -1265,7 +1267,7 @@ impl PrimitiveRenderer {
         transform: Transform2D,
         pivot: Vector2,
         z_index: i32,
-        created_timestamp: u64,
+        _created_timestamp: u64,
     ) -> TextureInstance {
         let mat = transform.to_mat3().to_cols_array();
 

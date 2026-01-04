@@ -7,7 +7,7 @@
 #![allow(non_upper_case_globals)]
 
 use chrono::{Datelike, Local, Timelike};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
@@ -16,31 +16,23 @@ use std::{
     ops::{Deref, DerefMut},
     path::Path,
     process,
-    rc::Rc,
-    str::FromStr,
-    sync::mpsc::Sender,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid; // For date/time formatting
 
 use crate::{
-    Node, Node2D, Sprite2D,
     app_command::AppCommand,
-    asset_io::{self, ResolvedPath, load_asset, resolve_path},
+    asset_io::{self, ResolvedPath, resolve_path},
     compiler::{BuildProfile, CompileTarget, Compiler},
-    input::joycon::ControllerManager,
     manifest::Project,
-    node_registry::{BaseNode, IntoInner, SceneNode},
+    node_registry::BaseNode,
     prelude::string_to_u64,
-    rendering::{Graphics, TextureManager},
-    script::{CreateFn, SceneAccess, Script, Var},
+    rendering::Graphics,
+    script::SceneAccess,
     transpiler::{script_path_to_identifier, transpile},
     types::ScriptType,
-    ui_node::UINode,
 };
-use wgpu::{Device, Queue};
-use std::sync::{Arc, Mutex};
 
 //-----------------------------------------------------
 // 1️⃣ Sub‑APIs (Engine modules)

@@ -1,3 +1,29 @@
+[scripts.p2_pup]
+src = "res://p2.pup"
+lang = "pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 69
+
+[scripts.p2_pup.names]
+
+[scripts.shape_pup]
+src = "res://shape.pup"
+lang = "pup"
+id = "shape_pup"
+
+[[scripts.shape_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 68
+
+[scripts.shape_pup.names]
+
 [scripts.player_pup]
 src = "res://player.pup"
 lang = "pup"
@@ -33,6 +59,33 @@ __t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
 __t_Deadzone_AreaExited = "Deadzone_AreaExited"
 tex_id = "tex"
 
+[scripts.camera_pup]
+src = "res://camera.pup"
+lang = "pup"
+id = "camera_pup"
+
+[[scripts.camera_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 88
+
+[scripts.camera_pup.names]
+__t_speed = "speed"
+
+[scripts.root_pup]
+src = "res://root.pup"
+lang = "pup"
+id = "root_pup"
+
+[[scripts.root_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 67
+
+[scripts.root_pup.names]
+
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
 lang = "pup"
@@ -57,59 +110,6 @@ g_start = 83
 g_end = 90
 
 [scripts.test_engine_structs_pup.names]
-__t_test_constructors = "test_constructors"
 __t_test_nested_access = "test_nested_access"
 __t_test_variable_access = "test_variable_access"
-
-[scripts.root_pup]
-src = "res://root.pup"
-lang = "pup"
-id = "root_pup"
-
-[[scripts.root_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 67
-
-[scripts.root_pup.names]
-
-[scripts.camera_pup]
-src = "res://camera.pup"
-lang = "pup"
-id = "camera_pup"
-
-[[scripts.camera_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 88
-
-[scripts.camera_pup.names]
-__t_speed = "speed"
-
-[scripts.p2_pup]
-src = "res://p2.pup"
-lang = "pup"
-id = "p2_pup"
-
-[[scripts.p2_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 69
-
-[scripts.p2_pup.names]
-
-[scripts.shape_pup]
-src = "res://shape.pup"
-lang = "pup"
-id = "shape_pup"
-
-[[scripts.shape_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 68
-
-[scripts.shape_pup.names]
+__t_test_constructors = "test_constructors"

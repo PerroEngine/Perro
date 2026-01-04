@@ -398,7 +398,7 @@ impl SourceMapBuilder {
     }
 
     /// Set the language identifier for this source map
-    pub fn set_language(&mut self, language: String) {
+    pub fn set_language(&mut self, _language: String) {
         // Language is stored in ScriptSourceMap, not in builder
         // This is a placeholder for future use if needed
     }

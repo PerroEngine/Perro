@@ -94,7 +94,6 @@ pub fn position_to_span(
 ) -> SourceSpan {
     let mut line = 1u32;
     let mut column = 1u32;
-    let mut current_offset = 0usize;
 
     for (idx, ch) in source.char_indices() {
         if idx >= byte_offset {
@@ -106,7 +105,6 @@ pub fn position_to_span(
         } else {
             column += 1;
         }
-        current_offset = idx + ch.len_utf8();
     }
 
     SourceSpan::single_char(file, line, column, language)

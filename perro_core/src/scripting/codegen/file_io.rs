@@ -1,6 +1,6 @@
 // File I/O operations for code generation
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use regex::Regex;
 use crate::ast::*;
 use crate::scripting::ast::Type;
@@ -91,7 +91,7 @@ pub fn derive_rust_perro_script(
         .captures(&code[marker_pos..])
         .ok_or_else(|| "Could not find struct after @PerroScript".to_string())?;
 
-    let actual_struct_name_from_struct = captures[1].to_string();
+    let _actual_struct_name_from_struct = captures[1].to_string();
     let struct_body = captures[2].to_string();
 
     let mut variables = Vec::new();
@@ -301,12 +301,12 @@ pub fn derive_rust_perro_script(
 
     // Don't generate MEMBER_NAMES and ATTRIBUTES_MAP here - let the boilerplate generate them
     // to avoid duplicates. The boilerplate will add them after the struct definition.
-    let mut injected_code = final_contents.clone();
+    let injected_code = final_contents.clone();
     let marker_pos = marker_re
         .find(&final_contents)
         .map(|m| m.end())
         .unwrap_or(0);
-    let struct_pos = final_contents[marker_pos..]
+    let _struct_pos = final_contents[marker_pos..]
         .find("struct ")
         .map(|p| marker_pos + p)
         .unwrap_or(0);

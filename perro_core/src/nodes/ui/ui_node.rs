@@ -19,8 +19,6 @@ use crate::{
     ui_element::{BaseElement, IntoUIInner, UIElement},
     ui_elements::ui_container::CornerRadius,
 };
-use serde_json::Value;
-use smallvec::SmallVec;
 
 fn default_visible() -> bool {
     true

@@ -69,7 +69,7 @@ pub fn convert_error_with_source_map(
 /// Convert a panic message using source map
 pub fn convert_panic_with_source_map(
     source_map: &SourceMap,
-    panic_info: &std::panic::PanicInfo,
+    panic_info: &std::panic::PanicHookInfo,
 ) -> String {
     let mut result = String::new();
     

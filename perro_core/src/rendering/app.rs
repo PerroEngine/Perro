@@ -2,8 +2,6 @@ use core::f32;
 use std::process;
 #[cfg(target_arch = "wasm32")]
 use std::rc::Rc;
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -11,13 +9,13 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
-    window::{Window, WindowId},
+    event_loop::{ActiveEventLoop, EventLoop},
+    window::WindowId,
 };
 
 use crate::{
     app_command::AppCommand,
-    graphics::{Graphics, create_graphics},
+    graphics::Graphics,
     scene::Scene,
     script::ScriptProvider,
     scripting::script::SceneAccess,
@@ -45,6 +43,7 @@ const RENDER_PASS_LABEL: &str = "Main Pass";
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLACK;
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
     PhysicalSize::new(640, 360),
     PhysicalSize::new(1280, 720),
@@ -53,6 +52,7 @@ const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
     PhysicalSize::new(2560, 1440),
 ];
 
+#[allow(dead_code)]
 const MONITOR_SCALE_FACTOR: f32 = 0.75;
 const FPS_MEASUREMENT_INTERVAL: f32 = 3.0;
 const MAX_FRAME_DEBT: f32 = 0.025; // 25ms worth of frames
@@ -151,6 +151,7 @@ pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
 pub struct App<P: ScriptProvider> {
     state: State,
     window_title: String,
+    #[allow(dead_code)]
     window_icon_path: Option<String>,
     game_scene: Option<Scene<P>>,
 
@@ -180,7 +181,7 @@ impl<P: ScriptProvider> App<P> {
     /// Graphics must be created synchronously before calling this, so we can render
     /// the first frame before showing the window (prevents black/white flash)
     pub fn new(
-        event_loop: &EventLoop<Graphics>,
+        _event_loop: &EventLoop<Graphics>,
         window_title: String,
         icon_path: Option<String>,
         mut game_scene: Option<Scene<P>>,
@@ -453,7 +454,7 @@ impl<P: ScriptProvider> App<P> {
 }
 
 impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
         // Graphics are always created synchronously before App creation
         // No async initialization needed
     }
@@ -467,10 +468,10 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
     ) {
         // Handle input events
         if let Some(scene) = self.game_scene.as_mut() {
-            use crate::input::manager::{InputManager, MouseButton};
+            use crate::input::manager::MouseButton;
             use crate::structs2d::vector2::Vector2;
             use winit::event::{ElementState, MouseButton as WinitMouseButton};
-            use winit::keyboard::KeyCode;
+            
 
             if let Some(input_mgr) = scene.get_input_manager() {
                 let mut input_mgr = input_mgr.lock().unwrap();

@@ -2,14 +2,12 @@ use glam::Mat4;
 use std::cmp::Ordering;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, HashSet},
-    ops::Range,
+    collections::HashMap,
 };
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device, Queue, RenderPass,
-    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat,
-    VERTEX_ALIGNMENT, util::DeviceExt,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat, util::DeviceExt,
 };
 
 use crate::{Frustum, MaterialManager, MeshManager, Transform3D};
@@ -354,7 +352,7 @@ impl Renderer3D {
 
     // ===== LIGHT MANAGEMENT =====
     pub fn queue_light(&mut self, id: uuid::Uuid, light_uniform: LightUniform) {
-        let slot = if let Some(&slot_idx) = self.light_uuid_to_slot.get(&id) {
+        let _slot = if let Some(&slot_idx) = self.light_uuid_to_slot.get(&id) {
             if let Some(existing_light) = &mut self.light_slots[slot_idx] {
                 if *existing_light != light_uniform {
                     *existing_light = light_uniform;
@@ -653,13 +651,13 @@ impl Renderer3D {
         };
 
         // ---- 3️⃣  Frustum culling stats ----
-        let total_instances = self
+        let _total_instances = self
             .mesh_instance_slots
             .par_iter()
             .filter(|s| s.is_some())
             .count();
 
-        let visible_instances = groups.values().map(|v| v.len()).sum::<usize>();
+        let _visible_instances = groups.values().map(|v| v.len()).sum::<usize>();
 
         // println!(
         //     "🧭 Frustum culling: {}/{} visible (culled {} meshes)",
@@ -804,7 +802,7 @@ impl Renderer3D {
         mesh_manager: &MeshManager,
         camera_view: &glam::Mat4,
         camera_projection: &glam::Mat4,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
     ) {
         let vp = *camera_projection * *camera_view;
         // Only recull if frustum moved significantly
@@ -849,7 +847,7 @@ impl Renderer3D {
         // -------------------------------------------------------------------------
         let mut instance_offset = 0;
 
-        for (mesh_path, material_id, instances) in &self.mesh_material_groups {
+        for (mesh_path, _material_id, instances) in &self.mesh_material_groups {
             if let Some(mesh) = mesh_manager.meshes.get(mesh_path) {
                 // Configure pipeline and all bindings
                 rpass.set_pipeline(&self.pipeline);
@@ -859,7 +857,7 @@ impl Renderer3D {
                 rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
 
                 // Compute vertex instance range for indirect drawing offset
-                let instance_size = std::mem::size_of::<MeshInstance>() as u64;
+                let _instance_size = std::mem::size_of::<MeshInstance>() as u64;
                 let start_offset = (instance_offset * std::mem::size_of::<MeshInstance>()) as u64;
                 let end_offset = ((instance_offset + instances.len())
                     * std::mem::size_of::<MeshInstance>()) as u64;

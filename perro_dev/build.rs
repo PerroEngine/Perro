@@ -207,6 +207,7 @@ fn embed_linux_icon(icon_path: &Path, log_path: &Path) {
 
 /// Embedded application icon (PNG bytes)
 /// This icon is embedded directly in the binary's data section
+#[allow(dead_code)]
 pub static EMBEDDED_ICON: &[u8] = include_bytes!("icon.png");
 "#
     );

@@ -20,10 +20,7 @@ pub use scene::*;
 pub use scripting::*;
 pub use structs::*;
 
-use crate::rendering::app::App;
-use crate::scripting::DllScriptProvider;
-
-pub type RuntimeApp = App<DllScriptProvider>;
+pub type RuntimeApp = crate::rendering::app::App<crate::scripting::DllScriptProvider>;
 
 pub mod prelude {
     // Core engine node types

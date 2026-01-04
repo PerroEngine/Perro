@@ -8,6 +8,7 @@ thread_local! {
     pub(crate) static SCRIPT_MEMBERS_CACHE: RefCell<Option<(usize, std::collections::HashSet<String>)>> = RefCell::new(None);
 }
 
+#[allow(dead_code)]
 pub(crate) fn expr_cache_key(expr: &Expr) -> usize {
     expr as *const Expr as usize
 }
@@ -30,6 +31,7 @@ pub(crate) fn set_cached_type(key: usize, typ: Option<Type>) {
     });
 }
 
+#[allow(dead_code)]
 pub(crate) fn get_cached_script_members(key: usize) -> Option<std::collections::HashSet<String>> {
     SCRIPT_MEMBERS_CACHE.with(|cache| {
         cache.borrow().as_ref().and_then(|(k, members)| {
@@ -42,6 +44,7 @@ pub(crate) fn get_cached_script_members(key: usize) -> Option<std::collections::
     })
 }
 
+#[allow(dead_code)]
 pub(crate) fn set_cached_script_members(key: usize, members: std::collections::HashSet<String>) {
     SCRIPT_MEMBERS_CACHE.with(|cache| {
         *cache.borrow_mut() = Some((key, members));

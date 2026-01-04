@@ -1,7 +1,6 @@
 use crate::{
     Graphics,
     Node,
-    RenderLayer,
     ShapeType2D,
     Transform3D,
     Vector2,
@@ -15,16 +14,13 @@ use crate::{
     manifest::Project,
     node_registry::{BaseNode, SceneNode},
     physics::physics_2d::PhysicsWorld2D,
-    prelude::string_to_u64,
-    script::{CreateFn, SceneAccess, Script, ScriptObject, ScriptProvider, Var},
+    script::{CreateFn, SceneAccess, ScriptObject, ScriptProvider},
     transpiler::script_path_to_identifier,
-    ui_element::{BaseElement, UIElement},
     ui_renderer::render_ui, // NEW import
 };
 use std::sync::Mutex;
 use once_cell::sync::OnceCell;
 
-use glam::{Mat4, Vec3};
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -32,19 +28,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::{SerializeStr
 use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
-    any::Any,
     borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
     io,
     path::{Path, PathBuf},
     rc::Rc,
-    str::FromStr,
     sync::mpsc::Sender,
-    time::{Duration, Instant}, // NEW import
+    time::Instant, // NEW import
 };
 use uuid::Uuid;
-use wgpu::RenderPass;
 
 //
 // ---------------- SceneData ----------------
@@ -79,7 +72,6 @@ impl Serialize for SceneData {
     where
         S: Serializer,
     {
-        use serde::ser::SerializeMap;
         let mut state = serializer.serialize_struct("SceneData", 2)?;
         state.serialize_field("root_index", &self.root_index)?;
         
@@ -378,7 +370,7 @@ impl SceneData {
     
     /// Convert SceneData to runtime Scene format
     /// Maps u32 indices to new UUIDs and remaps parent references
-    pub fn to_runtime_nodes(mut self) -> (FxHashMap<Uuid, SceneNode>, Uuid) {
+    pub fn to_runtime_nodes(self) -> (FxHashMap<Uuid, SceneNode>, Uuid) {
         // Create new UUIDs for runtime
         let mut old_to_new_uuid: HashMap<Uuid, Uuid> = HashMap::with_capacity(self.nodes.len());
         println!("🔍 Building old_to_new_uuid mapping ({} nodes):", self.nodes.len());
@@ -477,7 +469,7 @@ impl SceneData {
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
         
-        for (&idx, node) in data.nodes.iter() {
+        for (&_idx, node) in data.nodes.iter() {
             if let Some(parent) = node.get_parent() {
                 // parent.id is a UUID from index_to_uuid
                 // Find which index it corresponds to
@@ -502,7 +494,7 @@ impl SceneData {
                     .find(|&(_, &uuid)| uuid == parent_uuid)
                     .map(|(&idx, _)| idx);
                 
-                if let Some(parent_idx) = parent_idx_opt {
+                if let Some(_parent_idx) = parent_idx_opt {
                     let node_uuid = data.index_to_uuid[&idx];
                     parent_children.entry(parent_uuid).or_default().push(node_uuid);
                 }
@@ -758,7 +750,7 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Convert parent UUIDs to match index_to_uuid (so serialization can find them)
         // The parent.id should be the UUID from index_to_uuid for that parent's index
-        for (idx, node) in nodes.iter_mut() {
+        for (_idx, node) in nodes.iter_mut() {
             if let Some(parent) = node.get_parent() {
                 // Find which index this parent UUID corresponds to
                 if let Some(&parent_idx) = uuid_to_index.get(&parent.id) {
@@ -799,7 +791,7 @@ impl<P: ScriptProvider> Scene<P> {
         // Find all node types that have texture_path field
         let nodes_with_texture_path = ENGINE_REGISTRY.find_nodes_with_field("texture_path");
         
-        for (node_id, node) in self.nodes.iter_mut() {
+        for (_node_id, node) in self.nodes.iter_mut() {
             let node_type = node.get_type();
             
             // Only process nodes that have texture_path field
@@ -1036,7 +1028,7 @@ impl<P: ScriptProvider> Scene<P> {
         // Parent IDs in nodes are UUIDs from index_to_uuid, so we need to map them
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
-        for (&idx, node) in other.nodes.iter() {
+        for (&_idx, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
                 // parent.id is a UUID from index_to_uuid, find which index it corresponds to
                 // We need to reverse lookup: find index where index_to_uuid[index] == parent.id
@@ -1461,7 +1453,7 @@ impl<P: ScriptProvider> Scene<P> {
         // Parent IDs in nodes are UUIDs from index_to_uuid, so we need to map them
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
-        for (&idx, node) in other.nodes.iter() {
+        for (&_idx, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
                 // parent.id is a UUID from index_to_uuid, find which index it corresponds to
                 let parent_idx_opt = other.index_to_uuid.iter()
@@ -1710,6 +1702,7 @@ impl<P: ScriptProvider> Scene<P> {
         // Can be re-enabled for debugging scene structure
     }
 
+    #[allow(dead_code)]
     fn print_node_recursive(&self, node_id: Uuid, depth: usize, is_last: bool) {
         if let Some(node) = self.nodes.get(&node_id) {
             // Build the tree characters
@@ -2147,7 +2140,7 @@ impl<P: ScriptProvider> Scene<P> {
     /// Internal implementation - emits signal immediately to all connected handlers
     /// Params passed as slice reference - zero allocation when called from emit_signal_id
     /// OPTIMIZED: Uses SmallVec for stack allocation when listener count is small
-    fn emit_signal_impl(&mut self, signal: u64, params: &[Value]) {
+    fn emit_signal_impl(&mut self, signal: u64, _params: &[Value]) {
         let start_time = Instant::now();
         
         // Copy out listeners before mutable borrow
@@ -2167,17 +2160,17 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
 
-        let setup_time = start_time.elapsed();
+        let _setup_time = start_time.elapsed();
         
         // Now all borrows of self.signals are dropped ✅
         let now = Instant::now();
-        let true_delta = self
+        let _true_delta = self
             .last_scene_update
             .map(|prev| now.duration_since(prev).as_secs_f32())
             .unwrap_or(0.0);
 
         let project_ref = self.project.clone();
-        let mut project_borrow = project_ref.borrow_mut();
+        let _project_borrow = project_ref.borrow_mut();
 
         // Note: Signals are called from ScriptApi which has Graphics, but emit_signal_impl
         // doesn't have access to it. For now, we'll skip signal emission here since

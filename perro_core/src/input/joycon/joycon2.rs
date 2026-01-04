@@ -34,6 +34,7 @@ pub struct JoyCon2 {
     address: String,
     input_characteristic: Option<Characteristic>,
     command_characteristic: Option<Characteristic>,
+    #[allow(dead_code)]
     adapter: Option<Arc<Adapter>>,
     is_left: bool,
 }

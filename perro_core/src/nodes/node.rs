@@ -6,10 +6,7 @@ use uuid::Uuid;
 
 use crate::node_registry::NodeType;
 
-// Helper function for serde default
-fn uuid_nil() -> Uuid {
-    Uuid::nil()
-}
+// Note: uuid_nil helper removed - use Uuid::nil() directly if needed
 
 /// Represents a parent node with both its ID and type
 /// This allows runtime type checking without needing to query the scene

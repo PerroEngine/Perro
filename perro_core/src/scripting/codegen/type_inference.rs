@@ -117,15 +117,15 @@ impl Script {
         // Check cache first for performance
         let cache_key = expr as *const Expr as usize;
         if let Some(cached) = get_cached_type(cache_key) {
-            eprintln!("[INFER_TYPE] CACHE HIT for expr {:?} -> {:?}", expr, cached);
+            // eprintln!("[INFER_TYPE] CACHE HIT for expr {:?} -> {:?}", expr, cached);
             return cached;
         }
-        eprintln!("[INFER_TYPE] CACHE MISS for expr {:?}", expr);
+        // eprintln!("[INFER_TYPE] CACHE MISS for expr {:?}", expr);
 
         let result = match expr {
             Expr::Literal(lit) => {
                 let inferred = self.infer_literal_type(lit, None);
-                eprintln!("[INFER_TYPE] Literal {:?} -> {:?}", lit, inferred);
+                // eprintln!("[INFER_TYPE] Literal {:?} -> {:?}", lit, inferred);
                 inferred
             },
             Expr::Ident(name) => {
@@ -277,7 +277,7 @@ impl Script {
         };
 
         // Cache the result
-        eprintln!("[INFER_TYPE] CACHING result for expr {:?} -> {:?}", expr, result);
+        // eprintln!("[INFER_TYPE] CACHING result for expr {:?} -> {:?}", expr, result);
         set_cached_type(cache_key, result.clone());
 
         result
