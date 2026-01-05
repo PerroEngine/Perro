@@ -5,12 +5,12 @@ use std::os::raw::c_char;
 use perro_core::script::CreateFn;
 use phf::{phf_map, Map};
 
-pub mod scripts_editor_pup;
+pub mod scripts_manager_rs;
 pub mod scripts_repair_rs;
 pub mod scripts_root_rs;
 pub mod scripts_updater_rs;
 // __PERRO_MODULES__
-use scripts_editor_pup::scripts_editor_pup_create_script;
+use scripts_manager_rs::scripts_manager_rs_create_script;
 use scripts_repair_rs::scripts_repair_rs_create_script;
 use scripts_root_rs::scripts_root_rs_create_script;
 use scripts_updater_rs::scripts_updater_rs_create_script;
@@ -21,7 +21,7 @@ pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {
 }
 
 static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
-    "scripts_editor_pup" => scripts_editor_pup_create_script as CreateFn,
+    "scripts_manager_rs" => scripts_manager_rs_create_script as CreateFn,
         "scripts_repair_rs" => scripts_repair_rs_create_script as CreateFn,
         "scripts_root_rs" => scripts_root_rs_create_script as CreateFn,
         "scripts_updater_rs" => scripts_updater_rs_create_script as CreateFn,
@@ -49,24 +49,6 @@ pub extern "C" fn perro_set_project_root(path: *const c_char, name: *const c_cha
 mod panic_handler {
 // Panic handler for script DLL - handles panics that occur in the DLL
 // Panics in DLLs don't propagate to the main binary's panic hook, so we need our own
-use std::path::PathBuf;
-
-fn strip_file_extension(path: &str) -> String {
-    // Remove file extension from paths like "res://player.pup" -> "res://player"
-    // or "player.pup" -> "player"
-    if let Some(dot_idx) = path.rfind('.') {
-        // Check if there's a slash before the dot (to avoid removing extensions from directory names)
-        if let Some(slash_idx) = path.rfind('/') {
-            if dot_idx > slash_idx {
-                return path[..dot_idx].to_string();
-            }
-        } else {
-            // No slash, just remove the extension
-            return path[..dot_idx].to_string();
-        }
-    }
-    path.to_string()
-}
 
 fn get_project_root_from_dll() -> Option<std::path::PathBuf> {
     // Try to get project root from perro_core's global state
@@ -99,7 +81,7 @@ fn get_project_root_from_dll() -> Option<std::path::PathBuf> {
     None
 }
 
-fn handle_dll_panic(panic_info: &std::panic::PanicInfo) {
+fn handle_dll_panic(panic_info: &std::panic::PanicHookInfo) {
     // Get panic message
     let mut panic_msg = String::new();
     if let Some(s) = panic_info.payload().downcast_ref::<&str>() {

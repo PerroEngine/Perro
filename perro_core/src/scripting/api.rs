@@ -1305,6 +1305,89 @@ impl MathApi {
     }
 }
 
+#[derive(Default)]
+pub struct EditorApi {
+    // Store a pointer to the ScriptApi that owns this instance
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
+
+impl EditorApi {
+    /// Set the ScriptApi pointer for this instance
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    /// Get the ScriptApi pointer
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
+        self.api_ptr
+    }
+
+    /// Create a new Perro project
+    /// Returns true on success, false on failure
+    pub fn create_project(&mut self, project_name: &str, project_path: &str) -> bool {
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                let self_ptr = self as *mut EditorApi;
+                unsafe {
+                    (*self_ptr).set_api_ptr(ptr);
+                }
+                ptr
+            } else {
+                eprintln!("❌ EditorApi: No ScriptApi context available");
+                return false;
+            }
+        };
+
+        unsafe {
+            let api = &mut *api_ptr;
+            Self::create_project_impl(api, project_name, project_path)
+        }
+    }
+
+    pub(crate) fn create_project_impl(
+        api: &mut ScriptApi,
+        project_name: &str,
+        project_path: &str,
+    ) -> bool {
+        // Resolve the project path (supports user:// paths)
+        let resolved_path = match resolve_path(project_path) {
+            ResolvedPath::Disk(path) => path,
+            ResolvedPath::Brk(_) => {
+                api.print_error("Cannot create project in BRK path");
+                return false;
+            }
+        };
+
+        // Create the project using perro_core::project_creator
+        match crate::project_creator::create_new_project(
+            project_name,
+            &resolved_path,
+            false, // from_source = false, use crates.io dependency
+            true,  // quiet = true, suppress verbose output when called from API
+        ) {
+            Ok(_) => {
+                api.print(&format!("✅ Project '{}' created successfully at {}", project_name, resolved_path.display()));
+                
+                // Set the project_path runtime param so compile_scripts can use it
+                let path_str = resolved_path.to_string_lossy().to_string();
+                api.project().set_runtime_param("project_path", &path_str);
+                
+                true
+            }
+            Err(e) => {
+                api.print_error(&format!("❌ Failed to create project: {}", e));
+                false
+            }
+        }
+    }
+
+}
+
 #[allow(non_snake_case)]
 #[derive(Default)]
 pub struct EngineApi {
@@ -1315,6 +1398,7 @@ pub struct EngineApi {
     pub Input: InputApi,
     pub Texture: TextureApi,
     pub Math: MathApi,
+    pub Editor: EditorApi,
 }
 
 //-----------------------------------------------------
@@ -1354,6 +1438,10 @@ impl<'a> DerefMut for ScriptApi<'a> {
             // Set the pointer in TextureApi
             let texture_api = &mut (*api_ptr).engine.Texture;
             texture_api.set_api_ptr(api_ptr);
+            
+            // Set the pointer in EditorApi
+            let editor_api = &mut (*api_ptr).engine.Editor;
+            editor_api.set_api_ptr(api_ptr);
         }
 
         // Return the reference - safe because we're returning a reference to the same memory

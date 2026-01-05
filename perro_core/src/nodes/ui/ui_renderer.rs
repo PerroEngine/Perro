@@ -1486,6 +1486,43 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
     // Get timestamp from UINode's base node
     let timestamp = ui_node.base.created_timestamp;
 
+    // Check if fur_path has changed or if elements need to be loaded
+    // Extract fur_path string first to avoid borrow conflicts
+    {
+        let current_fur_path_str = ui_node.fur_path.as_ref().map(|fp| fp.as_ref().to_string());
+        let loaded_fur_path_str = ui_node.loaded_fur_path.as_ref().map(|fp| fp.as_ref().to_string());
+        
+        let needs_load = current_fur_path_str.as_ref().map(|current| {
+            loaded_fur_path_str.as_ref().map(|loaded| loaded != current).unwrap_or(true)
+        }).unwrap_or(false);
+        
+        if needs_load {
+            if let Some(ref fur_path_str) = current_fur_path_str {
+                // Try to load the fur file
+                use crate::apply_fur::{parse_fur_file, build_ui_elements_from_fur};
+                match parse_fur_file(fur_path_str) {
+                    Ok(ast) => {
+                        let fur_elements: Vec<crate::fur_ast::FurElement> = ast
+                            .into_iter()
+                            .filter_map(|f| match f {
+                                crate::fur_ast::FurNode::Element(el) => Some(el),
+                                _ => None,
+                            })
+                            .collect();
+                        
+                        if !fur_elements.is_empty() {
+                            build_ui_elements_from_fur(ui_node, &fur_elements);
+                            ui_node.loaded_fur_path = Some(std::borrow::Cow::Owned(fur_path_str.clone()));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️ Failed to load FUR file {}: {}", fur_path_str, e);
+                    }
+                }
+            }
+        }
+    }
+
     // Check if elements exist - if not, we can't render yet
     let elements_exist = ui_node.elements.is_some();
     

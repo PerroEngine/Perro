@@ -5,7 +5,20 @@ use regex::Regex;
 use crate::ast::*;
 use crate::scripting::ast::Type;
 use super::utils::to_pascal_case;
-use super::boilerplate::implement_script_boilerplate;
+use super::boilerplate::implement_script_boilerplate_internal;
+
+/// Strip println! and eprintln! statements from Rust code when not in verbose mode
+fn strip_rust_prints(code: &str) -> String {
+    // Match println! and eprintln! macro calls on a single line
+    // Pattern matches: println!(...); or eprintln!(...);
+    let print_re = Regex::new(r"(?m)^(\s*)((?:println|eprintln)!\([^;]*\);?)\s*$").unwrap();
+    
+    print_re.replace_all(code, |caps: &regex::Captures| {
+        let indent = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let print_call = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+        format!("{}// [stripped for release] {}\n", indent, print_call)
+    }).to_string()
+}
 
 pub fn write_to_crate(
     project_path: &Path,
@@ -79,6 +92,7 @@ pub fn derive_rust_perro_script(
     project_path: &Path,
     code: &str,
     struct_name: &str,
+    verbose: bool,
 ) -> Result<(), String> {
     let marker_re = Regex::new(r"///\s*@PerroScript").unwrap();
     let marker_pos = match marker_re.find(code) {
@@ -91,7 +105,7 @@ pub fn derive_rust_perro_script(
         .captures(&code[marker_pos..])
         .ok_or_else(|| "Could not find struct after @PerroScript".to_string())?;
 
-    let _actual_struct_name_from_struct = captures[1].to_string();
+    let actual_struct_name_from_struct = captures[1].to_string();
     let struct_body = captures[2].to_string();
 
     let mut variables = Vec::new();
@@ -167,8 +181,12 @@ pub fn derive_rust_perro_script(
 
     let lower_name = struct_name.to_lowercase();
 
+    // Extract struct name from @PerroScript struct definition (most accurate)
+    // Fallback to extracting from "impl Script for ..." if struct not found
     let impl_script_re = Regex::new(r"impl\s+Script\s+for\s+(\w+)\s*\{").unwrap();
-    let actual_struct_name = if let Some(cap) = impl_script_re.captures(code) {
+    let actual_struct_name = if !actual_struct_name_from_struct.is_empty() {
+        actual_struct_name_from_struct
+    } else if let Some(cap) = impl_script_re.captures(code) {
         cap[1].to_string()
     } else {
         to_pascal_case(struct_name)
@@ -216,18 +234,43 @@ pub fn derive_rust_perro_script(
         }
     }
 
-    // SECOND: Find impl StructNameScript { ... } blocks (non-trait methods)
-    let impl_block_re = Regex::new(&format!(
-        r"impl\s+{}\s*\{{([^}}]*(?:\{{[^}}]*\}}[^}}]*)*)\}}",
-        regex::escape(&format!("{}Script", to_pascal_case(struct_name)))
-    ))
-    .unwrap();
+    // SECOND: Find impl StructName { ... } blocks (non-trait methods)
+    // Use actual_struct_name extracted from @PerroScript struct definition
+    // Try both with and without "Script" suffix for backwards compatibility
+    // Find the impl block start position
+    let impl_pattern1 = format!("impl {}", format!("{}Script", actual_struct_name));
+    let impl_pattern2 = format!("impl {}", actual_struct_name);
+    
+    let impl_start = code.find(&impl_pattern1)
+        .or_else(|| code.find(&impl_pattern2));
+    
+    if let Some(start_pos) = impl_start {
+        // Find the opening brace
+        if let Some(brace_start) = code[start_pos..].find('{') {
+            let brace_pos = start_pos + brace_start;
+            
+            // Find matching closing brace by counting braces
+            let mut brace_count = 0;
+            let mut impl_end = None;
+            for (i, ch) in code[brace_pos..].char_indices() {
+                match ch {
+                    '{' => brace_count += 1,
+                    '}' => {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            impl_end = Some(brace_pos + i + 1);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
+            if let Some(end_pos) = impl_end {
+                let impl_body = &code[brace_pos + 1..end_pos - 1]; // Exclude the braces
 
-    if let Some(impl_cap) = impl_block_re.captures(code) {
-        let impl_body = &impl_cap[1];
-
-        // Parse attributes for functions: ///@AttributeName before fn function_name
-        let fn_attr_re = Regex::new(r"///\s*@(\w+)[^\n]*\n\s*fn\s+(\w+)").unwrap();
+        // Parse attributes for functions: ///@AttributeName before pub fn or fn function_name
+        let fn_attr_re = Regex::new(r"///\s*@(\w+)[^\n]*\n\s*(?:pub\s+)?fn\s+(\w+)").unwrap();
         for attr_cap in fn_attr_re.captures_iter(impl_body) {
             let attr_name = attr_cap[1].to_string();
             let fn_name = attr_cap[2].to_string();
@@ -238,8 +281,8 @@ pub fn derive_rust_perro_script(
         }
 
         // Find all function definitions with their full signatures
-        // Matches: fn function_name(&mut self, param: Type, ...) -> ReturnType {
-        let fn_re = Regex::new(r"fn\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*([^{]+))?").unwrap();
+        // Matches: pub fn or fn function_name(&mut self, param: Type, ...) -> ReturnType {
+        let fn_re = Regex::new(r"(?:pub\s+)?fn\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*([^{]+))?").unwrap();
 
         for fn_cap in fn_re.captures_iter(impl_body) {
             let fn_name = fn_cap[1].to_string();
@@ -262,7 +305,25 @@ pub fn derive_rust_perro_script(
                 // Split by ':' to get name and type
                 if let Some((name, typ_str)) = param.split_once(':') {
                     let name = name.trim().to_string();
-                    let typ = Variable::parse_type(typ_str);
+                    let typ_str_trimmed = typ_str.trim();
+                    
+                    // Keep ScriptApi parameters in the list (we'll handle them specially in boilerplate)
+                    // Mark them as Custom("ScriptApi") type so we can detect them
+                    let typ = if typ_str_trimmed.contains("ScriptApi") {
+                        Type::Custom("ScriptApi".to_string())
+                    } else {
+                        // For Rust scripts, preserve reference information in Custom types
+                        // If it's a reference type like &Path or &Manifest, store it as "&Path" or "&Manifest"
+                        // so we can add & prefix when calling the function
+                        let parsed = Variable::parse_type(typ_str_trimmed);
+                        match &parsed {
+                            Type::Custom(tn) if typ_str_trimmed.starts_with('&') && !tn.starts_with('&') => {
+                                // Preserve the & prefix for reference types
+                                Type::Custom(format!("&{}", tn))
+                            },
+                            _ => parsed,
+                        }
+                    };
 
                     params.push(Param { name, typ, span: None });
                 }
@@ -289,6 +350,10 @@ pub fn derive_rust_perro_script(
                 is_on_signal: false,
                 signal_name: None,
             });
+        }
+            } else {
+                // Couldn't find matching brace, skip this impl block
+            }
         }
     }
 
@@ -419,8 +484,13 @@ pub fn derive_rust_perro_script(
     }
 
     let boilerplate =
-        implement_script_boilerplate(&actual_struct_name, &variables, &functions, &attributes_map);
-    let combined = format!("{}\n\n{}", final_code, boilerplate);
+        implement_script_boilerplate_internal(&actual_struct_name, &variables, &functions, &attributes_map, true);
+    let mut combined = format!("{}\n\n{}", final_code, boilerplate);
+
+    // Strip println! and eprintln! statements when not in verbose mode
+    if !verbose {
+        combined = strip_rust_prints(&combined);
+    }
 
     write_to_crate(project_path, &combined, struct_name)
 }

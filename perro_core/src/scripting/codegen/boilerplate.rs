@@ -13,6 +13,16 @@ pub fn implement_script_boilerplate(
     functions: &[Function],
     _attributes_map: &HashMap<String, Vec<String>>,
 ) -> String {
+    implement_script_boilerplate_internal(struct_name, script_vars, functions, _attributes_map, false)
+}
+
+pub fn implement_script_boilerplate_internal(
+    struct_name: &str,
+    script_vars: &[Variable],
+    functions: &[Function],
+    _attributes_map: &HashMap<String, Vec<String>>,
+    is_rust_script: bool,
+) -> String {
     let mut out = String::with_capacity(8192);
     let mut get_entries = String::with_capacity(512);
     let mut set_entries = String::with_capacity(512);
@@ -411,70 +421,128 @@ pub fn implement_script_boilerplate(
 
         let func_name = &func.name;
         let func_id = string_to_u64(func_name);
-        let renamed_func_name = rename_function(func_name);
+        // For Rust scripts, don't rename functions (they don't have __t_ prefix)
+        let renamed_func_name = if is_rust_script {
+            func_name.clone()
+        } else {
+            rename_function(func_name)
+        };
 
         let mut param_parsing = String::new();
         let mut param_list = String::new();
 
         if !func.params.is_empty() {
-            for (i, param) in func.params.iter().enumerate() {
+            // Track actual parameter index (for JSON params array, skipping ScriptApi params)
+            let mut actual_param_idx = 0;
+            for param in func.params.iter() {
+                // Skip ScriptApi parameters when parsing from JSON - they use the api parameter from the closure
+                if matches!(param.typ, Type::Custom(ref tn) if tn == "ScriptApi") {
+                    continue;
+                }
+                
                 // Rename parameter: node types get _id suffix, others keep original name
-                let param_name = rename_variable(&param.name, Some(&param.typ));
+                let param_name = if is_rust_script {
+                    // For Rust scripts, use original parameter name
+                    param.name.clone()
+                } else {
+                    rename_variable(&param.name, Some(&param.typ))
+                };
                 let parse_code = match &param.typ {
-                    Type::String => format!(
-                        "let {param_name} = params.get({i})
+                    Type::String | Type::StrRef => format!(
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_default();\n"
                     ),
                     Type::Number(NumberKind::Signed(w)) => format!(
-                        "let {param_name} = params.get({i})
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
                             .unwrap_or_default() as i{w};\n"
                     ),
                     Type::Number(NumberKind::Unsigned(w)) => format!(
-                        "let {param_name} = params.get({i})
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
                             .unwrap_or_default() as u{w};\n"
                     ),
                     Type::Number(NumberKind::Float(32)) => format!(
-                        "let {param_name} = params.get({i})
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
                             .unwrap_or_default() as f32;\n"
                     ),
                     Type::Number(NumberKind::Float(64)) => format!(
-                        "let {param_name} = params.get({i})
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
                             .unwrap_or_default();\n"
                     ),
                     Type::Bool => format!(
-                        "let {param_name} = params.get({i})
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_bool())
                             .unwrap_or_default();\n"
                     ),
                     Type::Custom(tn) if tn == "Signal" => format!(
-                        "let {param_name} = params.get({i})
+                        "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
                             .unwrap_or_default() as u64;\n"
                     ),
                     Type::Custom(tn) if is_node_type(tn) => {
                         // For node types, parse UUID from string (nodes are just UUIDs)
                         format!(
-                            "let {param_name} = params.get({i})
+                            "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_str())
                             .and_then(|s| Uuid::parse_str(s).ok())
                             .unwrap_or_default();\n"
                         )
                     },
-                    Type::Custom(tn) => format!(
-                        "let {param_name} = params.get({i})
-                            .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok())
+                    Type::Custom(tn) if tn == "&Path" || tn == "Path" || (tn.contains("Path") && !tn.starts_with('&')) => {
+                        // Handle Path types - parse as string and convert to PathBuf
+                        // For &Path parameters, we'll create a PathBuf and use a reference
+                        format!(
+                            "let __path_buf_{param_name} = params.get({actual_param_idx})
+                            .and_then(|v| v.as_str())
+                            .map(|s| std::path::PathBuf::from(s))
+                            .unwrap_or_default();
+let {param_name} = __path_buf_{param_name}.as_path();\n"
+                        )
+                    },
+                    Type::Custom(tn) if tn == "&str" || tn == "str" => {
+                        // Handle &str - parse as String (we'll borrow it when calling)
+                        format!(
+                            "let {param_name} = params.get({actual_param_idx})
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
                             .unwrap_or_default();\n"
-                    ),
+                        )
+                    },
+                    Type::Custom(tn) if tn.starts_with('&') && tn != "&str" && tn != "&Path" => {
+                        // Handle reference types like &Manifest - deserialize owned type, then take reference
+                        let owned_type = tn.strip_prefix('&').unwrap_or(tn);
+                        // For types that might not have Default, we need to handle None case
+                        // If deserialization fails, we can't proceed, so we'll return early
+                        format!(
+                            "let __owned_{param_name}_opt = params.get({actual_param_idx})
+                            .and_then(|v| serde_json::from_value::<{owned_type}>(v.clone()).ok());
+let {param_name} = match __owned_{param_name}_opt {{
+    Some(ref val) => val,
+    None => return, // Skip this function call if deserialization failed
+}};\n"
+                        )
+                    },
+                    Type::Custom(tn) => {
+                        // For custom types without Default, we need to handle None case
+                        // Try to deserialize, and if it fails, return early
+                        format!(
+                            "let {param_name}_opt = params.get({actual_param_idx})
+                            .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok());
+let {param_name} = match {param_name}_opt {{
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+}};\n"
+                        )
+                    },
                     Type::Node(_) => {
                         // Handle Type::Node variant - nodes are just UUIDs
                         format!(
-                            "let {param_name} = params.get({i})
+                            "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_str())
                             .and_then(|s| Uuid::parse_str(s).ok())
                             .unwrap_or_default();\n"
@@ -483,7 +551,7 @@ pub fn implement_script_boilerplate(
                     Type::EngineStruct(EngineStructKind::Texture) => {
                         // Handle Texture - textures are just UUIDs
                         format!(
-                            "let {param_name} = params.get({i})
+                            "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_str())
                             .and_then(|s| Uuid::parse_str(s).ok())
                             .unwrap_or_default();\n"
@@ -492,7 +560,7 @@ pub fn implement_script_boilerplate(
                     Type::Uuid => {
                         // Handle Uuid - parse from string
                         format!(
-                            "let {param_name} = params.get({i})
+                            "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_str())
                             .and_then(|s| Uuid::parse_str(s).ok())
                             .unwrap_or_default();\n"
@@ -501,7 +569,7 @@ pub fn implement_script_boilerplate(
                     Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid) => {
                         // Handle Option<Uuid> - parse from string, return None if parsing fails
                         format!(
-                            "let {param_name} = params.get({i})
+                            "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_str())
                             .and_then(|s| Uuid::parse_str(s).ok());\n"
                         )
@@ -509,21 +577,65 @@ pub fn implement_script_boilerplate(
                     _ => format!("let {param_name} = Default::default();\n"),
                 };
                 param_parsing.push_str(&parse_code);
+                actual_param_idx += 1;
             }
 
-            param_list = func
-                .params
-                .iter()
-                .map(|p| rename_variable(&p.name, Some(&p.typ)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            param_list.push_str(", ");
+            // Build param list, inserting 'api' where ScriptApi parameters should be
+            // Preserve original parameter order
+            let mut param_names: Vec<String> = Vec::new();
+            for param in func.params.iter() {
+                if matches!(param.typ, Type::Custom(ref tn) if tn == "ScriptApi") {
+                    // Insert 'api' for ScriptApi parameters
+                    // If original was &ScriptApi (not &mut), we need to use &*api
+                    // But actually, &mut ScriptApi can be coerced to &ScriptApi, so just use api
+                    param_names.push("api".to_string());
+                } else {
+                    // Use original parameter name for Rust scripts, renamed for others
+                    let param_name = if is_rust_script {
+                        param.name.clone()
+                    } else {
+                        rename_variable(&param.name, Some(&param.typ))
+                    };
+                    
+                    // For Rust scripts, if the parameter type is a reference (&str, &Path, etc.),
+                    // we need to add & prefix when calling the function
+                    let param_expr = if is_rust_script {
+                        match &param.typ {
+                            Type::StrRef => {
+                                // &str - we parsed as String, need to borrow it
+                                format!("&{}", param_name)
+                            },
+                            Type::Custom(tn) if tn == "&Path" || tn == "Path" || (tn.contains("Path") && !tn.starts_with('&')) => {
+                                // Path types - we created __path_buf_ variable and used .as_path()
+                                // {param_name} is already a &Path reference, so use it directly
+                                param_name.clone()
+                            },
+                            Type::Custom(tn) if tn.starts_with('&') => {
+                                // Reference type like &Manifest - we created __owned_ variable
+                                if tn == "&str" || tn == "str" {
+                                    format!("&{}", param_name)
+                                } else {
+                                    // For other reference types, we created {param_name} as a reference from the match
+                                    // So use it directly (it's already a reference)
+                                    param_name.clone()
+                                }
+                            },
+                            _ => param_name,
+                        }
+                    } else {
+                        param_name
+                    };
+                    
+                    param_names.push(param_expr);
+                }
+            }
+            param_list = param_names.join(", ");
         }
 
         write!(
             dispatch_entries,
             "        {func_id}u64 => | script: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
-{param_parsing}            script.{renamed_func_name}({param_list}api);
+{param_parsing}            script.{renamed_func_name}({param_list});
         }},\n"
         )
         .unwrap();

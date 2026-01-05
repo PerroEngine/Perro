@@ -3,12 +3,24 @@
   "nodes": {
     "0": {
       "type": "UINode",
-      "fur_path": "res://fur/editor.fur",
+      "fur_path": "res://fur/manager.fur",
       "base": {
         "type": "Node",
-        "name": "Editor UI",
-        "script_path": "res://scripts/editor.pup"
+        "name": "Manager UI",
+        "script_path": "res://scripts/manager.rs"
       }
+    },
+    "1": {
+      "type": "Node",
+      "name": "Updater",
+      "parent": "0",
+      "script_path": "res://scripts/updater.rs"
+    },
+    "2": {
+      "type": "Node",
+      "name": "Repair",
+      "parent": "0",
+      "script_path": "res://scripts/repair.rs"
     }
   }
 }

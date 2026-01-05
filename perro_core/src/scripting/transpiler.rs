@@ -550,7 +550,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
             "rs" => {
                 parse_time = Duration::ZERO;
                 transpile_start = Instant::now();
-                derive_rust_perro_script(project_root, &code, &identifier)?;
+                derive_rust_perro_script(project_root, &code, &identifier, verbose)?;
                 transpile_time = transpile_start.elapsed();
             }
             _ => return Err(format!("Unsupported file extension: {}", extension)),

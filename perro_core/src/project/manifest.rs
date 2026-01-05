@@ -94,12 +94,19 @@ impl Project {
         xps: f32,
         root_script: Option<String>,
         metadata: &phf::Map<&'static str, &'static str>,
+        input_actions: &phf::Map<&'static str, &'static [&'static str]>,
     ) -> Self {
         let mut meta = HashMap::new();
 
         // Copy PHF map entries into HashMap
         for (key, value) in metadata.entries() {
             meta.insert(key.to_string(), value.to_string());
+        }
+
+        // Copy input actions from PHF map into HashMap
+        let mut input_map = HashMap::new();
+        for (action_name, sources) in input_actions.entries() {
+            input_map.insert(action_name.to_string(), sources.iter().map(|s| s.to_string()).collect());
         }
 
         let settings = ProjectSettings {
@@ -114,7 +121,7 @@ impl Project {
                 script: root_script,
             },
             meta: MetadataSection { data: meta },
-            input: InputSection::default(),
+            input: InputSection { actions: input_map },
         };
 
         Self {
@@ -325,5 +332,10 @@ impl Project {
         }
 
         input_map
+    }
+
+    /// Get the raw input actions as strings (for serialization)
+    pub fn get_input_actions(&self) -> &HashMap<String, Vec<String>> {
+        &self.settings.input.actions
     }
 }

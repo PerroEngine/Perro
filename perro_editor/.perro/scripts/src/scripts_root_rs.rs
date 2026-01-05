@@ -407,5 +407,67 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut RootScript, &[Value], &mut ScriptApi<'_>),
 > = phf::phf_map! {
+        2294572407279198284u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let // Ensure this is &mut ScriptApi
+    target_version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+let target_exe_name = params.get(1)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.ensure_runtime_exe_in_version_dir(api, &// Ensure this is &mut ScriptApi
+    target_version, &target_exe_name);
+        },
+        8474883865169775633u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let __path_buf_dir = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| std::path::PathBuf::from(s))
+                            .unwrap_or_default();
+let dir = __path_buf_dir.as_path();
+            script.find_exe_in_dir(dir);
+        },
+        1072299143536744344u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.version_exists(api, &version);
+        },
+        350600208379132370u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let current = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.find_highest_local_version(api, &current);
+        },
+        10459365434656882773u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let __path_buf_version_path = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| std::path::PathBuf::from(s))
+                            .unwrap_or_default();
+let version_path = __path_buf_version_path.as_path();
+            script.launch_version(version_path);
+        },
+        10865362270687727973u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.launch_version_from_proper_location(api, &version);
+        },
+        14963852875113987676u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let my_version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+let __path_buf_exe_path = params.get(1)
+                            .and_then(|v| v.as_str())
+                            .map(|s| std::path::PathBuf::from(s))
+                            .unwrap_or_default();
+let exe_path = __path_buf_exe_path.as_path();
+            script.ensure_correct_location(api, &my_version, exe_path);
+        },
 
     };

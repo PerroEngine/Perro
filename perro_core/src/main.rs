@@ -150,7 +150,7 @@ fn main() {
             projects_dir.join(project_name)
         };
 
-        match perro_core::project_creator::create_new_project(project_name, &project_path, true) {
+        match perro_core::project_creator::create_new_project(project_name, &project_path, true, false) {
             Ok(_) => {
                 println!("✅ Project created successfully!");
                 

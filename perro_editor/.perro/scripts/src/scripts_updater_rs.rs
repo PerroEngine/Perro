@@ -508,5 +508,76 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut UpdaterScript, &[Value], &mut ScriptApi<'_>),
 > = phf::phf_map! {
+        13237483245699359411u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.is_manifest_cache_valid(api);
+        },
+        1639560369510998272u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.load_cached_manifest(api);
+        },
+        3313862213766429953u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let __owned_manifest_opt = params.get(0)
+                            .and_then(|v| serde_json::from_value::<Manifest>(v.clone()).ok());
+let manifest = match __owned_manifest_opt {
+    Some(ref val) => val,
+    None => return, // Skip this function call if deserialization failed
+};
+            script.save_manifest_cache(api, manifest);
+        },
+        3093765166371536820u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let url = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+let __path_buf_dest_path = params.get(1)
+                            .and_then(|v| v.as_str())
+                            .map(|s| std::path::PathBuf::from(s))
+                            .unwrap_or_default();
+let dest_path = __path_buf_dest_path.as_path();
+            script.download_file(&url, dest_path);
+        },
+        2875991780397138133u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.fetch_online_manifest(api);
+        },
+        8474883865169775633u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let __path_buf_dir = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| std::path::PathBuf::from(s))
+                            .unwrap_or_default();
+let dir = __path_buf_dir.as_path();
+            script.find_exe_in_dir(dir);
+        },
+        1072299143536744344u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.version_exists(api, &version);
+        },
+        11638087919495912300u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.download_and_install_version(api, &version);
+        },
+        14777473568040455292u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let version = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.launch_version_and_close(api, &version);
+        },
+        4982378420564573509u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.process_update_check(api);
+        },
+        14246762877332372801u64 => | script: &mut UpdaterScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let manifest_opt = params.get(0)
+                            .and_then(|v| serde_json::from_value::<Manifest>(v.clone()).ok());
+let manifest = match manifest_opt {
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+};
+            script.handle_manifest(api, manifest);
+        },
 
     };

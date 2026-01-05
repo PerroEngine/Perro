@@ -2,36 +2,12 @@ Simple Build Log
 =================
 === Simple Build Script Started ===
 Icon path: ./icon.png
-✔ Copied icon to OUT_DIR: /home/tiernandefranco/Documents/Perro/target/release/build/perro_dev-6c80d9fd562f7a82/out/icon.png
-✔ Generated embedded icon module: /home/tiernandefranco/Documents/Perro/target/release/build/perro_dev-6c80d9fd562f7a82/out/embedded_icon.rs
-✔ Copied icon to ./perro_dev_runtime.png
-✔ Installed 16x16 icon to: /home/tiernandefranco/.local/share/icons/hicolor/16x16/apps/perro_dev_runtime.png
-✔ Installed 22x22 icon to: /home/tiernandefranco/.local/share/icons/hicolor/22x22/apps/perro_dev_runtime.png
-✔ Installed 24x24 icon to: /home/tiernandefranco/.local/share/icons/hicolor/24x24/apps/perro_dev_runtime.png
-✔ Installed 32x32 icon to: /home/tiernandefranco/.local/share/icons/hicolor/32x32/apps/perro_dev_runtime.png
-✔ Installed 48x48 icon to: /home/tiernandefranco/.local/share/icons/hicolor/48x48/apps/perro_dev_runtime.png
-✔ Installed 64x64 icon to: /home/tiernandefranco/.local/share/icons/hicolor/64x64/apps/perro_dev_runtime.png
-✔ Installed 128x128 icon to: /home/tiernandefranco/.local/share/icons/hicolor/128x128/apps/perro_dev_runtime.png
-✔ Installed 256x256 icon to: /home/tiernandefranco/.local/share/icons/hicolor/256x256/apps/perro_dev_runtime.png
-✔ Installed 512x512 icon to: /home/tiernandefranco/.local/share/icons/hicolor/512x512/apps/perro_dev_runtime.png
-✔ Installed 16x16 icon to: /home/tiernandefranco/.local/share/icons/hicolor/16x16/apps/perrodevruntime.png
-✔ Installed 22x22 icon to: /home/tiernandefranco/.local/share/icons/hicolor/22x22/apps/perrodevruntime.png
-✔ Installed 24x24 icon to: /home/tiernandefranco/.local/share/icons/hicolor/24x24/apps/perrodevruntime.png
-✔ Installed 32x32 icon to: /home/tiernandefranco/.local/share/icons/hicolor/32x32/apps/perrodevruntime.png
-✔ Installed 48x48 icon to: /home/tiernandefranco/.local/share/icons/hicolor/48x48/apps/perrodevruntime.png
-✔ Installed 64x64 icon to: /home/tiernandefranco/.local/share/icons/hicolor/64x64/apps/perrodevruntime.png
-✔ Installed 128x128 icon to: /home/tiernandefranco/.local/share/icons/hicolor/128x128/apps/perrodevruntime.png
-✔ Installed 256x256 icon to: /home/tiernandefranco/.local/share/icons/hicolor/256x256/apps/perrodevruntime.png
-✔ Installed 512x512 icon to: /home/tiernandefranco/.local/share/icons/hicolor/512x512/apps/perrodevruntime.png
-✔ Registered icon with xdg-icon-resource: perro_dev_runtime
-✔ Registered icon with xdg-icon-resource: perrodevruntime
-✔ Created Linux desktop file: ./perro_dev_runtime.desktop
-✔ Created binary desktop file: ./perrodevruntime.desktop
-✔ Installed desktop file to: /home/tiernandefranco/.local/share/applications/perro_dev_runtime.desktop
-✔ Installed binary desktop file to: /home/tiernandefranco/.local/share/applications/perrodevruntime.desktop
-✔ Updated desktop database
-✔ Updated GTK icon cache
-✔ Created desktop file next to binary: /home/tiernandefranco/Documents/Perro/target/release/perrodevruntime.desktop
-⚠ appimagetool not found, skipping AppImage creation
-  Install with: cargo install cargo-appimage or download from https://github.com/AppImage/AppImageKit
+Converting ./icon.png → icon.ico
+✔ Added 16x16 size
+✔ Added 32x32 size
+✔ Added 48x48 size
+✔ Added 256x256 size
+✔ Saved ICO to icon.ico
+✔ Wrote RC with version 1.0.0.1767558481 (icon=icon.ico)
+✔ Embedded icon + version info successfully
 === Simple Build Script Finished ===

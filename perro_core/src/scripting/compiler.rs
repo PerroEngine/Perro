@@ -2682,6 +2682,26 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(manifest_file, "}};")?;
         }
 
+        // Generate static input actions PHF map
+        // Use raw string values from project.toml (not parsed InputSource enum)
+        let input_map_name = "PERRO_INPUT_ACTIONS";
+        let input_actions = project.get_input_actions();
+        if !input_actions.is_empty() {
+            writeln!(
+                manifest_file,
+                "\nstatic {}: phf::Map<&'static str, &'static [&'static str]> = phf::phf_map! {{",
+                input_map_name
+            )?;
+            for (action_name, sources) in input_actions {
+                writeln!(manifest_file, "    \"{}\" => &[", action_name)?;
+                for source_str in sources {
+                    writeln!(manifest_file, "        \"{}\",", source_str)?;
+                }
+                writeln!(manifest_file, "    ],")?;
+            }
+            writeln!(manifest_file, "}};")?;
+        }
+
         // Generate the Lazy Project
         writeln!(manifest_file, "\n/// Statically compiled project manifest")?;
         writeln!(
@@ -2718,11 +2738,18 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(manifest_file, "        None,")?;
         }
 
-        // Pass PHF map reference
+        // Pass PHF map references
         if !project.metadata().is_empty() {
             writeln!(manifest_file, "        &{},", metadata_map_name)?;
         } else {
             writeln!(manifest_file, "        &phf::phf_map! {{}},")?;
+        }
+
+        // Pass input actions PHF map reference
+        if !input_actions.is_empty() {
+            writeln!(manifest_file, "        &{}", input_map_name)?;
+        } else {
+            writeln!(manifest_file, "        &phf::phf_map! {{}}")?;
         }
 
         writeln!(manifest_file, "    )")?;

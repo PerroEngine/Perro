@@ -18,7 +18,7 @@ mod analysis;
 // Re-export public API from new modules
 pub use utils::{is_node_type, rename_function, rename_struct, rename_variable, type_is_node, get_node_type};
 pub use file_io::{write_to_crate, derive_rust_perro_script};
-pub use boilerplate::implement_script_boilerplate;
+pub use boilerplate::{implement_script_boilerplate, implement_script_boilerplate_internal};
 
 // Note: Expr, TypedExpr, and Stmt types are available from crate::scripting::ast
 // The impl blocks for these types are in expression.rs and statement.rs

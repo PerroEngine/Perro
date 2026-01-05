@@ -1,9 +1,0 @@
-@script Editor extends UINode
-
-on two_d_Pressed() {
-    Console.print("2D Pressed")
-}
-
-on file_Pressed() {
-    Console.print("File Pressed")
-}

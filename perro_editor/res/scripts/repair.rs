@@ -49,7 +49,24 @@ impl RepairScript {
     }
 
     fn get_rust_url(&self, toolchain: &str) -> String {
-        format!("https://static.rust-lang.org/dist/{}.tar.gz", toolchain)
+        // toolchain should already be in the format rust-VERSION-x86_64-pc-windows-gnu
+        // but if it's just a version number, we need to construct the proper format
+        let toolchain_name = if toolchain.starts_with("rust-") {
+            toolchain.to_string()
+        } else {
+            // Detect platform and construct proper toolchain name
+            #[cfg(target_os = "windows")]
+            let platform_suffix = "x86_64-pc-windows-gnu";
+            #[cfg(target_os = "macos")]
+            let platform_suffix = "x86_64-apple-darwin";
+            #[cfg(target_os = "linux")]
+            let platform_suffix = "x86_64-unknown-linux-gnu";
+            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+            let platform_suffix = "x86_64-unknown-linux-gnu"; // fallback
+            
+            format!("rust-{}-{}", toolchain, platform_suffix)
+        };
+        format!("https://static.rust-lang.org/dist/{}.tar.gz", toolchain_name)
     }
 
     fn download_file(&self, url: &str, dest_path: &Path) -> Result<(), String> {
@@ -175,7 +192,8 @@ impl RepairScript {
     fn runtime_exists(&self, api: &ScriptApi, version: &str) -> bool {
         let editor_path = format!("user://versions/{}/editor/", version);
         if let Some(abs) = api.resolve_path(&editor_path) {
-            self.find_exe_in_dir(Path::new(&abs)).is_some()
+            let runtime_exe = Path::new(&abs).join("PerroDevRuntime.exe");
+            runtime_exe.exists()
         } else {
             false
         }
@@ -193,16 +211,16 @@ impl RepairScript {
         std::fs::create_dir_all(editor_path)
             .map_err(|e| format!("Failed to create editor dir: {}", e))?;
 
-        let editor_exe = editor_path.join("Perro_Engine.exe");
+        let runtime_exe = editor_path.join("PerroDevRuntime.exe");
 
-        if !editor_exe.exists() {
+        if !runtime_exe.exists() {
             let url = format!(
-                "https://cdn.perroengine.com/versions/{}/Perro_Engine.exe",
+                "https://cdn.perroengine.com/versions/{}/PerroDevRuntime.exe",
                 version
             );
 
             eprintln!("📥 Downloading runtime: {}", url);
-            self.download_file(&url, &editor_exe)?;
+            self.download_file(&url, &runtime_exe)?;
         }
 
         eprintln!("✅ Runtime version {} installed", version);
@@ -271,9 +289,34 @@ impl RepairScript {
         Ok(())
     }
 
-    /// Detect if running in editor mode (has command line arguments)
-    fn detect_editor_mode(&self) -> bool {
-        std::env::args().nth(1).is_some()
+    /// Handle editor_mode signal - triggered when manager switches to editor mode
+    pub fn on_editor_mode(&mut self, api: &mut ScriptApi) {
+        eprintln!("🔄 Editor mode signal received: checking dependencies...");
+        
+        // Step 1: Check/install toolchain
+        if let Err(e) = self.check_and_repair_toolchain(api) {
+            eprintln!("❌ Toolchain repair failed: {}", e);
+            eprintln!("⚠️ Build functionality may not work");
+            return; // Can't compile without toolchain
+        }
+
+        // Step 2: Check/install runtime
+        if let Err(e) = self.check_and_repair_runtime(api) {
+            eprintln!("❌ Runtime repair failed: {}", e);
+        }
+
+        eprintln!("✅ Dependencies verified");
+        
+        // Step 3: Always compile scripts when entering editor mode
+        eprintln!("🔧 Compiling scripts...");
+        match api.compile_scripts() {
+            Ok(_) => {
+                eprintln!("✅ Scripts compiled successfully");
+            }
+            Err(e) => {
+                eprintln!("❌ Script compilation failed: {}", e);
+            }
+        }
     }
 }
 
@@ -286,12 +329,10 @@ impl Script for RepairScript {
             .unwrap_or("")
             .to_string();
 
-        self.editor_mode = self.detect_editor_mode();
-
         eprintln!("🔧 Repair script initialized");
         eprintln!("   Engine: {}", self.engine_ver);
         eprintln!("   Toolchain: {}", if self.toolchain_ver.is_empty() { "none" } else { &self.toolchain_ver });
-        eprintln!("   Mode: {}", if self.editor_mode { "editor" } else { "manager" });
+        eprintln!("   Waiting for editor_mode signal...");
 
         // Skip in debug builds
         if cfg!(debug_assertions) {
@@ -299,25 +340,14 @@ impl Script for RepairScript {
             return;
         }
 
-        // Auto-repair in editor mode
-        if self.editor_mode {
-            eprintln!("🔄 Editor mode: checking dependencies...");
-            
-            if let Err(e) = self.check_and_repair_toolchain(api) {
-                eprintln!("❌ Toolchain repair failed: {}", e);
-                eprintln!("⚠️ Build functionality may not work");
-            }
-
-            if let Err(e) = self.check_and_repair_runtime(api) {
-                eprintln!("❌ Runtime repair failed: {}", e);
-            }
-
-            eprintln!("✅ Dependencies verified");
+        // Connect to editor_mode signal - will be triggered when manager switches to editor mode
+        if self.id == Uuid::nil() {
+            eprintln!("❌ ERROR: self.id is nil when trying to connect signal!");
+            return;
         }
+        eprintln!("🔗 Connecting signal 'editor_mode' to function 'on_editor_mode' for node {}", self.id);
+        api.connect_signal("editor_mode", self.id, "on_editor_mode");
+        eprintln!("✅ Signal connection made");
     }
 
-    fn update(&mut self, _api: &mut ScriptApi<'_>) {
-        // Repair script doesn't do anything in update loop
-        // All operations are manual or triggered in init
-    }
 }

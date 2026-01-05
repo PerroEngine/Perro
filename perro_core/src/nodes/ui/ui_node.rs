@@ -36,6 +36,9 @@ pub struct UINode {
     pub fur_path: Option<Cow<'static, str>>,
 
     #[serde(skip)]
+    pub loaded_fur_path: Option<Cow<'static, str>>,
+
+    #[serde(skip)]
     pub props: Option<HashMap<String, Var>>,
 
     #[serde(skip)]
@@ -68,6 +71,7 @@ impl UINode {
             // Base node
             base,
             fur_path: None,
+            loaded_fur_path: None,
             props: None,
             elements: None,
             root_ids: None,
