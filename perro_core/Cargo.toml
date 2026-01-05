@@ -2,6 +2,12 @@
 name = "perro_core"
 version = "0.1.0"
 edition = "2024"
+description = "Core library for the Perro game engine, used for compiling scripts and projects"
+license = "Apache-2.0"
+authors = ["Perro Engine Contributors"]
+repository = "https://github.com/PerroEngine/Perro.git"
+keywords = ["game-engine", "game-development", "rust", "rendering", "scripting"]
+categories = ["game-development", "graphics"]
 
 [lib]
 name = "perro_core"
@@ -69,8 +75,8 @@ zstd = { version = "0.13", features = ["zstdmt"] }
 aes-gcm = "0.10"
 
 # Time & Text processing
-chrono = "*"
-regex = "*"
+chrono = "0.4"
+regex = "1"
 
 # Dynamic loading
 libloading = "0.8.6"
