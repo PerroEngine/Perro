@@ -8,6 +8,20 @@ authors = ["Perro Engine Contributors"]
 repository = "https://github.com/PerroEngine/Perro.git"
 keywords = ["game-engine", "game-development", "rust", "rendering", "scripting"]
 categories = ["game-development", "graphics"]
+exclude = [
+    # Exclude unused font files to reduce package size (only Regular and Bold are used)
+    "src/rendering/fonts/NotoSans/NotoSans-Thin.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-ThinItalic.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-Light.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-LightItalic.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-Medium.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-MediumItalic.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-SemiBold.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-SemiBoldItalic.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-Italic.ttf",
+    "src/rendering/fonts/NotoSans/NotoSans-BoldItalic.ttf",
+    "src/rendering/fonts/NotoEmoji/NotoColorEmoji-Regular.ttf",
+]
 
 [lib]
 name = "perro_core"
