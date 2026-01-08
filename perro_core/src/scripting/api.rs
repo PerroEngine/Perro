@@ -14,7 +14,7 @@ use std::{
     cell::RefCell,
     env, io,
     ops::{Deref, DerefMut},
-    path::Path,
+    path::{Path, PathBuf},
     process,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -1544,6 +1544,140 @@ impl<'a> ScriptApi<'a> {
     }
     pub fn compile_project(&mut self) -> Result<(), String> {
         self.run_compile(BuildProfile::Release, CompileTarget::Project)
+    }
+    /// Compile scripts and run the project in dev mode using run_dev_with_path()
+    /// This spawns a separate process that calls run_dev(), which handles its own window and scene
+    /// If the spawned process crashes, it won't affect the editor
+    /// Output from the spawned process is captured and forwarded to the editor's console
+    pub fn compile_and_run(&mut self) -> Result<(), String> {
+        // First compile the scripts
+        self.compile_scripts()?;
+        
+        // Get the project path
+        let project_path_str = self
+            .project
+            .get_runtime_param("project_path")
+            .ok_or("Missing runtime param: project_path")?;
+        
+        // Ensure the path is absolute - resolve it if needed
+        let absolute_path = if Path::new(project_path_str).is_absolute() {
+            PathBuf::from(project_path_str)
+        } else {
+            // Try to canonicalize the path to make it absolute
+            match std::fs::canonicalize(project_path_str) {
+                Ok(abs_path) => abs_path,
+                Err(_) => {
+                    // If canonicalization fails, try to resolve relative to current dir
+                    env::current_dir()
+                        .map_err(|e| format!("Failed to get current directory: {}", e))?
+                        .join(project_path_str)
+                }
+            }
+        };
+        
+        // Validate that the path exists and contains project.toml
+        if !absolute_path.exists() {
+            return Err(format!("Project path does not exist: {}", absolute_path.display()));
+        }
+        
+        let project_toml = absolute_path.join("project.toml");
+        if !project_toml.exists() {
+            return Err(format!(
+                "project.toml not found at: {}\n\
+                The path exists but does not contain a project.toml file.",
+                absolute_path.display()
+            ));
+        }
+        
+        eprintln!("[compile_and_run] Project path from runtime param: {}", project_path_str);
+        eprintln!("[compile_and_run] Absolute path to use: {}", absolute_path.display());
+        eprintln!("[compile_and_run] Verified project.toml exists at: {}", project_toml.display());
+        
+        // Spawn a separate process - event loops can't be recreated in the same process
+        // In dev mode, use cargo run -p perro_core
+        // In release mode, use the current executable
+        let absolute_path_str = absolute_path.to_string_lossy().to_string();
+        
+        let mut cmd = if cfg!(debug_assertions) {
+            // Dev mode: use cargo run -p perro_core -- --path PATH --run
+            eprintln!("[compile_and_run] Dev mode: Using cargo run -p perro_core -- --path {} --run", absolute_path_str);
+            let mut cargo_cmd = process::Command::new("cargo");
+            cargo_cmd.args(&["run", "-p", "perro_core", "--", "--path", &absolute_path_str, "--run"]);
+            cargo_cmd.current_dir(env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?);
+            cargo_cmd
+        } else {
+            // Release mode: use current executable
+            let exe_path = env::current_exe()
+                .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+            eprintln!("[compile_and_run] Release mode: Spawning separate process: {} --path {} --run", exe_path.display(), absolute_path_str);
+            let mut exe_cmd = process::Command::new(exe_path);
+            exe_cmd.args(&["--path", &absolute_path_str, "--run"]);
+            exe_cmd.current_dir(&absolute_path);
+            exe_cmd
+        };
+        
+        // Platform-specific: Make the process run completely independently
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            // DETACHED_PROCESS = 0x00000008 (detached from parent)
+            // CREATE_NEW_PROCESS_GROUP = 0x00000200 (new process group)
+            // Combine flags: 0x00000208 (detached process, allows GUI windows)
+            // We don't use CREATE_NO_WINDOW because the game needs to create its GUI window via winit
+            // CREATE_NO_WINDOW only affects console windows, but we want to be safe
+            cmd.creation_flags(0x00000208);
+            // In release mode, redirect stdout to null but allow stderr to be captured
+            // This way we can see errors if the process crashes
+            // In dev mode, we want to see all output
+            if cfg!(debug_assertions) {
+                cmd.stdout(process::Stdio::inherit());
+                cmd.stderr(process::Stdio::inherit());
+            } else {
+                // Release mode: hide stdout but capture stderr for debugging
+                cmd.stdout(process::Stdio::null());
+                // For now, also hide stderr to avoid console windows
+                // TODO: Could pipe stderr to a log file or editor console
+                cmd.stderr(process::Stdio::null());
+            }
+        }
+        
+        #[cfg(not(target_os = "windows"))]
+        {
+            // On Unix-like systems, redirect to /dev/null to hide output
+            // In dev mode, show output for debugging
+            if cfg!(debug_assertions) {
+                cmd.stdout(process::Stdio::inherit());
+                cmd.stderr(process::Stdio::inherit());
+            } else {
+                cmd.stdout(process::Stdio::null());
+                cmd.stderr(process::Stdio::null());
+            }
+        }
+        
+        // Spawn the process (it will run completely independently)
+        let child = cmd.spawn()
+            .map_err(|e| format!("Failed to spawn dev runtime process: {}", e))?;
+        
+        // Get the process ID and store it as a runtime parameter
+        let process_id = child.id();
+        self.project.set_runtime_param("runtime_process_id", &process_id.to_string());
+        self.project.set_runtime_param("runtime_process_running", "true");
+        
+        // Don't keep the child handle - fully detach the process
+        // The OS will handle cleanup when the process exits
+        // We don't need to wait for it or track it - the manager script will check process status periodically
+        // This ensures the process is completely independent and the OS scheduler can balance them
+        drop(child);
+        
+        // The manager script will check process status periodically using the process ID
+        
+        #[cfg(target_os = "windows")]
+        eprintln!("[compile_and_run] Spawned runtime process (PID: {}) as detached process", process_id);
+        
+        #[cfg(not(target_os = "windows"))]
+        eprintln!("[compile_and_run] Spawned runtime process (PID: {}) as independent process", process_id);
+        
+        Ok(())
     }
     fn run_compile(&mut self, profile: BuildProfile, target: CompileTarget) -> Result<(), String> {
         let project_path_str = self

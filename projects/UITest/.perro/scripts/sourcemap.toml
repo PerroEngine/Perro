@@ -7,19 +7,19 @@ id = "ui_pup"
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 66
+g_end = 69
 
 [[scripts.ui_pup.lines]]
 s_start = 31
 s_end = 31
-g_start = 66
-g_end = 77
+g_start = 69
+g_end = 80
 
 [[scripts.ui_pup.lines]]
 s_start = 71
 s_end = 71
-g_start = 77
-g_end = 81
+g_start = 80
+g_end = 84
 
 [scripts.ui_pup.names]
 __t_bob_Pressed = "bob_Pressed"

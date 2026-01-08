@@ -1,0 +1,20 @@
+{
+  "root_index": 0,
+  "nodes": {
+    "0": {
+      "type": "UINode",
+      "fur_path": "res://fur/manager.fur",
+      "base": {
+        "type": "Node",
+        "name": "Manager UI",
+        "script_path": "res://scripts/manager.rs"
+      }
+    },
+    "1": {
+      "type": "Node",
+      "name": "Updater",
+      "parent": "0",
+      "script_path": "res://scripts/updater.rs"
+    }
+  }
+}

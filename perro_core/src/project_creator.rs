@@ -386,18 +386,18 @@ move_right = ["KeyD"]
 
 fn generate_main_scn() -> String {
     r#"{
-  "root_id": "00000000-0000-0000-0000-000000000000",
+  "root_index": 0,
   "nodes": {
-    "00000000-0000-0000-0000-000000000000": {
+    "0": {
       "type": "Node2D",
       "base": { "type": "Node", "name": "World" }
     },
-    "00000000-0000-0000-0000-000000000001": {
+    "1": {
       "type": "Camera2D",
       "active": true,
       "base": {
         "type": "Node2D",
-        "base": { "type": "Node", "name": "Camera", "parent": "00000000-0000-0000-0000-000000000000" }
+        "base": { "type": "Node", "name": "Camera", "parent": "0" }
       }
     }
   }

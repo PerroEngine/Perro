@@ -167,9 +167,9 @@ pub struct App<P: ScriptProvider> {
     frame_debt: f32,
     last_frame_time: Option<std::time::Instant>,
     total_frames_rendered: u64,
-    first_frame: bool,
+            first_frame: bool,
 
-    // Cached render state
+            // Cached render state
     cached_operations: wgpu::Operations<wgpu::Color>,
 
     // Command receiver
@@ -269,13 +269,30 @@ impl<P: ScriptProvider> App<P> {
             return true;
         }
         
-        if self.frame_debt < 0.5 {
+        // Check if a game process is running - if so, be more lenient with rendering
+        // to reduce GPU contention (game will use GPU, so editor should be more aggressive)
+        let game_running = self.game_scene.as_ref()
+            .map(|scene| {
+                let project = scene.project.borrow();
+                project.get_runtime_param("runtime_process_running")
+                    .map(|s| s == "true")
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        
+        // When game is running, use lower threshold and higher catch-up rate to reduce GPU contention
+        // Lower threshold means we render more often (less strict)
+        // Higher catch-up rate means we can catch up faster when behind
+        let frame_debt_threshold = if game_running { 0.1 } else { 0.5 };
+        let catchup_fps_boost = if game_running { 20.0 } else { MAX_CATCHUP_FPS };
+        
+        if self.frame_debt < frame_debt_threshold {
             return false;
         }
         
         // Cap catch-up rate: even if we have debt, don't render faster than max_catchup_fps
         if let Some(last_time) = self.last_frame_time {
-            let max_catchup_fps = self.target_fps + MAX_CATCHUP_FPS;
+            let max_catchup_fps = self.target_fps + catchup_fps_boost;
             let min_frame_interval = 1.0 / max_catchup_fps;
             let elapsed = (now - last_time).as_secs_f64() as f32;
             if elapsed < min_frame_interval {
@@ -317,7 +334,7 @@ impl<P: ScriptProvider> App<P> {
             self.process_commands(&gfx);
         }
 
-        // 2. UNCAPPED UPDATE LOOP - Runs every single frame for maximum UPS
+        // 2. UPDATE LOOP
         if let Some(scene) = self.game_scene.as_mut() {
             // OPTIMIZED: Only reset scroll delta if input manager exists (avoids Option check overhead)
             // Most projects don't use scroll, so this is usually a no-op
@@ -332,7 +349,7 @@ impl<P: ScriptProvider> App<P> {
                 #[cfg(feature = "profiling")]
                 let _span = tracing::span!(tracing::Level::INFO, "scene_update").entered();
                 // OPTIMIZED: Pass now to avoid duplicate Instant::now() call
-                scene.update(&mut gfx, now); // Update runs EVERY frame (uncapped UPS)
+                scene.update(&mut gfx, now);
             }
         }
 

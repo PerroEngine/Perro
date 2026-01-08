@@ -672,7 +672,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         
         let test_surface = match test_instance.create_surface(Rc::clone(&window)) {
             Ok(s) => s,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("⚠️  Failed to create surface for {} backend: {:?}", backend_name, e);
+                continue;
+            }
         };
         
         // Try to get adapters (prefer discrete, then integrated)
@@ -790,7 +793,14 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     });
     
     let surface = instance.create_surface(Rc::clone(&window))
-        .expect("Failed to create surface for selected adapter");
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to create graphics surface with {} backend: {:?}\n\
+                This usually happens on VMs or systems without proper graphics drivers.\n\
+                Try installing graphics drivers or enabling hardware acceleration in your VM settings.",
+                best_candidate.backend_name, e
+            );
+        });
     
     // Request the adapter again with the fresh instance/surface
     // This prevents the adapter from becoming invalid
@@ -1217,7 +1227,14 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
             ..Default::default()
         });
         
-        let surface = instance.create_surface(window.clone()).unwrap();
+        // Try to create surface - if it fails, skip this backend
+        let surface = match instance.create_surface(window.clone()) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("⚠️  Failed to create surface for {} backend: {:?}", backend_name, e);
+                continue;
+            }
+        };
         
         let adapter_options = RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
@@ -1312,7 +1329,15 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     });
     
     // Create surface
-    let surface = instance.create_surface(window.clone()).unwrap();
+    let surface = instance.create_surface(window.clone())
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to create graphics surface with {} backend: {:?}\n\
+                This usually happens on VMs or systems without proper graphics drivers.\n\
+                Try installing graphics drivers or enabling hardware acceleration in your VM settings.",
+                best_candidate.backend_name, e
+            );
+        });
     
     // Request adapter
     let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions {

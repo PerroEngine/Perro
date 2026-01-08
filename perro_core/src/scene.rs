@@ -904,7 +904,9 @@ impl<P: ScriptProvider> Scene<P> {
         // ✅ main scene second
         let main_scene_path: String = {
             let proj_ref = game_scene.project.borrow();
-            proj_ref.main_scene().to_string()
+            let path = proj_ref.main_scene().to_string();
+            println!("📂 Loading main scene: {}", path);
+            path
         };
 
         // measure load
@@ -3472,7 +3474,8 @@ impl<P: ScriptProvider> Scene<P> {
             for node_id in ui_nodes {
                 if let Some(node) = self.nodes.get_mut(&node_id) {
                     if let SceneNode::UINode(ui_node) = node {
-                        render_ui(ui_node, gfx);
+                        // Pass provider so FUR can be loaded using the correct method (dev vs release)
+                        render_ui(ui_node, gfx, Some(&self.provider));
                     }
                 }
             }
@@ -3647,7 +3650,8 @@ impl<P: ScriptProvider> Scene<P> {
                             }
                         }
                         SceneNode::UINode(ui_node) => {
-                            render_ui(ui_node, gfx);
+                            // Pass provider so FUR can be loaded using the correct method (dev vs release)
+                            render_ui(ui_node, gfx, Some(&self.provider));
                         }
                         SceneNode::Camera3D(camera) => {
                             if camera.active {

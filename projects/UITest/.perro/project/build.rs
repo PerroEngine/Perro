@@ -152,7 +152,12 @@ END
 
     #[cfg(target_os = "linux")]
     {
+        embed_linux_icon(&real_icon_path, &log_path);
         setup_linux_desktop(&real_icon_path, &project_root, &log_path, name, version);
+        // Create AppImage (single file with embedded icon) after release builds
+        if std::env::var("PROFILE").unwrap_or_default() == "release" {
+            create_appimage(&real_icon_path, &project_root, &log_path, name, version);
+        }
     }
 
     log(&log_path, "=== Build Script Finished ===");
@@ -6337,6 +6342,37 @@ fn convert_to_icns(input_path: &Path, icns_path: &Path, log_path: &Path) {
 }
 
 #[cfg(target_os = "linux")]
+fn embed_linux_icon(icon_path: &Path, log_path: &Path) {
+    if !icon_path.exists() {
+        log(log_path, &format!("⚠ Icon file not found: {}, skipping icon embedding", icon_path.display()));
+        return;
+    }
+
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+
+    // Copy icon to OUT_DIR so we can include it
+    let icon_in_out_dir = PathBuf::from(&out_dir).join("icon.png");
+    fs::copy(icon_path, &icon_in_out_dir).expect("Failed to copy icon to OUT_DIR");
+    log(log_path, &format!("✔ Copied icon to OUT_DIR: {}", icon_in_out_dir.display()));
+
+    // Generate module that embeds the icon using include_bytes!
+    // This will be included in the binary's data section
+    let embedded_icon_module = PathBuf::from(&out_dir).join("embedded_icon.rs");
+    let module_content = format!(
+        r#"// Auto-generated embedded icon module
+// Icon is embedded in the binary at compile time
+
+/// Embedded application icon (PNG bytes)
+/// This icon is embedded directly in the binary's data section
+pub static EMBEDDED_ICON: &[u8] = include_bytes!("icon.png");
+"#
+    );
+
+    fs::write(&embedded_icon_module, module_content).expect("Failed to write embedded_icon.rs");
+    log(log_path, &format!("✔ Generated embedded icon module: {}", embedded_icon_module.display()));
+}
+
+#[cfg(target_os = "linux")]
 fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {
     let actual_icon_path = if !icon_path.exists() {
         log(log_path, &format!("⚠ Icon file not found: {}, using default Perro icon", icon_path.display()));
@@ -6349,7 +6385,8 @@ fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, n
     };
 
 
-    let icon_dest = project_root.join(format!("{}.png", name.to_lowercase().replace(" ", "_")));
+    let icon_name = format!("{}", name.to_lowercase().replace(" ", "_"));
+    let icon_dest = project_root.join(format!("{}.png", icon_name));
     let _ = fs::copy(&actual_icon_path, &icon_dest);
     if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some("default-icon-temp.png") {
         let _ = fs::remove_file(&actual_icon_path); // Clean up temp file
@@ -6358,7 +6395,22 @@ fn setup_linux_desktop(icon_path: &Path, project_root: &Path, log_path: &Path, n
         let _ = fs::remove_file(&actual_icon_path); // Clean up temp file
     }
 
-    let desktop_path = project_root.join(format!("{}.desktop", name.to_lowercase().replace(" ", "_")));
+    // Also try to install to user's local icon directory for better file manager support
+    if let Ok(home) = std::env::var("HOME") {
+        let local_icons_dir = PathBuf::from(&home).join(".local/share/icons/hicolor/256x256/apps");
+        if let Err(_) = fs::create_dir_all(&local_icons_dir) {
+            // Silently fail if we can't create the directory
+        } else {
+            let system_icon_path = local_icons_dir.join(format!("{}.png", icon_name));
+            if let Ok(_) = fs::copy(&actual_icon_path, &system_icon_path) {
+                log(log_path, &format!("✔ Installed icon to system location: {}", system_icon_path.display()));
+            }
+        }
+    }
+
+    let desktop_path = project_root.join(format!("{}.desktop", icon_name));
+    // Use just the icon name (without path/extension) so file managers can find it
+    // They'll look in standard icon directories
     let desktop_content = format!(
         r#"[Desktop Entry]
 Name={}
@@ -6371,11 +6423,113 @@ StartupNotify=true
 Engine=Perro
 EngineWebsite=https://perroengine.com
 "#,
-        name, name.to_lowercase().replace(" ", "_"), icon_dest.display(), version
+        name, icon_name, icon_name, version
     );
 
     fs::write(&desktop_path, desktop_content).expect("Failed to write .desktop file");
     log(log_path, &format!("✔ Created Linux desktop files: {}, {}", icon_dest.display(), desktop_path.display()));
+}
+
+#[cfg(target_os = "linux")]
+fn create_appimage(icon_path: &Path, project_root: &Path, log_path: &Path, name: &str, version: &str) {
+    use std::process::Command;
+
+    // Only create AppImage if appimagetool is available
+    if Command::new("appimagetool").arg("--version").output().is_err() {
+        log(log_path, "⚠ appimagetool not found, skipping AppImage creation");
+        log(log_path, "  Install with: cargo install cargo-appimage or download from https://github.com/AppImage/AppImageKit");
+        return;
+    }
+
+    // Get binary name from CARGO_BIN_NAME
+    let binary_name = std::env::var("CARGO_BIN_NAME")
+        .unwrap_or_else(|_| name.to_lowercase().replace(" ", "_"));
+    let icon_name = name.to_lowercase().replace(" ", "_");
+
+    // Determine build directory
+    let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let target_dir = std::env::var("CARGO_TARGET_DIR")
+        .unwrap_or_else(|_| project_root.join("..").join("target").to_string_lossy().to_string());
+    let build_dir = PathBuf::from(&target_dir).join(&profile);
+    let binary = build_dir.join(&binary_name);
+
+    if !binary.exists() {
+        log(log_path, &format!("⚠ Binary not found at {}, skipping AppImage", binary.display()));
+        return;
+    }
+
+    // Create AppDir structure
+    let appdir = build_dir.join("AppDir");
+    let _ = fs::remove_dir_all(&appdir);
+    fs::create_dir_all(appdir.join("usr/bin")).ok();
+    fs::create_dir_all(appdir.join("usr/share/applications")).ok();
+    fs::create_dir_all(appdir.join("usr/share/icons/hicolor/256x256/apps")).ok();
+
+    // Copy binary
+    if fs::copy(&binary, appdir.join("usr/bin").join(&binary_name)).is_err() {
+        log(log_path, "⚠ Failed to copy binary to AppDir");
+        return;
+    }
+
+    // Copy icon as .DirIcon and to hicolor
+    if fs::copy(icon_path, appdir.join(".DirIcon")).is_err() {
+        log(log_path, "⚠ Failed to copy icon as .DirIcon");
+    }
+    if fs::copy(icon_path, appdir.join("usr/share/icons/hicolor/256x256/apps").join(format!("{}.png", icon_name))).is_err() {
+        log(log_path, "⚠ Failed to copy icon to hicolor");
+    }
+
+    // Create desktop file
+    let desktop_content = format!(
+        r#"[Desktop Entry]
+Name={}
+Exec={}
+Icon={}
+Type=Application
+Categories=Game;
+Version={}
+StartupNotify=true
+Engine=Perro
+EngineWebsite=https://perroengine.com
+"#,
+        name, binary_name, icon_name, version
+    );
+
+    if fs::write(appdir.join("usr/share/applications").join(format!("{}.desktop", icon_name)), &desktop_content).is_err() {
+        log(log_path, "⚠ Failed to write desktop file");
+        return;
+    }
+
+    // Create AppImage
+    let appimage_name = format!("{}-{}-x86_64.AppImage", binary_name, version);
+    let appimage_path = build_dir.join(&appimage_name);
+
+    log(log_path, &format!("📦 Creating AppImage: {}", appimage_path.display()));
+
+    let output = Command::new("appimagetool")
+        .arg(&appdir)
+        .arg(&appimage_path)
+        .output();
+
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                // Make executable
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(mut perms) = fs::metadata(&appimage_path).map(|m| m.permissions()) {
+                    perms.set_mode(0o755);
+                    fs::set_permissions(&appimage_path, perms).ok();
+                }
+                log(log_path, &format!("✔ AppImage created: {}", appimage_path.display()));
+            } else {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                log(log_path, &format!("⚠ AppImage creation failed: {}", stderr));
+            }
+        }
+        Err(e) => {
+            log(log_path, &format!("⚠ Failed to run appimagetool: {}", e));
+        }
+    }
 }
 
 fn resolve_res_path(project_root: PathBuf, res_path: &str) -> PathBuf {

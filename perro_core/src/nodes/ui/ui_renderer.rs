@@ -168,9 +168,26 @@ fn find_percentage_reference_ancestor(
     elements: &IndexMap<Uuid, UIElement>,
     current_id: &Uuid,
 ) -> Option<Vector2> {
-    let mut current = elements.get(current_id)?;
+    let current = elements.get(current_id)?;
 
-    // Walk up the parent chain
+    // Check immediate parent first - if it's a layout container, use it
+    let parent_id = current.get_parent();
+    if !parent_id.is_nil() {
+        if let Some(parent) = elements.get(&parent_id) {
+            // Check if immediate parent is a layout container
+            if matches!(parent, UIElement::Layout(_) | UIElement::GridLayout(_)) {
+                let parent_size = *parent.get_size();
+                // Use the layout container if it has any non-zero size
+                // This ensures children inside layouts use the layout's size as reference
+                if parent_size.x > 0.0 || parent_size.y > 0.0 {
+                    return Some(parent_size);
+                }
+            }
+        }
+    }
+
+    // If immediate parent is not a layout or has zero size, walk up the chain
+    let mut current = current;
     let mut parent_id = current.get_parent();
     while !parent_id.is_nil() {
         if let Some(parent) = elements.get(&parent_id) {
@@ -607,6 +624,31 @@ pub fn calculate_layout_positions(
         }
     }
     
+    // Inherit perpendicular dimension from parent layout
+    // HLayout children inherit height, VLayout children inherit width
+    match &container_mode {
+        ContainerMode::Horizontal => {
+            // For horizontal layouts, children without height inherit parent height
+            for (_, size, _, auto_y) in child_info.iter_mut() {
+                if *auto_y && parent_size.y >= 1.0 {
+                    size.y = parent_size.y;
+                }
+            }
+        }
+        ContainerMode::Vertical => {
+            // For vertical layouts, children without width inherit parent width
+            for (_, size, auto_x, _) in child_info.iter_mut() {
+                if *auto_x && parent_size.x >= 1.0 {
+                    size.x = parent_size.x;
+                }
+            }
+        }
+        ContainerMode::Grid => {
+            // Grid layout could inherit both dimensions, but that's more complex
+            // For now, we'll leave grid as-is
+        }
+    }
+    
     // Apply calculated sizes to the actual elements
     for (child_id, size, _, _) in &child_info {
         if let Some(child) = elements.get_mut(child_id) {
@@ -685,6 +727,46 @@ pub fn calculate_layout_positions(
                         let offset = target_right - last_right;
                         for (_, pos) in &mut positions {
                             pos.x += offset;
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Center (default) - positions are already centered
+            }
+        }
+    }
+    
+    // Adjust positions based on parent anchor for vertical layouts
+    if matches!(&container_mode, ContainerMode::Vertical) {
+        match parent_anchor {
+            FurAnchor::Top | FurAnchor::TopLeft | FurAnchor::TopRight => {
+                // Top align: shift all positions to start from top edge
+                // First child's top edge should be at parent's top edge
+                if let Some((_, first_pos)) = positions.first() {
+                    if let Some((_, first_size)) = child_info_simple.first() {
+                        // First child's top edge = first_pos.y + first_size.y * 0.5
+                        // We want it at parent_size.y * 0.5
+                        let first_top = first_pos.y + first_size.y * 0.5;
+                        let target_top = parent_size.y * 0.5;
+                        let offset = target_top - first_top;
+                        for (_, pos) in &mut positions {
+                            pos.y += offset;
+                        }
+                    }
+                }
+            }
+            FurAnchor::Bottom | FurAnchor::BottomLeft | FurAnchor::BottomRight => {
+                // Bottom align: shift all positions to end at bottom edge
+                if let Some((_, last_pos)) = positions.last() {
+                    if let Some((_, last_size)) = child_info_simple.last() {
+                        // Last child's bottom edge = last_pos.y - last_size.y * 0.5
+                        // We want it at -parent_size.y * 0.5
+                        let last_bottom = last_pos.y - last_size.y * 0.5;
+                        let target_bottom = -parent_size.y * 0.5;
+                        let offset = target_bottom - last_bottom;
+                        for (_, pos) in &mut positions {
+                            pos.y += offset;
                         }
                     }
                 }
@@ -975,6 +1057,28 @@ pub fn update_global_transforms_with_layout(
     let percentage_reference_size = find_percentage_reference_ancestor(elements, current_id)
         .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
 
+    // Check if this element is a layout container or child of layout (before mutable borrow)
+    let (is_layout_container, has_explicit_size, is_child_of_layout) = {
+        if let Some(element) = elements.get(current_id) {
+            let is_layout = matches!(element, UIElement::Layout(_) | UIElement::GridLayout(_));
+            let style_map = element.get_style_map();
+            let has_size = style_map.contains_key("size.x") || style_map.contains_key("size.y");
+            let parent_id = element.get_parent();
+            let is_child = if !parent_id.is_nil() {
+                if let Some(parent) = elements.get(&parent_id) {
+                    matches!(parent, UIElement::Layout(_) | UIElement::GridLayout(_))
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            (is_layout, has_size, is_child)
+        } else {
+            (false, false, false)
+        }
+    };
+
     // Calculate layout positions for this element's children BEFORE mutating
     let child_layout_positions = calculate_layout_positions(elements, current_id);
     let mut child_layout_map = HashMap::new();
@@ -986,14 +1090,9 @@ pub fn update_global_transforms_with_layout(
     if let Some(element) = elements.get_mut(current_id) {
         let style_map = element.get_style_map().clone(); // clone to break the borrow
 
-        // Check if this is a layout container that should be auto-sized
-        let is_layout_container =
-            matches!(element, UIElement::Layout(_) | UIElement::GridLayout(_));
-        let has_explicit_size =
-            style_map.contains_key("size.x") || style_map.contains_key("size.y");
-
         // Apply percentage styles first (but skip auto-sizing containers unless they have explicit percentages)
-        if !is_layout_container || has_explicit_size {
+        // Also skip percentage sizing for children in layouts - they should be sized by the layout system
+        if (!is_layout_container || has_explicit_size) && !is_child_of_layout {
             for (key, pct) in style_map.iter() {
                 let fraction = *pct / 100.0;
 
@@ -1066,6 +1165,43 @@ pub fn update_global_transforms_with_layout(
             }
         }
 
+        // Check if parent is a layout container (before mutable borrow)
+        let (is_in_vlayout, is_in_hlayout, is_child_of_layout) = {
+            if let Some(element) = elements.get(current_id) {
+                let pid = element.get_parent();
+                let in_v = if !pid.is_nil() {
+                    if let Some(parent) = elements.get(&pid) {
+                        matches!(parent, UIElement::Layout(layout) if layout.container.mode == ContainerMode::Vertical)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                let in_h = if !pid.is_nil() {
+                    if let Some(parent) = elements.get(&pid) {
+                        matches!(parent, UIElement::Layout(layout) if layout.container.mode == ContainerMode::Horizontal)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                let is_child = in_v || in_h || (if !pid.is_nil() {
+                    if let Some(parent) = elements.get(&pid) {
+                        matches!(parent, UIElement::Layout(_) | UIElement::GridLayout(_))
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                });
+                (in_v, in_h, is_child)
+            } else {
+                (false, false, false)
+            }
+        };
+
         // Re-borrow for the rest of the function
         if let Some(element) = elements.get_mut(current_id) {
             // Calculate actual text size for text elements (before anchoring)
@@ -1081,6 +1217,7 @@ pub fn update_global_transforms_with_layout(
 
             // STEP 1: Layout positioning (if this element is in a layout)
             let mut layout_offset = Vector2::new(0.0, 0.0);
+            
             if let Some(&layout_pos) = layout_positions.get(current_id) {
                 layout_offset = layout_pos;
             } else {
@@ -1155,9 +1292,19 @@ pub fn update_global_transforms_with_layout(
                     // Center - no offset needed
                     FurAnchor::Center => (0.0, 0.0),
                 };
-                layout_offset.x = anchor_x;
-                layout_offset.y = anchor_y;
                 
+                // If parent is a VLayout, children should be centered horizontally (x = 0)
+                // If parent is an HLayout, children should be centered vertically (y = 0)
+                if is_in_vlayout {
+                    layout_offset.x = 0.0; // Center horizontally in VLayout
+                    layout_offset.y = anchor_y; // Use anchor for vertical positioning
+                } else if is_in_hlayout {
+                    layout_offset.x = anchor_x; // Use anchor for horizontal positioning
+                    layout_offset.y = 0.0; // Center vertically in HLayout
+                } else {
+                    layout_offset.x = anchor_x;
+                    layout_offset.y = anchor_y;
+                }
              
             }
 
@@ -1480,7 +1627,7 @@ fn collect_dirty_with_ancestors(
 }
 
 // Updated render function with caching and dirty element optimization
-pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
+pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn crate::script::ScriptProvider>) {
     let cache = get_layout_cache();
     
     // Get timestamp from UINode's base node
@@ -1498,18 +1645,28 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics) {
         
         if needs_load {
             if let Some(ref fur_path_str) = current_fur_path_str {
-                // Try to load the fur file
-                use crate::apply_fur::{parse_fur_file, build_ui_elements_from_fur};
-                match parse_fur_file(fur_path_str) {
-                    Ok(ast) => {
-                        let fur_elements: Vec<crate::fur_ast::FurElement> = ast
-                            .into_iter()
-                            .filter_map(|f| match f {
-                                crate::fur_ast::FurNode::Element(el) => Some(el),
-                                _ => None,
-                            })
-                            .collect();
-                        
+                // Try to load the fur file using the provider if available, otherwise fall back to parse_fur_file
+                use crate::apply_fur::build_ui_elements_from_fur;
+                let fur_elements_result = if let Some(provider) = provider {
+                    // Use provider to load FUR (works in both dev and release mode)
+                    provider.load_fur_data(fur_path_str)
+                } else {
+                    // Fallback: use parse_fur_file directly (for backwards compatibility)
+                    use crate::apply_fur::parse_fur_file;
+                    parse_fur_file(fur_path_str)
+                        .map(|ast| {
+                            ast.into_iter()
+                                .filter_map(|f| match f {
+                                    crate::fur_ast::FurNode::Element(el) => Some(el),
+                                    _ => None,
+                                })
+                                .collect::<Vec<crate::fur_ast::FurElement>>()
+                        })
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                };
+                
+                match fur_elements_result {
+                    Ok(fur_elements) => {
                         if !fur_elements.is_empty() {
                             build_ui_elements_from_fur(ui_node, &fur_elements);
                             ui_node.loaded_fur_path = Some(std::borrow::Cow::Owned(fur_path_str.clone()));

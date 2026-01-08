@@ -34,65 +34,6 @@ pub extern "C" fn scripts_root_rs_create_script() -> *mut dyn ScriptObject {
 
 
 impl RootScript {
-
- fn ensure_runtime_exe_in_version_dir(
-    &self,
-    api: &mut ScriptApi, // Ensure this is &mut ScriptApi
-    target_version: &str,
-    target_exe_name: &str, // e.g., "perro_runtime.exe"
-) -> Result<PathBuf, String> {
-    let version_editor_path_str = format!("user://versions/{}/editor/", target_version);
-    let resolved_version_dir_path = api
-        .resolve_path(&version_editor_path_str)
-        .ok_or_else(|| format!("Failed to resolve path for {}", version_editor_path_str))?;
-    let version_editor_dir = PathBuf::from(&resolved_version_dir_path);
-
-    // --- THIS IS THE CORRECTED LINE ---
-    let expected_runtime_path = version_editor_dir.join(target_exe_name);
-    // --- END CORRECTED LINE ---
-
-    // Step 1: Check if the file already exists on disk
-    if expected_runtime_path.exists() {
-        eprintln!(
-            "✅ Runtime executable found on disk: {}",
-            expected_runtime_path.display()
-        );
-        return Ok(expected_runtime_path);
-    }
-
-    eprintln!(
-        "⚠️  Runtime executable NOT found at {}. Attempting to extract from embedded resources...",
-        expected_runtime_path.display()
-    );
-
-    // Step 2: If not found, load it from the editor's embedded resources
-    let embedded_runtime_asset_path = format!("res://runtime/{target_exe_name}");
-    let runtime_bytes = api.load_asset(&embedded_runtime_asset_path)
-        .ok_or_else(|| {
-            format!(
-                "❌ Failed to load embedded runtime asset: {}",
-                embedded_runtime_asset_path
-            )
-        })?;
-
-    // --- CRITICAL DEBUGGING OUTPUT HERE ---
-    let path_to_save_str = expected_runtime_path.to_string_lossy();
-
-
-    // Step 4: Save the bytes to the expected location on disk
-    api.save_asset(&path_to_save_str, runtime_bytes) // Use the debug string here
-        .map_err(|e| { // Map the io::Error to a String error for the Result
-            format!(
-                "❌ Failed to save runtime executable to {}: {}", // Include the io::Error details here
-                expected_runtime_path.display(),
-                e // This `e` is the io::Error
-            )
-        })?;
-
-    // ... rest of the function
-    Ok(expected_runtime_path)
-}
-
     /// Find executable in directory
     fn find_exe_in_dir(&self, dir: &Path) -> Option<PathBuf> {
         std::fs::read_dir(dir)
@@ -155,7 +96,7 @@ impl RootScript {
 
     /// Launch a version and exit current process
     fn launch_version(&self, version_path: &Path) -> Result<(), String> {
-        eprintln!("🚀 Launching {} and exiting", version_path.display());
+        // [stripped for release] eprintln!("🚀 Launching {} and exiting", version_path.display());
 
         let parent_dir = version_path
             .parent()
@@ -197,19 +138,24 @@ impl RootScript {
             let expected_exe = expected.join(&exe_name);
             
             if exe_path != expected_exe {
-                eprintln!("⚠️  Not running from correct location!");
-                eprintln!("   Current: {}", exe_path.display());
-                eprintln!("   Expected: {}", expected_exe.display());
-                
+                // [stripped for release] eprintln!("⚠️  Not running from correct location!");
+
+                // [stripped for release] eprintln!("   Current: {}", exe_path.display());
+
+                // [stripped for release] eprintln!("   Expected: {}", expected_exe.display());
+
                 std::fs::create_dir_all(&expected).ok();
                 
                 if std::fs::copy(exe_path, &expected_exe).is_ok() {
-                    eprintln!("✅ Copied to correct location, relaunching...");
+                    // [stripped for release] eprintln!("✅ Copied to correct location, relaunching...");
+
                     if self.launch_version(&expected_exe).is_err() {
-                        eprintln!("❌ Failed to launch from correct location");
+                        // [stripped for release] eprintln!("❌ Failed to launch from correct location");
+
                     }
                 } else {
-                    eprintln!("❌ Failed to copy to correct location");
+                    // [stripped for release] eprintln!("❌ Failed to copy to correct location");
+
                 }
             }
         }
@@ -218,7 +164,38 @@ impl RootScript {
 
 impl Script for RootScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
-api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
+        // Check for --editor PATH runtime param
+        // If present, switch to editor mode and load editor.scn
+        let project_path_opt = api.project().get_runtime_param("editor").map(|s| s.to_string());
+        if let Some(project_path) = project_path_opt {
+            // [stripped for release] eprintln!("📂 Editor mode detected! Project path: {}", project_path);
+
+            api.print(&format!("📂 Editor mode: Loading project at {}", project_path));
+            
+            // Set the main scene to editor.scn
+            api.project().set_main_scene("res://editor.scn");
+            
+            // Verify the change was applied (extract value first to avoid borrow issues)
+            let new_main_scene = api.project().main_scene().to_string();
+            // [stripped for release] eprintln!("✅ Main scene set to: {}", new_main_scene);
+
+            api.print(&format!("✅ Main scene set to: {}", new_main_scene));
+            
+            // Store the project path as a runtime param for editor scripts to use
+            api.project().set_runtime_param("project_path", &project_path);
+            
+            // Mark that we need to compile scripts (will be done after window shows up)
+            api.project().set_runtime_param("needs_initial_compile", "true");
+            
+            api.print("✅ Switched to editor mode");
+        } else {
+            // Manager mode: use default manager.scn (set in project.toml)
+            let current_main_scene = api.project().main_scene().to_string();
+            // [stripped for release] eprintln!("📁 Manager mode: Project selection (main_scene: {})", current_main_scene);
+
+            api.print(&format!("📁 Manager mode: Project selection (main_scene: {})", current_main_scene));
+        }
+
        let my_version = api.project().version().to_string();
         let current_exe_path = std::env::current_exe().expect("Could not get exe path");
         let current_exe_name = current_exe_path
@@ -227,7 +204,7 @@ api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
             .to_string_lossy()
             .to_string(); // e.g., "perro_editor.exe"
 
-        eprintln!("🎮 Perro Engine v{}", my_version);
+        // [stripped for release] eprintln!("🎮 Perro Engine v{}", my_version);
 
         let file = api.JSON.stringify(&json!({
             "name": "EXPORT MODE BITCH",
@@ -238,58 +215,33 @@ api.print_info(format!("attributes of b: {:?}", self.attributes_of("a")));
 
         // Skip version management in debug builds
         if cfg!(debug_assertions) {
-            eprintln!("🐛 Debug build: skipping version management");
+            // [stripped for release] eprintln!("🐛 Debug build: skipping version management");
+
             return;
         }
 
-        // --- NEW LOGIC FOR RUNTIME.EXE EXTRACTION ---
-        // Ensure the perro_runtime.exe is available on disk at the *current* engine's version path
-        // before proceeding with any version checks.
-        let target_runtime_exe_name = "PerroDevRuntime.exe"; // The actual name of the runtime binary
-        match self.ensure_runtime_exe_in_version_dir(
-            api,
-            &my_version,
-            target_runtime_exe_name,
-        ) {
-            Ok(runtime_on_disk_path) => {
-                eprintln!(
-                    "✅ Perro Dev Runtime confirmed at: {}",
-                    runtime_on_disk_path.display()
-                );
-            }
-            Err(e) => {
-                // Now this `eprintln!` will be hit and show the full error from save_asset!
-                eprintln!("❌ CRITICAL ERROR: Failed to ensure perro_runtime.exe: {}", e);
-            }
-        }
-        // --- END NEW LOGIC ---
-
         // Step 1: Ensure we're in the correct location (fast filesystem check)
         self.ensure_correct_location(api, &my_version, &current_exe_path);
-        eprintln!("✅ Running from correct location");
+        // [stripped for release] eprintln!("✅ Running from correct location");
 
         // Step 2: Check if higher local version exists (fast filesystem check)
         if let Some(higher_version) = self.find_highest_local_version(api, &my_version) {
-            eprintln!("🚀 Found higher local version: {} -> {}", my_version, higher_version);
-            eprintln!("   Relaunching with newer version...");
-            
+            // [stripped for release] eprintln!("🚀 Found higher local version: {} -> {}", my_version, higher_version);
+
+            // [stripped for release] eprintln!("   Relaunching with newer version...");
+
             if let Err(e) = self.launch_version_from_proper_location(api, &higher_version) {
-                eprintln!("❌ Failed to launch higher version: {}", e);
-                eprintln!("   Continuing with current version");
+                // [stripped for release] eprintln!("❌ Failed to launch higher version: {}", e);
+
+                // [stripped for release] eprintln!("   Continuing with current version");
+
             }
         } else {
-            eprintln!("✅ Running highest local version: {}", my_version);
+            // [stripped for release] eprintln!("✅ Running highest local version: {}", my_version);
+
         }
 
         // Window will open immediately - updater script handles network checks
-    }
-
-    fn update(&mut self, api: &mut ScriptApi<'_>) {
-
-      
-        // In your script struct
-let mut was_mouse_down = false;
-
     }
 }
 
@@ -382,7 +334,7 @@ impl ScriptObject for RootScript {
     }
     
     fn script_flags(&self) -> ScriptFlags {
-        ScriptFlags::new(3)
+        ScriptFlags::new(1)
     }
 }
 
@@ -407,19 +359,6 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut RootScript, &[Value], &mut ScriptApi<'_>),
 > = phf::phf_map! {
-        2294572407279198284u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
-let // Ensure this is &mut ScriptApi
-    target_version = params.get(0)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-let target_exe_name = params.get(1)
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-            script.ensure_runtime_exe_in_version_dir(api, &// Ensure this is &mut ScriptApi
-    target_version, &target_exe_name);
-        },
         8474883865169775633u64 => | script: &mut RootScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let __path_buf_dir = params.get(0)
                             .and_then(|v| v.as_str())

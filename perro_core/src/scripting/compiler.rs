@@ -313,22 +313,23 @@ impl Compiler {
     }
 
     fn build_command(&self, profile: &BuildProfile) -> Result<Command, String> {
-        let mut cmd = if self.from_source {
+        let (mut cmd, toolchain_dir) = if self.from_source {
             eprintln!("🔧 Using system cargo (source code mode)");
-            Command::new("cargo")
+            (Command::new("cargo"), None)
         } else {
             // Try to use toolchain cargo, fallback to system
             if let Some(cargo_path) = self.get_cargo_path() {
                 if cargo_path.exists() {
                     eprintln!("✅ Using toolchain cargo: {}", cargo_path.display());
-                    Command::new(cargo_path)
+                    let toolchain_dir = self.get_toolchain_dir();
+                    (Command::new(cargo_path), toolchain_dir)
                 } else {
                     eprintln!("⚠️  Toolchain cargo not found, using system cargo");
-                    Command::new("cargo")
+                    (Command::new("cargo"), None)
                 }
             } else {
                 eprintln!("🔧 Using system cargo (no custom toolchain)");
-                Command::new("cargo")
+                (Command::new("cargo"), None)
             }
         };
 
@@ -344,13 +345,527 @@ impl Compiler {
         cmd.arg("--manifest-path")
             .arg(&self.crate_manifest_path)
             .arg("-j")
-            .arg(num_cpus.to_string())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .arg(num_cpus.to_string());
+        
+        // Hide console window in release mode (when not from_source)
+        // In dev mode, we want to see cargo output for debugging
+        if !self.from_source && !cfg!(debug_assertions) {
+            // Release mode: hide console window
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+            cmd.stdout(Stdio::null());
+            cmd.stderr(Stdio::null());
+        } else {
+            // Dev mode: show output
+            cmd.stdout(Stdio::inherit());
+            cmd.stderr(Stdio::inherit());
+        }
         
         // Set working directory to the manifest directory so relative paths resolve correctly
         if let Some(manifest_dir) = self.crate_manifest_path.parent() {
             cmd.current_dir(manifest_dir);
+        }
+
+        // When using toolchain cargo, add rustc to PATH and set up environment for standard library
+        if let Some(ref toolchain_dir) = toolchain_dir {
+            eprintln!("📂 Toolchain directory: {}", toolchain_dir.display());
+            let rustc_bin_dir = toolchain_dir.join("rustc").join("bin");
+            if rustc_bin_dir.exists() {
+                // Get current PATH
+                let mut path_entries = Vec::new();
+                path_entries.push(rustc_bin_dir.display().to_string());
+                
+                // On Windows with GNU target, set up MinGW for both linking and C compilation
+                #[cfg(target_os = "windows")]
+                {
+                    // First, check for bundled GCC compiler (w64devkit) for C/C++ compilation
+                    let bundled_mingw_bin = toolchain_dir.join("mingw").join("bin");
+                    let bundled_gcc = bundled_mingw_bin.join("gcc.exe");
+                    
+                    if bundled_gcc.exists() {
+                        eprintln!("✅ Found bundled GCC compiler at: {}", bundled_mingw_bin.display());
+                        path_entries.push(bundled_mingw_bin.display().to_string());
+                        
+                        // Set CC and CXX environment variables for build scripts
+                        cmd.env("CC", &bundled_gcc);
+                        cmd.env("CXX", bundled_mingw_bin.join("g++.exe"));
+                        cmd.env("CC_x86_64-pc-windows-gnu", &bundled_gcc);
+                        cmd.env("CXX_x86_64-pc-windows-gnu", bundled_mingw_bin.join("g++.exe"));
+                        eprintln!("✅ Set CC={}", bundled_gcc.display());
+                        eprintln!("✅ Set CXX={}", bundled_mingw_bin.join("g++.exe").display());
+                    } else {
+                        eprintln!("⚠️  Bundled GCC compiler not found (mingw/bin/gcc.exe)");
+                        eprintln!("ℹ️  C/C++ compilation in build scripts will not work without it");
+                    }
+                    
+                    // Also add self-contained MinGW linker to PATH (for linking Rust code)
+                    let rust_mingw_dir = toolchain_dir.join("rust-mingw");
+                    let possible_mingw_bins = vec![
+                        rust_mingw_dir.join("lib").join("rustlib").join("x86_64-pc-windows-gnu").join("bin").join("self-contained"),
+                        rust_mingw_dir.join("lib").join("self-contained"),
+                        rust_mingw_dir.join("bin"),
+                    ];
+                    
+                    for mingw_bin in &possible_mingw_bins {
+                        if mingw_bin.exists() {
+                            eprintln!("✅ Found MinGW linker at: {}", mingw_bin.display());
+                            // Add to PATH but AFTER bundled GCC so bundled GCC is used for compilation
+                            // The linker from rust-mingw is still used for linking Rust code
+                            path_entries.push(mingw_bin.display().to_string());
+                            
+                            // Set LIBRARY_PATH so the linker can find the libraries and C runtime files
+                            let mut library_paths = vec![mingw_bin.display().to_string()];
+                            
+                            // Add lib/self-contained directory which contains all MinGW libraries
+                            // This is at rust-mingw/lib/rustlib/x86_64-pc-windows-gnu/lib/self-contained
+                            if let Some(bin_dir) = mingw_bin.parent() {
+                                if let Some(base_dir) = bin_dir.parent() {
+                                    let lib_self_contained = base_dir.join("lib").join("self-contained");
+                                    if lib_self_contained.exists() {
+                                        library_paths.push(lib_self_contained.display().to_string());
+                                        eprintln!("✅ Added lib/self-contained to LIBRARY_PATH: {}", lib_self_contained.display());
+                                    }
+                                }
+                            }
+                            
+                            // Also add bundled MinGW lib directories if they exist
+                            if bundled_gcc.exists() {
+                                let bundled_lib = toolchain_dir.join("mingw").join("lib");
+                                if bundled_lib.exists() {
+                                    library_paths.push(bundled_lib.display().to_string());
+                                    eprintln!("✅ Added bundled MinGW lib to LIBRARY_PATH: {}", bundled_lib.display());
+                                }
+                            }
+                            
+                            let current_lib_path = std::env::var("LIBRARY_PATH").unwrap_or_default();
+                            let lib_path_separator = if cfg!(target_os = "windows") { ";" } else { ":" };
+                            let new_lib_path = if current_lib_path.is_empty() {
+                                library_paths.join(lib_path_separator)
+                            } else {
+                                format!("{}{}{}", library_paths.join(lib_path_separator), lib_path_separator, current_lib_path)
+                            };
+                            cmd.env("LIBRARY_PATH", &new_lib_path);
+                            eprintln!("✅ Set LIBRARY_PATH to: {}", new_lib_path);
+                            break;
+                        }
+                    }
+                }
+                
+                // Prepend all toolchain paths to PATH
+                // Prepend toolchain paths to PATH
+                // The self-contained MinGW is prepended first, so linking will use it
+                // We don't filter PATH - if system MinGW exists, it might be used for C compilation
+                // but since we don't set CC, build scripts won't try to use the linker-only gcc for compilation
+                let current_path = std::env::var("PATH").unwrap_or_default();
+                let path_separator = if cfg!(target_os = "windows") { ";" } else { ":" };
+                
+                let filtered_path: Vec<String> = current_path
+                    .split(&path_separator)
+                    .filter(|path| !path.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
+                
+                let filtered_path_str = filtered_path.join(&path_separator);
+                let new_path = format!("{}{}{}", path_entries.join(&path_separator), path_separator, filtered_path_str);
+                cmd.env("PATH", &new_path);
+                eprintln!("✅ Set PATH with toolchain paths prepended");
+                
+                // Also set RUSTC explicitly to be safe
+                let rustc_exe = rustc_bin_dir.join(if cfg!(target_os = "windows") { "rustc.exe" } else { "rustc" });
+                if rustc_exe.exists() {
+                    cmd.env("RUSTC", &rustc_exe);
+                }
+                
+                // Set sysroot so rustc can find the standard library
+                // The sysroot is the directory containing lib/rustlib/
+                // For standalone toolchains, check if standard library is merged or in rust-std subdirectory
+                let target_triple = if cfg!(target_os = "windows") {
+                    "x86_64-pc-windows-gnu"
+                } else if cfg!(target_os = "macos") {
+                    "x86_64-apple-darwin"
+                } else {
+                    "x86_64-unknown-linux-gnu"
+                };
+                
+                // Determine where the standard library is located
+                // The standard library structure in extracted toolchains:
+                // - rust-std-<target>/lib/rustlib/<target>/lib/ contains the std library files
+                // - The sysroot should be the rust-std-<target> directory itself
+                let rust_std_dir = toolchain_dir.join(format!("rust-std-{}", target_triple));
+                let rust_std_lib = rust_std_dir.join("lib").join("rustlib").join(target_triple).join("lib");
+                
+                // Also check if it's been merged into the main toolchain structure
+                let merged_std_lib = toolchain_dir.join("lib").join("rustlib").join(target_triple).join("lib");
+                
+                // Helper to check if a directory exists and has files
+                let has_files = |path: &Path| -> bool {
+                    path.exists() && 
+                    std::fs::read_dir(path)
+                        .map(|d| d.count() > 0)
+                        .unwrap_or(false)
+                };
+                
+                // Check both locations
+                let rust_std_has_files = has_files(&rust_std_lib);
+                let merged_has_files = has_files(&merged_std_lib);
+                
+                // Determine sysroot - ALWAYS prefer rust-std directory if it exists with files
+                // This is the standard location in extracted toolchains
+                let sysroot = if rust_std_has_files {
+                    // Standard library is in rust-std subdirectory (normal case for extracted toolchains)
+                    eprintln!("📦 Standard library found in rust-std subdirectory");
+                    eprintln!("   Location: {}", rust_std_lib.display());
+                    eprintln!("   Using sysroot: {}", rust_std_dir.display());
+                    dunce::canonicalize(&rust_std_dir)
+                        .unwrap_or_else(|_| rust_std_dir.clone())
+                } else if merged_has_files {
+                    // Standard library has been merged into main toolchain structure
+                    eprintln!("📦 Standard library found in merged location");
+                    eprintln!("   Location: {}", merged_std_lib.display());
+                    eprintln!("   Using sysroot: {}", toolchain_dir.display());
+                    dunce::canonicalize(toolchain_dir)
+                        .unwrap_or_else(|_| toolchain_dir.clone())
+                } else {
+                    // Neither location has files - this is an error condition
+                    eprintln!("❌ ERROR: Standard library not found in expected locations!");
+                    eprintln!("   Checked rust-std: {} (exists: {}, has files: {})", 
+                        rust_std_lib.display(), rust_std_lib.exists(), rust_std_has_files);
+                    eprintln!("   Checked merged: {} (exists: {}, has files: {})", 
+                        merged_std_lib.display(), merged_std_lib.exists(), merged_has_files);
+                    eprintln!("   Toolchain directory: {}", toolchain_dir.display());
+                    eprintln!("   Attempting to list toolchain contents...");
+                    
+                    // Diagnostic: list what's actually in the toolchain directory
+                    if let Ok(entries) = std::fs::read_dir(toolchain_dir) {
+                        let mut dirs = Vec::new();
+                        for entry in entries.flatten() {
+                            if entry.path().is_dir() {
+                                dirs.push(entry.file_name().to_string_lossy().to_string());
+                            }
+                        }
+                        dirs.sort();
+                        eprintln!("   Directories found: {}", dirs.join(", "));
+                    }
+                    
+                    // Fallback to toolchain root (will likely fail, but at least we tried)
+                    eprintln!("   ⚠️  Falling back to toolchain root as sysroot (this may not work)");
+                    dunce::canonicalize(toolchain_dir)
+                        .unwrap_or_else(|_| toolchain_dir.clone())
+                };
+                
+                // Create a .cargo/config.toml file to set the sysroot
+                // This avoids RUSTFLAGS parsing issues with spaces in paths
+                if let Some(manifest_dir) = self.crate_manifest_path.parent() {
+                    let cargo_config_dir = manifest_dir.join(".cargo");
+                    let cargo_config_file = cargo_config_dir.join("config.toml");
+                    
+                    // Create .cargo directory if it doesn't exist
+                    if let Err(e) = std::fs::create_dir_all(&cargo_config_dir) {
+                        eprintln!("⚠️  Warning: Failed to create .cargo directory: {}", e);
+                    } else {
+                        // Write config.toml with sysroot setting
+                        // Use TOML format with proper escaping for Windows paths
+                        let sysroot_str = sysroot.to_string_lossy();
+                        eprintln!("🔧 Setting sysroot in .cargo/config.toml: {}", sysroot_str);
+                        
+                        // For TOML, we need to escape backslashes and use forward slashes or raw strings
+                        // Actually, TOML strings can use forward slashes or we can use raw strings
+                        // Let's use forward slashes for Windows paths in TOML (Cargo accepts this)
+                        let toml_path = sysroot_str.replace('\\', "/");
+                        
+                        // ALWAYS set RUSTC_SYSROOT as environment variable - this is the most reliable way
+                        // Use the actual PathBuf to ensure correct path format for Windows
+                        // RUSTC_SYSROOT avoids path parsing issues with spaces, unlike RUSTFLAGS
+                        let sysroot_env = sysroot.to_string_lossy().to_string();
+                        cmd.env("RUSTC_SYSROOT", &sysroot_env);
+                        eprintln!("🔧 Set RUSTC_SYSROOT={}", sysroot_env);
+                        
+                        // Don't set --sysroot in RUSTFLAGS when RUSTC_SYSROOT is set, as it causes
+                        // parsing issues with paths containing spaces. RUSTC_SYSROOT is sufficient.
+                        // RUSTFLAGS will be set via config.toml instead, which handles paths correctly.
+                        
+                        // Build config content with sysroot and linker configuration
+                        // Start with [build] section
+                        let mut config_content = format!(
+                            "[build]\nrustflags = [\"--sysroot\", \"{}\"]\n\n",
+                            toml_path
+                        );
+                        
+                        // On Windows with GNU target, configure the linker and library paths
+                        #[cfg(target_os = "windows")]
+                        {
+                            let rust_mingw_dir = toolchain_dir.join("rust-mingw");
+                            // Check multiple possible locations for MinGW gcc
+                            let possible_mingw_bins = vec![
+                                rust_mingw_dir.join("lib").join("rustlib").join("x86_64-pc-windows-gnu").join("bin").join("self-contained"),
+                                rust_mingw_dir.join("lib").join("self-contained"),
+                                rust_mingw_dir.join("bin"),
+                            ];
+                            
+                            let mut found_linker = false;
+                            for mingw_bin in &possible_mingw_bins {
+                                if mingw_bin.exists() {
+                                    let gcc_exe = mingw_bin.join("x86_64-w64-mingw32-gcc.exe");
+                                    if gcc_exe.exists() {
+                                        let linker_path = gcc_exe.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+                                        
+                                        // The libraries are in the same self-contained directory as the gcc executable
+                                        // Also check for lib subdirectory in rust-mingw
+                                        // C runtime object files (crt2.o, crtbegin.o, crtend.o) are typically in:
+                                        // 1. Same directory as gcc (self-contained)
+                                        // 2. lib subdirectory of self-contained directory
+                                        // 3. lib/gcc/x86_64-w64-mingw32/<version>/ directory
+                                        // 4. lib subdirectory relative to gcc
+                                        let mut lib_paths = vec![
+                                            mingw_bin.clone(), // Same directory as gcc (contains crt*.o files)
+                                            rust_mingw_dir.join("lib").join("rustlib").join("x86_64-pc-windows-gnu").join("lib").join("self-contained"),
+                                        ];
+                                        
+                                        // Check for lib subdirectory within the self-contained directory
+                                        let self_contained_lib = mingw_bin.join("lib");
+                                        if self_contained_lib.exists() {
+                                            lib_paths.push(self_contained_lib);
+                                        }
+                                        
+                                        // The lib/self-contained directory is already in lib_paths above
+                                        // This contains all the MinGW libraries (.a files)
+                                        // C runtime files (crt2.o, crtbegin.o, crtend.o) may be embedded
+                                        // in the libraries or provided by the linker in the self-contained setup
+                                        
+                                        // Check for C runtime files in the gcc directory for diagnostics
+                                        let crt_files = ["crt2.o", "crtbegin.o", "crtend.o"];
+                                        let mut found_crt_files = Vec::new();
+                                        for crt_file in &crt_files {
+                                            let crt_path = mingw_bin.join(crt_file);
+                                            if crt_path.exists() {
+                                                found_crt_files.push(crt_file);
+                                            }
+                                        }
+                                        if !found_crt_files.is_empty() {
+                                            eprintln!("✅ Found C runtime files in {}: {:?}", mingw_bin.display(), found_crt_files);
+                                        } else {
+                                            eprintln!("⚠️  C runtime files not found in {} (will search other paths)", mingw_bin.display());
+                                        }
+                                        
+                                        // Build rustflags array with sysroot and library search paths
+                                        let mut rustflags_parts = vec![
+                                            format!("\"--sysroot\", \"{}\"", toml_path),
+                                        ];
+                                        
+                                        // Add -B flag to tell gcc where to find its support files
+                                        // This makes gcc look for crt files in the expected relative paths
+                                        // The -B flag should point to the directory containing gcc (bin/self-contained)
+                                        let gcc_base_dir = mingw_bin.to_string_lossy().replace('\\', "/");
+                                        rustflags_parts.push("\"-C\"".to_string());
+                                        rustflags_parts.push(format!("\"link-arg=-B{}\"", gcc_base_dir));
+                                        eprintln!("✅ Added GCC base directory (-B): {}", mingw_bin.display());
+                                        
+                                        // Also add -B flag for bundled MinGW where crt2.o actually is
+                                        // This is critical - crt2.o is in mingw/x86_64-w64-mingw32/lib/
+                                        let bundled_mingw_target_lib = toolchain_dir.join("mingw").join("x86_64-w64-mingw32").join("lib");
+                                        if bundled_mingw_target_lib.exists() {
+                                            let bundled_mingw_target_lib_toml = bundled_mingw_target_lib.to_string_lossy().replace('\\', "/");
+                                            rustflags_parts.push("\"-C\"".to_string());
+                                            rustflags_parts.push(format!("\"link-arg=-B{}\"", bundled_mingw_target_lib_toml));
+                                            eprintln!("✅ Added bundled MinGW target lib base directory (-B): {}", bundled_mingw_target_lib.display());
+                                        }
+                                        
+                                        // Add MinGW library search paths
+                                        for lib_path in &lib_paths {
+                                            if lib_path.exists() {
+                                                let lib_toml_path = lib_path.to_string_lossy().replace('\\', "/");
+                                                rustflags_parts.push("\"-C\"".to_string());
+                                                rustflags_parts.push(format!("\"link-arg=-L{}\"", lib_toml_path));
+                                                eprintln!("✅ Added library search path: {}", lib_path.display());
+                                            }
+                                        }
+                                        
+                                        // Also add bundled MinGW lib directories (contains crt2.o, crtbegin.o, crtend.o)
+                                        // This is critical - the bundled GCC has the C runtime files we need
+                                        // crt2.o is in mingw/x86_64-w64-mingw32/lib/
+                                        let bundled_mingw_target_lib = toolchain_dir.join("mingw").join("x86_64-w64-mingw32").join("lib");
+                                        if bundled_mingw_target_lib.exists() {
+                                            let bundled_mingw_target_lib_toml = bundled_mingw_target_lib.to_string_lossy().replace('\\', "/");
+                                            rustflags_parts.push("\"-C\"".to_string());
+                                            rustflags_parts.push(format!("\"link-arg=-L{}\"", bundled_mingw_target_lib_toml));
+                                            eprintln!("✅ Added bundled MinGW target lib path (contains crt2.o): {}", bundled_mingw_target_lib.display());
+                                        }
+                                        
+                                        // Also add mingw/lib for other libraries
+                                        let bundled_mingw_lib = toolchain_dir.join("mingw").join("lib");
+                                        if bundled_mingw_lib.exists() {
+                                            let bundled_mingw_lib_toml = bundled_mingw_lib.to_string_lossy().replace('\\', "/");
+                                            rustflags_parts.push("\"-C\"".to_string());
+                                            rustflags_parts.push(format!("\"link-arg=-L{}\"", bundled_mingw_lib_toml));
+                                            eprintln!("✅ Added bundled MinGW lib path: {}", bundled_mingw_lib.display());
+                                        }
+                                        
+                                        // Also add bundled MinGW lib/gcc directory if it exists (for crtbegin.o/crtend.o)
+                                        let bundled_mingw_gcc_lib = toolchain_dir.join("mingw").join("lib").join("gcc");
+                                        if bundled_mingw_gcc_lib.exists() {
+                                            // Find the versioned subdirectory (e.g., lib/gcc/x86_64-w64-mingw32/14.1.0/)
+                                            if let Ok(entries) = std::fs::read_dir(&bundled_mingw_gcc_lib) {
+                                                for entry in entries.flatten() {
+                                                    let path = entry.path();
+                                                    if path.is_dir() {
+                                                        if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                                                            for sub_entry in sub_entries.flatten() {
+                                                                let sub_path = sub_entry.path();
+                                                                if sub_path.is_dir() {
+                                                                    let gcc_version_lib_toml = sub_path.to_string_lossy().replace('\\', "/");
+                                                                    rustflags_parts.push("\"-C\"".to_string());
+                                                                    rustflags_parts.push(format!("\"link-arg=-L{}\"", gcc_version_lib_toml));
+                                                                    eprintln!("✅ Added bundled MinGW GCC lib path: {}", sub_path.display());
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Add rust-std library directories where C runtime files are located
+                                        // crt2.o and dllcrt2.o are in lib/rustlib/x86_64-pc-windows-gnu/lib/self-contained
+                                        // rsbegin.o and rsend.o are in lib/rustlib/x86_64-pc-windows-gnu/lib
+                                        // Canonicalize paths to ensure they're absolute and properly formatted
+                                        let rust_std_lib_self_contained = dunce::canonicalize(
+                                            sysroot.join("lib").join("rustlib").join(target_triple).join("lib").join("self-contained")
+                                        ).unwrap_or_else(|_| sysroot.join("lib").join("rustlib").join(target_triple).join("lib").join("self-contained"));
+                                        
+                                        let rust_std_lib = dunce::canonicalize(
+                                            sysroot.join("lib").join("rustlib").join(target_triple).join("lib")
+                                        ).unwrap_or_else(|_| sysroot.join("lib").join("rustlib").join(target_triple).join("lib"));
+                                        
+                                        // Always add these paths - they're needed for crt2.o and other startup files
+                                        // Even if the directory doesn't exist, adding the path won't hurt
+                                        let rust_std_lib_self_contained_toml = rust_std_lib_self_contained.to_string_lossy().replace('\\', "/");
+                                        rustflags_parts.push("\"-C\"".to_string());
+                                        rustflags_parts.push(format!("\"link-arg=-L{}\"", rust_std_lib_self_contained_toml));
+                                        eprintln!("✅ Added rust-std lib/self-contained path: {}", rust_std_lib_self_contained.display());
+                                        
+                                        let rust_std_lib_toml = rust_std_lib.to_string_lossy().replace('\\', "/");
+                                        rustflags_parts.push("\"-C\"".to_string());
+                                        rustflags_parts.push(format!("\"link-arg=-L{}\"", rust_std_lib_toml));
+                                        eprintln!("✅ Added rust-std lib path: {}", rust_std_lib.display());
+                                        
+                                        // Also add to LIBRARY_PATH environment variable for the linker
+                                        // This is critical - the linker needs these paths to find crt2.o
+                                        let current_lib_path = std::env::var("LIBRARY_PATH").unwrap_or_default();
+                                        let lib_path_separator = if cfg!(target_os = "windows") { ";" } else { ":" };
+                                        let mut additional_lib_paths = vec![
+                                            rust_std_lib_self_contained.display().to_string(),
+                                            rust_std_lib.display().to_string(),
+                                        ];
+                                        
+                                        // Add bundled MinGW lib directories to LIBRARY_PATH (contains crt2.o)
+                                        // crt2.o is in x86_64-w64-mingw32/lib/
+                                        if bundled_mingw_target_lib.exists() {
+                                            additional_lib_paths.push(bundled_mingw_target_lib.display().to_string());
+                                        }
+                                        if bundled_mingw_lib.exists() {
+                                            additional_lib_paths.push(bundled_mingw_lib.display().to_string());
+                                        }
+                                        
+                                        let new_lib_path = if current_lib_path.is_empty() {
+                                            additional_lib_paths.join(lib_path_separator)
+                                        } else {
+                                            format!("{}{}{}", additional_lib_paths.join(lib_path_separator), lib_path_separator, current_lib_path)
+                                        };
+                                        cmd.env("LIBRARY_PATH", &new_lib_path);
+                                        eprintln!("✅ Updated LIBRARY_PATH with all paths: {}", new_lib_path);
+                                        
+                                        // Tell Rust to use its own startup files (rsbegin.o, rsend.o, crt2.o)
+                                        // instead of looking for GCC's crtbegin.o and crtend.o which don't exist
+                                        rustflags_parts.push("\"-C\"".to_string());
+                                        rustflags_parts.push("\"link-self-contained=yes\"".to_string());
+                                        eprintln!("✅ Added link-self-contained=yes to use Rust's startup files");
+                                        
+                                        // Write target section with both linker and rustflags
+                                        // Format rustflags as a multi-line array for better readability
+                                        let rustflags_formatted = rustflags_parts
+                                            .iter()
+                                            .map(|s| format!("    {}", s))
+                                            .collect::<Vec<_>>()
+                                            .join(",\n");
+                                        config_content.push_str(&format!(
+                                            "[target.{}]\nlinker = \"{}\"\nrustflags = [\n{}\n]\n",
+                                            target_triple, linker_path, rustflags_formatted
+                                        ));
+                                        eprintln!("✅ Configured MinGW linker: {}", gcc_exe.display());
+                                        for lib_path in &lib_paths {
+                                            if lib_path.exists() {
+                                                eprintln!("✅ Added MinGW library path: {}", lib_path.display());
+                                            }
+                                        }
+                                        found_linker = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // If no MinGW linker found, still add target section with just rustflags
+                            if !found_linker {
+                                config_content.push_str(&format!(
+                                    "[target.{}]\nrustflags = [\"--sysroot\", \"{}\"]\n",
+                                    target_triple, toml_path
+                                ));
+                            }
+                        }
+                        
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            // For non-Windows, just add target section with rustflags
+                            config_content.push_str(&format!(
+                                "[target.{}]\nrustflags = [\"--sysroot\", \"{}\"]\n",
+                                target_triple, toml_path
+                            ));
+                        }
+                        
+                        eprintln!("📝 Writing .cargo/config.toml with content:\n{}", config_content);
+                        
+                        if let Err(e) = std::fs::write(&cargo_config_file, config_content) {
+                            eprintln!("⚠️  Warning: Failed to write .cargo/config.toml: {}", e);
+                            eprintln!("   RUSTC_SYSROOT is already set, which should be sufficient");
+                            // RUSTC_SYSROOT is already set above, so we don't need to set RUSTFLAGS
+                            // Setting --sysroot in RUSTFLAGS would cause parsing issues with paths containing spaces
+                        } else {
+                            eprintln!("🔧 Created .cargo/config.toml with sysroot: {}", sysroot.display());
+                            // RUSTC_SYSROOT is already set above, which is the most reliable method
+                        }
+                    }
+                }
+                
+                // Verify standard library exists and log for debugging
+                // rustc expects it at <sysroot>/lib/rustlib/<target>/lib/
+                let expected_std_lib = sysroot.join("lib").join("rustlib").join(target_triple).join("lib");
+                
+                let std_lib_has_files = expected_std_lib.exists() && 
+                    std::fs::read_dir(&expected_std_lib)
+                        .map(|d| d.count() > 0)
+                        .unwrap_or(false);
+                
+                if std_lib_has_files {
+                    eprintln!("✅ Standard library found at: {}", expected_std_lib.display());
+                } else {
+                    eprintln!("⚠️  Warning: Standard library directory not found or empty: {}", expected_std_lib.display());
+                    eprintln!("   This may cause 'can't find crate for core' errors");
+                    eprintln!("   Sysroot: {}", sysroot.display());
+                    eprintln!("   Expected location: <sysroot>/lib/rustlib/{}/lib/", target_triple);
+                    
+                    // Also check the rust-std location for diagnostic purposes
+                    let rust_std_check = toolchain_dir.join(format!("rust-std-{}", target_triple))
+                        .join("lib").join("rustlib").join(target_triple).join("lib");
+                    if rust_std_check.exists() {
+                        eprintln!("   💡 Note: Standard library exists at: {}", rust_std_check.display());
+                        eprintln!("   💡 Consider merging it or using rust-std directory as sysroot");
+                    }
+                }
+            } else {
+                eprintln!("⚠️  Warning: rustc bin directory not found in toolchain: {}", rustc_bin_dir.display());
+            }
         }
 
         // Set CARGO_TARGET_DIR to control where cargo builds
@@ -758,6 +1273,21 @@ impl Compiler {
         let main_file_path = src_dir.join("main.rs");
         let mut main_file = File::create(&main_file_path)?;
 
+        // Check if this is the editor project (by checking project name or path)
+        let is_editor = {
+            // Check project name
+            if let Ok(project) = crate::manifest::Project::load(Some(&self.project_root)) {
+                project.name() == "Perro Engine" || 
+                self.project_root.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n == "perro_editor")
+                    .unwrap_or(false)
+            } else {
+                // Fallback: check if path contains "perro_editor"
+                self.project_root.to_string_lossy().contains("perro_editor")
+            }
+        };
+
         // Add windows_subsystem attribute only for non-verbose project builds
         if !matches!(self.target, CompileTarget::VerboseProject) {
             writeln!(
@@ -794,14 +1324,70 @@ impl Compiler {
         )?;
         writeln!(main_file, "}}")?;
         writeln!(main_file, "")?;
-        writeln!(
-            main_file,
-            "use perro_core::runtime::{{run_game, RuntimeData, StaticAssets}};"
-        )?;
+        
+        if is_editor {
+            writeln!(
+                main_file,
+                "use perro_core::runtime::{{run_game, run_dev_with_path, RuntimeData, StaticAssets}};"
+            )?;
+            writeln!(main_file, "use std::env;")?;
+        } else {
+            writeln!(
+                main_file,
+                "use perro_core::runtime::{{run_game, RuntimeData, StaticAssets}};"
+            )?;
+        }
+        
         writeln!(main_file, "")?;
         writeln!(main_file, "mod static_assets;")?;
         writeln!(main_file, "")?;
         writeln!(main_file, "fn main() {{")?;
+        
+        if is_editor {
+            writeln!(main_file, "    // Editor-specific: Check if --path argument is present - if so, run in dev mode")?;
+            writeln!(main_file, "    // This allows the editor to spawn itself to run a project in dev mode")?;
+            writeln!(main_file, "    let args: Vec<String> = env::args().collect();")?;
+            writeln!(main_file, "    if let Some(i) = args.iter().position(|a| a == \"--path\") {{")?;
+            writeln!(main_file, "        if let Some(path_arg) = args.get(i + 1) {{")?;
+            writeln!(main_file, "            // Resolve the path to an absolute PathBuf")?;
+            writeln!(main_file, "            let project_path = if std::path::Path::new(path_arg).is_absolute() {{")?;
+            writeln!(main_file, "                std::path::PathBuf::from(path_arg)")?;
+            writeln!(main_file, "            }} else {{")?;
+            writeln!(main_file, "                match std::fs::canonicalize(path_arg) {{")?;
+            writeln!(main_file, "                    Ok(abs_path) => abs_path,")?;
+            writeln!(main_file, "                    Err(_) => {{")?;
+            writeln!(main_file, "                        env::current_dir()")?;
+            writeln!(main_file, "                            .expect(\"Failed to get current directory\")")?;
+            writeln!(main_file, "                            .join(path_arg)")?;
+            writeln!(main_file, "                    }}")?;
+            writeln!(main_file, "                }}")?;
+            writeln!(main_file, "            }};")?;
+            writeln!(main_file, "")?;
+            writeln!(main_file, "            // Run in dev mode with the specified project path")?;
+            writeln!(main_file, "            // All other --arg val pairs will be parsed and added as runtime params")?;
+            writeln!(main_file, "            run_dev_with_path(project_path);")?;
+            writeln!(main_file, "            return;")?;
+            writeln!(main_file, "        }}")?;
+            writeln!(main_file, "    }}")?;
+            writeln!(main_file, "")?;
+        }
+        
+        writeln!(main_file, "    // Parse command-line arguments into runtime parameters")?;
+        writeln!(main_file, "    // Format: --key value (all --arg val pairs become runtime parameters)")?;
+        writeln!(main_file, "    let args: Vec<String> = std::env::args().collect();")?;
+        writeln!(main_file, "    let mut runtime_params = std::collections::HashMap::new();")?;
+        writeln!(main_file, "    let mut key: Option<String> = None;")?;
+        writeln!(main_file, "    for arg in args.iter().skip(1) {{")?;
+        writeln!(main_file, "        if arg.starts_with(\"--\") {{")?;
+        writeln!(main_file, "            let clean_key = arg.trim_start_matches(\"--\").to_string();")?;
+        writeln!(main_file, "            key = Some(clean_key);")?;
+        writeln!(main_file, "        }} else if let Some(k) = key.take() {{")?;
+        writeln!(main_file, "            runtime_params.insert(k, arg.clone());")?;
+        writeln!(main_file, "        }}")?;
+        writeln!(main_file, "    }}")?;
+        writeln!(main_file, "")?;
+        writeln!(main_file, "    // The root script can check these parameters via api.project().get_runtime_param()")?;
+        writeln!(main_file, "    // and decide what to do based on them")?;
         writeln!(main_file, "    run_game(RuntimeData {{")?;
         writeln!(main_file, "        assets_brk: ASSETS_BRK,")?;
         writeln!(
@@ -830,7 +1416,7 @@ impl Compiler {
             main_file,
             "        script_registry: scripts::get_script_registry(),"
         )?;
-        writeln!(main_file, "    }});")?;
+        writeln!(main_file, "    }}, runtime_params);")?;
         writeln!(main_file, "}}")?;
 
         main_file.flush()?;

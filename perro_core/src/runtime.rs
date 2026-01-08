@@ -285,7 +285,8 @@ fn log_error(msg: &str) {
 }
 
 /// Main entry point for running a Perro game
-pub fn run_game(data: RuntimeData) {
+/// `runtime_params` should be parsed from command-line arguments in the format `--key value`
+pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // Name the main thread
     crate::thread_utils::set_current_thread_name("Main");
     
@@ -305,9 +306,6 @@ pub fn run_game(data: RuntimeData) {
         eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
     }));
 
-    let args: Vec<String> = env::args().collect();
-    let mut key: Option<String> = None;
-
     {
         set_key(data.aes_key);
         set_project_root(ProjectRoot::Brk {
@@ -319,14 +317,9 @@ pub fn run_game(data: RuntimeData) {
     // 2. Clone the static project so we can add runtime params
     let mut project = data.static_assets.project.clone();
 
-    // 3. Parse runtime arguments and add them to project
-    for arg in args.iter().skip(1) {
-        if arg.starts_with("--") {
-            let clean_key = arg.trim_start_matches("--").to_string();
-            key = Some(clean_key);
-        } else if let Some(k) = key.take() {
-            project.set_runtime_param(&k, arg);
-        }
+    // 3. Add runtime parameters to project
+    for (key, value) in runtime_params {
+        project.set_runtime_param(&key, &value);
     }
 
     // 4. Initialize static textures (runtime mode only)
@@ -406,28 +399,21 @@ pub fn run_game(data: RuntimeData) {
         project_rc.borrow().target_fps(),
         graphics,
     );
+    
+    // Note: ups_divisor runtime parameter will be checked by the root script in init()
+    // and applied via api.set_ups_divisor()
 
     run_app(event_loop, app);
 }
 
-/// Development entry point for running projects from disk with DLL hot-reloading
+/// Resolve project root path from command line arguments or environment
+/// This is extracted from run_dev() to allow calling run_dev_with_path() directly
 #[cfg(not(target_arch = "wasm32"))]
-pub fn run_dev() {
-    use crate::registry::DllScriptProvider;
-
-    // Name the main thread
-    crate::thread_utils::set_current_thread_name("Main");
-    
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
-    
+fn resolve_dev_project_path() -> Result<PathBuf, String> {
     let args: Vec<String> = env::args().collect();
-    let mut key: Option<String> = None;
-    
-    // Check for profiling flag
-    let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
     
     // 1. Determine project root path (disk or exe dir) - need this IMMEDIATELY
-    let project_root: PathBuf = if let Some(i) = args.iter().position(|a| a == "--path") {
+    if let Some(i) = args.iter().position(|a| a == "--path") {
         let path_arg = &args[i + 1];
 
         // Get the directory where cargo executed the compiled binary
@@ -496,7 +482,7 @@ pub fn run_dev() {
             
             if let Some(found) = found_path {
                 use dunce;
-                dunce::canonicalize(&found).unwrap_or(found)
+                return Ok(dunce::canonicalize(&found).unwrap_or(found));
             } else {
                 // If not found, return error
                 let error_msg = format!(
@@ -504,8 +490,7 @@ pub fn run_dev() {
                     Searched in workspace root and parent directories.",
                     search_name
                 );
-                log_error(&error_msg);
-                std::process::exit(1);
+                return Err(error_msg);
             }
         } else {
             // Handle the input path
@@ -529,7 +514,7 @@ pub fn run_dev() {
             };
 
             if is_valid_absolute {
-                candidate
+                return Ok(candidate);
             } else {
                 // If it starts with / on Windows, treat as relative to workspace root
                 let base_path: PathBuf = {
@@ -556,7 +541,7 @@ pub fn run_dev() {
 
                 // Try to canonicalize, but if it fails, ensure we have a proper absolute path
                 use dunce;
-                dunce::canonicalize(&full_path).unwrap_or_else(|_| {
+                return Ok(dunce::canonicalize(&full_path).unwrap_or_else(|_| {
                     if full_path.is_absolute() {
                         full_path
                     } else {
@@ -570,7 +555,7 @@ pub fn run_dev() {
                                     .join(&full_path)
                             })
                     }
-                })
+                }));
             }
         }
     } else if args.contains(&"--editor".to_string()) {
@@ -619,13 +604,12 @@ pub fn run_dev() {
         }
         
         if let Some(found) = found_path {
-            dunce::canonicalize(&found).unwrap_or(found)
+            return Ok(dunce::canonicalize(&found).unwrap_or(found));
         } else {
             // If not found, return error
             let error_msg = "ERROR: Could not find 'perro_editor' project folder with project.toml.\n\
                              Searched in exe directory, parent, and workspace root.";
-            log_error(error_msg);
-            std::process::exit(1);
+            return Err(error_msg.to_string());
         }
     } else {
         // Default behavior: look for ANY sibling folders with project.toml (no hardcoded names)
@@ -660,11 +644,11 @@ pub fn run_dev() {
         // First check if exe directory itself is a project
         if exe_dir.join("project.toml").exists() {
             println!("Found project.toml in exe directory: {:?}", exe_dir);
-            dunce::canonicalize(&exe_dir).unwrap_or(exe_dir)
+            return Ok(dunce::canonicalize(&exe_dir).unwrap_or(exe_dir));
         // Then check sibling folders in exe directory (where the exe actually is)
         } else if let Some(found) = find_project_in_dir(&exe_dir) {
             println!("Found project at sibling folder: {:?}", found);
-            found
+            return Ok(found);
         } else {
             let error_msg = format!(
                 "ERROR: No project.toml found.\n\
@@ -676,10 +660,56 @@ pub fn run_dev() {
                 exe_dir,
                 exe_dir
             );
-            log_error(&error_msg);
+            return Err(error_msg);
+        }
+    }
+}
+
+/// Development entry point for running projects from disk with DLL hot-reloading
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_dev() {
+    match resolve_dev_project_path() {
+        Ok(project_root) => run_dev_with_path(project_root),
+        Err(e) => {
+            log_error(&e);
             std::process::exit(1);
         }
-    };
+    }
+}
+
+/// Development entry point for running projects from disk with DLL hot-reloading
+/// This version accepts a project path directly instead of reading from command line args
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_dev_with_path(project_root: PathBuf) {
+    use crate::registry::DllScriptProvider;
+
+    // Name the main thread
+    crate::thread_utils::set_current_thread_name("Main");
+    
+    // Try to initialize logger, but don't panic if it's already initialized (e.g., when called from editor)
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).try_init();
+    
+    let args: Vec<String> = env::args().collect();
+    
+    // Check for profiling flag
+    let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
+
+    // Parse runtime arguments (excluding --path which is already handled)
+    let mut runtime_params = HashMap::new();
+    let mut key: Option<String> = None;
+    for arg in args.iter().skip(1) {
+        // Skip --path and its value
+        if arg == "--path" {
+            key = None; // Clear any pending key
+            continue;
+        }
+        if arg.starts_with("--") {
+            let clean_key = arg.trim_start_matches("--").to_string();
+            key = Some(clean_key);
+        } else if let Some(k) = key.take() {
+            runtime_params.insert(k, arg.clone());
+        }
+    }
 
     println!("Running project at {:?}", project_root);
 
@@ -908,7 +938,7 @@ pub fn run_dev() {
     window.set_visible(true);
 
     // 11. Run app with pre-created Graphics
-    let app = App::new(
+    let mut app = App::new(
         &event_loop,
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
@@ -916,8 +946,15 @@ pub fn run_dev() {
         project_rc.borrow().target_fps(),
         graphics,
     );
+    
+    // Check for ups_divisor runtime parameter - the root script will apply it in init()
+    // This is cleaner than trying to access the command sender here
+    if let Some(ups_divisor_str) = project_rc.borrow().get_runtime_param("ups_divisor") {
+        if let Ok(divisor) = ups_divisor_str.parse::<u32>() {
+            eprintln!("[runtime] UPS divisor runtime param set to {} - root script will apply it", divisor);
+        }
+    }
 
-    let mut app = app;
     let _ = event_loop.run_app(&mut app);
     println!("Event loop exited.");
     

@@ -4,6 +4,7 @@ use std::process::Command;
 
 use perro_core::asset_io::{ProjectRoot, set_project_root};
 use perro_core::compiler::{BuildProfile, CompileTarget, Compiler};
+use perro_core::runtime::run_dev_with_path;
 use perro_core::transpiler::transpile;
 
 /// Find the workspace root by looking for Cargo.toml
@@ -249,14 +250,9 @@ fn main() {
 
         println!("🚀 Running project (no compilation)…");
 
-        // Spawn perro_dev with the same path
-        let mut cmd = Command::new("cargo");
-        cmd.args(&["run", "--release", "-p", "perro_dev", "--", "--path", path_arg]);
-        cmd.stdout(std::process::Stdio::inherit());
-        cmd.stderr(std::process::Stdio::inherit());
-
-        let status = cmd.status().expect("Failed to start perro_dev");
-        std::process::exit(status.code().unwrap_or(1));
+        // Run the project in dev mode using run_dev_with_path
+        // This works for any project, including the editor
+        run_dev_with_path(project_root);
     }
 
     // Handle --profile command (build scripts + run with headless profiling)
@@ -310,15 +306,9 @@ fn main() {
         println!("✅ Scripts built! Starting dev runner with profiling…");
         println!("🔥 Profiling enabled! Flamegraph will be written to {:?}", project_root.join("flamegraph.folded"));
 
-        // Spawn perro_dev with profiling enabled (headless mode)
-        // Pass the profiling feature through to perro_dev
-        let mut cmd = Command::new("cargo");
-        cmd.args(&["run", "-p", "perro_dev", "--features", "profiling", "--", "--path", path_arg, "--profile"]);
-        cmd.stdout(std::process::Stdio::inherit());
-        cmd.stderr(std::process::Stdio::inherit());
-
-        let status = cmd.status().expect("Failed to start perro_dev");
-        std::process::exit(status.code().unwrap_or(1));
+        // Run the project in dev mode with profiling using run_dev_with_path
+        // The profiling feature is already enabled in this build
+        run_dev_with_path(project_root);
     }
 
     // Handle --dev command (build scripts + run)
@@ -368,14 +358,9 @@ fn main() {
 
         println!("✅ Scripts built! Starting dev runner…");
 
-        // Spawn perro_dev with the same path
-        let mut cmd = Command::new("cargo");
-        cmd.args(&["run", "--release", "-p", "perro_dev", "--", "--path", path_arg]);
-        cmd.stdout(std::process::Stdio::inherit());
-        cmd.stderr(std::process::Stdio::inherit());
-
-        let status = cmd.status().expect("Failed to start perro_dev");
-        std::process::exit(status.code().unwrap_or(1));
+        // Run the project in dev mode using run_dev_with_path
+        // This works for any project, including the editor
+        run_dev_with_path(project_root);
     }
 
     // Require --path to be present for build commands
