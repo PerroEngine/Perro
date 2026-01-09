@@ -1,0 +1,15 @@
+[Panel id=SceneGraphPanel w=100% h=60% anchor=c bg=steel-10]
+  [VLayout w=100% h=100% anchor=c align=s gap=0]
+    // Scene Graph header
+    [Panel w=100% h=5% anchor=c bg=steel-8 z=51]
+      [Text fsz=15 color=white anchor=c]
+      Scene Graph
+      [/Text]
+    [/Panel]
+    // Content area - remaining space
+    [Panel w=100% h=95.5% anchor=c bg=steel-10]
+      [Panel w=95% h=97% anchor=c bg=neutral-10 rounding=0.1]
+      [/Panel]
+    [/Panel]
+  [/VLayout]
+[/Panel]

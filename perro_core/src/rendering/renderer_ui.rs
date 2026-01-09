@@ -123,6 +123,18 @@ impl RendererUI {
         );
     }
 
+    /// Remove a panel from the render cache
+    /// Call this when an element becomes invisible
+    pub fn remove_panel(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: uuid::Uuid) {
+        primitive_renderer.remove_rect(uuid);
+    }
+
+    /// Remove text from the render cache
+    /// Call this when an element becomes invisible
+    pub fn remove_text(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: uuid::Uuid) {
+        primitive_renderer.remove_text(uuid);
+    }
+
     pub fn render(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,

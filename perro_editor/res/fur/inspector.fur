@@ -1,0 +1,15 @@
+[Panel id=InspectorPanel w=14% h=100% anchor=c bg=steel-10 z=50]
+  [VLayout w=100% h=100% anchor=c align=s gap=0]
+    // Inspector header
+    [Panel w=100% h=3% anchor=c bg=steel-8 z=51]
+      [Text fsz=15 color=white anchor=c]
+      Inspector
+      [/Text]
+    [/Panel]
+    // Content area
+    [Panel w=100% h=97% anchor=c bg=steel-10]
+      [Panel w=95% h=98% anchor=c bg=neutral-10 rounding=0.1]
+      [/Panel]
+    [/Panel]
+  [/VLayout]
+[/Panel]

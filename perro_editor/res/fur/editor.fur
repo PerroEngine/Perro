@@ -1,129 +1,110 @@
-[UI]
-   
 
-      // Top menu bar
-      [Panel w=100% h=3% anchor=tl bg=steel-10 z=100]
-            [HLayout w=13% anchor=l]
-                  [Button id=file fsz=16 text-c=white bg=steel-9 opacity=0.9]
-                  File
-                  [/Button]
-                  [Button  fsz=16 text-c=white bg=steel-9 opacity=0.9]
-                  Edit
-                  [/Button]
-                  [Button fsz=16 text-c=white bg=steel-9 opacity=0.9]
-                  View
-                  [/Button]
-                  [Button fsz=16 text-c=white bg=steel-9 opacity=0.9]
-                  Project
-                  [/Button]
-            [/HLayout]
-            [HLayout w=35% anchor=c h=95%]
-                  [Button fsz=15 text-c=lime-5 bg=steel-9 opacity=0.9 rounding-l=0.5]
-                  UI
-                  [/Button]
-                  [Button id=two_d fsz=15 text-c=blue-5 bg=steel-9 opacity=0.9]
-                  2D
-                  [/Button]
-                  [Button fsz=15 text-c=amber-5 bg=steel-9 opacity=0.9]
-                  3D
-                  [/Button]
-                  [Button fsz=15 text-c=white bg=steel-9 opacity=0.9 rounding-r=0.5]
-                  Script
-                  [/Button]
-            [/HLayout]
-            [HLayout w=14% anchor=r]
-                  [Button id=RunGame fsz=15 text-c=lime-5 bg=steel-9 opacity=0.9]
-                  ▶ Play
-                  [/Button]
-                  [Button id=StopGame fsz=15 text-c=red-5 bg=steel-9 opacity=0.9]
-                  ⏹ Stop
-                  [/Button]
-            [/HLayout]
-      [/Panel]
-
-      // Left sidebar - Scene Graph and Resource Tree
-      [Panel w=13% h=97% anchor=tl ty=-3% bg=steel-10 z=50]
-            [VLayout w=100% h=100% anchor=tl gap=0]
-                  // Scene Graph Section
-                  [Panel w=100% h=65% anchor=tl bg=steel-10]
-                        [VLayout w=100% h=100% anchor=tl gap=0]
-                              // Scene Graph header
-                              [Panel w=100% h=4.5% anchor=tl bg=steel-8 z=51]
-                                    [Text fsz=15 color=white anchor=c tx=1.5%]
-                                    Scene Graph
-                                    [/Text]
-                              [/Panel]
-                              // Flat panel for content
-                              [Panel w=100% h=95.5% anchor=tl bg=steel-10]
-                                    // Darker inner panel
-                                    [Panel w=95% h=98% anchor=c bg=neutral-10 rounding=0.1]
-                                    [/Panel]
-                              [/Panel]
-                        [/VLayout]
-                  [/Panel]
-
-                  // Resource Tree Section
-                  [Panel w=100% h=35% anchor=tl bg=steel-10]
-                        [VLayout w=100% h=100% anchor=tl gap=0]
-                              // Resource Tree header
-                              [Panel w=100% h=8% anchor=tl bg=steel-8 z=51]
-                                    [Text fsz=15 color=white anchor=c tx=1.5%]
-                                    Resources (res://)
-                                    [/Text]
-                              [/Panel]
-                              // Flat panel for content
-                              [Panel w=100% h=92% anchor=tl bg=steel-10]
-                                    // Darker inner panel
-                                    [Panel w=95% h=97% anchor=c bg=neutral-10 rounding=0.1]
-                                    [/Panel]
-                              [/Panel]
-                        [/VLayout]
-                  [/Panel]
-            [/VLayout]
-      [/Panel]
-
-      // Right sidebar - Inspector
-      [Panel w=14% h=97% anchor=tr ty=-3% bg=steel-10 z=50]
-            [VLayout w=100% h=100% anchor=tl gap=0]
-                  // Inspector header
-                  [Panel w=100% h=3% anchor=tl bg=steel-8 z=51]
-                        [Text fsz=15 color=white anchor=l tx=2% anchor=c]
-                        Inspector
-                        [/Text]
-                  [/Panel]
-                  // Flat panel for content
-                  [Panel w=100% h=97% anchor=tl bg=steel-10]
-                        // Darker inner panel
-                        [Panel w=95% h=98% anchor=c bg=neutral-10 rounding=0.1]
-                        [/Panel]
-                  [/Panel]
-            [/VLayout]
-      [/Panel]
-
-      // Center - Main Viewport and Console
-      [VLayout w=73.5% h=100% anchor=t tx=-0.55% ty=-2.5% gap=0 z=40]
-            // Viewport header
-            [Panel w=100% h=3.3% anchor=tl bg=steel-8 z=51]
-            [/Panel]
-            // Viewport Panel (remaining space)
-            [Panel w=100% h=75.5% bg=stone-10]
-                  // Viewport content
-                  [Text fsz=20 color=steel-5 anchor=c align=center]
-                  Viewport
-                  [/Text]
-            [/Panel]
-
-            // Console Panel (20%)
-            [Panel w=100% h=20% bg=steel-10]
-                  [Panel w=99% h=78% bg=neutral-10 anchor=t ty=-5% rounding=0.1]
-                  [/Panel]
-
-            [/Panel]
-
+      // Main vertical layout - contains menu bar and main content area
+      [VLayout w=100% h=100% anchor=c align=s gap=0]
             
-        
+            // Top menu bar - 3.5% height
+            [Panel w=100% h=3.5% anchor=c bg=steel-10 z=100]
+                  // Left menu items - 13% width, start aligned
+                  [HLayout w=13% h=100% anchor=l align=s]
+                        [Button id=file fsz=16 text-c=white bg=steel-9 opacity=0.9]
+                        File
+                        [/Button]
+                        [Button fsz=16 text-c=white bg=steel-9 opacity=0.9]
+                        Edit
+                        [/Button]
+                        [Button fsz=16 text-c=white bg=steel-9 opacity=0.9]
+                        View
+                        [/Button]
+                        [Button fsz=16 text-c=white bg=steel-9 opacity=0.9]
+                        Project
+                        [/Button]
+                  [/HLayout]
+                  
+                  // Center tabs - 25% width, centered
+                  [HLayout w=25% h=100% anchor=c align=c gap=12 py=3]
+                        [Button id=UIEditor fsz=15 text-c=lime-5 bg=steel-9 opacity=0.9 rounding=0.5]
+                        UI
+                        [/Button]
+                        [Button id=two_d fsz=15 text-c=blue-5 bg=steel-9 opacity=0.9 rounding=0.5]
+                        2D
+                        [/Button]
+                        [Button fsz=15 text-c=amber-5 bg=steel-9 opacity=0.9 rounding=0.5]
+                        3D
+                        [/Button]
+                        [Button fsz=15 text-c=white bg=steel-9 opacity=0.9 rounding=0.5]
+                        Script
+                        [/Button]
+                  [/HLayout]
+                  
+                  // Right controls - 13% width
+                  [HLayout w=13% h=100% anchor=r align=c gap=10 py=3 tx=-0.5%]
+                        [Button id=RunGame fsz=15 text-c=lime-5 bg=steel-9 opacity=0.9 rounding=0.5]
+                        ▶ Play
+                        [/Button]
+                        [Button id=StopGame fsz=15 text-c=red-5 bg=steel-9 opacity=0.9 rounding=0.5]
+                        ⏹ Stop
+                        [/Button]
+                  [/HLayout]
+            [/Panel]
+            
+            // Main horizontal layout - contains left sidebar, center, and right sidebar
+            // Height: 100% - 3.5% (menu bar) = 96.5%
+            [HLayout w=100% h=96.5% anchor=c align=s gap=0]
+                  
+                  // Left sidebar - 13% width
+                  [Panel w=13% h=100% anchor=c bg=steel-10 z=50]
+                        [VLayout w=100% h=100% anchor=c align=c gap=0]
+                              // Scene Graph Section - included from separate file
+                              [Include path="res://fur/scene_graph.fur"]
+                              [/Include]
+
+                              // Resource Tree Section
+                              [Panel w=100% anchor=c bg=steel-10]
+                                    [VLayout w=100% h=100% anchor=c align=s gap=0]
+                                          // Resource Tree header
+                                          [Panel w=100% h=32 anchor=c bg=steel-8 z=51]
+                                                [Text fsz=15 color=white anchor=c]
+                                                Resources (res://)
+                                                [/Text]
+                                          [/Panel]
+                                          // Content area - remaining space
+                                          [Panel w=100% h=92% anchor=c bg=steel-10]
+                                                [Panel id=ResourcesContainer w=95% h=98% anchor=c bg=neutral-10 rounding=0.1]
+                                                [/Panel]
+                                          [/Panel]
+                                    [/VLayout]
+                              [/Panel]
+                        [/VLayout]
+                  [/Panel]
+
+
+                  // Center content - default viewport (shown when UI editor is off)
+                  [VLayout id=DefaultViewport h=100% anchor=c align=s gap=0 z=40]
+                        // Viewport header
+                        [Panel w=100% h=3% anchor=c bg=steel-8 z=51]
+                        [/Panel]
+                        
+                        // Viewport Panel
+                        [Panel w=100% anchor=c bg=stone-10]
+                              [Text fsz=20 color=steel-5 anchor=c align=center]
+                              Viewport
+                              [/Text]
+                        [/Panel]
+
+                        // Console Panel
+                        // Remaining: 100% - 3.3% - 75.5% = 21.2%
+                        [Panel w=100% h=20% anchor=c bg=steel-10]
+                              [Panel w=99% h=78% anchor=c bg=neutral-10 rounding=0.1]
+                              [/Panel]
+                        [/Panel]
+                  [/VLayout]
+
+                  // UI Editor content (hidden by default, shown when UI button is pressed)
+                  [Include path="res://fur/ui_editor.fur" visible=false]
+                  [/Include]
+
+                  // Right sidebar - Inspector - included from separate file
+                  [Include path="res://fur/inspector.fur"]
+                  [/Include]
+            [/HLayout]
       [/VLayout]
-
-  
-
-[/UI]

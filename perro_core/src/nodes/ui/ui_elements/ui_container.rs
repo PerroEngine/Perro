@@ -19,11 +19,43 @@ impl_ui_element!(BoxContainer);
 /// 2. Layout containers
 /// =========================
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default)]
+pub struct Padding {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+impl Padding {
+    pub fn uniform(padding: f32) -> Self {
+        Self {
+            top: padding,
+            right: padding,
+            bottom: padding,
+            left: padding,
+        }
+    }
+    
+    /// Returns the total horizontal padding (left + right)
+    pub fn horizontal(&self) -> f32 {
+        self.left + self.right
+    }
+    
+    /// Returns the total vertical padding (top + bottom)
+    pub fn vertical(&self) -> f32 {
+        self.top + self.bottom
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Container {
     pub mode: ContainerMode,            // Horizontal, Vertical, Grid
     pub gap: Vector2,                   // extra spacing between children (added on top of default gap)
     pub distribution: DistributionMode, // pack or even spacing
+    pub padding: Padding,               // padding that reduces effective parent size for children
+    #[serde(default)]
+    pub align: LayoutAlignment,        // alignment of children (start/center/end)
 }
 
 impl Default for Container {
@@ -32,6 +64,8 @@ impl Default for Container {
             mode: ContainerMode::Horizontal,
             gap: Vector2::new(0.0, 0.0),
             distribution: DistributionMode::Pack,
+            padding: Padding::default(),
+            align: LayoutAlignment::Center,
         }
     }
 }
@@ -47,6 +81,19 @@ pub enum ContainerMode {
 pub enum DistributionMode {
     Pack,
     Even,
+}
+
+#[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Debug, Copy)]
+pub enum LayoutAlignment {
+    Start,  // Align to start (left for horizontal, top for vertical)
+    Center, // Center alignment (default)
+    End,    // Align to end (right for horizontal, bottom for vertical)
+}
+
+impl Default for LayoutAlignment {
+    fn default() -> Self {
+        LayoutAlignment::Center
+    }
 }
 
 /// Horizontal/Vertical layout

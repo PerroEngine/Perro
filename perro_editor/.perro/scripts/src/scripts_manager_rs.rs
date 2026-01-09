@@ -7,9 +7,19 @@ use serde_json::{Value, json};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
+use perro_core::ui_element::{BaseElement, UIElement};
 use std::path::{Path, PathBuf};
 use phf::{phf_map, Map};
 use smallvec::{SmallVec, smallvec};
+
+/// Editor mode - determines which panels/content are visible
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum EditorMode {
+    UI,
+    TwoD,
+    ThreeD,
+    Script,
+}
 
 /// @PerroScript
 pub static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
@@ -29,6 +39,9 @@ struct ManagerScript {
     process_check_counter: u32, // Counter to check process status less frequently
     initial_compile_delay_accumulator: f32, // Accumulate time to delay initial compilation (wait 2 seconds)
     initial_compile_done: bool, // Track if initial compilation has been done
+    resources_scanned: bool, // Track if we've scanned the res folder
+    resource_files: Vec<String>, // List of res:// paths to all files in the project
+    current_mode: Option<EditorMode>, // Current editor mode (None = default viewport mode)
 }
 
 #[unsafe(no_mangle)]
@@ -44,6 +57,9 @@ pub extern "C" fn scripts_manager_rs_create_script() -> *mut dyn ScriptObject {
         process_check_counter: 0,
         initial_compile_delay_accumulator: 0.0,
         initial_compile_done: false,
+        resources_scanned: false,
+        resource_files: Vec::new(),
+        current_mode: None, // Start with no mode (default viewport)
     })) as *mut dyn ScriptObject
 }
 
@@ -98,8 +114,8 @@ impl ManagerScript {
     fn launch_editor_via_cargo(&self, project_path: &str) -> Result<(), String> {
         use std::process::Command;
         
-        // [stripped for release] eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
-
+        eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
+        
         let mut cmd = Command::new("cargo");
         cmd.args(&["run", "-p", "perro_core", "--", "--path", "--editor", project_path, "--run"]);
         
@@ -139,8 +155,8 @@ impl ManagerScript {
             .parent()
             .ok_or("Could not determine parent directory")?;
         
-        // [stripped for release] eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
-
+        eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
+        
         let mut cmd = Command::new(exe_path);
         cmd.arg("--editor").arg(project_path);
         cmd.current_dir(parent_dir);
@@ -438,9 +454,7 @@ impl ManagerScript {
 
         self.project_creation_in_progress = false;
     }
-}
-
-impl ManagerScript {
+    
     /// Compile scripts if needed (called after window is visible, with 2 second delay)
     fn check_and_compile_if_needed(&mut self, api: &mut ScriptApi) {
         // Check if we need to do initial compilation
@@ -476,10 +490,212 @@ impl ManagerScript {
         }
     }
     
-    // Signal handlers are now connected directly to run_project and stop_project
-    // The wrapper functions on_run_game_pressed and on_stop_game_pressed aren't being
-    // included in the dispatch table by the compiler, so we connect directly to the
-    // functions that are in the dispatch table.
+    /// Add resource buttons to the Resources panel
+    fn add_resource_buttons_to_ui(&mut self, api: &mut ScriptApi, res_files: &[String]) {
+        // Get the UINode (self.id is the UINode's ID)
+        let ui_node_id = self.id;
+        api.print(&format!("🔍 Looking for ResourcesContainer in UINode: {}", ui_node_id));
+        
+        // Find the ResourcesContainer panel and collect debug info
+        let (resources_container_id, element_names) = api.with_ui_node(ui_node_id, |ui| {
+            // Debug: Collect all element names
+            let mut names = Vec::new();
+            if let Some(elements) = &ui.elements {
+                for (uuid, element) in elements.iter() {
+                    names.push((element.get_name().to_string(), uuid.to_string()));
+                }
+            }
+            
+            // Find the ResourcesContainer element by name
+            let container_id = ui.find_element_by_name("ResourcesContainer")
+                .map(|element| element.get_id());
+            
+            (container_id, names)
+        });
+        
+        // Print debug info outside the closure
+        api.print(&format!("📋 Found {} elements in UI", element_names.len()));
+        for (name, uuid) in element_names.iter() {
+            api.print(&format!("  - Element: {} (ID: {})", name, uuid));
+        }
+        
+        if let Some(container_id) = resources_container_id {
+            api.print(&format!("✅ Using ResourcesContainer ID: {}", container_id));
+            
+            // Create buttons for each resource file directly using UIButton::new()
+            for (i, file_path) in res_files.iter().enumerate() {
+                // Extract just the filename for display
+                let filename = file_path.split('/').last().unwrap_or(file_path);
+                
+                // Create button directly
+                use perro_core::nodes::ui::ui_elements::ui_button::UIButton;
+                use perro_core::nodes::ui::ui_element::UIElement;
+                use perro_core::nodes::ui::fur_ast::FurAnchor;
+                
+                let mut button = UIButton::new();
+                
+                // Set button properties
+                button.set_name(&format!("resource_{}", i));
+                button.set_anchor(FurAnchor::Center);
+                
+                // Set size using style_map for percentage (95% width, 25 height)
+                button.get_style_map_mut().insert("size.x".to_string(), 95.0); // 95%
+                button.get_style_map_mut().insert("size.y".to_string(), 25.0);
+                
+                // Set background color
+                if let Some(bg_color) = Color::from_preset("steel-8") {
+                    button.panel_props_mut().background_color = Some(bg_color);
+                }
+                
+                // Set text properties
+                button.text_props_mut().content = filename.to_string();
+                button.text_props_mut().color = Color::new(255, 255, 255, 255); // white
+                button.text_props_mut().font_size = 14.0;
+                
+                // Wrap in UIElement and add to UI
+                let button_element = UIElement::Button(button);
+                api.print(&format!("  🎨 Creating button {} for: {} (parent: {})", i, filename, container_id));
+                if let Some(button_id) = api.add_ui_element(ui_node_id, &format!("resource_{}", i), button_element, Some(container_id)) {
+                    api.print(&format!("  ✅ Added button for: {} (ID: {})", filename, button_id));
+                } else {
+                    api.print(&format!("  ❌ Failed to add button for: {}", filename));
+                }
+            }
+            
+            // Verify buttons were added and mark only the container and new buttons for rerender
+            let button_count = api.with_ui_node(ui_node_id, |ui| {
+                // Collect IDs to mark (immutable borrow first)
+                let mut ids_to_mark = Vec::new();
+                
+                // Mark only the ResourcesContainer and its children for rerender (not all elements)
+                if let Some(container) = ui.find_element_by_name("ResourcesContainer") {
+                    let container_id = container.get_id();
+                    ids_to_mark.push(container_id);
+                    
+                    // Also collect all children of the container
+                    if let Some(elements) = &ui.elements {
+                        let mut to_process = vec![container_id];
+                        while let Some(current_id) = to_process.pop() {
+                            if let Some(element) = elements.get(&current_id) {
+                                for child_id in element.get_children() {
+                                    if !ids_to_mark.contains(child_id) {
+                                        ids_to_mark.push(*child_id);
+                                        to_process.push(*child_id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Now mark all collected IDs (mutable borrow after immutable is released)
+                for element_id in &ids_to_mark {
+                    ui.mark_element_needs_rerender(*element_id);
+                    ui.mark_element_needs_layout(*element_id);
+                }
+                
+                if let Some(elements) = &ui.elements {
+                    elements.values()
+                        .filter(|el| el.get_name().starts_with("resource_"))
+                        .count()
+                } else {
+                    0
+                }
+            });
+            api.print(&format!("📊 Total resource buttons in UI: {}", button_count));
+        } else {
+            api.print("❌ Could not find ResourcesContainer panel");
+            api.print("💡 Make sure the FUR file has an element with id='ResourcesContainer'");
+        }
+    }
+    
+    /// Set the editor mode - switches between UI, 2D, 3D, Script modes
+    fn set_editor_mode(&mut self, mode: EditorMode, api: &mut ScriptApi) {
+        // If already in this mode, do nothing
+        if self.current_mode == Some(mode) {
+            api.print(&format!("⚠️ Already in {:?} mode", mode));
+            return;
+        }
+        
+        let ui_node_id = self.id;
+        
+        // Update current mode
+        self.current_mode = Some(mode);
+        
+        api.print(&format!("🎨 Switching to {:?} mode", mode));
+        
+        api.with_ui_node(ui_node_id, |ui| {
+            // Determine visibility based on mode
+            let (panels_visible, ui_editor_visible) = match mode {
+                EditorMode::UI => (false, true),  // Hide panels, show UI editor
+                EditorMode::TwoD | EditorMode::ThreeD | EditorMode::Script => (true, false), // Show panels, hide UI editor
+            };
+            
+            // Array of (name, visibility) pairs to process
+            let elements_to_toggle = [
+                ("SceneGraphPanel", panels_visible),
+                ("InspectorPanel", panels_visible),
+                ("DefaultViewport", panels_visible),
+                ("UIEditorContent", ui_editor_visible),
+            ];
+            
+            // Collect IDs of changed elements and their parents
+            let mut changed_element_ids = Vec::new();
+            let mut parent_ids = Vec::new();
+            
+            // Process each element: set visibility and collect IDs
+            // The UI renderer will automatically handle child visibility via is_effectively_visible
+            for (name, visible) in &elements_to_toggle {
+                if let Some(element) = ui.find_element_by_name_mut(name) {
+                    element.set_visible(*visible);
+                    let element_id = element.get_id();
+                    changed_element_ids.push(element_id);
+                    
+                    // Also collect parent IDs for layout recalculation
+                    let parent_id = element.get_parent();
+                    if !parent_id.is_nil() {
+                        parent_ids.push(parent_id);
+                    }
+                }
+            }
+            
+            // Mark changed elements and their parents for layout recalculation
+            // This ensures parent layouts shrink/expand when children become visible/invisible
+            for element_id in changed_element_ids {
+                ui.mark_element_needs_layout(element_id);
+            }
+            for parent_id in parent_ids {
+                ui.mark_element_needs_layout(parent_id);
+            }
+        });
+        
+        api.print(&format!("✅ Editor mode set to {:?}", mode));
+    }
+    
+    /// Handler for UI Editor button
+    pub fn on_ui_editor_pressed(&mut self, api: &mut ScriptApi) {
+        self.set_editor_mode(EditorMode::UI, api);
+    }
+    
+    /// Handler for 2D Editor button
+    pub fn on_two_d_pressed(&mut self, api: &mut ScriptApi) {
+        self.set_editor_mode(EditorMode::TwoD, api);
+    }
+    
+    /// Handler for 3D Editor button
+    pub fn on_three_d_pressed(&mut self, api: &mut ScriptApi) {
+        self.set_editor_mode(EditorMode::ThreeD, api);
+    }
+    
+    /// Handler for Script Editor button
+    pub fn on_script_pressed(&mut self, api: &mut ScriptApi) {
+        self.set_editor_mode(EditorMode::Script, api);
+    }
+    
+    /// Legacy function name for backwards compatibility
+    pub fn toggle_ui_editor(&mut self, api: &mut ScriptApi) {
+        self.on_ui_editor_pressed(api);
+    }
 }
 
 impl Script for ManagerScript {
@@ -490,23 +706,97 @@ impl Script for ManagerScript {
         if let Some(project_path) = api.project().get_runtime_param("project_path") {
             self.current_project_path = project_path.to_string();
             api.print(&format!("📂 Project loaded: {}", self.current_project_path));
+            
+            // Resolve the project path to get the actual disk path
+            let resolved_project_path = if self.current_project_path.starts_with("user://") {
+                api.resolve_path(&self.current_project_path).unwrap_or_else(|| self.current_project_path.clone())
+            } else {
+                self.current_project_path.clone()
+            };
+            
+            // Build the res folder path (disk path)
+            let project_res_path = format!("{}/res", resolved_project_path);
+            api.print(&format!("🔍 Scanning project resources at: {}", project_res_path));
+            
+            // Scan the res folder using Directory API (this will print debug info)
+            // scan() returns relative paths, then we add "res://" prefix
+            let relative_files = api.Directory.scan(&project_res_path);
+            let res_files: Vec<String> = relative_files.iter()
+                .map(|f| format!("res://{}", f))
+                .collect();
+            
+            api.print(&format!("✅ Found {} resource files in project", res_files.len()));
+            
+            // Store the resource files for later use
+            self.resource_files = res_files.clone();
+            self.resources_scanned = true;
+            
+            // Add resource buttons to the Resources panel
+            // Get the UINode (self.id is the UINode's ID)
+            api.print("🎨 Adding resource buttons to UI...");
+            self.add_resource_buttons_to_ui(api, &res_files);
         } else {
             api.print("   Press the 'Create Project' button to create a new project");
         }
         
+        // Set initial visibility: UI editor hidden, default viewport visible
+        api.with_ui_node(self.id, |ui| {
+            let mut changed_ids = Vec::new();
+            
+            if let Some(element) = ui.find_element_by_name_mut("UIEditorContent") {
+                element.set_visible(false);
+                changed_ids.push(element.get_id());
+            }
+            if let Some(element) = ui.find_element_by_name_mut("DefaultViewport") {
+                element.set_visible(true);
+                changed_ids.push(element.get_id());
+            }
+            
+            // Mark only the changed elements and their parent layouts for rerender
+            for element_id in changed_ids {
+                ui.mark_element_needs_rerender(element_id);
+                ui.mark_element_needs_layout(element_id);
+                
+                // Also mark parent layouts
+                if let Some(elements) = &ui.elements {
+                    let mut current_id = element_id;
+                    while let Some(element) = elements.get(&current_id) {
+                        let parent_id = element.get_parent();
+                        if parent_id.is_nil() {
+                            break;
+                        }
+                        if let Some(parent) = elements.get(&parent_id) {
+                            match parent {
+                                UIElement::Layout(_) | UIElement::GridLayout(_) => {
+                                    ui.mark_element_needs_layout(parent_id);
+                                    break; // Only mark immediate parent layout
+                                }
+                                _ => {}
+                            }
+                        }
+                        current_id = parent_id;
+                    }
+                }
+            }
+        });
+        
         // Connect to button signals
         api.print(&format!("🔗 Connecting signals for node ID: {}", self.id));
-        if self.id != Uuid::nil() {
             api.print("🔗 Connecting RunGame_Pressed signal to run_project...");
             // Connect directly to run_project since on_run_game_pressed isn't in dispatch table
             api.connect_signal("RunGame_Pressed", self.id, "run_project");
             api.print("🔗 Connecting StopGame_Pressed signal to stop_project...");
             // Connect directly to stop_project since on_stop_game_pressed isn't in dispatch table
             api.connect_signal("StopGame_Pressed", self.id, "stop_project");
+            
+            // Connect editor mode buttons
+            api.print("🔗 Connecting UIEditor_Pressed signal to on_ui_editor_pressed...");
+            api.connect_signal("UIEditor_Pressed", self.id, "on_ui_editor_pressed");
+            api.print("🔗 Connecting two_d_Pressed signal to on_two_d_pressed...");
+            api.connect_signal("two_d_Pressed", self.id, "on_two_d_pressed");
+            // Note: 3D and Script buttons don't have IDs in the FUR file yet, so we'll need to add them
+            // For now, we can connect them if they get IDs later
             api.print("✅ Signal connections complete");
-        } else {
-            api.print("⚠️ Warning: Script ID is nil, cannot connect signals!");
-        }
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -693,6 +983,43 @@ let pid = params.get(0)
         },
         14983575068207283127u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
             script.create_project(api);
+        },
+        11543083528011375305u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.check_and_compile_if_needed(api);
+        },
+        18234036162573606832u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let __vec_res_files_opt = params.get(0)
+                            .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok());
+let __vec_res_files = match __vec_res_files_opt {
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+};
+let res_files = __vec_res_files.as_slice();
+            script.add_resource_buttons_to_ui(api, res_files);
+        },
+        12969723914930156605u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let mode_opt = params.get(0)
+                            .and_then(|v| serde_json::from_value::<EditorMode>(v.clone()).ok());
+let mode = match mode_opt {
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+};
+            script.set_editor_mode(mode, api);
+        },
+        16452679290048682748u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_ui_editor_pressed(api);
+        },
+        6271441688664419927u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_two_d_pressed(api);
+        },
+        5297026351155972229u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_three_d_pressed(api);
+        },
+        5085426388671876031u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_script_pressed(api);
+        },
+        11006045986918016856u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.toggle_ui_editor(api);
         },
 
     };

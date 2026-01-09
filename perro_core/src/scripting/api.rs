@@ -32,6 +32,7 @@ use crate::{
     script::SceneAccess,
     transpiler::{script_path_to_identifier, transpile},
     types::ScriptType,
+    ui_element::BaseElement,
 };
 
 //-----------------------------------------------------
@@ -1277,6 +1278,94 @@ impl TextureApi {
 }
 
 #[derive(Default)]
+pub struct DirectoryApi;
+impl DirectoryApi {
+    /// Scan a directory recursively and return all file paths
+    /// Paths are returned relative to the base directory
+    /// Example: `let files = api.Directory.scan("res://");`
+    pub fn scan(&self, path: &str) -> Vec<String> {
+        use walkdir::WalkDir;
+        use crate::asset_io::resolve_path;
+        
+        let mut files = Vec::new();
+        
+        eprintln!("🔍 [DirectoryApi] Scanning directory: {}", path);
+        
+        // Resolve the path
+        let resolved = match resolve_path(path) {
+            crate::asset_io::ResolvedPath::Disk(pb) => {
+                eprintln!("📂 [DirectoryApi] Resolved to disk path: {}", pb.display());
+                pb
+            },
+            crate::asset_io::ResolvedPath::Brk(_) => {
+                eprintln!("⚠️ [DirectoryApi] Cannot scan BRK archives recursively");
+                return files;
+            }
+        };
+        
+        if !resolved.exists() {
+            eprintln!("❌ [DirectoryApi] Path does not exist: {}", resolved.display());
+            return files;
+        }
+        
+        if !resolved.is_dir() {
+            eprintln!("❌ [DirectoryApi] Path is not a directory: {}", resolved.display());
+            return files;
+        }
+        
+        eprintln!("✅ [DirectoryApi] Starting recursive walk of: {}", resolved.display());
+        
+        // Walk the directory recursively
+        for entry in WalkDir::new(&resolved).into_iter().filter_map(|e| e.ok()) {
+            let entry_path = entry.path();
+            
+            if entry_path.is_file() {
+                // Get relative path from base directory
+                if let Ok(relative) = entry_path.strip_prefix(&resolved) {
+                    // Convert to forward slashes for consistency
+                    let relative_str = relative.to_string_lossy().replace('\\', "/");
+                    eprintln!("📄 [DirectoryApi] Found file: {}", relative_str);
+                    files.push(relative_str);
+                }
+            } else if entry_path.is_dir() {
+                if let Ok(relative) = entry_path.strip_prefix(&resolved) {
+                    let relative_str = relative.to_string_lossy().replace('\\', "/");
+                    eprintln!("📁 [DirectoryApi] Entering directory: {}", relative_str);
+                }
+            }
+        }
+        
+        // Sort for consistent ordering
+        files.sort();
+        eprintln!("✅ [DirectoryApi] Scan complete. Found {} files", files.len());
+        files
+    }
+    
+    /// Scan a directory and return files with their full res:// paths
+    /// The base_path should be something like "res://" and files will be returned as "res://path/to/file.ext"
+    pub fn scan_with_prefix(&self, base_path: &str) -> Vec<String> {
+        eprintln!("🔍 [DirectoryApi] Scanning with prefix: {}", base_path);
+        let files = self.scan(base_path);
+        let prefix = if base_path.ends_with('/') {
+            base_path.to_string()
+        } else {
+            format!("{}/", base_path)
+        };
+        
+        let prefixed_files: Vec<String> = files.iter()
+            .map(|f| format!("{}{}", prefix, f))
+            .collect();
+        
+        eprintln!("📋 [DirectoryApi] Returning {} files with prefix '{}'", prefixed_files.len(), prefix);
+        for (i, file) in prefixed_files.iter().enumerate() {
+            eprintln!("  [{}] {}", i + 1, file);
+        }
+        
+        prefixed_files
+    }
+}
+
+#[derive(Default)]
 pub struct MathApi;
 
 impl MathApi {
@@ -1399,6 +1488,7 @@ pub struct EngineApi {
     pub Texture: TextureApi,
     pub Math: MathApi,
     pub Editor: EditorApi,
+    pub Directory: DirectoryApi,
 }
 
 //-----------------------------------------------------
@@ -2172,6 +2262,137 @@ impl<'a> ScriptApi<'a> {
             .unwrap_or_else(|e| panic!("Failed to add node to scene: {}", e));
         
         id
+    }
+    
+    /// Get a UINode by node ID and execute a closure with mutable access
+    /// This allows you to modify UI elements dynamically
+    /// Example: `api.with_ui_node(ui_node_id, |ui| { ui.add_element(...); });`
+    pub fn with_ui_node<F, R>(&mut self, node_id: Uuid, f: F) -> R
+    where
+        F: FnOnce(&mut crate::nodes::ui::ui_node::UINode) -> R,
+    {
+        let node = self.scene.get_scene_node_mut(node_id)
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+        
+        let ui_node = node.as_any_mut().downcast_mut::<crate::nodes::ui::ui_node::UINode>()
+            .unwrap_or_else(|| panic!("Node {} is not a UINode", node_id));
+        
+        let result = f(ui_node);
+        
+        // Mark the UI node as needing rerender after modification
+        self.scene.mark_needs_rerender(node_id);
+        
+        result
+    }
+    
+    /// Add a UI element to a UINode
+    /// The element will be added to the elements map and marked for rerender
+    /// If parent_element_id is provided and not nil, the element will be set as a child of that parent element
+    /// Returns the element's UUID if successful, None otherwise
+    /// Example: `api.add_ui_element(ui_node_id, "my_button", UIElement::Button(...), Some(parent_element_id));`
+    pub fn add_ui_element(
+        &mut self,
+        ui_node_id: Uuid,
+        element_name: &str,
+        mut element: crate::ui_element::UIElement,
+        parent_element_id: Option<Uuid>,
+    ) -> Option<Uuid> {
+        self.with_ui_node(ui_node_id, |ui| {
+            use indexmap::IndexMap;
+            
+            // Get or create elements map
+            let elements = ui.elements.get_or_insert_with(|| IndexMap::new());
+            
+            // Get or create root_ids
+            let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());
+            
+            let element_id = element.get_id();
+            
+            // Set the element's name
+            element.set_name(element_name);
+            
+            // Set parent if provided
+            if let Some(parent_id) = parent_element_id {
+                if !parent_id.is_nil() {
+                    // Set the element's parent
+                    element.set_parent(Some(parent_id));
+                    
+                    // Add to parent's children list
+                    if let Some(parent_element) = elements.get_mut(&parent_id) {
+                        let mut children = parent_element.get_children().to_vec();
+                        children.push(element_id);
+                        parent_element.set_children(children);
+                    }
+                    
+                    elements.insert(element_id, element);
+                } else {
+                    // No parent, add as root
+                    root_ids.push(element_id);
+                    elements.insert(element_id, element);
+                }
+            } else {
+                // No parent specified, add as root
+                root_ids.push(element_id);
+                elements.insert(element_id, element);
+            }
+            
+            // Mark element as needing rerender and layout
+            ui.mark_element_needs_layout(element_id);
+            
+            Some(element_id)
+        })
+    }
+    
+    /// Append FUR elements to a UINode dynamically
+    /// Parses the FUR string and adds the elements as children of the specified parent
+    /// Returns true if successful, false otherwise
+    /// Example: `api.append_fur_to_ui(ui_node_id, "[Button]Click Me[/Button]", Some(parent_id));`
+    pub fn append_fur_to_ui(
+        &mut self,
+        ui_node_id: Uuid,
+        fur_string: &str,
+        parent_element_id: Option<Uuid>,
+    ) -> bool {
+        use crate::nodes::ui::parser::FurParser;
+        use crate::nodes::ui::apply_fur::append_fur_elements_to_ui;
+        
+        // Parse the FUR string
+        let mut parser = match FurParser::new(fur_string) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("❌ Failed to create FUR parser: {}", e);
+                return false;
+            }
+        };
+        
+        let fur_ast = match parser.parse() {
+            Ok(ast) => ast,
+            Err(e) => {
+                eprintln!("❌ Failed to parse FUR string: {}", e);
+                return false;
+            }
+        };
+        
+        // Extract elements from AST
+        let fur_elements: Vec<crate::fur_ast::FurElement> = fur_ast
+            .into_iter()
+            .filter_map(|node| match node {
+                crate::fur_ast::FurNode::Element(el) => Some(el),
+                _ => None,
+            })
+            .collect();
+        
+        if fur_elements.is_empty() {
+            eprintln!("⚠️ No FUR elements found in string");
+            return false;
+        }
+        
+        // Append to UI node using mutate_node for proper rerender marking
+        self.mutate_node::<crate::nodes::ui::ui_node::UINode, _>(ui_node_id, |ui| {
+            append_fur_elements_to_ui(ui, &fur_elements, parent_element_id);
+        });
+        
+        true
     }
     
     /// Reparent a child node to a new parent

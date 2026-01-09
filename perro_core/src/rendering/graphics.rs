@@ -976,10 +976,15 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     
     // UI camera: stretch to fill window (no black bars)
     // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
-    let ui_scale_x = window_width / ui_virtual_width;
-    let ui_scale_y = window_height / ui_virtual_height;
-    let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
-    let ui_ndc_scale = glam::vec2(2.0 / window_width, 2.0 / window_height);
+        // Use f64 for precision to avoid rounding errors that cause gaps
+        let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
+        let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
+        let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+    // Use f64 for precision to avoid rounding errors
+    let ui_ndc_scale = glam::vec2(
+        (2.0_f64 / window_width as f64) as f32,
+        (2.0_f64 / window_height as f64) as f32
+    );
     
     let ui_cam_uniform = CameraUniform {
         virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
@@ -1579,10 +1584,15 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     
     // UI camera: stretch to fill window (no black bars)
     // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
-    let ui_scale_x = window_width / ui_virtual_width;
-    let ui_scale_y = window_height / ui_virtual_height;
-    let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
-    let ui_ndc_scale = glam::vec2(2.0 / window_width, 2.0 / window_height);
+        // Use f64 for precision to avoid rounding errors that cause gaps
+        let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
+        let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
+        let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+    // Use f64 for precision to avoid rounding errors
+    let ui_ndc_scale = glam::vec2(
+        (2.0_f64 / window_width as f64) as f32,
+        (2.0_f64 / window_height as f64) as f32
+    );
     
     let ui_cam_uniform = CameraUniform {
         virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
@@ -1752,10 +1762,14 @@ impl Graphics {
         // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
         // view matrix scales: virtual_pos * (window/virtual) = window_pos
         // ndc_scale converts: window_pos * (2.0/window) = NDC
-        let ui_scale_x = window_width / ui_virtual_width;
-        let ui_scale_y = window_height / ui_virtual_height;
+        // Use f64 for precision to avoid rounding errors that cause gaps
+        let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
+        let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
         let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
-        let ui_ndc_scale = glam::vec2(2.0 / window_width, 2.0 / window_height);
+        let ui_ndc_scale = glam::vec2(
+            (2.0_f64 / window_width as f64) as f32,
+            (2.0_f64 / window_height as f64) as f32
+        );
 
         let ui_cam_uniform = CameraUniform {
             virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system

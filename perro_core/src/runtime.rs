@@ -324,8 +324,11 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
 
     // 4. Initialize static textures (runtime mode only)
     set_static_textures(data.static_assets.textures);
+    
+    // 5. Initialize static FUR map (for Include tag resolution in release mode)
+    crate::apply_fur::set_static_fur_map(data.static_assets.fur);
 
-    // 5. Create event loop
+    // 6. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
     // 6. Create window and Graphics before building scene

@@ -1,0 +1,42 @@
+[VLayout id=UIEditorContent h=100% anchor=c align=s gap=0 z=40]
+  // UI Editor Layout - Text Editor on left, Live View on right
+  [HLayout w=100% h=100% anchor=c align=s gap=0 pb=1%]
+    
+    // Text Editor Panel - 50% width
+    [Panel w=40% h=100% anchor=c bg=steel-10]
+      [VLayout w=100% h=100% anchor=c align=s gap=0]
+        // Text Editor header
+        [Panel w=100% h=3% anchor=c bg=steel-8 z=51]
+          [Text fsz=15 color=white anchor=c]
+          Text Editor
+          [/Text]
+        [/Panel]
+        
+        // Text Editor content area
+        [Panel w=100% h=100% anchor=c bg=neutral-10]
+          [Panel id=TextEditorContainer w=98% h=97% anchor=c bg=stone-10 rounding=0.05]
+          [/Panel]
+        [/Panel]
+      [/VLayout]
+    [/Panel]
+    
+    // Live View Panel - 50% width
+    [Panel h=100% anchor=c bg=steel-10]
+      [VLayout w=100% h=100% anchor=c align=s gap=0]
+        // Live View header
+        [Panel w=100% h=3% anchor=c bg=steel-8 z=51]
+          [Text fsz=15 color=white anchor=c]
+          Live View
+          [/Text]
+        [/Panel]
+        
+        // Live View content area
+        [Panel w=100% h=60% anchor=c bg=stone-10]
+          [Text fsz=20 color=steel-5 anchor=c align=center]
+          Live Preview
+          [/Text]
+        [/Panel]
+      [/VLayout]
+    [/Panel]
+  [/HLayout]
+[/VLayout]

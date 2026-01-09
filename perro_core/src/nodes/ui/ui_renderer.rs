@@ -15,7 +15,7 @@ use crate::{
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
     ui_elements::{
-        ui_container::{ContainerMode, UIPanel},
+        ui_container::{ContainerMode, LayoutAlignment, Padding, UIPanel},
         ui_text::UIText,
     },
     ui_node::UINode,
@@ -30,6 +30,8 @@ struct LayoutSignature {
     children_order: Vec<Uuid>,
     container_mode: Option<ContainerMode>,
     gap: Option<(i32, i32)>,
+    padding: Option<(i32, i32, i32, i32)>, // top, right, bottom, left
+    align: Option<u8>, // LayoutAlignment as u8
     cols: Option<usize>,
     style_affecting_layout: Vec<(String, i32)>,
 }
@@ -41,13 +43,20 @@ impl LayoutSignature {
 
         let children_order = element.get_children().to_vec();
 
-        let (container_mode, gap, cols) = match element {
+        let (container_mode, gap, padding, align, cols) = match element {
             UIElement::Layout(layout) => (
                 Some(layout.container.mode),
                 Some((
                     (layout.container.gap.x * 1000.0) as i32,
                     (layout.container.gap.y * 1000.0) as i32,
                 )),
+                Some((
+                    (layout.container.padding.top * 1000.0) as i32,
+                    (layout.container.padding.right * 1000.0) as i32,
+                    (layout.container.padding.bottom * 1000.0) as i32,
+                    (layout.container.padding.left * 1000.0) as i32,
+                )),
+                Some(layout.container.align as u8),
                 None,
             ),
             UIElement::GridLayout(grid) => (
@@ -56,10 +65,17 @@ impl LayoutSignature {
                     (grid.container.gap.x * 1000.0) as i32,
                     (grid.container.gap.y * 1000.0) as i32,
                 )),
+                Some((
+                    (grid.container.padding.top * 1000.0) as i32,
+                    (grid.container.padding.right * 1000.0) as i32,
+                    (grid.container.padding.bottom * 1000.0) as i32,
+                    (grid.container.padding.left * 1000.0) as i32,
+                )),
+                Some(grid.container.align as u8),
                 Some(grid.cols),
             ),
-            UIElement::BoxContainer(_) => (None, None, None),
-            _ => (None, None, None),
+            UIElement::BoxContainer(_) => (None, None, None, None, None),
+            _ => (None, None, None, None, None),
         };
 
         let mut style_affecting_layout = Vec::new();
@@ -81,6 +97,8 @@ impl LayoutSignature {
             children_order,
             container_mode,
             gap,
+            padding,
+            align,
             cols,
             style_affecting_layout,
         }
@@ -226,6 +244,177 @@ fn find_percentage_reference_ancestor(
     Some(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT))
 }
 
+/// Helper function to check if an element is effectively visible (considering parent visibility)
+/// Walks up the parent chain to ensure all ancestors are visible
+fn is_effectively_visible(elements: &IndexMap<Uuid, UIElement>, element_id: Uuid) -> bool {
+    let mut current_id = element_id;
+    let mut visited = std::collections::HashSet::new();
+    const MAX_DEPTH: usize = 100; // Prevent infinite loops
+    let mut depth = 0;
+    
+    loop {
+        if depth > MAX_DEPTH {
+            // Safety: prevent infinite loops if parent chain is broken
+            eprintln!("⚠️ is_effectively_visible: Max depth reached for element {}", element_id);
+            return false;
+        }
+        depth += 1;
+        
+        // Prevent infinite loops
+        if visited.contains(&current_id) {
+            eprintln!("⚠️ is_effectively_visible: Circular parent chain detected for element {}", element_id);
+            return false;
+        }
+        visited.insert(current_id);
+        
+        if let Some(element) = elements.get(&current_id) {
+            // If this element is not visible, return false
+            if !element.get_visible() {
+                return false;
+            }
+            // Check parent
+            let parent_id = element.get_parent();
+            if parent_id.is_nil() {
+                // Reached root, element is visible
+                return true;
+            }
+            current_id = parent_id;
+        } else {
+            // Element not found, consider it invisible
+            eprintln!("⚠️ is_effectively_visible: Element {} not found in elements map", current_id);
+            return false;
+        }
+    }
+}
+
+/// Calculate content size using pre-computed caches (FAST - no parent chain walks!)
+fn calculate_content_size_with_visibility_cache(
+    elements: &IndexMap<Uuid, UIElement>,
+    parent_id: &Uuid,
+    visibility_cache: &HashSet<Uuid>,
+    percentage_ref_cache: &HashMap<Uuid, Vector2>,
+) -> Vector2 {
+    let parent = match elements.get(parent_id) {
+        Some(p) => p,
+        None => return Vector2::new(0.0, 0.0),
+    };
+
+    let children_ids = parent.get_children();
+    if children_ids.is_empty() {
+        return Vector2::new(0.0, 0.0);
+    }
+
+    // Convert to Vec for parallel processing
+    let children_vec: Vec<&Uuid> = children_ids.iter().collect();
+    let resolved_child_sizes: Vec<Vector2> = children_vec
+        .par_iter()
+        .filter_map(|&&child_id| {
+            // Use cached visibility instead of calling is_effectively_visible!
+            if !visibility_cache.contains(&child_id) {
+                return None; // Child is invisible
+            }
+            
+            elements.get(&child_id).map(|child| {
+                let mut child_size = *child.get_size();
+
+                // Use cached percentage reference (no parent chain walk!)
+                let percentage_reference_size = percentage_ref_cache
+                    .get(&child_id)
+                    .copied()
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+
+                // Resolve percentages
+                let style_map = child.get_style_map();
+                if let Some(&pct) = style_map.get("size.x") {
+                    if pct >= 0.0 {
+                        child_size.x = (percentage_reference_size.x as f64 * (pct as f64 / 100.0)) as f32;
+                    }
+                }
+                if let Some(&pct) = style_map.get("size.y") {
+                    if pct >= 0.0 {
+                        child_size.y = (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
+                    }
+                }
+
+                child_size
+            })
+        })
+        .collect();
+
+    // If all children are invisible, return 0 size
+    if resolved_child_sizes.is_empty() {
+        return Vector2::new(0.0, 0.0);
+    }
+
+    // Handle different container types
+    match parent {
+        UIElement::BoxContainer(_) => {
+            let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+            let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+            Vector2::new(max_width, max_height)
+        }
+        UIElement::Layout(layout) => {
+            let gap = layout.container.gap;
+            let padding = layout.container.padding;
+
+            let content_size = match layout.container.mode {
+                ContainerMode::Horizontal => {
+                    let total_width: f64 = resolved_child_sizes.par_iter().map(|size| size.x as f64).sum();
+                    let gap_width = if resolved_child_sizes.len() > 1 {
+                        gap.x as f64 * (resolved_child_sizes.len() - 1) as f64
+                    } else {
+                        0.0
+                    };
+                    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+                    Vector2::new((total_width + gap_width) as f32, max_height)
+                }
+                ContainerMode::Vertical => {
+                    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+                    let total_height: f64 = resolved_child_sizes.par_iter().map(|size| size.y as f64).sum();
+                    let gap_height = if resolved_child_sizes.len() > 1 {
+                        gap.y as f64 * (resolved_child_sizes.len() - 1) as f64
+                    } else {
+                        0.0
+                    };
+                    Vector2::new(max_width, (total_height + gap_height) as f32)
+                }
+                ContainerMode::Grid => {
+                    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
+                    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+                    Vector2::new(max_width, max_height)
+                }
+            };
+            
+            Vector2::new(
+                content_size.x + padding.horizontal(),
+                content_size.y + padding.vertical(),
+            )
+        }
+        UIElement::GridLayout(grid) => {
+            let gap = grid.container.gap;
+            let padding = grid.container.padding;
+            let cols = grid.cols;
+
+            if cols == 0 || resolved_child_sizes.is_empty() {
+                return Vector2::new(0.0, 0.0);
+            }
+
+            let rows = (resolved_child_sizes.len() + cols - 1) / cols;
+            let max_cell_width = resolved_child_sizes.par_iter().map(|size| size.x as f64).reduce(|| 0.0, f64::max);
+            let max_cell_height = resolved_child_sizes.par_iter().map(|size| size.y as f64).reduce(|| 0.0, f64::max);
+
+            let total_width = max_cell_width * cols as f64 + if cols > 1 { gap.x as f64 * (cols - 1) as f64 } else { 0.0 };
+            let total_height = max_cell_height * rows as f64 + if rows > 1 { gap.y as f64 * (rows - 1) as f64 } else { 0.0 };
+
+            Vector2::new(
+                (total_width + padding.horizontal() as f64) as f32,
+                (total_height + padding.vertical() as f64) as f32,
+            )
+        }
+        _ => Vector2::new(0.0, 0.0),
+    }
+}
+
 /// FIXED: Remove cache parameter to match working version
 pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &Uuid) -> Vector2 {
     let parent = match elements.get(parent_id) {
@@ -244,6 +433,11 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
         .par_iter()
         .filter_map(|&&child_id| {
             elements.get(&child_id).map(|child| {
+                // Check effective visibility (including parent visibility)
+                if !is_effectively_visible(elements, child_id) {
+                    return Vector2::new(0.0, 0.0);
+                }
+                
                 let mut child_size = *child.get_size();
 
                 // Find the percentage reference for this child
@@ -252,18 +446,19 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
                         .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
 
                 // Resolve percentages using the smart reference (skip auto-sizing)
+                // Use f64 for precision to avoid rounding errors
                 let style_map = child.get_style_map();
                 if let Some(&pct) = style_map.get("size.x") {
                     if pct >= 0.0 {
                         // Not auto-sizing, resolve percentage
-                        child_size.x = percentage_reference_size.x * (pct / 100.0);
+                        child_size.x = (percentage_reference_size.x as f64 * (pct as f64 / 100.0)) as f32;
                     }
                     // If pct < 0.0, it's auto-sizing - keep default size for now
                 }
                 if let Some(&pct) = style_map.get("size.y") {
                     if pct >= 0.0 {
                         // Not auto-sizing, resolve percentage
-                        child_size.y = percentage_reference_size.y * (pct / 100.0);
+                        child_size.y = (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
                     }
                     // If pct < 0.0, it's auto-sizing - keep default size for now
                 }
@@ -273,7 +468,8 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
         })
         .collect();
 
-    if resolved_child_sizes.is_empty() {
+    // If all children are invisible, return 0 size (layout should collapse)
+    if resolved_child_sizes.is_empty() || resolved_child_sizes.iter().all(|s| s.x == 0.0 && s.y == 0.0) {
         return Vector2::new(0.0, 0.0);
     }
 
@@ -294,19 +490,15 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
         }
         UIElement::Layout(layout) => {
             let container_mode = &layout.container.mode;
-            let _gap = layout.container.gap;
+            let gap = layout.container.gap;
+            let padding = layout.container.padding;
 
-            match container_mode {
+            let content_size = match container_mode {
                 ContainerMode::Horizontal => {
-                    // Width: sum of all children + gaps (gap = average child size)
-                    let total_width: f32 = resolved_child_sizes.par_iter().map(|size| size.x).sum();
-                    let avg_child_width = if !resolved_child_sizes.is_empty() {
-                        total_width / resolved_child_sizes.len() as f32
-                    } else {
-                        0.0
-                    };
+                    // Width: sum of all children + gaps (use actual gap value, not default)
+                    let total_width: f64 = resolved_child_sizes.par_iter().map(|size| size.x as f64).sum();
                     let gap_width = if resolved_child_sizes.len() > 1 {
-                        avg_child_width * (resolved_child_sizes.len() - 1) as f32
+                        gap.x as f64 * (resolved_child_sizes.len() - 1) as f64
                     } else {
                         0.0
                     };
@@ -315,7 +507,7 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
                         .par_iter()
                         .map(|size| size.y)
                         .reduce(|| 0.0, f32::max);
-                    Vector2::new(total_width + gap_width, max_height)
+                    Vector2::new((total_width + gap_width) as f32, max_height)
                 }
                 ContainerMode::Vertical => {
                     // Width: max of all children
@@ -323,20 +515,15 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
                         .par_iter()
                         .map(|size| size.x)
                         .reduce(|| 0.0, f32::max);
-                    // Height: sum of all children + gaps (gap = average child size)
-                    let total_height: f32 =
-                        resolved_child_sizes.par_iter().map(|size| size.y).sum();
-                    let avg_child_height = if !resolved_child_sizes.is_empty() {
-                        total_height / resolved_child_sizes.len() as f32
-                    } else {
-                        0.0
-                    };
+                    // Height: sum of all children + gaps (use actual gap value, not default)
+                    let total_height: f64 =
+                        resolved_child_sizes.par_iter().map(|size| size.y as f64).sum();
                     let gap_height = if resolved_child_sizes.len() > 1 {
-                        avg_child_height * (resolved_child_sizes.len() - 1) as f32
+                        gap.y as f64 * (resolved_child_sizes.len() - 1) as f64
                     } else {
                         0.0
                     };
-                    Vector2::new(max_width, total_height + gap_height)
+                    Vector2::new(max_width, (total_height + gap_height) as f32)
                 }
                 ContainerMode::Grid => {
                     // This shouldn't happen for Layout, but handle it anyway
@@ -350,10 +537,17 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
                         .reduce(|| 0.0, f32::max);
                     Vector2::new(max_width, max_height)
                 }
-            }
+            };
+            
+            // Add padding to content size
+            Vector2::new(
+                content_size.x + padding.horizontal(),
+                content_size.y + padding.vertical(),
+            )
         }
         UIElement::GridLayout(grid) => {
             let gap = grid.container.gap;
+            let padding = grid.container.padding;
             let cols = grid.cols;
 
             if cols == 0 {
@@ -367,32 +561,37 @@ pub fn calculate_content_size(elements: &IndexMap<Uuid, UIElement>, parent_id: &
             let rows = (resolved_child_sizes.len() + cols - 1) / cols; // Ceiling division
 
             // Find max dimensions for grid cells using parallel processing
+            // Use f64 for precision during calculations
             let max_cell_width = resolved_child_sizes
                 .par_iter()
-                .map(|size| size.x)
-                .reduce(|| 0.0, f32::max);
+                .map(|size| size.x as f64)
+                .reduce(|| 0.0, f64::max);
             let max_cell_height = resolved_child_sizes
                 .par_iter()
-                .map(|size| size.y)
-                .reduce(|| 0.0, f32::max);
+                .map(|size| size.y as f64)
+                .reduce(|| 0.0, f64::max);
 
             // Total width: (cols × max_width) + gaps between columns
-            let total_width = max_cell_width * cols as f32
+            let total_width = max_cell_width * cols as f64
                 + if cols > 1 {
-                    gap.x * (cols - 1) as f32
+                    gap.x as f64 * (cols - 1) as f64
                 } else {
                     0.0
                 };
 
             // Total height: (rows × max_height) + gaps between rows
-            let total_height = max_cell_height * rows as f32
+            let total_height = max_cell_height * rows as f64
                 + if rows > 1 {
-                    gap.y * (rows - 1) as f32
+                    gap.y as f64 * (rows - 1) as f64
                 } else {
                     0.0
                 };
 
-            Vector2::new(total_width, total_height)
+            // Add padding to content size
+            Vector2::new(
+                (total_width + padding.horizontal() as f64) as f32,
+                (total_height + padding.vertical() as f64) as f32,
+            )
         }
         _ => Vector2::new(0.0, 0.0), // Not a container
     }
@@ -450,37 +649,67 @@ pub fn calculate_layout_positions(
 
     // Get layout properties and parent info before we start mutating
     // First, resolve parent's percentage size if it has one
+    // For layout containers, if they have percentage sizes, use the immediate parent's resolved size
     let mut resolved_parent_size = *parent.get_size();
     let parent_style_map = parent.get_style_map();
     
     // Resolve parent's percentage sizes
+    // For layout containers with percentage sizes, use immediate parent's actual size (not percentage reference ancestor)
     if let Some(&pct_x) = parent_style_map.get("size.x") {
         if pct_x >= 0.0 {  // Not auto-sizing
-            let percentage_reference_size =
-                find_percentage_reference_ancestor(elements, parent_id)
-                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
-            resolved_parent_size.x = percentage_reference_size.x * (pct_x / 100.0);
+            // For layout containers, use immediate parent's resolved size
+            let parent_parent_id = parent.get_parent();
+            if !parent_parent_id.is_nil() {
+                if let Some(parent_parent) = elements.get(&parent_parent_id) {
+                    resolved_parent_size.x = (parent_parent.get_size().x as f64 * (pct_x as f64 / 100.0)) as f32;
+                } else {
+                    let percentage_reference_size =
+                        find_percentage_reference_ancestor(elements, parent_id)
+                            .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                    resolved_parent_size.x = (percentage_reference_size.x as f64 * (pct_x as f64 / 100.0)) as f32;
+                }
+            } else {
+                let percentage_reference_size =
+                    find_percentage_reference_ancestor(elements, parent_id)
+                        .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                resolved_parent_size.x = (percentage_reference_size.x as f64 * (pct_x as f64 / 100.0)) as f32;
+            }
         }
     }
     if let Some(&pct_y) = parent_style_map.get("size.y") {
         if pct_y >= 0.0 {  // Not auto-sizing
-            let percentage_reference_size =
-                find_percentage_reference_ancestor(elements, parent_id)
-                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
-            resolved_parent_size.y = percentage_reference_size.y * (pct_y / 100.0);
+            // For layout containers, use immediate parent's resolved size
+            let parent_parent_id = parent.get_parent();
+            if !parent_parent_id.is_nil() {
+                if let Some(parent_parent) = elements.get(&parent_parent_id) {
+                    resolved_parent_size.y = (parent_parent.get_size().y as f64 * (pct_y as f64 / 100.0)) as f32;
+                } else {
+                    let percentage_reference_size =
+                        find_percentage_reference_ancestor(elements, parent_id)
+                            .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                    resolved_parent_size.y = (percentage_reference_size.y as f64 * (pct_y as f64 / 100.0)) as f32;
+                }
+            } else {
+                let percentage_reference_size =
+                    find_percentage_reference_ancestor(elements, parent_id)
+                        .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                resolved_parent_size.y = (percentage_reference_size.y as f64 * (pct_y as f64 / 100.0)) as f32;
+            }
         }
     }
     
-    let (container_mode, extra_gap, parent_anchor) = match parent {
+    let (container_mode, extra_gap, padding, layout_align) = match parent {
         UIElement::Layout(layout) => (
             layout.container.mode,  // Copy the enum
             layout.container.gap,   // Copy the Vector2
-            *parent.get_anchor(),
+            layout.container.padding, // Copy the Padding
+            layout.container.align, // Copy the LayoutAlignment
         ),
         UIElement::GridLayout(grid) => (
             grid.container.mode,  // Copy the enum
             grid.container.gap,   // Copy the Vector2
-            *parent.get_anchor(),
+            grid.container.padding, // Copy the Padding
+            grid.container.align, // Copy the LayoutAlignment
         ),
         UIElement::BoxContainer(_) => {
             // BoxContainer doesn't position children - they use anchors/manual positioning
@@ -489,8 +718,14 @@ pub fn calculate_layout_positions(
         _ => return Vec::new(), // Not a layout container
     };
     
+    // Reduce effective parent size by padding for child layout calculations
+    let effective_parent_size = Vector2::new(
+        (resolved_parent_size.x - padding.horizontal()).max(0.0),
+        (resolved_parent_size.y - padding.vertical()).max(0.0),
+    );
+    
     let parent_size = resolved_parent_size;
-    let use_content_based = parent_size.x < 1.0 && parent_size.y < 1.0;
+    let use_content_based = effective_parent_size.x < 1.0 && effective_parent_size.y < 1.0;
     
     // Convert to Vec for processing
     let children_vec: Vec<&Uuid> = children_ids.iter().collect();
@@ -500,26 +735,57 @@ pub fn calculate_layout_positions(
         .iter()
         .filter_map(|&&child_id| {
             elements.get(&child_id).map(|child| {
+                // Check effective visibility (including parent visibility)
+                let is_visible = is_effectively_visible(elements, child_id);
                 let mut child_size = *child.get_size();
                 let style_map = child.get_style_map();
                 
-                // Check for auto-sizing: explicit "auto" (< 0.0) OR no size specified
-                let auto_x = style_map.get("size.x").map(|&v| v < 0.0).unwrap_or(true); // No size = auto
-                let auto_y = style_map.get("size.y").map(|&v| v < 0.0).unwrap_or(true); // No size = auto
+                // If element is invisible (or parent is invisible), treat it as having 0 size for layout calculations
+                if !is_visible {
+                    return (child_id, Vector2::new(0.0, 0.0), false, false);
+                }
                 
-                // Resolve percentages for non-auto sizes
-                // For layout children, percentages are relative to the immediate parent (layout container)
-                if !auto_x {
-                    if let Some(&pct) = style_map.get("size.x") {
-                        // Use the resolved parent size as the reference for layout children
-                        child_size.x = parent_size.x * (pct / 100.0);
+                // Check for auto-sizing: explicit "auto" (< 0.0) OR no size specified
+                // Absolute values are stored in style_map with a marker (> 10000)
+                const ABSOLUTE_MARKER: f32 = 10000.0;
+                let mut auto_x = style_map.get("size.x").map(|&v| v < 0.0).unwrap_or(true); // No size = auto
+                let mut auto_y = style_map.get("size.y").map(|&v| v < 0.0).unwrap_or(true); // No size = auto
+                
+                // Check if this is an explicit absolute size (marked with > 10000)
+                let is_abs_x = style_map.get("size.x").map(|&v| v >= ABSOLUTE_MARKER).unwrap_or(false);
+                let is_abs_y = style_map.get("size.y").map(|&v| v >= ABSOLUTE_MARKER).unwrap_or(false);
+                
+                // If it's an explicit absolute size, it's not auto
+                if is_abs_x {
+                    auto_x = false;
+                    // Extract the actual absolute value (remove the marker)
+                    if let Some(&marked_value) = style_map.get("size.x") {
+                        child_size.x = marked_value - ABSOLUTE_MARKER;
+                    }
+                }
+                if is_abs_y {
+                    auto_y = false;
+                    // Extract the actual absolute value (remove the marker)
+                    if let Some(&marked_value) = style_map.get("size.y") {
+                        child_size.y = marked_value - ABSOLUTE_MARKER;
                     }
                 }
                 
-                if !auto_y {
+                // Resolve percentages for non-auto sizes
+                // For layout children, percentages are relative to the effective parent size (after padding)
+                // Use f64 for precision to avoid rounding errors in percentage calculations
+                // Round up to ensure elements don't get smaller than intended
+                if !auto_x && !is_abs_x {
+                    if let Some(&pct) = style_map.get("size.x") {
+                        // Use the effective parent size (after padding) as the reference for layout children
+                        child_size.x = (effective_parent_size.x as f64 * (pct as f64 / 100.0)).ceil() as f32;
+                    }
+                }
+                
+                if !auto_y && !is_abs_y {
                     if let Some(&pct) = style_map.get("size.y") {
-                        // Use the resolved parent size as the reference for layout children
-                        child_size.y = parent_size.y * (pct / 100.0);
+                        // Use the effective parent size (after padding) as the reference for layout children
+                        child_size.y = (effective_parent_size.y as f64 * (pct as f64 / 100.0)).ceil() as f32;
                     }
                 }
                 
@@ -541,22 +807,25 @@ pub fn calculate_layout_positions(
         ContainerMode::Horizontal => {
             let auto_count = child_info.iter().filter(|(_, _, auto_x, _)| *auto_x).count();
             
-            if !use_content_based && parent_size.x >= 1.0 {
+            if !use_content_based && effective_parent_size.x >= 1.0 {
                 // Parent has explicit size - calculate all child sizes first
                 if auto_count > 0 {
                     // We have auto children - calculate their sizes
-                    let total_fixed: f32 = child_info.iter()
-                        .map(|(_, size, auto_x, _)| if !*auto_x { size.x } else { 0.0 })
+                    // Use f64 for precision to avoid rounding errors
+                    let total_fixed: f64 = child_info.iter()
+                        .map(|(_, size, auto_x, _)| if !*auto_x { size.x as f64 } else { 0.0 })
                         .sum();
                     
                     // Remaining space for auto children (each gets 1/n of remaining)
-                    let remaining = parent_size.x - total_fixed;
-                    let auto_width = remaining / auto_count as f32;
+                    // Use effective parent size (after padding)
+                    let remaining = effective_parent_size.x as f64 - total_fixed;
+                    let auto_width = remaining / auto_count as f64;
                     
                     // Apply auto sizes
+                    // Round up to ensure elements don't get smaller than intended
                     for (_, size, auto_x, _) in child_info.iter_mut() {
                         if *auto_x {
-                            size.x = auto_width.max(0.0);
+                            size.x = auto_width.max(0.0).ceil() as f32;
                         }
                     }
                 }
@@ -572,31 +841,31 @@ pub fn calculate_layout_positions(
                 }
             }
             
-            // Always calculate gaps after all child sizes are determined
-            // Gap is just the extra_gap attribute value (no default gap)
-            for _i in 0..(child_info.len() - 1) {
-                individual_gaps.push(extra_gap.x);
-            }
+            // Gaps will be recalculated later to only include gaps between visible elements
+            // This is a placeholder - actual gap calculation happens after filtering
         }
         ContainerMode::Vertical => {
             let auto_count = child_info.iter().filter(|(_, _, _, auto_y)| *auto_y).count();
             
-            if !use_content_based && parent_size.y >= 1.0 {
+            if !use_content_based && effective_parent_size.y >= 1.0 {
                 // Parent has explicit size - calculate all child sizes first
                 if auto_count > 0 {
                     // We have auto children - calculate their sizes
-                    let total_fixed: f32 = child_info.iter()
-                        .map(|(_, size, _, auto_y)| if !*auto_y { size.y } else { 0.0 })
+                    // Use f64 for precision to avoid rounding errors
+                    let total_fixed: f64 = child_info.iter()
+                        .map(|(_, size, _, auto_y)| if !*auto_y { size.y as f64 } else { 0.0 })
                         .sum();
                     
                     // Remaining space for auto children (each gets 1/n of remaining)
-                    let remaining = parent_size.y - total_fixed;
-                    let auto_height = remaining / auto_count as f32;
+                    // Use effective parent size (after padding)
+                    let remaining = effective_parent_size.y as f64 - total_fixed;
+                    let auto_height = remaining / auto_count as f64;
                     
                     // Apply auto sizes
+                    // Round up to ensure elements don't get smaller than intended
                     for (_, size, _, auto_y) in child_info.iter_mut() {
                         if *auto_y {
-                            size.y = auto_height.max(0.0);
+                            size.y = auto_height.max(0.0).ceil() as f32;
                         }
                     }
                 }
@@ -612,11 +881,8 @@ pub fn calculate_layout_positions(
                 }
             }
             
-            // Always calculate gaps after all child sizes are determined
-            // Gap is just the extra_gap attribute value (no default gap)
-            for _i in 0..(child_info.len() - 1) {
-                individual_gaps.push(extra_gap.y);
-            }
+            // Gaps will be recalculated later to only include gaps between visible elements
+            // This is a placeholder - actual gap calculation happens after filtering
         }
         ContainerMode::Grid => {
             // Grid layout doesn't support auto-sizing in the same way
@@ -626,20 +892,21 @@ pub fn calculate_layout_positions(
     
     // Inherit perpendicular dimension from parent layout
     // HLayout children inherit height, VLayout children inherit width
+    // Use effective parent size (after padding)
     match &container_mode {
         ContainerMode::Horizontal => {
-            // For horizontal layouts, children without height inherit parent height
+            // For horizontal layouts, children without height inherit effective parent height
             for (_, size, _, auto_y) in child_info.iter_mut() {
-                if *auto_y && parent_size.y >= 1.0 {
-                    size.y = parent_size.y;
+                if *auto_y && effective_parent_size.y >= 1.0 {
+                    size.y = effective_parent_size.y;
                 }
             }
         }
         ContainerMode::Vertical => {
-            // For vertical layouts, children without width inherit parent width
+            // For vertical layouts, children without width inherit effective parent width
             for (_, size, auto_x, _) in child_info.iter_mut() {
-                if *auto_x && parent_size.x >= 1.0 {
-                    size.x = parent_size.x;
+                if *auto_x && effective_parent_size.x >= 1.0 {
+                    size.x = effective_parent_size.x;
                 }
             }
         }
@@ -656,17 +923,33 @@ pub fn calculate_layout_positions(
         }
     }
     
+    // Recalculate gaps only between visible elements (non-zero size)
+    let mut visible_gaps: Vec<f32> = Vec::new();
+    let mut prev_was_visible = false;
+    for (_, size, _, _) in &child_info {
+        let is_visible = size.x > 0.0 || size.y > 0.0;
+        if prev_was_visible && is_visible {
+            // Add gap between two visible elements
+            match container_mode {
+                ContainerMode::Horizontal => visible_gaps.push(extra_gap.x),
+                ContainerMode::Vertical => visible_gaps.push(extra_gap.y),
+                ContainerMode::Grid => {}, // Grid handles gaps differently
+            }
+        }
+        prev_was_visible = is_visible;
+    }
+    
     // Convert to format expected by layout functions
     let child_info_simple: Vec<(Uuid, Vector2)> = child_info
-        .into_iter()
-        .map(|(id, size, _, _)| (id, size))
+        .iter()
+        .map(|(id, size, _, _)| (*id, *size))
         .collect();
     
-    // Use calculated individual gaps
+    // Use calculated individual gaps (now only between visible elements)
     let mut positions = match container_mode {
         ContainerMode::Horizontal => {
-            if !individual_gaps.is_empty() {
-                calculate_horizontal_layout_with_individual_gaps(&child_info_simple, &individual_gaps)
+            if !visible_gaps.is_empty() {
+                calculate_horizontal_layout_with_individual_gaps(&child_info_simple, &visible_gaps)
             } else {
                 // Fallback: use default gap calculation
                 let default_gap = Vector2::new(extra_gap.x, 0.0);
@@ -674,8 +957,8 @@ pub fn calculate_layout_positions(
             }
         }
         ContainerMode::Vertical => {
-            if !individual_gaps.is_empty() {
-                calculate_vertical_layout_with_individual_gaps(&child_info_simple, &individual_gaps)
+            if !visible_gaps.is_empty() {
+                calculate_vertical_layout_with_individual_gaps(&child_info_simple, &visible_gaps)
             } else {
                 // Fallback: use default gap calculation
                 let default_gap = Vector2::new(0.0, extra_gap.y);
@@ -693,22 +976,41 @@ pub fn calculate_layout_positions(
             } else {
                 1
             };
-            calculate_grid_layout(&child_info_simple, extra_gap, cols)
+            let mut grid_positions = calculate_grid_layout(&child_info_simple, extra_gap, cols);
+            
+            // Apply padding offset to grid positions
+            // Shift content right by left padding and down by top padding
+            let padding_offset_x = padding.left - padding.right;
+            let padding_offset_y = padding.top - padding.bottom;
+            for (_, pos) in &mut grid_positions {
+                pos.x += padding_offset_x;
+                pos.y += padding_offset_y;
+            }
+            
+            grid_positions
         }
     };
     
-    // Adjust positions based on parent anchor for horizontal layouts
+    // Adjust positions based on layout alignment for horizontal layouts
+    // Account for padding by offsetting positions
     if matches!(&container_mode, ContainerMode::Horizontal) {
-        match parent_anchor {
-            FurAnchor::Left | FurAnchor::TopLeft | FurAnchor::BottomLeft => {
-                // Left align: shift all positions to start from left edge
-                // First child's left edge should be at parent's left edge
+        // Apply vertical padding offset to center children within the padded area
+        // The effective area is centered, so offset by (top - bottom) / 2
+        let padding_offset_y = (padding.top - padding.bottom) * 0.5;
+        for (_, pos) in &mut positions {
+            pos.y += padding_offset_y;
+        }
+        
+        // Use layout alignment (align parameter) instead of parent anchor
+        match layout_align {
+            LayoutAlignment::Start => {
+                // Start align: shift all positions to start from left edge (accounting for padding)
                 if let Some((_, first_pos)) = positions.first() {
                     if let Some((_, first_size)) = child_info_simple.first() {
                         // First child's left edge = first_pos.x - first_size.x * 0.5
-                        // We want it at -parent_size.x * 0.5
+                        // We want it at -parent_size.x * 0.5 + padding.left
                         let first_left = first_pos.x - first_size.x * 0.5;
-                        let target_left = -parent_size.x * 0.5;
+                        let target_left = -parent_size.x * 0.5 + padding.left;
                         let offset = target_left - first_left;
                         for (_, pos) in &mut positions {
                             pos.x += offset;
@@ -716,14 +1018,14 @@ pub fn calculate_layout_positions(
                     }
                 }
             }
-            FurAnchor::Right | FurAnchor::TopRight | FurAnchor::BottomRight => {
-                // Right align: shift all positions to end at right edge
+            LayoutAlignment::End => {
+                // End align: shift all positions to end at right edge (accounting for padding)
                 if let Some((_, last_pos)) = positions.last() {
                     if let Some((_, last_size)) = child_info_simple.last() {
                         // Last child's right edge = last_pos.x + last_size.x * 0.5
-                        // We want it at parent_size.x * 0.5
+                        // We want it at parent_size.x * 0.5 - padding.right
                         let last_right = last_pos.x + last_size.x * 0.5;
-                        let target_right = parent_size.x * 0.5;
+                        let target_right = parent_size.x * 0.5 - padding.right;
                         let offset = target_right - last_right;
                         for (_, pos) in &mut positions {
                             pos.x += offset;
@@ -731,24 +1033,28 @@ pub fn calculate_layout_positions(
                     }
                 }
             }
-            _ => {
-                // Center (default) - positions are already centered
+            LayoutAlignment::Center => {
+                // Center (default) - positions are already centered, just apply horizontal padding offset
+                let padding_offset_x = (padding.left - padding.right) * 0.5;
+                for (_, pos) in &mut positions {
+                    pos.x += padding_offset_x;
+                }
             }
         }
     }
     
-    // Adjust positions based on parent anchor for vertical layouts
+    // Adjust positions based on layout alignment for vertical layouts
+    // Account for padding by offsetting positions
     if matches!(&container_mode, ContainerMode::Vertical) {
-        match parent_anchor {
-            FurAnchor::Top | FurAnchor::TopLeft | FurAnchor::TopRight => {
-                // Top align: shift all positions to start from top edge
-                // First child's top edge should be at parent's top edge
+        match layout_align {
+            LayoutAlignment::Start => {
+                // Start align: shift all positions to start from top edge (accounting for padding)
                 if let Some((_, first_pos)) = positions.first() {
                     if let Some((_, first_size)) = child_info_simple.first() {
                         // First child's top edge = first_pos.y + first_size.y * 0.5
-                        // We want it at parent_size.y * 0.5
+                        // We want it at parent_size.y * 0.5 - padding.top (top of effective area)
                         let first_top = first_pos.y + first_size.y * 0.5;
-                        let target_top = parent_size.y * 0.5;
+                        let target_top = parent_size.y * 0.5 - padding.top;
                         let offset = target_top - first_top;
                         for (_, pos) in &mut positions {
                             pos.y += offset;
@@ -756,14 +1062,14 @@ pub fn calculate_layout_positions(
                     }
                 }
             }
-            FurAnchor::Bottom | FurAnchor::BottomLeft | FurAnchor::BottomRight => {
-                // Bottom align: shift all positions to end at bottom edge
+            LayoutAlignment::End => {
+                // End align: shift all positions to end at bottom edge (accounting for padding)
                 if let Some((_, last_pos)) = positions.last() {
                     if let Some((_, last_size)) = child_info_simple.last() {
                         // Last child's bottom edge = last_pos.y - last_size.y * 0.5
-                        // We want it at -parent_size.y * 0.5
+                        // We want it at -parent_size.y * 0.5 + padding.bottom (bottom of effective area)
                         let last_bottom = last_pos.y - last_size.y * 0.5;
-                        let target_bottom = -parent_size.y * 0.5;
+                        let target_bottom = -parent_size.y * 0.5 + padding.bottom;
                         let offset = target_bottom - last_bottom;
                         for (_, pos) in &mut positions {
                             pos.y += offset;
@@ -771,8 +1077,13 @@ pub fn calculate_layout_positions(
                     }
                 }
             }
-            _ => {
-                // Center (default) - positions are already centered
+            LayoutAlignment::Center => {
+                // Center (default) - center within the effective area (after padding)
+                // Apply vertical padding offset to center content within padded area
+                let padding_offset_y = (padding.top - padding.bottom) * 0.5;
+                for (_, pos) in &mut positions {
+                    pos.y += padding_offset_y;
+                }
             }
         }
     }
@@ -784,10 +1095,15 @@ pub fn calculate_layout_positions(
 fn calculate_horizontal_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
 
+    if children.is_empty() {
+        return positions;
+    }
+
     // Calculate total width needed using parallel processing
-    let total_child_width: f32 = children.par_iter().map(|(_, size)| size.x).sum();
+    // Use f64 for precision during calculations
+    let total_child_width: f64 = children.par_iter().map(|(_, size)| size.x as f64).sum();
     let total_gap_width = if children.len() > 1 {
-        gap.x * (children.len() - 1) as f32
+        gap.x as f64 * (children.len() - 1) as f64
     } else {
         0.0
     };
@@ -796,18 +1112,22 @@ fn calculate_horizontal_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Ve
     // Start from the left edge of the content area (which is centered in the parent)
     let start_x = -total_content_width * 0.5;
 
-    // Position each child from left to right
-    let mut current_x = start_x;
-
+    // Calculate positions directly to avoid floating point accumulation errors
+    // Use f64 for precision during accumulation
+    // When gap=0, ensure edges align exactly by calculating from edges
+    let mut accumulated_width = 0.0_f64;
     for (child_id, child_size) in children {
-        // Position child at its left edge, then offset by half its width to center it
-        let child_x = current_x + child_size.x * 0.5;
+        // Calculate position from left edge, then add half width to get center
+        // This ensures exact edge alignment when gap=0
+        // Use floor for positions to ensure consistent alignment
+        let child_left_edge = start_x + accumulated_width;
+        let child_x = (child_left_edge + child_size.x as f64 * 0.5).floor() as f32;
         let child_y = 0.0; // Center vertically in parent
 
         positions.push((*child_id, Vector2::new(child_x, child_y)));
 
-        // Move to next position
-        current_x += child_size.x + gap.x;
+        // Update accumulated width: move to right edge of current element, then add gap
+        accumulated_width += child_size.x as f64 + gap.x as f64;
     }
 
     positions
@@ -816,28 +1136,37 @@ fn calculate_horizontal_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Ve
 fn calculate_horizontal_layout_with_individual_gaps(children: &[(Uuid, Vector2)], gaps: &[f32]) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
 
+    if children.is_empty() {
+        return positions;
+    }
+
     // Calculate total width needed
-    let total_child_width: f32 = children.iter().map(|(_, size)| size.x).sum();
-    let total_gap_width: f32 = gaps.iter().sum();
+    // Use f64 for precision during calculations
+    let total_child_width: f64 = children.iter().map(|(_, size)| size.x as f64).sum();
+    let total_gap_width: f64 = gaps.iter().map(|&g| g as f64).sum();
     let total_content_width = total_child_width + total_gap_width;
 
     // Start from the left edge of the content area (which is centered in the parent)
     let start_x = -total_content_width * 0.5;
 
-    // Position each child from left to right
-    let mut current_x = start_x;
-
+    // Calculate positions directly to avoid floating point accumulation errors
+    // Use f64 for precision during accumulation
+    // When gap=0, ensure edges align exactly by calculating from edges
+    let mut accumulated_width = 0.0_f64;
     for (i, (child_id, child_size)) in children.iter().enumerate() {
-        // Position child at its left edge, then offset by half its width to center it
-        let child_x = current_x + child_size.x * 0.5;
+        // Calculate position from left edge, then add half width to get center
+        // This ensures exact edge alignment when gap=0
+        // Use floor for positions to ensure consistent alignment
+        let child_left_edge = start_x + accumulated_width;
+        let child_x = (child_left_edge + child_size.x as f64 * 0.5).floor() as f32;
         let child_y = 0.0; // Center vertically in parent
 
         positions.push((*child_id, Vector2::new(child_x, child_y)));
 
-        // Move to next position with individual gap
-        current_x += child_size.x;
+        // Update accumulated width: move to right edge of current element, then add gap
+        accumulated_width += child_size.x as f64;
         if i < gaps.len() {
-            current_x += gaps[i];
+            accumulated_width += gaps[i] as f64;
         }
     }
 
@@ -847,10 +1176,15 @@ fn calculate_horizontal_layout_with_individual_gaps(children: &[(Uuid, Vector2)]
 fn calculate_vertical_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
 
+    if children.is_empty() {
+        return positions;
+    }
+
     // Calculate total height needed using parallel processing
-    let total_child_height: f32 = children.par_iter().map(|(_, size)| size.y).sum();
+    // Use f64 for precision during calculations
+    let total_child_height: f64 = children.par_iter().map(|(_, size)| size.y as f64).sum();
     let total_gap_height = if children.len() > 1 {
-        gap.y * (children.len() - 1) as f32
+        gap.y as f64 * (children.len() - 1) as f64
     } else {
         0.0
     };
@@ -859,18 +1193,22 @@ fn calculate_vertical_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Vec<
     // Start from the top edge of the content area (which is centered in the parent)
     let start_y = total_content_height * 0.5;
 
-    // Position each child from top to bottom
-    let mut current_y = start_y;
-
+    // Calculate positions directly to avoid floating point accumulation errors
+    // Use f64 for precision during accumulation
+    // When gap=0, ensure edges align exactly by calculating from edges
+    let mut accumulated_height = 0.0_f64;
     for (child_id, child_size) in children {
-        // Position child at its top edge, then offset by half its height to center it
-        let child_y = current_y - child_size.y * 0.5;
+        // Calculate position from top edge, then subtract half height to get center
+        // This ensures exact edge alignment when gap=0
+        // Use floor for positions to ensure consistent alignment
+        let child_top_edge = start_y - accumulated_height;
+        let child_y = (child_top_edge - child_size.y as f64 * 0.5).floor() as f32;
         let child_x = 0.0; // Center horizontally in parent
 
         positions.push((*child_id, Vector2::new(child_x, child_y)));
 
-        // Move to next position (downward)
-        current_y -= child_size.y + gap.y;
+        // Update accumulated height: move to bottom edge of current element, then add gap
+        accumulated_height += child_size.y as f64 + gap.y as f64;
     }
 
     positions
@@ -879,28 +1217,37 @@ fn calculate_vertical_layout(children: &[(Uuid, Vector2)], gap: Vector2) -> Vec<
 fn calculate_vertical_layout_with_individual_gaps(children: &[(Uuid, Vector2)], gaps: &[f32]) -> Vec<(Uuid, Vector2)> {
     let mut positions = Vec::new();
 
+    if children.is_empty() {
+        return positions;
+    }
+
     // Calculate total height needed
-    let total_child_height: f32 = children.iter().map(|(_, size)| size.y).sum();
-    let total_gap_height: f32 = gaps.iter().sum();
+    // Use f64 for precision during calculations
+    let total_child_height: f64 = children.iter().map(|(_, size)| size.y as f64).sum();
+    let total_gap_height: f64 = gaps.iter().map(|&g| g as f64).sum();
     let total_content_height = total_child_height + total_gap_height;
 
     // Start from the top edge of the content area (which is centered in the parent)
     let start_y = total_content_height * 0.5;
 
-    // Position each child from top to bottom
-    let mut current_y = start_y;
-
+    // Calculate positions directly to avoid floating point accumulation errors
+    // Use f64 for precision during accumulation
+    // When gap=0, ensure edges align exactly by calculating from edges
+    let mut accumulated_height = 0.0_f64;
     for (i, (child_id, child_size)) in children.iter().enumerate() {
-        // Position child at its top edge, then offset by half its height to center it
-        let child_y = current_y - child_size.y * 0.5;
+        // Calculate position from top edge, then subtract half height to get center
+        // This ensures exact edge alignment when gap=0
+        // Use floor for positions to ensure consistent alignment
+        let child_top_edge = start_y - accumulated_height;
+        let child_y = (child_top_edge - child_size.y as f64 * 0.5).floor() as f32;
         let child_x = 0.0; // Center horizontally in parent
 
         positions.push((*child_id, Vector2::new(child_x, child_y)));
 
-        // Move to next position (downward) with individual gap
-        current_y -= child_size.y;
+        // Update accumulated height: move to bottom edge of current element, then add gap
+        accumulated_height += child_size.y as f64;
         if i < gaps.len() {
-            current_y -= gaps[i];
+            accumulated_height += gaps[i] as f64;
         }
     }
 
@@ -921,25 +1268,26 @@ fn calculate_grid_layout(
     let rows = (children.len() + cols - 1) / cols; // Ceiling division
 
     // Find the maximum width and height for consistent grid cells using parallel processing
+    // Use f64 for precision during calculations
     let max_width = children
         .par_iter()
-        .map(|(_, size)| size.x)
-        .reduce(|| 0.0, f32::max);
+        .map(|(_, size)| size.x as f64)
+        .reduce(|| 0.0, f64::max);
     let max_height = children
         .par_iter()
-        .map(|(_, size)| size.y)
-        .reduce(|| 0.0, f32::max);
+        .map(|(_, size)| size.y as f64)
+        .reduce(|| 0.0, f64::max);
 
     // Calculate total grid dimensions
-    let total_width = max_width * cols as f32
+    let total_width = max_width * cols as f64
         + if cols > 1 {
-            gap.x * (cols - 1) as f32
+            gap.x as f64 * (cols - 1) as f64
         } else {
             0.0
         };
-    let total_height = max_height * rows as f32
+    let total_height = max_height * rows as f64
         + if rows > 1 {
-            gap.y * (rows - 1) as f32
+            gap.y as f64 * (rows - 1) as f64
         } else {
             0.0
         };
@@ -953,9 +1301,9 @@ fn calculate_grid_layout(
         let col = index % cols;
         let row = index / cols;
 
-        // Calculate cell position
-        let cell_x = grid_start_x + col as f32 * (max_width + gap.x) + max_width * 0.5;
-        let cell_y = grid_start_y - row as f32 * (max_height + gap.y) - max_height * 0.5;
+        // Calculate cell position using f64 for precision
+        let cell_x = (grid_start_x + col as f64 * (max_width + gap.x as f64) + max_width * 0.5) as f32;
+        let cell_y = (grid_start_y - row as f64 * (max_height + gap.y as f64) - max_height * 0.5) as f32;
 
         positions.push((*child_id, Vector2::new(cell_x, cell_y)));
     }
@@ -1023,12 +1371,60 @@ fn calculate_all_content_sizes_cached(
 }
 
 /// FIXED: Remove cache parameter to match working version
+/// Filtered version that skips unaffected branches for performance
+pub fn update_global_transforms_with_layout_filtered(
+    elements: &mut IndexMap<Uuid, UIElement>,
+    current_id: &Uuid,
+    parent_global: &Transform2D,
+    layout_positions: &HashMap<Uuid, Vector2>,
+    _parent_z: i32,
+    initial_z_indices: &HashMap<Uuid, i32>,
+    affected_elements: &HashSet<Uuid>,
+) {
+    // OPTIMIZATION: Skip this element entirely if it's not affected
+    if !affected_elements.contains(current_id) {
+        return;
+    }
+    
+    // Rest is identical to the unfiltered version
+    update_global_transforms_with_layout_impl(
+        elements,
+        current_id,
+        parent_global,
+        layout_positions,
+        _parent_z,
+        initial_z_indices,
+        Some(affected_elements),
+    );
+}
+
 pub fn update_global_transforms_with_layout(
     elements: &mut IndexMap<Uuid, UIElement>,
     current_id: &Uuid,
     parent_global: &Transform2D,
     layout_positions: &HashMap<Uuid, Vector2>,
     _parent_z: i32,
+    initial_z_indices: &HashMap<Uuid, i32>,
+) {
+    update_global_transforms_with_layout_impl(
+        elements,
+        current_id,
+        parent_global,
+        layout_positions,
+        _parent_z,
+        initial_z_indices,
+        None,
+    );
+}
+
+fn update_global_transforms_with_layout_impl(
+    elements: &mut IndexMap<Uuid, UIElement>,
+    current_id: &Uuid,
+    parent_global: &Transform2D,
+    layout_positions: &HashMap<Uuid, Vector2>,
+    _parent_z: i32,
+    initial_z_indices: &HashMap<Uuid, i32>,
+    affected_elements: Option<&HashSet<Uuid>>,
 ) {
     // Get parent info - FIXED: Use the working version's logic
     let (parent_size, parent_z) = {
@@ -1053,34 +1449,48 @@ pub fn update_global_transforms_with_layout(
         }
     };
 
-    // Find the reference size for percentages (parent with explicit size, or first non-layout ancestor)
+    // Find the reference size for percentages
     let percentage_reference_size = find_percentage_reference_ancestor(elements, current_id)
         .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
 
     // Check if this element is a layout container or child of layout (before mutable borrow)
-    let (is_layout_container, has_explicit_size, is_child_of_layout) = {
-        if let Some(element) = elements.get(current_id) {
-            let is_layout = matches!(element, UIElement::Layout(_) | UIElement::GridLayout(_));
-            let style_map = element.get_style_map();
-            let has_size = style_map.contains_key("size.x") || style_map.contains_key("size.y");
-            let parent_id = element.get_parent();
-            let is_child = if !parent_id.is_nil() {
-                if let Some(parent) = elements.get(&parent_id) {
-                    matches!(parent, UIElement::Layout(_) | UIElement::GridLayout(_))
-                } else {
-                    false
-                }
+    let (is_layout_container, has_explicit_size, is_child_of_layout) = if let Some(element) = elements.get(current_id) {
+        let is_layout = matches!(element, UIElement::Layout(_) | UIElement::GridLayout(_));
+        let style_map = element.get_style_map();
+        let has_size = style_map.contains_key("size.x") || style_map.contains_key("size.y");
+        let parent_id = element.get_parent();
+        let is_child = if !parent_id.is_nil() {
+            if let Some(parent) = elements.get(&parent_id) {
+                matches!(parent, UIElement::Layout(_) | UIElement::GridLayout(_))
             } else {
                 false
-            };
-            (is_layout, has_size, is_child)
+            }
         } else {
-            (false, false, false)
-        }
+            false
+        };
+        (is_layout, has_size, is_child)
+    } else {
+        (false, false, false)
     };
 
     // Calculate layout positions for this element's children BEFORE mutating
-    let child_layout_positions = calculate_layout_positions(elements, current_id);
+    // OPTIMIZATION: Only calculate if this element has children that are affected
+    let child_layout_positions = if let Some(affected) = affected_elements {
+        // Check if any children are affected
+        if let Some(elem) = elements.get(current_id) {
+            let has_affected_child = elem.get_children().iter().any(|child_id| affected.contains(child_id));
+            if has_affected_child {
+                calculate_layout_positions(elements, current_id)
+            } else {
+                Vec::new() // No affected children, skip layout calc!
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        calculate_layout_positions(elements, current_id) // No filter, calculate normally
+    };
+    
     let mut child_layout_map = HashMap::new();
     for (child_id, pos) in child_layout_positions {
         child_layout_map.insert(child_id, pos);
@@ -1098,16 +1508,17 @@ pub fn update_global_transforms_with_layout(
 
                 match key.as_str() {
                     // Size percentages use parent (or first non-auto-sizing layout ancestor)
+                    // Use f64 for precision to avoid rounding errors
                     "size.x" => {
                         element.set_size(Vector2::new(
-                            percentage_reference_size.x * fraction,
+                            (percentage_reference_size.x as f64 * fraction as f64) as f32,
                             element.get_size().y,
                         ));
                     }
                     "size.y" => {
                         element.set_size(Vector2::new(
                             element.get_size().x,
-                            percentage_reference_size.y * fraction,
+                            (percentage_reference_size.y as f64 * fraction as f64) as f32,
                         ));
                     }
 
@@ -1166,7 +1577,7 @@ pub fn update_global_transforms_with_layout(
         }
 
         // Check if parent is a layout container (before mutable borrow)
-        let (is_in_vlayout, is_in_hlayout, is_child_of_layout) = {
+        let (is_in_vlayout, is_in_hlayout, _is_child_of_layout) = {
             if let Some(element) = elements.get(current_id) {
                 let pid = element.get_parent();
                 let in_v = if !pid.is_nil() {
@@ -1355,10 +1766,12 @@ pub fn update_global_transforms_with_layout(
      
 
             // Set inherited z-index: local z + parent z
-            // Clamp to prevent overflow (i32 max is 2,147,483,647, but we'll use a safer range)
-            let local_z = element.get_z_index(); // Get the element's explicitly set z-index
+            // Use INITIAL z-index from FUR (not accumulated z-index from previous frames)
+            // This prevents z-index accumulation across frames
+            let element_id = element.get_id();
+            let local_z = initial_z_indices.get(&element_id).copied().unwrap_or(0);
             let global_z = if local_z != 0 {
-                // If element has explicit z-index, use it (but still inherit parent offset)
+                // If element has explicit z-index from FUR, use it (but still inherit parent offset)
                 // Clamp to prevent overflow
                 (parent_z.saturating_add(local_z).saturating_add(2)).min(1000000)
             } else {
@@ -1526,12 +1939,21 @@ pub fn update_global_transforms_with_layout(
 
             // STEP 7: Recurse into regular children with their layout positions
             for child_id in children_ids {
-                update_global_transforms_with_layout(
+                // OPTIMIZATION: Skip children not in affected set (if filtering is enabled)
+                if let Some(affected) = affected_elements {
+                    if !affected.contains(&child_id) {
+                        continue; // Skip this entire branch!
+                    }
+                }
+                
+                update_global_transforms_with_layout_impl(
                     elements,
                     &child_id,
                     &global,
                     &child_layout_map,
                     global_z,
+                    initial_z_indices,
+                    affected_elements,
                 );
             }
         }
@@ -1545,9 +1967,8 @@ pub fn update_ui_layout(ui_node: &mut UINode) {
             calculate_all_content_sizes(elements, root_id);
         }
 
-     
-
         let empty_layout_map = HashMap::new();
+        let initial_z_indices = &ui_node.initial_z_indices;
         for root_id in root_ids {
             update_global_transforms_with_layout(
                 elements,
@@ -1555,6 +1976,7 @@ pub fn update_ui_layout(ui_node: &mut UINode) {
                 &Transform2D::default(),
                 &empty_layout_map,
                 0,
+                initial_z_indices,
             );
           
         }
@@ -1576,6 +1998,7 @@ fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
         }
 
         let empty_layout_map = HashMap::new();
+        let initial_z_indices = &ui_node.initial_z_indices;
         for root_id in root_ids {
             update_global_transforms_with_layout(
                 elements,
@@ -1583,6 +2006,7 @@ fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
                 &Transform2D::default(),
                 &empty_layout_map,
                 0,
+                initial_z_indices,
             );
         }
     }
@@ -1699,68 +2123,276 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
         return;
     }
     
-    // If no dirty elements but elements exist, skip rendering entirely
-    if dirty_elements.is_empty() {
-        return;
-    }
+    // Build visibility cache ONCE for the frame (used by both visibility check and layout)
+    let visibility_cache: HashSet<Uuid> = if let Some(elements) = &ui_node.elements {
+        let elements_ref: &IndexMap<Uuid, UIElement> = elements;
+        elements_ref
+            .par_iter()
+            .filter_map(|(id, _)| {
+                if is_effectively_visible(elements_ref, *id) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        HashSet::new()
+    };
+    
+    // Build percentage reference cache ONCE (no more repeated parent chain walks!)
+    let percentage_ref_cache: HashMap<Uuid, Vector2> = if let Some(elements) = &ui_node.elements {
+        let elements_ref: &IndexMap<Uuid, UIElement> = elements;
+        elements_ref
+            .par_iter()
+            .map(|(id, _)| {
+                let ref_size = find_percentage_reference_ancestor(elements_ref, id)
+                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                (*id, ref_size)
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
     
     // Only recalculate layout if layout actually changed (not just visual state like button hover)
     if needs_layout {
-        update_ui_layout_cached(ui_node, cache);
+        let _layout_start = std::time::Instant::now();
+        
+        // OPTIMIZATION: Only recalculate dirty elements and their ancestors
+        // Don't recalculate the entire tree!
+        if let Some(elements) = &mut ui_node.elements {
+            // Collect dirty elements + ancestors (parents up to root)
+            let dirty_with_ancestors = collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
+            
+            
+            // Sync button properties only for dirty buttons (not all elements!)
+            for dirty_id in &dirty_with_ancestors {
+                if let Some(element) = elements.get_mut(dirty_id) {
+                    if let UIElement::Button(button) = element {
+                        button.sync_base_to_children();
+                    }
+                }
+            }
+            
+            // Clear cache only for elements we're recalculating
+            if let Ok(mut cache_ref) = cache.write() {
+                for dirty_id in &dirty_with_ancestors {
+                    cache_ref.entries.remove(dirty_id);
+                }
+            }
+            
+            // Recalculate content sizes only for dirty elements (bottom-up)
+            // We need to process them in order: children before parents
+            let mut sorted_dirty: Vec<Uuid> = dirty_with_ancestors.iter().copied().collect();
+            // Sort by depth (deeper elements first) by counting ancestors
+            sorted_dirty.sort_by_key(|id| {
+                let mut depth = 0;
+                let mut current = *id;
+                while let Some(el) = elements.get(&current) {
+                    let parent = el.get_parent();
+                    if parent.is_nil() { break; }
+                    depth += 1;
+                    current = parent;
+                    if depth > 100 { break; } // Safety
+                }
+                -(depth as i32) // Negative so deeper elements come first
+            });
+            
+            // Recalculate content sizes for dirty elements only
+            // (visibility_cache was already built at the start of the function)
+            for element_id in sorted_dirty {
+                if let Some(element) = elements.get(&element_id) {
+                    let is_container = matches!(
+                        element,
+                        UIElement::Layout(_) | UIElement::GridLayout(_) | UIElement::BoxContainer(_)
+                    );
+                    
+                    if is_container {
+                        // Use cached visibility AND percentage refs (no parent chain walks!)
+                        let content_size = calculate_content_size_with_visibility_cache(
+                            elements, 
+                            &element_id, 
+                            &visibility_cache,
+                            &percentage_ref_cache
+                        );
+                        
+                        if let Some(element) = elements.get_mut(&element_id) {
+                            element.set_size(content_size);
+                        }
+                    }
+                }
+            }
+            
+            // Build "affected elements" set: dirty elements + all their descendants + immediate siblings
+            // This is the minimum set needed for correct positioning without updating the entire tree
+            let mut affected_elements = HashSet::new();
+            
+            for dirty_id in dirty_elements.iter() {
+                // Mark the dirty element itself
+                affected_elements.insert(*dirty_id);
+                
+                // Mark all descendants (they inherit from this element)
+                let mut stack = vec![*dirty_id];
+                while let Some(current_id) = stack.pop() {
+                    if let Some(element) = elements.get(&current_id) {
+                        for child_id in element.get_children() {
+                            if affected_elements.insert(*child_id) {
+                                stack.push(*child_id);
+                            }
+                        }
+                    }
+                }
+                
+                // Mark parent + ancestors up the chain (they all need layout recalc)
+                if let Some(element) = elements.get(dirty_id) {
+                    let mut current_parent = element.get_parent();
+                    while !current_parent.is_nil() {
+                        if !affected_elements.insert(current_parent) {
+                            break; // Already marked, can stop
+                        }
+                        if let Some(parent_elem) = elements.get(&current_parent) {
+                            current_parent = parent_elem.get_parent();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Update transforms from root, SKIPPING unaffected branches
+            let empty_layout_map = HashMap::new();
+            let initial_z_indices = &ui_node.initial_z_indices;
+            
+            if let Some(root_ids) = &ui_node.root_ids {
+                for root_id in root_ids {
+                    update_global_transforms_with_layout_filtered(
+                        elements,
+                        root_id,
+                        &Transform2D::default(),
+                        &empty_layout_map,
+                        0,
+                        initial_z_indices,
+                        &affected_elements,
+                    );
+                }
+            }
+        }
+        
+        // Uncomment for timing debug:
+        // eprintln!("⏱️ Layout recalc took: {:?}", layout_start.elapsed());
     }
 
     // Now borrow elements for rendering
     if let Some(elements) = &mut ui_node.elements {
-        // Collect all ancestors of dirty elements (needed for layout recalculation)
+        // OPTIMIZATION: Only check dirty elements for visibility changes
+        // instead of checking ALL elements every frame
         let dirty_set: HashSet<Uuid> = dirty_elements.iter().copied().collect();
-        let _elements_to_recalculate = collect_dirty_with_ancestors(elements, &dirty_set);
+        
+        // Collect elements that need visibility checking (dirty elements + their descendants)
+        let elements_to_check: HashSet<Uuid> = if dirty_set.is_empty() {
+            // First frame: check all elements
+            elements.keys().copied().collect()
+        } else {
+            // Subsequent frames: only check dirty elements and their descendants
+            let mut to_check = HashSet::new();
+            for dirty_id in &dirty_set {
+                to_check.insert(*dirty_id);
+                // Add all descendants
+                let mut stack = vec![*dirty_id];
+                while let Some(current_id) = stack.pop() {
+                    if let Some(element) = elements.get(&current_id) {
+                        for &child_id in element.get_children() {
+                            if to_check.insert(child_id) {
+                                stack.push(child_id);
+                            }
+                        }
+                    }
+                }
+            }
+            to_check
+        };
 
-        // Render ALL visible elements (they need to be queued every frame to stay visible)
-        // But we only recalculated layout for dirty ones above
-        for (_, element) in elements.iter_mut() {
-            if !element.get_visible() {
-                continue;
+        // Use pre-computed visibility cache instead of rechecking!
+        let (visible_element_ids, newly_invisible_ids): (Vec<Uuid>, Vec<Uuid>) = {
+            let visible: Vec<Uuid> = visibility_cache.iter().copied().collect();
+            let mut invisible = Vec::new();
+            
+            // Find elements that JUST became invisible (were in dirty set but not visible)
+            for id in &elements_to_check {
+                if !visibility_cache.contains(id) {
+                    invisible.push(*id);
+                }
             }
             
-            match element {
-                UIElement::BoxContainer(_) => { /* no-op */ }
-                UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
-                UIElement::GridLayout(_) => { /* no-op */ }
-                UIElement::Layout(_) => {}
-                UIElement::Text(text) => render_text(text, gfx, timestamp),
-                UIElement::Button(button) => {
-                    // Get the base background color
-                    let base_bg = button.panel_props().background_color;
-                    
-                    // Determine which color to use based on button state
-                    let bg_color = if button.is_pressed {
-                        // Pressed state: use pressed_bg if specified, otherwise darken base by 20%
-                        if let Some(pressed) = button.pressed_bg {
-                            Some(pressed)
-                        } else if let Some(base) = base_bg {
-                            Some(base.darken(0.2))
+            (visible, invisible)
+        };
+        
+        // OPTIMIZATION: Only remove newly invisible elements (not all invisible elements)
+        // This avoids iterating through everything every frame
+        for element_id in newly_invisible_ids {
+            if let Some(element) = elements.get(&element_id) {
+                match element {
+                    UIElement::Panel(_) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, element_id);
+                    }
+                    UIElement::Text(_) => {
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, element_id);
+                    }
+                    UIElement::Button(button) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, button.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, button.text.id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        // Now render only the visible elements (mutable borrow)
+        for element_id in visible_element_ids {
+            if let Some(element) = elements.get_mut(&element_id) {
+                match element {
+                    UIElement::BoxContainer(_) => { /* no-op */ }
+                    UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
+                    UIElement::GridLayout(_) => { /* no-op */ }
+                    UIElement::Layout(_) => {
+                        // Layouts don't render themselves - they only manage child positioning
+                    }
+                    UIElement::Text(text) => render_text(text, gfx, timestamp),
+                    UIElement::Button(button) => {
+                        // Get the base background color
+                        let base_bg = button.panel_props().background_color;
+                        
+                        // Determine which color to use based on button state
+                        let bg_color = if button.is_pressed {
+                            // Pressed state: use pressed_bg if specified, otherwise darken base by 20%
+                            if let Some(pressed) = button.pressed_bg {
+                                Some(pressed)
+                            } else if let Some(base) = base_bg {
+                                Some(base.darken(0.2))
+                            } else {
+                                None
+                            }
+                        } else if button.is_hovered {
+                            // Hover state: use hover_bg if specified, otherwise lighten base by 20%
+                            if let Some(hover) = button.hover_bg {
+                                Some(hover)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.2))
+                            } else {
+                                None
+                            }
                         } else {
-                            None
-                        }
-                    } else if button.is_hovered {
-                        // Hover state: use hover_bg if specified, otherwise lighten base by 20%
-                        if let Some(hover) = button.hover_bg {
-                            Some(hover)
-                        } else if let Some(base) = base_bg {
-                            Some(base.lighten(0.2))
-                        } else {
-                            None
-                        }
-                    } else {
-                        // Normal state: use base background color
-                        base_bg
-                    };
-                    
-                    // Render panel with the appropriate color (create a temporary panel copy)
-                    let mut panel_copy = button.panel.clone();
-                    panel_copy.props.background_color = bg_color;
-                    render_panel(&panel_copy, gfx, timestamp);
-                    render_text(&button.text, gfx, timestamp);
+                            // Normal state: use base background color
+                            base_bg
+                        };
+                        
+                        // Render panel with the appropriate color (create a temporary panel copy)
+                        let mut panel_copy = button.panel.clone();
+                        panel_copy.props.background_color = bg_color;
+                        render_panel(&panel_copy, gfx, timestamp);
+                        render_text(&button.text, gfx, timestamp);
+                    }
                 }
             }
         }
@@ -1771,16 +2403,33 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
 }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
+    // VALIDATION: Skip rendering if size is zero, negative, NaN, or infinite
+    // This prevents buffer overflow and GPU errors
+    let size = panel.base.size;
+    if size.x <= 0.0 || size.y <= 0.0 || !size.x.is_finite() || !size.y.is_finite() {
+        // Skip rendering zero-size or invalid panels
+        return;
+    }
+    
+    // VALIDATION: Check for invalid transform values
+    let transform = panel.base.global_transform;
+    if !transform.position.x.is_finite() || !transform.position.y.is_finite() ||
+       !transform.scale.x.is_finite() || !transform.scale.y.is_finite() ||
+       !transform.rotation.is_finite() {
+        // Skip rendering panels with invalid transforms
+        return;
+    }
+    
     let mut background_color = panel
         .props
         .background_color
         .clone()
         .unwrap_or(Color::new(0, 0, 0, 0));
     let opacity = panel.props.opacity;
-    
+
     // Apply opacity to background color alpha
     background_color.a = ((background_color.a as f32 * opacity) as u8).min(255);
-    
+
     let corner_radius = panel.props.corner_radius;
     let mut border_color = panel.props.border_color.clone();
     let border_thickness = panel.props.border_thickness;
@@ -1790,8 +2439,8 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
     gfx.renderer_ui.queue_panel(
         &mut gfx.renderer_prim,
         bg_id,
-        panel.base.global_transform,
-        panel.base.size,
+        transform,
+        size,
         panel.base.pivot,
         background_color,
         Some(corner_radius),

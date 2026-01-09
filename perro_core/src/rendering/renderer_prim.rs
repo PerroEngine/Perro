@@ -473,6 +473,40 @@ impl PrimitiveRenderer {
         z_index: i32,
         created_timestamp: u64,
     ) {
+        // VALIDATION: Skip zero-size, negative, NaN, or infinite sizes to prevent buffer issues
+        if size.x <= 0.0 || size.y <= 0.0 || !size.x.is_finite() || !size.y.is_finite() {
+            // Remove from slots if it exists (element became invalid)
+            if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+                if let Some(_existing) = &mut self.rect_instance_slots[slot] {
+                    self.rect_instance_slots[slot] = None;
+                    self.free_rect_slots.push(slot);
+                    self.rect_uuid_to_slot.remove(&uuid);
+                    self.mark_rect_slot_dirty(slot);
+                    self.dirty_count += 1;
+                    self.instances_need_rebuild = true;
+                }
+            }
+            return; // Don't queue invalid sizes
+        }
+        
+        // VALIDATION: Check for invalid transform values
+        if !transform.position.x.is_finite() || !transform.position.y.is_finite() ||
+           !transform.scale.x.is_finite() || !transform.scale.y.is_finite() ||
+           !transform.rotation.is_finite() {
+            // Remove from slots if it exists (element has invalid transform)
+            if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+                if let Some(_existing) = &mut self.rect_instance_slots[slot] {
+                    self.rect_instance_slots[slot] = None;
+                    self.free_rect_slots.push(slot);
+                    self.rect_uuid_to_slot.remove(&uuid);
+                    self.mark_rect_slot_dirty(slot);
+                    self.dirty_count += 1;
+                    self.instances_need_rebuild = true;
+                }
+            }
+            return; // Don't queue invalid transforms
+        }
+        
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&transform, &size) {
             // Remove from slots if it exists (sprite moved offscreen)
@@ -540,6 +574,11 @@ impl PrimitiveRenderer {
             let slot = if let Some(free_slot) = self.free_rect_slots.pop() {
                 free_slot
             } else {
+                // Check if we're about to exceed MAX_INSTANCES
+                if self.rect_instance_slots.len() >= MAX_INSTANCES {
+                    eprintln!("⚠️ WARNING: Rect instance buffer full ({} instances). Skipping panel with UUID {}", MAX_INSTANCES, uuid);
+                    return; // Don't queue if buffer is full
+                }
                 let new_slot = self.rect_instance_slots.len();
                 self.rect_instance_slots.push(None);
                 new_slot
@@ -549,6 +588,29 @@ impl PrimitiveRenderer {
             self.rect_uuid_to_slot.insert(uuid, slot);
             self.mark_rect_slot_dirty(slot);
             self.dirty_count += 1;
+            self.instances_need_rebuild = true;
+        }
+    }
+
+    /// Remove a rect instance from the render cache
+    /// Call this when an element becomes invisible to clear it from GPU buffers
+    pub fn remove_rect(&mut self, uuid: uuid::Uuid) {
+        if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+            if let Some(_existing) = &mut self.rect_instance_slots[slot] {
+                self.rect_instance_slots[slot] = None;
+                self.free_rect_slots.push(slot);
+                self.rect_uuid_to_slot.remove(&uuid);
+                self.mark_rect_slot_dirty(slot);
+                self.dirty_count += 1;
+                self.instances_need_rebuild = true;
+            }
+        }
+    }
+
+    /// Remove a text instance from the render cache
+    /// Call this when an element becomes invisible to clear it from GPU buffers
+    pub fn remove_text(&mut self, uuid: uuid::Uuid) {
+        if self.cached_text.remove(&uuid).is_some() {
             self.instances_need_rebuild = true;
         }
     }

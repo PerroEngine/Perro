@@ -513,6 +513,21 @@ let {param_name} = __path_buf_{param_name}.as_path();\n"
                             .unwrap_or_default();\n"
                         )
                     },
+                    Type::Custom(tn) if tn.starts_with("&[") && tn.ends_with(']') => {
+                        // Handle slice types like &[String] - deserialize as Vec<T>, then take slice reference
+                        let element_type = tn.strip_prefix("&[").and_then(|s| s.strip_suffix(']')).unwrap_or("");
+                        // For types that might not have Default, we need to handle None case
+                        // If deserialization fails, we can't proceed, so we'll return early
+                        format!(
+                            "let __vec_{param_name}_opt = params.get({actual_param_idx})
+                            .and_then(|v| serde_json::from_value::<Vec<{element_type}>>(v.clone()).ok());
+let __vec_{param_name} = match __vec_{param_name}_opt {{
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+}};
+let {param_name} = __vec_{param_name}.as_slice();\n"
+                        )
+                    },
                     Type::Custom(tn) if tn.starts_with('&') && tn != "&str" && tn != "&Path" => {
                         // Handle reference types like &Manifest - deserialize owned type, then take reference
                         let owned_type = tn.strip_prefix('&').unwrap_or(tn);

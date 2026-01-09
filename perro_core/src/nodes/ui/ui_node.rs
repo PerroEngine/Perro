@@ -57,6 +57,10 @@ pub struct UINode {
     
     #[serde(skip)]
     pub needs_layout_recalc: HashSet<Uuid>,
+    
+    /// Store initial z-indices from FUR file to prevent accumulation across frames
+    #[serde(skip)]
+    pub initial_z_indices: HashMap<Uuid, i32>,
 
     pub base: Node,
 }
@@ -77,6 +81,7 @@ impl UINode {
             root_ids: None,
             needs_rerender: HashSet::new(),
             needs_layout_recalc: HashSet::new(),
+            initial_z_indices: HashMap::new(),
         }
     }
     
@@ -223,6 +228,51 @@ impl UINode {
             }
         }
         None
+    }
+
+    /// Recursively collect all descendant IDs of an element
+    /// This is useful for marking all children as needing rerender when parent visibility changes
+    fn collect_all_descendants(&self, element_id: Uuid) -> Vec<Uuid> {
+        let mut descendants = Vec::new();
+        
+        if let Some(elements) = &self.elements {
+            let mut to_process = vec![element_id];
+            
+            while let Some(current_id) = to_process.pop() {
+                if let Some(element) = elements.get(&current_id) {
+                    for &child_id in element.get_children() {
+                        descendants.push(child_id);
+                        to_process.push(child_id);
+                    }
+                }
+            }
+        }
+        
+        descendants
+    }
+
+    /// Mark an element and all its descendants as needing rerender
+    /// Use this when changing visibility to ensure all descendants are properly updated
+    pub fn mark_element_with_descendants_needs_rerender(&mut self, element_id: Uuid) {
+        self.needs_rerender.insert(element_id);
+        
+        let descendants = self.collect_all_descendants(element_id);
+        for descendant_id in descendants {
+            self.needs_rerender.insert(descendant_id);
+        }
+    }
+
+    /// Mark an element and all its descendants as needing layout recalculation
+    /// Use this when changing visibility to ensure all descendants are properly updated
+    pub fn mark_element_with_descendants_needs_layout(&mut self, element_id: Uuid) {
+        self.needs_rerender.insert(element_id);
+        self.needs_layout_recalc.insert(element_id);
+        
+        let descendants = self.collect_all_descendants(element_id);
+        for descendant_id in descendants {
+            self.needs_rerender.insert(descendant_id);
+            self.needs_layout_recalc.insert(descendant_id);
+        }
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
     structs2d::Vector2,
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
-        ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, UIPanel},
+        ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, LayoutAlignment, Padding, UIPanel},
         ui_text::{TextFlow, UIText},
         ui_button::UIButton,
     },
@@ -52,6 +52,45 @@ fn parse_opacity(v: &str) -> Option<f32> {
 }
 
 // =================== FILE PARSING ===================
+
+use std::sync::RwLock;
+use once_cell::sync::Lazy;
+
+// Global registry for statically compiled FUR (used in release mode)
+static STATIC_FUR_MAP: Lazy<RwLock<Option<&'static HashMap<&'static str, &'static [FurElement]>>>> = 
+    Lazy::new(|| RwLock::new(None));
+
+/// Set the static FUR map (called by runtime at startup in release mode)
+pub fn set_static_fur_map(map: &'static HashMap<&'static str, &'static [FurElement]>) {
+    *STATIC_FUR_MAP.write().unwrap() = Some(map);
+}
+
+/// Try to load FUR elements, checking static assets first, then parsing from disk/BRK
+fn try_load_fur_elements(path: &str) -> Result<Vec<FurElement>, String> {
+    // First: Check static FUR map (release mode)
+    if let Ok(guard) = STATIC_FUR_MAP.read() {
+        if let Some(fur_map) = *guard {
+            if let Some(elements) = fur_map.get(path) {
+                return Ok(elements.to_vec());
+            }
+        }
+    }
+    
+    // Fallback: Parse from disk/BRK (dev mode)
+    let ast = parse_fur_file(path)?;
+    let elements: Vec<FurElement> = ast
+        .into_iter()
+        .filter_map(|node| {
+            if let FurNode::Element(elem) = node {
+                Some(elem)
+            } else {
+                None
+            }
+        })
+        .collect();
+    
+    Ok(elements)
+}
 
 pub fn parse_fur_file(path: &str) -> Result<Vec<FurNode>, String> {
     let bytes =
@@ -216,7 +255,10 @@ fn apply_base_attributes(
                     if pct {
                         base.style_map.insert(SIZE_X.into(), f);
                     } else {
+                        // Store absolute values in style_map with a marker (> 10000) to distinguish from percentages
+                        // This allows the layout system to know it's an explicit absolute size
                         base.size.x = f;
+                        base.style_map.insert(SIZE_X.into(), 10000.0 + f);
                     }
                 }
             }
@@ -229,7 +271,10 @@ fn apply_base_attributes(
                     if pct {
                         base.style_map.insert(SIZE_Y.into(), f);
                     } else {
+                        // Store absolute values in style_map with a marker (> 10000) to distinguish from percentages
+                        // This allows the layout system to know it's an explicit absolute size
                         base.size.y = f;
+                        base.style_map.insert(SIZE_Y.into(), 10000.0 + f);
                     }
                 }
             }
@@ -256,6 +301,13 @@ fn apply_base_attributes(
                     "b" => FurAnchor::Bottom,
                     "br" => FurAnchor::BottomRight,
                     _ => FurAnchor::Center,
+                }
+            }
+            "visible" => {
+                base.visible = match v.to_lowercase().as_str() {
+                    "true" | "1" | "yes" => true,
+                    "false" | "0" | "no" => false,
+                    _ => v.parse().unwrap_or(true), // Default to true if unparseable
                 }
             }
             _ => {}
@@ -385,6 +437,76 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
         }
 
         "Layout" | "HLayout" | "VLayout" | "Grid" => {
+            // Helper to parse a single float value
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
+            
+            // Helper to parse padding
+            fn parse_padding(fur: &FurElement) -> Padding {
+                let mut padding = Padding::default();
+                
+                // Step 1: base padding list (like "p: 10,20,30,40" or "p: 10")
+                if let Some(value) = fur.attributes.get("p") {
+                    let mut vals = [0.0; 4];
+                    for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                        vals[i] = v.parse().unwrap_or(0.0);
+                    }
+                    
+                    match value.split(',').count() {
+                        0 | 1 => padding = Padding::uniform(vals[0]),
+                        2 => {
+                            // vertical, horizontal
+                            padding.top = vals[0];
+                            padding.bottom = vals[0];
+                            padding.left = vals[1];
+                            padding.right = vals[1];
+                        }
+                        3 => {
+                            // top, horizontal, bottom
+                            padding.top = vals[0];
+                            padding.left = vals[1];
+                            padding.right = vals[1];
+                            padding.bottom = vals[2];
+                        }
+                        4 => {
+                            // top, right, bottom, left
+                            padding.top = vals[0];
+                            padding.right = vals[1];
+                            padding.bottom = vals[2];
+                            padding.left = vals[3];
+                        }
+                        _ => {}
+                    }
+                }
+                
+                // Step 2: horizontal and vertical shortcuts (px, py)
+                if let Some(v) = parse_val(fur.attributes.get("px")) {
+                    padding.left = v;
+                    padding.right = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("py")) {
+                    padding.top = v;
+                    padding.bottom = v;
+                }
+                
+                // Step 3: individual side overrides (pt, pr, pb, pl) - highest priority
+                if let Some(v) = parse_val(fur.attributes.get("pt")) {
+                    padding.top = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("pr")) {
+                    padding.right = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("pb")) {
+                    padding.bottom = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("pl")) {
+                    padding.left = v;
+                }
+                
+                padding
+            }
+            
             if tag == "Grid"
                 || fur
                     .attributes
@@ -401,9 +523,21 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 }
                 if let Some(gap) = fur.attributes.get("gap") {
                     let (x, y) = parse_compound(gap);
-                    g.container.gap.x = x.and_then(|x| x.parse().ok()).unwrap_or(0.0);
-                    g.container.gap.y = y.and_then(|y| y.parse().ok()).unwrap_or(g.container.gap.x);
+                    g.container.gap.x = x.and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0) as f32;
+                    g.container.gap.y = y.and_then(|y| y.parse::<f64>().ok()).unwrap_or(g.container.gap.x as f64) as f32;
                 }
+                g.container.padding = parse_padding(fur);
+                
+                // Parse alignment (align=s/c/e for start/center/end)
+                if let Some(align_str) = fur.attributes.get("align") {
+                    g.container.align = match align_str.as_ref() {
+                        "start" | "s" => LayoutAlignment::Start,
+                        "center" | "c" => LayoutAlignment::Center,
+                        "end" | "e" => LayoutAlignment::End,
+                        _ => LayoutAlignment::Center,
+                    };
+                }
+                
                 return Some(UIElement::GridLayout(g));
             }
 
@@ -418,16 +552,29 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
 
             if let Some(g) = fur.attributes.get("gap") {
                 // Gap is a single value that adds EXTRA spacing on top of default
+                // Use f64 for precision during parsing, then convert to f32
                 let parsed = if g.trim().ends_with('%') {
-                    g.trim().trim_end_matches('%').parse::<f32>().unwrap_or(0.0)
+                    g.trim().trim_end_matches('%').parse::<f64>().unwrap_or(0.0) as f32
                 } else {
-                    g.parse::<f32>().unwrap_or(0.0)
+                    g.parse::<f64>().unwrap_or(0.0) as f32
                 };
                 match layout.container.mode {
                     ContainerMode::Horizontal => layout.container.gap.x = parsed,
                     ContainerMode::Vertical => layout.container.gap.y = parsed,
                     _ => {}
                 }
+            }
+            
+            layout.container.padding = parse_padding(fur);
+            
+            // Parse alignment (align=s/c/e for start/center/end)
+            if let Some(align_str) = fur.attributes.get("align") {
+                layout.container.align = match align_str.as_ref() {
+                    "start" | "s" => LayoutAlignment::Start,
+                    "center" | "c" => LayoutAlignment::Center,
+                    "end" | "e" => LayoutAlignment::End,
+                    _ => LayoutAlignment::Center,
+                };
             }
 
             Some(UIElement::Layout(layout))
@@ -714,13 +861,84 @@ fn convert_fur_element_to_ui_elements(
     fur: &FurElement,
     parent_uuid: Option<Uuid>,
 ) -> Vec<(Uuid, UIElement)> {
+    convert_fur_element_to_ui_elements_with_includes(fur, parent_uuid, &mut std::collections::HashSet::new())
+}
+
+fn convert_fur_element_to_ui_elements_with_includes(
+    fur: &FurElement,
+    parent_uuid: Option<Uuid>,
+    included_paths: &mut std::collections::HashSet<String>,
+) -> Vec<(Uuid, UIElement)> {
+    // Handle Include elements
+    if fur.tag_name.eq_ignore_ascii_case("Include") {
+        if let Some(path) = fur.attributes.get("path") {
+            let path_str = path.as_ref();
+            // Prevent circular includes
+            if included_paths.contains(path_str) {
+                eprintln!("⚠️ Circular include detected for path: {}. Skipping.", path_str);
+                return Vec::new();
+            }
+            
+            let path_string = path.to_string();
+            included_paths.insert(path_string.clone());
+            
+            // Check if Include has a visible attribute
+            let include_visible = fur.attributes.get("visible")
+                .map(|v| {
+                    match v.to_lowercase().as_str() {
+                        "true" | "1" | "yes" => true,
+                        "false" | "0" | "no" => false,
+                        _ => v.parse().unwrap_or(true),
+                    }
+                })
+                .unwrap_or(true); // Default to visible if not specified
+            
+            // Load the included FUR file
+            // Try to get pre-parsed elements from static assets first (release mode),
+            // then fall back to parsing from disk/BRK (dev mode)
+            let elements: Vec<FurElement> = match try_load_fur_elements(path_str) {
+                Ok(elems) => elems,
+                Err(e) => {
+                    eprintln!("⚠️ Failed to load included FUR file {}: {}", path_str, e);
+                    included_paths.remove(&path_string);
+                    return Vec::new();
+                }
+            };
+            
+            let mut results = Vec::new();
+            // Process all root elements from the included file
+            for elem in &elements {
+                let mut included_results = convert_fur_element_to_ui_elements_with_includes(
+                    elem,
+                    parent_uuid,
+                    included_paths,
+                );
+                
+                // Apply visibility from Include tag ONLY to the root element
+                // Children will inherit visibility through the parent chain check in is_effectively_visible
+                if !include_visible {
+                    if let Some((_, root_element)) = included_results.first_mut() {
+                        root_element.set_visible(false);
+                    }
+                }
+                
+                results.extend(included_results);
+            }
+            included_paths.remove(&path_string);
+            return results;
+        } else {
+            eprintln!("⚠️ Include element missing 'path' attribute. Skipping.");
+            return Vec::new();
+        }
+    }
+
     let Some(mut ui) = convert_fur_element_to_ui_element(fur) else {
         return fur
             .children
             .iter()
             .filter_map(|n| {
                 if let FurNode::Element(e) = n {
-                    Some(convert_fur_element_to_ui_elements(e, parent_uuid))
+                    Some(convert_fur_element_to_ui_elements_with_includes(e, parent_uuid, included_paths))
                 } else {
                     None
                 }
@@ -738,7 +956,7 @@ fn convert_fur_element_to_ui_elements(
 
     for child in &fur.children {
         if let FurNode::Element(e) = child {
-            let child_nodes = convert_fur_element_to_ui_elements(e, Some(id));
+            let child_nodes = convert_fur_element_to_ui_elements_with_includes(e, Some(id), included_paths);
             if let Some((cid, _)) = child_nodes.first() {
                 children.push(*cid);
             }
@@ -773,10 +991,71 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
             elements.insert(uuid, e);
         }
     }
-    
+
     // Store element count before dropping the borrow
     let _element_count = elements.len();
     
+    // Store initial z-indices for all elements to prevent accumulation
+    ui.initial_z_indices.clear();
+    for (uuid, element) in elements.iter() {
+        ui.initial_z_indices.insert(*uuid, element.get_z_index());
+    }
+
     // Mark all newly created elements as needing rerender so they get rendered
     ui.mark_all_needs_rerender();
+}
+
+/// Append FUR elements to an existing UINode without clearing existing elements
+/// This allows dynamically adding UI elements at runtime
+/// parent_id: If Some, the new elements will be children of that parent element. If None, they'll be root elements.
+pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_id: Option<Uuid>) {
+    // Collect all UUIDs that will be added, so we can mark them for rerender after the borrow is released
+    let mut added_uuids = Vec::new();
+
+    // Use a scope block to limit the lifetime of the mutable borrows
+    {
+        let elements = ui
+            .elements
+            .get_or_insert_with(|| IndexMap::new());
+
+        let root_ids = ui
+            .root_ids
+            .get_or_insert_with(|| Vec::new());
+
+        for el in elems {
+            let flat = convert_fur_element_to_ui_elements(el, parent_id);
+            for (uuid, e) in flat {
+                // Store initial z-index for new element
+                ui.initial_z_indices.insert(uuid, e.get_z_index());
+                
+                // If parent is nil, add to root_ids
+                if e.get_parent().is_nil() {
+                    root_ids.push(uuid);
+                } else {
+                    // If parent is set, add to parent's children list
+                    if let Some(parent_uuid) = parent_id {
+                        if let Some(parent_element) = elements.get_mut(&parent_uuid) {
+                            let mut children = parent_element.get_children().to_vec();
+                            if !children.contains(&uuid) {
+                                children.push(uuid);
+                                parent_element.set_children(children);
+                            }
+                        }
+                    }
+                }
+                elements.insert(uuid, e);
+                added_uuids.push(uuid);
+            }
+        }
+    } // Borrows are released here
+    
+    // Now mark all added elements for rerender (after the borrow is released)
+    for uuid in added_uuids {
+        ui.mark_element_needs_layout(uuid);
+    }
+    
+    // Also mark parent as needing layout if provided
+    if let Some(parent_uuid) = parent_id {
+        ui.mark_element_needs_layout(parent_uuid);
+    }
 }
