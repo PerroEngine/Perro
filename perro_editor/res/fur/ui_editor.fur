@@ -8,13 +8,13 @@
         // Text Editor header
         [Panel w=100% h=3% anchor=c bg=steel-8 z=51]
           [Text fsz=15 color=white anchor=c]
-          Text Editor
+          FUR Editor
           [/Text]
         [/Panel]
         
         // Text Editor content area
         [Panel w=100% h=100% anchor=c bg=neutral-10]
-          [Panel id=TextEditorContainer w=98% h=97% anchor=c bg=stone-10 rounding=0.05]
+          [Panel id=TextEditorContainer w=98% h=95% anchor=c ty=1% bg=stone-10 rounding=0.05]
           [/Panel]
         [/Panel]
       [/VLayout]
@@ -26,7 +26,7 @@
         // Live View header
         [Panel w=100% h=3% anchor=c bg=steel-8 z=51]
           [Text fsz=15 color=white anchor=c]
-          Live View
+          Preview
           [/Text]
         [/Panel]
         

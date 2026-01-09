@@ -14,11 +14,13 @@ use winit::{
 };
 
 use crate::{
-    app_command::AppCommand,
     graphics::Graphics,
     scene::Scene,
     script::ScriptProvider,
-    scripting::script::SceneAccess,
+    scripting::{
+        app_command::{AppCommand, CursorIcon},
+        script::SceneAccess,
+    },
 };
 
 // Graphics are always created synchronously before App initialization
@@ -191,7 +193,7 @@ impl<P: ScriptProvider> App<P> {
         let now = std::time::Instant::now();
 
         // Create command channel
-        use crate::app_command::create_command_channel;
+        use crate::scripting::app_command::create_command_channel;
         let (tx, rx) = create_command_channel();
 
         // Give the scene the sender
@@ -242,6 +244,23 @@ impl<P: ScriptProvider> App<P> {
                 AppCommand::SetTargetFPS(fps) => {
                     self.target_fps = fps;
                     println!("Target FPS changed to: {}", fps);
+                }
+                AppCommand::SetCursorIcon(icon) => {
+                    use winit::window::CursorIcon as WinitCursorIcon;
+                    let winit_icon = match icon {
+                        CursorIcon::Default => WinitCursorIcon::Default,
+                        CursorIcon::Hand => WinitCursorIcon::Pointer,
+                        CursorIcon::Text => WinitCursorIcon::Text,
+                        CursorIcon::NotAllowed => WinitCursorIcon::NotAllowed,
+                        CursorIcon::Wait => WinitCursorIcon::Wait,
+                        CursorIcon::Crosshair => WinitCursorIcon::Crosshair,
+                        CursorIcon::Move => WinitCursorIcon::Move,
+                        CursorIcon::ResizeVertical => WinitCursorIcon::NsResize,
+                        CursorIcon::ResizeHorizontal => WinitCursorIcon::EwResize,
+                        CursorIcon::ResizeDiagonal1 => WinitCursorIcon::NwseResize,
+                        CursorIcon::ResizeDiagonal2 => WinitCursorIcon::NeswResize,
+                    };
+                    gfx.window().set_cursor(winit_icon);
                 }
                 AppCommand::Quit => {
                     println!("Quit command received");

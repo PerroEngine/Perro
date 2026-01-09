@@ -4,7 +4,23 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 pub enum AppCommand {
     SetWindowTitle(String),
     SetTargetFPS(f32),
+    SetCursorIcon(CursorIcon),
     Quit,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CursorIcon {
+    Default,
+    Hand,
+    Text,
+    NotAllowed,
+    Wait,
+    Crosshair,
+    Move,
+    ResizeVertical,
+    ResizeHorizontal,
+    ResizeDiagonal1,
+    ResizeDiagonal2,
 }
 
 pub fn create_command_channel() -> (Sender<AppCommand>, Receiver<AppCommand>) {

@@ -439,6 +439,8 @@ impl UINode {
         // Hit testing (FINAL)
         // -----------------------------------------
         let mut dirty_button_ids = Vec::new();
+        let mut any_button_hovered = false;
+        
         for (_, element) in elements.iter_mut() {
             let UIElement::Button(button) = element else {
                 continue;
@@ -478,6 +480,10 @@ impl UINode {
     
             button.is_hovered = is_hovered;
             button.is_pressed = is_hovered && mouse_pressed;
+            
+            if is_hovered {
+                any_button_hovered = true;
+            }
     
             let name = button.get_name();
             
@@ -512,6 +518,17 @@ impl UINode {
             }
     
             button.was_pressed_last_frame = button.is_pressed;
+        }
+        
+        // Update cursor icon based on button hover state
+        if let Some(tx) = api.scene.get_command_sender() {
+            use crate::scripting::app_command::{AppCommand, CursorIcon};
+            let cursor_icon = if any_button_hovered {
+                CursorIcon::Hand
+            } else {
+                CursorIcon::Default
+            };
+            let _ = tx.send(AppCommand::SetCursorIcon(cursor_icon));
         }
         
         // Mark all dirty buttons after the loop (avoid borrow conflict)

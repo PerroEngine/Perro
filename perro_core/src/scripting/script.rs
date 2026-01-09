@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::SceneData;
 use crate::api::ScriptApi;
-use crate::app_command::AppCommand;
+use crate::scripting::app_command::AppCommand;
 use crate::fur_ast::FurElement;
 use crate::node_registry::SceneNode;
 
