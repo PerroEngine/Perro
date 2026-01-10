@@ -2736,6 +2736,10 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         // Render cursor if focused, visible (blink), and element is visible
                         if text_input.is_focused && text_input.is_cursor_visible() && text_input.base.visible {
                             render_text_input_cursor(text_input, gfx, timestamp);
+                        } else if !text_input.is_focused {
+                            // Remove cursor panel when unfocused
+                            let cursor_id = uuid::Uuid::new_v5(&text_input.text.id, b"cursor");
+                            gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
                     UIElement::TextEdit(text_edit) => {
@@ -2931,7 +2935,7 @@ fn calculate_text_size(text: &str, font_size: f32) -> Vector2 {
     use fontdue::Font as Fontdue;
     use fontdue::FontSettings;
     
-    const DESIGN_SIZE: f32 = 64.0; // Same as used in FontAtlas::new
+    const DESIGN_SIZE: f32 = 192.0; // High resolution for sharp text (3x supersampling)
     
     if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
         let fd_font = Fontdue::from_bytes(font.data, FontSettings::default())
@@ -2965,7 +2969,7 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
         return;
     }
     
-    let font_key = ("NotoSans".to_string(), 64);
+    let font_key = ("NotoSans".to_string(), 192);
     let font_cache = get_font_cache();
 
     // Check if font atlas is already initialized
@@ -2978,7 +2982,7 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
                 if !cache.contains_key(&font_key) {
                     if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal)
                     {
-                        let font_atlas = FontAtlas::new(font, 64.0);
+                        let font_atlas = FontAtlas::new(font, 192.0);
                         gfx.initialize_font_atlas(font_atlas);
                         cache.insert(font_key, true);
                     }

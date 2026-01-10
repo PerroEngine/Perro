@@ -106,16 +106,18 @@ var font_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let dist = textureSample(font_atlas, font_sampler, in.uv).r;
-
-    if dist > 0.6 {
-        return vec4<f32>(in.color.rgb, in.color.a);
-    }
-    if dist < 0.4 {
+    // Sample the gamma-corrected font atlas
+    // The atlas is stored in gamma space for better mipmap quality
+    let gamma_alpha = textureSample(font_atlas, font_sampler, in.uv).r;
+    
+    // Convert from gamma space back to linear for correct alpha blending
+    // Use gamma 1.8 (matches the encoding gamma)
+    let linear_alpha = pow(gamma_alpha, 1.8);
+    
+    // Simple threshold to discard fully transparent pixels
+    if linear_alpha < 0.05 {
         discard;
     }
-
-    let fw = fwidth(dist);
-    let alpha = smoothstep(0.5 - fw, 0.5 + fw, dist);
-    return vec4<f32>(in.color.rgb, in.color.a * alpha);
+    
+    return vec4<f32>(in.color.rgb, in.color.a * linear_alpha);
 }

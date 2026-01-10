@@ -96,7 +96,7 @@ impl RootScript {
 
     /// Launch a version and exit current process
     fn launch_version(&self, version_path: &Path) -> Result<(), String> {
-        eprintln!("🚀 Launching {} and exiting", version_path.display());
+        // [stripped for release] eprintln!("🚀 Launching {} and exiting", version_path.display());
 
         let parent_dir = version_path
             .parent()
@@ -138,19 +138,24 @@ impl RootScript {
             let expected_exe = expected.join(&exe_name);
             
             if exe_path != expected_exe {
-                eprintln!("⚠️  Not running from correct location!");
-                eprintln!("   Current: {}", exe_path.display());
-                eprintln!("   Expected: {}", expected_exe.display());
-                
+                // [stripped for release] eprintln!("⚠️  Not running from correct location!");
+
+                // [stripped for release] eprintln!("   Current: {}", exe_path.display());
+
+                // [stripped for release] eprintln!("   Expected: {}", expected_exe.display());
+
                 std::fs::create_dir_all(&expected).ok();
                 
                 if std::fs::copy(exe_path, &expected_exe).is_ok() {
-                    eprintln!("✅ Copied to correct location, relaunching...");
+                    // [stripped for release] eprintln!("✅ Copied to correct location, relaunching...");
+
                     if self.launch_version(&expected_exe).is_err() {
-                        eprintln!("❌ Failed to launch from correct location");
+                        // [stripped for release] eprintln!("❌ Failed to launch from correct location");
+
                     }
                 } else {
-                    eprintln!("❌ Failed to copy to correct location");
+                    // [stripped for release] eprintln!("❌ Failed to copy to correct location");
+
                 }
             }
         }
@@ -163,7 +168,8 @@ impl Script for RootScript {
         // If present, switch to editor mode and load editor.scn
         let project_path_opt = api.project().get_runtime_param("editor").map(|s| s.to_string());
         if let Some(project_path) = project_path_opt {
-            eprintln!("📂 Editor mode detected! Project path: {}", project_path);
+            // [stripped for release] eprintln!("📂 Editor mode detected! Project path: {}", project_path);
+
             api.print(&format!("📂 Editor mode: Loading project at {}", project_path));
             
             // Set the main scene to editor.scn
@@ -171,7 +177,8 @@ impl Script for RootScript {
             
             // Verify the change was applied (extract value first to avoid borrow issues)
             let new_main_scene = api.project().main_scene().to_string();
-            eprintln!("✅ Main scene set to: {}", new_main_scene);
+            // [stripped for release] eprintln!("✅ Main scene set to: {}", new_main_scene);
+
             api.print(&format!("✅ Main scene set to: {}", new_main_scene));
             
             // Store the project path as a runtime param for editor scripts to use
@@ -184,7 +191,8 @@ impl Script for RootScript {
         } else {
             // Manager mode: use default manager.scn (set in project.toml)
             let current_main_scene = api.project().main_scene().to_string();
-            eprintln!("📁 Manager mode: Project selection (main_scene: {})", current_main_scene);
+            // [stripped for release] eprintln!("📁 Manager mode: Project selection (main_scene: {})", current_main_scene);
+
             api.print(&format!("📁 Manager mode: Project selection (main_scene: {})", current_main_scene));
         }
 
@@ -196,7 +204,7 @@ impl Script for RootScript {
             .to_string_lossy()
             .to_string(); // e.g., "perro_editor.exe"
 
-        eprintln!("🎮 Perro Engine v{}", my_version);
+        // [stripped for release] eprintln!("🎮 Perro Engine v{}", my_version);
 
         let file = api.JSON.stringify(&json!({
             "name": "EXPORT MODE BITCH",
@@ -207,25 +215,30 @@ impl Script for RootScript {
 
         // Skip version management in debug builds
         if cfg!(debug_assertions) {
-            eprintln!("🐛 Debug build: skipping version management");
+            // [stripped for release] eprintln!("🐛 Debug build: skipping version management");
+
             return;
         }
 
         // Step 1: Ensure we're in the correct location (fast filesystem check)
         self.ensure_correct_location(api, &my_version, &current_exe_path);
-        eprintln!("✅ Running from correct location");
+        // [stripped for release] eprintln!("✅ Running from correct location");
 
         // Step 2: Check if higher local version exists (fast filesystem check)
         if let Some(higher_version) = self.find_highest_local_version(api, &my_version) {
-            eprintln!("🚀 Found higher local version: {} -> {}", my_version, higher_version);
-            eprintln!("   Relaunching with newer version...");
-            
+            // [stripped for release] eprintln!("🚀 Found higher local version: {} -> {}", my_version, higher_version);
+
+            // [stripped for release] eprintln!("   Relaunching with newer version...");
+
             if let Err(e) = self.launch_version_from_proper_location(api, &higher_version) {
-                eprintln!("❌ Failed to launch higher version: {}", e);
-                eprintln!("   Continuing with current version");
+                // [stripped for release] eprintln!("❌ Failed to launch higher version: {}", e);
+
+                // [stripped for release] eprintln!("   Continuing with current version");
+
             }
         } else {
-            eprintln!("✅ Running highest local version: {}", my_version);
+            // [stripped for release] eprintln!("✅ Running highest local version: {}", my_version);
+
         }
 
         // Window will open immediately - updater script handles network checks

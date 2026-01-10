@@ -1082,6 +1082,9 @@ impl PrimitiveRenderer {
     }
 
     pub fn initialize_font_atlas(&mut self, device: &Device, queue: &Queue, font_atlas: FontAtlas) {
+        // Calculate mip levels for high-quality downscaling
+        let mip_level_count = (font_atlas.width.max(font_atlas.height) as f32).log2().floor() as u32 + 1;
+        
         let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Font Atlas"),
             size: wgpu::Extent3d {
@@ -1089,14 +1092,20 @@ impl PrimitiveRenderer {
                 height: font_atlas.height,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: 1,
+            mip_level_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING 
+                | wgpu::TextureUsages::COPY_DST 
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
 
+        // Convert font atlas to gamma space before uploading (gamma-correct rendering)
+        // Fontdue rasterizes in linear space, but mipmaps work better in sRGB/gamma space
+        let gamma_corrected = self.apply_gamma_to_font_atlas(&font_atlas.bitmap);
+        
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &atlas_texture,
@@ -1104,7 +1113,7 @@ impl PrimitiveRenderer {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &font_atlas.bitmap,
+            &gamma_corrected,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(font_atlas.width),
@@ -1117,6 +1126,9 @@ impl PrimitiveRenderer {
             },
         );
 
+        // Generate mipmaps for smooth scaling
+        self.generate_mipmaps(device, queue, &atlas_texture, mip_level_count, font_atlas.width, font_atlas.height);
+
         let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Font Atlas Sampler"),
@@ -1125,7 +1137,7 @@ impl PrimitiveRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -1146,6 +1158,192 @@ impl PrimitiveRenderer {
 
         self.font_atlas = Some(font_atlas);
         self.font_bind_group = Some(font_bind_group);
+    }
+
+    /// Apply gamma correction to font atlas for better mipmap quality
+    /// Fontdue outputs linear coverage, but mipmaps work better in gamma/sRGB space
+    fn apply_gamma_to_font_atlas(&self, bitmap: &[u8]) -> Vec<u8> {
+        bitmap
+            .iter()
+            .map(|&linear| {
+                // Convert from linear [0, 255] to gamma space
+                // Use gamma 1.8 (less aggressive than 2.2) to prevent thinning at small sizes
+                let normalized = linear as f32 / 255.0;
+                let gamma_corrected = normalized.powf(1.0 / 1.8);
+                (gamma_corrected * 255.0) as u8
+            })
+            .collect()
+    }
+
+    fn generate_mipmaps(
+        &self,
+        device: &Device,
+        queue: &Queue,
+        texture: &wgpu::Texture,
+        mip_count: u32,
+        width: u32,
+        height: u32,
+    ) {
+        // Create a simple shader for mipmap generation
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Mipmap Blit Shader"),
+            source: ShaderSource::Wgsl(Cow::Borrowed(
+                r#"
+                @group(0) @binding(0) var src_texture: texture_2d<f32>;
+                @group(0) @binding(1) var src_sampler: sampler;
+
+                struct VertexOutput {
+                    @builtin(position) position: vec4<f32>,
+                    @location(0) uv: vec2<f32>,
+                }
+
+                @vertex
+                fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+                    var out: VertexOutput;
+                    let x = f32((vertex_index & 1u) << 1u);
+                    let y = f32((vertex_index & 2u));
+                    out.position = vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+                    out.uv = vec2<f32>(x, y);
+                    return out;
+                }
+
+                @fragment
+                fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+                    return textureSample(src_texture, src_sampler, in.uv);
+                }
+                "#,
+            )),
+        });
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Mipmap Sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Mipmap BGL"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("Mipmap Pipeline Layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            immediate_size: 0,
+        });
+
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("Mipmap Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(ColorTargetState {
+                    format: wgpu::TextureFormat::R8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Mipmap Generator"),
+        });
+
+        let mut mip_width = width;
+        let mut mip_height = height;
+
+        for mip_level in 1..mip_count {
+            mip_width = (mip_width / 2).max(1);
+            mip_height = (mip_height / 2).max(1);
+
+            let src_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Mipmap Src"),
+                base_mip_level: mip_level - 1,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+
+            let dst_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("Mipmap Dst"),
+                base_mip_level: mip_level,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Mipmap Bind Group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&src_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Mipmap Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &dst_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            rpass.set_pipeline(&pipeline);
+            rpass.set_bind_group(0, &bind_group, &[]);
+            rpass.draw(0..3, 0..1);
+            drop(rpass);
+        }
+
+        queue.submit(Some(encoder.finish()));
     }
 
     pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {

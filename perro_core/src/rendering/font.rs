@@ -83,8 +83,13 @@ impl FontAtlas {
 
         // Preload ASCII 32-126
         let chars: Vec<char> = (32u8..=126u8).map(|c| c as char).collect();
-        let atlas_w: u32 = 1024;
-        let atlas_h: u32 = 1024;
+        
+        // Scale atlas size based on design_size to ensure all glyphs fit
+        // Base size of 1024 works well for design_size ~64
+        // Scale proportionally: 64->1024, 128->2048, 192->3072, 256->4096
+        let scale_factor = (design_size / 64.0).ceil() as u32;
+        let atlas_w: u32 = 1024 * scale_factor;
+        let atlas_h: u32 = 1024 * scale_factor;
 
         let mut bitmap = vec![0u8; (atlas_w * atlas_h) as usize];
         let mut glyphs = HashMap::new();

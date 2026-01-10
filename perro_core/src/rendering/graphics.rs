@@ -608,7 +608,7 @@ pub struct Graphics {
     // Cached render state
     #[allow(dead_code)]
     cached_operations: wgpu::Operations<wgpu::Color>,
-    
+
     // OPTIMIZED: Cache camera 3D matrices to avoid recalculating in render()
     cached_camera3d_view: Option<glam::Mat4>,
     cached_camera3d_proj: Option<glam::Mat4>,
@@ -1172,11 +1172,12 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         depth_texture,
         depth_view,
 
+
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             store: wgpu::StoreOp::Store,
         },
-        
+
         // OPTIMIZED: Initialize cached camera matrices with initial values
         cached_camera3d_view,
         cached_camera3d_proj,
@@ -1661,6 +1662,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         renderer_3d,
         depth_texture,
         depth_view,
+
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             store: wgpu::StoreOp::Store,

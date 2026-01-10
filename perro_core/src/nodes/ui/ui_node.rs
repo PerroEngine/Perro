@@ -66,6 +66,10 @@ pub struct UINode {
     #[serde(skip)]
     pub focused_element: Option<Uuid>,
 
+    /// Previous cursor icon state to avoid redundant updates
+    #[serde(skip)]
+    last_cursor_icon: Option<u8>, // Store as u8 to avoid importing CursorIcon here
+
     pub base: Node,
 }
 
@@ -87,6 +91,7 @@ impl UINode {
             needs_layout_recalc: HashSet::new(),
             initial_z_indices: HashMap::new(),
             focused_element: None,
+            last_cursor_icon: None,
         }
     }
     
@@ -751,7 +756,7 @@ impl UINode {
             }
         }
         
-        // Update cursor icon based on hover state
+        // Update cursor icon based on hover state (only if changed)
         if let Some(tx) = api.scene.get_command_sender() {
             use crate::scripting::app_command::{AppCommand, CursorIcon};
             let cursor_icon = if any_button_hovered {
@@ -761,7 +766,27 @@ impl UINode {
             } else {
                 CursorIcon::Default
             };
-            let _ = tx.send(AppCommand::SetCursorIcon(cursor_icon));
+            
+            // Convert to u8 for comparison (avoid importing CursorIcon type in struct)
+            let icon_value = match cursor_icon {
+                CursorIcon::Default => 0,
+                CursorIcon::Hand => 1,
+                CursorIcon::Text => 2,
+                CursorIcon::NotAllowed => 3,
+                CursorIcon::Wait => 4,
+                CursorIcon::Crosshair => 5,
+                CursorIcon::Move => 6,
+                CursorIcon::ResizeVertical => 7,
+                CursorIcon::ResizeHorizontal => 8,
+                CursorIcon::ResizeDiagonal1 => 9,
+                CursorIcon::ResizeDiagonal2 => 10,
+            };
+            
+            // Only send command if cursor icon changed
+            if self.last_cursor_icon != Some(icon_value) {
+                self.last_cursor_icon = Some(icon_value);
+                let _ = tx.send(AppCommand::SetCursorIcon(cursor_icon));
+            }
         }
         
         // Handle keyboard input for focused TextInput, TextEdit, or CodeEdit
