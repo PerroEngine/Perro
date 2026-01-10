@@ -390,10 +390,44 @@ fn main() {
         }
 
         println!("✅ Scripts built! Starting dev runner…");
+        println!("🚀 Spawning perro_dev in release mode…");
 
-        // Run the project in dev mode using run_dev_with_path
-        // This works for any project, including the editor
-        run_dev_with_path(project_root);
+        // Check if --editor was passed with a project path
+        // Command format: --path --editor <project_path>
+        let mut cmd = Command::new("cargo");
+        cmd.arg("run")
+            .arg("-p")
+            .arg("perro_dev")
+            .arg("--release")
+            .arg("--")
+            .arg("--path")
+            .arg(project_root.to_string_lossy().as_ref());
+
+        // If path_arg was "--editor", check if there's a project path after it
+        if path_arg == "--editor" {
+            if let Some(project_path) = path_flag_i.and_then(|i| args.get(i + 2)) {
+                // Only add if it's not another flag (like --dev)
+                if !project_path.starts_with("--") {
+                    println!("📂 Editor mode: Project path: {}", project_path);
+                    cmd.arg("--editor")
+                        .arg(project_path);
+                }
+            }
+        }
+
+        let mut child = cmd
+            .spawn()
+            .expect("Failed to spawn perro_dev");
+
+        // Wait for it to finish
+        let status = child.wait().expect("Failed to wait on child process");
+        
+        if !status.success() {
+            eprintln!("❌ perro_dev exited with error");
+            std::process::exit(1);
+        }
+        
+        std::process::exit(0);
     }
 
     // Require --path to be present for build commands

@@ -61,6 +61,10 @@ pub struct UINode {
     /// Store initial z-indices from FUR file to prevent accumulation across frames
     #[serde(skip)]
     pub initial_z_indices: HashMap<Uuid, i32>,
+    
+    /// Currently focused UI element (for text input, etc.)
+    #[serde(skip)]
+    pub focused_element: Option<Uuid>,
 
     pub base: Node,
 }
@@ -82,6 +86,7 @@ impl UINode {
             needs_rerender: HashSet::new(),
             needs_layout_recalc: HashSet::new(),
             initial_z_indices: HashMap::new(),
+            focused_element: None,
         }
     }
     
@@ -398,9 +403,15 @@ impl UINode {
     
         if screen_mouse.x == 0.0 && screen_mouse.y == 0.0 {
             for (_, el) in elements.iter_mut() {
-                if let UIElement::Button(b) = el {
-                    b.is_hovered = false;
-                    b.is_pressed = false;
+                match el {
+                    UIElement::Button(b) => {
+                        b.is_hovered = false;
+                        b.is_pressed = false;
+                    }
+                    UIElement::TextInput(ti) => {
+                        ti.is_hovered = false;
+                    }
+                    _ => {}
                 }
             }
             return;
@@ -438,9 +449,23 @@ impl UINode {
         // -----------------------------------------
         // Hit testing (FINAL)
         // -----------------------------------------
-        let mut dirty_button_ids = Vec::new();
+        let mut dirty_element_ids = Vec::new();
         let mut any_button_hovered = false;
+        let mut any_text_input_hovered = false;
+        let mut clicked_text_input_id = None;
         
+        // Check for mouse click outside to unfocus
+        let mouse_just_pressed = api
+            .scene
+            .get_input_manager()
+            .map(|mgr| {
+                let mgr = mgr.lock().unwrap();
+                use crate::input::manager::MouseButton;
+                mgr.is_mouse_button_pressed(MouseButton::Left)
+            })
+            .unwrap_or(false);
+        
+        // Handle buttons
         for (_, element) in elements.iter_mut() {
             let UIElement::Button(button) = element else {
                 continue;
@@ -491,7 +516,7 @@ impl UINode {
             let state_changed = (is_hovered != was_hovered) || (button.is_pressed != was_pressed);
             if state_changed {
                 // Collect ID to mark after loop (avoid borrow conflict)
-                dirty_button_ids.push(button.get_id());
+                dirty_element_ids.push(button.get_id());
                 // Also mark the UI node so it gets processed
                 api.scene.mark_needs_rerender(self.base.id);
             }
@@ -520,20 +545,472 @@ impl UINode {
             button.was_pressed_last_frame = button.is_pressed;
         }
         
-        // Update cursor icon based on button hover state
+        // Handle TextInput, TextEdit, and CodeEdit elements
+        for (_, element) in elements.iter_mut() {
+            let (_is_hovered_result, _element_id, _was_focused) = match element {
+                UIElement::TextInput(text_input) => {
+                    if !text_input.get_visible() {
+                        continue;
+                    }
+                    let was_hovered = text_input.is_hovered;
+                    let was_focused = text_input.is_focused;
+                    
+                    let size = *text_input.get_size();
+                    let scaled_size = Vector2::new(
+                        size.x * text_input.global_transform.scale.x,
+                        size.y * text_input.global_transform.scale.y,
+                    );
+                    
+                    let center = text_input.global_transform.position;
+                    let corner_radius = text_input.panel_props().corner_radius;
+                    let local_pos = Vector2::new(
+                        mouse_pos.x - center.x,
+                        mouse_pos.y - center.y,
+                    );
+                    
+                    let is_hovered = is_point_in_rounded_rect(
+                        local_pos,
+                        scaled_size,
+                        corner_radius,
+                    );
+                    
+                    text_input.is_hovered = is_hovered;
+                    
+                    if is_hovered {
+                        any_text_input_hovered = true;
+                        if mouse_just_pressed && !was_focused {
+                            clicked_text_input_id = Some(text_input.get_id());
+                        }
+                    }
+                    
+                    if mouse_just_pressed && was_focused && !is_hovered {
+                        text_input.is_focused = false;
+                        self.focused_element = None;
+                        dirty_element_ids.push(text_input.get_id());
+                    }
+                    
+                    let state_changed = (is_hovered != was_hovered) || (text_input.is_focused != was_focused);
+                    if state_changed {
+                        dirty_element_ids.push(text_input.get_id());
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    
+                    (is_hovered, text_input.get_id(), was_focused)
+                }
+                UIElement::TextEdit(text_edit) => {
+                    if !text_edit.get_visible() {
+                        continue;
+                    }
+                    let was_hovered = text_edit.is_hovered;
+                    let was_focused = text_edit.is_focused;
+                    
+                    let size = *text_edit.get_size();
+                    let scaled_size = Vector2::new(
+                        size.x * text_edit.global_transform.scale.x,
+                        size.y * text_edit.global_transform.scale.y,
+                    );
+                    
+                    let center = text_edit.global_transform.position;
+                    let corner_radius = text_edit.panel_props().corner_radius;
+                    let local_pos = Vector2::new(
+                        mouse_pos.x - center.x,
+                        mouse_pos.y - center.y,
+                    );
+                    
+                    let is_hovered = is_point_in_rounded_rect(
+                        local_pos,
+                        scaled_size,
+                        corner_radius,
+                    );
+                    
+                    text_edit.is_hovered = is_hovered;
+                    
+                    if is_hovered {
+                        any_text_input_hovered = true;
+                        if mouse_just_pressed && !was_focused {
+                            clicked_text_input_id = Some(text_edit.get_id());
+                        }
+                    }
+                    
+                    if mouse_just_pressed && was_focused && !is_hovered {
+                        text_edit.is_focused = false;
+                        self.focused_element = None;
+                        dirty_element_ids.push(text_edit.get_id());
+                    }
+                    
+                    let state_changed = (is_hovered != was_hovered) || (text_edit.is_focused != was_focused);
+                    if state_changed {
+                        dirty_element_ids.push(text_edit.get_id());
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    
+                    (is_hovered, text_edit.get_id(), was_focused)
+                }
+                UIElement::CodeEdit(code_edit) => {
+                    if !code_edit.get_visible() {
+                        continue;
+                    }
+                    let was_hovered = code_edit.is_hovered;
+                    let was_focused = code_edit.is_focused;
+                    
+                    let size = *code_edit.get_size();
+                    let scaled_size = Vector2::new(
+                        size.x * code_edit.global_transform.scale.x,
+                        size.y * code_edit.global_transform.scale.y,
+                    );
+                    
+                    let center = code_edit.global_transform.position;
+                    let corner_radius = code_edit.panel_props().corner_radius;
+                    let local_pos = Vector2::new(
+                        mouse_pos.x - center.x,
+                        mouse_pos.y - center.y,
+                    );
+                    
+                    let is_hovered = is_point_in_rounded_rect(
+                        local_pos,
+                        scaled_size,
+                        corner_radius,
+                    );
+                    
+                    code_edit.is_hovered = is_hovered;
+                    
+                    if is_hovered {
+                        any_text_input_hovered = true;
+                        if mouse_just_pressed && !was_focused {
+                            clicked_text_input_id = Some(code_edit.get_id());
+                        }
+                    }
+                    
+                    if mouse_just_pressed && was_focused && !is_hovered {
+                        code_edit.is_focused = false;
+                        self.focused_element = None;
+                        dirty_element_ids.push(code_edit.get_id());
+                    }
+                    
+                    let state_changed = (is_hovered != was_hovered) || (code_edit.is_focused != was_focused);
+                    if state_changed {
+                        dirty_element_ids.push(code_edit.get_id());
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    
+                    (is_hovered, code_edit.get_id(), was_focused)
+                }
+                _ => continue,
+            };
+        }
+        
+        // Handle focus change
+        if let Some(clicked_id) = clicked_text_input_id {
+            // Unfocus previously focused element
+            if let Some(old_focused) = self.focused_element {
+                if let Some(old_element) = elements.get_mut(&old_focused) {
+                    match old_element {
+                        UIElement::TextInput(ti) => {
+                            ti.is_focused = false;
+                            dirty_element_ids.push(old_focused);
+                        }
+                        UIElement::TextEdit(te) => {
+                            te.is_focused = false;
+                            dirty_element_ids.push(old_focused);
+                        }
+                        UIElement::CodeEdit(ce) => {
+                            ce.is_focused = false;
+                            dirty_element_ids.push(old_focused);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            
+            // Focus new element
+            if let Some(new_element) = elements.get_mut(&clicked_id) {
+                match new_element {
+                    UIElement::TextInput(ti) => {
+                        ti.is_focused = true;
+                        self.focused_element = Some(clicked_id);
+                        dirty_element_ids.push(clicked_id);
+                        // Immediately mark for rerender
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    UIElement::TextEdit(te) => {
+                        te.is_focused = true;
+                        self.focused_element = Some(clicked_id);
+                        dirty_element_ids.push(clicked_id);
+                        // Immediately mark for rerender
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    UIElement::CodeEdit(ce) => {
+                        ce.is_focused = true;
+                        self.focused_element = Some(clicked_id);
+                        dirty_element_ids.push(clicked_id);
+                        // Immediately mark for rerender
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        // Update cursor icon based on hover state
         if let Some(tx) = api.scene.get_command_sender() {
             use crate::scripting::app_command::{AppCommand, CursorIcon};
             let cursor_icon = if any_button_hovered {
                 CursorIcon::Hand
+            } else if any_text_input_hovered {
+                CursorIcon::Text
             } else {
                 CursorIcon::Default
             };
             let _ = tx.send(AppCommand::SetCursorIcon(cursor_icon));
         }
         
-        // Mark all dirty buttons after the loop (avoid borrow conflict)
-        for button_id in dirty_button_ids {
-            self.mark_element_needs_rerender(button_id);
+        // Handle keyboard input for focused TextInput, TextEdit, or CodeEdit
+        if let Some(focused_id) = self.focused_element {
+            if let Some(element) = elements.get_mut(&focused_id) {
+                let input_mgr = api.scene.get_input_manager();
+                if let Some(mgr) = input_mgr {
+                    let mut mgr = mgr.lock().unwrap();
+                    use winit::keyboard::KeyCode;
+                    
+                    // Get text input from IME
+                    let text_input_from_ime = mgr.get_text_input().to_string();
+                    
+                    // Clear the buffer immediately after reading so we don't process it twice
+                    mgr.clear_text_input();
+                    
+                    
+                    // Drop the lock before processing
+                    drop(mgr);
+                    let mut needs_rerender = false;
+                    
+                    // Reacquire the lock for processing keys
+                    let input_mgr = api.scene.get_input_manager();
+                    if let Some(mgr) = input_mgr {
+                        let mut mgr = mgr.lock().unwrap();
+                    
+                    match element {
+                        UIElement::TextInput(text_input) => {
+                            let mut text_changed = false;
+                            
+                            // Handle text input from IME
+                            let text_to_insert = &text_input_from_ime;
+                            if !text_to_insert.is_empty() {
+                                println!("[DEBUG] Inserting text: {:?}, current content: {:?}", text_to_insert, text_input.get_text());
+                                text_input.insert_text(text_to_insert);
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                println!("[DEBUG] After insert, content: {:?}", text_input.get_text());
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            // Handle special keys with repeat
+                            if mgr.is_key_triggered(KeyCode::Backspace) {
+                                text_input.delete_backward();
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                                println!("[DEBUG] Backspace - text now: '{}' (len: {})", text_input.get_text(), text_input.get_text().len());
+                            }
+                            if mgr.is_key_triggered(KeyCode::Delete) {
+                                text_input.delete_forward();
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowLeft) {
+                                text_input.move_cursor_left();
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowRight) {
+                                text_input.move_cursor_right();
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::Home) {
+                                text_input.move_cursor_home();
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::End) {
+                                text_input.move_cursor_end();
+                                text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            text_input.update_cursor_blink(0.016);
+                            
+                            // If text changed, mark for layout recalculation
+                            if text_changed {
+                                self.mark_element_needs_layout(focused_id);
+                            }
+                        }
+                        UIElement::TextEdit(text_edit) => {
+                            let mut text_changed = false;
+                            
+                            // Handle text input from IME
+                            let text_to_insert = mgr.get_text_input();
+                            if !text_to_insert.is_empty() {
+                                text_edit.insert_text(&text_to_insert);
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            // Handle Enter key for newline
+                            if mgr.is_key_triggered(KeyCode::Enter) {
+                                text_edit.insert_newline();
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            // Handle special keys with repeat
+                            if mgr.is_key_triggered(KeyCode::Backspace) {
+                                text_edit.delete_backward();
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::Delete) {
+                                text_edit.delete_forward();
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowLeft) {
+                                text_edit.move_cursor_left();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowRight) {
+                                text_edit.move_cursor_right();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowUp) {
+                                text_edit.move_cursor_up();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowDown) {
+                                text_edit.move_cursor_down();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::Home) {
+                                text_edit.move_cursor_line_start();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::End) {
+                                text_edit.move_cursor_line_end();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            text_edit.update_cursor_blink(0.016);
+                            
+                            // If text changed, mark for layout recalculation
+                            if text_changed {
+                                self.mark_element_needs_layout(focused_id);
+                            }
+                        }
+                        UIElement::CodeEdit(code_edit) => {
+                            let mut text_changed = false;
+                            
+                            // Handle text input from IME
+                            let text_to_insert = mgr.get_text_input();
+                            if !text_to_insert.is_empty() {
+                                code_edit.insert_text(&text_to_insert);
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            // Handle Enter key for newline
+                            if mgr.is_key_triggered(KeyCode::Enter) {
+                                code_edit.insert_newline();
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            // Handle special keys with repeat
+                            if mgr.is_key_triggered(KeyCode::Backspace) {
+                                code_edit.delete_backward();
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::Delete) {
+                                code_edit.delete_forward();
+                                text_changed = true;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowLeft) {
+                                code_edit.move_cursor_left();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowRight) {
+                                code_edit.move_cursor_right();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowUp) {
+                                code_edit.move_cursor_up();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::ArrowDown) {
+                                code_edit.move_cursor_down();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::Home) {
+                                code_edit.move_cursor_line_start();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            if mgr.is_key_triggered(KeyCode::End) {
+                                code_edit.move_cursor_line_end();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            
+                            code_edit.update_cursor_blink(0.016);
+                            
+                            // If text changed, mark for layout recalculation
+                            if text_changed {
+                                self.mark_element_needs_layout(focused_id);
+                            }
+                        }
+                        _ => {}
+                    }
+                    
+                    // Drop the mutex guard before calling mark_needs_rerender
+                    drop(mgr);
+                    
+                    if needs_rerender {
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    }
+                }
+            }
+        }
+        
+        // Mark all dirty elements after the loop (avoid borrow conflict)
+        for element_id in dirty_element_ids {
+            self.mark_element_needs_rerender(element_id);
         }
     }
 }

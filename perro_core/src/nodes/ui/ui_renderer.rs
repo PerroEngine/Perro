@@ -15,8 +15,10 @@ use crate::{
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
     ui_elements::{
-        ui_container::{ContainerMode, LayoutAlignment, Padding, UIPanel},
+        ui_container::{ContainerMode, LayoutAlignment, UIPanel},
         ui_text::UIText,
+        ui_text_input::UITextInput,
+        ui_text_edit::UITextEdit,
     },
     ui_node::UINode,
 };
@@ -801,7 +803,7 @@ pub fn calculate_layout_positions(
     // Calculate gaps and resolve auto-sizing
     // Default gap = 1/n of parent (where n = number of children)
     // Gap attribute adds EXTRA spacing on top
-    let mut individual_gaps: Vec<f32> = Vec::new();
+    let _individual_gaps: Vec<f32> = Vec::new();
     
     match &container_mode {
         ContainerMode::Horizontal => {
@@ -1503,23 +1505,29 @@ fn update_global_transforms_with_layout_impl(
         // Apply percentage styles first (but skip auto-sizing containers unless they have explicit percentages)
         // Also skip percentage sizing for children in layouts - they should be sized by the layout system
         if (!is_layout_container || has_explicit_size) && !is_child_of_layout {
+            const ABSOLUTE_MARKER: f32 = 10000.0;
             for (key, pct) in style_map.iter() {
                 let fraction = *pct / 100.0;
 
                 match key.as_str() {
                     // Size percentages use parent (or first non-auto-sizing layout ancestor)
                     // Use f64 for precision to avoid rounding errors
+                    // Skip absolute values (marked with >= 10000)
                     "size.x" => {
-                        element.set_size(Vector2::new(
-                            (percentage_reference_size.x as f64 * fraction as f64) as f32,
-                            element.get_size().y,
-                        ));
+                        if *pct < ABSOLUTE_MARKER {
+                            element.set_size(Vector2::new(
+                                (percentage_reference_size.x as f64 * fraction as f64) as f32,
+                                element.get_size().y,
+                            ));
+                        }
                     }
                     "size.y" => {
-                        element.set_size(Vector2::new(
-                            element.get_size().x,
-                            (percentage_reference_size.y as f64 * fraction as f64) as f32,
-                        ));
+                        if *pct < ABSOLUTE_MARKER {
+                            element.set_size(Vector2::new(
+                                element.get_size().x,
+                                (percentage_reference_size.y as f64 * fraction as f64) as f32,
+                            ));
+                        }
                     }
 
                     // Position percentages still use immediate parent
@@ -1784,7 +1792,7 @@ fn update_global_transforms_with_layout_impl(
             // Get children list before dropping the mutable borrow
             let children_ids = element.get_children().to_vec();
 
-            // STEP 6: Handle button children specially (panel and text are not in elements map)
+            // STEP 6: Handle button and text input children specially (panel and text are not in elements map)
             // They should be positioned like regular children using the anchor system
             if let UIElement::Button(button) = element {
                 // Sync button size to panel (panel should match button size for rendering)
@@ -1936,6 +1944,275 @@ fn update_global_transforms_with_layout_impl(
                 
               
             }
+            
+            // Handle TextInput children (same logic as Button)
+            if let UIElement::TextInput(text_input) = element {
+                // Sync text input size to panel
+                text_input.panel.base.size = text_input.base.size;
+                
+                // Calculate actual text size based on content
+                let actual_text_size = calculate_text_size(&text_input.text.props.content, text_input.text.props.font_size);
+                text_input.text.base.size = actual_text_size;
+                
+                // Use the text input's size as the parent size for anchor calculations
+                let text_input_size = text_input.base.size;
+                
+                // Helper function to calculate anchor offset (same as Button)
+                let calculate_anchor_offset = |child_size: Vector2, child_pivot: Vector2, anchor: FurAnchor, parent_size: Vector2| -> Vector2 {
+                    match anchor {
+                        FurAnchor::TopLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::TopRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::Top => {
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Bottom => {
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Left => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Right => {
+                            let parent_right = parent_size.x * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Center => {
+                            Vector2::new(0.0, 0.0)
+                        }
+                    }
+                };
+                
+                // Process panel
+                let panel_size = text_input.panel.base.size;
+                let panel_pivot = text_input.panel.base.pivot;
+                let panel_anchor = text_input.panel.base.anchor;
+                let panel_local = text_input.panel.base.transform.clone();
+                
+                let panel_anchor_offset = calculate_anchor_offset(panel_size, panel_pivot, panel_anchor, text_input_size);
+                
+                let mut panel_local_pos = panel_local.position;
+                panel_local_pos.x += panel_anchor_offset.x;
+                panel_local_pos.y += panel_anchor_offset.y;
+                
+                let mut panel_global = Transform2D::default();
+                panel_global.scale.x = global.scale.x * panel_local.scale.x;
+                panel_global.scale.y = global.scale.y * panel_local.scale.y;
+                panel_global.position.x = global.position.x + (panel_local_pos.x * global.scale.x);
+                panel_global.position.y = global.position.y + (panel_local_pos.y * global.scale.y);
+                panel_global.rotation = global.rotation + panel_local.rotation;
+                
+                text_input.panel.base.global_transform = panel_global;
+                text_input.panel.base.z_index = global_z.min(1000000);
+                
+                // Process text
+                let text_size = actual_text_size;
+                let text_pivot = text_input.text.base.pivot;
+                let text_anchor = text_input.text_anchor;
+                let text_local = text_input.text.base.transform.clone();
+                
+                let text_anchor_offset = calculate_anchor_offset(text_size, text_pivot, text_anchor, text_input_size);
+                
+                let mut text_local_pos = text_local.position;
+                text_local_pos.x += text_anchor_offset.x;
+                text_local_pos.y += text_anchor_offset.y;
+                
+                // Adjust position for baseline (same as Button)
+                match text_anchor {
+                    crate::fur_ast::FurAnchor::Top | 
+                    crate::fur_ast::FurAnchor::TopLeft | 
+                    crate::fur_ast::FurAnchor::TopRight => {
+                        text_local_pos.y -= text_size.y * 1.5;
+                    }
+                    crate::fur_ast::FurAnchor::Center |
+                    crate::fur_ast::FurAnchor::Left |
+                    crate::fur_ast::FurAnchor::Right => {
+                        text_local_pos.y -= text_size.y * 1.25;
+                    }
+                    _ => {
+                        text_local_pos.y -= text_size.y;
+                    }
+                }
+                
+                let mut text_global = Transform2D::default();
+                text_global.scale.x = global.scale.x * text_local.scale.x;
+                text_global.scale.y = global.scale.y * text_local.scale.y;
+                text_global.position.x = global.position.x + (text_local_pos.x * global.scale.x);
+                text_global.position.y = global.position.y + (text_local_pos.y * global.scale.y);
+                text_global.rotation = global.rotation + text_local.rotation;
+                
+                text_input.text.base.global_transform = text_global;
+                text_input.text.base.z_index = (global_z + 1).min(1000000);
+            }
+            
+            // Handle TextEdit children (same logic as TextInput)
+            if let UIElement::TextEdit(text_edit) = element {
+                // Sync text edit size to panel
+                text_edit.panel.base.size = text_edit.base.size;
+                
+                // Calculate actual text size based on content
+                let actual_text_size = calculate_text_size(&text_edit.text.props.content, text_edit.text.props.font_size);
+                text_edit.text.base.size = actual_text_size;
+                
+                // Use the text edit's size as the parent size for anchor calculations
+                let text_edit_size = text_edit.base.size;
+                
+                // Helper function to calculate anchor offset (same as TextInput)
+                let calculate_anchor_offset = |child_size: Vector2, child_pivot: Vector2, anchor: FurAnchor, parent_size: Vector2| -> Vector2 {
+                    match anchor {
+                        FurAnchor::TopLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::TopRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::Top => {
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Bottom => {
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Left => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Right => {
+                            let parent_right = parent_size.x * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Center => {
+                            Vector2::new(0.0, 0.0)
+                        }
+                    }
+                };
+                
+                // Process panel
+                let panel_size = text_edit.panel.base.size;
+                let panel_pivot = text_edit.panel.base.pivot;
+                let panel_anchor = text_edit.panel.base.anchor;
+                let panel_local = text_edit.panel.base.transform.clone();
+                
+                let panel_anchor_offset = calculate_anchor_offset(panel_size, panel_pivot, panel_anchor, text_edit_size);
+                
+                let mut panel_local_pos = panel_local.position;
+                panel_local_pos.x += panel_anchor_offset.x;
+                panel_local_pos.y += panel_anchor_offset.y;
+                
+                let mut panel_global = Transform2D::default();
+                panel_global.scale.x = global.scale.x * panel_local.scale.x;
+                panel_global.scale.y = global.scale.y * panel_local.scale.y;
+                panel_global.position.x = global.position.x + (panel_local_pos.x * global.scale.x);
+                panel_global.position.y = global.position.y + (panel_local_pos.y * global.scale.y);
+                panel_global.rotation = global.rotation + panel_local.rotation;
+                
+                text_edit.panel.base.global_transform = panel_global;
+                text_edit.panel.base.z_index = global_z.min(1000000);
+                
+                // Process text
+                let text_size = actual_text_size;
+                let text_pivot = text_edit.text.base.pivot;
+                let text_anchor = text_edit.text_anchor;
+                let text_local = text_edit.text.base.transform.clone();
+                
+                let text_anchor_offset = calculate_anchor_offset(text_size, text_pivot, text_anchor, text_edit_size);
+                
+                let mut text_local_pos = text_local.position;
+                text_local_pos.x += text_anchor_offset.x;
+                text_local_pos.y += text_anchor_offset.y;
+                
+                // Adjust position for baseline (same as TextInput)
+                match text_anchor {
+                    crate::fur_ast::FurAnchor::Top | 
+                    crate::fur_ast::FurAnchor::TopLeft | 
+                    crate::fur_ast::FurAnchor::TopRight => {
+                        text_local_pos.y -= text_size.y * 1.5;
+                    }
+                    crate::fur_ast::FurAnchor::Center |
+                    crate::fur_ast::FurAnchor::Left |
+                    crate::fur_ast::FurAnchor::Right => {
+                        text_local_pos.y -= text_size.y * 1.25;
+                    }
+                    _ => {
+                        text_local_pos.y -= text_size.y;
+                    }
+                }
+                
+                let mut text_global = Transform2D::default();
+                text_global.scale.x = global.scale.x * text_local.scale.x;
+                text_global.scale.y = global.scale.y * text_local.scale.y;
+                text_global.position.x = global.position.x + (text_local_pos.x * global.scale.x);
+                text_global.position.y = global.position.y + (text_local_pos.y * global.scale.y);
+                text_global.rotation = global.rotation + text_local.rotation;
+                
+                text_edit.text.base.global_transform = text_global;
+                text_edit.text.base.z_index = (global_z + 1).min(1000000);
+            }
+            
+            // Handle CodeEdit children (composed of text_edit + line numbers)
+            if let UIElement::CodeEdit(_code_edit) = element {
+                // CodeEdit's sync_base_to_children already handles positioning
+                // We just need to ensure the layout is calculated
+                // The text_edit and line_number components are positioned relative to code_edit
+            }
 
             // STEP 7: Recurse into regular children with their layout positions
             for child_id in children_ids {
@@ -1985,11 +2262,23 @@ pub fn update_ui_layout(ui_node: &mut UINode) {
 
 fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
     if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
-        // First, sync all buttons' base properties to their panel/text
+        // First, sync all buttons', text inputs', text edits', and code edits' base properties
         // This must happen before layout calculation
         for (_, element) in elements.iter_mut() {
-            if let UIElement::Button(button) = element {
-                button.sync_base_to_children();
+            match element {
+                UIElement::Button(button) => {
+                    button.sync_base_to_children();
+                }
+                UIElement::TextInput(text_input) => {
+                    text_input.sync_base_to_children();
+                }
+                UIElement::TextEdit(text_edit) => {
+                    text_edit.sync_base_to_children();
+                }
+                UIElement::CodeEdit(code_edit) => {
+                    code_edit.sync_base_to_children();
+                }
+                _ => {}
             }
         }
         
@@ -2343,6 +2632,20 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, button.panel.id);
                         gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, button.text.id);
                     }
+                    UIElement::TextInput(text_input) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_input.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_input.text.id);
+                    }
+                    UIElement::TextEdit(text_edit) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_edit.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
+                    }
+                    UIElement::CodeEdit(code_edit) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, code_edit.text_edit.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, code_edit.text_edit.text.id);
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, code_edit.line_number_panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, code_edit.line_number_text.id);
+                    }
                     _ => {}
                 }
             }
@@ -2392,6 +2695,124 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         panel_copy.props.background_color = bg_color;
                         render_panel(&panel_copy, gfx, timestamp);
                         render_text(&button.text, gfx, timestamp);
+                    }
+                    UIElement::TextInput(text_input) => {
+                        // Scroll offset is calculated in render_text_input_with_clipping
+                        // Get the base background color
+                        let base_bg = text_input.panel_props().background_color;
+                        
+                        // Determine which color to use based on text input state
+                        let bg_color = if text_input.is_focused {
+                            // Focused state: use focused_bg if specified, otherwise lighten base by 10%
+                            if let Some(focused) = text_input.focused_bg {
+                                Some(focused)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.1))
+                            } else {
+                                None
+                            }
+                        } else if text_input.is_hovered {
+                            // Hover state: use hover_bg if specified, otherwise lighten base by 5%
+                            if let Some(hover) = text_input.hover_bg {
+                                Some(hover)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.05))
+                            } else {
+                                None
+                            }
+                        } else {
+                            // Normal state: use base background color
+                            base_bg
+                        };
+                        
+                        // Render panel with the appropriate color
+                        let mut panel_copy = text_input.panel.clone();
+                        panel_copy.props.background_color = bg_color;
+                        render_panel(&panel_copy, gfx, timestamp);
+                        
+                        // Render text with clipping (only show visible portion)
+                        render_text_input_with_clipping(text_input, gfx, timestamp);
+                        
+                        // Render cursor if focused, visible (blink), and element is visible
+                        if text_input.is_focused && text_input.is_cursor_visible() && text_input.base.visible {
+                            render_text_input_cursor(text_input, gfx, timestamp);
+                        }
+                    }
+                    UIElement::TextEdit(text_edit) => {
+                        // Get the base background color
+                        let base_bg = text_edit.panel_props().background_color;
+                        
+                        // Determine which color to use based on text edit state
+                        let bg_color = if text_edit.is_focused {
+                            if let Some(focused) = text_edit.focused_bg {
+                                Some(focused)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.1))
+                            } else {
+                                None
+                            }
+                        } else if text_edit.is_hovered {
+                            if let Some(hover) = text_edit.hover_bg {
+                                Some(hover)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.05))
+                            } else {
+                                None
+                            }
+                        } else {
+                            base_bg
+                        };
+                        
+                        // Render panel with the appropriate color
+                        let mut panel_copy = text_edit.panel.clone();
+                        panel_copy.props.background_color = bg_color;
+                        render_panel(&panel_copy, gfx, timestamp);
+                        render_text(&text_edit.text, gfx, timestamp);
+                        
+                        // Render cursor if focused, visible (blink), and element is visible
+                        if text_edit.is_focused && text_edit.is_cursor_visible() && text_edit.base.visible {
+                            render_text_edit_cursor(text_edit, gfx, timestamp);
+                        }
+                    }
+                    UIElement::CodeEdit(code_edit) => {
+                        // Get the base background color
+                        let base_bg = code_edit.panel_props().background_color;
+                        
+                        // Determine which color to use based on code edit state
+                        let bg_color = if code_edit.is_focused {
+                            if let Some(focused) = code_edit.focused_bg {
+                                Some(focused)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.1))
+                            } else {
+                                None
+                            }
+                        } else if code_edit.is_hovered {
+                            if let Some(hover) = code_edit.hover_bg {
+                                Some(hover)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.05))
+                            } else {
+                                None
+                            }
+                        } else {
+                            base_bg
+                        };
+                        
+                        // Render line number panel
+                        render_panel(&code_edit.line_number_panel, gfx, timestamp);
+                        render_text(&code_edit.line_number_text, gfx, timestamp);
+                        
+                        // Render text edit panel
+                        let mut panel_copy = code_edit.text_edit.panel.clone();
+                        panel_copy.props.background_color = bg_color;
+                        render_panel(&panel_copy, gfx, timestamp);
+                        render_text(&code_edit.text_edit.text, gfx, timestamp);
+                        
+                        // Render cursor if focused, visible (blink), and element is visible
+                        if code_edit.is_focused && code_edit.is_cursor_visible() && code_edit.base.visible {
+                            render_text_edit_cursor(&code_edit.text_edit, gfx, timestamp);
+                        }
                     }
                 }
             }
@@ -2475,6 +2896,37 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
 
 /// Calculate text size from font metrics
 /// Returns (width, height) where height = (ascent + descent) * scale
+/// Calculate cumulative character positions (width at each character boundary)
+fn calculate_character_positions(text: &str, font_size: f32) -> Vec<f32> {
+    use fontdue::Font as Fontdue;
+    use fontdue::FontSettings;
+    
+    const DESIGN_SIZE: f32 = 64.0;
+    
+    if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
+        let fd_font = Fontdue::from_bytes(font.data, FontSettings::default())
+            .expect("Invalid font data");
+        
+        let scale = font_size / DESIGN_SIZE;
+        let mut cumulative_width = 0.0;
+        let mut positions = Vec::with_capacity(text.len());
+        
+        for ch in text.chars() {
+            let (metrics, _) = fd_font.rasterize(ch, DESIGN_SIZE);
+            cumulative_width += metrics.advance_width as f32 * scale;
+            positions.push(cumulative_width);
+        }
+        
+        return positions;
+    }
+    
+    // Fallback: approximate positions
+    let char_width = font_size * 0.6;
+    (0..text.len())
+        .map(|i| (i + 1) as f32 * char_width)
+        .collect()
+}
+
 fn calculate_text_size(text: &str, font_size: f32) -> Vector2 {
     use fontdue::Font as Fontdue;
     use fontdue::FontSettings;
@@ -2507,8 +2959,9 @@ fn calculate_text_size(text: &str, font_size: f32) -> Vector2 {
 
 // Optimized text rendering - only regenerate atlas when font properties change
 fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
-    // Skip rendering if text content is empty
+    // Skip rendering if text content is empty - but remove from cache to clear old text
     if text.props.content.is_empty() {
+        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text.id);
         return;
     }
     
@@ -2560,4 +3013,384 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
         align_h,
         align_v,
     );
+}
+
+/// Calculate scroll offset (in pixels) for text input to keep cursor visible
+fn calculate_text_input_scroll_offset(text_input: &mut UITextInput) -> f32 {
+    let panel_width = text_input.panel.base.size.x;
+    let full_text = &text_input.text.props.content;
+    let cursor_pos = text_input.cursor_position.min(full_text.len());
+    
+    // Cache should already be updated in cursor rendering, but check anyway
+    if text_input.cached_text_content != *full_text {
+        text_input.cached_text_content = full_text.to_string();
+        
+        if full_text.is_empty() {
+            text_input.cached_text_width = 0.0;
+            text_input.cached_char_positions.clear();
+        } else {
+            text_input.cached_char_positions = calculate_character_positions(full_text, text_input.text.props.font_size);
+            text_input.cached_text_width = text_input.cached_char_positions.last().copied().unwrap_or(0.0);
+        }
+    }
+    
+    let full_text_width = text_input.cached_text_width;
+    
+    // Add padding (~2 character widths) to give breathing room at edges
+    let char_width = text_input.text.props.font_size * 0.6;
+    let padding = char_width * 2.0;
+    
+    // If text fits in panel, no scrolling needed
+    if full_text_width <= panel_width {
+        return 0.0;
+    }
+    
+    // Get accurate cursor X position from cached character positions
+    let cursor_x = if cursor_pos == 0 {
+        0.0
+    } else if cursor_pos <= text_input.cached_char_positions.len() {
+        text_input.cached_char_positions[cursor_pos - 1]
+    } else {
+        full_text_width
+    };
+    
+    // Current scroll offset
+    let current_scroll = text_input.scroll_offset;
+    
+    // Scroll calculation with equal side padding:
+    // Cursor on screen = panel_left + side_padding + (cursor_x - scroll)
+    // For cursor to be at right edge with padding:
+    // panel_left + side_padding + (cursor_x - scroll) = panel_left + panel_width - side_padding
+    // => cursor_x - scroll = panel_width - 2*side_padding
+    // => cursor_x = scroll + panel_width - 2*side_padding
+    
+    let side_padding = 5.0;
+    
+    // Boundaries in text coordinates where cursor should be
+    let min_cursor_text_pos = current_scroll + side_padding;
+    let max_cursor_text_pos = current_scroll + panel_width - 2.0 * side_padding;
+    
+    let new_scroll = if cursor_x < min_cursor_text_pos {
+        // Cursor scrolled off left - scroll so cursor is at left boundary (with padding)
+        (cursor_x - side_padding).max(0.0)
+    } else if cursor_x > max_cursor_text_pos {
+        // Cursor scrolled off right - scroll so cursor is at right boundary (with padding)
+        cursor_x - (panel_width - 2.0 * side_padding)
+    } else {
+        // Cursor is visible within padding bounds
+        current_scroll
+    };
+    
+    // Clamp scroll to valid range
+    // The max scroll should account for side padding on both sides
+    let usable_width = panel_width - 2.0 * side_padding;
+    let max_scroll = (full_text_width - usable_width).max(0.0);
+    let clamped_scroll = new_scroll.max(0.0).min(max_scroll);
+    
+    println!("[SCROLL DEBUG] cursor_x: {}, min_pos: {}, max_pos: {}, current_scroll: {}, new_scroll: {}, max_scroll: {}, clamped: {}", 
+        cursor_x, min_cursor_text_pos, max_cursor_text_pos, current_scroll, new_scroll, max_scroll, clamped_scroll);
+    
+    clamped_scroll
+}
+
+/// Render text input with horizontal scrolling and clipping
+fn render_text_input_with_clipping(text_input: &mut UITextInput, gfx: &mut Graphics, timestamp: u64) {
+    // If text is empty, explicitly remove it and return early
+    if text_input.text.props.content.is_empty() {
+        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_input.text.id);
+        return;
+    }
+    
+    // Update scroll offset to keep cursor visible
+    let old_scroll = text_input.scroll_offset;
+    text_input.scroll_offset = calculate_text_input_scroll_offset(text_input);
+    if (text_input.scroll_offset - old_scroll).abs() > 0.01 {
+        println!("[SCROLL UPDATE] Changed from {} to {}", old_scroll, text_input.scroll_offset);
+    }
+    
+    let panel_width = text_input.panel.base.size.x;
+    let full_text_width = text_input.cached_text_width;
+    
+    // If text fits entirely, no scrolling or clipping needed
+    if full_text_width <= panel_width {
+        text_input.scroll_offset = 0.0;
+        let text_copy = text_input.text.clone();
+        render_text(&text_copy, gfx, timestamp);
+        return;
+    }
+    
+    // Text is longer than panel - need to show only visible portion
+    // Calculate which part of text is visible based on scroll
+    // The visible window in text coordinates is simply [scroll, scroll + panel_width]
+    // Side padding affects screen positioning, not which characters are included
+    // Add safety margin on right to prevent bleeding (especially when scrolling right)
+    let side_padding = 5.0;
+    let right_margin = 5.0;
+    let visible_start_x = text_input.scroll_offset;
+    let visible_end_x = text_input.scroll_offset + panel_width - right_margin;
+    
+    // Find which characters are visible
+    let mut start_char = 0;
+    let mut end_char = text_input.text.props.content.len();
+    
+    if !text_input.cached_char_positions.is_empty() {
+        // Find characters FULLY within the visible window [visible_start_x, visible_end_x]
+        // This prevents bleeding at panel edges by excluding partially visible characters
+        let mut found_start = false;
+        for i in 0..text_input.cached_char_positions.len() {
+            let char_start = if i > 0 {
+                text_input.cached_char_positions[i - 1]
+            } else {
+                0.0
+            };
+            let char_end = text_input.cached_char_positions[i];
+            
+            // Only include character if BOTH start and end are within visible bounds
+            if char_start >= visible_start_x && char_end <= visible_end_x {
+                if !found_start {
+                    start_char = i;
+                    found_start = true;
+                }
+                end_char = i + 1;
+            } else if char_end > visible_end_x {
+                // Character extends past visible area, stop
+                break;
+            }
+        }
+    }
+    
+    // Get visible substring
+    let visible_text = if start_char < end_char && end_char <= text_input.text.props.content.len() {
+        &text_input.text.props.content[start_char..end_char]
+    } else {
+        &text_input.text.props.content
+    };
+    
+    // Calculate where this visible text should be positioned
+    // It should appear to start at the left edge of the panel
+    let panel_left = text_input.panel.base.global_transform.position.x 
+        - (text_input.panel.base.size.x * text_input.panel.base.pivot.x);
+    
+    // Offset within the visible text (how far into first character)
+    let start_offset = if start_char > 0 && start_char <= text_input.cached_char_positions.len() {
+        text_input.cached_char_positions[start_char - 1]
+    } else {
+        0.0
+    };
+    
+    // Render visible text, aligned to left edge of panel (with side padding)
+    // Override alignment to Start so text appears from left edge
+    let side_padding = 5.0;
+    let mut text_copy = text_input.text.clone();
+    text_copy.props.content = visible_text.to_string();
+    text_copy.props.align = crate::ui_elements::ui_text::TextFlow::Start;
+    // Text positioned: panel_left + side_padding + (where_this_char_starts - scroll)
+    // start_offset is where the first visible char starts in text coordinates
+    // scroll is text_input.scroll_offset
+    text_copy.base.transform.position.x = panel_left + side_padding + (start_offset - text_input.scroll_offset);
+    text_copy.base.global_transform.position.x = panel_left + side_padding + (start_offset - text_input.scroll_offset);
+    
+    render_text(&text_copy, gfx, timestamp);
+}
+
+/// Render a cursor for a focused TextInput element
+fn render_text_input_cursor(text_input: &mut UITextInput, gfx: &mut Graphics, timestamp: u64) {
+    let cursor_pos_in_full_text = text_input.cursor_position.min(text_input.text.props.content.len());
+    
+    // Use cached character positions for accurate cursor placement
+    let full_text = &text_input.text.props.content;
+    
+    // Update cache if text changed (including when cleared to empty)
+    if text_input.cached_text_content != *full_text || (full_text.is_empty() && !text_input.cached_char_positions.is_empty()) {
+        text_input.cached_text_content = full_text.to_string();
+        
+        if full_text.is_empty() {
+            text_input.cached_text_width = 0.0;
+            text_input.cached_char_positions.clear();
+        } else {
+            // Calculate cumulative character positions for accurate cursor placement
+            text_input.cached_char_positions = calculate_character_positions(full_text, text_input.text.props.font_size);
+            text_input.cached_text_width = text_input.cached_char_positions.last().copied().unwrap_or(0.0);
+        }
+    }
+    
+    // Get accurate width of text before cursor from cached positions
+    let text_before_cursor_width = if cursor_pos_in_full_text == 0 {
+        0.0
+    } else if cursor_pos_in_full_text <= text_input.cached_char_positions.len() {
+        text_input.cached_char_positions[cursor_pos_in_full_text - 1]
+    } else {
+        text_input.cached_text_width
+    };
+    
+    // Get text transform and position
+    let text_transform = text_input.text.base.global_transform;
+    let text_align = text_input.text.props.align;
+    
+    // Use cached width (already calculated above)
+    let full_text_width = text_input.cached_text_width;
+    
+    // Calculate cursor X position based on text alignment
+    // Note: text_transform.position already accounts for text-anchor (where text is positioned in panel)
+    // We just need to calculate the offset based on how text flows relative to that anchor point
+    let cursor_x_offset = match text_align {
+        crate::ui_elements::ui_text::TextFlow::Start => {
+            // align=start (left): text starts at anchor point and flows right
+            // Cursor is at the width of text before cursor position
+            text_before_cursor_width
+        }
+        crate::ui_elements::ui_text::TextFlow::Center => {
+            // align=center: text is centered on anchor point
+            // Cursor = (text_before_cursor_width) - (full_text_width / 2)
+            text_before_cursor_width - (full_text_width * 0.5)
+        }
+        crate::ui_elements::ui_text::TextFlow::End => {
+            // align=end (right): text ends at anchor point and flows left
+            // Cursor = text_before_cursor_width - full_text_width
+            text_before_cursor_width - full_text_width
+        }
+    };
+    
+    let font_size = text_input.text.props.font_size;
+    
+    // Cursor positioning for scrollable text input:
+    // The text is rendered as if it were left-aligned starting from panel left edge
+    // cursor_x_offset contains the position based on original alignment (we calculated it above)
+    // We need to convert this to "absolute position from start of text"
+    
+    let panel_left = text_input.panel.base.global_transform.position.x 
+        - (text_input.panel.base.size.x * text_input.panel.base.pivot.x);
+    let panel_width = text_input.panel.base.size.x;
+    let full_text_width = text_input.cached_text_width;
+    
+    // Use deterministic cursor ID so we don't create duplicates
+    let cursor_id = uuid::Uuid::new_v5(&text_input.text.id, b"cursor");
+    
+    // If text fits in panel, use original centered positioning
+    if full_text_width <= panel_width {
+        let cursor_global_x = text_transform.position.x + cursor_x_offset;
+        let cursor_global_y = text_transform.position.y + (font_size * 1.0);
+        
+        // Create cursor transform
+        let mut cursor_transform = Transform2D::default();
+        cursor_transform.position = Vector2::new(cursor_global_x, cursor_global_y);
+        cursor_transform.scale = Vector2::new(1.0, 1.0);
+        cursor_transform.rotation = 0.0;
+        
+        // Create cursor panel
+        let mut cursor_panel = UIPanel::default();
+        cursor_panel.base.id = cursor_id;
+        cursor_panel.base.size = Vector2::new(1.5, font_size);
+        cursor_panel.base.pivot = Vector2::new(0.5, 0.5);
+        cursor_panel.base.global_transform = cursor_transform;
+        cursor_panel.props.background_color = Some(text_input.text.props.color);
+        cursor_panel.base.z_index = text_input.text.base.z_index + 1;
+        
+        if (text_input.cursor_blink_timer % 1000.0) < 500.0 {
+            render_panel(&cursor_panel, gfx, timestamp);
+        }
+        
+        return;
+    }
+    
+    // For scrollable text, cursor position is based on actual character widths
+    // text_before_cursor_width is the cumulative width from start of text to cursor position
+    let side_padding = 5.0;
+    
+    // Text rendering logic with side padding:
+    // - Visible window in text coordinates: [scroll, scroll + panel_width]
+    // - Text is rendered starting at: panel_left + side_padding
+    // - A character at text position P appears at: panel_left + side_padding + (P - scroll)
+    let cursor_global_x = panel_left + side_padding + (text_before_cursor_width - text_input.scroll_offset);
+    let cursor_global_y = text_transform.position.y + (font_size * 1.0);
+    
+    println!("[CURSOR DEBUG] text_before_cursor_width: {}, cursor_x_offset: {}, scroll: {}, side_padding: {}, panel_left: {}, result: {}", 
+        text_before_cursor_width, cursor_x_offset, text_input.scroll_offset, side_padding, panel_left, cursor_global_x);
+    
+    // Create cursor transform with top-left pivot so Y position is at the top of the cursor
+    let mut cursor_transform = Transform2D::default();
+    cursor_transform.position = Vector2::new(cursor_global_x, cursor_global_y);
+    cursor_transform.scale = Vector2::new(1.0, 1.0);
+    cursor_transform.rotation = 0.0;
+    
+    // Cursor is a thin vertical line (1.5px wide, font_size tall) - thin to clearly show between letters
+    let cursor_width = 1.5;
+    let cursor_height = font_size;
+    
+    // Use text color for cursor
+    let cursor_color = text_input.text.props.color;
+    
+    // Create a temporary panel for the cursor (cursor_id already defined above)
+    use crate::ui_elements::ui_container::UIPanel;
+    let mut cursor_panel = UIPanel::default();
+    cursor_panel.base.id = cursor_id;
+    cursor_panel.base.size = Vector2::new(cursor_width, cursor_height);
+    cursor_panel.base.global_transform = cursor_transform;
+    cursor_panel.base.pivot = Vector2::new(0.5, 0.5); // Center pivot so cursor is centered between characters
+    cursor_panel.props.background_color = Some(cursor_color);
+    cursor_panel.base.z_index = text_input.text.base.z_index + 1; // Cursor on top of text
+    
+    // Only render if cursor is in visible phase of blink cycle
+    if (text_input.cursor_blink_timer % 1000.0) < 500.0 {
+        render_panel(&cursor_panel, gfx, timestamp);
+    }
+}
+
+/// Render a cursor for a focused TextEdit element (multiline)
+fn render_text_edit_cursor(text_edit: &UITextEdit, gfx: &mut Graphics, timestamp: u64) {
+    // Get the current line
+    let line_text = text_edit.get_line(text_edit.cursor_pos.line);
+    let text_before_cursor = &line_text[..text_edit.cursor_pos.column.min(line_text.len())];
+    
+    // Estimate character width
+    let char_width = text_edit.text.props.font_size * 0.6;
+    let text_width = text_before_cursor.len() as f32 * char_width;
+    
+    // Get text transform
+    let text_transform = text_edit.text.base.global_transform;
+    
+    // Calculate cursor X position (always left-aligned for multiline)
+    let cursor_x_offset = text_width;
+    
+    // Calculate cursor Y position based on line number
+    let font_size = text_edit.text.props.font_size;
+    let line_height = font_size * 1.2; // Line spacing
+    let cursor_y_offset = -(text_edit.cursor_pos.line as f32 * line_height);
+    
+    // Apply baseline alignment adjustment - text anchor is center
+    let baseline_offset = -(font_size * 0.5);
+
+    // Cursor position in text's local space
+    let cursor_local_x = cursor_x_offset;
+    let cursor_local_y = cursor_y_offset + baseline_offset;
+    
+    // Transform to global space
+    let cursor_global_x = text_transform.position.x + (cursor_local_x * text_transform.scale.x);
+    let cursor_global_y = text_transform.position.y + (cursor_local_y * text_transform.scale.y);
+    
+    // Create cursor transform
+    let mut cursor_transform = Transform2D::default();
+    cursor_transform.position = Vector2::new(cursor_global_x, cursor_global_y);
+    cursor_transform.scale = text_transform.scale;
+    cursor_transform.rotation = text_transform.rotation;
+    
+    // Cursor is a thin vertical line
+    let cursor_width = 2.0;
+    let cursor_height = text_edit.text.props.font_size;
+    
+    // Use text color for cursor
+    let cursor_color = text_edit.text.props.color;
+    
+    // Render cursor as a small rectangle
+    let cursor_id = uuid::Uuid::new_v5(&text_edit.text.id, b"cursor");
+    
+    let mut cursor_panel = UIPanel::default();
+    cursor_panel.base.id = cursor_id;
+    cursor_panel.base.size = Vector2::new(cursor_width, cursor_height);
+    cursor_panel.base.global_transform = cursor_transform;
+    cursor_panel.base.pivot = Vector2::new(0.0, 0.5); // Left-center pivot
+    cursor_panel.props.background_color = Some(cursor_color);
+    cursor_panel.base.z_index = text_edit.text.base.z_index + 1;
+    
+    render_panel(&cursor_panel, gfx, timestamp);
 }

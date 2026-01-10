@@ -583,6 +583,18 @@ pub struct SignalBus {
 }
 
 impl<P: ScriptProvider> Scene<P> {
+    /// Check if any UINode has a focused text input element
+    pub fn has_focused_text_input(&self) -> bool {
+        for node in self.nodes.values() {
+            if let SceneNode::UINode(ui_node) = node {
+                if ui_node.focused_element.is_some() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    
     /// Create a runtime scene from a root node
     pub fn new(root: SceneNode, provider: P, project: Rc<RefCell<Project>>) -> Self {
         let root_id = root.get_id();

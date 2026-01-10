@@ -12,6 +12,9 @@ use crate::{
         ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, LayoutAlignment, Padding, UIPanel},
         ui_text::{TextFlow, UIText},
         ui_button::UIButton,
+        ui_text_input::UITextInput,
+        ui_text_edit::UITextEdit,
+        ui_code_edit::UICodeEdit,
     },
     ui_node::UINode,
 };
@@ -846,6 +849,547 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
 
             Some(UIElement::Button(button))
+        }
+
+        "TextInput" => {
+            let mut text_input = UITextInput::default();
+            text_input.set_name(&fur.id);
+            apply_base_attributes(&mut text_input.base, &fur.attributes);
+
+            // Apply panel properties (same as Button)
+            if let Some(bg) = fur.attributes.get("bg") {
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    text_input.panel_props_mut().background_color = Some(c);
+                }
+            }
+            
+            // Parse hover and focused background colors
+            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
+                if let Ok(c) = parse_color_with_opacity(hover_bg) {
+                    text_input.hover_bg = Some(c);
+                }
+            }
+            if let Some(focused_bg) = fur.attributes.get("focused-bg") {
+                if let Ok(c) = parse_color_with_opacity(focused_bg) {
+                    text_input.focused_bg = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    text_input.panel_props_mut().border_color = Some(c);
+                }
+            }
+            if let Some(b) = fur.attributes.get("border") {
+                text_input.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
+            }
+
+            if let Some(opacity_str) = fur.attributes.get("opacity") {
+                if let Some(opacity) = parse_opacity(opacity_str) {
+                    text_input.panel_props_mut().opacity = opacity;
+                }
+            }
+
+            // Apply corner radius (same logic as Button)
+            let mut corner = CornerRadius::default();
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
+
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut vals = [0.0; 4];
+                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
+
+                match value.split(',').count() {
+                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
+                    2 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
+                    }
+                    3 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
+                    }
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
+                    }
+                    _ => {}
+                }
+            }
+
+            // Directional and individual corner overrides
+            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+                corner.top_left = v;
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+                corner.bottom_left = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+                corner.top_left = v;
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+                corner.top_right = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
+                corner.top_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
+                corner.bottom_right = v;
+            }
+
+            text_input.panel_props_mut().corner_radius = corner;
+
+            // Apply text properties - extract text from children
+            let text_content: String = fur
+                .children
+                .iter()
+                .filter_map(|n| {
+                    if let FurNode::Text(s) = n {
+                        Some(s.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<&str>>()
+                .join("");
+            
+            let trimmed_content = text_content.trim();
+            text_input.text_props_mut().content = trimmed_content.to_string();
+            
+            // Set default text color to white if not specified
+            if fur.attributes.get("text-c").is_none() {
+                text_input.text_props_mut().color = Color::new(255, 255, 255, 255);
+            }
+            
+            // Parse text-anchor
+            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
+                text_input.text_anchor = match anchor_str.as_ref() {
+                    "tl" => FurAnchor::TopLeft,
+                    "t" => FurAnchor::Top,
+                    "tr" => FurAnchor::TopRight,
+                    "l" => FurAnchor::Left,
+                    "c" => FurAnchor::Center,
+                    "r" => FurAnchor::Right,
+                    "bl" => FurAnchor::BottomLeft,
+                    "b" => FurAnchor::Bottom,
+                    "br" => FurAnchor::BottomRight,
+                    _ => FurAnchor::Center,
+                };
+            }
+            
+            // Parse text flow alignment - defaults to Center like other UI elements
+            if let Some(align_str) = fur.attributes.get("align") {
+                text_input.text_props_mut().align = match align_str.as_ref() {
+                    "start" | "s" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "end" | "e" => TextFlow::End,
+                    "left" | "l" => TextFlow::Start,
+                    "right" | "r" => TextFlow::End,
+                    _ => TextFlow::Center,
+                };
+            }
+            
+            // Set default font size if not specified
+            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
+                text_input.text_props_mut().font_size = 16.0;
+            }
+
+            if let Some(fs) = fur
+                .attributes
+                .get("fsz")
+                .or(fur.attributes.get("font-size"))
+            {
+                text_input.text_props_mut().font_size = fs.parse().unwrap_or(text_input.text_props().font_size);
+            }
+
+            if let Some(tc) = fur.attributes.get("text-c") {
+                if let Ok(c) = parse_color_with_opacity(tc) {
+                    text_input.text_props_mut().color = c;
+                }
+            }
+
+            Some(UIElement::TextInput(text_input))
+        }
+
+        "TextEdit" => {
+            let mut text_edit = UITextEdit::default();
+            text_edit.set_name(&fur.id);
+            apply_base_attributes(&mut text_edit.base, &fur.attributes);
+
+            // Apply panel properties (same as TextInput)
+            if let Some(bg) = fur.attributes.get("bg") {
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    text_edit.panel_props_mut().background_color = Some(c);
+                }
+            }
+            
+            // Parse hover and focused background colors
+            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
+                if let Ok(c) = parse_color_with_opacity(hover_bg) {
+                    text_edit.hover_bg = Some(c);
+                }
+            }
+            if let Some(focused_bg) = fur.attributes.get("focused-bg") {
+                if let Ok(c) = parse_color_with_opacity(focused_bg) {
+                    text_edit.focused_bg = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    text_edit.panel_props_mut().border_color = Some(c);
+                }
+            }
+            if let Some(b) = fur.attributes.get("border") {
+                text_edit.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
+            }
+
+            if let Some(opacity_str) = fur.attributes.get("opacity") {
+                if let Some(opacity) = parse_opacity(opacity_str) {
+                    text_edit.panel_props_mut().opacity = opacity;
+                }
+            }
+
+            // Apply corner radius (same logic as Button)
+            let mut corner = CornerRadius::default();
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
+
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut vals = [0.0; 4];
+                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
+
+                match value.split(',').count() {
+                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
+                    2 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
+                    }
+                    3 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
+                    }
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
+                    }
+                    _ => {}
+                }
+            }
+
+            // Directional and individual corner overrides
+            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+                corner.top_left = v;
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+                corner.bottom_left = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+                corner.top_left = v;
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+                corner.top_right = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
+                corner.top_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
+                corner.bottom_right = v;
+            }
+
+            text_edit.panel_props_mut().corner_radius = corner;
+
+            // Apply text properties - extract text from children
+            let text_content: String = fur
+                .children
+                .iter()
+                .filter_map(|n| {
+                    if let FurNode::Text(s) = n {
+                        Some(s.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<&str>>()
+                .join("");
+            
+            let trimmed_content = text_content.trim();
+            text_edit.set_text(&trimmed_content);
+            
+            // Set default text color to white if not specified
+            if fur.attributes.get("text-c").is_none() {
+                text_edit.text_props_mut().color = Color::new(255, 255, 255, 255);
+            }
+            
+            // Parse text-anchor (defaults to TopLeft for multiline)
+            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
+                text_edit.text_anchor = match anchor_str.as_ref() {
+                    "tl" => FurAnchor::TopLeft,
+                    "t" => FurAnchor::Top,
+                    "tr" => FurAnchor::TopRight,
+                    "l" => FurAnchor::Left,
+                    "c" => FurAnchor::Center,
+                    "r" => FurAnchor::Right,
+                    "bl" => FurAnchor::BottomLeft,
+                    "b" => FurAnchor::Bottom,
+                    "br" => FurAnchor::BottomRight,
+                    _ => FurAnchor::TopLeft,
+                };
+            }
+            
+            // Parse text flow alignment
+            if let Some(align_str) = fur.attributes.get("align") {
+                text_edit.text_props_mut().align = match align_str.as_ref() {
+                    "start" | "s" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "end" | "e" => TextFlow::End,
+                    "left" | "l" => TextFlow::Start,
+                    "right" | "r" => TextFlow::End,
+                    _ => TextFlow::Start,
+                };
+            }
+            
+            // Set default font size if not specified
+            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
+                text_edit.text_props_mut().font_size = 14.0;
+            }
+
+            if let Some(fs) = fur
+                .attributes
+                .get("fsz")
+                .or(fur.attributes.get("font-size"))
+            {
+                text_edit.text_props_mut().font_size = fs.parse().unwrap_or(text_edit.text_props().font_size);
+            }
+
+            if let Some(tc) = fur.attributes.get("text-c") {
+                if let Ok(c) = parse_color_with_opacity(tc) {
+                    text_edit.text_props_mut().color = c;
+                }
+            }
+
+            Some(UIElement::TextEdit(text_edit))
+        }
+
+        "CodeEdit" => {
+            let mut code_edit = UICodeEdit::default();
+            code_edit.set_name(&fur.id);
+            apply_base_attributes(&mut code_edit.base, &fur.attributes);
+
+            // Parse line number width
+            if let Some(lnw) = fur.attributes.get("line-number-width") {
+                if let Ok(w) = lnw.parse::<f32>() {
+                    code_edit.line_number_width = w;
+                }
+            }
+
+            // Apply panel properties to text_edit (same as TextEdit)
+            if let Some(bg) = fur.attributes.get("bg") {
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    code_edit.panel_props_mut().background_color = Some(c);
+                }
+            }
+            
+            // Parse hover and focused background colors
+            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
+                if let Ok(c) = parse_color_with_opacity(hover_bg) {
+                    code_edit.hover_bg = Some(c);
+                }
+            }
+            if let Some(focused_bg) = fur.attributes.get("focused-bg") {
+                if let Ok(c) = parse_color_with_opacity(focused_bg) {
+                    code_edit.focused_bg = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    code_edit.panel_props_mut().border_color = Some(c);
+                }
+            }
+            if let Some(b) = fur.attributes.get("border") {
+                code_edit.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
+            }
+
+            if let Some(opacity_str) = fur.attributes.get("opacity") {
+                if let Some(opacity) = parse_opacity(opacity_str) {
+                    code_edit.panel_props_mut().opacity = opacity;
+                }
+            }
+
+            // Apply corner radius (same logic as Button)
+            let mut corner = CornerRadius::default();
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
+
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut vals = [0.0; 4];
+                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
+
+                match value.split(',').count() {
+                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
+                    2 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
+                    }
+                    3 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
+                    }
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
+                    }
+                    _ => {}
+                }
+            }
+
+            // Directional and individual corner overrides
+            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+                corner.top_left = v;
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+                corner.bottom_left = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+                corner.top_left = v;
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+                corner.top_right = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
+                corner.top_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
+                corner.bottom_right = v;
+            }
+
+            code_edit.panel_props_mut().corner_radius = corner;
+
+            // Apply text properties - extract text from children
+            let text_content: String = fur
+                .children
+                .iter()
+                .filter_map(|n| {
+                    if let FurNode::Text(s) = n {
+                        Some(s.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<&str>>()
+                .join("");
+            
+            let trimmed_content = text_content.trim();
+            code_edit.set_text(&trimmed_content);
+            
+            // Set default text color to white if not specified
+            if fur.attributes.get("text-c").is_none() {
+                code_edit.text_props_mut().color = Color::new(255, 255, 255, 255);
+            }
+            
+            // Parse text-anchor (defaults to TopLeft for multiline)
+            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
+                code_edit.text_edit.text_anchor = match anchor_str.as_ref() {
+                    "tl" => FurAnchor::TopLeft,
+                    "t" => FurAnchor::Top,
+                    "tr" => FurAnchor::TopRight,
+                    "l" => FurAnchor::Left,
+                    "c" => FurAnchor::Center,
+                    "r" => FurAnchor::Right,
+                    "bl" => FurAnchor::BottomLeft,
+                    "b" => FurAnchor::Bottom,
+                    "br" => FurAnchor::BottomRight,
+                    _ => FurAnchor::TopLeft,
+                };
+            }
+            
+            // Parse text flow alignment
+            if let Some(align_str) = fur.attributes.get("align") {
+                code_edit.text_props_mut().align = match align_str.as_ref() {
+                    "start" | "s" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "end" | "e" => TextFlow::End,
+                    "left" | "l" => TextFlow::Start,
+                    "right" | "r" => TextFlow::End,
+                    _ => TextFlow::Start,
+                };
+            }
+            
+            // Set default font size if not specified
+            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
+                code_edit.text_props_mut().font_size = 14.0;
+            }
+
+            if let Some(fs) = fur
+                .attributes
+                .get("fsz")
+                .or(fur.attributes.get("font-size"))
+            {
+                code_edit.text_props_mut().font_size = fs.parse().unwrap_or(code_edit.text_props().font_size);
+            }
+
+            if let Some(tc) = fur.attributes.get("text-c") {
+                if let Ok(c) = parse_color_with_opacity(tc) {
+                    code_edit.text_props_mut().color = c;
+                }
+            }
+
+            Some(UIElement::CodeEdit(code_edit))
         }
 
         _ => {

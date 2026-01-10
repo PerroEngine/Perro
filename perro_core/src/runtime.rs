@@ -367,12 +367,16 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     #[cfg(target_arch = "wasm32")]
     let window = {
         #[allow(deprecated)]
-        std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"))
+        let w = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+        w.set_ime_allowed(true); // Enable IME for text input
+        w
     };
     #[cfg(not(target_arch = "wasm32"))]
     let window = {
         #[allow(deprecated)]
-        std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"))
+        let w = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+        w.set_ime_allowed(true); // Enable IME for text input
+        w
     };
 
     // Create Graphics synchronously
@@ -864,12 +868,16 @@ pub fn run_dev_with_path(project_root: PathBuf) {
     #[cfg(target_arch = "wasm32")]
     let window = {
         #[allow(deprecated)]
-        std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"))
+        let w = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+        w.set_ime_allowed(true); // Enable IME for text input
+        w
     };
     #[cfg(not(target_arch = "wasm32"))]
     let window = {
         #[allow(deprecated)]
-        std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"))
+        let w = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+        w.set_ime_allowed(true); // Enable IME for text input
+        w
     };
 
     // Create Graphics synchronously

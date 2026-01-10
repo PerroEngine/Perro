@@ -2,6 +2,7 @@
 
 use crate::structs2d::vector2::Vector2;
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
 /// Represents a single input source (keyboard key, mouse button, etc.)
@@ -23,7 +24,6 @@ pub enum MouseButton {
 }
 
 /// Current input state
-#[derive(Default)]
 pub struct InputState {
     /// Currently pressed keys
     pub keys_pressed: HashSet<KeyCode>,
@@ -41,6 +41,30 @@ pub struct InputState {
     pub mouse_wheel_down: bool,
     /// Text input buffer (for text input events)
     pub text_input: String,
+    /// Key press times for repeat logic
+    pub key_press_times: HashMap<KeyCode, Instant>,
+    /// Key last repeat times
+    pub key_last_repeat: HashMap<KeyCode, Instant>,
+    /// Key press frame counters (for frame-based repeat logic)
+    pub key_press_frames: HashMap<KeyCode, u32>,
+}
+
+impl Default for InputState {
+    fn default() -> Self {
+        Self {
+            keys_pressed: HashSet::new(),
+            mouse_buttons_pressed: HashSet::new(),
+            mouse_position: Vector2::default(),
+            mouse_position_world: None,
+            scroll_delta: 0.0,
+            mouse_wheel_up: false,
+            mouse_wheel_down: false,
+            text_input: String::new(),
+            key_press_times: HashMap::new(),
+            key_last_repeat: HashMap::new(),
+            key_press_frames: HashMap::new(),
+        }
+    }
 }
 
 /// Input action mapping - maps action names to input sources
@@ -92,6 +116,86 @@ impl InputManager {
     /// Check if a key is pressed (raw key access)
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
         self.state.keys_pressed.contains(&key)
+    }
+    
+    /// Check if a key should trigger (just pressed or repeat)
+    /// Uses standard keyboard repeat timing: 500ms initial delay, 33ms repeat rate
+    /// Navigation keys (arrows, home, end) use slower repeat: 150ms
+    pub fn is_key_triggered(&mut self, key: KeyCode) -> bool {
+        if !self.state.keys_pressed.contains(&key) {
+            // Key not pressed - reset frame counter
+            self.state.key_press_frames.remove(&key);
+            return false;
+        }
+        
+        // Use frame-based repeat for navigation keys, time-based for others
+        let use_frame_based = matches!(
+            key,
+            KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown |
+            KeyCode::Home | KeyCode::End
+        );
+        
+        if use_frame_based {
+            // Frame-based repeat for navigation keys
+            let frame_count = self.state.key_press_frames.entry(key).or_insert(0);
+            *frame_count += 1;
+            
+            // First press (frame 1) triggers immediately
+            if *frame_count == 1 {
+                return true;
+            }
+            
+            // Wait 25 frames (~400ms at 60fps) before starting repeat
+            if *frame_count < 25 {
+                return false;
+            }
+            
+            // After initial delay, trigger every 6 frames (~100ms at 60fps)
+            if (*frame_count - 25) % 6 == 0 {
+                return true;
+            }
+            
+            false
+        } else {
+            // Time-based repeat for other keys (faster for deletion)
+            let now = Instant::now();
+            let (initial_delay_ms, repeat_rate_ms) = (300, 33);
+            
+            // Check if this is a new press
+            if let Some(&press_time) = self.state.key_press_times.get(&key) {
+                let time_since_press = now.duration_since(press_time);
+                
+                // First frame of press - trigger immediately
+                if time_since_press < Duration::from_millis(16) {
+                    return true;
+                }
+                
+                // Initial delay before repeat starts
+                if time_since_press < Duration::from_millis(initial_delay_ms) {
+                    return false;
+                }
+                
+                // Check repeat timing
+                if let Some(&last_repeat) = self.state.key_last_repeat.get(&key) {
+                    let time_since_repeat = now.duration_since(last_repeat);
+                    if time_since_repeat >= Duration::from_millis(repeat_rate_ms) {
+                        self.state.key_last_repeat.insert(key, now);
+                        return true;
+                    }
+                } else {
+                    // First repeat after initial delay
+                    self.state.key_last_repeat.insert(key, now);
+                    return true;
+                }
+            } else {
+                // First press - record time and trigger
+                self.state.key_press_times.insert(key, now);
+                self.state.key_last_repeat.remove(&key);
+                return true;
+            }
+            
+            false
+        }
     }
 
     /// Check if a mouse button is pressed (raw button access)
@@ -188,12 +292,22 @@ impl InputManager {
 
     /// Handle key press
     pub fn handle_key_press(&mut self, key: KeyCode) {
+        let was_pressed = self.state.keys_pressed.contains(&key);
         self.state.keys_pressed.insert(key);
+        
+        // Only set press time if this is a new press (not already held)
+        if !was_pressed {
+            self.state.key_press_times.insert(key, Instant::now());
+            self.state.key_last_repeat.remove(&key);
+        }
     }
 
     /// Handle key release
     pub fn handle_key_release(&mut self, key: KeyCode) {
         self.state.keys_pressed.remove(&key);
+        self.state.key_press_times.remove(&key);
+        self.state.key_last_repeat.remove(&key);
+        self.state.key_press_frames.remove(&key);
     }
 
     /// Handle mouse button press

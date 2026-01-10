@@ -12,6 +12,9 @@ use crate::{
         ui_container::{BoxContainer, GridLayout, Layout, UIPanel},
         ui_text::UIText,
         ui_button::UIButton,
+        ui_text_input::UITextInput,
+        ui_text_edit::UITextEdit,
+        ui_code_edit::UICodeEdit,
     },
 };
 
@@ -249,6 +252,9 @@ pub enum UIElement {
 
     Text(UIText),
     Button(UIButton),
+    TextInput(UITextInput),
+    TextEdit(UITextEdit),
+    CodeEdit(UICodeEdit),
 }
 
 // Implement IntoUIInner for each UI element type
@@ -308,6 +314,33 @@ impl IntoUIInner<UIButton> for UIElement {
         match self {
             UIElement::Button(inner) => inner,
             _ => panic!("Cannot extract UIButton from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<UITextInput> for UIElement {
+    fn into_ui_inner(self) -> UITextInput {
+        match self {
+            UIElement::TextInput(inner) => inner,
+            _ => panic!("Cannot extract UITextInput from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<UITextEdit> for UIElement {
+    fn into_ui_inner(self) -> UITextEdit {
+        match self {
+            UIElement::TextEdit(inner) => inner,
+            _ => panic!("Cannot extract UITextEdit from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<UICodeEdit> for UIElement {
+    fn into_ui_inner(self) -> UICodeEdit {
+        match self {
+            UIElement::CodeEdit(inner) => inner,
+            _ => panic!("Cannot extract UICodeEdit from UIElement variant {:?}", self),
         }
     }
 }

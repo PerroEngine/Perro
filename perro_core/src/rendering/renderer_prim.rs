@@ -611,7 +611,7 @@ impl PrimitiveRenderer {
     /// Call this when an element becomes invisible to clear it from GPU buffers
     pub fn remove_text(&mut self, uuid: uuid::Uuid) {
         if self.cached_text.remove(&uuid).is_some() {
-            self.instances_need_rebuild = true;
+            self.text_instances_need_rebuild = true;
         }
     }
 
@@ -967,6 +967,8 @@ impl PrimitiveRenderer {
             };
 
             if needs_update {
+                // If text is empty (no instances), we still need to update the cache
+                // to clear any previously rendered glyphs
                 self.cached_text.insert(uuid, (layer, instances, created_timestamp));
                 self.text_instances_need_rebuild = true;
             }
