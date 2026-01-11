@@ -14,7 +14,7 @@
         
         // Text Editor content area
         [Panel w=100% h=100% anchor=c bg=neutral-10]
-          [TextInput id=TextEditorContainer w=100 h=32 anchor=c ty=1% bg=stone-10 rounding=25% color=white fsz=16]
+          [TextInput id=TextEditorContainer w=100 h=32 anchor=c ty=1% bg=stone-10 rounding=25% color=white fsz=12]
           [/TextInput]
         [/Panel]
       [/VLayout]

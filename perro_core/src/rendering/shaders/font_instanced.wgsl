@@ -114,8 +114,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Use gamma 1.8 (matches the encoding gamma)
     let linear_alpha = pow(gamma_alpha, 1.8);
     
-    // Simple threshold to discard fully transparent pixels
-    if linear_alpha < 0.05 {
+    // Dynamic threshold based on mip level (texture detail)
+    // Calculate how much the texture is being stretched/compressed
+    let dx = dpdx(in.uv);
+    let dy = dpdy(in.uv);
+    let texel_delta = length(dx) + length(dy);
+    
+    // For large text (low texel_delta), use higher threshold to remove artifacts
+    // For small text (high texel_delta), use lower threshold to preserve detail
+    let threshold = mix(0.15, 0.05, clamp(texel_delta * 100.0, 0.0, 1.0));
+    
+    if linear_alpha < threshold {
         discard;
     }
     
