@@ -470,6 +470,17 @@ impl UINode {
             })
             .unwrap_or(false);
         
+        // Check if mouse button is currently held down
+        let mouse_is_held = api
+            .scene
+            .get_input_manager()
+            .map(|mgr| {
+                let mgr = mgr.lock().unwrap();
+                use crate::input::manager::MouseButton;
+                mgr.state().mouse_buttons_pressed.contains(&MouseButton::Left)
+            })
+            .unwrap_or(false);
+        
         // Handle buttons
         for (_, element) in elements.iter_mut() {
             let UIElement::Button(button) = element else {
@@ -581,15 +592,141 @@ impl UINode {
                     
                     text_input.is_hovered = is_hovered;
                     
+                    // Handle dragging even when mouse is outside (for continuous selection)
+                    if text_input.is_dragging && was_focused && mouse_is_held {
+                        // Mouse is being dragged - update selection (or starting selection on first frame)
+                        // Recalculate cursor position from current mouse position
+                        let full_text = &text_input.text.props.content;
+                        let font_size = text_input.text.props.font_size;
+
+                        use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                        let new_positions = calculate_character_positions(full_text, font_size);
+
+                        text_input.cached_char_positions = new_positions;
+                        text_input.cached_text_width = text_input.cached_char_positions.last().copied().unwrap_or(0.0);
+                        
+                        let panel_width = text_input.panel.base.size.x;
+                        let full_text_width = text_input.cached_text_width;
+                        
+                        let click_x_in_text = if full_text_width <= panel_width {
+                            let panel_center_x = text_input.panel.global_transform.position.x;
+                            let text_start_x = panel_center_x - (full_text_width / 2.0);
+                            let click_offset = mouse_pos.x - text_start_x;
+                            click_offset
+                        } else {
+                            let panel_left = text_input.panel.base.global_transform.position.x 
+                                - (text_input.panel.base.size.x * text_input.panel.base.pivot.x);
+                            let side_padding = 5.0;
+                            let text_start_x = panel_left + side_padding;
+                            let click_offset = (mouse_pos.x - text_start_x) + text_input.scroll_offset;
+                            click_offset
+                        };
+                        
+                        let mut cursor_pos = 0;
+                        if text_input.cached_char_positions.is_empty() || click_x_in_text <= 0.0 {
+                            cursor_pos = 0;
+                        } else {
+                            for (i, &char_end_x) in text_input.cached_char_positions.iter().enumerate() {
+                                let char_start_x = if i == 0 { 0.0 } else { text_input.cached_char_positions[i - 1] };
+                                let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                                
+                                if click_x_in_text <= char_mid_x {
+                                    cursor_pos = i;
+                                    break;
+                                } else if i == text_input.cached_char_positions.len() - 1 {
+                                    cursor_pos = i + 1;
+                                } else if click_x_in_text <= text_input.cached_char_positions[i] {
+                                    cursor_pos = i + 1;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        text_input.cursor_position = cursor_pos;
+                        
+                        // Update selection end to follow cursor (start was set on initial click)
+                        text_input.update_selection_to_cursor();
+                        
+                        dirty_element_ids.push(text_input.get_id());
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    
                     if is_hovered {
                         any_text_input_hovered = true;
                         if mouse_just_pressed && !was_focused {
                             clicked_text_input_id = Some(text_input.get_id());
+                            // Clear selection when focusing a new element
+                            text_input.clear_selection();
+                        } else if mouse_just_pressed && was_focused {
+                            // New click - position cursor and prepare for potential drag
+                            text_input.is_dragging = true;
+                            
+                            // Position cursor at click location
+                            let full_text = &text_input.text.props.content;
+                            let font_size = text_input.text.props.font_size;
+
+                            use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                            let new_positions = calculate_character_positions(full_text, font_size);
+
+                            text_input.cached_char_positions = new_positions;
+                            text_input.cached_text_width = text_input.cached_char_positions.last().copied().unwrap_or(0.0);
+                            
+                            let panel_width = text_input.panel.base.size.x;
+                            let full_text_width = text_input.cached_text_width;
+                            
+                            let click_x_in_text = if full_text_width <= panel_width {
+                                let panel_center_x = text_input.panel.global_transform.position.x;
+                                let text_start_x = panel_center_x - (full_text_width / 2.0);
+                                mouse_pos.x - text_start_x
+                            } else {
+                                let panel_left = text_input.panel.base.global_transform.position.x 
+                                    - (text_input.panel.base.size.x * text_input.panel.base.pivot.x);
+                                let side_padding = 5.0;
+                                let text_start_x = panel_left + side_padding;
+                                (mouse_pos.x - text_start_x) + text_input.scroll_offset
+                            };
+                            
+                            let mut cursor_pos = 0;
+                            if !text_input.cached_char_positions.is_empty() && click_x_in_text > 0.0 {
+                                for (i, &char_end_x) in text_input.cached_char_positions.iter().enumerate() {
+                                    let char_start_x = if i == 0 { 0.0 } else { text_input.cached_char_positions[i - 1] };
+                                    let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                                    
+                                    if click_x_in_text <= char_mid_x {
+                                        cursor_pos = i;
+                                        break;
+                                    } else if i == text_input.cached_char_positions.len() - 1 {
+                                        cursor_pos = i + 1;
+                                    } else if click_x_in_text <= text_input.cached_char_positions[i] {
+                                        cursor_pos = i + 1;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            text_input.cursor_position = cursor_pos;
+                            // Start selection at this position - will be extended if mouse moves while held
+                            text_input.start_selection();
+                            text_input.cursor_blink_timer = 0.0;
+                            dirty_element_ids.push(text_input.get_id());
+                            api.scene.mark_needs_rerender(self.base.id);
+                        }
+                    }
+                    
+                    // Stop dragging when mouse is released
+                    if !mouse_is_held && text_input.is_dragging {
+                        text_input.is_dragging = false;
+                        // Clear selection if it's empty (just a click, not a drag)
+                        if let Some((start, end)) = text_input.get_selection_range() {
+                            if start == end {
+                                text_input.clear_selection();
+                            }
                         }
                     }
                     
                     if mouse_just_pressed && was_focused && !is_hovered {
                         text_input.is_focused = false;
+                        text_input.clear_selection(); // Clear selection when unfocusing
                         self.focused_element = None;
                         dirty_element_ids.push(text_input.get_id());
                     }
@@ -630,15 +767,118 @@ impl UINode {
                     
                     text_edit.is_hovered = is_hovered;
                     
+                    // Handle dragging even when mouse is outside (for continuous selection)
+                    if text_edit.is_dragging && was_focused && mouse_is_held {
+                        // Mouse is being dragged - update selection
+                        let font_size = text_edit.text.props.font_size;
+                        let line_height = font_size * 1.3;
+                        
+                        // Calculate relative position within the panel
+                        let panel_pos = text_edit.panel.base.global_transform.position;
+                        let panel_left = panel_pos.x - (text_edit.panel.base.size.x * text_edit.panel.base.pivot.x);
+                        let panel_top = panel_pos.y - (text_edit.panel.base.size.y * text_edit.panel.base.pivot.y);
+                        
+                        // Add padding
+                        let padding = 5.0;
+                        let relative_y = (mouse_pos.y - panel_top - padding).max(0.0);
+                        let relative_x = (mouse_pos.x - panel_left - padding).max(0.0);
+                        
+                        // Calculate which line
+                        let line_index = ((relative_y / line_height).floor() as usize).min(text_edit.line_count().saturating_sub(1));
+                        
+                        // Calculate which column within the line
+                        let line_text = text_edit.get_line(line_index);
+                        use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                        let char_positions = calculate_character_positions(line_text, font_size);
+                        
+                        let mut column = 0;
+                        if !char_positions.is_empty() && relative_x > 0.0 {
+                            for (i, &char_end_x) in char_positions.iter().enumerate() {
+                                let char_start_x = if i == 0 { 0.0 } else { char_positions[i - 1] };
+                                let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                                
+                                if relative_x <= char_mid_x {
+                                    column = i;
+                                    break;
+                                } else if i == char_positions.len() - 1 {
+                                    column = i + 1;
+                                }
+                            }
+                        }
+                        
+                        text_edit.cursor_pos = crate::ui_elements::ui_text_edit::CursorPos { line: line_index, column };
+                        
+                        // Update selection end to follow cursor (start was set on initial click)
+                        text_edit.update_selection_to_cursor();
+                        
+                        dirty_element_ids.push(text_edit.get_id());
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    
                     if is_hovered {
                         any_text_input_hovered = true;
                         if mouse_just_pressed && !was_focused {
                             clicked_text_input_id = Some(text_edit.get_id());
+                            text_edit.clear_selection();
+                        } else if mouse_just_pressed && was_focused {
+                            // New click - position cursor and prepare for potential drag
+                            text_edit.is_dragging = true;
+                            
+                            // Position cursor at click location
+                            let font_size = text_edit.text.props.font_size;
+                            let line_height = font_size * 1.3;
+                            
+                            let panel_pos = text_edit.panel.base.global_transform.position;
+                            let panel_left = panel_pos.x - (text_edit.panel.base.size.x * text_edit.panel.base.pivot.x);
+                            let panel_top = panel_pos.y - (text_edit.panel.base.size.y * text_edit.panel.base.pivot.y);
+                            
+                            let padding = 5.0;
+                            let relative_y = (mouse_pos.y - panel_top - padding).max(0.0);
+                            let relative_x = (mouse_pos.x - panel_left - padding).max(0.0);
+                            
+                            let line_index = ((relative_y / line_height).floor() as usize).min(text_edit.line_count().saturating_sub(1));
+                            
+                            let line_text = text_edit.get_line(line_index);
+                            use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                            let char_positions = calculate_character_positions(line_text, font_size);
+                            
+                            let mut column = 0;
+                            if !char_positions.is_empty() && relative_x > 0.0 {
+                                for (i, &char_end_x) in char_positions.iter().enumerate() {
+                                    let char_start_x = if i == 0 { 0.0 } else { char_positions[i - 1] };
+                                    let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                                    
+                                    if relative_x <= char_mid_x {
+                                        column = i;
+                                        break;
+                                    } else if i == char_positions.len() - 1 {
+                                        column = i + 1;
+                                    }
+                                }
+                            }
+                            
+                            text_edit.cursor_pos = crate::ui_elements::ui_text_edit::CursorPos { line: line_index, column };
+                            // Start selection at this position - will be extended if mouse moves while held
+                            text_edit.start_selection();
+                            dirty_element_ids.push(text_edit.get_id());
+                            api.scene.mark_needs_rerender(self.base.id);
+                        }
+                    }
+                    
+                    // Stop dragging when mouse is released
+                    if !mouse_is_held && text_edit.is_dragging {
+                        text_edit.is_dragging = false;
+                        // Clear selection if it's empty (just a click, not a drag)
+                        if let Some((start, end)) = text_edit.get_selection_range() {
+                            if start == end {
+                                text_edit.clear_selection();
+                            }
                         }
                     }
                     
                     if mouse_just_pressed && was_focused && !is_hovered {
                         text_edit.is_focused = false;
+                        text_edit.clear_selection(); // Clear selection when unfocusing
                         self.focused_element = None;
                         dirty_element_ids.push(text_edit.get_id());
                     }
@@ -679,15 +919,118 @@ impl UINode {
                     
                     code_edit.is_hovered = is_hovered;
                     
+                    // Handle dragging even when mouse is outside (for continuous selection)
+                    if code_edit.text_edit.is_dragging && was_focused && mouse_is_held {
+                        // Mouse is being dragged - update selection
+                        let font_size = code_edit.text_edit.text.props.font_size;
+                        let line_height = font_size * 1.3;
+                        
+                        // Calculate relative position within the text edit panel (not including line numbers)
+                        let text_edit_pos = code_edit.text_edit.panel.base.global_transform.position;
+                        let text_edit_left = text_edit_pos.x - (code_edit.text_edit.panel.base.size.x * code_edit.text_edit.panel.base.pivot.x);
+                        let text_edit_top = text_edit_pos.y - (code_edit.text_edit.panel.base.size.y * code_edit.text_edit.panel.base.pivot.y);
+                        
+                        // Add padding
+                        let padding = 5.0;
+                        let relative_y = (mouse_pos.y - text_edit_top - padding).max(0.0);
+                        let relative_x = (mouse_pos.x - text_edit_left - padding).max(0.0);
+                        
+                        // Calculate which line
+                        let line_index = ((relative_y / line_height).floor() as usize).min(code_edit.text_edit.line_count().saturating_sub(1));
+                        
+                        // Calculate which column within the line
+                        let line_text = code_edit.text_edit.get_line(line_index);
+                        use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                        let char_positions = calculate_character_positions(line_text, font_size);
+                        
+                        let mut column = 0;
+                        if !char_positions.is_empty() && relative_x > 0.0 {
+                            for (i, &char_end_x) in char_positions.iter().enumerate() {
+                                let char_start_x = if i == 0 { 0.0 } else { char_positions[i - 1] };
+                                let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                                
+                                if relative_x <= char_mid_x {
+                                    column = i;
+                                    break;
+                                } else if i == char_positions.len() - 1 {
+                                    column = i + 1;
+                                }
+                            }
+                        }
+                        
+                        code_edit.text_edit.cursor_pos = crate::ui_elements::ui_text_edit::CursorPos { line: line_index, column };
+                        
+                        // Update selection end to follow cursor (start was set on initial click)
+                        code_edit.text_edit.update_selection_to_cursor();
+                        
+                        dirty_element_ids.push(code_edit.get_id());
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    
                     if is_hovered {
                         any_text_input_hovered = true;
                         if mouse_just_pressed && !was_focused {
                             clicked_text_input_id = Some(code_edit.get_id());
+                            code_edit.clear_selection();
+                        } else if mouse_just_pressed && was_focused {
+                            // New click - position cursor and prepare for potential drag
+                            code_edit.text_edit.is_dragging = true;
+                            
+                            // Position cursor at click location
+                            let font_size = code_edit.text_edit.text.props.font_size;
+                            let line_height = font_size * 1.3;
+                            
+                            let text_edit_pos = code_edit.text_edit.panel.base.global_transform.position;
+                            let text_edit_left = text_edit_pos.x - (code_edit.text_edit.panel.base.size.x * code_edit.text_edit.panel.base.pivot.x);
+                            let text_edit_top = text_edit_pos.y - (code_edit.text_edit.panel.base.size.y * code_edit.text_edit.panel.base.pivot.y);
+                            
+                            let padding = 5.0;
+                            let relative_y = (mouse_pos.y - text_edit_top - padding).max(0.0);
+                            let relative_x = (mouse_pos.x - text_edit_left - padding).max(0.0);
+                            
+                            let line_index = ((relative_y / line_height).floor() as usize).min(code_edit.text_edit.line_count().saturating_sub(1));
+                            
+                            let line_text = code_edit.text_edit.get_line(line_index);
+                            use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                            let char_positions = calculate_character_positions(line_text, font_size);
+                            
+                            let mut column = 0;
+                            if !char_positions.is_empty() && relative_x > 0.0 {
+                                for (i, &char_end_x) in char_positions.iter().enumerate() {
+                                    let char_start_x = if i == 0 { 0.0 } else { char_positions[i - 1] };
+                                    let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                                    
+                                    if relative_x <= char_mid_x {
+                                        column = i;
+                                        break;
+                                    } else if i == char_positions.len() - 1 {
+                                        column = i + 1;
+                                    }
+                                }
+                            }
+                            
+                            code_edit.text_edit.cursor_pos = crate::ui_elements::ui_text_edit::CursorPos { line: line_index, column };
+                            // Start selection at this position - will be extended if mouse moves while held
+                            code_edit.text_edit.start_selection();
+                            dirty_element_ids.push(code_edit.get_id());
+                            api.scene.mark_needs_rerender(self.base.id);
+                        }
+                    }
+                    
+                    // Stop dragging when mouse is released
+                    if !mouse_is_held && code_edit.text_edit.is_dragging {
+                        code_edit.text_edit.is_dragging = false;
+                        // Clear selection if it's empty (just a click, not a drag)
+                        if let Some((start, end)) = code_edit.text_edit.get_selection_range() {
+                            if start == end {
+                                code_edit.clear_selection();
+                            }
                         }
                     }
                     
                     if mouse_just_pressed && was_focused && !is_hovered {
                         code_edit.is_focused = false;
+                        code_edit.clear_selection(); // Clear selection when unfocusing
                         self.focused_element = None;
                         dirty_element_ids.push(code_edit.get_id());
                     }
@@ -817,11 +1160,17 @@ impl UINode {
                         UIElement::TextInput(text_input) => {
                             let mut text_changed = false;
                             
-                            // Handle text input from IME
+                            // Check for Ctrl/Cmd modifier FIRST
+                            let ctrl_pressed = mgr.is_key_pressed(KeyCode::ControlLeft) || 
+                                             mgr.is_key_pressed(KeyCode::ControlRight) ||
+                                             mgr.is_key_pressed(KeyCode::SuperLeft) ||  // Cmd on Mac
+                                             mgr.is_key_pressed(KeyCode::SuperRight);
+                            
+                            // Handle text input from IME (skip if Ctrl is pressed)
                             let text_to_insert = &text_input_from_ime;
-                            if !text_to_insert.is_empty() {
+                            if !text_to_insert.is_empty() && !ctrl_pressed {
                                 println!("[DEBUG] Inserting text: {:?}, current content: {:?}", text_to_insert, text_input.get_text());
-                                text_input.insert_text(text_to_insert);
+                                text_input.insert_text_at_cursor(text_to_insert);
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 println!("[DEBUG] After insert, content: {:?}", text_input.get_text());
                                 text_changed = true;
@@ -829,9 +1178,44 @@ impl UINode {
                                 needs_rerender = true;
                             }
                             
+                            // Handle Ctrl+A (Select All)
+                            if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyA) {
+                                text_input.select_all();
+                                text_input.cursor_blink_timer = 0.0;
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            // Handle Ctrl+C (Copy)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyC) {
+                                let _ = text_input.copy_to_clipboard();
+                            }
+                            // Handle Ctrl+X (Cut)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyX) {
+                                if let Ok(()) = text_input.cut_to_clipboard() {
+                                    text_changed = true;
+                                    text_input.cursor_blink_timer = 0.0;
+                                    dirty_element_ids.push(focused_id);
+                                    needs_rerender = true;
+                                }
+                            }
+                            // Handle Ctrl+V (Paste)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyV) {
+                                if let Ok(()) = text_input.paste_from_clipboard() {
+                                    text_changed = true;
+                                    text_input.cursor_blink_timer = 0.0;
+                                    dirty_element_ids.push(focused_id);
+                                    needs_rerender = true;
+                                }
+                            }
+                            
                             // Handle special keys with repeat
                             if mgr.is_key_triggered(KeyCode::Backspace) {
-                                text_input.delete_backward();
+                                // Delete selection or single character
+                                if text_input.has_selection() {
+                                    text_input.delete_selection();
+                                } else {
+                                    text_input.delete_backward();
+                                }
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
@@ -839,39 +1223,101 @@ impl UINode {
                                 println!("[DEBUG] Backspace - text now: '{}' (len: {})", text_input.get_text(), text_input.get_text().len());
                             }
                             if mgr.is_key_triggered(KeyCode::Delete) {
-                                text_input.delete_forward();
+                                // Delete selection or single character
+                                if text_input.has_selection() {
+                                    text_input.delete_selection();
+                                } else {
+                                    text_input.delete_forward();
+                                }
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
+                            // Check if shift is pressed for selection extension
+                            let shift_pressed = mgr.is_key_pressed(KeyCode::ShiftLeft) || 
+                                              mgr.is_key_pressed(KeyCode::ShiftRight);
+                            
                             if mgr.is_key_triggered(KeyCode::ArrowLeft) {
-                                text_input.move_cursor_left();
+                                if shift_pressed {
+                                    // Start selection if not already active
+                                    if !text_input.has_selection() {
+                                        text_input.start_selection();
+                                    }
+                                    text_input.move_cursor_left();
+                                    text_input.update_selection_to_cursor();
+                                } else {
+                                    // Clear selection if not holding shift
+                                    text_input.clear_selection();
+                                    text_input.move_cursor_left();
+                                }
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowRight) {
-                                text_input.move_cursor_right();
+                                if shift_pressed {
+                                    // Start selection if not already active
+                                    if !text_input.has_selection() {
+                                        text_input.start_selection();
+                                    }
+                                    text_input.move_cursor_right();
+                                    text_input.update_selection_to_cursor();
+                                } else {
+                                    // Clear selection if not holding shift
+                                    text_input.clear_selection();
+                                    text_input.move_cursor_right();
+                                }
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::Home) {
-                                text_input.move_cursor_home();
+                                if shift_pressed {
+                                    // Start selection if not already active
+                                    if !text_input.has_selection() {
+                                        text_input.start_selection();
+                                    }
+                                    text_input.move_cursor_home();
+                                    text_input.update_selection_to_cursor();
+                                } else {
+                                    // Clear selection if not holding shift
+                                    text_input.clear_selection();
+                                    text_input.move_cursor_home();
+                                }
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::End) {
-                                text_input.move_cursor_end();
+                                if shift_pressed {
+                                    // Start selection if not already active
+                                    if !text_input.has_selection() {
+                                        text_input.start_selection();
+                                    }
+                                    text_input.move_cursor_end();
+                                    text_input.update_selection_to_cursor();
+                                } else {
+                                    // Clear selection if not holding shift
+                                    text_input.clear_selection();
+                                    text_input.move_cursor_end();
+                                }
                                 text_input.cursor_blink_timer = 0.0; // Reset blink timer to make cursor visible
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             
+                            // Update cursor blink and check if visibility changed
+                            let was_visible = text_input.is_cursor_visible();
                             text_input.update_cursor_blink(0.016);
+                            let is_visible = text_input.is_cursor_visible();
                             
+                            // If cursor visibility changed, mark for rerender
+                            if was_visible != is_visible {
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+
                             // If text changed, mark for layout recalculation
                             if text_changed {
                                 self.mark_element_needs_layout(focused_id);
@@ -880,13 +1326,46 @@ impl UINode {
                         UIElement::TextEdit(text_edit) => {
                             let mut text_changed = false;
                             
-                            // Handle text input from IME
+                            // Check for Ctrl/Cmd modifier FIRST
+                            let ctrl_pressed = mgr.is_key_pressed(KeyCode::ControlLeft) || 
+                                             mgr.is_key_pressed(KeyCode::ControlRight) ||
+                                             mgr.is_key_pressed(KeyCode::SuperLeft) ||
+                                             mgr.is_key_pressed(KeyCode::SuperRight);
+                            
+                            // Handle text input from IME (skip if Ctrl is pressed)
                             let text_to_insert = mgr.get_text_input();
-                            if !text_to_insert.is_empty() {
+                            if !text_to_insert.is_empty() && !ctrl_pressed {
                                 text_edit.insert_text(&text_to_insert);
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
+                            }
+                            
+                            // Handle Ctrl+A (Select All)
+                            if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyA) {
+                                text_edit.select_all();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            // Handle Ctrl+C (Copy)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyC) {
+                                let _ = text_edit.copy_to_clipboard();
+                            }
+                            // Handle Ctrl+X (Cut)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyX) {
+                                if let Ok(()) = text_edit.cut_to_clipboard() {
+                                    text_changed = true;
+                                    dirty_element_ids.push(focused_id);
+                                    needs_rerender = true;
+                                }
+                            }
+                            // Handle Ctrl+V (Paste)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyV) {
+                                if let Ok(()) = text_edit.paste_from_clipboard() {
+                                    text_changed = true;
+                                    dirty_element_ids.push(focused_id);
+                                    needs_rerender = true;
+                                }
                             }
                             
                             // Handle Enter key for newline
@@ -899,50 +1378,126 @@ impl UINode {
                             
                             // Handle special keys with repeat
                             if mgr.is_key_triggered(KeyCode::Backspace) {
-                                text_edit.delete_backward();
+                                if text_edit.has_selection() {
+                                    text_edit.delete_selection();
+                                } else {
+                                    text_edit.delete_backward();
+                                }
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::Delete) {
-                                text_edit.delete_forward();
+                                if text_edit.has_selection() {
+                                    text_edit.delete_selection();
+                                } else {
+                                    text_edit.delete_forward();
+                                }
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
+                            
+                            // Check if shift is pressed for selection extension
+                            let shift_pressed = mgr.is_key_pressed(KeyCode::ShiftLeft) || 
+                                              mgr.is_key_pressed(KeyCode::ShiftRight);
+                            
                             if mgr.is_key_triggered(KeyCode::ArrowLeft) {
-                                text_edit.move_cursor_left();
+                                if shift_pressed {
+                                    if !text_edit.has_selection() {
+                                        text_edit.start_selection();
+                                    }
+                                    text_edit.move_cursor_left();
+                                    text_edit.update_selection_to_cursor();
+                                } else {
+                                    text_edit.clear_selection();
+                                    text_edit.move_cursor_left();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowRight) {
-                                text_edit.move_cursor_right();
+                                if shift_pressed {
+                                    if !text_edit.has_selection() {
+                                        text_edit.start_selection();
+                                    }
+                                    text_edit.move_cursor_right();
+                                    text_edit.update_selection_to_cursor();
+                                } else {
+                                    text_edit.clear_selection();
+                                    text_edit.move_cursor_right();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowUp) {
-                                text_edit.move_cursor_up();
+                                if shift_pressed {
+                                    if !text_edit.has_selection() {
+                                        text_edit.start_selection();
+                                    }
+                                    text_edit.move_cursor_up();
+                                    text_edit.update_selection_to_cursor();
+                                } else {
+                                    text_edit.clear_selection();
+                                    text_edit.move_cursor_up();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowDown) {
-                                text_edit.move_cursor_down();
+                                if shift_pressed {
+                                    if !text_edit.has_selection() {
+                                        text_edit.start_selection();
+                                    }
+                                    text_edit.move_cursor_down();
+                                    text_edit.update_selection_to_cursor();
+                                } else {
+                                    text_edit.clear_selection();
+                                    text_edit.move_cursor_down();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::Home) {
-                                text_edit.move_cursor_line_start();
+                                if shift_pressed {
+                                    if !text_edit.has_selection() {
+                                        text_edit.start_selection();
+                                    }
+                                    text_edit.move_cursor_line_start();
+                                    text_edit.update_selection_to_cursor();
+                                } else {
+                                    text_edit.clear_selection();
+                                    text_edit.move_cursor_line_start();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::End) {
-                                text_edit.move_cursor_line_end();
+                                if shift_pressed {
+                                    if !text_edit.has_selection() {
+                                        text_edit.start_selection();
+                                    }
+                                    text_edit.move_cursor_line_end();
+                                    text_edit.update_selection_to_cursor();
+                                } else {
+                                    text_edit.clear_selection();
+                                    text_edit.move_cursor_line_end();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             
+                            // Update cursor blink and check if visibility changed
+                            let was_visible = text_edit.is_cursor_visible();
                             text_edit.update_cursor_blink(0.016);
+                            let is_visible = text_edit.is_cursor_visible();
                             
+                            // If cursor visibility changed, mark for rerender
+                            if was_visible != is_visible {
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+
                             // If text changed, mark for layout recalculation
                             if text_changed {
                                 self.mark_element_needs_layout(focused_id);
@@ -951,13 +1506,46 @@ impl UINode {
                         UIElement::CodeEdit(code_edit) => {
                             let mut text_changed = false;
                             
-                            // Handle text input from IME
+                            // Check for Ctrl/Cmd modifier FIRST
+                            let ctrl_pressed = mgr.is_key_pressed(KeyCode::ControlLeft) || 
+                                             mgr.is_key_pressed(KeyCode::ControlRight) ||
+                                             mgr.is_key_pressed(KeyCode::SuperLeft) ||
+                                             mgr.is_key_pressed(KeyCode::SuperRight);
+                            
+                            // Handle text input from IME (skip if Ctrl is pressed)
                             let text_to_insert = mgr.get_text_input();
-                            if !text_to_insert.is_empty() {
+                            if !text_to_insert.is_empty() && !ctrl_pressed {
                                 code_edit.insert_text(&text_to_insert);
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
+                            }
+                            
+                            // Handle Ctrl+A (Select All)
+                            if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyA) {
+                                code_edit.select_all();
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+                            // Handle Ctrl+C (Copy)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyC) {
+                                let _ = code_edit.copy_to_clipboard();
+                            }
+                            // Handle Ctrl+X (Cut)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyX) {
+                                if let Ok(()) = code_edit.cut_to_clipboard() {
+                                    text_changed = true;
+                                    dirty_element_ids.push(focused_id);
+                                    needs_rerender = true;
+                                }
+                            }
+                            // Handle Ctrl+V (Paste)
+                            else if ctrl_pressed && mgr.is_key_triggered(KeyCode::KeyV) {
+                                if let Ok(()) = code_edit.paste_from_clipboard() {
+                                    text_changed = true;
+                                    dirty_element_ids.push(focused_id);
+                                    needs_rerender = true;
+                                }
                             }
                             
                             // Handle Enter key for newline
@@ -970,50 +1558,126 @@ impl UINode {
                             
                             // Handle special keys with repeat
                             if mgr.is_key_triggered(KeyCode::Backspace) {
-                                code_edit.delete_backward();
+                                if code_edit.has_selection() {
+                                    code_edit.cut_to_clipboard().ok();
+                                } else {
+                                    code_edit.delete_backward();
+                                }
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::Delete) {
-                                code_edit.delete_forward();
+                                if code_edit.has_selection() {
+                                    code_edit.text_edit.delete_selection();
+                                } else {
+                                    code_edit.delete_forward();
+                                }
                                 text_changed = true;
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
+                            
+                            // Check if shift is pressed for selection extension
+                            let shift_pressed = mgr.is_key_pressed(KeyCode::ShiftLeft) || 
+                                              mgr.is_key_pressed(KeyCode::ShiftRight);
+                            
                             if mgr.is_key_triggered(KeyCode::ArrowLeft) {
-                                code_edit.move_cursor_left();
+                                if shift_pressed {
+                                    if !code_edit.has_selection() {
+                                        code_edit.text_edit.start_selection();
+                                    }
+                                    code_edit.move_cursor_left();
+                                    code_edit.text_edit.update_selection_to_cursor();
+                                } else {
+                                    code_edit.clear_selection();
+                                    code_edit.move_cursor_left();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowRight) {
-                                code_edit.move_cursor_right();
+                                if shift_pressed {
+                                    if !code_edit.has_selection() {
+                                        code_edit.text_edit.start_selection();
+                                    }
+                                    code_edit.move_cursor_right();
+                                    code_edit.text_edit.update_selection_to_cursor();
+                                } else {
+                                    code_edit.clear_selection();
+                                    code_edit.move_cursor_right();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowUp) {
-                                code_edit.move_cursor_up();
+                                if shift_pressed {
+                                    if !code_edit.has_selection() {
+                                        code_edit.text_edit.start_selection();
+                                    }
+                                    code_edit.move_cursor_up();
+                                    code_edit.text_edit.update_selection_to_cursor();
+                                } else {
+                                    code_edit.clear_selection();
+                                    code_edit.move_cursor_up();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::ArrowDown) {
-                                code_edit.move_cursor_down();
+                                if shift_pressed {
+                                    if !code_edit.has_selection() {
+                                        code_edit.text_edit.start_selection();
+                                    }
+                                    code_edit.move_cursor_down();
+                                    code_edit.text_edit.update_selection_to_cursor();
+                                } else {
+                                    code_edit.clear_selection();
+                                    code_edit.move_cursor_down();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::Home) {
-                                code_edit.move_cursor_line_start();
+                                if shift_pressed {
+                                    if !code_edit.has_selection() {
+                                        code_edit.text_edit.start_selection();
+                                    }
+                                    code_edit.move_cursor_line_start();
+                                    code_edit.text_edit.update_selection_to_cursor();
+                                } else {
+                                    code_edit.clear_selection();
+                                    code_edit.move_cursor_line_start();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             if mgr.is_key_triggered(KeyCode::End) {
-                                code_edit.move_cursor_line_end();
+                                if shift_pressed {
+                                    if !code_edit.has_selection() {
+                                        code_edit.text_edit.start_selection();
+                                    }
+                                    code_edit.move_cursor_line_end();
+                                    code_edit.text_edit.update_selection_to_cursor();
+                                } else {
+                                    code_edit.clear_selection();
+                                    code_edit.move_cursor_line_end();
+                                }
                                 dirty_element_ids.push(focused_id);
                                 needs_rerender = true;
                             }
                             
+                            // Update cursor blink and check if visibility changed
+                            let was_visible = code_edit.is_cursor_visible();
                             code_edit.update_cursor_blink(0.016);
+                            let is_visible = code_edit.is_cursor_visible();
                             
+                            // If cursor visibility changed, mark for rerender
+                            if was_visible != is_visible {
+                                dirty_element_ids.push(focused_id);
+                                needs_rerender = true;
+                            }
+
                             // If text changed, mark for layout recalculation
                             if text_changed {
                                 self.mark_element_needs_layout(focused_id);

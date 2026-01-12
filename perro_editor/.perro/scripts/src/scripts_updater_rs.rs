@@ -91,8 +91,8 @@ impl UpdaterScript {
     // ------------------- Network Operations -------------------
 
     fn download_file(&self, url: &str, dest_path: &Path) -> Result<(), String> {
-        // [stripped for release] eprintln!("📥 Downloading: {}", url);
-
+        eprintln!("📥 Downloading: {}", url);
+        
         if let Some(parent) = dest_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create dir: {}", e))?;
@@ -115,13 +115,11 @@ impl UpdaterScript {
 
         match curl_result {
             Ok(output) if output.status.success() => {
-                // [stripped for release] eprintln!("✅ Downloaded with curl");
-
+                eprintln!("✅ Downloaded with curl");
                 return Ok(());
             }
             Ok(output) => {
-                // [stripped for release] eprintln!("⚠️ curl failed: {}", String::from_utf8_lossy(&output.stderr));
-
+                eprintln!("⚠️ curl failed: {}", String::from_utf8_lossy(&output.stderr));
             }
             Err(_) => eprintln!("⚠️ curl not available, trying wget..."),
         }
@@ -139,8 +137,7 @@ impl UpdaterScript {
 
         match wget_result {
             Ok(output) if output.status.success() => {
-                // [stripped for release] eprintln!("✅ Downloaded with wget");
-
+                eprintln!("✅ Downloaded with wget");
                 Ok(())
             }
             Ok(output) => Err(format!(
@@ -152,7 +149,7 @@ impl UpdaterScript {
     }
 
     fn fetch_online_manifest(&self, api: &ScriptApi) -> Result<Manifest, String> {
-        // [stripped for release] eprintln!("📡 Fetching manifest from CDN...");
+        eprintln!("📡 Fetching manifest from CDN...");
 
         let url = "https://cdn.perroengine.com/manifest.json";
         let tmp_path = std::env::temp_dir().join("perro_manifest.json");
@@ -166,8 +163,8 @@ impl UpdaterScript {
             .map_err(|e| format!("Parse manifest: {}", e))?;
 
         self.save_manifest_cache(api, &manifest);
-        // [stripped for release] eprintln!("✅ Manifest fetched: latest = {}", manifest.latest);
-
+        eprintln!("✅ Manifest fetched: latest = {}", manifest.latest);
+        
         Ok(manifest)
     }
 
@@ -195,7 +192,7 @@ impl UpdaterScript {
         api: &ScriptApi,
         version: &str,
     ) -> Result<(), String> {
-        // [stripped for release] eprintln!("🚀 Installing engine version {}...", version);
+        eprintln!("🚀 Installing engine version {}...", version);
 
         let editor_dir_str = format!("user://versions/{}/editor/", version);
         let editor_dir_resolved = api
@@ -214,13 +211,11 @@ impl UpdaterScript {
                 version
             );
 
-            // [stripped for release] eprintln!("📥 Downloading engine: {}", url);
-
+            eprintln!("📥 Downloading engine: {}", url);
             self.download_file(&url, &editor_exe)?;
         }
 
-        // [stripped for release] eprintln!("✅ Engine version {} installed", version);
-
+        eprintln!("✅ Engine version {} installed", version);
         Ok(())
     }
 
@@ -235,7 +230,7 @@ impl UpdaterScript {
         
         if let Some(resolved) = api.resolve_path(&path_str) {
             if let Some(exe) = self.find_exe_in_dir(Path::new(&resolved)) {
-                // [stripped for release] eprintln!("🚀 Launching {} and closing current", exe.display());
+                eprintln!("🚀 Launching {} and closing current", exe.display());
 
                 let parent_dir = exe
                     .parent()
@@ -262,8 +257,7 @@ impl UpdaterScript {
     fn process_update_check(&mut self, api: &ScriptApi) {
         match &self.state {
             UpdateState::Initial => {
-                // [stripped for release] eprintln!("🔍 Starting update check...");
-
+                eprintln!("🔍 Starting update check...");
                 self.state = UpdateState::CheckingCache;
             }
 
@@ -271,15 +265,13 @@ impl UpdaterScript {
                 // Check cached manifest first (instant)
                 if self.is_manifest_cache_valid(api) {
                     if let Some(manifest) = self.load_cached_manifest(api) {
-                        // [stripped for release] eprintln!("📋 Using cached manifest (valid for {} hours)", MANIFEST_CACHE_HOURS);
-
+                        eprintln!("📋 Using cached manifest (valid for {} hours)", MANIFEST_CACHE_HOURS);
                         self.handle_manifest(api, manifest);
                         return;
                     }
                 }
                 
-                // [stripped for release] eprintln!("📋 Cache invalid or missing, checking online...");
-
+                eprintln!("📋 Cache invalid or missing, checking online...");
                 self.state = UpdateState::CheckingOnline;
             }
 
@@ -289,16 +281,14 @@ impl UpdaterScript {
                         self.handle_manifest(api, manifest);
                     }
                     Err(e) => {
-                        // [stripped for release] eprintln!("⚠️ Failed to fetch online manifest: {}", e);
-
+                        eprintln!("⚠️ Failed to fetch online manifest: {}", e);
+                        
                         // Try cached manifest as fallback
                         if let Some(manifest) = self.load_cached_manifest(api) {
-                            // [stripped for release] eprintln!("📋 Using stale cached manifest as fallback");
-
+                            eprintln!("📋 Using stale cached manifest as fallback");
                             self.handle_manifest(api, manifest);
                         } else {
-                            // [stripped for release] eprintln!("❌ No network and no cache available");
-
+                            eprintln!("❌ No network and no cache available");
                             self.state = UpdateState::Error(
                                 "No internet connection and no cached manifest".to_string()
                             );
@@ -309,17 +299,15 @@ impl UpdaterScript {
 
             UpdateState::DownloadingUpdate { version } => {
                 let version = version.clone();
-                // [stripped for release] eprintln!("📦 Downloading version {}...", version);
-
+                eprintln!("📦 Downloading version {}...", version);
+                
                 match self.download_and_install_version(api, &version) {
                     Ok(_) => {
-                        // [stripped for release] eprintln!("✅ Download complete!");
-
+                        eprintln!("✅ Download complete!");
                         self.state = UpdateState::ReadyToRelaunch { version };
                     }
                     Err(e) => {
-                        // [stripped for release] eprintln!("❌ Download failed: {}", e);
-
+                        eprintln!("❌ Download failed: {}", e);
                         self.state = UpdateState::Error(e);
                     }
                 }
@@ -327,11 +315,10 @@ impl UpdaterScript {
 
             UpdateState::ReadyToRelaunch { version } => {
                 let version = version.clone();
-                // [stripped for release] eprintln!("🚀 Relaunching with version {}...", version);
-
+                eprintln!("🚀 Relaunching with version {}...", version);
+                
                 if let Err(e) = self.launch_version_and_close(api, &version) {
-                    // [stripped for release] eprintln!("❌ Failed to relaunch: {}", e);
-
+                    eprintln!("❌ Failed to relaunch: {}", e);
                     self.state = UpdateState::Error(e);
                 }
             }
@@ -350,20 +337,17 @@ impl UpdaterScript {
         let latest = &manifest.latest;
         
         if natord::compare(latest, &self.my_version).is_gt() {
-            // [stripped for release] eprintln!("🎉 Update available: {} -> {}", self.my_version, latest);
-
+            eprintln!("🎉 Update available: {} -> {}", self.my_version, latest);
+            
             if self.version_exists(api, latest) {
-                // [stripped for release] eprintln!("✅ Version {} already downloaded", latest);
-
+                eprintln!("✅ Version {} already downloaded", latest);
                 self.state = UpdateState::ReadyToRelaunch { version: latest.clone() };
             } else {
-                // [stripped for release] eprintln!("📦 Need to download version {}", latest);
-
+                eprintln!("📦 Need to download version {}", latest);
                 self.state = UpdateState::DownloadingUpdate { version: latest.clone() };
             }
         } else {
-            // [stripped for release] eprintln!("✅ Already running latest version: {}", self.my_version);
-
+            eprintln!("✅ Already running latest version: {}", self.my_version);
             self.state = UpdateState::UpToDate;
         }
     }
@@ -376,12 +360,11 @@ impl Script for UpdaterScript {
 
         self.my_version = api.project().version().to_string();
         
-        // [stripped for release] eprintln!("🔄 Updater initialized for version {}", self.my_version);
-
+        eprintln!("🔄 Updater initialized for version {}", self.my_version);
+        
         // Skip in debug builds
         if cfg!(debug_assertions) {
-            // [stripped for release] eprintln!("🐛 Debug build: updater disabled");
-
+            eprintln!("🐛 Debug build: updater disabled");
             return;
         }
 

@@ -256,4 +256,41 @@ impl UICodeEdit {
     pub fn cursor_pos(&self) -> crate::ui_elements::ui_text_edit::CursorPos {
         self.text_edit.cursor_pos
     }
+    
+    // ===== Selection Methods (forward to text_edit) =====
+    
+    /// Check if there is an active selection
+    pub fn has_selection(&self) -> bool {
+        self.text_edit.has_selection()
+    }
+    
+    /// Get selected text
+    pub fn get_selected_text(&self) -> Option<String> {
+        self.text_edit.get_selected_text()
+    }
+    
+    /// Clear selection
+    pub fn clear_selection(&mut self) {
+        self.text_edit.clear_selection();
+    }
+    
+    /// Select all text
+    pub fn select_all(&mut self) {
+        self.text_edit.select_all();
+    }
+    
+    /// Copy selected text to clipboard
+    pub fn copy_to_clipboard(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.text_edit.copy_to_clipboard()
+    }
+    
+    /// Cut selected text to clipboard
+    pub fn cut_to_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.text_edit.cut_to_clipboard()
+    }
+    
+    /// Paste text from clipboard
+    pub fn paste_from_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.text_edit.paste_from_clipboard()
+    }
 }

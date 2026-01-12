@@ -33,6 +33,11 @@ pub struct UITextInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focused_bg: Option<crate::structs::Color>,
     
+    // Optional custom selection highlight color
+    // If None, will use lightened version of background color
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub highlight_color: Option<crate::structs::Color>,
+    
     // Internal state for interactions (not serialized)
     #[serde(skip)]
     pub is_hovered: bool,
@@ -50,6 +55,14 @@ pub struct UITextInput {
     // Horizontal scroll offset in pixels (how many pixels to shift text left)
     #[serde(skip)]
     pub scroll_offset: f32,
+    
+    // Text selection state
+    #[serde(skip)]
+    pub selection_start: Option<usize>,  // None = no selection
+    #[serde(skip)]
+    pub selection_end: Option<usize>,
+    #[serde(skip)]
+    pub is_dragging: bool,  // True while mouse is being dragged for selection
     
     // Cached text measurements for performance
     #[serde(skip)]
@@ -77,11 +90,15 @@ impl Default for UITextInput {
             text_anchor: FurAnchor::Center, // Default text anchor to center
             hover_bg: None,
             focused_bg: None,
+            highlight_color: None,
             is_hovered: false,
             is_focused: false,
             cursor_position: 0,
             cursor_blink_timer: 0.0,
             scroll_offset: 0.0,
+            selection_start: None,
+            selection_end: None,
+            is_dragging: false,
             cached_text_width: 0.0,
             cached_text_content: String::new(),
             cached_char_positions: Vec::new(),
@@ -262,14 +279,119 @@ impl UITextInput {
     /// Update cursor blink timer (call each frame)
     pub fn update_cursor_blink(&mut self, delta_time: f32) {
         self.cursor_blink_timer += delta_time;
-        // Blink every 0.5 seconds
-        if self.cursor_blink_timer >= 1.0 {
+        // Blink every 2 seconds (1 second visible, 1 second hidden)
+        if self.cursor_blink_timer >= 2.0 {
             self.cursor_blink_timer = 0.0;
         }
     }
-    
+
     /// Check if cursor should be visible (for blinking effect)
     pub fn is_cursor_visible(&self) -> bool {
-        self.cursor_blink_timer < 0.5
+        self.cursor_blink_timer < 1.0
+    }
+    
+    // ===== Selection Methods =====
+    
+    /// Check if there is an active selection
+    pub fn has_selection(&self) -> bool {
+        self.selection_start.is_some() && self.selection_end.is_some()
+    }
+    
+    /// Get the selection range (start, end) in sorted order (start <= end)
+    pub fn get_selection_range(&self) -> Option<(usize, usize)> {
+        match (self.selection_start, self.selection_end) {
+            (Some(start), Some(end)) => {
+                let min = start.min(end);
+                let max = start.max(end);
+                Some((min, max))
+            }
+            _ => None,
+        }
+    }
+    
+    /// Get the currently selected text
+    pub fn get_selected_text(&self) -> Option<String> {
+        self.get_selection_range().map(|(start, end)| {
+            self.text.props.content[start..end].to_string()
+        })
+    }
+    
+    /// Clear the current selection
+    pub fn clear_selection(&mut self) {
+        self.selection_start = None;
+        self.selection_end = None;
+    }
+    
+    /// Select all text
+    pub fn select_all(&mut self) {
+        self.selection_start = Some(0);
+        self.selection_end = Some(self.text.props.content.len());
+        self.cursor_position = self.text.props.content.len();
+    }
+    
+    /// Start a new selection from the current cursor position
+    pub fn start_selection(&mut self) {
+        self.selection_start = Some(self.cursor_position);
+        self.selection_end = Some(self.cursor_position);
+    }
+    
+    /// Update selection end to current cursor position
+    pub fn update_selection_to_cursor(&mut self) {
+        if self.selection_start.is_some() {
+            self.selection_end = Some(self.cursor_position);
+        }
+    }
+    
+    /// Delete the selected text
+    pub fn delete_selection(&mut self) {
+        if let Some((start, end)) = self.get_selection_range() {
+            self.text.props.content.replace_range(start..end, "");
+            self.cursor_position = start;
+            self.clear_selection();
+            self.invalidate_cache();
+        }
+    }
+    
+    /// Insert text at cursor, replacing selection if any
+    pub fn insert_text_at_cursor(&mut self, text: &str) {
+        // If there's a selection, delete it first
+        if self.has_selection() {
+            self.delete_selection();
+        }
+        
+        // Insert the new text
+        let content = &mut self.text.props.content;
+        let pos = self.cursor_position.min(content.len());
+        content.insert_str(pos, text);
+        self.cursor_position += text.len();
+        self.invalidate_cache();
+    }
+    
+    /// Copy selected text to clipboard
+    pub fn copy_to_clipboard(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(text) = self.get_selected_text() {
+            let mut clipboard = arboard::Clipboard::new()?;
+            clipboard.set_text(text)?;
+        }
+        Ok(())
+    }
+    
+    /// Cut selected text to clipboard
+    pub fn cut_to_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(text) = self.get_selected_text() {
+            let mut clipboard = arboard::Clipboard::new()?;
+            clipboard.set_text(text)?;
+            self.delete_selection();
+        }
+        Ok(())
+    }
+    
+    /// Paste text from clipboard
+    pub fn paste_from_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut clipboard = arboard::Clipboard::new()?;
+        if let Ok(text) = clipboard.get_text() {
+            self.insert_text_at_cursor(&text);
+        }
+        Ok(())
     }
 }

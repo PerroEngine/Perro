@@ -114,8 +114,8 @@ impl ManagerScript {
     fn launch_editor_via_cargo(&self, project_path: &str) -> Result<(), String> {
         use std::process::Command;
         
-        // [stripped for release] eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
-
+        eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
+        
         let mut cmd = Command::new("cargo");
         cmd.args(&["run", "-p", "perro_core", "--", "--path", "--editor", project_path, "--run"]);
         
@@ -155,8 +155,8 @@ impl ManagerScript {
             .parent()
             .ok_or("Could not determine parent directory")?;
         
-        // [stripped for release] eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
-
+        eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
+        
         let mut cmd = Command::new(exe_path);
         cmd.arg("--editor").arg(project_path);
         cmd.current_dir(parent_dir);

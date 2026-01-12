@@ -2730,15 +2730,24 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         panel_copy.props.background_color = bg_color;
                         render_panel(&panel_copy, gfx, timestamp);
                         
+                        // Render selection highlight FIRST (below text) if focused and has selection
+                        let selection_id = uuid::Uuid::new_v5(&text_input.text.id, b"selection");
+                        if text_input.is_focused && text_input.base.visible {
+                            render_text_input_selection(text_input, gfx, timestamp);
+                        } else {
+                            // Remove selection highlight when unfocused
+                            gfx.renderer_prim.remove_rect(selection_id);
+                        }
+                        
                         // Render text with clipping (only show visible portion)
                         render_text_input_with_clipping(text_input, gfx, timestamp);
-                        
+
                         // Render cursor if focused, visible (blink), and element is visible
+                        let cursor_id = uuid::Uuid::new_v5(&text_input.text.id, b"cursor");
                         if text_input.is_focused && text_input.is_cursor_visible() && text_input.base.visible {
                             render_text_input_cursor(text_input, gfx, timestamp);
-                        } else if !text_input.is_focused {
-                            // Remove cursor panel when unfocused
-                            let cursor_id = uuid::Uuid::new_v5(&text_input.text.id, b"cursor");
+                        } else {
+                            // Remove cursor panel when unfocused OR when not visible (blink off)
                             gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
@@ -2771,11 +2780,26 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         let mut panel_copy = text_edit.panel.clone();
                         panel_copy.props.background_color = bg_color;
                         render_panel(&panel_copy, gfx, timestamp);
+                        
+                        // Render selection highlight if focused and has selection
+                        let selection_id = uuid::Uuid::new_v5(&text_edit.panel.base.id, b"selection");
+                        if text_edit.is_focused && text_edit.base.visible && text_edit.has_selection() {
+                            render_text_edit_selection(text_edit, gfx, timestamp);
+                        } else {
+                            // Remove selection highlight when unfocused or no selection
+                            gfx.renderer_prim.remove_rect(selection_id);
+                        }
+                        
                         render_text(&text_edit.text, gfx, timestamp);
                         
                         // Render cursor if focused, visible (blink), and element is visible
+                        // Note: TextEdit uses panel ID for cursor, not text ID
                         if text_edit.is_focused && text_edit.is_cursor_visible() && text_edit.base.visible {
                             render_text_edit_cursor(text_edit, gfx, timestamp);
+                        } else if text_edit.is_focused {
+                            // Remove cursor when not visible (blink off) but still focused
+                            let cursor_id = uuid::Uuid::new_v5(&text_edit.panel.base.id, b"cursor");
+                            gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
                     UIElement::CodeEdit(code_edit) => {
@@ -2811,11 +2835,25 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         let mut panel_copy = code_edit.text_edit.panel.clone();
                         panel_copy.props.background_color = bg_color;
                         render_panel(&panel_copy, gfx, timestamp);
+                        
+                        // Render selection highlight if focused and has selection
+                        let selection_id = uuid::Uuid::new_v5(&code_edit.text_edit.panel.base.id, b"selection");
+                        if code_edit.is_focused && code_edit.base.visible && code_edit.has_selection() {
+                            render_text_edit_selection(&code_edit.text_edit, gfx, timestamp);
+                        } else {
+                            // Remove selection highlight when unfocused or no selection
+                            gfx.renderer_prim.remove_rect(selection_id);
+                        }
+                        
                         render_text(&code_edit.text_edit.text, gfx, timestamp);
                         
                         // Render cursor if focused, visible (blink), and element is visible
                         if code_edit.is_focused && code_edit.is_cursor_visible() && code_edit.base.visible {
                             render_text_edit_cursor(&code_edit.text_edit, gfx, timestamp);
+                        } else if code_edit.is_focused {
+                            // Remove cursor when not visible (blink off) but still focused
+                            let cursor_id = uuid::Uuid::new_v5(&code_edit.text_edit.panel.base.id, b"cursor");
+                            gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
                 }
@@ -2901,11 +2939,11 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
 /// Calculate text size from font metrics
 /// Returns (width, height) where height = (ascent + descent) * scale
 /// Calculate cumulative character positions (width at each character boundary)
-fn calculate_character_positions(text: &str, font_size: f32) -> Vec<f32> {
+pub fn calculate_character_positions(text: &str, font_size: f32) -> Vec<f32> {
     use fontdue::Font as Fontdue;
     use fontdue::FontSettings;
-    
-    const DESIGN_SIZE: f32 = 64.0;
+
+    const DESIGN_SIZE: f32 = 192.0; // Must match the font atlas design size!
     
     if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
         let fd_font = Fontdue::from_bytes(font.data, FontSettings::default())
@@ -3090,10 +3128,7 @@ fn calculate_text_input_scroll_offset(text_input: &mut UITextInput) -> f32 {
     let usable_width = panel_width - 2.0 * side_padding;
     let max_scroll = (full_text_width - usable_width).max(0.0);
     let clamped_scroll = new_scroll.max(0.0).min(max_scroll);
-    
-    println!("[SCROLL DEBUG] cursor_x: {}, min_pos: {}, max_pos: {}, current_scroll: {}, new_scroll: {}, max_scroll: {}, clamped: {}", 
-        cursor_x, min_cursor_text_pos, max_cursor_text_pos, current_scroll, new_scroll, max_scroll, clamped_scroll);
-    
+
     clamped_scroll
 }
 
@@ -3106,11 +3141,7 @@ fn render_text_input_with_clipping(text_input: &mut UITextInput, gfx: &mut Graph
     }
     
     // Update scroll offset to keep cursor visible
-    let old_scroll = text_input.scroll_offset;
     text_input.scroll_offset = calculate_text_input_scroll_offset(text_input);
-    if (text_input.scroll_offset - old_scroll).abs() > 0.01 {
-        println!("[SCROLL UPDATE] Changed from {} to {}", old_scroll, text_input.scroll_offset);
-    }
     
     let panel_width = text_input.panel.base.size.x;
     let full_text_width = text_input.cached_text_width;
@@ -3118,7 +3149,8 @@ fn render_text_input_with_clipping(text_input: &mut UITextInput, gfx: &mut Graph
     // If text fits entirely, no scrolling or clipping needed
     if full_text_width <= panel_width {
         text_input.scroll_offset = 0.0;
-        let text_copy = text_input.text.clone();
+        let mut text_copy = text_input.text.clone();
+        text_copy.base.z_index = text_input.panel.base.z_index + 2; // Text at z+2
         render_text(&text_copy, gfx, timestamp);
         return;
     }
@@ -3193,8 +3225,221 @@ fn render_text_input_with_clipping(text_input: &mut UITextInput, gfx: &mut Graph
     // scroll is text_input.scroll_offset
     text_copy.base.transform.position.x = panel_left + side_padding + (start_offset - text_input.scroll_offset);
     text_copy.base.global_transform.position.x = panel_left + side_padding + (start_offset - text_input.scroll_offset);
+    text_copy.base.z_index = text_input.panel.base.z_index + 2; // Text at z+2
     
     render_text(&text_copy, gfx, timestamp);
+}
+
+/// Render selection highlight for a focused TextInput element
+fn render_text_input_selection(text_input: &mut UITextInput, gfx: &mut Graphics, timestamp: u64) {
+    // Check if there's a selection
+    if let Some((start, end)) = text_input.get_selection_range() {
+        if start == end {
+            return; // No selection
+        }
+        
+        let font_size = text_input.text.props.font_size;
+        
+        // Get character positions
+        if text_input.cached_char_positions.is_empty() {
+            return;
+        }
+        
+        // Calculate selection start and end positions in text coordinate space
+        let selection_start_x = if start == 0 {
+            0.0
+        } else if start <= text_input.cached_char_positions.len() {
+            text_input.cached_char_positions[start - 1]
+        } else {
+            text_input.cached_text_width
+        };
+        
+        let selection_end_x = if end == 0 {
+            0.0
+        } else if end <= text_input.cached_char_positions.len() {
+            text_input.cached_char_positions[end - 1]
+        } else {
+            text_input.cached_text_width
+        };
+        
+        let selection_width = selection_end_x - selection_start_x;
+        
+        // Position selection based on whether text is scrolled or centered
+        let panel_width = text_input.panel.base.size.x;
+        let full_text_width = text_input.cached_text_width;
+        let side_padding = 5.0;
+        
+        let (selection_global_x, visible_selection_width) = if full_text_width <= panel_width {
+            // Text fits entirely - it's centered in the panel
+            let panel_center_x = text_input.panel.base.global_transform.position.x;
+            let text_start_x = panel_center_x - (full_text_width / 2.0);
+            let selection_x = text_start_x + selection_start_x;
+            (selection_x, selection_width)
+        } else {
+            // Text is scrolled - left-aligned with padding
+            // Clip selection to visible bounds
+            let visible_start_x = text_input.scroll_offset;
+            let visible_end_x = text_input.scroll_offset + panel_width - (2.0 * side_padding);
+            
+            // Clamp selection to visible area
+            let visible_sel_start = selection_start_x.max(visible_start_x);
+            let visible_sel_end = selection_end_x.min(visible_end_x);
+            
+            if visible_sel_start >= visible_sel_end {
+                // Selection is completely outside visible area
+                let selection_id = uuid::Uuid::new_v5(&text_input.text.id, b"selection");
+                gfx.renderer_prim.remove_rect(selection_id);
+                return;
+            }
+            
+            let vis_width = visible_sel_end - visible_sel_start;
+            
+            // Calculate panel position
+            let panel_left = text_input.panel.base.global_transform.position.x 
+                - (text_input.panel.base.size.x * text_input.panel.base.pivot.x);
+            
+            // Position selection rectangle in panel coordinate space
+            let selection_x_in_panel = visible_sel_start - text_input.scroll_offset;
+            let selection_x = panel_left + side_padding + selection_x_in_panel;
+            (selection_x, vis_width)
+        };
+        
+        // Create selection highlight rectangle
+        // Match the text height more closely
+        let selection_height = font_size * 1.2;
+        // Move up by adding more to align with text
+        let selection_y = text_input.text.base.global_transform.position.y + (selection_height * 0.75);
+        
+        let selection_id = uuid::Uuid::new_v5(&text_input.text.id, b"selection");
+        
+        // Get selection color: use a lighter version of the background with full opacity
+        // Z-index layering will handle visibility (selection between panel and text)
+        let selection_color = if let Some(custom_color) = text_input.highlight_color {
+            // Use custom highlight color
+            custom_color
+        } else if let Some(bg_color) = text_input.panel.props.background_color {
+            // Lighten by 20% with full opacity - text will render on top
+            bg_color.lighten(0.2)
+        } else {
+            // Fallback to light gray
+            crate::structs::Color::new(200, 200, 200, 255)
+        };
+        
+        let mut selection_transform = crate::structs2d::Transform2D::default();
+        selection_transform.position = crate::structs2d::Vector2::new(selection_global_x, selection_y);
+        
+        // Render the selection rectangle (only the visible portion)
+        // Use pivot (0.0, 0.5) to align from left edge and center vertically
+        // Panel is at z, Selection is at z+1, Text is at z+2
+        // This ensures text renders on TOP of the selection, and selection is above panel
+        use crate::rendering::renderer_prim::RenderLayer;
+        gfx.renderer_prim.queue_rect(
+            selection_id,
+            RenderLayer::UI,
+            selection_transform,
+            crate::structs2d::Vector2::new(visible_selection_width, selection_height),
+            crate::structs2d::Vector2::new(0.0, 0.5), // Left-aligned horizontally, centered vertically
+            selection_color,
+            None, // no corner radius
+            0.0,  // no border thickness
+            false, // not a border
+            text_input.panel.base.z_index + 1, // Highlight at z+1 (above panel, below text at z+2)
+            timestamp,
+        );
+    } else {
+        // No selection, remove any previous selection highlight
+        let selection_id = uuid::Uuid::new_v5(&text_input.text.id, b"selection");
+        gfx.renderer_prim.remove_rect(selection_id);
+    }
+}
+
+/// Render selection highlight for a focused TextEdit element (multiline)
+fn render_text_edit_selection(text_edit: &crate::ui_elements::ui_text_edit::UITextEdit, gfx: &mut Graphics, timestamp: u64) {
+    // Check if there's a selection
+    if let Some((start, end)) = text_edit.get_selection_range() {
+        if start == end {
+            return; // No selection
+        }
+        
+        let font_size = text_edit.text.props.font_size;
+        let line_height = font_size * 1.3;
+        let selection_height = font_size * 1.2;
+        
+        // Get start and end cursor positions
+        let start_pos = text_edit.char_index_to_cursor_pos(start);
+        let end_pos = text_edit.char_index_to_cursor_pos(end);
+        
+        // Get selection color - lighter version of background
+        let selection_color = if let Some(bg_color) = text_edit.panel.props.background_color {
+            bg_color.lighten(0.2)
+        } else {
+            crate::structs::Color::new(200, 200, 200, 255)
+        };
+        
+        // Calculate text area position
+        let text_left = text_edit.text.base.global_transform.position.x - (text_edit.text.base.size.x / 2.0);
+        let text_top = text_edit.text.base.global_transform.position.y - (text_edit.text.base.size.y / 2.0);
+        
+        // Render selection for each line
+        for line_idx in start_pos.line..=end_pos.line {
+            let line_text = text_edit.get_line(line_idx);
+            let char_positions = calculate_character_positions(line_text, font_size);
+            
+            // Determine start and end columns for this line
+            let line_start_col = if line_idx == start_pos.line { start_pos.column } else { 0 };
+            let line_end_col = if line_idx == end_pos.line { end_pos.column } else { line_text.len() };
+            
+            if line_start_col >= line_end_col {
+                continue;
+            }
+            
+            // Calculate X positions for this line's selection
+            let sel_start_x = if line_start_col == 0 {
+                0.0
+            } else if line_start_col <= char_positions.len() {
+                char_positions[line_start_col - 1]
+            } else {
+                char_positions.last().copied().unwrap_or(0.0)
+            };
+            
+            let sel_end_x = if line_end_col == 0 {
+                0.0
+            } else if line_end_col <= char_positions.len() {
+                char_positions[line_end_col - 1]
+            } else {
+                char_positions.last().copied().unwrap_or(0.0)
+            };
+            
+            let sel_width = sel_end_x - sel_start_x;
+            if sel_width <= 0.0 {
+                continue;
+            }
+            
+            // Calculate Y position for this line
+            let line_y = text_top + (line_idx as f32 * line_height) + (line_height * 0.75);
+            let sel_x = text_left + sel_start_x;
+            
+            let selection_id = uuid::Uuid::new_v5(&text_edit.panel.base.id, format!("selection_{}", line_idx).as_bytes());
+            
+            let mut selection_transform = crate::structs2d::Transform2D::default();
+            selection_transform.position = crate::structs2d::Vector2::new(sel_x, line_y);
+            
+            use crate::rendering::renderer_prim::RenderLayer;
+            gfx.renderer_prim.queue_rect(
+                selection_id,
+                RenderLayer::UI,
+                selection_transform,
+                crate::structs2d::Vector2::new(sel_width, selection_height),
+                crate::structs2d::Vector2::new(0.0, 0.5),
+                selection_color,
+                None,
+                0.0,
+                false,
+                text_edit.panel.base.z_index + 1, // Between panel and text
+                timestamp,
+            );
+        }
+    }
 }
 
 /// Render a cursor for a focused TextInput element
@@ -3307,9 +3552,6 @@ fn render_text_input_cursor(text_input: &mut UITextInput, gfx: &mut Graphics, ti
     // - A character at text position P appears at: panel_left + side_padding + (P - scroll)
     let cursor_global_x = panel_left + side_padding + (text_before_cursor_width - text_input.scroll_offset);
     let cursor_global_y = text_transform.position.y + (font_size * 1.0);
-    
-    println!("[CURSOR DEBUG] text_before_cursor_width: {}, cursor_x_offset: {}, scroll: {}, side_padding: {}, panel_left: {}, result: {}", 
-        text_before_cursor_width, cursor_x_offset, text_input.scroll_offset, side_padding, panel_left, cursor_global_x);
     
     // Create cursor transform with top-left pivot so Y position is at the top of the cursor
     let mut cursor_transform = Transform2D::default();

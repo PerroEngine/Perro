@@ -55,6 +55,14 @@ pub struct UITextEdit {
     #[serde(skip)]
     pub cursor_pos: CursorPos,
     
+    // Text selection state
+    #[serde(skip)]
+    pub selection_start: Option<CursorPos>,  // None = no selection
+    #[serde(skip)]
+    pub selection_end: Option<CursorPos>,
+    #[serde(skip)]
+    pub is_dragging: bool,  // True while mouse is being dragged for selection
+    
     // Cached line starts for efficient navigation
     #[serde(skip)]
     pub line_starts: Vec<usize>,
@@ -88,6 +96,9 @@ impl Default for UITextEdit {
             is_hovered: false,
             is_focused: false,
             cursor_pos: CursorPos::default(),
+            selection_start: None,
+            selection_end: None,
+            is_dragging: false,
             line_starts: vec![0], // First line starts at position 0
             scroll_offset: Vector2::new(0.0, 0.0),
             cursor_blink_timer: 0.0,
@@ -395,14 +406,15 @@ impl UITextEdit {
     /// Update cursor blink timer (call each frame)
     pub fn update_cursor_blink(&mut self, delta_time: f32) {
         self.cursor_blink_timer += delta_time;
-        if self.cursor_blink_timer >= 1.0 {
+        // Blink every 2 seconds (1 second visible, 1 second hidden)
+        if self.cursor_blink_timer >= 2.0 {
             self.cursor_blink_timer = 0.0;
         }
     }
-    
+
     /// Check if cursor should be visible (for blinking effect)
     pub fn is_cursor_visible(&self) -> bool {
-        self.cursor_blink_timer < 0.5
+        self.cursor_blink_timer < 1.0
     }
     
     /// Get the number of lines in the text
@@ -424,5 +436,132 @@ impl UITextEdit {
         };
         
         &self.text.props.content[line_start..line_end]
+    }
+    
+    // ===== Selection Methods =====
+    
+    /// Convert CursorPos to byte index in the text
+    fn cursor_pos_to_index(&self, pos: &CursorPos) -> usize {
+        if pos.line >= self.line_starts.len() {
+            return self.text.props.content.len();
+        }
+        let line_start = self.line_starts[pos.line];
+        let line_end = if pos.line + 1 < self.line_starts.len() {
+            self.line_starts[pos.line + 1] - 1
+        } else {
+            self.text.props.content.len()
+        };
+        (line_start + pos.column).min(line_end)
+    }
+    
+    /// Check if there is an active selection
+    pub fn has_selection(&self) -> bool {
+        self.selection_start.is_some() && self.selection_end.is_some()
+    }
+    
+    /// Get the selection range as byte indices (start, end) in sorted order
+    pub fn get_selection_range(&self) -> Option<(usize, usize)> {
+        match (self.selection_start.as_ref(), self.selection_end.as_ref()) {
+            (Some(start), Some(end)) => {
+                let start_idx = self.cursor_pos_to_index(start);
+                let end_idx = self.cursor_pos_to_index(end);
+                let min = start_idx.min(end_idx);
+                let max = start_idx.max(end_idx);
+                Some((min, max))
+            }
+            _ => None,
+        }
+    }
+    
+    /// Get the currently selected text
+    pub fn get_selected_text(&self) -> Option<String> {
+        self.get_selection_range().map(|(start, end)| {
+            self.text.props.content[start..end].to_string()
+        })
+    }
+    
+    /// Clear the current selection
+    pub fn clear_selection(&mut self) {
+        self.selection_start = None;
+        self.selection_end = None;
+    }
+    
+    /// Select all text
+    pub fn select_all(&mut self) {
+        self.selection_start = Some(CursorPos { line: 0, column: 0 });
+        let last_line = self.line_starts.len().saturating_sub(1);
+        let last_column = if last_line < self.line_starts.len() {
+            let line_start = self.line_starts[last_line];
+            self.text.props.content.len() - line_start
+        } else {
+            0
+        };
+        self.selection_end = Some(CursorPos { line: last_line, column: last_column });
+        self.cursor_pos = CursorPos { line: last_line, column: last_column };
+    }
+    
+    /// Start a new selection from the current cursor position
+    pub fn start_selection(&mut self) {
+        self.selection_start = Some(self.cursor_pos.clone());
+        self.selection_end = Some(self.cursor_pos.clone());
+    }
+    
+    /// Update selection end to current cursor position
+    pub fn update_selection_to_cursor(&mut self) {
+        if self.selection_start.is_some() {
+            self.selection_end = Some(self.cursor_pos.clone());
+        }
+    }
+    
+    /// Delete the selected text
+    pub fn delete_selection(&mut self) {
+        if let Some((start, end)) = self.get_selection_range() {
+            self.text.props.content.replace_range(start..end, "");
+            // Recalculate line starts after deletion
+            self.rebuild_line_starts();
+            // Position cursor at start of deleted selection
+            if let Some(start_pos) = &self.selection_start {
+                self.cursor_pos = start_pos.clone();
+            }
+            self.clear_selection();
+        }
+    }
+    
+    /// Copy selected text to clipboard
+    pub fn copy_to_clipboard(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(text) = self.get_selected_text() {
+            let mut clipboard = arboard::Clipboard::new()?;
+            clipboard.set_text(text)?;
+        }
+        Ok(())
+    }
+    
+    /// Cut selected text to clipboard
+    pub fn cut_to_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(text) = self.get_selected_text() {
+            let mut clipboard = arboard::Clipboard::new()?;
+            clipboard.set_text(text)?;
+            self.delete_selection();
+        }
+        Ok(())
+    }
+    
+    /// Paste text from clipboard
+    pub fn paste_from_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut clipboard = arboard::Clipboard::new()?;
+        if let Ok(text) = clipboard.get_text() {
+            // Delete selection if any
+            if self.has_selection() {
+                self.delete_selection();
+            }
+            // Insert pasted text
+            let index = self.cursor_pos_to_index(&self.cursor_pos);
+            self.text.props.content.insert_str(index, &text);
+            self.rebuild_line_starts();
+            // Move cursor to end of pasted text
+            // (simplified - just moves to end for now)
+            self.cursor_pos.column += text.len();
+        }
+        Ok(())
     }
 }

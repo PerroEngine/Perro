@@ -73,6 +73,7 @@ enum_dispatch = "0.3"
 indexmap = { version = "1.9", features = ["serde", "rayon"] }
 once_cell = "1.19"
 smallvec = "1.11"
+arboard = "3.4"
 
 # File system
 dunce = "1.0.5"
