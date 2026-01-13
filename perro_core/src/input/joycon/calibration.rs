@@ -22,9 +22,9 @@ pub struct Calibration {
 impl Default for Calibration {
     fn default() -> Self {
         Self {
-            gyro: Vector3::zero(),
-            accel: Vector3::zero(),
-            stick_center: Vector2::zero(),
+            gyro: Vector3::ZERO,
+            accel: Vector3::ZERO,
+            stick_center: Vector2::ZERO,
             // Default deadzone: 5.0 degrees/second (approximately 0.087 radians/second)
             // This filters out small noise while still allowing intentional movements
             gyro_deadzone: 5.0,

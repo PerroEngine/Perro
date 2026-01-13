@@ -58,7 +58,7 @@
                               [Include path="res://fur/scene_graph.fur"]
                               [/Include]
 
-                              // Resource Tree Section
+                              // Resource Tree Section - MUST HAVE HEIGHT!
                               [Panel w=100% anchor=c bg=steel-10]
                                     [VLayout w=100% h=100% anchor=c align=s gap=0]
                                           // Resource Tree header
@@ -69,7 +69,9 @@
                                           [/Panel]
                                           // Content area - remaining space
                                           [Panel w=100% h=92% anchor=c bg=steel-10]
-                                                [Panel id=ResourcesContainer w=95% h=98% anchor=c bg=neutral-10 rounding=0.1]
+                                                [Panel id=ResourcesContainer w=95% h=98% anchor=c bg=steel-5 rounding=0.1]
+                                                      [FileTree id=ResourceFileTree w=100% h=100% anchor=c bg=steel-8 text-c=white selected-c=blue-6 hover-c=steel-6]
+                                                      [/FileTree]
                                                 [/Panel]
                                           [/Panel]
                                     [/VLayout]

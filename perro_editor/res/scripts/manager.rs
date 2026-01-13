@@ -8,6 +8,11 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
 use perro_core::ui_element::{BaseElement, UIElement};
+use perro_core::ui_elements::ui_file_tree::{UIFileTree, FileTreeItem, SelectionMode};
+use perro_core::ui_elements::ui_context_menu::{UIContextMenu, ContextMenuItem};
+use perro_core::ui_file_tree_manager::FileTreeManager;
+use perro_core::project::uid_integration::{init_project_uid_registry, clear_project_uid_registry};
+use perro_core::nodes::ui::fur_ast::FurAnchor;
 use std::path::{Path, PathBuf};
 use phf::{phf_map, Map};
 use smallvec::{SmallVec, smallvec};
@@ -36,6 +41,10 @@ pub struct ManagerScript {
     resources_scanned: bool, // Track if we've scanned the res folder
     resource_files: Vec<String>, // List of res:// paths to all files in the project
     current_mode: Option<EditorMode>, // Current editor mode (None = default viewport mode)
+    file_tree_initialized: bool, // Track if file tree UI has been created
+    file_tree_id: Option<Uuid>, // Store file tree element ID
+    context_menu_id: Option<Uuid>, // Store context menu element ID
+    frame_count: u32, // Track frames to delay file tree initialization
 }
 
 #[unsafe(no_mangle)]
@@ -54,6 +63,10 @@ pub extern "C" fn manager_create_script() -> *mut dyn ScriptObject {
         resources_scanned: false,
         resource_files: Vec::new(),
         current_mode: None, // Start with no mode (default viewport)
+        file_tree_initialized: false,
+        file_tree_id: None,
+        context_menu_id: None,
+        frame_count: 0,
     })) as *mut dyn ScriptObject
 }
 
@@ -484,7 +497,105 @@ impl ManagerScript {
         }
     }
     
-    /// Add resource buttons to the Resources panel
+    /// Initialize and populate the file tree UI component
+    fn init_file_tree_ui(&mut self, api: &mut ScriptApi, project_path: &str) {
+        if self.file_tree_initialized {
+            api.print("⚠️ File tree already initialized");
+            return;
+        }
+        
+        api.print("🌳 Populating file tree from FUR...");
+        
+        let ui_node_id = self.id;
+        
+        // Find the ResourceFileTree element (defined in FUR)
+        let file_tree_id = api.with_ui_node(ui_node_id, |ui| {
+            ui.find_element_by_name("ResourceFileTree")
+                .map(|element| element.get_id())
+        });
+        
+        let Some(file_tree_id) = file_tree_id else {
+            api.print("❌ Could not find ResourceFileTree in FUR file");
+            return;
+        };
+        
+        api.print(&format!("✅ Found ResourceFileTree: {}", file_tree_id));
+        
+        // Load files from disk
+        let resolved_path = if project_path.starts_with("user://") {
+            api.resolve_path(project_path).unwrap_or_else(|| project_path.to_string())
+        } else {
+            project_path.to_string()
+        };
+        
+        let res_dir = PathBuf::from(&resolved_path).join("res");
+        
+        // Populate the file tree with directory contents
+        let result = api.with_ui_node(ui_node_id, |ui| -> Result<usize, String> {
+            if let Some(UIElement::FileTree(file_tree)) = ui.find_element_by_name_mut("ResourceFileTree") {
+                file_tree.root_path = "res://".to_string();
+                file_tree.selection_mode = SelectionMode::Single;
+                file_tree.show_extensions = true;
+                file_tree.show_hidden = false;
+                
+                if res_dir.exists() {
+                    if let Err(e) = file_tree.load_from_directory(&res_dir) {
+                        return Err(format!("❌ Failed to load directory: {}", e));
+                    }
+                    let item_count = file_tree.items.len();
+                    
+                    // Register all files with UID registry
+                    for item in file_tree.items.values_mut() {
+                        if !item.is_directory {
+                            item.uid = perro_core::project::uid_registry::get_or_create_uid(&item.path);
+                        }
+                    }
+                    
+                    // Mark for rerender
+                    ui.mark_element_needs_rerender(file_tree_id);
+                    ui.mark_element_needs_layout(file_tree_id);
+                    
+                    Ok(item_count)
+                } else {
+                    Err("❌ Resource directory doesn't exist".to_string())
+                }
+            } else {
+                Err("❌ FileTree element not found in UI".to_string())
+            }
+        });
+        
+        // Print results after closure
+        match result {
+            Ok(count) => api.print(&format!("✅ Loaded {} items from res/", count)),
+            Err(e) => {
+                api.print(&e);
+                return;
+            }
+        }
+        
+        self.file_tree_id = Some(file_tree_id);
+        
+        // Create context menu (initially hidden)
+        let mut context_menu = UIContextMenu::new();
+        context_menu.set_name("FileTreeContextMenu");
+        context_menu.set_items(UIContextMenu::create_file_tree_menu());
+        context_menu.visible = false;
+        context_menu.base.z_index = 1000; // Render on top
+        
+        // Add context menu to UI (as top-level element)
+        let context_menu_element = UIElement::ContextMenu(context_menu);
+        if let Some(menu_id) = api.add_ui_element(ui_node_id, "FileTreeContextMenu", context_menu_element, None) {
+            api.print(&format!("✅ Context menu added with ID: {}", menu_id));
+            self.context_menu_id = Some(menu_id);
+        } else {
+            api.print("❌ Failed to add context menu to UI");
+        }
+        
+        self.file_tree_initialized = true;
+        api.print("✅ File tree UI initialized");
+    }
+    
+    /// Legacy function - now creates file tree instead of buttons
     fn add_resource_buttons_to_ui(&mut self, api: &mut ScriptApi, res_files: &[String]) {
         // Get the UINode (self.id is the UINode's ID)
         let ui_node_id = self.id;
@@ -690,11 +801,144 @@ impl ManagerScript {
     pub fn toggle_ui_editor(&mut self, api: &mut ScriptApi) {
         self.on_ui_editor_pressed(api);
     }
+    
+    /// Handle file tree input (F2, clicks, context menu)
+    fn handle_file_tree_input(&mut self, api: &mut ScriptApi) {
+        let Some(tree_id) = self.file_tree_id else { return };
+        let Some(menu_id) = self.context_menu_id else { return };
+        let ui_node_id = self.id;
+        
+        // Get mouse position (in screen space)
+        let mouse_pos = api.Input.Mouse.get_position();
+        // mouse_pos is already a Vector2, no need to convert
+        let mouse_pos_vec = mouse_pos;
+        
+        // Handle F2 key for rename
+        if api.Input.Keyboard.is_key_pressed("F2") {
+            // Check if there's a selected item (immutable borrow)
+            let selected_id_opt = api.with_ui_node(ui_node_id, |ui| {
+                if let Some(UIElement::FileTree(tree)) = ui.elements.as_ref().and_then(|e| e.get(&tree_id)) {
+                    tree.selected_items.iter().next().copied()
+                } else {
+                    None
+                }
+            });
+            
+            // Start rename if there's a selection
+            if let Some(selected_id) = selected_id_opt {
+                api.print(&format!("🔤 Starting rename for item: {}", selected_id));
+                
+                api.with_ui_node(ui_node_id, |ui| {
+                    if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
+                        tree.start_rename(selected_id);
+                        ui.mark_element_needs_rerender(tree_id);
+                    }
+                });
+            }
+        }
+        
+        // Handle Enter key to commit rename
+        if api.Input.Keyboard.is_key_pressed("Enter") {
+            let rename_active = api.with_ui_node(ui_node_id, |ui| {
+                if let Some(UIElement::FileTree(tree)) = ui.elements.as_ref().and_then(|e| e.get(&tree_id)) {
+                    tree.rename_state.is_some()
+                } else {
+                    false
+                }
+            });
+            
+            if rename_active {
+                api.print("💾 Committing rename...");
+                // TODO: Implement FileTreeManager::commit_rename_with_fs
+                // For now, just commit in-memory
+                let result = api.with_ui_node(ui_node_id, |ui| {
+                    if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
+                        let res = tree.commit_rename();
+                        ui.mark_element_needs_rerender(tree_id);
+                        Some(res)
+                    } else {
+                        None
+                    }
+                });
+                
+                // Print result outside the closure
+                if let Some(res) = result {
+                    match res {
+                        Ok(_) => api.print("✅ Rename committed"),
+                        Err(e) => api.print(&format!("❌ Rename failed: {}", e)),
+                    }
+                }
+            }
+        }
+        
+        // Handle Escape key to cancel rename or close context menu
+        if api.Input.Keyboard.is_key_pressed("Escape") {
+            let mut cancelled_something = false;
+            
+            // Cancel rename if active
+            api.with_ui_node(ui_node_id, |ui| {
+                if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
+                    if tree.rename_state.is_some() {
+                        tree.cancel_rename();
+                        cancelled_something = true;
+                        ui.mark_element_needs_rerender(tree_id);
+                    }
+                }
+            });
+            
+            // Hide context menu if visible
+            api.with_ui_node(ui_node_id, |ui| {
+                if let Some(UIElement::ContextMenu(menu)) = ui.elements.as_mut().and_then(|e| e.get_mut(&menu_id)) {
+                    if menu.visible {
+                        menu.hide();
+                        cancelled_something = true;
+                        ui.mark_element_needs_rerender(menu_id);
+                    }
+                }
+            });
+            
+            if cancelled_something {
+                api.print("🚫 Cancelled");
+            }
+        }
+        
+        // Handle Delete key
+        if api.Input.Keyboard.is_key_pressed("Delete") {
+            let delete_result = api.with_ui_node(ui_node_id, |ui| {
+                if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
+                    if let Some(&selected_id) = tree.selected_items.iter().next() {
+                        // TODO: Implement FileTreeManager::delete_item
+                        // For now, just remove from tree
+                        let item = tree.remove_item(selected_id);
+                        ui.mark_element_needs_rerender(tree_id);
+                        item.map(|i| (selected_id, i.name))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+            
+            // Print result outside the closure
+            if let Some((id, name)) = delete_result {
+                api.print(&format!("🗑️ Deleted item: {}", id));
+                api.print(&format!("✅ Removed from tree: {}", name));
+            }
+        }
+    }
 }
 
 impl Script for ManagerScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("🎮 Manager script initialized");
+        
+        // Initialize UID registry for editor session
+        if let Err(e) = init_project_uid_registry() {
+            api.print(&format!("⚠️ Failed to init UID registry: {}", e));
+        } else {
+            api.print("✅ UID registry initialized");
+        }
         
         // Check if we're opening a project (project_path runtime param set by root script)
         if let Some(project_path) = api.project().get_runtime_param("project_path") {
@@ -725,10 +969,9 @@ impl Script for ManagerScript {
             self.resource_files = res_files.clone();
             self.resources_scanned = true;
             
-            // Add resource buttons to the Resources panel
-            // Get the UINode (self.id is the UINode's ID)
-            api.print("🎨 Adding resource buttons to UI...");
-            self.add_resource_buttons_to_ui(api, &res_files);
+            // DON'T initialize file tree here - it will be deleted by FUR loading
+            // We'll do it in process() after a few frames
+            api.print("🌳 File tree will be initialized after FUR loads...");
         } else {
             api.print("   Press the 'Create Project' button to create a new project");
         }
@@ -794,6 +1037,18 @@ impl Script for ManagerScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
+        // Initialize file tree after a few frames (to let FUR finish loading)
+        if !self.file_tree_initialized && self.frame_count == 3 && !self.current_project_path.is_empty() {
+            api.print("🌳 Initializing file tree UI (after FUR load)...");
+            self.init_file_tree_ui(api, &self.current_project_path.clone());
+        }
+        self.frame_count += 1;
+        
+        // Handle file tree input (F2, mouse clicks, etc.)
+        if self.file_tree_initialized && self.file_tree_id.is_some() && self.context_menu_id.is_some() {
+            self.handle_file_tree_input(api);
+        }
+        
         // Check if we need to compile scripts (only on first update, after window is visible)
         self.check_and_compile_if_needed(api);
         

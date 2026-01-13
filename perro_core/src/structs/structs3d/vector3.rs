@@ -28,19 +28,15 @@ impl<'de> Deserialize<'de> for Vector3 {
 }
 
 impl Vector3 {
+    /// Zero vector constant (0, 0, 0)
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
+    
+    /// One vector constant (1, 1, 1)
+    pub const ONE: Self = Self { x: 1.0, y: 1.0, z: 1.0 };
+
     /// Creates a new `Vector3`.
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
-    }
-
-    /// Zero vector (0, 0, 0)
-    pub fn zero() -> Self {
-        Self { x: 0.0, y: 0.0, z: 0.0 }
-    }
-
-    /// One vector (1, 1, 1)
-    pub fn one() -> Self {
-        Self { x: 1.0, y: 1.0, z: 1.0 }
     }
 
     // Helper to convert to glam for operations

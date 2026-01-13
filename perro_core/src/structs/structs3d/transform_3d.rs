@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Quaternion, Vector3};
 
 fn default_position() -> Vector3 {
-    Vector3::zero()
+    Vector3::ZERO
 }
 fn is_default_position(v: &Vector3) -> bool {
     *v == default_position()
@@ -18,7 +18,7 @@ fn is_default_rotation(q: &Quaternion) -> bool {
 }
 
 fn default_scale() -> Vector3 {
-    Vector3::one()
+    Vector3::ONE
 }
 fn is_default_scale(v: &Vector3) -> bool {
     *v == default_scale()

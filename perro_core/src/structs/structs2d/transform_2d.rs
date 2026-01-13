@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use crate::structs2d::Vector2;
 
 fn default_position() -> Vector2 {
-    Vector2::zero()
+    Vector2::ZERO
 }
 fn is_default_position(v: &Vector2) -> bool {
     *v == default_position()
@@ -16,7 +16,7 @@ fn is_default_rotation(v: &f32) -> bool {
 }
 
 fn default_scale() -> Vector2 {
-    Vector2::one()
+    Vector2::ONE
 }
 fn is_default_scale(v: &Vector2) -> bool {
     *v == default_scale()

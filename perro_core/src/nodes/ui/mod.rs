@@ -8,3 +8,4 @@ pub mod fur_ast;
 pub mod parser;
 
 pub mod ui_renderer;
+pub mod ui_file_tree_manager;

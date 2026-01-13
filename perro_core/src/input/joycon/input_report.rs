@@ -250,7 +250,7 @@ impl InputReport {
                 Vector3::new(accel_x, accel_y, accel_z)
             } else {
                 // Return zeros if data not available
-                Vector3::zero()
+                Vector3::ZERO
             }
         };
 
@@ -276,7 +276,7 @@ impl InputReport {
                 Vector3::new(gyro_x, gyro_y, gyro_z)
             } else {
                 // Return zeros if data not available
-                Vector3::zero()
+                Vector3::ZERO
             }
         };
 
@@ -481,7 +481,7 @@ impl InputReport {
 
             (gyro, Vector3::new(accel_x, accel_y, accel_z))
         } else {
-            (Vector3::zero(), Vector3::zero())
+            (Vector3::ZERO, Vector3::ZERO)
         };
 
         Ok(InputReport {

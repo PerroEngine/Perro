@@ -292,7 +292,7 @@ impl PrimitiveRenderer {
             text_instances_need_rebuild: false,
             
             // OPTIMIZED: Initialize camera culling info
-            camera_position: Vector2::zero(),
+            camera_position: Vector2::ZERO,
             camera_rotation: 0.0,
             camera_zoom: 1.0,
             viewport_enabled: false,

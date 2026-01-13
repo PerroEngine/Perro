@@ -471,9 +471,9 @@ impl JoyConApi {
                             },
                             connected: false,
                             buttons: JoyconButtons::default(),
-                            stick: Vector2::zero(),
-                            gyro: Vector3::zero(),
-                            accel: Vector3::zero(),
+                            stick: Vector2::ZERO,
+                            gyro: Vector3::ZERO,
+                            accel: Vector3::ZERO,
                         }
                     }
                 })
@@ -809,7 +809,7 @@ impl MouseApi {
                 Self::get_position_impl(api)
             }
         } else {
-            crate::structs2d::vector2::Vector2::zero()
+            crate::structs2d::vector2::Vector2::ZERO
         }
     }
 
@@ -818,7 +818,7 @@ impl MouseApi {
             let mgr = mgr.lock().unwrap();
             mgr.get_mouse_position()
         } else {
-            crate::structs2d::vector2::Vector2::zero()
+            crate::structs2d::vector2::Vector2::ZERO
         }
     }
 
@@ -965,11 +965,11 @@ impl MouseApi {
                         window_height,
                     )
                 } else {
-                    crate::structs2d::vector2::Vector2::zero()
+                    crate::structs2d::vector2::Vector2::ZERO
                 }
             }
         } else {
-            crate::structs2d::vector2::Vector2::zero()
+            crate::structs2d::vector2::Vector2::ZERO
         }
     }
 }
@@ -2338,6 +2338,8 @@ impl<'a> ScriptApi<'a> {
             
             // Mark element as needing rerender and layout
             ui.mark_element_needs_layout(element_id);
+            eprintln!("🔧 [add_ui_element] Marked element {} ({}) for layout/rerender", element_name, element_id);
+            eprintln!("🔧 [add_ui_element] needs_rerender now has {} elements", ui.needs_rerender.len());
             
             Some(element_id)
         })

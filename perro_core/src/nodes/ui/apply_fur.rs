@@ -15,6 +15,7 @@ use crate::{
         ui_text_input::UITextInput,
         ui_text_edit::UITextEdit,
         ui_code_edit::UICodeEdit,
+        ui_file_tree::UIFileTree,
     },
     ui_node::UINode,
 };
@@ -1390,6 +1391,54 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
 
             Some(UIElement::CodeEdit(code_edit))
+        }
+
+        "FileTree" => {
+            let mut file_tree = UIFileTree::default();
+            file_tree.set_name(&fur.id);
+            apply_base_attributes(&mut file_tree.base, &fur.attributes);
+
+            // Parse background color
+            if let Some(bg) = fur.attributes.get("bg") {
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    file_tree.background_color = c;
+                }
+            }
+
+            // Parse text color
+            if let Some(text_c) = fur.attributes.get("text-c") {
+                if let Ok(c) = parse_color_with_opacity(text_c) {
+                    file_tree.text_color = c;
+                }
+            }
+
+            // Parse selected/hover colors
+            if let Some(sel_c) = fur.attributes.get("selected-c") {
+                if let Ok(c) = parse_color_with_opacity(sel_c) {
+                    file_tree.selected_color = c;
+                }
+            }
+            if let Some(hover_c) = fur.attributes.get("hover-c") {
+                if let Ok(c) = parse_color_with_opacity(hover_c) {
+                    file_tree.hover_color = c;
+                }
+            }
+
+            // Parse item height
+            if let Some(item_h) = fur.attributes.get("item-h") {
+                if let Ok(h) = item_h.parse::<f32>() {
+                    file_tree.item_height = h;
+                }
+            }
+
+            // Parse indent size
+            if let Some(indent) = fur.attributes.get("indent") {
+                if let Ok(i) = indent.parse::<f32>() {
+                    file_tree.indent_size = i;
+                }
+            }
+
+            Some(UIElement::FileTree(file_tree))
         }
 
         _ => {

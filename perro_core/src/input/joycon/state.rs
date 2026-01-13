@@ -85,9 +85,9 @@ impl Default for JoyconState {
             version: JoyconVersion::V1,
             connected: false,
             buttons: JoyconButtons::default(),
-            stick: Vector2::zero(),
-            gyro: Vector3::zero(),
-            accel: Vector3::zero(),
+            stick: Vector2::ZERO,
+            gyro: Vector3::ZERO,
+            accel: Vector3::ZERO,
         }
     }
 }

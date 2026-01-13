@@ -15,6 +15,8 @@ use crate::{
         ui_text_input::UITextInput,
         ui_text_edit::UITextEdit,
         ui_code_edit::UICodeEdit,
+        ui_file_tree::UIFileTree,
+        ui_context_menu::UIContextMenu,
     },
 };
 
@@ -255,6 +257,8 @@ pub enum UIElement {
     TextInput(UITextInput),
     TextEdit(UITextEdit),
     CodeEdit(UICodeEdit),
+    FileTree(UIFileTree),
+    ContextMenu(UIContextMenu),
 }
 
 // Implement IntoUIInner for each UI element type
@@ -341,6 +345,24 @@ impl IntoUIInner<UICodeEdit> for UIElement {
         match self {
             UIElement::CodeEdit(inner) => inner,
             _ => panic!("Cannot extract UICodeEdit from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<UIFileTree> for UIElement {
+    fn into_ui_inner(self) -> UIFileTree {
+        match self {
+            UIElement::FileTree(inner) => inner,
+            _ => panic!("Cannot extract UIFileTree from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<UIContextMenu> for UIElement {
+    fn into_ui_inner(self) -> UIContextMenu {
+        match self {
+            UIElement::ContextMenu(inner) => inner,
+            _ => panic!("Cannot extract UIContextMenu from UIElement variant {:?}", self),
         }
     }
 }

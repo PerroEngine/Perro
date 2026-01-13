@@ -27,19 +27,15 @@ impl<'de> Deserialize<'de> for Vector2 {
 }
 
 impl Vector2 {
+    /// Zero vector constant (0, 0)
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
+    
+    /// One vector constant (1, 1)
+    pub const ONE: Self = Self { x: 1.0, y: 1.0 };
+
     /// Creates a new 2D vector
     pub fn new(x: f32, y: f32) -> Self {
         Self { x, y }
-    }
-
-    /// (0, 0)
-    pub fn zero() -> Self {
-        Self { x: 0.0, y: 0.0 }
-    }
-
-    /// (1, 1)
-    pub fn one() -> Self {
-        Self { x: 1.0, y: 1.0 }
     }
 
     /// Whether the pivot is the default (0.5, 0.5)

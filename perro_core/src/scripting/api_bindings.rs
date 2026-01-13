@@ -1527,7 +1527,7 @@ impl ApiCodegen for InputApi {
                 let camera_pos = args_strs
                     .get(0)
                     .cloned()
-                    .unwrap_or_else(|| "Vector2::zero()".into());
+                    .unwrap_or_else(|| "Vector2::ZERO".into());
                 let camera_rotation = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
                 let camera_zoom = args_strs.get(2).cloned().unwrap_or_else(|| "1.0".into());
                 let virtual_width = args_strs.get(3).cloned().unwrap_or_else(|| "1920.0".into());

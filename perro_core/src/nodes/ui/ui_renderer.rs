@@ -254,6 +254,11 @@ fn is_effectively_visible(elements: &IndexMap<Uuid, UIElement>, element_id: Uuid
     const MAX_DEPTH: usize = 100; // Prevent infinite loops
     let mut depth = 0;
     
+    // Debug: check if this is a FileTree
+    let is_file_tree = elements.get(&element_id)
+        .map(|e| matches!(e, UIElement::FileTree(_)))
+        .unwrap_or(false);
+    
     loop {
         if depth > MAX_DEPTH {
             // Safety: prevent infinite loops if parent chain is broken
@@ -272,18 +277,28 @@ fn is_effectively_visible(elements: &IndexMap<Uuid, UIElement>, element_id: Uuid
         if let Some(element) = elements.get(&current_id) {
             // If this element is not visible, return false
             if !element.get_visible() {
+                if is_file_tree {
+                    eprintln!("🌳 [visibility] FileTree parent chain broken: {} ({}) is not visible", 
+                        element.get_name(), current_id);
+                }
                 return false;
             }
             // Check parent
             let parent_id = element.get_parent();
             if parent_id.is_nil() {
                 // Reached root, element is visible
+                if is_file_tree {
+                    eprintln!("🌳 [visibility] FileTree is effectively visible (reached root)");
+                }
                 return true;
             }
             current_id = parent_id;
         } else {
             // Element not found, consider it invisible
             eprintln!("⚠️ is_effectively_visible: Element {} not found in elements map", current_id);
+            if is_file_tree {
+                eprintln!("🌳 [visibility] FileTree parent not found: {}", current_id);
+            }
             return false;
         }
     }
@@ -2400,11 +2415,13 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
     // If empty, mark all elements as dirty for initial render
     if ui_node.needs_rerender.is_empty() {
         ui_node.mark_all_needs_rerender();
+        eprintln!("🔧 [render_ui] needs_rerender was empty, marked all elements");
     }
     
     // Collect dirty element IDs before borrowing elements
     let dirty_elements: Vec<Uuid> = ui_node.needs_rerender.iter().copied().collect();
     let needs_layout = !ui_node.needs_layout_recalc.is_empty();
+    eprintln!("🔧 [render_ui] Processing {} dirty elements, needs_layout: {}", dirty_elements.len(), needs_layout);
     
     // If elements don't exist yet, return early - elements will be marked when FUR loads
     // The UINode will be re-added to scene's needs_rerender after FUR loads
@@ -2574,6 +2591,11 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
 
     // Now borrow elements for rendering
     if let Some(elements) = &mut ui_node.elements {
+        eprintln!("🔧 [render_ui] Total elements in map: {}", elements.len());
+        
+        // Count FileTree elements
+        let file_tree_count = elements.values().filter(|e| matches!(e, UIElement::FileTree(_))).count();
+        eprintln!("🌳 [render_ui] FileTree elements found: {}", file_tree_count);
         // OPTIMIZATION: Only check dirty elements for visibility changes
         // instead of checking ALL elements every frame
         let dirty_set: HashSet<Uuid> = dirty_elements.iter().copied().collect();
@@ -2614,6 +2636,8 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                 }
             }
             
+            eprintln!("🔧 [render_ui] Visibility check: {} visible, {} newly invisible", visible.len(), invisible.len());
+            
             (visible, invisible)
         };
         
@@ -2651,9 +2675,40 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
             }
         }
         
+        // DEBUG: Check if FileTree is in the elements map and what its state is
+        eprintln!("🔧 [render_ui] Starting FileTree debug loop...");
+        let mut found_file_tree = false;
+        for (id, element) in elements.iter() {
+            if let UIElement::FileTree(ft) = element {
+                found_file_tree = true;
+                eprintln!("🌳 [DEBUG] FileTree exists: id={}, name={}, visible={}, size={:?}, parent={:?}", 
+                    id, ft.base.name, ft.base.visible, ft.base.size, ft.base.parent_id);
+                eprintln!("🌳 [DEBUG] FileTree global_transform: {:?}", ft.base.global_transform);
+                eprintln!("🌳 [DEBUG] FileTree is in visibility_cache: {}", visibility_cache.contains(id));
+                
+                // Check parent visibility
+                if !ft.base.parent_id.is_nil() {
+                    if let Some(parent) = elements.get(&ft.base.parent_id) {
+                        eprintln!("🌳 [DEBUG] FileTree parent: name={}, visible={}", 
+                            parent.get_name(), parent.get_visible());
+                    } else {
+                        eprintln!("🌳 [DEBUG] FileTree parent NOT FOUND in elements map!");
+                    }
+                }
+            }
+        }
+        if !found_file_tree {
+            eprintln!("🌳 [DEBUG] NO FileTree found in elements map!");
+        }
+        
         // Now render only the visible elements (mutable borrow)
+        eprintln!("🔧 [render_ui] About to render {} visible elements", visible_element_ids.len());
         for element_id in visible_element_ids {
             if let Some(element) = elements.get_mut(&element_id) {
+                // Check if this is the file tree for debugging
+                if let UIElement::FileTree(_) = element {
+                    eprintln!("🌳 [render_ui] Found FileTree in visible list!");
+                }
                 match element {
                     UIElement::BoxContainer(_) => { /* no-op */ }
                     UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
@@ -2856,6 +2911,16 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                             gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
+                    UIElement::FileTree(file_tree) => {
+                        eprintln!("🌳 [render_ui] Rendering FileTree {} with {} items (visible: {})", 
+                            file_tree.base.name, 
+                            file_tree.items.len(),
+                            file_tree.base.visible);
+                        render_file_tree(file_tree, gfx, timestamp);
+                    }
+                    UIElement::ContextMenu(context_menu) => {
+                        render_context_menu(context_menu, gfx, timestamp);
+                    }
                 }
             }
         }
@@ -2863,6 +2928,298 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
     
     // Clear dirty flags after rendering (outside the elements borrow)
     ui_node.clear_rerender_flags();
+}
+
+fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gfx: &mut Graphics, timestamp: u64) {
+    use crate::ui_elements::ui_file_tree::UIFileTree;
+    
+    // Render background panel
+    let bg_rect_id = uuid::Uuid::new_v5(&file_tree.base.id, b"background");
+    gfx.renderer_prim.queue_rect(
+        bg_rect_id,
+        crate::rendering::renderer_prim::RenderLayer::UI,
+        file_tree.base.global_transform,
+        file_tree.base.size,
+        file_tree.base.pivot, // Use actual pivot from base element
+        file_tree.background_color,
+        None, // No corner radius for file tree background
+        0.0, // border_thickness
+        false, // is_border
+        file_tree.base.z_index,
+        timestamp,
+    );
+    
+    // Get visible items in display order
+    let visible_items = file_tree.get_visible_items();
+    
+    // Calculate top-left corner based on pivot
+    // When pivot is (0.5, 0.5), position is at center, so top-left is position - (size * pivot)
+    let top_left_x = file_tree.base.global_transform.position.x - (file_tree.base.size.x * file_tree.base.pivot.x);
+    let top_left_y = file_tree.base.global_transform.position.y - (file_tree.base.size.y * file_tree.base.pivot.y);
+    
+    // Calculate item positions
+    let item_start_y = top_left_y + 5.0;
+    let mut current_y = item_start_y;
+    
+    for item_id in visible_items {
+        if let Some(item) = file_tree.get_item(item_id) {
+            // Calculate indentation based on depth
+            let indent = item.depth as f32 * file_tree.indent_size;
+            let item_x = top_left_x + indent + 5.0;
+            
+            // Check if this item is selected
+            let is_selected = file_tree.is_selected(item_id);
+            
+            // Render selection highlight if selected
+            if is_selected {
+                let selection_id = uuid::Uuid::new_v5(&item_id, b"selection");
+                let selection_pos = crate::Vector2::new(
+                    top_left_x,
+                    current_y
+                );
+                let selection_size = crate::Vector2::new(
+                    file_tree.base.size.x,
+                    file_tree.item_height
+                );
+                let selection_transform = crate::Transform2D {
+                    position: selection_pos,
+                    rotation: 0.0,
+                    scale: crate::Vector2::ONE,
+                };
+                gfx.renderer_prim.queue_rect(
+                    selection_id,
+                    crate::rendering::renderer_prim::RenderLayer::UI,
+                    selection_transform,
+                    selection_size,
+                    crate::Vector2::ZERO, // pivot
+                    file_tree.selected_color,
+                    None, // corner_radius
+                    0.0, // border_thickness
+                    false, // is_border
+                    file_tree.base.z_index + 1,
+                    timestamp,
+                );
+            }
+            
+            // Render folder expand/collapse indicator
+            let mut text_offset = 0.0;
+            if item.is_directory {
+                let indicator = if item.is_expanded { "▼ " } else { "▶ " };
+                let indicator_id = uuid::Uuid::new_v5(&item_id, b"indicator");
+                let indicator_pos = crate::Vector2::new(item_x, current_y + file_tree.item_height * 0.5);
+                let indicator_transform = crate::Transform2D {
+                    position: indicator_pos,
+                    rotation: 0.0,
+                    scale: crate::Vector2::ONE,
+                };
+                
+                gfx.renderer_ui.queue_text(
+                    &mut gfx.renderer_prim,
+                    indicator_id,
+                    indicator,
+                    12.0, // Font size for indicator
+                    indicator_transform,
+                    crate::Vector2::new(0.0, 0.5), // pivot - centered vertically
+                    file_tree.text_color,
+                    file_tree.base.z_index + 2,
+                    timestamp,
+                );
+                text_offset = 15.0; // Space for indicator
+            }
+            
+            // Render item text (name)
+            let display_name = if file_tree.show_extensions || item.is_directory {
+                item.name.clone()
+            } else {
+                // Strip extension if not showing
+                item.name.split('.').next().unwrap_or(&item.name).to_string()
+            };
+            
+            let text_id = uuid::Uuid::new_v5(&item_id, b"text");
+            let text_pos = crate::Vector2::new(
+                item_x + text_offset,
+                current_y + file_tree.item_height * 0.5
+            );
+            let text_transform = crate::Transform2D {
+                position: text_pos,
+                rotation: 0.0,
+                scale: crate::Vector2::ONE,
+            };
+            
+            gfx.renderer_ui.queue_text(
+                &mut gfx.renderer_prim,
+                text_id,
+                &display_name,
+                14.0, // Font size for item name
+                text_transform,
+                crate::Vector2::new(0.0, 0.5), // pivot - centered vertically
+                file_tree.text_color,
+                file_tree.base.z_index + 2,
+                timestamp,
+            );
+            
+            current_y += file_tree.item_height;
+            
+            // Stop if we've exceeded the visible area (compare against bottom edge)
+            let bottom_y = top_left_y + file_tree.base.size.y;
+            if current_y > bottom_y {
+                break;
+            }
+        }
+    }
+}
+
+fn render_context_menu(menu: &crate::ui_elements::ui_context_menu::UIContextMenu, gfx: &mut Graphics, timestamp: u64) {
+    if !menu.visible {
+        return;
+    }
+    
+    let width = menu.calculate_width();
+    let height = menu.calculate_height();
+    
+    // Render background
+    let bg_id = uuid::Uuid::new_v5(&menu.base.id, b"background");
+    let menu_transform = crate::Transform2D {
+        position: menu.position,
+        rotation: 0.0,
+        scale: crate::Vector2::ONE,
+    };
+    gfx.renderer_prim.queue_rect(
+        bg_id,
+        crate::rendering::renderer_prim::RenderLayer::UI,
+        menu_transform,
+        crate::Vector2::new(width, height),
+        crate::Vector2::ZERO, // pivot
+        menu.background_color,
+        Some(crate::ui_elements::ui_container::CornerRadius::uniform(4.0)), // Slight rounding for context menu
+        0.0, // border_thickness
+        false, // is_border
+        menu.base.z_index,
+        timestamp,
+    );
+    
+    // Render border
+    let border_id = uuid::Uuid::new_v5(&menu.base.id, b"border");
+    gfx.renderer_prim.queue_rect(
+        border_id,
+        crate::rendering::renderer_prim::RenderLayer::UI,
+        menu_transform,
+        crate::Vector2::new(width, height),
+        crate::Vector2::ZERO, // pivot
+        menu.border_color,
+        Some(crate::ui_elements::ui_container::CornerRadius::uniform(4.0)), // corner_radius
+        1.0, // border_thickness
+        true, // is_border
+        menu.base.z_index,
+        timestamp,
+    );
+    
+    // Render menu items
+    let separator_height = 8.0;
+    let mut current_y = menu.position.y + menu.padding;
+    
+    for (i, item) in menu.items.iter().enumerate() {
+        if item.is_separator {
+            // Render separator line
+            let sep_id = uuid::Uuid::new_v5(&menu.base.id, format!("sep_{}", i).as_bytes());
+            let sep_y = current_y + separator_height * 0.5;
+            let sep_transform = crate::Transform2D {
+                position: crate::Vector2::new(menu.position.x + menu.padding, sep_y),
+                rotation: 0.0,
+                scale: crate::Vector2::ONE,
+            };
+            gfx.renderer_prim.queue_rect(
+                sep_id,
+                crate::rendering::renderer_prim::RenderLayer::UI,
+                sep_transform,
+                crate::Vector2::new(width - menu.padding * 2.0, 1.0),
+                crate::Vector2::ZERO, // pivot
+                menu.border_color,
+                None, // corner_radius
+                0.0, // border_thickness
+                false, // is_border
+                menu.base.z_index + 1,
+                timestamp,
+            );
+            current_y += separator_height;
+        } else {
+            // Render hover highlight
+            if menu.hovered_item == Some(i) && item.enabled {
+                let hover_id = uuid::Uuid::new_v5(&menu.base.id, format!("hover_{}", i).as_bytes());
+                let hover_transform = crate::Transform2D {
+                    position: crate::Vector2::new(menu.position.x + 2.0, current_y),
+                    rotation: 0.0,
+                    scale: crate::Vector2::ONE,
+                };
+                gfx.renderer_prim.queue_rect(
+                    hover_id,
+                    crate::rendering::renderer_prim::RenderLayer::UI,
+                    hover_transform,
+                    crate::Vector2::new(width - 4.0, menu.item_height),
+                    crate::Vector2::ZERO, // pivot
+                    menu.hover_color,
+                    Some(crate::ui_elements::ui_container::CornerRadius::uniform(2.0)), // corner_radius
+                    0.0, // border_thickness
+                    false, // is_border
+                    menu.base.z_index + 1,
+                    timestamp,
+                );
+            }
+            
+            // Render item text
+            let text_color = if item.enabled { menu.text_color } else { menu.disabled_color };
+            let text_id = uuid::Uuid::new_v5(&menu.base.id, format!("text_{}", i).as_bytes());
+            let text_pos = crate::Vector2::new(
+                menu.position.x + menu.padding * 2.0,
+                current_y + menu.item_height * 0.5
+            );
+            let text_transform = crate::Transform2D {
+                position: text_pos,
+                rotation: 0.0,
+                scale: crate::Vector2::ONE,
+            };
+            
+            gfx.renderer_ui.queue_text(
+                &mut gfx.renderer_prim,
+                text_id,
+                &item.label,
+                menu.font_size,
+                text_transform,
+                crate::Vector2::new(0.0, 0.5), // pivot - centered vertically
+                text_color,
+                menu.base.z_index + 2,
+                timestamp,
+            );
+            
+            // Render shortcut hint if present
+            if let Some(ref shortcut) = item.shortcut {
+                let shortcut_id = uuid::Uuid::new_v5(&menu.base.id, format!("shortcut_{}", i).as_bytes());
+                let shortcut_pos = crate::Vector2::new(
+                    menu.position.x + width - menu.padding * 2.0 - 50.0,
+                    current_y + menu.item_height * 0.5
+                );
+                let shortcut_transform = crate::Transform2D {
+                    position: shortcut_pos,
+                    rotation: 0.0,
+                    scale: crate::Vector2::ONE,
+                };
+                
+                gfx.renderer_ui.queue_text(
+                    &mut gfx.renderer_prim,
+                    shortcut_id,
+                    shortcut,
+                    menu.font_size * 0.9,
+                    shortcut_transform,
+                    crate::Vector2::new(0.0, 0.5), // pivot - centered vertically
+                    menu.disabled_color, // Dimmed color for shortcuts
+                    menu.base.z_index + 2,
+                    timestamp,
+                );
+            }
+            
+            current_y += menu.item_height;
+        }
+    }
 }
 
 fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
