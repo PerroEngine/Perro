@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use winit::keyboard::KeyCode;
 
 use crate::{
     fur_ast::FurAnchor,
     impl_ui_element,
     structs2d::Vector2,
-    ui_element::BaseUIElement,
+    ui_element::{BaseElement, BaseUIElement, UIElementUpdate, UIUpdateContext, is_point_in_rounded_rect},
     ui_elements::{
         ui_container::UIPanel,
         ui_text::UIText,
@@ -291,6 +292,84 @@ impl UICodeEdit {
     
     /// Paste text from clipboard
     pub fn paste_from_clipboard(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.text_edit.paste_from_clipboard()
+        let result = self.text_edit.paste_from_clipboard();
+        self.update_line_numbers();
+        result
+    }
+}
+
+impl UIElementUpdate for UICodeEdit {
+    fn internal_render_update(&mut self, ctx: &mut UIUpdateContext) -> bool {
+        if !self.get_visible() {
+            return false;
+        }
+
+        let was_hovered = self.is_hovered;
+        let was_focused = self.is_focused;
+        
+        // Adjust mouse position to account for line number panel offset
+        // The text_edit is offset by line_number_width, so we need to adjust the mouse position
+        let text_edit_pos = self.text_edit.panel.base.global_transform.position;
+        let code_edit_pos = self.global_transform.position;
+        let offset_x = text_edit_pos.x - code_edit_pos.x;
+        
+        let size = *self.get_size();
+        let scaled_size = Vector2::new(
+            size.x * self.global_transform.scale.x,
+            size.y * self.global_transform.scale.y,
+        );
+        
+        let center = self.global_transform.position;
+        let corner_radius = self.panel_props().corner_radius;
+        let local_pos = Vector2::new(
+            ctx.mouse_pos.x - center.x,
+            ctx.mouse_pos.y - center.y,
+        );
+        
+        let is_hovered = is_point_in_rounded_rect(
+            local_pos,
+            scaled_size,
+            corner_radius,
+        );
+        
+        self.is_hovered = is_hovered;
+        
+        // Handle focus requests at code edit level
+        if is_hovered && ctx.mouse_just_pressed && !was_focused {
+            if let Some(ref mut request_focus) = ctx.request_focus {
+                let _ = request_focus(self.get_id());
+            }
+            self.is_focused = true;
+        }
+        
+        // Update is_focused from context
+        let is_focused = ctx.focused_element == Some(self.get_id());
+        self.is_focused = is_focused;
+        
+        // Adjust mouse position in the context for text_edit
+        // We need to create wrapper closures that borrow from ctx
+        // Since we can't move the closures, we'll adjust the mouse position directly in ctx
+        let original_mouse_x = ctx.mouse_pos.x;
+        ctx.mouse_pos.x -= offset_x;
+        
+        // Update text_edit with adjusted context
+        let text_edit_needs_rerender = self.text_edit.internal_render_update(ctx);
+        
+        // Restore original mouse position
+        ctx.mouse_pos.x = original_mouse_x;
+        
+        // Sync focus state back from text_edit
+        self.is_focused = self.text_edit.is_focused;
+        
+        // Update line numbers if text changed (this is handled by text_edit's mark_layout_dirty)
+        // We'll update line numbers in the render phase if needed
+        
+        let state_changed = (is_hovered != was_hovered) || (self.is_focused != self.text_edit.is_focused);
+        if state_changed || text_edit_needs_rerender {
+            (ctx.mark_dirty)(self.get_id());
+            (ctx.mark_ui_dirty)();
+        }
+        
+        state_changed || text_edit_needs_rerender
     }
 }

@@ -243,6 +243,174 @@ pub trait IntoUIInner<T> {
     fn into_ui_inner(self) -> T;
 }
 
+/// Context passed to UI elements during update
+/// Contains shared state needed for element updates
+pub struct UIUpdateContext<'a> {
+    /// Mouse position in virtual UI space
+    pub mouse_pos: crate::structs2d::Vector2,
+    /// Whether mouse button is currently pressed
+    pub mouse_pressed: bool,
+    /// Whether mouse button was just pressed this frame
+    pub mouse_just_pressed: bool,
+    /// Whether mouse button is currently held down
+    pub mouse_is_held: bool,
+    /// Script API for emitting signals and accessing scene
+    pub api: &'a mut crate::scripting::api::ScriptApi<'a>,
+    /// Currently focused element ID (for text inputs, etc.)
+    pub focused_element: Option<uuid::Uuid>,
+    /// Callback to mark an element as needing rerender
+    /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
+    pub mark_dirty: Box<dyn FnMut(uuid::Uuid) + 'static>,
+    /// Callback to mark UI node as needing rerender
+    /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
+    pub mark_ui_dirty: Box<dyn FnMut() + 'static>,
+    /// Callback to mark an element as needing layout recalculation
+    /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
+    pub mark_layout_dirty: Box<dyn FnMut(uuid::Uuid) + 'static>,
+    /// Whether this element is currently focused
+    pub is_focused: bool,
+    /// Callback to request focus for this element (returns the previously focused element ID)
+    /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
+    pub request_focus: Option<Box<dyn FnMut(uuid::Uuid) -> Option<uuid::Uuid> + 'static>>,
+}
+
+impl<'a> UIUpdateContext<'a> {
+    /// Check if a key is currently pressed
+    pub fn is_key_pressed(&self, key: winit::keyboard::KeyCode) -> bool {
+        if let Some(input_mgr) = self.api.scene.get_input_manager() {
+            let mgr = input_mgr.lock().unwrap();
+            mgr.is_key_pressed(key)
+        } else {
+            false
+        }
+    }
+    
+    /// Check if a key was just triggered this frame
+    pub fn is_key_triggered(&mut self, key: winit::keyboard::KeyCode) -> bool {
+        if let Some(input_mgr) = self.api.scene.get_input_manager() {
+            let mut mgr = input_mgr.lock().unwrap();
+            mgr.is_key_triggered(key)
+        } else {
+            false
+        }
+    }
+    
+    /// Get text input from IME and clear the buffer
+    pub fn get_text_input(&mut self) -> String {
+        if let Some(input_mgr) = self.api.scene.get_input_manager() {
+            let mut mgr = input_mgr.lock().unwrap();
+            let text = mgr.get_text_input().to_string();
+            mgr.clear_text_input();
+            text
+        } else {
+            String::new()
+        }
+    }
+    
+    /// Check if right mouse button is pressed
+    pub fn is_right_mouse_pressed(&self) -> bool {
+        if let Some(input_mgr) = self.api.scene.get_input_manager() {
+            let mgr = input_mgr.lock().unwrap();
+            use crate::input::manager::MouseButton;
+            mgr.is_mouse_button_pressed(MouseButton::Right)
+        } else {
+            false
+        }
+    }
+}
+
+/// Trait for UI elements that can update their internal state
+/// Each element type implements this to handle its own update logic
+pub trait UIElementUpdate {
+    /// Update the element's internal state (mouse interactions, keyboard input, etc.)
+    /// Returns true if the element needs to be rerendered
+    fn internal_render_update(&mut self, ctx: &mut UIUpdateContext) -> bool;
+}
+
+/// Check if a point (in local space, centered at origin) is inside a rounded rectangle
+/// This accounts for corner radius and handles "full" rounding (circular/pill-shaped buttons)
+pub fn is_point_in_rounded_rect(
+    local_pos: Vector2,
+    size: Vector2,
+    corner_radius: crate::ui_elements::ui_container::CornerRadius,
+) -> bool {
+    let half_w = size.x * 0.5;
+    let half_h = size.y * 0.5;
+    
+    // Rounding values are normalized (0.0 to 1.0), where 1.0 = fully rounded
+    // The maximum possible radius is the minimum of half width and half height
+    let max_radius = half_w.min(half_h);
+    
+    // Convert normalized rounding values to actual pixel radii
+    // Values >= 0.99 are treated as "full" (100% of max radius)
+    // Other values are treated as percentages of max radius
+    let tl_radius = if corner_radius.top_left >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.top_left * max_radius
+    };
+    let tr_radius = if corner_radius.top_right >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.top_right * max_radius
+    };
+    let br_radius = if corner_radius.bottom_right >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.bottom_right * max_radius
+    };
+    let bl_radius = if corner_radius.bottom_left >= 0.99 {
+        max_radius
+    } else {
+        corner_radius.bottom_left * max_radius
+    };
+    
+    // Quick AABB rejection test
+    if local_pos.x.abs() > half_w || local_pos.y.abs() > half_h {
+        return false;
+    }
+    
+    let abs_x = local_pos.x.abs();
+    let abs_y = local_pos.y.abs();
+    
+    // Determine which corner region we're in (if any)
+    let (corner_radius, corner_center_x, corner_center_y) = if local_pos.x >= 0.0 && local_pos.y >= 0.0 {
+        // Top-right corner
+        (tr_radius, half_w - tr_radius, half_h - tr_radius)
+    } else if local_pos.x >= 0.0 && local_pos.y < 0.0 {
+        // Bottom-right corner
+        (br_radius, half_w - br_radius, -(half_h - br_radius))
+    } else if local_pos.x < 0.0 && local_pos.y >= 0.0 {
+        // Top-left corner
+        (tl_radius, -(half_w - tl_radius), half_h - tl_radius)
+    } else {
+        // Bottom-left corner
+        (bl_radius, -(half_w - bl_radius), -(half_h - bl_radius))
+    };
+    
+    // Check if point is in the central rectangular area (not in corner region)
+    // A point is in the central area if it's not in any corner's rounded region
+    let in_corner_region = abs_x > (half_w - corner_radius) && abs_y > (half_h - corner_radius);
+    
+    if !in_corner_region {
+        // Point is in the central rectangular area
+        return true;
+    }
+    
+    // Point is in a corner region - check if it's inside the corner's circular arc
+    // If no rounding on this corner, it's inside (shouldn't happen if in_corner_region is true, but be safe)
+    if corner_radius <= 0.0 {
+        return true;
+    }
+    
+    // Check if point is inside the corner's circular arc
+    let dx = local_pos.x - corner_center_x;
+    let dy = local_pos.y - corner_center_y;
+    let dist_sq = dx * dx + dy * dy;
+    
+    dist_sq <= corner_radius * corner_radius
+}
+
 /// Enum of all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[enum_dispatch(BaseElement)]

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use winit::keyboard::KeyCode;
 
 use crate::{
     fur_ast::FurAnchor,
     impl_ui_element,
     structs2d::Vector2,
-    ui_element::BaseUIElement,
+    ui_element::{BaseElement, BaseUIElement, UIElementUpdate, UIUpdateContext, is_point_in_rounded_rect},
     ui_elements::{
         ui_container::UIPanel,
         ui_text::UIText,
@@ -393,5 +394,286 @@ impl UITextInput {
             self.insert_text_at_cursor(&text);
         }
         Ok(())
+    }
+    
+    /// Calculate cursor position from mouse click position
+    fn calculate_cursor_from_mouse(&mut self, mouse_pos: Vector2) -> usize {
+        let full_text = &self.text.props.content;
+        let font_size = self.text.props.font_size;
+
+        use crate::nodes::ui::ui_renderer::calculate_character_positions;
+        let new_positions = calculate_character_positions(full_text, font_size);
+
+        self.cached_char_positions = new_positions;
+        self.cached_text_width = self.cached_char_positions.last().copied().unwrap_or(0.0);
+        
+        let panel_width = self.panel.base.size.x;
+        let full_text_width = self.cached_text_width;
+        
+        let click_x_in_text = if full_text_width <= panel_width {
+            let panel_center_x = self.panel.global_transform.position.x;
+            let text_start_x = panel_center_x - (full_text_width / 2.0);
+            mouse_pos.x - text_start_x
+        } else {
+            let panel_left = self.panel.base.global_transform.position.x 
+                - (self.panel.base.size.x * self.panel.base.pivot.x);
+            let side_padding = 5.0;
+            let text_start_x = panel_left + side_padding;
+            (mouse_pos.x - text_start_x) + self.scroll_offset
+        };
+        
+        let mut cursor_pos = 0;
+        if !self.cached_char_positions.is_empty() && click_x_in_text > 0.0 {
+            for (i, &char_end_x) in self.cached_char_positions.iter().enumerate() {
+                let char_start_x = if i == 0 { 0.0 } else { self.cached_char_positions[i - 1] };
+                let char_mid_x = (char_start_x + char_end_x) / 2.0;
+                
+                if click_x_in_text <= char_mid_x {
+                    cursor_pos = i;
+                    break;
+                } else if i == self.cached_char_positions.len() - 1 {
+                    cursor_pos = i + 1;
+                } else if click_x_in_text <= self.cached_char_positions[i] {
+                    cursor_pos = i + 1;
+                    break;
+                }
+            }
+        }
+        
+        cursor_pos
+    }
+}
+
+impl UIElementUpdate for UITextInput {
+    fn internal_render_update(&mut self, ctx: &mut UIUpdateContext) -> bool {
+        if !self.get_visible() {
+            return false;
+        }
+
+        let mut needs_rerender = false;
+        let was_hovered = self.is_hovered;
+        let was_focused = self.is_focused;
+        
+        let size = *self.get_size();
+        let scaled_size = Vector2::new(
+            size.x * self.global_transform.scale.x,
+            size.y * self.global_transform.scale.y,
+        );
+        
+        let center = self.global_transform.position;
+        let corner_radius = self.panel_props().corner_radius;
+        let local_pos = Vector2::new(
+            ctx.mouse_pos.x - center.x,
+            ctx.mouse_pos.y - center.y,
+        );
+        
+        let is_hovered = is_point_in_rounded_rect(
+            local_pos,
+            scaled_size,
+            corner_radius,
+        );
+        
+        self.is_hovered = is_hovered;
+        
+        // Handle dragging even when mouse is outside (for continuous selection)
+        if self.is_dragging && was_focused && ctx.mouse_is_held {
+            // Mouse is being dragged - update selection
+            let cursor_pos = self.calculate_cursor_from_mouse(ctx.mouse_pos);
+            self.cursor_position = cursor_pos;
+            self.update_selection_to_cursor();
+            needs_rerender = true;
+        }
+        
+        // Handle mouse clicks
+        if is_hovered {
+            if ctx.mouse_just_pressed && !was_focused {
+                // Request focus
+                if let Some(ref mut request_focus) = ctx.request_focus {
+                    let _ = request_focus(self.get_id());
+                }
+                // Clear selection when focusing
+                self.clear_selection();
+                self.is_focused = true;
+            } else if ctx.mouse_just_pressed && was_focused {
+                // New click - position cursor and prepare for potential drag
+                self.is_dragging = true;
+                let cursor_pos = self.calculate_cursor_from_mouse(ctx.mouse_pos);
+                self.cursor_position = cursor_pos;
+                self.start_selection();
+                self.cursor_blink_timer = 0.0;
+                needs_rerender = true;
+            }
+        }
+        
+        // Stop dragging when mouse is released
+        if !ctx.mouse_is_held && self.is_dragging {
+            self.is_dragging = false;
+            // Clear selection if it's empty (just a click, not a drag)
+            if let Some((start, end)) = self.get_selection_range() {
+                if start == end {
+                    self.clear_selection();
+                }
+            }
+        }
+        
+        // Handle unfocus when clicking outside
+        if ctx.mouse_just_pressed && was_focused && !is_hovered {
+            self.is_focused = false;
+            self.clear_selection();
+            needs_rerender = true;
+            // Clear focus in UINode (will be handled by UINode after all updates)
+        }
+        
+        // Handle keyboard input if focused
+        if ctx.is_focused {
+            let mut text_changed = false;
+            
+            // Check for Ctrl/Cmd modifier
+            let ctrl_pressed = ctx.is_key_pressed(KeyCode::ControlLeft) || 
+                             ctx.is_key_pressed(KeyCode::ControlRight) ||
+                             ctx.is_key_pressed(KeyCode::SuperLeft) ||
+                             ctx.is_key_pressed(KeyCode::SuperRight);
+            
+            // Handle text input from IME (skip if Ctrl is pressed)
+            let text_to_insert = ctx.get_text_input();
+            if !text_to_insert.is_empty() && !ctrl_pressed {
+                self.insert_text_at_cursor(&text_to_insert);
+                self.cursor_blink_timer = 0.0;
+                text_changed = true;
+                needs_rerender = true;
+            }
+            
+            // Handle Ctrl+A (Select All)
+            if ctrl_pressed && ctx.is_key_triggered(KeyCode::KeyA) {
+                self.select_all();
+                self.cursor_blink_timer = 0.0;
+                needs_rerender = true;
+            }
+            // Handle Ctrl+C (Copy)
+            else if ctrl_pressed && ctx.is_key_triggered(KeyCode::KeyC) {
+                let _ = self.copy_to_clipboard();
+            }
+            // Handle Ctrl+X (Cut)
+            else if ctrl_pressed && ctx.is_key_triggered(KeyCode::KeyX) {
+                if let Ok(()) = self.cut_to_clipboard() {
+                    text_changed = true;
+                    self.cursor_blink_timer = 0.0;
+                    needs_rerender = true;
+                }
+            }
+            // Handle Ctrl+V (Paste)
+            else if ctrl_pressed && ctx.is_key_triggered(KeyCode::KeyV) {
+                if let Ok(()) = self.paste_from_clipboard() {
+                    text_changed = true;
+                    self.cursor_blink_timer = 0.0;
+                    needs_rerender = true;
+                }
+            }
+            
+            // Handle special keys
+            if ctx.is_key_triggered(KeyCode::Backspace) {
+                if self.has_selection() {
+                    self.delete_selection();
+                } else {
+                    self.delete_backward();
+                }
+                self.cursor_blink_timer = 0.0;
+                text_changed = true;
+                needs_rerender = true;
+            }
+            if ctx.is_key_triggered(KeyCode::Delete) {
+                if self.has_selection() {
+                    self.delete_selection();
+                } else {
+                    self.delete_forward();
+                }
+                self.cursor_blink_timer = 0.0;
+                text_changed = true;
+                needs_rerender = true;
+            }
+            
+            // Check if shift is pressed for selection extension
+            let shift_pressed = ctx.is_key_pressed(KeyCode::ShiftLeft) || 
+                              ctx.is_key_pressed(KeyCode::ShiftRight);
+            
+            if ctx.is_key_triggered(KeyCode::ArrowLeft) {
+                if shift_pressed {
+                    if !self.has_selection() {
+                        self.start_selection();
+                    }
+                    self.move_cursor_left();
+                    self.update_selection_to_cursor();
+                } else {
+                    self.clear_selection();
+                    self.move_cursor_left();
+                }
+                self.cursor_blink_timer = 0.0;
+                needs_rerender = true;
+            }
+            if ctx.is_key_triggered(KeyCode::ArrowRight) {
+                if shift_pressed {
+                    if !self.has_selection() {
+                        self.start_selection();
+                    }
+                    self.move_cursor_right();
+                    self.update_selection_to_cursor();
+                } else {
+                    self.clear_selection();
+                    self.move_cursor_right();
+                }
+                self.cursor_blink_timer = 0.0;
+                needs_rerender = true;
+            }
+            if ctx.is_key_triggered(KeyCode::Home) {
+                if shift_pressed {
+                    if !self.has_selection() {
+                        self.start_selection();
+                    }
+                    self.move_cursor_home();
+                    self.update_selection_to_cursor();
+                } else {
+                    self.clear_selection();
+                    self.move_cursor_home();
+                }
+                self.cursor_blink_timer = 0.0;
+                needs_rerender = true;
+            }
+            if ctx.is_key_triggered(KeyCode::End) {
+                if shift_pressed {
+                    if !self.has_selection() {
+                        self.start_selection();
+                    }
+                    self.move_cursor_end();
+                    self.update_selection_to_cursor();
+                } else {
+                    self.clear_selection();
+                    self.move_cursor_end();
+                }
+                self.cursor_blink_timer = 0.0;
+                needs_rerender = true;
+            }
+            
+            // Update cursor blink
+            let was_visible = self.is_cursor_visible();
+            self.update_cursor_blink(0.016);
+            let is_visible = self.is_cursor_visible();
+            
+            if was_visible != is_visible {
+                needs_rerender = true;
+            }
+
+            // If text changed, mark for layout recalculation
+            if text_changed {
+                (ctx.mark_layout_dirty)(self.get_id());
+            }
+        }
+        
+        let state_changed = (is_hovered != was_hovered) || (self.is_focused != was_focused);
+        if state_changed || needs_rerender {
+            (ctx.mark_dirty)(self.get_id());
+            (ctx.mark_ui_dirty)();
+        }
+        
+        state_changed || needs_rerender
     }
 }

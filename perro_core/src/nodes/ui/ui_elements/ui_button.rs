@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     fur_ast::FurAnchor,
     impl_ui_element,
+    prelude::string_to_u64,
     structs2d::Vector2,
-    ui_element::BaseUIElement,
+    ui_element::{BaseElement, BaseUIElement, UIElementUpdate, UIUpdateContext, is_point_in_rounded_rect},
     ui_elements::{
         ui_container::UIPanel,
         ui_text::UIText,
@@ -159,5 +160,79 @@ impl UIButton {
     /// Get mutable text props
     pub fn text_props_mut(&mut self) -> &mut crate::ui_elements::ui_text::TextProps {
         &mut self.text.props
+    }
+}
+
+impl UIElementUpdate for UIButton {
+    fn internal_render_update(&mut self, ctx: &mut UIUpdateContext) -> bool {
+        if !self.get_visible() {
+            return false;
+        }
+
+        let was_hovered = self.is_hovered;
+        let was_pressed = self.is_pressed;
+
+        // Size is stored as full size (not half-extents)
+        // The renderer treats it as full size and halves it internally
+        let size = *self.get_size();
+        // Apply scale from transform
+        let scaled_size = Vector2::new(
+            size.x * self.global_transform.scale.x,
+            size.y * self.global_transform.scale.y,
+        );
+
+        let center = self.global_transform.position;
+        let corner_radius = self.panel_props().corner_radius;
+        
+        // Convert mouse position to button's local space (centered at origin)
+        let local_pos = Vector2::new(
+            ctx.mouse_pos.x - center.x,
+            ctx.mouse_pos.y - center.y,
+        );
+        
+        // Use rounded rectangle hit test
+        let is_hovered = is_point_in_rounded_rect(
+            local_pos,
+            scaled_size,
+            corner_radius,
+        );
+
+        self.is_hovered = is_hovered;
+        self.is_pressed = is_hovered && ctx.mouse_pressed;
+        
+        let name = self.get_name();
+        
+        // Check if state changed
+        let state_changed = (is_hovered != was_hovered) || (self.is_pressed != was_pressed);
+        
+        if is_hovered != was_hovered {
+            let signal = if is_hovered {
+                format!("{}_Hovered", name)
+            } else {
+                format!("{}_NotHovered", name)
+            };
+            ctx.api.emit_signal_id(string_to_u64(&signal), &[]);
+        }
+        
+        if self.is_pressed && !was_pressed {
+            ctx.api.emit_signal_id(
+                string_to_u64(&format!("{}_Pressed", name)),
+                &[],
+            );
+        } else if !self.is_pressed && was_pressed && was_hovered {
+            ctx.api.emit_signal_id(
+                string_to_u64(&format!("{}_Released", name)),
+                &[],
+            );
+        }
+        
+        self.was_pressed_last_frame = self.is_pressed;
+        
+        if state_changed {
+            (ctx.mark_dirty)(self.get_id());
+            (ctx.mark_ui_dirty)();
+        }
+        
+        state_changed
     }
 }

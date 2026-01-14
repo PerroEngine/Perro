@@ -78,7 +78,7 @@ pub extern "C" fn scripts_manager_rs_create_script() -> *mut dyn ScriptObject {
         initial_compile_done: false,
         resources_scanned: false,
         resource_files: Vec::new(),
-        current_mode: Some(EditorMode::TwoD), // Start with no mode (default viewport)
+        current_mode: Some(EditorMode::TwoD),
         file_tree_initialized: false,
         file_tree_id: None,
         context_menu_id: None,

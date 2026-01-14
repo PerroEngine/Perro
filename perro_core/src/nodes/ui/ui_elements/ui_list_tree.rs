@@ -6,9 +6,11 @@ use uuid::Uuid;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, Duration};
 
+use winit::keyboard::KeyCode;
+
 use crate::{
     structs2d::Vector2,
-    ui_element::BaseUIElement,
+    ui_element::{BaseElement, BaseUIElement, UIElementUpdate, UIUpdateContext},
     Color,
 };
 
@@ -697,3 +699,167 @@ impl std::fmt::Debug for UIListTree {
 
 // Implement BaseElement trait using the macro
 crate::impl_ui_element!(UIListTree);
+
+impl UIElementUpdate for UIListTree {
+    fn internal_render_update(&mut self, ctx: &mut UIUpdateContext) -> bool {
+        if !self.get_visible() {
+            return false;
+        }
+
+        let mut needs_rerender = false;
+        let tree_id = self.get_id();
+        
+        // Calculate bounds
+        let top_left_x = self.base.global_transform.position.x - (self.base.size.x * self.base.pivot.x);
+        let top_left_y = self.base.global_transform.position.y - (self.base.size.y * self.base.pivot.y);
+        
+        let in_bounds = ctx.mouse_pos.x >= top_left_x && ctx.mouse_pos.x <= (top_left_x + self.base.size.x) &&
+                       ctx.mouse_pos.y >= top_left_y && ctx.mouse_pos.y <= (top_left_y + self.base.size.y);
+        
+        // Track hover state (always, even if not clicking)
+        if in_bounds {
+            // Find hovered item
+            let item_start_y = top_left_y + 5.0;
+            let mut current_y = item_start_y;
+            let mut hovered_item_id: Option<Uuid> = None;
+            
+            for item_id in self.get_visible_items() {
+                let item_bottom = current_y + self.item_height;
+                if ctx.mouse_pos.y >= current_y && ctx.mouse_pos.y < item_bottom {
+                    hovered_item_id = Some(item_id);
+                    break;
+                }
+                current_y = item_bottom;
+            }
+            
+            // Update hover state if it changed
+            if self.hovered_item != hovered_item_id {
+                self.hovered_item = hovered_item_id;
+                needs_rerender = true;
+            }
+        } else {
+            // Mouse is outside bounds, clear hover
+            if self.hovered_item.is_some() {
+                self.hovered_item = None;
+                needs_rerender = true;
+            }
+        }
+        
+        // Find clicked item (reuse the hover detection logic)
+        let clicked_item_id = self.hovered_item;
+        
+        if let Some(item_id) = clicked_item_id {
+            // Left click
+            if ctx.mouse_just_pressed {
+                // Check for double-click
+                let now = std::time::SystemTime::now();
+                let is_double_click = if let Some((last_id, last_time)) = self.last_click {
+                    last_id == item_id && now.duration_since(last_time).map(|d| d.as_millis() < self.double_click_threshold_ms as u128).unwrap_or(false)
+                } else {
+                    false
+                };
+                
+                if is_double_click {
+                    // Double-click: toggle folder and emit signal WITH item_id parameter
+                    let is_folder = self.items.get(&item_id).map(|i| i.is_directory).unwrap_or(false);
+                    
+                    if is_folder {
+                        self.toggle_expanded(item_id);
+                    }
+                    
+                    // Emit double-click signal with item_id as parameter
+                    let signal_name = format!("{}_DoubleClicked", self.base.name);
+                    let params = [serde_json::Value::String(item_id.to_string())];
+                    eprintln!("🔔 [ListTree] Emitting signal: '{}' (ListTree name: '{}') with params: {:?}", signal_name, self.base.name, params);
+                    ctx.api.emit_signal(&signal_name, &params);
+                    
+                    self.last_click = None;
+                    needs_rerender = true;
+                } else {
+                    // Single-click: select and emit signal WITH item_id parameter
+                    self.select_item(item_id, false);
+                    self.last_click = Some((item_id, now));
+                    
+                    // Emit single-click signal with item_id as parameter
+                    let signal_name = format!("{}_Clicked", self.base.name);
+                    let params = [serde_json::Value::String(item_id.to_string())];
+                    eprintln!("🔔 [ListTree] Emitting signal: '{}' (ListTree name: '{}') with params: {:?}", signal_name, self.base.name, params);
+                    ctx.api.emit_signal(&signal_name, &params);
+                    
+                    needs_rerender = true;
+                }
+            }
+            
+            // Right click
+            if ctx.mouse_is_held && !ctx.mouse_just_pressed {
+                // Check if right mouse button is pressed
+                let right_pressed = ctx.is_right_mouse_pressed();
+                
+                if right_pressed {
+                    self.select_item(item_id, false);
+                    
+                    // Emit right-click signal with item_id as parameter
+                    let signal_name = format!("{}_RightClicked", self.base.name);
+                    let params = [serde_json::Value::String(item_id.to_string())];
+                    eprintln!("🔔 [ListTree] Emitting signal: '{}' (ListTree name: '{}') with params: {:?}", signal_name, self.base.name, params);
+                    ctx.api.emit_signal(&signal_name, &params);
+                    
+                    needs_rerender = true;
+                }
+            }
+        }
+        
+        // Handle keyboard input for rename
+        if self.rename_state.is_some() {
+            let should_commit = ctx.is_key_triggered(KeyCode::Enter);
+            let should_cancel = ctx.is_key_triggered(KeyCode::Escape);
+            
+            // Handle Enter key to commit rename
+            if should_commit {
+                // Get rename state before commit (commit_rename consumes it)
+                if let Some(state) = self.rename_state.as_ref() {
+                    let item_id = state.item_id;
+                    
+                    // Get old path before commit
+                    let old_path = self.items.get(&item_id)
+                        .map(|item| item.path.clone());
+                    
+                    // Calculate new path from rename state
+                    let parent_path = old_path.as_ref()
+                        .and_then(|p| p.rfind('/').map(|idx| &p[..=idx]))
+                        .unwrap_or("");
+                    let new_path = format!("{}{}", parent_path, state.text);
+                    
+                    // Commit the rename (updates item path, consumes rename_state)
+                    if let Ok(()) = self.commit_rename() {
+                        // Emit rename signal with old_path and new_path
+                        if let Some(old_path) = old_path {
+                            let signal_name = format!("{}_Renamed", self.base.name);
+                            let params = [
+                                serde_json::Value::String(old_path.clone()),
+                                serde_json::Value::String(new_path.clone()),
+                            ];
+                            eprintln!("🔔 [ListTree] Emitting rename signal: '{}' old_path='{}' new_path='{}'", signal_name, old_path, new_path);
+                            ctx.api.emit_signal(&signal_name, &params);
+                            
+                            needs_rerender = true;
+                        }
+                    }
+                }
+            }
+            
+            // Handle Escape key to cancel rename
+            if should_cancel {
+                self.cancel_rename();
+                needs_rerender = true;
+            }
+        }
+        
+        if needs_rerender {
+            (ctx.mark_dirty)(tree_id);
+            (ctx.mark_ui_dirty)();
+        }
+        
+        needs_rerender
+    }
+}
