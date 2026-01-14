@@ -289,6 +289,17 @@ pub fn derive_rust_perro_script(
             let params_str = fn_cap.get(2).map_or("", |m| m.as_str());
             let return_str = fn_cap.get(3).map_or("", |m| m.as_str().trim());
 
+            // Skip local functions (functions without self parameter) - these are not methods
+            // Methods on the struct will have &mut self or &self as the first parameter
+            let params_trimmed = params_str.trim();
+            if !params_trimmed.starts_with("&mut self") 
+                && !params_trimmed.starts_with("&self")
+                && params_trimmed != "&mut self"
+                && params_trimmed != "&self" {
+                // This is likely a local function, not a method - skip it
+                continue;
+            }
+
             // Parse parameters
             let mut params = Vec::new();
 
@@ -336,6 +347,14 @@ pub fn derive_rust_perro_script(
                 Variable::parse_type(return_str)
             };
 
+            // Get attributes for this function
+            let func_attributes = attributes_map.get(&fn_name).cloned().unwrap_or_default();
+            
+            // Skip functions marked with @skip attribute - these are internal helpers
+            if func_attributes.iter().any(|attr| attr.to_lowercase() == "skip") {
+                continue;
+            }
+
             functions.push(Function {
                 name: fn_name.clone(),
                 is_trait_method: false,
@@ -346,7 +365,7 @@ pub fn derive_rust_perro_script(
                 cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
                 body: vec![],
                 locals: vec![],
-                attributes: attributes_map.get(&fn_name).cloned().unwrap_or_default(),
+                attributes: func_attributes,
                 is_on_signal: false,
                 signal_name: None,
             });

@@ -55,6 +55,9 @@ pub struct ManagerScript {
     uid_registry: HashMap<Uuid, AssetMetadata>, // UID -> metadata
     path_to_uid: HashMap<String, Uuid>, // path -> UID (reverse lookup)
     // Note: Mouse tracking and double-click tracking are now handled by UIListTree internally
+    // Live preview debouncing - updates preview 1 second after last text change
+    live_preview_timer: f32, // Accumulator for 1 second timer after text change
+    last_fur_text: String, // Track last text content to detect changes
 }
 
 #[unsafe(no_mangle)]
@@ -79,6 +82,8 @@ pub extern "C" fn manager_create_script() -> *mut dyn ScriptObject {
         frame_count: 0,
         uid_registry: HashMap::new(),
         path_to_uid: HashMap::new(),
+        live_preview_timer: 0.0,
+        last_fur_text: String::new(),
     })) as *mut dyn ScriptObject
 }
 
@@ -1024,6 +1029,224 @@ impl ManagerScript {
         });
     }
     
+    /// Update the live preview by parsing FUR text from TextEditorContainer
+    /// and completely rebuilding the UIPreview panel with the parsed elements
+    ///@skip
+    fn update_live_preview(&mut self, api: &mut ScriptApi) {
+        let ui_node_id = self.id;
+        
+        // Get the text from TextEditorContainer
+        let fur_text = api.with_ui_node(ui_node_id, |ui| {
+            if let Some(element) = ui.find_element_by_name("TextEditorContainer") {
+                match element {
+                    UIElement::TextEdit(text_edit) => Some(text_edit.get_text().to_string()),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        });
+        
+        let Some(fur_text) = fur_text else {
+            return; // TextEditorContainer not found or not a TextEdit
+        };
+        
+        // Find UIPreview element
+        let preview_id = api.with_ui_node(ui_node_id, |ui| {
+            ui.find_element_by_name("UIPreview")
+                .map(|element| element.get_id())
+        });
+        
+        let Some(preview_id) = preview_id else {
+            return; // UIPreview not found
+        };
+        
+        // Completely clear all existing children from UIPreview
+        self.clear_preview_children(api, ui_node_id);
+        
+        // Parse FUR and prefix all IDs with "PREVIEW_" to ensure uniqueness
+        let parse_success = self.append_fur_to_ui_with_prefix(api, ui_node_id, &fur_text, Some(preview_id), "PREVIEW_");
+        
+        // Verify final state after parsing
+        api.with_ui_node(ui_node_id, |ui| {
+            if let Some(preview_element) = ui.find_element_by_name("UIPreview") {
+                let final_children_count = preview_element.get_children().len();
+                eprintln!("🔍 [update_live_preview] After parsing, UIPreview has {} children", final_children_count);
+                if final_children_count > 0 {
+                    eprintln!("🔍 [update_live_preview] UIPreview children IDs:");
+                    for child_id in preview_element.get_children() {
+                        eprintln!("  - Child ID: {}", child_id);
+                    }
+                }
+            }
+        });
+        
+        if !parse_success {
+            // Parsing failed or no elements found (e.g., empty text) - this is expected
+            // Explicitly verify children are cleared and mark for rerender to show the cleared state
+            api.with_ui_node(ui_node_id, |ui| {
+                // Verify UIPreview has no children
+                if let Some(preview_element) = ui.find_element_by_name("UIPreview") {
+                    let children_count = preview_element.get_children().len();
+                    if children_count > 0 {
+                        eprintln!("⚠️ [update_live_preview] Warning: UIPreview still has {} children after clearing! Forcing clear...", children_count);
+                        // Force clear if somehow children remain
+                        if let Some(preview_element_mut) = ui.find_element_by_name_mut("UIPreview") {
+                            preview_element_mut.set_children(Vec::new());
+                        }
+                    } else {
+                        eprintln!("✅ [update_live_preview] UIPreview is properly cleared (0 children)");
+                    }
+                }
+                // Ensure preview is marked for rerender to show the cleared state
+                ui.mark_element_needs_rerender(preview_id);
+                ui.mark_element_needs_layout(preview_id);
+                eprintln!("🔄 [update_live_preview] Marked UIPreview (id: {}) for rerender after parse failure", preview_id);
+            });
+            // Note: with_ui_node automatically marks the UI node itself for rerender
+        } else {
+            eprintln!("✅ [update_live_preview] Successfully parsed and added FUR elements");
+        }
+    }
+    
+    /// Append FUR elements with a prefix on all IDs to ensure uniqueness
+    ///@skip
+    fn append_fur_to_ui_with_prefix(
+        &mut self,
+        api: &mut ScriptApi,
+        ui_node_id: Uuid,
+        fur_string: &str,
+        parent_element_id: Option<Uuid>,
+        prefix: &str,
+    ) -> bool {
+        use perro_core::nodes::ui::parser::FurParser;
+        use perro_core::nodes::ui::apply_fur::append_fur_elements_to_ui;
+        use perro_core::nodes::ui::fur_ast::{FurElement, FurNode};
+        use std::borrow::Cow;
+        
+        // Helper function to recursively prefix IDs (defined locally to avoid codegen issues)
+        fn prefix_element_ids(element: &mut FurElement, prefix: &str) {
+            // Prefix this element's ID
+            if !element.id.starts_with(prefix) {
+                let prefixed_id = format!("{}{}", prefix, element.id);
+                element.id = Cow::Owned(prefixed_id);
+            }
+            
+            // Recursively prefix all child element IDs
+            for child in &mut element.children {
+                if let FurNode::Element(child_el) = child {
+                    prefix_element_ids(child_el, prefix);
+                }
+            }
+        }
+        
+        // Parse the FUR string
+        let mut parser: perro_core::nodes::ui::parser::FurParser = match FurParser::new(fur_string) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("❌ Failed to create FUR parser: {}", e);
+                return false;
+            }
+        };
+        
+        let fur_ast: Vec<perro_core::nodes::ui::fur_ast::FurNode> = match parser.parse() {
+            Ok(ast) => ast,
+            Err(e) => {
+                eprintln!("❌ Failed to parse FUR string: {}", e);
+                return false;
+            }
+        };
+        
+        // Extract elements from AST and prefix all IDs recursively
+        let mut fur_elements: Vec<perro_core::nodes::ui::fur_ast::FurElement> = fur_ast
+            .into_iter()
+            .filter_map(|node| match node {
+                FurNode::Element(mut el) => {
+                    prefix_element_ids(&mut el, prefix);
+                    Some(el)
+                }
+                _ => None,
+            })
+            .collect();
+        
+        if fur_elements.is_empty() {
+            eprintln!("⚠️ No FUR elements found in string");
+            return false;
+        }
+        
+        // Append to UI node using mutate_node for proper rerender marking
+        api.mutate_node::<perro_core::nodes::ui::ui_node::UINode, _>(ui_node_id, |ui| {
+            append_fur_elements_to_ui(ui, &fur_elements, parent_element_id);
+        });
+        
+        true
+    }
+    
+    /// Clear all children from the UIPreview panel (recursively removes all descendants)
+    ///@skip
+    fn clear_preview_children(&mut self, api: &mut ScriptApi, ui_node_id: Uuid) {
+        // First, collect all element IDs and their types before removing them
+        let (preview_id, all_descendant_ids, element_types) = api.with_ui_node(ui_node_id, |ui| {
+            // First, collect the preview_id and direct children while we have the mutable borrow
+            let (preview_id, direct_children) = if let Some(preview_element) = ui.find_element_by_name_mut("UIPreview") {
+                (preview_element.get_id(), preview_element.get_children().to_vec())
+            } else {
+                return (Uuid::nil(), Vec::new(), Vec::new());
+            };
+            
+            eprintln!("🧹 [clear_preview_children] Clearing {} direct children from UIPreview", direct_children.len());
+            
+            // Recursively collect ALL descendant IDs (not just direct children)
+            // This ensures we remove nested children from the elements map
+            let mut all_descendant_ids = Vec::new();
+            let mut element_types = Vec::new();
+            if let Some(elements) = &ui.elements {
+                let mut to_process = direct_children.clone();
+                while let Some(current_id) = to_process.pop() {
+                    all_descendant_ids.push(current_id);
+                    // Store element type for primitive renderer removal
+                    if let Some(element) = elements.get(&current_id) {
+                        element_types.push((current_id, element.clone()));
+                        for &child_id in element.get_children() {
+                            to_process.push(child_id);
+                        }
+                    }
+                }
+            }
+            
+            (preview_id, all_descendant_ids, element_types)
+        });
+        
+        if preview_id.is_nil() {
+            return;
+        }
+        
+        eprintln!("🧹 [clear_preview_children] Found {} total descendant elements to remove", all_descendant_ids.len());
+        
+        // Use the new mark_for_deletion mechanism - this properly handles deletion
+        // by removing from primitive renderer cache and then from the elements map
+        api.with_ui_node(ui_node_id, |ui| {
+            // Mark all direct children (and their descendants) for deletion
+            // The renderer will handle removing them from primitive renderer and elements map
+            for child_id in &all_descendant_ids {
+                ui.mark_for_deletion(*child_id);
+            }
+            
+            // Clear the children list from UIPreview
+            if let Some(preview_element) = ui.find_element_by_name_mut("UIPreview") {
+                preview_element.set_children(Vec::new());
+                eprintln!("🧹 [clear_preview_children] Cleared UIPreview children list");
+            }
+            
+            // Mark preview element for rerender and layout to ensure UI updates
+            ui.mark_element_needs_rerender(preview_id);
+            ui.mark_element_needs_layout(preview_id);
+            eprintln!("🧹 [clear_preview_children] Marked {} elements for deletion and UIPreview for rerender", all_descendant_ids.len());
+        });
+        // Note: with_ui_node automatically marks the UI node itself for rerender
+        eprintln!("🧹 [clear_preview_children] UI node {} marked for rerender", ui_node_id);
+    }
+    
     /// Called when a file tree item is renamed
     /// Params: old_path (String), new_path (String)
     pub fn on_file_tree_item_renamed(&mut self, api: &mut ScriptApi, old_path: String, new_path: String) {
@@ -1249,6 +1472,38 @@ impl Script for ManagerScript {
             }
         } else {
             self.run_project_key_pressed = false;
+        }
+        
+        // Update live preview with debouncing: 1 second after last text change (only in UI editor mode)
+        if self.current_mode == Some(EditorMode::UI) {
+            // Get current text to detect changes
+            let current_text = api.with_ui_node(self.id, |ui| {
+                if let Some(element) = ui.find_element_by_name("TextEditorContainer") {
+                    match element {
+                        UIElement::TextEdit(text_edit) => Some(text_edit.get_text().to_string()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            });
+            
+            // Check if text has changed
+            if let Some(text) = current_text {
+                if text != self.last_fur_text {
+                    // Text changed - reset timer
+                    self.last_fur_text = text;
+                    self.live_preview_timer = 0.0;
+                } else {
+                    // Text hasn't changed - increment timer
+                    self.live_preview_timer += api.Time.get_delta();
+                    // Update preview if 1 second has passed since last change
+                    if self.live_preview_timer >= 1.0 {
+                        self.live_preview_timer = 0.0;
+                        self.update_live_preview(api);
+                    }
+                }
+            }
         }
     }
 }

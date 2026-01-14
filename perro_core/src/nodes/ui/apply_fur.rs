@@ -13,6 +13,7 @@ use crate::{
         ui_text::{TextFlow, UIText},
         ui_button::UIButton,
         ui_text_input::UITextInput,
+        ui_text_edit::UITextEdit,
         ui_list_tree::UIListTree,
     },
     ui_node::UINode,
@@ -1026,6 +1027,249 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             }
 
             Some(UIElement::TextInput(text_input))
+        }
+
+        "TextEdit" => {
+            let mut text_edit = UITextEdit::default();
+            text_edit.set_name(&fur.id);
+            apply_base_attributes(&mut text_edit.base, &fur.attributes);
+
+            // Apply panel properties (same as Button)
+            if let Some(bg) = fur.attributes.get("bg") {
+                if let Ok(c) = parse_color_with_opacity(bg) {
+                    text_edit.panel_props_mut().background_color = Some(c);
+                }
+            }
+            
+            // Parse hover and focused background colors
+            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
+                if let Ok(c) = parse_color_with_opacity(hover_bg) {
+                    text_edit.hover_bg = Some(c);
+                }
+            }
+            if let Some(focused_bg) = fur.attributes.get("focused-bg") {
+                if let Ok(c) = parse_color_with_opacity(focused_bg) {
+                    text_edit.focused_bg = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    text_edit.panel_props_mut().border_color = Some(c);
+                }
+            }
+            if let Some(b) = fur.attributes.get("border") {
+                text_edit.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
+            }
+
+            if let Some(opacity_str) = fur.attributes.get("opacity") {
+                if let Some(opacity) = parse_opacity(opacity_str) {
+                    text_edit.panel_props_mut().opacity = opacity;
+                }
+            }
+
+            // Apply corner radius (same logic as Button)
+            let mut corner = CornerRadius::default();
+            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+                v.and_then(|s| s.trim().parse().ok())
+            }
+
+            if let Some(value) = fur.attributes.get("rounding") {
+                let mut vals = [0.0; 4];
+                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                    vals[i] = v.parse().unwrap_or(0.0);
+                }
+
+                match value.split(',').count() {
+                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
+                    2 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[0];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[1];
+                    }
+                    3 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[1];
+                        corner.bottom_right = vals[2];
+                    }
+                    4 => {
+                        corner.top_left = vals[0];
+                        corner.top_right = vals[1];
+                        corner.bottom_left = vals[2];
+                        corner.bottom_right = vals[3];
+                    }
+                    _ => {}
+                }
+            }
+
+            // Directional and individual corner overrides
+            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
+                corner.top_left = v;
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
+                corner.bottom_left = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
+                corner.top_left = v;
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
+                corner.top_right = v;
+                corner.bottom_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
+                corner.top_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
+                corner.top_right = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
+                corner.bottom_left = v;
+            }
+            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
+                corner.bottom_right = v;
+            }
+
+            text_edit.panel_props_mut().corner_radius = corner;
+
+            // Parse padding (inline version since parse_padding is local to Layout/Grid)
+            {
+                let mut padding = Padding::default();
+                
+                // Step 1: base padding list (like "p: 10,20,30,40" or "p: 10")
+                if let Some(value) = fur.attributes.get("p") {
+                    let mut vals = [0.0; 4];
+                    for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+                        vals[i] = v.parse().unwrap_or(0.0);
+                    }
+                    
+                    match value.split(',').count() {
+                        0 | 1 => padding = Padding::uniform(vals[0]),
+                        2 => {
+                            // vertical, horizontal
+                            padding.top = vals[0];
+                            padding.bottom = vals[0];
+                            padding.left = vals[1];
+                            padding.right = vals[1];
+                        }
+                        3 => {
+                            // top, horizontal, bottom
+                            padding.top = vals[0];
+                            padding.left = vals[1];
+                            padding.right = vals[1];
+                            padding.bottom = vals[2];
+                        }
+                        4 => {
+                            // top, right, bottom, left
+                            padding.top = vals[0];
+                            padding.right = vals[1];
+                            padding.bottom = vals[2];
+                            padding.left = vals[3];
+                        }
+                        _ => {}
+                    }
+                }
+                
+                // Step 2: horizontal and vertical shortcuts (px, py)
+                if let Some(v) = parse_val(fur.attributes.get("px")) {
+                    padding.left = v;
+                    padding.right = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("py")) {
+                    padding.top = v;
+                    padding.bottom = v;
+                }
+                
+                // Step 3: individual side overrides (pt, pr, pb, pl) - highest priority
+                if let Some(v) = parse_val(fur.attributes.get("pt")) {
+                    padding.top = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("pr")) {
+                    padding.right = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("pb")) {
+                    padding.bottom = v;
+                }
+                if let Some(v) = parse_val(fur.attributes.get("pl")) {
+                    padding.left = v;
+                }
+                
+                text_edit.padding = padding;
+            }
+
+            // Apply text properties - extract text from children
+            let text_content: String = fur
+                .children
+                .iter()
+                .filter_map(|n| {
+                    if let FurNode::Text(s) = n {
+                        Some(s.as_ref())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<&str>>()
+                .join("");
+            
+            let trimmed_content = text_content.trim();
+            text_edit.text_props_mut().content = trimmed_content.to_string();
+            
+            // Set default text color to white if not specified
+            if fur.attributes.get("text-c").is_none() {
+                text_edit.text_props_mut().color = Color::new(255, 255, 255, 255);
+            }
+            
+            // Parse text-anchor
+            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
+                text_edit.text_anchor = match anchor_str.as_ref() {
+                    "tl" => FurAnchor::TopLeft,
+                    "t" => FurAnchor::Top,
+                    "tr" => FurAnchor::TopRight,
+                    "l" => FurAnchor::Left,
+                    "c" => FurAnchor::Center,
+                    "r" => FurAnchor::Right,
+                    "bl" => FurAnchor::BottomLeft,
+                    "b" => FurAnchor::Bottom,
+                    "br" => FurAnchor::BottomRight,
+                    _ => FurAnchor::Center,
+                };
+            }
+            
+            // Parse text flow alignment - defaults to Center like other UI elements
+            if let Some(align_str) = fur.attributes.get("align") {
+                text_edit.text_props_mut().align = match align_str.as_ref() {
+                    "start" | "s" => TextFlow::Start,
+                    "center" | "c" => TextFlow::Center,
+                    "end" | "e" => TextFlow::End,
+                    "left" | "l" => TextFlow::Start,
+                    "right" | "r" => TextFlow::End,
+                    _ => TextFlow::Center,
+                };
+            }
+            
+            // Set default font size if not specified
+            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
+                text_edit.text_props_mut().font_size = 16.0;
+            }
+
+            if let Some(fs) = fur
+                .attributes
+                .get("fsz")
+                .or(fur.attributes.get("font-size"))
+            {
+                text_edit.text_props_mut().font_size = fs.parse().unwrap_or(text_edit.text_props().font_size);
+            }
+
+            if let Some(tc) = fur.attributes.get("text-c") {
+                if let Ok(c) = parse_color_with_opacity(tc) {
+                    text_edit.text_props_mut().color = c;
+                }
+            }
+
+            Some(UIElement::TextEdit(text_edit))
         }
 
         // ListTree and FileTree are the same (ListTree is the generic name)

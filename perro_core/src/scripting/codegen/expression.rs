@@ -2105,9 +2105,15 @@ impl Expr {
                                     format!("{}.as_bool().unwrap_or_default()", api_call_code)
                                 }
                                 Type::Custom(custom_type) => {
+                                    // Strip 'mut' if present in type name
+                                    let clean_type = if custom_type.starts_with("mut ") {
+                                        custom_type.strip_prefix("mut ").unwrap_or(custom_type)
+                                    } else {
+                                        custom_type
+                                    };
                                     format!(
                                         "serde_json::from_value::<{}>({}).unwrap_or_default()",
-                                        custom_type, api_call_code
+                                        clean_type, api_call_code
                                     )
                                 }
                                 _ => api_call_code,
@@ -2557,9 +2563,15 @@ impl Expr {
                                     inner_code
                                 )
                                 } else {
+                                    // Strip 'mut' if present in type name
+                                    let clean_name = if name.starts_with("mut ") {
+                                        name.strip_prefix("mut ").unwrap_or(name)
+                                    } else {
+                                        name
+                                    };
                                     format!(
                                         "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
-                                        name, inner_code
+                                        clean_name, inner_code
                                     )
                                 }
                             }
@@ -2644,9 +2656,15 @@ impl Expr {
                             } else {
                                 inner_code
                             };
+                            // Strip 'mut' if present in type name
+                            let clean_to_name = if to_name.starts_with("mut ") {
+                                to_name.strip_prefix("mut ").unwrap_or(to_name)
+                            } else {
+                                to_name
+                            };
                             format!(
                                 "serde_json::from_value::<{}>(serde_json::to_value(&{}).unwrap_or_default()).unwrap_or_default()",
-                                to_name, cloned_code
+                                clean_to_name, cloned_code
                             )
                         }
                     }

@@ -418,6 +418,11 @@ pub fn implement_script_boilerplate_internal(
         if func.is_trait_method {
             continue;
         }
+        
+        // Skip functions marked with @skip attribute - these are internal helpers
+        if func.attributes.iter().any(|attr| attr.to_lowercase() == "skip") {
+            continue;
+        }
 
         let func_name = &func.name;
         let func_id = string_to_u64(func_name);
@@ -530,29 +535,59 @@ let {param_name} = __vec_{param_name}.as_slice();\n"
                     },
                     Type::Custom(tn) if tn.starts_with('&') && tn != "&str" && tn != "&Path" => {
                         // Handle reference types like &Manifest - deserialize owned type, then take reference
-                        let owned_type = tn.strip_prefix('&').unwrap_or(tn);
-                        // For types that might not have Default, we need to handle None case
-                        // If deserialization fails, we can't proceed, so we'll return early
-                        format!(
-                            "let __owned_{param_name}_opt = params.get({actual_param_idx})
+                        let mut owned_type = tn.strip_prefix('&').unwrap_or(tn).to_string();
+                        // Strip 'mut' if present (e.g., "mut FurElement" -> "FurElement")
+                        if owned_type.starts_with("mut ") {
+                            owned_type = owned_type.strip_prefix("mut ").unwrap_or(&owned_type).to_string();
+                        }
+                        
+                        // Check for internal types that don't implement Deserialize
+                        // Handle both short names (FurElement) and full paths (perro_core::nodes::ui::fur_ast::FurElement)
+                        if owned_type.contains("FurElement") || owned_type.contains("FurNode") {
+                            // For internal types that can't be deserialized, we can't call this function from scripts
+                            format!(
+                                "return; // Cannot deserialize internal type {owned_type} - this method should not be called from scripts\n"
+                            )
+                        } else {
+                            // For types that might not have Default, we need to handle None case
+                            // If deserialization fails, we can't proceed, so we'll return early
+                            format!(
+                                "let __owned_{param_name}_opt = params.get({actual_param_idx})
                             .and_then(|v| serde_json::from_value::<{owned_type}>(v.clone()).ok());
 let {param_name} = match __owned_{param_name}_opt {{
     Some(ref val) => val,
     None => return, // Skip this function call if deserialization failed
 }};\n"
-                        )
+                            )
+                        }
                     },
                     Type::Custom(tn) => {
-                        // For custom types without Default, we need to handle None case
-                        // Try to deserialize, and if it fails, return early
-                        format!(
-                            "let {param_name}_opt = params.get({actual_param_idx})
-                            .and_then(|v| serde_json::from_value::<{tn}>(v.clone()).ok());
+                        // Strip 'mut' if present in type name (e.g., "mut FurElement" -> "FurElement")
+                        let clean_type = if tn.starts_with("mut ") {
+                            tn.strip_prefix("mut ").unwrap_or(tn)
+                        } else {
+                            tn
+                        };
+                        
+                        // Check for internal types that don't implement Deserialize
+                        // Handle both short names (FurElement) and full paths (perro_core::nodes::ui::fur_ast::FurElement)
+                        if clean_type.contains("FurElement") || clean_type.contains("FurNode") {
+                            // For internal types that can't be deserialized, we can't call this function from scripts
+                            format!(
+                                "return; // Cannot deserialize internal type {clean_type} - this method should not be called from scripts\n"
+                            )
+                        } else {
+                            // For custom types without Default, we need to handle None case
+                            // Try to deserialize, and if it fails, return early
+                            format!(
+                                "let {param_name}_opt = params.get({actual_param_idx})
+                            .and_then(|v| serde_json::from_value::<{clean_type}>(v.clone()).ok());
 let {param_name} = match {param_name}_opt {{
     Some(val) => val,
     None => return, // Skip this function call if deserialization failed
 }};\n"
-                        )
+                            )
+                        }
                     },
                     Type::Node(_) => {
                         // Handle Type::Node variant - nodes are just UUIDs

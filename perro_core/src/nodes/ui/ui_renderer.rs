@@ -18,6 +18,7 @@ use crate::{
         ui_container::{ContainerMode, LayoutAlignment, UIPanel},
         ui_text::UIText,
         ui_text_input::UITextInput,
+        ui_text_edit::UITextEdit,
     },
     ui_node::UINode,
 };
@@ -2089,6 +2090,141 @@ fn update_global_transforms_with_layout_impl(
                 text_input.text.base.global_transform = text_global;
                 text_input.text.base.z_index = (global_z + 1).min(1000000);
             }
+            
+            // Handle TextEdit children (same logic as TextInput)
+            if let UIElement::TextEdit(text_edit) = element {
+                // Sync text edit size to panel
+                text_edit.panel.base.size = text_edit.base.size;
+                
+                // Calculate actual text size based on content
+                let actual_text_size = calculate_text_size(&text_edit.text.props.content, text_edit.text.props.font_size);
+                text_edit.text.base.size = actual_text_size;
+                
+                // Use the text edit's size as the parent size for anchor calculations
+                let text_edit_size = text_edit.base.size;
+                
+                // Helper function to calculate anchor offset (same as Button)
+                let calculate_anchor_offset = |child_size: Vector2, child_pivot: Vector2, anchor: FurAnchor, parent_size: Vector2| -> Vector2 {
+                    match anchor {
+                        FurAnchor::TopLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::TopRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomLeft => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::BottomRight => {
+                            let parent_right = parent_size.x * 0.5;
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(offset_x, offset_y)
+                        }
+                        FurAnchor::Top => {
+                            let parent_top = parent_size.y * 0.5;
+                            let offset_y = parent_top - child_size.y * child_pivot.y;
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Bottom => {
+                            let parent_bottom = -parent_size.y * 0.5;
+                            let offset_y = parent_bottom + child_size.y * (1.0 - child_pivot.y);
+                            Vector2::new(0.0, offset_y)
+                        }
+                        FurAnchor::Left => {
+                            let parent_left = -parent_size.x * 0.5;
+                            let offset_x = parent_left + child_size.x * (1.0 - child_pivot.x);
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Right => {
+                            let parent_right = parent_size.x * 0.5;
+                            let offset_x = parent_right - child_size.x * child_pivot.x;
+                            Vector2::new(offset_x, 0.0)
+                        }
+                        FurAnchor::Center => {
+                            Vector2::new(0.0, 0.0)
+                        }
+                    }
+                };
+                
+                // Process panel
+                let panel_size = text_edit.panel.base.size;
+                let panel_pivot = text_edit.panel.base.pivot;
+                let panel_anchor = text_edit.panel.base.anchor;
+                let panel_local = text_edit.panel.base.transform.clone();
+                
+                let panel_anchor_offset = calculate_anchor_offset(panel_size, panel_pivot, panel_anchor, text_edit_size);
+                
+                let mut panel_local_pos = panel_local.position;
+                panel_local_pos.x += panel_anchor_offset.x;
+                panel_local_pos.y += panel_anchor_offset.y;
+                
+                let mut panel_global = Transform2D::default();
+                panel_global.scale.x = global.scale.x * panel_local.scale.x;
+                panel_global.scale.y = global.scale.y * panel_local.scale.y;
+                panel_global.position.x = global.position.x + (panel_local_pos.x * global.scale.x);
+                panel_global.position.y = global.position.y + (panel_local_pos.y * global.scale.y);
+                panel_global.rotation = global.rotation + panel_local.rotation;
+                
+                text_edit.panel.base.global_transform = panel_global;
+                text_edit.panel.base.z_index = global_z.min(1000000);
+                
+                // Process text
+                // For text editor, use a fixed size (0,0) for positioning so text stays fixed at anchor
+                // regardless of content length - the actual rendering handles multi-line positioning
+                let text_size_for_layout = crate::structs2d::Vector2::new(0.0, text_edit.text.props.font_size);
+                let text_pivot = text_edit.text.base.pivot;
+                let text_anchor = text_edit.text_anchor;
+                let text_local = text_edit.text.base.transform.clone();
+                
+                let text_anchor_offset = calculate_anchor_offset(text_size_for_layout, text_pivot, text_anchor, text_edit_size);
+                
+                let mut text_local_pos = text_local.position;
+                text_local_pos.x += text_anchor_offset.x;
+                text_local_pos.y += text_anchor_offset.y;
+                
+                // Adjust position for baseline (same as Button)
+                // Use font_size for baseline adjustment instead of text_size.y
+                let font_size = text_edit.text.props.font_size;
+                match text_anchor {
+                    crate::fur_ast::FurAnchor::Top | 
+                    crate::fur_ast::FurAnchor::TopLeft | 
+                    crate::fur_ast::FurAnchor::TopRight => {
+                        text_local_pos.y -= font_size * 1.5;
+                    }
+                    crate::fur_ast::FurAnchor::Center |
+                    crate::fur_ast::FurAnchor::Left |
+                    crate::fur_ast::FurAnchor::Right => {
+                        text_local_pos.y -= font_size * 1.25;
+                    }
+                    _ => {
+                        text_local_pos.y -= font_size;
+                    }
+                }
+                
+                let mut text_global = Transform2D::default();
+                text_global.scale.x = global.scale.x * text_local.scale.x;
+                text_global.scale.y = global.scale.y * text_local.scale.y;
+                text_global.position.x = global.position.x + (text_local_pos.x * global.scale.x);
+                text_global.position.y = global.position.y + (text_local_pos.y * global.scale.y);
+                text_global.rotation = global.rotation + text_local.rotation;
+                
+                text_edit.text.base.global_transform = text_global;
+                text_edit.text.base.z_index = (global_z + 1).min(1000000);
+            }
 
             // STEP 7: Recurse into regular children with their layout positions
             for child_id in children_ids {
@@ -2147,6 +2283,9 @@ fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
                 }
                 UIElement::TextInput(text_input) => {
                     text_input.sync_base_to_children();
+                }
+                UIElement::TextEdit(text_edit) => {
+                    text_edit.sync_base_to_children();
                 }
                 _ => {}
             }
@@ -2503,16 +2642,28 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
             (visible, invisible)
         };
         
-        // OPTIMIZATION: Only remove newly invisible elements (not all invisible elements)
-        // This avoids iterating through everything every frame
-        for element_id in newly_invisible_ids {
-            if let Some(element) = elements.get(&element_id) {
+        // Process elements marked for deletion first
+        // These are explicitly marked for deletion and should be removed from primitive renderer and map
+        if !ui_node.pending_deletion.is_empty() {
+            let pending_deletion_set = ui_node.pending_deletion.clone();
+            
+            // Collect elements to remove by iterating over the map (avoids indexmap version mismatch)
+            let mut to_remove: Vec<(Uuid, UIElement)> = Vec::new();
+            for (id, element) in elements.iter() {
+                // Check if this ID is in pending_deletion_set by comparing directly
+                if pending_deletion_set.iter().any(|&pending_id| pending_id == *id) {
+                    to_remove.push((*id, element.clone()));
+                }
+            }
+            
+            // Remove from primitive renderer cache
+            for (element_id, element) in &to_remove {
                 match element {
                     UIElement::Panel(_) => {
-                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, element_id);
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, *element_id);
                     }
                     UIElement::Text(_) => {
-                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, element_id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, *element_id);
                     }
                     UIElement::Button(button) => {
                         gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, button.panel.id);
@@ -2521,6 +2672,58 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                     UIElement::TextInput(text_input) => {
                         gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_input.panel.id);
                         gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_input.text.id);
+                    }
+                    UIElement::TextEdit(text_edit) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_edit.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
+                    }
+                    _ => {}
+                }
+            }
+            
+            // Remove from elements map using retain (avoids indexmap version mismatch)
+            let ids_to_remove: HashSet<Uuid> = to_remove.iter().map(|(id, _)| *id).collect();
+            elements.retain(|id, _| !ids_to_remove.contains(id));
+            
+            // Clean up other data structures
+            for (element_id, _) in to_remove {
+                ui_node.needs_rerender.remove(&element_id);
+                ui_node.needs_layout_recalc.remove(&element_id);
+                ui_node.initial_z_indices.remove(&element_id);
+                if let Some(root_ids) = &mut ui_node.root_ids {
+                    root_ids.retain(|id| id != &element_id);
+                }
+            }
+            
+            // Clear the pending_deletion set
+            ui_node.pending_deletion.clear();
+        }
+        
+        // OPTIMIZATION: Only remove newly invisible elements from primitive renderer cache
+        // (not from the elements map - invisible elements should stay in the map so they can become visible again)
+        // This avoids iterating through everything every frame
+        // Work around indexmap version mismatch by iterating over elements map
+        let newly_invisible_set: HashSet<Uuid> = newly_invisible_ids.iter().copied().collect();
+        for (element_id, element) in elements.iter() {
+            if newly_invisible_set.contains(element_id) {
+                match element {
+                    UIElement::Panel(_) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, *element_id);
+                    }
+                    UIElement::Text(_) => {
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, *element_id);
+                    }
+                    UIElement::Button(button) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, button.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, button.text.id);
+                    }
+                    UIElement::TextInput(text_input) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_input.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_input.text.id);
+                    }
+                    UIElement::TextEdit(text_edit) => {
+                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_edit.panel.id);
+                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
                     }
                     _ => {}
                 }
@@ -2654,6 +2857,61 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         let cursor_id = uuid::Uuid::new_v5(&text_input.text.id, b"cursor");
                         if text_input.is_focused && text_input.is_cursor_visible() && text_input.base.visible {
                             render_text_input_cursor(text_input, gfx, timestamp);
+                        } else {
+                            // Remove cursor panel when unfocused OR when not visible (blink off)
+                            gfx.renderer_prim.remove_rect(cursor_id);
+                        }
+                    }
+                    UIElement::TextEdit(text_edit) => {
+                        // Scroll offset is calculated in render_text_edit_with_clipping
+                        // Get the base background color
+                        let base_bg = text_edit.panel_props().background_color;
+                        
+                        // Determine which color to use based on text edit state
+                        let bg_color = if text_edit.is_focused {
+                            // Focused state: use focused_bg if specified, otherwise lighten base by 10%
+                            if let Some(focused) = text_edit.focused_bg {
+                                Some(focused)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.1))
+                            } else {
+                                None
+                            }
+                        } else if text_edit.is_hovered {
+                            // Hover state: use hover_bg if specified, otherwise lighten base by 5%
+                            if let Some(hover) = text_edit.hover_bg {
+                                Some(hover)
+                            } else if let Some(base) = base_bg {
+                                Some(base.lighten(0.05))
+                            } else {
+                                None
+                            }
+                        } else {
+                            // Normal state: use base background color
+                            base_bg
+                        };
+                        
+                        // Render panel with the appropriate color
+                        let mut panel_copy = text_edit.panel.clone();
+                        panel_copy.props.background_color = bg_color;
+                        render_panel(&panel_copy, gfx, timestamp);
+                        
+                        // Render selection highlight FIRST (below text) if focused and has selection
+                        let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, b"selection");
+                        if text_edit.is_focused && text_edit.base.visible {
+                            render_text_edit_selection(text_edit, gfx, timestamp);
+                        } else {
+                            // Remove selection highlight when unfocused
+                            gfx.renderer_prim.remove_rect(selection_id);
+                        }
+                        
+                        // Render text with clipping (only show visible portion)
+                        render_text_edit_with_clipping(text_edit, gfx, timestamp);
+
+                        // Render cursor if focused, visible (blink), and element is visible
+                        let cursor_id = uuid::Uuid::new_v5(&text_edit.text.id, b"cursor");
+                        if text_edit.is_focused && text_edit.is_cursor_visible() && text_edit.base.visible {
+                            render_text_edit_cursor(text_edit, gfx, timestamp);
                         } else {
                             // Remove cursor panel when unfocused OR when not visible (blink off)
                             gfx.renderer_prim.remove_rect(cursor_id);
@@ -3687,6 +3945,462 @@ fn render_text_input_cursor(text_input: &mut UITextInput, gfx: &mut Graphics, ti
     
     // Only render if cursor is in visible phase of blink cycle
     if (text_input.cursor_blink_timer % 1000.0) < 500.0 {
+        render_panel(&cursor_panel, gfx, timestamp);
+    }
+}
+
+/// Calculate horizontal scroll offset (in pixels) for text edit to keep cursor visible
+fn calculate_text_edit_scroll_offset(text_edit: &mut UITextEdit) -> f32 {
+    // Update line info if needed
+    if text_edit.line_start_positions.is_empty() {
+        text_edit.update_line_info();
+    }
+    
+    let panel_width = text_edit.panel.base.size.x;
+    let cursor_pos = text_edit.cursor_position.min(text_edit.text.props.content.len());
+    
+    // Get line and column for cursor
+    let (line, column) = text_edit.get_line_and_column(cursor_pos);
+    let line_text = text_edit.get_line_text(line);
+    
+    // Calculate character positions for the current line
+    let line_char_positions = calculate_character_positions(line_text, text_edit.text.props.font_size);
+    let line_width = line_char_positions.last().copied().unwrap_or(0.0);
+    
+    // Get cursor X position within the line
+    let cursor_x = if column == 0 {
+        0.0
+    } else if column <= line_char_positions.len() {
+        line_char_positions[column - 1]
+    } else {
+        line_width
+    };
+    
+    // If line fits in panel, no scrolling needed
+    if line_width <= panel_width {
+        return 0.0;
+    }
+    
+    // Current scroll offset
+    let current_scroll = text_edit.scroll_offset;
+    let left_padding = text_edit.padding.left;
+    let right_padding = text_edit.padding.right;
+    
+    // Boundaries in text coordinates where cursor should be
+    let min_cursor_text_pos = current_scroll + left_padding;
+    let max_cursor_text_pos = current_scroll + panel_width - left_padding - right_padding;
+    
+    let new_scroll = if cursor_x < min_cursor_text_pos {
+        // Cursor scrolled off left - scroll so cursor is at left boundary (with padding)
+        (cursor_x - left_padding).max(0.0)
+    } else if cursor_x > max_cursor_text_pos {
+        // Cursor scrolled off right - scroll so cursor is at right boundary (with padding)
+        cursor_x - (panel_width - left_padding - right_padding)
+    } else {
+        // Cursor is visible within padding bounds
+        current_scroll
+    };
+    
+    // Clamp scroll to valid range
+    let usable_width = panel_width - left_padding - right_padding;
+    let max_scroll = (line_width - usable_width).max(0.0);
+    let clamped_scroll = new_scroll.max(0.0).min(max_scroll);
+
+    clamped_scroll
+}
+
+/// Calculate vertical scroll offset (in pixels) for text edit to keep cursor visible
+fn calculate_text_edit_scroll_offset_y(text_edit: &mut UITextEdit) -> f32 {
+    // Update line info if needed
+    if text_edit.line_start_positions.is_empty() {
+        text_edit.update_line_info();
+    }
+    
+    let panel_height = text_edit.panel.base.size.y;
+    let cursor_pos = text_edit.cursor_position.min(text_edit.text.props.content.len());
+    
+    // Get line number for cursor
+    let (line, _) = text_edit.get_line_and_column(cursor_pos);
+    
+    // Calculate line height
+    let line_height = text_edit.line_heights.first().copied().unwrap_or(text_edit.text.props.font_size * 1.2);
+    
+    // Calculate total text height
+    let num_lines = text_edit.line_start_positions.len();
+    let total_text_height = (num_lines as f32) * line_height;
+    
+    // If text fits in panel, no scrolling needed
+    if total_text_height <= panel_height {
+        return 0.0;
+    }
+    
+    // Calculate cursor Y position (from top of text)
+    let cursor_y = (line as f32) * line_height;
+    
+    // Current scroll offset
+    let current_scroll = text_edit.scroll_offset_y;
+    let top_padding = text_edit.padding.top;
+    let bottom_padding = text_edit.padding.bottom;
+    
+    // Boundaries where cursor should be
+    let min_cursor_y = current_scroll + top_padding;
+    let max_cursor_y = current_scroll + panel_height - top_padding - bottom_padding - line_height;
+    
+    let new_scroll = if cursor_y < min_cursor_y {
+        // Cursor scrolled off top - scroll so cursor is at top boundary
+        (cursor_y - top_padding).max(0.0)
+    } else if cursor_y > max_cursor_y {
+        // Cursor scrolled off bottom - scroll so cursor is at bottom boundary
+        cursor_y - (panel_height - top_padding - bottom_padding - line_height)
+    } else {
+        // Cursor is visible
+        current_scroll
+    };
+    
+    // Clamp scroll to valid range
+    let usable_height = panel_height - top_padding - bottom_padding;
+    let max_scroll = (total_text_height - usable_height).max(0.0);
+    let clamped_scroll = new_scroll.max(0.0).min(max_scroll);
+    
+    clamped_scroll
+}
+
+/// Render text edit with horizontal and vertical scrolling and clipping for multi-line text
+fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics, timestamp: u64) {
+    // If text is empty, explicitly remove all line text and return early
+    if text_edit.text.props.content.is_empty() {
+        // Remove main text ID
+        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
+        // Remove all potential line IDs (clean up any previous multi-line rendering)
+        for i in 0..100 {
+            let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", i).as_bytes());
+            gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
+        }
+        return;
+    }
+    
+    // Update line info if needed
+    if text_edit.line_start_positions.is_empty() {
+        text_edit.update_line_info();
+    }
+    
+    // Update scroll offsets to keep cursor visible
+    text_edit.scroll_offset = calculate_text_edit_scroll_offset(text_edit);
+    text_edit.scroll_offset_y = calculate_text_edit_scroll_offset_y(text_edit);
+    
+    let panel_width = text_edit.panel.base.size.x;
+    let panel_height = text_edit.panel.base.size.y;
+    let left_padding = text_edit.padding.left;
+    let top_padding = text_edit.padding.top;
+    
+    // Get text transform position (this is where text is positioned by layout system based on anchor)
+    let text_transform = text_edit.text.base.global_transform;
+    // Apply padding offset: padding moves content INSIDE the bounds
+    // For TopLeft: add left padding (move right), subtract top padding (move down in screen coords)
+    let text_base_x = text_transform.position.x + left_padding;
+    let text_base_y = text_transform.position.y - top_padding;
+    
+    // Calculate line height
+    let line_height = text_edit.line_heights.first().copied().unwrap_or(text_edit.text.props.font_size * 1.2);
+    
+    // Split text into lines
+    let content = &text_edit.text.props.content;
+    let lines: Vec<&str> = content.split('\n').collect();
+    
+    // Calculate which lines are visible based on vertical scroll
+    // Account for padding in visible area
+    let visible_start_y = text_edit.scroll_offset_y;
+    let visible_end_y = text_edit.scroll_offset_y + panel_height - top_padding - text_edit.padding.bottom;
+    
+    // Render each visible line
+    for (line_idx, line_text) in lines.iter().enumerate() {
+        let line_y_offset = (line_idx as f32) * line_height;
+        let line_bottom = line_y_offset + line_height;
+        let line_top = line_y_offset;
+        
+        // Check if this line is visible vertically
+        if line_bottom < visible_start_y || line_top > visible_end_y {
+            // Remove this line if it's not visible
+            let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", line_idx).as_bytes());
+            gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
+            continue;
+        }
+        
+        // Calculate line's Y position on screen
+        // text_base_y is already offset by padding, so just subtract line offset
+        let screen_y = text_base_y - line_y_offset + text_edit.scroll_offset_y;
+        
+        // Calculate character positions for this line
+        let line_char_positions = calculate_character_positions(line_text, text_edit.text.props.font_size);
+        let line_width = line_char_positions.last().copied().unwrap_or(0.0);
+        
+        // Handle horizontal scrolling for this line
+        let visible_start_x = text_edit.scroll_offset;
+        let visible_end_x = text_edit.scroll_offset + panel_width - left_padding - text_edit.padding.right;
+        
+        // Find which characters are visible horizontally
+        let mut start_char = 0;
+        let mut end_char = line_text.len();
+        
+        if !line_char_positions.is_empty() {
+            let mut found_start = false;
+            for i in 0..line_char_positions.len() {
+                let char_start = if i > 0 {
+                    line_char_positions[i - 1]
+                } else {
+                    0.0
+                };
+                let char_end = line_char_positions[i];
+                
+                if char_start >= visible_start_x && char_end <= visible_end_x {
+                    if !found_start {
+                        start_char = i;
+                        found_start = true;
+                    }
+                    end_char = i + 1;
+                } else if char_end > visible_end_x {
+                    break;
+                }
+            }
+        }
+        
+        // Get visible substring for this line
+        let visible_line_text = if start_char < end_char && end_char <= line_text.len() {
+            &line_text[start_char..end_char]
+        } else {
+            line_text
+        };
+        
+        // Calculate X position
+        // text_base_x is already offset by left padding, so use it directly
+        let start_offset = if start_char > 0 && start_char <= line_char_positions.len() {
+            line_char_positions[start_char - 1]
+        } else {
+            0.0
+        };
+        
+        let screen_x = text_base_x + (start_offset - text_edit.scroll_offset);
+        
+        // Render this line
+        let mut line_text_copy = text_edit.text.clone();
+        line_text_copy.props.content = visible_line_text.to_string();
+        line_text_copy.props.align = crate::ui_elements::ui_text::TextFlow::Start;
+        line_text_copy.base.transform.position = crate::structs2d::Vector2::new(screen_x, screen_y);
+        line_text_copy.base.global_transform.position = crate::structs2d::Vector2::new(screen_x, screen_y);
+        line_text_copy.base.z_index = text_edit.panel.base.z_index + 2; // Text at z+2
+        
+        // Use unique ID per line to avoid conflicts
+        let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", line_idx).as_bytes());
+        line_text_copy.base.id = line_id;
+        
+        render_text(&line_text_copy, gfx, timestamp);
+    }
+}
+
+/// Render selection highlight for a focused TextEdit element (multi-line support)
+fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, timestamp: u64) {
+    // Update line info if needed
+    if text_edit.line_start_positions.is_empty() {
+        text_edit.update_line_info();
+    }
+    
+    // Check if there's a selection
+    if let Some((start, end)) = text_edit.get_selection_range() {
+        if start == end {
+            // No selection, remove any previous selection highlights
+            for i in 0..100 {
+                let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
+                gfx.renderer_prim.remove_rect(selection_id);
+            }
+            return;
+        }
+        
+        let font_size = text_edit.text.props.font_size;
+        let line_height = text_edit.line_heights.first().copied().unwrap_or(font_size * 1.2);
+        let selection_height = font_size * 1.2;
+        
+        // Get text transform position (already positioned by layout system)
+        let text_transform = text_edit.text.base.global_transform;
+        // Apply padding offset: padding moves content INSIDE the bounds
+        let text_base_x = text_transform.position.x + text_edit.padding.left;
+        let text_base_y = text_transform.position.y - text_edit.padding.top;
+        
+        let panel_width = text_edit.panel.base.size.x;
+        let left_padding = text_edit.padding.left;
+        let right_padding = text_edit.padding.right;
+        let top_padding = text_edit.padding.top;
+        
+        // Get selection start and end line/column
+        let (start_line, start_col) = text_edit.get_line_and_column(start);
+        let (end_line, end_col) = text_edit.get_line_and_column(end);
+        
+        // Get selection color
+        let selection_color = if let Some(custom_color) = text_edit.highlight_color {
+            custom_color
+        } else if let Some(bg_color) = text_edit.panel.props.background_color {
+            bg_color.lighten(0.2)
+        } else {
+            crate::structs::Color::new(200, 200, 200, 255)
+        };
+        
+        use crate::rendering::renderer_prim::RenderLayer;
+        
+        // Render selection rectangles for each line in the selection
+        let mut rect_idx = 0;
+        for line_idx in start_line..=end_line {
+            let line_text = text_edit.get_line_text(line_idx);
+            let line_char_positions = calculate_character_positions(line_text, font_size);
+            
+            // Determine selection start and end columns for this line
+            let line_start_col = if line_idx == start_line { start_col } else { 0 };
+            let line_end_col = if line_idx == end_line { 
+                end_col 
+            } else { 
+                line_text.chars().count() 
+            };
+            
+            // Calculate selection X positions within this line
+            let sel_start_x = if line_start_col == 0 {
+                0.0
+            } else if line_start_col <= line_char_positions.len() {
+                line_char_positions[line_start_col - 1]
+            } else {
+                line_char_positions.last().copied().unwrap_or(0.0)
+            };
+            
+            let sel_end_x = if line_end_col == 0 {
+                0.0
+            } else if line_end_col <= line_char_positions.len() {
+                line_char_positions[line_end_col - 1]
+            } else {
+                line_char_positions.last().copied().unwrap_or(0.0)
+            };
+            
+            let sel_width = sel_end_x - sel_start_x;
+            
+            // For multi-line selections, extend to end of line if not the last line
+            let actual_width = if line_idx < end_line {
+                // Full width of line
+                line_char_positions.last().copied().unwrap_or(0.0) - sel_start_x
+            } else {
+                sel_width
+            };
+            
+            // Calculate Y position for this line - text_base_y is already offset by padding
+            let line_y_offset = (line_idx as f32) * line_height;
+            let selection_y = text_base_y - line_y_offset + text_edit.scroll_offset_y + (selection_height * 0.75);
+            
+            // Calculate X position accounting for scroll
+            let visible_start_x = text_edit.scroll_offset;
+            let visible_end_x = text_edit.scroll_offset + panel_width - left_padding - right_padding;
+            
+            // Clip selection to visible area
+            let visible_sel_start = sel_start_x.max(visible_start_x);
+            let visible_sel_end = (sel_start_x + actual_width).min(visible_end_x);
+            
+            if visible_sel_start < visible_sel_end {
+                let vis_width = visible_sel_end - visible_sel_start;
+                // text_base_x is already offset by left_padding
+                let selection_x = text_base_x + (visible_sel_start - text_edit.scroll_offset);
+                
+                let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", rect_idx).as_bytes());
+                
+                let mut selection_transform = crate::structs2d::Transform2D::default();
+                selection_transform.position = crate::structs2d::Vector2::new(selection_x, selection_y);
+                
+                gfx.renderer_prim.queue_rect(
+                    selection_id,
+                    RenderLayer::UI,
+                    selection_transform,
+                    crate::structs2d::Vector2::new(vis_width, selection_height),
+                    crate::structs2d::Vector2::new(0.0, 0.5),
+                    selection_color,
+                    None,
+                    0.0,
+                    false,
+                    text_edit.panel.base.z_index + 1,
+                    timestamp,
+                );
+                rect_idx += 1;
+            }
+        }
+        
+        // Remove any extra selection rectangles from previous selections
+        for i in rect_idx..100 {
+            let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
+            gfx.renderer_prim.remove_rect(selection_id);
+        }
+    } else {
+        // No selection, remove any previous selection highlights
+        for i in 0..100 {
+            let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
+            gfx.renderer_prim.remove_rect(selection_id);
+        }
+    }
+}
+
+/// Render a cursor for a focused TextEdit element (multi-line support)
+fn render_text_edit_cursor(text_edit: &mut UITextEdit, gfx: &mut Graphics, timestamp: u64) {
+    // Update line info if needed
+    if text_edit.line_start_positions.is_empty() {
+        text_edit.update_line_info();
+    }
+    
+    let cursor_pos = text_edit.cursor_position.min(text_edit.text.props.content.len());
+    
+    // Get line and column for cursor
+    let (line, column) = text_edit.get_line_and_column(cursor_pos);
+    let line_text = text_edit.get_line_text(line);
+    
+    // Calculate character positions for the current line
+    let line_char_positions = calculate_character_positions(line_text, text_edit.text.props.font_size);
+    
+    // Get cursor X position within the line
+    let cursor_x_in_line = if column == 0 {
+        0.0
+    } else if column <= line_char_positions.len() {
+        line_char_positions[column - 1]
+    } else {
+        line_char_positions.last().copied().unwrap_or(0.0)
+    };
+    
+    // Calculate line height
+    let line_height = text_edit.line_heights.first().copied().unwrap_or(text_edit.text.props.font_size * 1.2);
+    let font_size = text_edit.text.props.font_size;
+    
+    // Get text transform position (already positioned by layout system)
+    let text_transform = text_edit.text.base.global_transform;
+    // Apply padding offset: padding moves content INSIDE the bounds
+    let text_base_x = text_transform.position.x + text_edit.padding.left;
+    let text_base_y = text_transform.position.y - text_edit.padding.top;
+    
+    // Calculate cursor Y position - text_base_y is already offset by padding
+    let cursor_y_in_text = (line as f32) * line_height;
+    let cursor_global_y = text_base_y - cursor_y_in_text + text_edit.scroll_offset_y + (font_size * 1.0);
+    
+    // Calculate cursor X position - text_base_x is already offset by padding
+    let cursor_global_x = text_base_x + (cursor_x_in_line - text_edit.scroll_offset);
+    
+    // Use deterministic cursor ID so we don't create duplicates
+    let cursor_id = uuid::Uuid::new_v5(&text_edit.text.id, b"cursor");
+    
+    // Create cursor transform
+    let mut cursor_transform = Transform2D::default();
+    cursor_transform.position = Vector2::new(cursor_global_x, cursor_global_y);
+    cursor_transform.scale = Vector2::new(1.0, 1.0);
+    cursor_transform.rotation = 0.0;
+    
+    // Create cursor panel
+    let mut cursor_panel = UIPanel::default();
+    cursor_panel.base.id = cursor_id;
+    cursor_panel.base.size = Vector2::new(1.5, font_size);
+    cursor_panel.base.pivot = Vector2::new(0.5, 0.5);
+    cursor_panel.base.global_transform = cursor_transform;
+    cursor_panel.props.background_color = Some(text_edit.text.props.color);
+    cursor_panel.base.z_index = text_edit.text.base.z_index + 1;
+    
+    // Only render if cursor is in visible phase of blink cycle
+    if (text_edit.cursor_blink_timer % 2000.0) < 1000.0 {
         render_panel(&cursor_panel, gfx, timestamp);
     }
 }

@@ -14,9 +14,9 @@
         
         // Text Editor content area
         [Panel w=100% h=98% anchor=c bg=neutral-10]
-          [TextEdit id=TextEditorContainer w=95% h=50% anchor=c bg=stone-10 rounding=5% color=white fsz=14]
+          [TextEdit id=TextEditorContainer w=95% h=50% anchor=c bg=stone-10 rounding=5% color=white fsz=14 p=10]
           [/TextEdit]
-          [TextInput anchor=b ty=2% w=10% bg=stone-10 rounding=5% color=white fsz=14/]
+
         [/Panel]
       [/VLayout]
     [/Panel]
@@ -32,10 +32,8 @@
         [/Panel]
         
         // Live View content area
-        [Panel w=100% h=60% anchor=c bg=stone-10]
-          [Text fsz=20 color=steel-5 anchor=c align=center]
-          Live Preview
-          [/Text]
+        [Panel id=UIPreview w=100% h=60% anchor=c bg=stone-10]
+
         [/Panel]
       [/VLayout]
     [/Panel]

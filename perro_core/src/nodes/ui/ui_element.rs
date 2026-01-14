@@ -13,6 +13,7 @@ use crate::{
         ui_text::UIText,
         ui_button::UIButton,
         ui_text_input::UITextInput,
+        ui_text_edit::UITextEdit,
         ui_list_tree::UIListTree,
         ui_context_menu::UIContextMenu,
     },
@@ -421,6 +422,7 @@ pub enum UIElement {
     Text(UIText),
     Button(UIButton),
     TextInput(UITextInput),
+    TextEdit(UITextEdit),
     ListTree(UIListTree),
     ContextMenu(UIContextMenu),
 }
@@ -491,6 +493,15 @@ impl IntoUIInner<UITextInput> for UIElement {
         match self {
             UIElement::TextInput(inner) => inner,
             _ => panic!("Cannot extract UITextInput from UIElement variant {:?}", self),
+        }
+    }
+}
+
+impl IntoUIInner<UITextEdit> for UIElement {
+    fn into_ui_inner(self) -> UITextEdit {
+        match self {
+            UIElement::TextEdit(inner) => inner,
+            _ => panic!("Cannot extract UITextEdit from UIElement variant {:?}", self),
         }
     }
 }
