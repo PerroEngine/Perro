@@ -13,12 +13,10 @@
         [/Panel]
         
         // Text Editor content area
-        [Panel w=100% h=75% anchor=c bg=neutral-10]
-          [TextInput id=TextEditorContainer w=100 h=32 anchor=c ty=1% bg=stone-10 rounding=25% color=white fsz=12]
-          [/TextInput]
-
-           [TextInput id=TextEditorContainer w=100 h=32 anchor=b ty=1% bg=stone-10 rounding=25% color=white fsz=12]
-          [/TextInput]
+        [Panel w=100% h=98% anchor=c bg=neutral-10]
+          [TextEdit id=TextEditorContainer w=95% h=50% anchor=c bg=stone-10 rounding=5% color=white fsz=14]
+          [/TextEdit]
+          [TextInput anchor=b ty=2% w=10% bg=stone-10 rounding=5% color=white fsz=14/]
         [/Panel]
       [/VLayout]
     [/Panel]

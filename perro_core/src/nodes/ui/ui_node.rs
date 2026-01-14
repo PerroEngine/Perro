@@ -508,88 +508,6 @@ impl UINode {
                         *any_text.borrow_mut() = true;
                     }
                 }
-                UIElement::TextEdit(text_edit) => {
-                    let is_focused = current_focused_element == Some(text_edit.get_id());
-                    let element_id = text_edit.get_id();
-                    let dirty_ids = dirty_element_ids.clone();
-                    let ui_dirty = needs_ui_rerender.clone();
-                    let layout_ids = layout_dirty_element_ids.clone();
-                    let any_text = any_text_input_hovered.clone();
-                    let clicked_id = clicked_text_input_id.clone();
-                    let new_focused = new_focused_element.clone();
-                    let current_focused = current_focused_element;
-                    
-                    // SAFETY: See comment above loop - this borrow doesn't overlap with others
-                    let api_borrow = unsafe { &mut *(api as *mut ScriptApi<'_>) };
-                    
-                    let mut ctx = UIUpdateContext {
-                        mouse_pos,
-                        mouse_pressed,
-                        mouse_just_pressed,
-                        mouse_is_held,
-                        api: api_borrow,
-                        focused_element: current_focused_element,
-                        mark_dirty: Box::new(move |id| dirty_ids.borrow_mut().push(id)),
-                        mark_ui_dirty: Box::new(move || *ui_dirty.borrow_mut() = true),
-                        mark_layout_dirty: Box::new(move |id| layout_ids.borrow_mut().push(id)),
-                        is_focused,
-                        request_focus: Some(Box::new(move |id| {
-                            *new_focused.borrow_mut() = Some(id);
-                            current_focused
-                        })),
-                    };
-                    
-                    if text_edit.internal_render_update(&mut ctx) {
-                        if text_edit.is_focused && current_focused_element != Some(element_id) {
-                            *clicked_id.borrow_mut() = Some(element_id);
-                        }
-                    }
-                    // Check hover state independently - cursor icon should update even if no other changes
-                    if text_edit.is_hovered {
-                        *any_text.borrow_mut() = true;
-                    }
-                }
-                UIElement::CodeEdit(code_edit) => {
-                    let is_focused = current_focused_element == Some(code_edit.get_id());
-                    let element_id = code_edit.get_id();
-                    let dirty_ids = dirty_element_ids.clone();
-                    let ui_dirty = needs_ui_rerender.clone();
-                    let layout_ids = layout_dirty_element_ids.clone();
-                    let any_text = any_text_input_hovered.clone();
-                    let clicked_id = clicked_text_input_id.clone();
-                    let new_focused = new_focused_element.clone();
-                    let current_focused = current_focused_element;
-                    
-                    // SAFETY: See comment above loop - this borrow doesn't overlap with others
-                    let api_borrow = unsafe { &mut *(api as *mut ScriptApi<'_>) };
-                    
-                    let mut ctx = UIUpdateContext {
-                        mouse_pos,
-                        mouse_pressed,
-                        mouse_just_pressed,
-                        mouse_is_held,
-                        api: api_borrow,
-                        focused_element: current_focused_element,
-                        mark_dirty: Box::new(move |id| dirty_ids.borrow_mut().push(id)),
-                        mark_ui_dirty: Box::new(move || *ui_dirty.borrow_mut() = true),
-                        mark_layout_dirty: Box::new(move |id| layout_ids.borrow_mut().push(id)),
-                        is_focused,
-                        request_focus: Some(Box::new(move |id| {
-                            *new_focused.borrow_mut() = Some(id);
-                            current_focused
-                        })),
-                    };
-                    
-                    if code_edit.internal_render_update(&mut ctx) {
-                        if code_edit.is_focused && current_focused_element != Some(element_id) {
-                            *clicked_id.borrow_mut() = Some(element_id);
-                        }
-                    }
-                    // Check hover state independently - cursor icon should update even if no other changes
-                    if code_edit.is_hovered {
-                        *any_text.borrow_mut() = true;
-                    }
-                }
                 UIElement::ListTree(list_tree) => {
                     let dirty_ids = dirty_element_ids.clone();
                     let ui_dirty = needs_ui_rerender.clone();
@@ -645,14 +563,6 @@ impl UINode {
                         match old_element {
                             UIElement::TextInput(ti) => {
                                 ti.is_focused = false;
-                                dirty_element_ids.push(old_focused);
-                            }
-                            UIElement::TextEdit(te_old) => {
-                                te_old.is_focused = false;
-                                dirty_element_ids.push(old_focused);
-                            }
-                            UIElement::CodeEdit(ce_old) => {
-                                ce_old.is_focused = false;
                                 dirty_element_ids.push(old_focused);
                             }
                             _ => {}
