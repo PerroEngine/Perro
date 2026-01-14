@@ -1,4 +1,4 @@
-// ui_file_tree.rs - File tree/explorer UI component with context menu and rename support
+// ui_list_tree.rs - List tree/explorer UI component with context menu and rename support
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -10,21 +10,24 @@ use crate::{
     structs2d::Vector2,
     ui_element::BaseUIElement,
     Color,
-    project::uid_registry::AssetUid,
 };
 
-/// Represents a single item in the file tree (file or folder)
+/// Represents a single item in the tree (generic - can represent files, nodes, game objects, etc.)
+/// 
+/// The tree item stores display information (name, icon) and hierarchy (parent/children).
+/// Use `user_data` to store custom data that maps to your game objects (e.g., node IDs, entity IDs, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileTreeItem {
+pub struct ListTreeItem {
     /// Unique identifier for this tree item
     pub id: Uuid,
     /// Display name
     pub name: String,
-    /// Full path (e.g., "res://textures/player.png")
+    /// Full path (e.g., "res://textures/player.png") - optional for non-file items
     pub path: String,
-    /// Asset UID (if registered)
-    pub uid: Option<AssetUid>,
-    /// Whether this is a directory
+    /// Asset UID (if registered) - optional for non-file items
+    /// Editor-specific: used for tracking file renames
+    pub uid: Option<Uuid>,
+    /// Whether this is a directory/folder (can have children)
     pub is_directory: bool,
     /// Whether this item is expanded (for directories)
     pub is_expanded: bool,
@@ -36,10 +39,15 @@ pub struct FileTreeItem {
     pub depth: usize,
     /// Custom icon (optional)
     pub icon: Option<String>,
+    /// Custom user data - store anything here to map this item to your game data
+    /// (e.g., node ID, entity ID, custom struct as JSON, etc.)
+    #[serde(skip)]
+    pub user_data: Option<serde_json::Value>,
 }
 
-impl FileTreeItem {
-    pub fn new_file(name: String, path: String, uid: Option<AssetUid>) -> Self {
+impl ListTreeItem {
+    /// Create a new file item (for file trees)
+    pub fn new_file(name: String, path: String, uid: Option<Uuid>) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
@@ -51,9 +59,11 @@ impl FileTreeItem {
             parent: None,
             depth: 0,
             icon: None,
+            user_data: None,
         }
     }
 
+    /// Create a new directory/folder item (for file trees)
     pub fn new_directory(name: String, path: String) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -66,7 +76,63 @@ impl FileTreeItem {
             parent: None,
             depth: 0,
             icon: None,
+            user_data: None,
         }
+    }
+
+    /// Create a new generic tree item (for scene graphs, game objects, etc.)
+    /// 
+    /// Use this when you want to display non-file data in a tree.
+    /// Set `user_data` to store a reference to your actual game object (e.g., node ID as JSON).
+    /// 
+    /// Example:
+    /// ```rust
+    /// let node_id = some_node.get_id();
+    /// let item = ListTreeItem::new_item(
+    ///     "Player".to_string(),
+    ///     false, // not a folder
+    ///     Some(serde_json::json!({ "node_id": node_id.to_string() }))
+    /// );
+    /// ```
+    pub fn new_item(name: String, is_directory: bool, user_data: Option<serde_json::Value>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            path: String::new(), // Empty for non-file items
+            uid: None,
+            is_directory,
+            is_expanded: false,
+            children: Vec::new(),
+            parent: None,
+            depth: 0,
+            icon: None,
+            user_data,
+        }
+    }
+
+    /// Set custom user data (e.g., node ID, entity ID, etc.)
+    pub fn set_user_data(&mut self, data: serde_json::Value) {
+        self.user_data = Some(data);
+    }
+
+    /// Get custom user data
+    pub fn get_user_data(&self) -> Option<&serde_json::Value> {
+        self.user_data.as_ref()
+    }
+
+    /// Get user data as a specific type (e.g., extract node ID)
+    /// 
+    /// Example:
+    /// ```rust
+    /// if let Some(node_id_str) = item.get_user_data_string("node_id") {
+    ///     // Use node_id_str to find your node
+    /// }
+    /// ```
+    pub fn get_user_data_string(&self, key: &str) -> Option<String> {
+        self.user_data.as_ref()
+            .and_then(|data| data.get(key))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 }
 
@@ -88,7 +154,7 @@ impl Default for ContextMenuState {
     }
 }
 
-/// Selection mode for the file tree
+/// Selection mode for the List tree
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SelectionMode {
     /// Single item selection
@@ -108,9 +174,14 @@ pub struct RenameState {
     pub active: bool,
 }
 
-/// File tree UI element - displays a hierarchical file/folder structure
+/// Tree UI element - displays hierarchical data (files, scene nodes, game objects, etc.)
+/// 
+/// This is a generic tree component that can display any hierarchical data.
+/// - For file trees: use `load_from_directory()` or `new_file()`/`new_directory()`
+/// - For scene graphs/game objects: use `new_item()` with `user_data` to map to your objects
+/// - Items are stored in a HashMap keyed by UUID, with parent/child relationships
 #[derive(Clone, Serialize, Deserialize)]
-pub struct UIFileTree {
+pub struct UIListTree {
     #[serde(flatten)]
     pub base: BaseUIElement,
 
@@ -119,7 +190,7 @@ pub struct UIFileTree {
 
     /// All items in the tree (keyed by ID)
     #[serde(skip)]
-    pub items: HashMap<Uuid, FileTreeItem>,
+    pub items: HashMap<Uuid, ListTreeItem>,
 
     /// Root item IDs (top-level items)
     #[serde(skip)]
@@ -172,7 +243,11 @@ pub struct UIFileTree {
 
     /// Last click time and item (for double-click detection)
     #[serde(skip)]
-    last_click: Option<(Uuid, SystemTime)>,
+    pub last_click: Option<(Uuid, SystemTime)>,
+    
+    /// Currently hovered item (for hover highlighting)
+    #[serde(skip)]
+    pub hovered_item: Option<Uuid>,
 
     /// Double-click threshold in milliseconds
     pub double_click_threshold_ms: u64,
@@ -193,7 +268,7 @@ pub struct UIFileTree {
     pub on_context_action: Option<std::sync::Arc<dyn Fn(Uuid, &str) + Send + Sync>>,
 }
 
-impl Default for UIFileTree {
+impl Default for UIListTree {
     fn default() -> Self {
         Self {
             base: BaseUIElement::default(),
@@ -215,6 +290,7 @@ impl Default for UIFileTree {
             folder_icon: None,
             file_icon: None,
             last_click: None,
+            hovered_item: None,
             double_click_threshold_ms: 300,
             on_item_activated: None,
             on_item_renamed: None,
@@ -223,7 +299,7 @@ impl Default for UIFileTree {
     }
 }
 
-impl UIFileTree {
+impl UIListTree {
     pub fn new() -> Self {
         Self::default()
     }
@@ -235,7 +311,7 @@ impl UIFileTree {
     }
 
     /// Add an item to the tree
-    pub fn add_item(&mut self, mut item: FileTreeItem, parent_id: Option<Uuid>) {
+    pub fn add_item(&mut self, mut item: ListTreeItem, parent_id: Option<Uuid>) {
         item.parent = parent_id;
         
         // Calculate depth
@@ -263,7 +339,7 @@ impl UIFileTree {
     }
 
     /// Remove an item from the tree
-    pub fn remove_item(&mut self, item_id: Uuid) -> Option<FileTreeItem> {
+    pub fn remove_item(&mut self, item_id: Uuid) -> Option<ListTreeItem> {
         let item = self.items.remove(&item_id)?;
 
         // Remove from parent's children or root items
@@ -288,18 +364,52 @@ impl UIFileTree {
     }
 
     /// Get an item by ID
-    pub fn get_item(&self, item_id: Uuid) -> Option<&FileTreeItem> {
+    pub fn get_item(&self, item_id: Uuid) -> Option<&ListTreeItem> {
         self.items.get(&item_id)
     }
 
     /// Get a mutable item by ID
-    pub fn get_item_mut(&mut self, item_id: Uuid) -> Option<&mut FileTreeItem> {
+    pub fn get_item_mut(&mut self, item_id: Uuid) -> Option<&mut ListTreeItem> {
         self.items.get_mut(&item_id)
     }
 
     /// Find an item by path
-    pub fn find_item_by_path(&self, path: &str) -> Option<&FileTreeItem> {
+    pub fn find_item_by_path(&self, path: &str) -> Option<&ListTreeItem> {
         self.items.values().find(|item| item.path == path)
+    }
+
+    /// Find an item by user data key-value pair
+    /// 
+    /// Useful for finding items that map to your game objects.
+    /// 
+    /// Example:
+    /// ```rust
+    /// // Find item that has node_id in user_data
+    /// if let Some(item) = tree.find_item_by_user_data("node_id", &node_id.to_string()) {
+    ///     // Found the item for this node
+    /// }
+    /// ```
+    pub fn find_item_by_user_data(&self, key: &str, value: &str) -> Option<&ListTreeItem> {
+        self.items.values().find(|item| {
+            item.user_data.as_ref()
+                .and_then(|data| data.get(key))
+                .and_then(|v| v.as_str())
+                .map(|s| s == value)
+                .unwrap_or(false)
+        })
+    }
+
+    /// Get all items that match a user data key-value pair
+    pub fn find_items_by_user_data(&self, key: &str, value: &str) -> Vec<&ListTreeItem> {
+        self.items.values()
+            .filter(|item| {
+                item.user_data.as_ref()
+                    .and_then(|data| data.get(key))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s == value)
+                    .unwrap_or(false)
+            })
+            .collect()
     }
 
     /// Select an item
@@ -476,7 +586,7 @@ impl UIFileTree {
         let mut result = Vec::new();
         
         fn traverse(
-            tree: &UIFileTree,
+            tree: &UIListTree,
             items: &[Uuid],
             result: &mut Vec<Uuid>,
         ) {
@@ -506,7 +616,6 @@ impl UIFileTree {
 
     /// Load tree structure from a directory path
     pub fn load_from_directory(&mut self, directory: &Path) -> std::io::Result<()> {
-        use std::fs;
         use walkdir::WalkDir;
         
         self.items.clear();
@@ -545,9 +654,9 @@ impl UIFileTree {
             
             let is_dir = path.is_dir();
             let item = if is_dir {
-                FileTreeItem::new_directory(name, full_path)
+                ListTreeItem::new_directory(name, full_path)
             } else {
-                FileTreeItem::new_file(name, full_path, None)
+                ListTreeItem::new_file(name, full_path, None)
             };
             
             // Find parent
@@ -571,9 +680,9 @@ impl UIFileTree {
 }
 
 // Implement Debug manually to avoid issues with callback functions
-impl std::fmt::Debug for UIFileTree {
+impl std::fmt::Debug for UIListTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UIFileTree")
+        f.debug_struct("UIListTree")
             .field("base", &self.base)
             .field("root_path", &self.root_path)
             .field("items", &self.items)
@@ -587,4 +696,4 @@ impl std::fmt::Debug for UIFileTree {
 }
 
 // Implement BaseElement trait using the macro
-crate::impl_ui_element!(UIFileTree);
+crate::impl_ui_element!(UIListTree);

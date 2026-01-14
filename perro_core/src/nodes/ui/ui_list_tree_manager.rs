@@ -1,26 +1,25 @@
-// ui_file_tree_manager.rs - Manager for file tree operations with UID registry integration
+// ui_list_tree_manager.rs - Manager for list tree operations with UID registry integration
 
 use uuid::Uuid;
 use winit::keyboard::KeyCode;
 
 use crate::{
-    project::uid_registry::{rename_asset_with_fs, get_or_create_uid},
     project::asset_io::{resolve_path, ResolvedPath, get_project_root, ProjectRoot},
-    ui_elements::ui_file_tree::{UIFileTree, FileTreeItem},
+    ui_elements::ui_list_tree::{UIListTree, ListTreeItem},
     ui_elements::ui_context_menu::UIContextMenu,
     structs2d::Vector2,
     input::manager::InputManager,
 };
 
-/// File tree manager - handles high-level operations for file trees
-pub struct FileTreeManager {
-    /// Reference to the file tree
+/// List tree manager - handles high-level operations for list trees
+pub struct ListTreeManager {
+    /// Reference to the list tree
     pub tree_id: String,
     /// Reference to the context menu
     pub context_menu_id: String,
 }
 
-impl FileTreeManager {
+impl ListTreeManager {
     pub fn new(tree_id: impl Into<String>, context_menu_id: impl Into<String>) -> Self {
         Self {
             tree_id: tree_id.into(),
@@ -28,10 +27,10 @@ impl FileTreeManager {
         }
     }
 
-    /// Handle input events for the file tree
+    /// Handle input events for the list tree
     /// Returns true if the event was handled
     pub fn handle_input(
-        tree: &mut UIFileTree,
+        tree: &mut UIListTree,
         context_menu: &mut UIContextMenu,
         input: &InputManager,
         _mouse_pos: Vector2,
@@ -58,10 +57,13 @@ impl FileTreeManager {
         }
 
         // Handle Enter key to commit rename
+        // NOTE: Rename signal emission should be handled by caller (ui_node.rs) after this returns
         if input.is_key_pressed(KeyCode::Enter) {
             if tree.rename_state.is_some() {
-                if let Err(e) = Self::commit_rename_with_fs(tree) {
-                    eprintln!("Failed to rename: {}", e);
+                // Just commit the rename in the tree (updates item path)
+                // The caller should check if rename was successful and emit signal
+                if let Err(e) = tree.commit_rename() {
+                    eprintln!("Failed to commit rename: {}", e);
                 }
                 return true;
             }
@@ -79,7 +81,8 @@ impl FileTreeManager {
     }
 
     /// Commit rename and update file system + UID registry
-    pub fn commit_rename_with_fs(tree: &mut UIFileTree) -> Result<(), String> {
+    /// Returns (old_path, new_path) so the caller can update scene nodes
+    pub fn commit_rename_with_fs(tree: &mut UIListTree) -> Result<(String, String), String> {
         // Get the rename state
         let state = tree.rename_state.as_ref()
             .ok_or_else(|| "No rename in progress".to_string())?;
@@ -111,38 +114,34 @@ impl FileTreeManager {
         };
         let new_path = format!("{}{}", parent_path, new_name);
 
-        // If the item has a UID, rename via UID registry
-        if let Some(uid) = uid {
-            rename_asset_with_fs(uid, &new_path)
-                .map_err(|e| format!("Failed to rename file: {}", e))?;
-        } else {
-            // No UID - do a simple file rename
-            let old_fs_path = match resolve_path(&old_path) {
-                ResolvedPath::Disk(p) => p,
-                ResolvedPath::Brk(_) => {
-                    return Err("Cannot rename assets in BRK archives".to_string());
-                }
-            };
+        // Rename the file on disk
+        // NOTE: UID registry updates should be handled by the caller (manager script)
+        let old_fs_path = match resolve_path(&old_path) {
+            ResolvedPath::Disk(p) => p,
+            ResolvedPath::Brk(_) => {
+                return Err("Cannot rename assets in BRK archives".to_string());
+            }
+        };
 
-            let new_fs_path = match resolve_path(&new_path) {
-                ResolvedPath::Disk(p) => p,
-                ResolvedPath::Brk(_) => {
-                    return Err("Cannot rename assets in BRK archives".to_string());
-                }
-            };
+        let new_fs_path = match resolve_path(&new_path) {
+            ResolvedPath::Disk(p) => p,
+            ResolvedPath::Brk(_) => {
+                return Err("Cannot rename assets in BRK archives".to_string());
+            }
+        };
 
-            std::fs::rename(&old_fs_path, &new_fs_path)
-                .map_err(|e| format!("Failed to rename file: {}", e))?;
-        }
+        std::fs::rename(&old_fs_path, &new_fs_path)
+            .map_err(|e| format!("Failed to rename file: {}", e))?;
 
         // Update the tree
         tree.commit_rename()?;
 
-        Ok(())
+        // Return old and new paths so caller can update scene nodes
+        Ok((old_path, new_path))
     }
 
     /// Delete an item from the tree and file system
-    pub fn delete_item(tree: &mut UIFileTree, item_id: Uuid) -> Result<(), String> {
+    pub fn delete_item(tree: &mut UIListTree, item_id: Uuid) -> Result<(), String> {
         let item = tree.get_item(item_id)
             .ok_or_else(|| "Item not found".to_string())?;
         
@@ -175,7 +174,7 @@ impl FileTreeManager {
     }
 
     /// Create a new file in the tree
-    pub fn create_file(tree: &mut UIFileTree, parent_id: Option<Uuid>, name: String) -> Result<Uuid, String> {
+    pub fn create_file(tree: &mut UIListTree, parent_id: Option<Uuid>, name: String) -> Result<Uuid, String> {
         // Calculate path
         let parent_path = if let Some(pid) = parent_id {
             tree.get_item(pid)
@@ -199,11 +198,8 @@ impl FileTreeManager {
         std::fs::File::create(&fs_path)
             .map_err(|e| format!("Failed to create file: {}", e))?;
 
-        // Register with UID registry
-        let uid = get_or_create_uid(&file_path);
-
-        // Add to tree
-        let item = FileTreeItem::new_file(name, file_path, uid);
+        // Add to tree (UID will be set by caller if needed)
+        let item = ListTreeItem::new_file(name, file_path, None);
         let item_id = item.id;
         tree.add_item(item, parent_id);
 
@@ -211,7 +207,7 @@ impl FileTreeManager {
     }
 
     /// Create a new directory in the tree
-    pub fn create_directory(tree: &mut UIFileTree, parent_id: Option<Uuid>, name: String) -> Result<Uuid, String> {
+    pub fn create_directory(tree: &mut UIListTree, parent_id: Option<Uuid>, name: String) -> Result<Uuid, String> {
         // Calculate path
         let parent_path = if let Some(pid) = parent_id {
             tree.get_item(pid)
@@ -236,7 +232,7 @@ impl FileTreeManager {
             .map_err(|e| format!("Failed to create directory: {}", e))?;
 
         // Add to tree
-        let item = FileTreeItem::new_directory(name, dir_path);
+        let item = ListTreeItem::new_directory(name, dir_path);
         let item_id = item.id;
         tree.add_item(item, parent_id);
 
@@ -245,7 +241,7 @@ impl FileTreeManager {
 
     /// Handle context menu action
     pub fn handle_context_action(
-        tree: &mut UIFileTree,
+        tree: &mut UIListTree,
         _context_menu: &mut UIContextMenu,
         action: &str,
     ) -> Result<(), String> {
@@ -369,7 +365,7 @@ impl FileTreeManager {
     }
 
     /// Refresh the tree from the file system, preserving UIDs
-    pub fn refresh_tree(tree: &mut UIFileTree) -> Result<(), String> {
+    pub fn refresh_tree(tree: &mut UIListTree) -> Result<(), String> {
         let project_root = match get_project_root() {
             ProjectRoot::Disk { root, .. } => root,
             ProjectRoot::Brk { .. } => {
@@ -386,12 +382,8 @@ impl FileTreeManager {
         tree.load_from_directory(&res_dir)
             .map_err(|e| format!("Failed to load directory: {}", e))?;
 
-        // Assign UIDs to all items
-        for item in tree.items.values_mut() {
-            if !item.is_directory {
-                item.uid = get_or_create_uid(&item.path);
-            }
-        }
+        // UIDs should be assigned by the caller (manager script) if needed
+        // This function just refreshes the tree structure
 
         Ok(())
     }

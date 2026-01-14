@@ -256,7 +256,7 @@ fn is_effectively_visible(elements: &IndexMap<Uuid, UIElement>, element_id: Uuid
     
     // Debug: check if this is a FileTree
     let is_file_tree = elements.get(&element_id)
-        .map(|e| matches!(e, UIElement::FileTree(_)))
+        .map(|e| matches!(e, UIElement::ListTree(_)))
         .unwrap_or(false);
     
     loop {
@@ -276,29 +276,29 @@ fn is_effectively_visible(elements: &IndexMap<Uuid, UIElement>, element_id: Uuid
         
         if let Some(element) = elements.get(&current_id) {
             // If this element is not visible, return false
-            if !element.get_visible() {
-                if is_file_tree {
-                    eprintln!("🌳 [visibility] FileTree parent chain broken: {} ({}) is not visible", 
-                        element.get_name(), current_id);
+                if !element.get_visible() {
+                    // if is_file_tree {
+                    //     eprintln!("🌳 [visibility] FileTree parent chain broken: {} ({}) is not visible",
+                    //         element.get_name(), current_id);
+                    // }
+                    return false;
                 }
-                return false;
-            }
             // Check parent
             let parent_id = element.get_parent();
             if parent_id.is_nil() {
                 // Reached root, element is visible
-                if is_file_tree {
-                    eprintln!("🌳 [visibility] FileTree is effectively visible (reached root)");
-                }
+                // if is_file_tree {
+                //     eprintln!("🌳 [visibility] FileTree is effectively visible (reached root)");
+                // }
                 return true;
             }
             current_id = parent_id;
         } else {
             // Element not found, consider it invisible
-            eprintln!("⚠️ is_effectively_visible: Element {} not found in elements map", current_id);
-            if is_file_tree {
-                eprintln!("🌳 [visibility] FileTree parent not found: {}", current_id);
-            }
+            // eprintln!("⚠️ is_effectively_visible: Element {} not found in elements map", current_id);
+            // if is_file_tree {
+            //     eprintln!("🌳 [visibility] FileTree parent not found: {}", current_id);
+            // }
             return false;
         }
     }
@@ -2411,23 +2411,30 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
     // Check if elements exist - if not, we can't render yet
     let elements_exist = ui_node.elements.is_some();
     
-    // Check if we have any dirty elements
-    // If empty, mark all elements as dirty for initial render
-    if ui_node.needs_rerender.is_empty() {
-        ui_node.mark_all_needs_rerender();
-        eprintln!("🔧 [render_ui] needs_rerender was empty, marked all elements");
-    }
-    
-    // Collect dirty element IDs before borrowing elements
-    let dirty_elements: Vec<Uuid> = ui_node.needs_rerender.iter().copied().collect();
-    let needs_layout = !ui_node.needs_layout_recalc.is_empty();
-    eprintln!("🔧 [render_ui] Processing {} dirty elements, needs_layout: {}", dirty_elements.len(), needs_layout);
-    
     // If elements don't exist yet, return early - elements will be marked when FUR loads
     // The UINode will be re-added to scene's needs_rerender after FUR loads
     if !elements_exist {
         return;
     }
+    
+    // Check if we have any dirty elements
+    // Only mark all on FIRST render (when elements just loaded but nothing marked yet)
+    // Don't do this every frame when HashSet is empty after clearing!
+    if ui_node.needs_rerender.is_empty() && ui_node.needs_layout_recalc.is_empty() {
+        // If both are empty, nothing needs updating - return early
+        return;
+    }
+    
+    // If needs_rerender is empty but layout needs recalc, mark affected elements
+    if ui_node.needs_rerender.is_empty() && !ui_node.needs_layout_recalc.is_empty() {
+        // Layout changed but no elements marked - mark elements that need layout
+        ui_node.needs_rerender.extend(ui_node.needs_layout_recalc.iter().copied());
+    }
+    
+    // Collect dirty element IDs before borrowing elements
+    let dirty_elements: Vec<Uuid> = ui_node.needs_rerender.iter().copied().collect();
+    let needs_layout = !ui_node.needs_layout_recalc.is_empty();
+    // eprintln!("🔧 [render_ui] Processing {} dirty elements, needs_layout: {}", dirty_elements.len(), needs_layout);
     
     // Build visibility cache ONCE for the frame (used by both visibility check and layout)
     let visibility_cache: HashSet<Uuid> = if let Some(elements) = &ui_node.elements {
@@ -2591,11 +2598,11 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
 
     // Now borrow elements for rendering
     if let Some(elements) = &mut ui_node.elements {
-        eprintln!("🔧 [render_ui] Total elements in map: {}", elements.len());
-        
-        // Count FileTree elements
-        let file_tree_count = elements.values().filter(|e| matches!(e, UIElement::FileTree(_))).count();
-        eprintln!("🌳 [render_ui] FileTree elements found: {}", file_tree_count);
+        // eprintln!("🔧 [render_ui] Total elements in map: {}", elements.len());
+
+        // Count ListTree elements (for debugging)
+        // let file_tree_count = elements.values().filter(|e| matches!(e, UIElement::ListTree(_))).count();
+        // eprintln!("🌳 [render_ui] FileTree elements found: {}", file_tree_count);
         // OPTIMIZATION: Only check dirty elements for visibility changes
         // instead of checking ALL elements every frame
         let dirty_set: HashSet<Uuid> = dirty_elements.iter().copied().collect();
@@ -2636,7 +2643,7 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                 }
             }
             
-            eprintln!("🔧 [render_ui] Visibility check: {} visible, {} newly invisible", visible.len(), invisible.len());
+            // eprintln!("🔧 [render_ui] Visibility check: {} visible, {} newly invisible", visible.len(), invisible.len());
             
             (visible, invisible)
         };
@@ -2676,39 +2683,40 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
         }
         
         // DEBUG: Check if FileTree is in the elements map and what its state is
-        eprintln!("🔧 [render_ui] Starting FileTree debug loop...");
-        let mut found_file_tree = false;
-        for (id, element) in elements.iter() {
-            if let UIElement::FileTree(ft) = element {
-                found_file_tree = true;
-                eprintln!("🌳 [DEBUG] FileTree exists: id={}, name={}, visible={}, size={:?}, parent={:?}", 
-                    id, ft.base.name, ft.base.visible, ft.base.size, ft.base.parent_id);
-                eprintln!("🌳 [DEBUG] FileTree global_transform: {:?}", ft.base.global_transform);
-                eprintln!("🌳 [DEBUG] FileTree is in visibility_cache: {}", visibility_cache.contains(id));
-                
-                // Check parent visibility
-                if !ft.base.parent_id.is_nil() {
-                    if let Some(parent) = elements.get(&ft.base.parent_id) {
-                        eprintln!("🌳 [DEBUG] FileTree parent: name={}, visible={}", 
-                            parent.get_name(), parent.get_visible());
-                    } else {
-                        eprintln!("🌳 [DEBUG] FileTree parent NOT FOUND in elements map!");
-                    }
-                }
-            }
-        }
-        if !found_file_tree {
-            eprintln!("🌳 [DEBUG] NO FileTree found in elements map!");
-        }
+        // Debug FileTree presence (commented out for performance)
+        // eprintln!("🔧 [render_ui] Starting FileTree debug loop...");
+        // let mut found_file_tree = false;
+        // for (id, element) in elements.iter() {
+        //     if let UIElement::ListTree(ft) = element {
+        //         found_file_tree = true;
+        //         eprintln!("🌳 [DEBUG] ListTree exists: id={}, name={}, visible={}, size={:?}, parent={:?}",
+        //             id, ft.base.name, ft.base.visible, ft.base.size, ft.base.parent_id);
+        //         eprintln!("🌳 [DEBUG] FileTree global_transform: {:?}", ft.base.global_transform);
+        //         eprintln!("🌳 [DEBUG] FileTree is in visibility_cache: {}", visibility_cache.contains(id));
+
+        //         // Check parent visibility
+        //         if !ft.base.parent_id.is_nil() {
+        //             if let Some(parent) = elements.get(&ft.base.parent_id) {
+        //                 eprintln!("🌳 [DEBUG] FileTree parent: name={}, visible={}",
+        //                     parent.get_name(), parent.get_visible());
+        //             } else {
+        //                 eprintln!("🌳 [DEBUG] FileTree parent NOT FOUND in elements map!");
+        //             }
+        //         }
+        //     }
+        // }
+        // if !found_file_tree {
+        //     eprintln!("🌳 [DEBUG] NO FileTree found in elements map!");
+        // }
         
         // Now render only the visible elements (mutable borrow)
-        eprintln!("🔧 [render_ui] About to render {} visible elements", visible_element_ids.len());
+        // eprintln!("🔧 [render_ui] About to render {} visible elements", visible_element_ids.len());
         for element_id in visible_element_ids {
             if let Some(element) = elements.get_mut(&element_id) {
                 // Check if this is the file tree for debugging
-                if let UIElement::FileTree(_) = element {
-                    eprintln!("🌳 [render_ui] Found FileTree in visible list!");
-                }
+                // if let UIElement::ListTree(_) = element {
+                //     eprintln!("🌳 [render_ui] Found ListTree in visible list!");
+                // }
                 match element {
                     UIElement::BoxContainer(_) => { /* no-op */ }
                     UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
@@ -2911,11 +2919,11 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                             gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
-                    UIElement::FileTree(file_tree) => {
-                        eprintln!("🌳 [render_ui] Rendering FileTree {} with {} items (visible: {})", 
-                            file_tree.base.name, 
-                            file_tree.items.len(),
-                            file_tree.base.visible);
+                    UIElement::ListTree(file_tree) => {
+                        // eprintln!("🌳 [render_ui] Rendering ListTree {} with {} items (visible: {})",
+                        //     file_tree.base.name,
+                        //     file_tree.items.len(),
+                        //     file_tree.base.visible);
                         render_file_tree(file_tree, gfx, timestamp);
                     }
                     UIElement::ContextMenu(context_menu) => {
@@ -2930,8 +2938,8 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
     ui_node.clear_rerender_flags();
 }
 
-fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gfx: &mut Graphics, timestamp: u64) {
-    use crate::ui_elements::ui_file_tree::UIFileTree;
+fn render_file_tree(file_tree: &crate::ui_elements::ui_list_tree::UIListTree, gfx: &mut Graphics, timestamp: u64) {
+    use crate::ui_elements::ui_list_tree::UIListTree;
     
     // Render background panel
     let bg_rect_id = uuid::Uuid::new_v5(&file_tree.base.id, b"background");
@@ -2967,7 +2975,39 @@ fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gf
             let indent = item.depth as f32 * file_tree.indent_size;
             let item_x = top_left_x + indent + 5.0;
             
-            // Check if this item is selected
+            // Check if this item is hovered (render first, so selection is on top)
+            let is_hovered = file_tree.hovered_item == Some(item_id);
+            if is_hovered {
+                let hover_id = uuid::Uuid::new_v5(&item_id, b"hover");
+                let hover_pos = crate::Vector2::new(
+                    top_left_x,
+                    current_y
+                );
+                let hover_size = crate::Vector2::new(
+                    file_tree.base.size.x,
+                    file_tree.item_height
+                );
+                let hover_transform = crate::Transform2D {
+                    position: hover_pos,
+                    rotation: 0.0,
+                    scale: crate::Vector2::ONE,
+                };
+                gfx.renderer_prim.queue_rect(
+                    hover_id,
+                    crate::rendering::renderer_prim::RenderLayer::UI,
+                    hover_transform,
+                    hover_size,
+                    crate::Vector2::ZERO, // pivot
+                    file_tree.hover_color,
+                    None, // corner_radius
+                    0.0, // border_thickness
+                    false, // is_border
+                    file_tree.base.z_index + 1,
+                    timestamp,
+                );
+            }
+            
+            // Check if this item is selected (render on top of hover)
             let is_selected = file_tree.is_selected(item_id);
             
             // Render selection highlight if selected
@@ -3006,6 +3046,7 @@ fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gf
             if item.is_directory {
                 let indicator = if item.is_expanded { "▼ " } else { "▶ " };
                 let indicator_id = uuid::Uuid::new_v5(&item_id, b"indicator");
+                // Position at left edge of item + indent, vertically centered in item bounds
                 let indicator_pos = crate::Vector2::new(item_x, current_y + file_tree.item_height * 0.5);
                 let indicator_transform = crate::Transform2D {
                     position: indicator_pos,
@@ -3013,16 +3054,18 @@ fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gf
                     scale: crate::Vector2::ONE,
                 };
                 
-                gfx.renderer_ui.queue_text(
+                gfx.renderer_ui.queue_text_aligned(
                     &mut gfx.renderer_prim,
                     indicator_id,
                     indicator,
                     12.0, // Font size for indicator
                     indicator_transform,
-                    crate::Vector2::new(0.0, 0.5), // pivot - centered vertically
+                    crate::Vector2::ZERO, // pivot at top-left
                     file_tree.text_color,
                     file_tree.base.z_index + 2,
                     timestamp,
+                    crate::ui_elements::ui_text::TextAlignment::Left, // Left align
+                    crate::ui_elements::ui_text::TextAlignment::Center, // Center vertically
                 );
                 text_offset = 15.0; // Space for indicator
             }
@@ -3036,6 +3079,7 @@ fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gf
             };
             
             let text_id = uuid::Uuid::new_v5(&item_id, b"text");
+            // Position at item position + text offset, vertically centered in item bounds
             let text_pos = crate::Vector2::new(
                 item_x + text_offset,
                 current_y + file_tree.item_height * 0.5
@@ -3046,16 +3090,18 @@ fn render_file_tree(file_tree: &crate::ui_elements::ui_file_tree::UIFileTree, gf
                 scale: crate::Vector2::ONE,
             };
             
-            gfx.renderer_ui.queue_text(
+            gfx.renderer_ui.queue_text_aligned(
                 &mut gfx.renderer_prim,
                 text_id,
                 &display_name,
                 14.0, // Font size for item name
                 text_transform,
-                crate::Vector2::new(0.0, 0.5), // pivot - centered vertically
+                crate::Vector2::ZERO, // pivot at top-left
                 file_tree.text_color,
                 file_tree.base.z_index + 2,
                 timestamp,
+                crate::ui_elements::ui_text::TextAlignment::Left, // Left align
+                crate::ui_elements::ui_text::TextAlignment::Center, // Center vertically
             );
             
             current_y += file_tree.item_height;

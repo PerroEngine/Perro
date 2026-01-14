@@ -70,8 +70,8 @@
                                           // Content area - remaining space
                                           [Panel w=100% h=92% anchor=c bg=steel-10]
                                                 [Panel id=ResourcesContainer w=95% h=98% anchor=c bg=steel-5 rounding=0.1]
-                                                      [FileTree id=ResourceFileTree w=100% h=100% anchor=c bg=steel-8 text-c=white selected-c=blue-6 hover-c=steel-6]
-                                                      [/FileTree]
+                                                      [ListTree id=ResourceFileTree w=100% h=100% anchor=c bg=steel-8 text-c=white selected-c=blue-6 hover-c=steel-6]
+                                                      [/ListTree]
                                                 [/Panel]
                                           [/Panel]
                                     [/VLayout]

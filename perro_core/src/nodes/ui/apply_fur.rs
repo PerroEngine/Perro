@@ -15,7 +15,7 @@ use crate::{
         ui_text_input::UITextInput,
         ui_text_edit::UITextEdit,
         ui_code_edit::UICodeEdit,
-        ui_file_tree::UIFileTree,
+        ui_list_tree::UIListTree,
     },
     ui_node::UINode,
 };
@@ -1393,8 +1393,9 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             Some(UIElement::CodeEdit(code_edit))
         }
 
-        "FileTree" => {
-            let mut file_tree = UIFileTree::default();
+        // ListTree and FileTree are the same (ListTree is the generic name)
+        "ListTree" | "FileTree" => {
+            let mut file_tree = UIListTree::default();
             file_tree.set_name(&fur.id);
             apply_base_attributes(&mut file_tree.base, &fur.attributes);
 
@@ -1438,7 +1439,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 }
             }
 
-            Some(UIElement::FileTree(file_tree))
+            Some(UIElement::ListTree(file_tree))
         }
 
         _ => {

@@ -8,10 +8,9 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use perro_core::prelude::*;
 use perro_core::ui_element::{BaseElement, UIElement};
-use perro_core::ui_elements::ui_file_tree::{UIFileTree, FileTreeItem, SelectionMode};
+use perro_core::ui_elements::ui_list_tree::{UIListTree, ListTreeItem, SelectionMode};
 use perro_core::ui_elements::ui_context_menu::{UIContextMenu, ContextMenuItem};
-use perro_core::ui_file_tree_manager::FileTreeManager;
-use perro_core::project::uid_integration::{init_project_uid_registry, clear_project_uid_registry};
+use perro_core::ui_list_tree_manager::ListTreeManager;
 use perro_core::nodes::ui::fur_ast::FurAnchor;
 use std::path::{Path, PathBuf};
 use phf::{phf_map, Map};
@@ -24,6 +23,13 @@ enum EditorMode {
     TwoD,
     ThreeD,
     Script,
+}
+
+/// Asset metadata for UID registry
+#[derive(Debug, Clone)]
+struct AssetMetadata {
+    uid: Uuid,
+    path: String,
 }
 
 /// @PerroScript
@@ -51,6 +57,10 @@ struct ManagerScript {
     file_tree_id: Option<Uuid>, // Store file tree element ID
     context_menu_id: Option<Uuid>, // Store context menu element ID
     frame_count: u32, // Track frames to delay file tree initialization
+    // UID registry - editor-specific: maps file paths to UIDs for tracking renames
+    uid_registry: HashMap<Uuid, AssetMetadata>, // UID -> metadata
+    path_to_uid: HashMap<String, Uuid>, // path -> UID (reverse lookup)
+    // Note: Mouse tracking and double-click tracking are now handled by UIListTree internally
 }
 
 #[unsafe(no_mangle)]
@@ -68,15 +78,187 @@ pub extern "C" fn scripts_manager_rs_create_script() -> *mut dyn ScriptObject {
         initial_compile_done: false,
         resources_scanned: false,
         resource_files: Vec::new(),
-        current_mode: None, // Start with no mode (default viewport)
+        current_mode: Some(EditorMode::TwoD), // Start with no mode (default viewport)
         file_tree_initialized: false,
         file_tree_id: None,
         context_menu_id: None,
         frame_count: 0,
+        uid_registry: HashMap::new(),
+        path_to_uid: HashMap::new(),
     })) as *mut dyn ScriptObject
 }
 
 impl ManagerScript {
+    // ===== UID REGISTRY METHODS =====
+    // Editor-specific: Track file paths with UIDs for rename/move operations
+    
+    /// Register a file path and get/create its UID
+    /// Uses deterministic UUID (v5) so same path = same UID across sessions
+    fn register_asset(&mut self, path: &str) -> Uuid {
+        // Check if already registered
+        if let Some(&uid) = self.path_to_uid.get(path) {
+            return uid;
+        }
+        
+        // Create deterministic UID from path hash
+        let namespace = Uuid::NAMESPACE_URL;
+        let uid = Uuid::new_v5(&namespace, path.as_bytes());
+        
+        // Store in registry
+        let metadata = AssetMetadata {
+            uid,
+            path: path.to_string(),
+        };
+        self.uid_registry.insert(uid, metadata);
+        self.path_to_uid.insert(path.to_string(), uid);
+        
+        uid
+    }
+    
+    /// Get UID for a path, or None if not registered
+    fn get_uid(&self, path: &str) -> Option<Uuid> {
+        self.path_to_uid.get(path).copied()
+    }
+    
+    /// Get path for a UID, or None if not found
+    fn get_path(&self, uid: Uuid) -> Option<&str> {
+        self.uid_registry.get(&uid).map(|m| m.path.as_str())
+    }
+    
+    /// Rename/move an asset (updates UID registry)
+    /// Returns old_path if successful
+    fn rename_asset(&mut self, uid: Uuid, new_path: &str) -> Result<String, String> {
+        let metadata = self.uid_registry.get_mut(&uid)
+            .ok_or_else(|| format!("Asset UID {} not found in registry", uid))?;
+        
+        let old_path = metadata.path.clone();
+        
+        // Update path in metadata
+        metadata.path = new_path.to_string();
+        
+        // Update reverse mapping
+        self.path_to_uid.remove(&old_path);
+        self.path_to_uid.insert(new_path.to_string(), uid);
+        
+        Ok(old_path)
+    }
+    
+    /// Update all scene files on disk when a file is renamed/moved
+    fn update_all_scene_files_on_disk(&self, api: &mut ScriptApi, project_res_path: &str, old_path: &str, new_path: &str) -> Result<(usize, usize), String> {
+        use perro_core::scene::SceneData;
+        
+        let res_dir = Path::new(project_res_path);
+        if !res_dir.exists() {
+            return Ok((0, 0));
+        }
+        
+        let mut scenes_checked = 0;
+        let mut total_nodes_updated = 0;
+        
+        // Walk through all .scn files in res/ using FileSystem API
+        // project_res_path is already a disk path like "d:/path/to/project/res"
+        let scn_files = api.FileSystem.walk_files_with_ext(project_res_path, "scn");
+        
+        for relative_path_str in scn_files {
+            scenes_checked += 1;
+            
+            // Construct the full res:// path (relative_path_str is already relative to res/)
+            let scene_res_path = format!("res://{}", relative_path_str);
+            
+            // Load the scene
+            match SceneData::load(&scene_res_path) {
+                Ok(mut scene_data) => {
+                    // Update asset paths in this scene (inlined to avoid codegen issues)
+                    use perro_core::nodes::node_registry::SceneNode;
+                    let mut nodes_updated = 0;
+                    
+                    for (_idx, node) in scene_data.nodes.iter_mut() {
+                        // Update script paths
+                        if let Some(script_path) = node.get_script_path() {
+                            if script_path == old_path {
+                                node.set_script_path(new_path);
+                                nodes_updated += 1;
+                            }
+                        }
+                        
+                        // Update texture paths
+                        if let Some(texture_path) = Self::get_texture_path_mut(node) {
+                            if texture_path.as_ref() == old_path {
+                                *texture_path = new_path.to_string().into();
+                                nodes_updated += 1;
+                            }
+                        }
+                        
+                        // Update mesh paths
+                        if let Some(mesh_path) = Self::get_mesh_path_mut(node) {
+                            if mesh_path.as_ref() == old_path {
+                                *mesh_path = new_path.to_string().into();
+                                nodes_updated += 1;
+                            }
+                        }
+                        
+                        // Update material paths
+                        if let Some(material_path) = Self::get_material_path_mut(node) {
+                            if material_path.as_ref() == old_path {
+                                *material_path = new_path.to_string().into();
+                                nodes_updated += 1;
+                            }
+                        }
+                        
+                        // Update FUR paths
+                        if let SceneNode::UINode(ui_node) = node {
+                            if let Some(ref fur_path) = ui_node.fur_path {
+                                if fur_path.as_ref() == old_path {
+                                    ui_node.fur_path = Some(new_path.to_string().into());
+                                    nodes_updated += 1;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if nodes_updated > 0 {
+                        // Save the scene back to disk
+                        if let Err(e) = scene_data.save(&scene_res_path) {
+                            eprintln!("⚠️ Failed to save scene {}: {}", scene_res_path, e);
+                        } else {
+                            total_nodes_updated += nodes_updated;
+                            eprintln!("✅ Updated {} node(s) in scene: {}", nodes_updated, scene_res_path);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠️ Failed to load scene {}: {}", scene_res_path, e);
+                }
+            }
+        }
+        
+        Ok((scenes_checked, total_nodes_updated))
+    }
+    
+    /// Helper to get mutable texture path from a node
+    fn get_texture_path_mut<'a>(node: &'a mut perro_core::nodes::node_registry::SceneNode) -> Option<&'a mut std::borrow::Cow<'static, str>> {
+        match node {
+            perro_core::nodes::node_registry::SceneNode::Sprite2D(sprite) => sprite.texture_path.as_mut(),
+            _ => None,
+        }
+    }
+    
+    /// Helper to get mutable mesh path from a node
+    fn get_mesh_path_mut<'a>(node: &'a mut perro_core::nodes::node_registry::SceneNode) -> Option<&'a mut std::borrow::Cow<'static, str>> {
+        match node {
+            perro_core::nodes::node_registry::SceneNode::MeshInstance3D(mesh) => mesh.mesh_path.as_mut(),
+            _ => None,
+        }
+    }
+    
+    /// Helper to get mutable material path from a node
+    fn get_material_path_mut<'a>(node: &'a mut perro_core::nodes::node_registry::SceneNode) -> Option<&'a mut std::borrow::Cow<'static, str>> {
+        match node {
+            perro_core::nodes::node_registry::SceneNode::MeshInstance3D(mesh) => mesh.material_path.as_mut(),
+            _ => None,
+        }
+    }
+    
     /// Find the editor executable in a directory
     fn find_editor_exe(&self, dir: &Path) -> Option<PathBuf> {
         use std::fs;
@@ -538,7 +720,7 @@ impl ManagerScript {
         
         // Populate the file tree with directory contents
         let result = api.with_ui_node(ui_node_id, |ui| -> Result<usize, String> {
-            if let Some(UIElement::FileTree(file_tree)) = ui.find_element_by_name_mut("ResourceFileTree") {
+            if let Some(UIElement::ListTree(file_tree)) = ui.find_element_by_name_mut("ResourceFileTree") {
                 file_tree.root_path = "res://".to_string();
                 file_tree.selection_mode = SelectionMode::Single;
                 file_tree.show_extensions = true;
@@ -550,10 +732,11 @@ impl ManagerScript {
                     }
                     let item_count = file_tree.items.len();
                     
-                    // Register all files with UID registry
+                    // Register all files with UID registry (editor-specific)
                     for item in file_tree.items.values_mut() {
                         if !item.is_directory {
-                            item.uid = perro_core::project::uid_registry::get_or_create_uid(&item.path);
+                            let uid = self.register_asset(&item.path);
+                            item.uid = Some(uid);
                         }
                     }
                     
@@ -808,129 +991,93 @@ impl ManagerScript {
         self.on_ui_editor_pressed(api);
     }
     
-    /// Handle file tree input (F2, clicks, context menu)
-    fn handle_file_tree_input(&mut self, api: &mut ScriptApi) {
-        let Some(tree_id) = self.file_tree_id else { return };
-        let Some(menu_id) = self.context_menu_id else { return };
+    // ===== FILE TREE SIGNAL HANDLERS =====
+    // The UIListTree component handles all mouse interactions and emits signals
+    // We just need to respond to those signals
+    
+    /// Called when a file tree item is clicked
+    pub fn on_file_tree_item_clicked(&mut self, api: &mut ScriptApi) {
+        eprintln!("🎯 [Manager] on_file_tree_item_clicked HANDLER CALLED!");
+        api.print("📄 File tree item clicked");
+        // TODO: Handle file selection (e.g., update inspector)
+    }
+    
+    /// Called when a file tree item is double-clicked
+    pub fn on_file_tree_item_double_clicked(&mut self, api: &mut ScriptApi) {
+        eprintln!("🎯 [Manager] on_file_tree_item_double_clicked HANDLER CALLED!");
+        api.print("📂 File tree item double-clicked");
+        // TODO: Handle file opening (e.g., open scene, open script editor, etc.)
+    }
+    
+    /// Called when a file tree item is right-clicked
+    pub fn on_file_tree_item_right_clicked(&mut self, api: &mut ScriptApi) {
+        eprintln!("🎯 [Manager] on_file_tree_item_right_clicked HANDLER CALLED!");
+        api.print("🖱️ File tree item right-clicked");
+        
+        let Some(menu_id) = self.context_menu_id else { 
+            eprintln!("⚠️ [Manager] Context menu ID not set!");
+            return 
+        };
         let ui_node_id = self.id;
         
-        // Get mouse position (in screen space)
+        // Show context menu at mouse position
         let mouse_pos = api.Input.Mouse.get_position();
-        // mouse_pos is already a Vector2, no need to convert
-        let mouse_pos_vec = mouse_pos;
-        
-        // Handle F2 key for rename
-        if api.Input.Keyboard.is_key_pressed("F2") {
-            // Check if there's a selected item (immutable borrow)
-            let selected_id_opt = api.with_ui_node(ui_node_id, |ui| {
-                if let Some(UIElement::FileTree(tree)) = ui.elements.as_ref().and_then(|e| e.get(&tree_id)) {
-                    tree.selected_items.iter().next().copied()
-                } else {
-                    None
-                }
-            });
-            
-            // Start rename if there's a selection
-            if let Some(selected_id) = selected_id_opt {
-                api.print(&format!("🔤 Starting rename for item: {}", selected_id));
-                
-                api.with_ui_node(ui_node_id, |ui| {
-                    if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
-                        tree.start_rename(selected_id);
-                        ui.mark_element_needs_rerender(tree_id);
-                    }
-                });
+        api.with_ui_node(ui_node_id, |ui| {
+            if let Some(UIElement::ContextMenu(menu)) = ui.elements.as_mut().and_then(|e| e.get_mut(&menu_id)) {
+                menu.show_at(mouse_pos);
+                ui.mark_element_needs_rerender(menu_id);
             }
-        }
+        });
+    }
+    
+    /// Called when a file tree item is renamed
+    /// Params: old_path (String), new_path (String)
+    pub fn on_file_tree_item_renamed(&mut self, api: &mut ScriptApi, old_path: String, new_path: String) {
+        eprintln!("🎯 [Manager] on_file_tree_item_renamed HANDLER CALLED! old_path='{}' new_path='{}'", old_path, new_path);
+        api.print(&format!("🔄 File rename: {} -> {}", old_path, new_path));
         
-        // Handle Enter key to commit rename
-        if api.Input.Keyboard.is_key_pressed("Enter") {
-            let rename_active = api.with_ui_node(ui_node_id, |ui| {
-                if let Some(UIElement::FileTree(tree)) = ui.elements.as_ref().and_then(|e| e.get(&tree_id)) {
-                    tree.rename_state.is_some()
-                } else {
-                    false
-                }
-            });
-            
-            if rename_active {
-                api.print("💾 Committing rename...");
-                // TODO: Implement FileTreeManager::commit_rename_with_fs
-                // For now, just commit in-memory
-                let result = api.with_ui_node(ui_node_id, |ui| {
-                    if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
-                        let res = tree.commit_rename();
-                        ui.mark_element_needs_rerender(tree_id);
-                        Some(res)
-                    } else {
-                        None
-                    }
-                });
-                
-                // Print result outside the closure
-                if let Some(res) = result {
-                    match res {
-                        Ok(_) => api.print("✅ Rename committed"),
-                        Err(e) => api.print(&format!("❌ Rename failed: {}", e)),
-                    }
-                }
+        // Get UID for old path
+        if let Some(uid) = self.get_uid(&old_path) {
+            // Update UID registry
+            if let Err(e) = self.rename_asset(uid, &new_path) {
+                api.print(&format!("❌ Failed to update UID registry: {}", e));
+                return;
             }
-        }
-        
-        // Handle Escape key to cancel rename or close context menu
-        if api.Input.Keyboard.is_key_pressed("Escape") {
-            let mut cancelled_something = false;
             
-            // Cancel rename if active
+            // Update file tree item's UID mapping (path is already updated by commit_rename)
+            let ui_node_id = self.id;
             api.with_ui_node(ui_node_id, |ui| {
-                if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
-                    if tree.rename_state.is_some() {
-                        tree.cancel_rename();
-                        cancelled_something = true;
-                        ui.mark_element_needs_rerender(tree_id);
+                if let Some(UIElement::ListTree(file_tree)) = ui.find_element_by_name_mut("ResourceFileTree") {
+                    // Find the item with the new path and verify UID is set
+                    for item in file_tree.items.values_mut() {
+                        if item.path == new_path {
+                            if item.uid.is_none() {
+                                item.uid = Some(uid);
+                            }
+                            break;
+                        }
                     }
                 }
             });
             
-            // Hide context menu if visible
-            api.with_ui_node(ui_node_id, |ui| {
-                if let Some(UIElement::ContextMenu(menu)) = ui.elements.as_mut().and_then(|e| e.get_mut(&menu_id)) {
-                    if menu.visible {
-                        menu.hide();
-                        cancelled_something = true;
-                        ui.mark_element_needs_rerender(menu_id);
-                    }
-                }
-            });
+            // Update all scene files on disk
+            let resolved_path = if self.current_project_path.starts_with("user://") {
+                api.resolve_path(&self.current_project_path).unwrap_or_else(|| self.current_project_path.clone())
+            } else {
+                self.current_project_path.clone()
+            };
             
-            if cancelled_something {
-                api.print("🚫 Cancelled");
+            let project_res_path = format!("{}/res", resolved_path);
+            match self.update_all_scene_files_on_disk(api, &project_res_path, &old_path, &new_path) {
+                Ok((scenes_checked, nodes_updated)) => {
+                    api.print(&format!("✅ Updated {} node(s) across {} scene(s)", nodes_updated, scenes_checked));
+                }
+                Err(e) => {
+                    api.print(&format!("❌ Failed to update scene files: {}", e));
+                }
             }
-        }
-        
-        // Handle Delete key
-        if api.Input.Keyboard.is_key_pressed("Delete") {
-            let delete_result = api.with_ui_node(ui_node_id, |ui| {
-                if let Some(UIElement::FileTree(tree)) = ui.elements.as_mut().and_then(|e| e.get_mut(&tree_id)) {
-                    if let Some(&selected_id) = tree.selected_items.iter().next() {
-                        // TODO: Implement FileTreeManager::delete_item
-                        // For now, just remove from tree
-                        let item = tree.remove_item(selected_id);
-                        ui.mark_element_needs_rerender(tree_id);
-                        item.map(|i| (selected_id, i.name))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            });
-            
-            // Print result outside the closure
-            if let Some((id, name)) = delete_result {
-                api.print(&format!("🗑️ Deleted item: {}", id));
-                api.print(&format!("✅ Removed from tree: {}", name));
-            }
+        } else {
+            api.print(&format!("⚠️ File {} not in UID registry, skipping scene updates", old_path));
         }
     }
 }
@@ -939,12 +1086,8 @@ impl Script for ManagerScript {
     fn init(&mut self, api: &mut ScriptApi<'_>) {
         api.print("🎮 Manager script initialized");
         
-        // Initialize UID registry for editor session
-        if let Err(e) = init_project_uid_registry() {
-            api.print(&format!("⚠️ Failed to init UID registry: {}", e));
-        } else {
-            api.print("✅ UID registry initialized");
-        }
+        // UID registry is initialized as part of ManagerScript struct
+        api.print("✅ UID registry ready (editor-specific)");
         
         // Check if we're opening a project (project_path runtime param set by root script)
         if let Some(project_path) = api.project().get_runtime_param("project_path") {
@@ -1039,7 +1182,20 @@ impl Script for ManagerScript {
             api.connect_signal("two_d_Pressed", self.id, "on_two_d_pressed");
             // Note: 3D and Script buttons don't have IDs in the FUR file yet, so we'll need to add them
             // For now, we can connect them if they get IDs later
+            
+            // Connect file tree signals (emitted by UIListTree component)
+            api.print("🔗 Connecting file tree signals...");
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_Clicked to on_file_tree_item_clicked");
+            api.connect_signal("ResourceFileTree_Clicked", self.id, "on_file_tree_item_clicked");
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_DoubleClicked to on_file_tree_item_double_clicked");
+            api.connect_signal("ResourceFileTree_DoubleClicked", self.id, "on_file_tree_item_double_clicked");
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_RightClicked to on_file_tree_item_right_clicked");
+            api.connect_signal("ResourceFileTree_RightClicked", self.id, "on_file_tree_item_right_clicked");
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_Renamed to on_file_tree_item_renamed");
+            api.connect_signal("ResourceFileTree_Renamed", self.id, "on_file_tree_item_renamed");
+            
             api.print("✅ Signal connections complete");
+            eprintln!("✅ [Manager] All signal connections registered");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -1050,10 +1206,8 @@ impl Script for ManagerScript {
         }
         self.frame_count += 1;
         
-        // Handle file tree input (F2, mouse clicks, etc.)
-        if self.file_tree_initialized && self.file_tree_id.is_some() && self.context_menu_id.is_some() {
-            self.handle_file_tree_input(api);
-        }
+        // Note: File tree input is now handled by the UIListTree component itself
+        // It will emit signals that we respond to via the connected signal handlers
         
         // Check if we need to compile scripts (only on first update, after window is visible)
         self.check_and_compile_if_needed(api);
@@ -1191,6 +1345,57 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut ManagerScript, &[Value], &mut ScriptApi<'_>),
 > = phf::phf_map! {
+        4508745618743899923u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let path = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.register_asset(&path);
+        },
+        11892411923517466138u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let path = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.get_uid(&path);
+        },
+        18257970443803474511u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let uid_opt = params.get(0)
+                            .and_then(|v| serde_json::from_value::<Uuid>(v.clone()).ok());
+let uid = match uid_opt {
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+};
+            script.get_path(uid);
+        },
+        16921870607580015404u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let uid_opt = params.get(0)
+                            .and_then(|v| serde_json::from_value::<Uuid>(v.clone()).ok());
+let uid = match uid_opt {
+    Some(val) => val,
+    None => return, // Skip this function call if deserialization failed
+};
+let new_path = params.get(1)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.rename_asset(uid, &new_path);
+        },
+        1580007559800030707u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let project_res_path = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+let old_path = params.get(1)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+let new_path = params.get(2)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.update_all_scene_files_on_disk(api, &project_res_path, &old_path, &new_path);
+        },
         7531284223884451901u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
 let __path_buf_dir = params.get(0)
                             .and_then(|v| v.as_str())
@@ -1283,8 +1488,25 @@ let mode = match mode_opt {
         11006045986918016856u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
             script.toggle_ui_editor(api);
         },
-        5549993138914309056u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
-            script.handle_file_tree_input(api);
+        5378030252301901168u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_file_tree_item_clicked(api);
+        },
+        5214513999877490216u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_file_tree_item_double_clicked(api);
+        },
+        12456821816054257453u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+            script.on_file_tree_item_right_clicked(api);
+        },
+        12143212617591553931u64 => | script: &mut ManagerScript, params: &[Value], api: &mut ScriptApi<'_>| {
+let old_path = params.get(0)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+let new_path = params.get(1)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_default();
+            script.on_file_tree_item_renamed(api, old_path, new_path);
         },
 
     };

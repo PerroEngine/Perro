@@ -1477,6 +1477,75 @@ impl EditorApi {
 
 }
 
+#[derive(Default)]
+pub struct FileSystemApi;
+
+impl FileSystemApi {
+    /// Walk a directory recursively and return all file paths matching a filter
+    /// Returns paths relative to the base directory
+    /// Example: `let files = api.FileSystem.walk_files("res://", |p| p.ends_with(".scn"));`
+    pub fn walk_files<F>(&self, base_path: &str, filter: F) -> Vec<String>
+    where
+        F: Fn(&Path) -> bool,
+    {
+        use crate::asset_io::resolve_path;
+        use std::fs;
+
+        let mut files = Vec::new();
+
+        // Resolve the path - handle both res:// paths and direct disk paths
+        let resolved = if base_path.starts_with("res://") || base_path.starts_with("user://") {
+            match resolve_path(base_path) {
+                crate::asset_io::ResolvedPath::Disk(pb) => pb,
+                crate::asset_io::ResolvedPath::Brk(_) => {
+                    return files;
+                }
+            }
+        } else {
+            // Already a disk path
+            PathBuf::from(base_path)
+        };
+
+        if !resolved.exists() || !resolved.is_dir() {
+            return files;
+        }
+
+        // Recursive walk using a stack
+        let base_dir = resolved.clone();
+        let mut stack = vec![resolved];
+        while let Some(current_dir) = stack.pop() {
+            if let Ok(entries) = fs::read_dir(&current_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        stack.push(path);
+                    } else if path.is_file() && filter(&path) {
+                        if let Ok(relative) = path.strip_prefix(&base_dir) {
+                            let relative_str = relative.to_string_lossy().replace('\\', "/");
+                            files.push(relative_str);
+                        }
+                    }
+                }
+            }
+        }
+
+        files.sort();
+        files
+    }
+
+    /// Walk a directory recursively and return all files with a specific extension
+    /// Returns paths relative to the base directory
+    /// Example: `let scn_files = api.FileSystem.walk_files_with_ext("res://", "scn");`
+    pub fn walk_files_with_ext(&self, base_path: &str, extension: &str) -> Vec<String> {
+        self.walk_files(base_path, |path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case(extension))
+                .unwrap_or(false)
+        })
+    }
+}
+
 #[allow(non_snake_case)]
 #[derive(Default)]
 pub struct EngineApi {
@@ -1489,6 +1558,7 @@ pub struct EngineApi {
     pub Math: MathApi,
     pub Editor: EditorApi,
     pub Directory: DirectoryApi,
+    pub FileSystem: FileSystemApi,
 }
 
 //-----------------------------------------------------
@@ -1959,6 +2029,7 @@ impl<'a> ScriptApi<'a> {
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal(&mut self, name: &str, params: &[Value]) {
         let id = self.string_to_u64(name);
+        eprintln!("📡 [Signal] Emitting signal '{}' (id={}) with {} params", name, id, params.len());
         self.emit_signal_id(id, params);
     }
 
@@ -1970,8 +2041,10 @@ impl<'a> ScriptApi<'a> {
         // Copy out listeners before calling functions
         let script_map_opt = self.scene.get_signal_connections(id);
         if script_map_opt.is_none() {
+            eprintln!("⚠️ [Signal] Signal id={} has no connections, skipping", id);
             return;
         }
+        eprintln!("✅ [Signal] Signal id={} has connections, processing...", id);
 
         // OPTIMIZED: Use SmallVec with inline capacity of 4 listeners
         // Most signals have 1-3 listeners, so this avoids heap allocation in common case
@@ -1986,21 +2059,36 @@ impl<'a> ScriptApi<'a> {
         // OPTIMIZED: Set context once for all calls instead of per-call
         self.set_context();
         
+        eprintln!("📞 [Signal] Calling {} handler(s) for signal id={}", call_list.len(), id);
+        
         // OPTIMIZED: Use fast-path calls that skip redundant context operations
         // IMPORTANT: Check if node still exists before EACH handler call
         // (previous handler might have deleted the node)
+        eprintln!("📞 [Signal] Found {} handler(s) for signal id={}", call_list.len(), id);
         for (target_id, fn_id) in call_list.iter() {
+            eprintln!("  → [Signal] Attempting to call handler: target={}, fn_id={}", target_id, fn_id);
+            
             // First, check if the target node still exists (it might have been deleted)
             if self.scene.get_scene_node_ref(*target_id).is_none() {
+                eprintln!("  ⚠️ [Signal] Target node {} was deleted, skipping handler", target_id);
                 continue; // Target node was deleted, skip this handler
             }
             
             // If params contain a node ID (first param is usually the collision node), check if it still exists
+            // NOTE: We only skip if the UUID exists as a scene node AND was deleted. If it doesn't exist
+            // as a scene node at all, it might be a different type of UUID (like file tree item_id), so proceed.
             let should_call = if let Some(first_param) = params.get(0) {
                 if let Some(node_id_str) = first_param.as_str() {
                     if let Ok(node_id) = uuid::Uuid::parse_str(node_id_str) {
-                        // Skip handler if node in params was deleted by previous handler
-                        self.scene.get_scene_node_ref(node_id).is_some()
+                        // Check if this UUID exists as a scene node
+                        if let Some(_) = self.scene.get_scene_node_ref(node_id) {
+                            // It's a scene node and it exists, proceed
+                            true
+                        } else {
+                            // UUID doesn't exist as a scene node - might be a different type of UUID (item_id, etc.)
+                            // Proceed with handler call
+                            true
+                        }
                     } else {
                         true // Not a UUID param, proceed
                     }
@@ -2012,7 +2100,11 @@ impl<'a> ScriptApi<'a> {
             };
             
             if should_call {
+                eprintln!("  ✅ [Signal] Calling handler: target={}, fn_id={}", target_id, fn_id);
                 self.call_function_id_fast(*target_id, *fn_id, params);
+                eprintln!("  ✅ [Signal] Handler call completed: target={}, fn_id={}", target_id, fn_id);
+            } else {
+                eprintln!("  ⚠️ [Signal] Skipping handler call (node in params was deleted): target={}, fn_id={}", target_id, fn_id);
             }
         }
         
@@ -2041,7 +2133,9 @@ impl<'a> ScriptApi<'a> {
     pub fn connect_signal(&mut self, name: &str, target: Uuid, function: &'static str) {
         let id = string_to_u64(name);
         let fn_id = string_to_u64(function);
+        eprintln!("🔗 [Signal] Connecting signal '{}' (id={}) to target {} function '{}' (fn_id={})", name, id, target, function, fn_id);
         self.scene.connect_signal_id(id, target, fn_id);
+        eprintln!("✅ [Signal] Connection complete for '{}'", name);
     }
 
     #[cfg_attr(not(debug_assertions), inline)]

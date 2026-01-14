@@ -7,6 +7,7 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use winit::keyboard::KeyCode;
 
 use crate::{
     Node,
@@ -407,17 +408,33 @@ impl UINode {
         };
     
         if screen_mouse.x == 0.0 && screen_mouse.y == 0.0 {
+            let mut needs_rerender = false;
             for (_, el) in elements.iter_mut() {
                 match el {
                     UIElement::Button(b) => {
-                        b.is_hovered = false;
-                        b.is_pressed = false;
+                        if b.is_hovered || b.is_pressed {
+                            b.is_hovered = false;
+                            b.is_pressed = false;
+                            needs_rerender = true;
+                        }
                     }
                     UIElement::TextInput(ti) => {
-                        ti.is_hovered = false;
+                        if ti.is_hovered {
+                            ti.is_hovered = false;
+                            needs_rerender = true;
+                        }
+                    }
+                    UIElement::ListTree(list_tree) => {
+                        if list_tree.hovered_item.is_some() {
+                            list_tree.hovered_item = None;
+                            needs_rerender = true;
+                        }
                     }
                     _ => {}
                 }
+            }
+            if needs_rerender {
+                api.scene.mark_needs_rerender(self.base.id);
             }
             return;
         }
@@ -533,7 +550,8 @@ impl UINode {
             if state_changed {
                 // Collect ID to mark after loop (avoid borrow conflict)
                 dirty_element_ids.push(button.get_id());
-                // Also mark the UI node so it gets processed
+                // Mark the UI node so the scene knows to call render_ui
+                // The needs_rerender HashSet tells render_ui which elements to actually update
                 api.scene.mark_needs_rerender(self.base.id);
             }
     
@@ -1095,6 +1113,196 @@ impl UINode {
                         api.scene.mark_needs_rerender(self.base.id);
                     }
                     _ => {}
+                }
+            }
+        }
+        
+        // Handle ListTree elements - automatic click detection and signal emission
+        for (_, element) in elements.iter_mut() {
+            if let UIElement::ListTree(list_tree) = element {
+                if !list_tree.get_visible() {
+                    continue;
+                }
+                
+                let tree_id = list_tree.get_id();
+                
+                // Calculate bounds
+                let top_left_x = list_tree.base.global_transform.position.x - (list_tree.base.size.x * list_tree.base.pivot.x);
+                let top_left_y = list_tree.base.global_transform.position.y - (list_tree.base.size.y * list_tree.base.pivot.y);
+                
+                let in_bounds = mouse_pos.x >= top_left_x && mouse_pos.x <= (top_left_x + list_tree.base.size.x) &&
+                               mouse_pos.y >= top_left_y && mouse_pos.y <= (top_left_y + list_tree.base.size.y);
+                
+                // Track hover state (always, even if not clicking)
+                if in_bounds {
+                    // Find hovered item
+                    let item_start_y = top_left_y + 5.0;
+                    let mut current_y = item_start_y;
+                    let mut hovered_item_id: Option<uuid::Uuid> = None;
+                    
+                    for item_id in list_tree.get_visible_items() {
+                        let item_bottom = current_y + list_tree.item_height;
+                        if mouse_pos.y >= current_y && mouse_pos.y < item_bottom {
+                            hovered_item_id = Some(item_id);
+                            break;
+                        }
+                        current_y = item_bottom;
+                    }
+                    
+                    // Update hover state if it changed
+                    if list_tree.hovered_item != hovered_item_id {
+                        list_tree.hovered_item = hovered_item_id;
+                        dirty_element_ids.push(tree_id);
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                } else {
+                    // Mouse is outside bounds, clear hover and mark for rerender
+                    if list_tree.hovered_item.is_some() {
+                        list_tree.hovered_item = None;
+                        // Mark the tree element as dirty for rerender
+                        dirty_element_ids.push(tree_id);
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
+                    continue;
+                }
+                
+                // Find clicked item (reuse the hover detection logic)
+                let clicked_item_id = list_tree.hovered_item;
+                
+                if let Some(item_id) = clicked_item_id {
+                    // Left click
+                    if mouse_just_pressed {
+                        // Check for double-click
+                        let now = std::time::SystemTime::now();
+                        let is_double_click = if let Some((last_id, last_time)) = list_tree.last_click {
+                            last_id == item_id && now.duration_since(last_time).map(|d| d.as_millis() < 300).unwrap_or(false)
+                        } else {
+                            false
+                        };
+                        
+                        if is_double_click {
+                            // Double-click: toggle folder and emit signal WITH item_id parameter
+                            let is_folder = list_tree.items.get(&item_id).map(|i| i.is_directory).unwrap_or(false);
+                            
+                            if is_folder {
+                                list_tree.toggle_expanded(item_id);
+                            }
+                            
+                            // Emit double-click signal with item_id as parameter
+                            let signal_name = format!("{}_DoubleClicked", list_tree.base.name);
+                            let params = [serde_json::Value::String(item_id.to_string())];
+                            eprintln!("🔔 [ListTree] Emitting signal: '{}' (ListTree name: '{}') with params: {:?}", signal_name, list_tree.base.name, params);
+                            api.emit_signal(&signal_name, &params);
+                            
+                            list_tree.last_click = None;
+                            dirty_element_ids.push(tree_id);
+                            api.scene.mark_needs_rerender(self.base.id);
+                        } else {
+                            // Single-click: select and emit signal WITH item_id parameter
+                            list_tree.select_item(item_id, false);
+                            list_tree.last_click = Some((item_id, now));
+                            
+                            // Emit single-click signal with item_id as parameter
+                            let signal_name = format!("{}_Clicked", list_tree.base.name);
+                            let params = [serde_json::Value::String(item_id.to_string())];
+                            eprintln!("🔔 [ListTree] Emitting signal: '{}' (ListTree name: '{}') with params: {:?}", signal_name, list_tree.base.name, params);
+                            api.emit_signal(&signal_name, &params);
+                            
+                            dirty_element_ids.push(tree_id);
+                            api.scene.mark_needs_rerender(self.base.id);
+                        }
+                    }
+                    
+                    // Right click
+                    if mouse_is_held && !mouse_just_pressed {
+                        // Check if right mouse button is pressed
+                        let right_pressed = api
+                            .scene
+                            .get_input_manager()
+                            .map(|mgr| {
+                                let mgr = mgr.lock().unwrap();
+                                use crate::input::manager::MouseButton;
+                                mgr.is_mouse_button_pressed(MouseButton::Right)
+                            })
+                            .unwrap_or(false);
+                        
+                        if right_pressed {
+                            list_tree.select_item(item_id, false);
+                            
+                            // Emit right-click signal with item_id as parameter
+                            let signal_name = format!("{}_RightClicked", list_tree.base.name);
+                            let params = [serde_json::Value::String(item_id.to_string())];
+                            eprintln!("🔔 [ListTree] Emitting signal: '{}' (ListTree name: '{}') with params: {:?}", signal_name, list_tree.base.name, params);
+                            api.emit_signal(&signal_name, &params);
+                            
+                            dirty_element_ids.push(tree_id);
+                            api.scene.mark_needs_rerender(self.base.id);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Handle keyboard input for ListTree rename
+        for (_, element) in elements.iter_mut() {
+            if let UIElement::ListTree(list_tree) = element {
+                if !list_tree.get_visible() {
+                    continue;
+                }
+                
+                let tree_id = list_tree.get_id();
+                
+                // Check if this ListTree is focused (has rename in progress)
+                if list_tree.rename_state.is_some() {
+                    // Check for Enter or Escape key presses (drop lock before using api)
+                    let (should_commit, should_cancel) = if let Some(input_mgr) = api.scene.get_input_manager() {
+                        let mut mgr = input_mgr.lock().unwrap();
+                        (mgr.is_key_triggered(KeyCode::Enter), mgr.is_key_triggered(KeyCode::Escape))
+                    } else {
+                        (false, false)
+                    };
+                    
+                    // Handle Enter key to commit rename
+                    if should_commit {
+                        // Get rename state before commit (commit_rename consumes it)
+                        if let Some(state) = list_tree.rename_state.as_ref() {
+                            let item_id = state.item_id;
+                            
+                            // Get old path before commit
+                            let old_path = list_tree.items.get(&item_id)
+                                .map(|item| item.path.clone());
+                            
+                            // Calculate new path from rename state
+                            let parent_path = old_path.as_ref()
+                                .and_then(|p| p.rfind('/').map(|idx| &p[..=idx]))
+                                .unwrap_or("");
+                            let new_path = format!("{}{}", parent_path, state.text);
+                            
+                            // Commit the rename (updates item path, consumes rename_state)
+                            if let Ok(()) = list_tree.commit_rename() {
+                                // Emit rename signal with old_path and new_path
+                                if let Some(old_path) = old_path {
+                                    let signal_name = format!("{}_Renamed", list_tree.base.name);
+                                    let params = [
+                                        serde_json::Value::String(old_path.clone()),
+                                        serde_json::Value::String(new_path.clone()),
+                                    ];
+                                    eprintln!("🔔 [ListTree] Emitting rename signal: '{}' old_path='{}' new_path='{}'", signal_name, old_path, new_path);
+                                    api.emit_signal(&signal_name, &params);
+                                    
+                                    dirty_element_ids.push(tree_id);
+                                    api.scene.mark_needs_rerender(self.base.id);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Handle Escape key to cancel rename
+                    if should_cancel {
+                        list_tree.cancel_rename();
+                        dirty_element_ids.push(tree_id);
+                        api.scene.mark_needs_rerender(self.base.id);
+                    }
                 }
             }
         }
