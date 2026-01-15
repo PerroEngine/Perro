@@ -79,7 +79,7 @@ pub struct UITextEdit {
     #[serde(skip)]
     pub cached_text_content: String,
     #[serde(skip)]
-    pub cached_char_positions: Vec<f32>, // Cumulative width at each character position
+    pub cached_char_positions: Vec<f32>, // Cumulative width at each character position (legacy, for single-line compatibility)
     
     // Multi-line support: line information
     #[serde(skip)]
@@ -88,6 +88,14 @@ pub struct UITextEdit {
     pub line_heights: Vec<f32>, // Height of each line
     #[serde(skip)]
     pub line_start_positions: Vec<usize>, // Character index where each line starts
+    
+    // Per-line character position cache for performance
+    // Each Vec<f32> contains cumulative character positions for that line
+    #[serde(skip)]
+    pub cached_line_char_positions: Vec<Vec<f32>>,
+    // Cache of line text content to detect changes
+    #[serde(skip)]
+    pub cached_line_texts: Vec<String>,
     
     // Backspace repeat state (for speed-up when held)
     #[serde(skip)]
@@ -138,6 +146,8 @@ impl Default for UITextEdit {
             line_breaks: Vec::new(),
             line_heights: Vec::new(),
             line_start_positions: vec![0], // First line starts at position 0
+            cached_line_char_positions: Vec::new(),
+            cached_line_texts: Vec::new(),
             backspace_repeat_timer: 0.0,
             backspace_last_delete_time: 0.0,
             delete_repeat_timer: 0.0,
@@ -297,6 +307,8 @@ impl UITextEdit {
         self.line_heights.clear();
         self.line_start_positions.clear();
         self.line_start_positions.push(0); // First line always starts at 0
+        self.cached_line_char_positions.clear();
+        self.cached_line_texts.clear();
     }
     
     /// Update line information from text content
@@ -341,6 +353,58 @@ impl UITextEdit {
         // Calculate line heights (all lines have the same height for now)
         let num_lines = self.line_start_positions.len();
         self.line_heights = vec![line_height; num_lines];
+        
+        // Update character position cache for all lines
+        // Resize cache vectors to match number of lines
+        self.cached_line_char_positions.resize_with(num_lines, Vec::new);
+        self.cached_line_texts.resize_with(num_lines, String::new);
+        
+        // Update cache for each line if it has changed
+        for line_idx in 0..num_lines {
+            let line_text = self.get_line_text(line_idx);
+            let line_text_str = line_text.to_string();
+            
+            // Check if this line's text has changed
+            if self.cached_line_texts.get(line_idx) != Some(&line_text_str) {
+                // Recalculate character positions for this line
+                use crate::nodes::ui::ui_renderer::calculate_character_positions;
+                self.cached_line_char_positions[line_idx] = calculate_character_positions(line_text, font_size);
+                self.cached_line_texts[line_idx] = line_text_str;
+            }
+        }
+    }
+    
+    /// Get cached character positions for a line, or calculate if not cached
+    /// This is the main method to use for getting character positions - it uses the cache
+    pub fn get_line_char_positions(&mut self, line_idx: usize) -> &[f32] {
+        // Ensure line info is up to date
+        if self.line_start_positions.is_empty() {
+            self.update_line_info();
+        }
+        
+        let num_lines = self.line_start_positions.len();
+        if line_idx >= num_lines {
+            return &[];
+        }
+        
+        // Ensure cache is sized correctly
+        if self.cached_line_char_positions.len() < num_lines {
+            self.cached_line_char_positions.resize_with(num_lines, Vec::new);
+            self.cached_line_texts.resize_with(num_lines, String::new);
+        }
+        
+        let line_text = self.get_line_text(line_idx);
+        let line_text_str = line_text.to_string();
+        
+        // Check if cache is valid for this line
+        if self.cached_line_texts.get(line_idx) != Some(&line_text_str) {
+            // Cache miss - calculate and store
+            use crate::nodes::ui::ui_renderer::calculate_character_positions;
+            self.cached_line_char_positions[line_idx] = calculate_character_positions(line_text, self.text.props.font_size);
+            self.cached_line_texts[line_idx] = line_text_str;
+        }
+        
+        &self.cached_line_char_positions[line_idx]
     }
     
     /// Get line number and column from cursor position
@@ -583,36 +647,42 @@ impl UITextEdit {
         // Calculate line height
         let line_height = self.line_heights.first().copied().unwrap_or(font_size * 1.2);
         
-        // Get panel position
-        let panel_top = self.panel.base.global_transform.position.y 
-            + (self.panel.base.size.y * (1.0 - self.panel.base.pivot.y));
-        let panel_left = self.panel.base.global_transform.position.x 
-            - (self.panel.base.size.x * self.panel.base.pivot.x);
-        
-        // Calculate which line was clicked based on Y position
-        // Account for vertical scroll
-        let click_y_relative = panel_top - mouse_pos.y + self.scroll_offset_y;
-        let line_index = (click_y_relative / line_height).floor() as usize;
-        let clicked_line = line_index.min(self.line_start_positions.len().saturating_sub(1));
-        
-        // Get the text of the clicked line
-        let line_text = self.get_line_text(clicked_line);
-        
-        // Calculate character positions for this line
-        use crate::nodes::ui::ui_renderer::calculate_character_positions;
-        let line_positions = calculate_character_positions(line_text, font_size);
-        
-        // Calculate X position within the line
-        // Get text transform position (already positioned by layout system)
+        // Get text transform position (same as used in rendering)
         let text_transform = self.text.base.global_transform;
         // Apply padding offset: padding moves content INSIDE the bounds
+        // This matches the coordinate system used in rendering
         let text_base_x = text_transform.position.x + self.padding.left;
+        let text_base_y = text_transform.position.y - self.padding.top;
+        
+        // Calculate which line was clicked based on Y position
+        // Rendering uses: screen_y = text_base_y - line_y_offset + scroll_offset_y
+        // where line_y_offset = line_idx * line_height
+        // Note: positive Y is UP in this coordinate system
+        // 
+        // To reverse: mouse_pos.y should match screen_y
+        // mouse_pos.y = text_base_y - (line_idx * line_height) + scroll_offset_y
+        // Rearranging: line_idx = (text_base_y + scroll_offset_y - mouse_pos.y) / line_height
+        // 
+        // Add an offset (about 1.5 lines) to account for text baseline positioning
+        // Since user has to click below to get the right line, we need to ADD to shift detection down
+        let click_y_relative = (text_base_y + self.scroll_offset_y) - mouse_pos.y + (line_height * 1.5);
+        let line_index = (click_y_relative / line_height).floor() as usize;
+        let clicked_line = line_index.min(self.line_start_positions.len().saturating_sub(1)).max(0);
+        
+        // Get cached character positions for this line (clone to avoid borrow conflicts)
+        let line_positions = {
+            let positions = self.get_line_char_positions(clicked_line);
+            positions.to_vec()
+        };
+        
+        // Calculate X position within the line
+        let scroll_offset = self.scroll_offset;
         
         let click_x_in_text = if line_positions.is_empty() {
             0.0
         } else {
             // Account for horizontal scroll
-            (mouse_pos.x - text_base_x) + self.scroll_offset
+            (mouse_pos.x - text_base_x) + scroll_offset
         };
         
         // Find column within the line

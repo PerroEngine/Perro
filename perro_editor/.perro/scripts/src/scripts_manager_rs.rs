@@ -224,18 +224,15 @@ impl ManagerScript {
                     if nodes_updated > 0 {
                         // Save the scene back to disk
                         if let Err(e) = scene_data.save(&scene_res_path) {
-                            // [stripped for release] eprintln!("⚠️ Failed to save scene {}: {}", scene_res_path, e);
-
+                            eprintln!("⚠️ Failed to save scene {}: {}", scene_res_path, e);
                         } else {
                             total_nodes_updated += nodes_updated;
-                            // [stripped for release] eprintln!("✅ Updated {} node(s) in scene: {}", nodes_updated, scene_res_path);
-
+                            eprintln!("✅ Updated {} node(s) in scene: {}", nodes_updated, scene_res_path);
                         }
                     }
                 }
                 Err(e) => {
-                    // [stripped for release] eprintln!("⚠️ Failed to load scene {}: {}", scene_res_path, e);
-
+                    eprintln!("⚠️ Failed to load scene {}: {}", scene_res_path, e);
                 }
             }
         }
@@ -317,8 +314,8 @@ impl ManagerScript {
     fn launch_editor_via_cargo(&self, project_path: &str) -> Result<(), String> {
         use std::process::Command;
         
-        // [stripped for release] eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
-
+        eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
+        
         let mut cmd = Command::new("cargo");
         cmd.args(&["run", "-p", "perro_core", "--", "--path", "--editor", project_path, "--run"]);
         
@@ -358,8 +355,8 @@ impl ManagerScript {
             .parent()
             .ok_or("Could not determine parent directory")?;
         
-        // [stripped for release] eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
-
+        eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
+        
         let mut cmd = Command::new(exe_path);
         cmd.arg("--editor").arg(project_path);
         cmd.current_dir(parent_dir);
@@ -1005,29 +1002,25 @@ impl ManagerScript {
     
     /// Called when a file tree item is clicked
     pub fn on_file_tree_item_clicked(&mut self, api: &mut ScriptApi) {
-        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_clicked HANDLER CALLED!");
-
+        eprintln!("🎯 [Manager] on_file_tree_item_clicked HANDLER CALLED!");
         api.print("📄 File tree item clicked");
         // TODO: Handle file selection (e.g., update inspector)
     }
     
     /// Called when a file tree item is double-clicked
     pub fn on_file_tree_item_double_clicked(&mut self, api: &mut ScriptApi) {
-        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_double_clicked HANDLER CALLED!");
-
+        eprintln!("🎯 [Manager] on_file_tree_item_double_clicked HANDLER CALLED!");
         api.print("📂 File tree item double-clicked");
         // TODO: Handle file opening (e.g., open scene, open script editor, etc.)
     }
     
     /// Called when a file tree item is right-clicked
     pub fn on_file_tree_item_right_clicked(&mut self, api: &mut ScriptApi) {
-        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_right_clicked HANDLER CALLED!");
-
+        eprintln!("🎯 [Manager] on_file_tree_item_right_clicked HANDLER CALLED!");
         api.print("🖱️ File tree item right-clicked");
         
         let Some(menu_id) = self.context_menu_id else { 
-            // [stripped for release] eprintln!("⚠️ [Manager] Context menu ID not set!");
-
+            eprintln!("⚠️ [Manager] Context menu ID not set!");
             return 
         };
         let ui_node_id = self.id;
@@ -1144,8 +1137,7 @@ impl ManagerScript {
         let mut parser: perro_core::nodes::ui::parser::FurParser = match FurParser::new(fur_string) {
             Ok(p) => p,
             Err(e) => {
-                // [stripped for release] eprintln!("❌ Failed to create FUR parser: {}", e);
-
+                eprintln!("❌ Failed to create FUR parser: {}", e);
                 return false;
             }
         };
@@ -1153,8 +1145,7 @@ impl ManagerScript {
         let fur_ast: Vec<perro_core::nodes::ui::fur_ast::FurNode> = match parser.parse() {
             Ok(ast) => ast,
             Err(e) => {
-                // [stripped for release] eprintln!("❌ Failed to parse FUR string: {}", e);
-
+                eprintln!("❌ Failed to parse FUR string: {}", e);
                 return false;
             }
         };
@@ -1172,8 +1163,7 @@ impl ManagerScript {
             .collect();
         
         if fur_elements.is_empty() {
-            // [stripped for release] eprintln!("⚠️ No FUR elements found in string");
-
+            eprintln!("⚠️ No FUR elements found in string");
             return false;
         }
         
@@ -1246,8 +1236,7 @@ impl ManagerScript {
     /// Called when a file tree item is renamed
     /// Params: old_path (String), new_path (String)
     pub fn on_file_tree_item_renamed(&mut self, api: &mut ScriptApi, old_path: String, new_path: String) {
-        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_renamed HANDLER CALLED! old_path='{}' new_path='{}'", old_path, new_path);
-
+        eprintln!("🎯 [Manager] on_file_tree_item_renamed HANDLER CALLED! old_path='{}' new_path='{}'", old_path, new_path);
         api.print(&format!("🔄 File rename: {} -> {}", old_path, new_path));
         
         // Get UID for old path
@@ -1399,22 +1388,17 @@ impl Script for ManagerScript {
             
             // Connect file tree signals (emitted by UIListTree component)
             api.print("🔗 Connecting file tree signals...");
-            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_Clicked to on_file_tree_item_clicked");
-
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_Clicked to on_file_tree_item_clicked");
             api.connect_signal("ResourceFileTree_Clicked", self.id, "on_file_tree_item_clicked");
-            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_DoubleClicked to on_file_tree_item_double_clicked");
-
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_DoubleClicked to on_file_tree_item_double_clicked");
             api.connect_signal("ResourceFileTree_DoubleClicked", self.id, "on_file_tree_item_double_clicked");
-            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_RightClicked to on_file_tree_item_right_clicked");
-
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_RightClicked to on_file_tree_item_right_clicked");
             api.connect_signal("ResourceFileTree_RightClicked", self.id, "on_file_tree_item_right_clicked");
-            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_Renamed to on_file_tree_item_renamed");
-
+            eprintln!("🔗 [Manager] Connecting ResourceFileTree_Renamed to on_file_tree_item_renamed");
             api.connect_signal("ResourceFileTree_Renamed", self.id, "on_file_tree_item_renamed");
             
             api.print("✅ Signal connections complete");
-            // [stripped for release] eprintln!("✅ [Manager] All signal connections registered");
-
+            eprintln!("✅ [Manager] All signal connections registered");
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {

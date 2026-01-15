@@ -4010,10 +4010,9 @@ fn calculate_text_edit_scroll_offset(text_edit: &mut UITextEdit) -> f32 {
     
     // Get line and column for cursor
     let (line, column) = text_edit.get_line_and_column(cursor_pos);
-    let line_text = text_edit.get_line_text(line);
     
-    // Calculate character positions for the current line
-    let line_char_positions = calculate_character_positions(line_text, text_edit.text.props.font_size);
+    // Get cached character positions for the current line
+    let line_char_positions = text_edit.get_line_char_positions(line);
     let line_width = line_char_positions.last().copied().unwrap_or(0.0);
     
     // Get cursor X position within the line
@@ -4152,14 +4151,31 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
     // Calculate line height
     let line_height = text_edit.line_heights.first().copied().unwrap_or(text_edit.text.props.font_size * 1.2);
     
-    // Split text into lines
-    let content = &text_edit.text.props.content;
-    let lines: Vec<&str> = content.split('\n').collect();
+    // Split text into lines and collect them to avoid borrow conflicts
+    let lines: Vec<String> = text_edit.text.props.content.split('\n').map(|s| s.to_string()).collect();
+    let num_lines = lines.len();
+    
+    // Remove all line IDs that are beyond the current line count to clean up old lines
+    // This is important when pasting multi-line text that changes the number of lines
+    for i in num_lines..100 {
+        let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", i).as_bytes());
+        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
+    }
+    
+    // Pre-calculate values we need to avoid borrow conflicts
+    let scroll_offset = text_edit.scroll_offset;
+    let scroll_offset_y = text_edit.scroll_offset_y;
+    let padding_right = text_edit.padding.right;
+    let padding_bottom = text_edit.padding.bottom;
     
     // Calculate which lines are visible based on vertical scroll
     // Account for padding in visible area
-    let visible_start_y = text_edit.scroll_offset_y;
-    let visible_end_y = text_edit.scroll_offset_y + panel_height - top_padding - text_edit.padding.bottom;
+    let visible_start_y = scroll_offset_y;
+    let visible_end_y = scroll_offset_y + panel_height - top_padding - padding_bottom;
+    
+    // Track which line indices we're actually rendering
+    use std::collections::HashSet;
+    let mut rendered_line_indices = HashSet::new();
     
     // Render each visible line
     for (line_idx, line_text) in lines.iter().enumerate() {
@@ -4175,21 +4191,29 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
             continue;
         }
         
+        // Mark this line as being rendered
+        rendered_line_indices.insert(line_idx);
+        
         // Calculate line's Y position on screen
         // text_base_y is already offset by padding, so just subtract line offset
-        let screen_y = text_base_y - line_y_offset + text_edit.scroll_offset_y;
+        let screen_y = text_base_y - line_y_offset + scroll_offset_y;
         
-        // Calculate character positions for this line
-        let line_char_positions = calculate_character_positions(line_text, text_edit.text.props.font_size);
-        let line_width = line_char_positions.last().copied().unwrap_or(0.0);
+        // Get cached character positions for this line (or calculate if not cached)
+        // Clone to avoid borrow conflicts
+        let line_char_positions = {
+            let positions = text_edit.get_line_char_positions(line_idx);
+            positions.to_vec()
+        };
+        let _line_width = line_char_positions.last().copied().unwrap_or(0.0);
         
         // Handle horizontal scrolling for this line
-        let visible_start_x = text_edit.scroll_offset;
-        let visible_end_x = text_edit.scroll_offset + panel_width - left_padding - text_edit.padding.right;
+        let visible_start_x = scroll_offset;
+        let visible_end_x = scroll_offset + panel_width - left_padding - padding_right;
         
         // Find which characters are visible horizontally
+        let line_text_chars: Vec<char> = line_text.chars().collect();
         let mut start_char = 0;
-        let mut end_char = line_text.len();
+        let mut end_char = line_text_chars.len();
         
         if !line_char_positions.is_empty() {
             let mut found_start = false;
@@ -4214,10 +4238,11 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
         }
         
         // Get visible substring for this line
-        let visible_line_text = if start_char < end_char && end_char <= line_text.len() {
-            &line_text[start_char..end_char]
+        // Use already-computed line_text_chars
+        let visible_line_text = if start_char < end_char && end_char <= line_text_chars.len() {
+            line_text_chars[start_char..end_char].iter().collect::<String>()
         } else {
-            line_text
+            line_text.clone()
         };
         
         // Calculate X position
@@ -4232,7 +4257,7 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
         
         // Render this line
         let mut line_text_copy = text_edit.text.clone();
-        line_text_copy.props.content = visible_line_text.to_string();
+        line_text_copy.props.content = visible_line_text;
         line_text_copy.props.align = crate::ui_elements::ui_text::TextFlow::Start;
         line_text_copy.base.transform.position = crate::structs2d::Vector2::new(screen_x, screen_y);
         line_text_copy.base.global_transform.position = crate::structs2d::Vector2::new(screen_x, screen_y);
@@ -4243,6 +4268,15 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
         line_text_copy.base.id = line_id;
         
         render_text(&line_text_copy, gfx, timestamp);
+    }
+    
+    // Remove any line IDs that exist but weren't rendered (lines that were removed or changed)
+    // This ensures old line content doesn't persist when content changes
+    for i in 0..num_lines {
+        if !rendered_line_indices.contains(&i) {
+            let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", i).as_bytes());
+            gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
+        }
     }
 }
 
@@ -4297,15 +4331,19 @@ fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, ti
         // Render selection rectangles for each line in the selection
         let mut rect_idx = 0;
         for line_idx in start_line..=end_line {
-            let line_text = text_edit.get_line_text(line_idx);
-            let line_char_positions = calculate_character_positions(line_text, font_size);
+            // Get line text and character positions (clone to avoid borrow conflicts)
+            let line_text = text_edit.get_line_text(line_idx).to_string();
+            let line_char_positions = {
+                let positions = text_edit.get_line_char_positions(line_idx);
+                positions.to_vec()
+            };
             
             // Determine selection start and end columns for this line
             let line_start_col = if line_idx == start_line { start_col } else { 0 };
             let line_end_col = if line_idx == end_line { 
                 end_col 
             } else { 
-                line_text.chars().count() 
+                line_text.chars().count()
             };
             
             // Calculate selection X positions within this line
@@ -4399,10 +4437,9 @@ fn render_text_edit_cursor(text_edit: &mut UITextEdit, gfx: &mut Graphics, times
     
     // Get line and column for cursor
     let (line, column) = text_edit.get_line_and_column(cursor_pos);
-    let line_text = text_edit.get_line_text(line);
     
-    // Calculate character positions for the current line
-    let line_char_positions = calculate_character_positions(line_text, text_edit.text.props.font_size);
+    // Get cached character positions for the current line
+    let line_char_positions = text_edit.get_line_char_positions(line);
     
     // Get cursor X position within the line
     let cursor_x_in_line = if column == 0 {
