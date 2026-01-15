@@ -2000,9 +2000,15 @@ impl<'a> ScriptApi<'a> {
     pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &[Value]) {
         self.set_context();
         // Safely take script out, call method, put it back
+        // IMPORTANT: Check if node still exists after calling the function, as the handler
+        // might have called self.remove() which deletes the node and its script
         if let Some(mut script) = self.scene.take_script(id) {
             script.call_function(func, self, params);
-            self.scene.insert_script(id, script);
+            // Only reinsert script if the node still exists (it might have been removed)
+            if self.scene.get_scene_node_ref(id).is_some() {
+                self.scene.insert_script(id, script);
+            }
+            // If node was removed, the script is dropped here (which is correct - removed nodes shouldn't have scripts)
         }
         Self::clear_context();
     }
@@ -2011,9 +2017,15 @@ impl<'a> ScriptApi<'a> {
     #[cfg_attr(not(debug_assertions), inline)]
     pub(crate) fn call_function_id_fast(&mut self, id: Uuid, func: u64, params: &[Value]) {
         // Safely take script out, call method, put it back (no context overhead)
+        // IMPORTANT: Check if node still exists after calling the function, as the handler
+        // might have called self.remove() which deletes the node and its script
         if let Some(mut script) = self.scene.take_script(id) {
             script.call_function(func, self, params);
-            self.scene.insert_script(id, script);
+            // Only reinsert script if the node still exists (it might have been removed)
+            if self.scene.get_scene_node_ref(id).is_some() {
+                self.scene.insert_script(id, script);
+            }
+            // If node was removed, the script is dropped here (which is correct - removed nodes shouldn't have scripts)
         }
     }
 
@@ -2203,45 +2215,50 @@ impl<'a> ScriptApi<'a> {
     /// The closure receives &T where T is the node type and returns any Clone value (including Copy types)
     /// For Copy types like primitives, no actual cloning happens at runtime
     /// For non-Copy types like String/Cow, the value is cloned out of the node
+    /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent);`
     /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_node<T: 'static, R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
-        let node = self.scene.get_scene_node_ref(node_id)
-            .unwrap_or_else(|| panic!("Node {} not found", node_id));
+    pub fn read_node<T: 'static, R: Clone + Default>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
+        // Check if node_id is nil (from get_parent() when node was removed)
+        if node_id.is_nil() {
+            return R::default();
+        }
         
-        let typed_node = node.as_any().downcast_ref::<T>()
-            .unwrap_or_else(|| panic!("Node {} is not of type {}", node_id, std::any::type_name::<T>()));
+        // Check if node exists (might have been removed during signal handling)
+        if let Some(node) = self.scene.get_scene_node_ref(node_id) {
+            if let Some(typed_node) = node.as_any().downcast_ref::<T>() {
+                return f(typed_node);
+            }
+        }
         
-        f(typed_node)
+        // Node doesn't exist or wrong type - return default value
+        // This prevents panics when nodes are removed during signal handling
+        R::default()
     }
     
     /// Read transform-related properties from any Node2D-based node
     /// This works with Node2D, Sprite2D, Area2D, CollisionShape2D, etc.
     /// Safer than read_node::<Node2D> when you don't know the exact type
+    /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let pos = api.read_node2d_transform(parent_id, |n2d| n2d.transform.position);`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_node2d_transform<R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
-        let target_node = uuid::Uuid::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok();
-        let is_target = target_node.map(|t| node_id == t).unwrap_or(false);
-        
-        if is_target {
-            eprintln!("🔍 [API] read_node2d_transform called for {}", node_id);
-            eprintln!("🔍 [API] Node exists: {}", self.scene.get_scene_node_ref(node_id).is_some());
+    pub fn read_node2d_transform<R: Clone + Default>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
+        // Check if node_id is nil (from get_parent() when node was removed)
+        if node_id.is_nil() {
+            return R::default();
         }
         
-        let node = self.scene.get_scene_node_ref(node_id)
-            .unwrap_or_else(|| {
-                if is_target {
-                    eprintln!("⚠️ [API] PANIC in read_node2d_transform for {}", node_id);
-                }
-                panic!("Node {} not found", node_id)
-            });
+        // Check if node exists (might have been removed during signal handling)
+        if let Some(node) = self.scene.get_scene_node_ref(node_id) {
+            if let Some(node2d) = node.as_node2d() {
+                return f(node2d);
+            }
+        }
         
-        let node2d = node.as_node2d()
-            .unwrap_or_else(|| panic!("Node {} is not a Node2D-based node", node_id));
-        
-        f(node2d)
+        // Node doesn't exist or is not Node2D-based - return default value
+        // This prevents panics when nodes are removed during signal handling
+        R::default()
     }
     
     /// Mutate a node directly with a closure - no clones needed!
@@ -2562,6 +2579,7 @@ impl<'a> ScriptApi<'a> {
     /// Get the parent node ID of a given node
     /// Returns the parent's UUID if the node has a parent
     /// Panics if the node is not found or has no parent
+    /// NOTE: Callers should check if the node exists before calling this
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_parent(&mut self, node_id: Uuid) -> Uuid {
         let node = self.scene.get_scene_node_ref(node_id)
@@ -2574,6 +2592,7 @@ impl<'a> ScriptApi<'a> {
     
     /// Returns the parent's NodeType if the node has a parent
     /// Panics if the node is not found or has no parent
+    /// NOTE: Callers should check if the node exists before calling this
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_parent_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
         let node = self.scene.get_scene_node_ref(node_id)
@@ -2585,25 +2604,13 @@ impl<'a> ScriptApi<'a> {
     
     /// Returns the NodeType of the given node
     /// Panics if the node is not found
+    /// NOTE: Callers should check if the node exists before calling this
     /// Useful for runtime type checking before casting
     /// Example: `match api.get_type(node_id) { NodeType::Sprite2D => ..., _ => ... }`
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
-        let target_node = uuid::Uuid::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok();
-        let is_target = target_node.map(|t| node_id == t).unwrap_or(false);
-        
-        if is_target {
-            eprintln!("🔍 [API] get_type called for {}", node_id);
-            eprintln!("🔍 [API] Node exists: {}", self.scene.get_scene_node_ref(node_id).is_some());
-        }
-        
         let node = self.scene.get_scene_node_ref(node_id)
-            .unwrap_or_else(|| {
-                if is_target {
-                    eprintln!("⚠️ [API] PANIC in get_type for {}", node_id);
-                }
-                panic!("Node {} not found", node_id)
-            });
+            .unwrap_or_else(|| panic!("Node {} not found", node_id));
         // Use the node's get_type() method which now returns NodeType directly
         node.get_type()
     }

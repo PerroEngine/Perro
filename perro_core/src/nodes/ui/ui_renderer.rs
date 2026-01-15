@@ -2438,13 +2438,16 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                 
                 match fur_elements_result {
                     Ok(fur_elements) => {
-                        if !fur_elements.is_empty() {
-                            build_ui_elements_from_fur(ui_node, &fur_elements);
-                            ui_node.loaded_fur_path = Some(std::borrow::Cow::Owned(fur_path_str.clone()));
-                        }
+                        // Always rebuild UI elements, even if empty (this clears existing elements)
+                        // build_ui_elements_from_fur calls elements.clear() which removes all old elements
+                        build_ui_elements_from_fur(ui_node, &fur_elements);
+                        ui_node.loaded_fur_path = Some(std::borrow::Cow::Owned(fur_path_str.clone()));
                     }
                     Err(e) => {
                         eprintln!("⚠️ Failed to load FUR file {}: {}", fur_path_str, e);
+                        // On parse error, clear all elements to prevent stale UI
+                        // Call build_ui_elements_from_fur with empty array to trigger cleanup
+                        build_ui_elements_from_fur(ui_node, &[]);
                     }
                 }
             }
@@ -2725,6 +2728,7 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                     UIElement::TextEdit(text_edit) => {
                         gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_edit.panel.id);
                         gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
+                        cleanup_text_edit_rendering(text_edit, gfx);
                     }
                     _ => {}
                 }
@@ -2773,6 +2777,7 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                     UIElement::TextEdit(text_edit) => {
                         gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, text_edit.panel.id);
                         gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
+                        cleanup_text_edit_rendering(text_edit, gfx);
                     }
                     _ => {}
                 }
@@ -2957,12 +2962,12 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         // Render text with clipping (only show visible portion)
                         render_text_edit_with_clipping(text_edit, gfx, timestamp);
 
-                        // Render cursor if focused, visible (blink), and element is visible
+                        // Render cursor if focused, visible (blink), element is visible, and text is not empty
                         let cursor_id = uuid::Uuid::new_v5(&text_edit.text.id, b"cursor");
-                        if text_edit.is_focused && text_edit.is_cursor_visible() && text_edit.base.visible {
+                        if text_edit.is_focused && text_edit.is_cursor_visible() && text_edit.base.visible && !text_edit.text.props.content.is_empty() {
                             render_text_edit_cursor(text_edit, gfx, timestamp);
                         } else {
-                            // Remove cursor panel when unfocused OR when not visible (blink off)
+                            // Remove cursor panel when unfocused OR when not visible (blink off) OR when text is empty
                             gfx.renderer_prim.remove_rect(cursor_id);
                         }
                     }
@@ -4119,11 +4124,15 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
     if text_edit.text.props.content.is_empty() {
         // Remove main text ID
         gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text_edit.text.id);
-        // Remove all potential line IDs (clean up any previous multi-line rendering)
-        for i in 0..100 {
-            let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", i).as_bytes());
-            gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
-        }
+        // Clean up all TextEdit rendering elements (lines, selections, cursor)
+        cleanup_text_edit_rendering(text_edit, gfx);
+        // Also clear the cached line data
+        text_edit.cached_line_char_positions.clear();
+        text_edit.cached_line_texts.clear();
+        text_edit.line_start_positions.clear();
+        text_edit.line_start_positions.push(0);
+        text_edit.line_breaks.clear();
+        text_edit.line_heights.clear();
         return;
     }
     
@@ -4272,7 +4281,8 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
     
     // Remove any line IDs that exist but weren't rendered (lines that were removed or changed)
     // This ensures old line content doesn't persist when content changes
-    for i in 0..num_lines {
+    // Check a larger range to catch any orphaned lines
+    for i in 0..num_lines.max(1000) {
         if !rendered_line_indices.contains(&i) {
             let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", i).as_bytes());
             gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
@@ -4280,8 +4290,42 @@ fn render_text_edit_with_clipping(text_edit: &mut UITextEdit, gfx: &mut Graphics
     }
 }
 
+/// Helper function to clean up all TextEdit rendering elements (lines, selections, cursor)
+fn cleanup_text_edit_rendering(text_edit: &UITextEdit, gfx: &mut Graphics) {
+    // Remove all line text IDs
+    for i in 0..1000 {
+        let line_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("line_{}", i).as_bytes());
+        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, line_id);
+    }
+    // Remove all selection rectangles
+    for i in 0..1000 {
+        let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
+        gfx.renderer_prim.remove_rect(selection_id);
+    }
+    // Remove main selection ID
+    let main_selection_id = uuid::Uuid::new_v5(&text_edit.text.id, b"selection");
+    gfx.renderer_prim.remove_rect(main_selection_id);
+    // Remove cursor
+    let cursor_id = uuid::Uuid::new_v5(&text_edit.text.id, b"cursor");
+    gfx.renderer_prim.remove_rect(cursor_id);
+}
+
 /// Render selection highlight for a focused TextEdit element (multi-line support)
 fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, timestamp: u64) {
+    // If text is empty, remove all selection highlights and clear selection state
+    if text_edit.text.props.content.is_empty() {
+        // Clean up all selection rectangles using helper
+        for i in 0..1000 {
+            let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
+            gfx.renderer_prim.remove_rect(selection_id);
+        }
+        let main_selection_id = uuid::Uuid::new_v5(&text_edit.text.id, b"selection");
+        gfx.renderer_prim.remove_rect(main_selection_id);
+        // Clear selection state when text is empty
+        text_edit.clear_selection();
+        return;
+    }
+    
     // Update line info if needed
     if text_edit.line_start_positions.is_empty() {
         text_edit.update_line_info();
@@ -4291,10 +4335,15 @@ fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, ti
     if let Some((start, end)) = text_edit.get_selection_range() {
         if start == end {
             // No selection, remove any previous selection highlights
-            for i in 0..100 {
+            for i in 0..1000 {
                 let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
                 gfx.renderer_prim.remove_rect(selection_id);
             }
+            // Also remove the main selection ID
+            let main_selection_id = uuid::Uuid::new_v5(&text_edit.text.id, b"selection");
+            gfx.renderer_prim.remove_rect(main_selection_id);
+            // Clear selection state when it's empty
+            text_edit.clear_selection();
             return;
         }
         
@@ -4309,9 +4358,11 @@ fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, ti
         let text_base_y = text_transform.position.y - text_edit.padding.top;
         
         let panel_width = text_edit.panel.base.size.x;
+        let panel_height = text_edit.panel.base.size.y;
         let left_padding = text_edit.padding.left;
         let right_padding = text_edit.padding.right;
         let top_padding = text_edit.padding.top;
+        let bottom_padding = text_edit.padding.bottom;
         
         // Get selection start and end line/column
         let (start_line, start_col) = text_edit.get_line_and_column(start);
@@ -4328,9 +4379,22 @@ fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, ti
         
         use crate::rendering::renderer_prim::RenderLayer;
         
+        // Calculate which lines are visible based on vertical scroll (same as text rendering)
+        let visible_start_y = text_edit.scroll_offset_y;
+        let visible_end_y = text_edit.scroll_offset_y + panel_height - top_padding - bottom_padding;
+        
         // Render selection rectangles for each line in the selection
         let mut rect_idx = 0;
         for line_idx in start_line..=end_line {
+            // Check if this line is visible vertically (clip to panel bounds)
+            let line_y_offset = (line_idx as f32) * line_height;
+            let line_bottom = line_y_offset + line_height;
+            let line_top = line_y_offset;
+            
+            // Skip this line if it's not visible vertically
+            if line_bottom < visible_start_y || line_top > visible_end_y {
+                continue;
+            }
             // Get line text and character positions (clone to avoid borrow conflicts)
             let line_text = text_edit.get_line_text(line_idx).to_string();
             let line_char_positions = {
@@ -4374,14 +4438,13 @@ fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, ti
             };
             
             // Calculate Y position for this line - text_base_y is already offset by padding
-            let line_y_offset = (line_idx as f32) * line_height;
             let selection_y = text_base_y - line_y_offset + text_edit.scroll_offset_y + (selection_height * 0.75);
             
             // Calculate X position accounting for scroll
             let visible_start_x = text_edit.scroll_offset;
             let visible_end_x = text_edit.scroll_offset + panel_width - left_padding - right_padding;
             
-            // Clip selection to visible area
+            // Clip selection to visible area horizontally
             let visible_sel_start = sel_start_x.max(visible_start_x);
             let visible_sel_end = (sel_start_x + actual_width).min(visible_end_x);
             
@@ -4413,16 +4476,22 @@ fn render_text_edit_selection(text_edit: &mut UITextEdit, gfx: &mut Graphics, ti
         }
         
         // Remove any extra selection rectangles from previous selections
-        for i in rect_idx..100 {
+        for i in rect_idx..1000 {
             let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
             gfx.renderer_prim.remove_rect(selection_id);
         }
+        // Also remove the main selection ID if it exists
+        let main_selection_id = uuid::Uuid::new_v5(&text_edit.text.id, b"selection");
+        gfx.renderer_prim.remove_rect(main_selection_id);
     } else {
         // No selection, remove any previous selection highlights
-        for i in 0..100 {
+        for i in 0..1000 {
             let selection_id = uuid::Uuid::new_v5(&text_edit.text.id, format!("selection_{}", i).as_bytes());
             gfx.renderer_prim.remove_rect(selection_id);
         }
+        // Also remove the main selection ID
+        let main_selection_id = uuid::Uuid::new_v5(&text_edit.text.id, b"selection");
+        gfx.renderer_prim.remove_rect(main_selection_id);
     }
 }
 

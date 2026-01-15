@@ -46,8 +46,6 @@ pub mod prelude {
 
     pub use crate::api::ScriptApi;
 
-    pub use crate::script::Var;
-
     // Core primitive/shared types (Vec2, Color, etc.)
     pub use crate::types::*;
 }

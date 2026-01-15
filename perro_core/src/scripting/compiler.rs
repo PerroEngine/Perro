@@ -2742,32 +2742,32 @@ impl Compiler {
             let mut scene_data: SceneData = SceneData::load(&current_res_path)?;
             SceneData::fix_relationships(&mut scene_data);
 
-            // Fix node IDs to use deterministic UUIDs based on indices
+            // Fix node IDs to use deterministic UUIDs based on scene keys
             // This ensures parent/child relationships work correctly in static code
-            let index_to_uuid = scene_data.index_to_uuid().clone();
-            let mut new_index_to_uuid: std::collections::HashMap<u32, uuid::Uuid> = std::collections::HashMap::new();
+            let key_to_uuid = scene_data.key_to_uuid().clone();
+            let mut new_key_to_uuid: std::collections::HashMap<u32, uuid::Uuid> = std::collections::HashMap::new();
             
             // First pass: generate deterministic UUIDs for all nodes
-            for (&idx, node) in scene_data.nodes.iter_mut() {
+            for (&key, node) in scene_data.nodes.iter_mut() {
                 // Generate deterministic UUID: 00000000-0000-0000-0000-0000000000XX
-                let uuid_str = format!("00000000-0000-0000-0000-{:012x}", idx);
+                let uuid_str = format!("00000000-0000-0000-0000-{:012x}", key);
                 let uuid = uuid::Uuid::parse_str(&uuid_str)
                     .unwrap_or_else(|_| uuid::Uuid::nil());
                 node.set_id(uuid);
-                new_index_to_uuid.insert(idx, uuid);
+                new_key_to_uuid.insert(key, uuid);
             }
             
             // Second pass: update parent and child UUIDs to match deterministic UUIDs
             for node in scene_data.nodes.values_mut() {
                 // Update parent UUID
                 if let Some(parent) = node.get_parent() {
-                    // Find which index this parent UUID corresponds to
-                    let parent_idx_opt = index_to_uuid.iter()
+                    // Find which scene key this parent UUID corresponds to
+                    let parent_key_opt = key_to_uuid.iter()
                         .find(|&(_, &uuid)| uuid == parent.id)
-                        .map(|(&idx, _)| idx);
+                        .map(|(&key, _)| key);
                     
-                    if let Some(parent_idx) = parent_idx_opt {
-                        if let Some(&parent_uuid) = new_index_to_uuid.get(&parent_idx) {
+                    if let Some(parent_key) = parent_key_opt {
+                        if let Some(&parent_uuid) = new_key_to_uuid.get(&parent_key) {
                             let parent_type = crate::nodes::node::ParentType::new(parent_uuid, parent.node_type);
                             node.set_parent(Some(parent_type));
                         }
@@ -2779,13 +2779,13 @@ impl Compiler {
                 node.clear_children();
                 let mut seen_children = HashSet::new();
                 for child_uuid in children {
-                    // Find which index this child UUID corresponds to
-                    let child_idx_opt = index_to_uuid.iter()
+                    // Find which scene key this child UUID corresponds to
+                    let child_key_opt = key_to_uuid.iter()
                         .find(|&(_, &uuid)| uuid == child_uuid)
-                        .map(|(&idx, _)| idx);
+                        .map(|(&key, _)| key);
                     
-                    if let Some(child_idx) = child_idx_opt {
-                        if let Some(&child_uuid) = new_index_to_uuid.get(&child_idx) {
+                    if let Some(child_key) = child_key_opt {
+                        if let Some(&child_uuid) = new_key_to_uuid.get(&child_key) {
                             // Only add if we haven't seen this UUID before
                             if seen_children.insert(child_uuid) {
                                 node.add_child(child_uuid);
@@ -2795,16 +2795,16 @@ impl Compiler {
                 }
             }
             
-            // Update the index_to_uuid mapping in scene_data
+            // Update the key_to_uuid mapping in scene_data
             // We need to use a helper function or rebuild the SceneData
-            // Actually, since index_to_uuid is private, we'll just ensure the nodes have correct IDs
+            // Actually, since key_to_uuid is private, we'll just ensure the nodes have correct IDs
             // The from_nodes function will rebuild the mapping correctly
 
             let static_scene_name = Self::sanitize_res_path_to_ident(&current_res_path);
-            let root_id_str = scene_data.root_index.to_string();
+            let root_id_str = scene_data.root_key.to_string();
 
             let mut entries = String::new();
-            for (idx, node) in &scene_data.nodes {
+            for (key, node) in &scene_data.nodes {
                 let mut node_str = format!("{:#?}", node);
 
                 // --- UUID fixups ---
@@ -2945,13 +2945,13 @@ impl Compiler {
                         writeln!(
                             &mut entries,
                             "        ({}, SceneNode::{}({})),",
-                            idx, variant_name, inner
+                            key, variant_name, inner
                         )?;
                     } else {
                         writeln!(
                             &mut entries,
                             "        ({}, SceneNode::{}),",
-                            idx,
+                            key,
                             node_str.trim()
                         )?;
                     }

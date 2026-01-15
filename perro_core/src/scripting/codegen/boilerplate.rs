@@ -681,6 +681,15 @@ let {param_name} = match {param_name}_opt {{
             }
             param_list = param_names.join(", ");
         }
+        
+        // For transpiled scripts (non-Rust), the api parameter is always added to the function signature
+        // in function.rs, so we must always pass it in the call, even if it's not in func.params
+        if !is_rust_script {
+            if !param_list.is_empty() {
+                param_list.push_str(", ");
+            }
+            param_list.push_str("api");
+        }
 
         write!(
             dispatch_entries,

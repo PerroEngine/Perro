@@ -7,18 +7,18 @@ use std::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use winit::keyboard::KeyCode;
+
 
 use crate::{
     Node,
     nodes::node_registry::NodeType,
-    prelude::string_to_u64,
+
     rendering::graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
-    script::Var,
+
     scripting::api::ScriptApi,
     structs2d::Vector2,
     ui_element::{BaseElement, IntoUIInner, UIElement, UIElementUpdate, UIUpdateContext},
-    ui_elements::ui_container::CornerRadius,
+
 };
 
 fn default_visible() -> bool {
@@ -38,9 +38,6 @@ pub struct UINode {
 
     #[serde(skip)]
     pub loaded_fur_path: Option<Cow<'static, str>>,
-
-    #[serde(skip)]
-    pub props: Option<HashMap<String, Var>>,
 
     #[serde(skip)]
     pub elements: Option<IndexMap<Uuid, UIElement>>,
@@ -90,7 +87,6 @@ impl UINode {
             base,
             fur_path: None,
             loaded_fur_path: None,
-            props: None,
             elements: None,
             root_ids: None,
             needs_rerender: HashSet::new(),

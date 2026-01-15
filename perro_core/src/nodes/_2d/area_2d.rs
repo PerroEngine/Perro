@@ -51,10 +51,12 @@ impl Area2D {
         let children = self.get_children().clone();
 
         // First, collect all collider handles from children (uses RefCell for immutable access)
+        // IMPORTANT: Only collect handles from children that still exist and are CollisionShape2D
         let mut collider_handles = Vec::new();
         {
             let children_ids: Vec<Uuid> = children.iter().copied().collect();
             for child_id in children_ids {
+                // Check if child still exists before accessing it
                 if let Some(child_node) = api.scene.get_scene_node_ref(child_id) {
                     // Check if it's a CollisionShape2D
                     if let SceneNode::CollisionShape2D(shape) = &*child_node {
@@ -67,6 +69,8 @@ impl Area2D {
         }
 
         if collider_handles.is_empty() {
+            // No valid colliders - clear previous collisions and return
+            self.previous_collisions.clear();
             return;
         }
 
@@ -82,18 +86,43 @@ impl Area2D {
                     
                     // Collect all colliding node IDs while we have the physics borrow
                     // Filter out any node IDs that no longer exist in the scene (were deleted)
+                    // IMPORTANT: Also filter out any node IDs that don't have a valid mapping in physics
+                    // (this can happen if a collider was removed but physics still has stale data)
+                    // NOTE: The node_id we collect here is the CollisionShape2D node ID, which is what gets
+                    // passed to signal handlers. We need to ensure this CollisionShape2D still exists.
                     let mut node_ids = HashSet::new();
                     for (_our_handle, other_handle) in &intersections {
+                        // First check if the collider handle is still valid (collider wasn't removed)
+                        // This prevents accessing colliders that were removed during iteration
+                        if physics.colliders.get(*other_handle).is_none() {
+                            continue; // Collider was removed, skip it
+                        }
+                        
+                        // Check if physics has a valid node_id mapping for this handle
                         if let Some(id) = physics.get_node_id(*other_handle) {
-                            // Only add if node still exists in scene
-                            if api.scene.get_scene_node_ref(id).is_some() {
-                                node_ids.insert(id);
+                            // Triple-check: 
+                            // 1. Node must exist in scene
+                            // 2. Node must still be a CollisionShape2D (not removed and replaced)
+                            // 3. Collider handle must still match (node wasn't recreated)
+                            if let Some(node) = api.scene.get_scene_node_ref(id) {
+                                // Verify it's still a CollisionShape2D with the same handle
+                                if let SceneNode::CollisionShape2D(shape) = node {
+                                    if shape.collider_handle == Some(*other_handle) {
+                                        node_ids.insert(id);
+                                    }
+                                }
                             }
                         }
+                        // If physics doesn't have a node_id for this handle, skip it
+                        // (collider was removed but intersection query still returned it)
                     }
                     (node_ids, intersections.len())
                 }
-                None => return,
+                None => {
+                    // No physics - clear previous collisions and return
+                    self.previous_collisions.clear();
+                    return;
+                }
             }
         };
 

@@ -61,9 +61,10 @@ struct ManagerScript {
     uid_registry: HashMap<Uuid, AssetMetadata>, // UID -> metadata
     path_to_uid: HashMap<String, Uuid>, // path -> UID (reverse lookup)
     // Note: Mouse tracking and double-click tracking are now handled by UIListTree internally
-    // Live preview debouncing - updates preview 2 seconds after last text change
+    // Live preview debouncing - updates preview 0.5 seconds after last text change
     live_preview_timer: f32, // Accumulator for debounce timer after text change
     last_fur_text_hash: u64, // Hash of last text content to detect changes efficiently
+    last_rendered_fur_hash: u64, // Hash of last successfully rendered content (to prevent unnecessary rerenders)
 }
 
 #[unsafe(no_mangle)]
@@ -90,6 +91,7 @@ pub extern "C" fn scripts_manager_rs_create_script() -> *mut dyn ScriptObject {
         path_to_uid: HashMap::new(),
         live_preview_timer: 0.0,
         last_fur_text_hash: 0,
+        last_rendered_fur_hash: 0,
     })) as *mut dyn ScriptObject
 }
 
@@ -1041,21 +1043,36 @@ impl ManagerScript {
     fn update_live_preview(&mut self, api: &mut ScriptApi) {
         let ui_node_id = self.id;
         
-        // Get the text from TextEditorContainer
-        let fur_text = api.with_ui_node(ui_node_id, |ui| {
+        // Get the text from TextEditorContainer and compute its hash
+        let Some((fur_text, current_hash)) = api.with_ui_node(ui_node_id, |ui| {
             if let Some(element) = ui.find_element_by_name("TextEditorContainer") {
                 match element {
-                    UIElement::TextEdit(text_edit) => Some(text_edit.get_text().to_string()),
+                    UIElement::TextEdit(text_edit) => {
+                        let text = text_edit.get_text();
+                        // Compute hash to check if content actually changed
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = DefaultHasher::new();
+                        text.hash(&mut hasher);
+                        let hash = hasher.finish();
+                        Some((text.to_string(), hash))
+                    },
                     _ => None,
                 }
             } else {
                 None
             }
-        });
-        
-        let Some(fur_text) = fur_text else {
+        }) else {
             return; // TextEditorContainer not found or not a TextEdit
         };
+        
+        // Early return if hash hasn't changed since last render - no need to rerender
+        if current_hash == self.last_rendered_fur_hash {
+            return; // Content hasn't changed since last render, skip update
+        }
+        
+        // Update the rendered hash (we're about to render this content)
+        self.last_rendered_fur_hash = current_hash;
         
         // Find UIPreview element
         let preview_id = api.with_ui_node(ui_node_id, |ui| {
@@ -1072,6 +1089,11 @@ impl ManagerScript {
         
         // Parse FUR and prefix all IDs with "PREVIEW_" to ensure uniqueness
         let parse_success = self.append_fur_to_ui_with_prefix(api, ui_node_id, &fur_text, Some(preview_id), "PREVIEW_");
+        
+        // If parsing succeeded, scale the preview elements to fit
+        if parse_success {
+            self.scale_preview_elements(api, ui_node_id, preview_id);
+        }
         
         // Verify final state after parsing
         api.with_ui_node(ui_node_id, |ui| {
@@ -1100,6 +1122,142 @@ impl ManagerScript {
             });
             // Note: with_ui_node automatically marks the UI node itself for rerender
         }
+    }
+    
+    /// Scale preview elements to fit within the preview panel
+    /// Scales font sizes and element sizes relative to preview panel size vs virtual UI size
+    ///@skip
+    fn scale_preview_elements(&mut self, api: &mut ScriptApi, ui_node_id: Uuid, preview_id: Uuid) {
+        use perro_core::nodes::ui::ui_element::UIElement;
+        use perro_core::structs2d::Vector2;
+        
+        // Virtual UI size (reference size for UI elements)
+        const VIRTUAL_WIDTH: f32 = 1920.0;
+        const VIRTUAL_HEIGHT: f32 = 1080.0;
+        
+        api.mutate_node::<perro_core::nodes::ui::ui_node::UINode, _>(ui_node_id, |ui| {
+            // Get preview panel size
+            let preview_size = if let Some(preview_element) = ui.find_element_by_name("UIPreview") {
+                *preview_element.get_size()
+            } else {
+                return; // Preview not found
+            };
+            
+            // Get root element(s) - first child(ren) of preview
+            let root_element_ids = if let Some(preview_element) = ui.find_element_by_name("UIPreview") {
+                preview_element.get_children().to_vec()
+            } else {
+                return;
+            };
+            
+            if root_element_ids.is_empty() {
+                return; // No elements to scale
+            }
+            
+            // Calculate scale factor based on preview panel size relative to virtual size
+            // Use the smaller dimension to maintain aspect ratio
+            let scale_x = preview_size.x / VIRTUAL_WIDTH;
+            let scale_y = preview_size.y / VIRTUAL_HEIGHT;
+            let scale = scale_x.min(scale_y);
+            
+            // Also check if content needs to be scaled down to fit
+            // Calculate the bounding box of all root elements
+            let mut root_width: f32 = 0.0;
+            let mut root_height: f32 = 0.0;
+            
+            for &root_id in &root_element_ids {
+                if let Some(element) = ui.elements.as_ref().and_then(|e| e.get(&root_id)) {
+                    let size = *element.get_size();
+                    if size.x > 0.0 {
+                        root_width = root_width.max(size.x);
+                    }
+                    if size.y > 0.0 {
+                        root_height = root_height.max(size.y);
+                    }
+                }
+            }
+            
+            // If content is larger than preview, scale it down
+            let content_scale = if root_width > 0.0 && root_height > 0.0 {
+                let content_scale_x = (preview_size.x * 0.9) / root_width;
+                let content_scale_y = (preview_size.y * 0.9) / root_height;
+                content_scale_x.min(content_scale_y).min(1.0)
+            } else {
+                1.0
+            };
+            
+            // Use the smaller of the two scales (virtual size scale vs content fit scale)
+            let final_scale = scale.min(content_scale);
+            
+            if final_scale >= 1.0 && content_scale >= 1.0 {
+                return; // No scaling needed
+            }
+            
+            // Recursively scale all elements
+            // Collect all element IDs first to avoid borrow conflicts
+            fn collect_all_element_ids(
+                ui: &perro_core::nodes::ui::ui_node::UINode,
+                element_id: Uuid,
+            ) -> Vec<Uuid> {
+                let mut ids = vec![element_id];
+                if let Some(elements) = &ui.elements {
+                    if let Some(element) = elements.get(&element_id) {
+                        for &child_id in element.get_children() {
+                            ids.extend(collect_all_element_ids(ui, child_id));
+                        }
+                    }
+                }
+                ids
+            }
+            
+            // Collect all element IDs to scale
+            let mut all_element_ids = Vec::new();
+            for &root_id in &root_element_ids {
+                all_element_ids.extend(collect_all_element_ids(ui, root_id));
+            }
+            
+            // Now scale all elements
+            if let Some(elements) = &mut ui.elements {
+                for &element_id in &all_element_ids {
+                    if let Some(element) = elements.get_mut(&element_id) {
+                        // Scale font sizes for text elements
+                        match element {
+                            UIElement::Text(text) => {
+                                text.props.font_size *= final_scale;
+                            }
+                            UIElement::Button(button) => {
+                                button.text.props.font_size *= final_scale;
+                            }
+                            UIElement::TextInput(text_input) => {
+                                text_input.text.props.font_size *= final_scale;
+                            }
+                            UIElement::TextEdit(text_edit) => {
+                                text_edit.text.props.font_size *= final_scale;
+                            }
+                            _ => {}
+                        }
+                        
+                        // Scale element size
+                        let current_size = *element.get_size();
+                        element.set_size(Vector2::new(current_size.x * final_scale, current_size.y * final_scale));
+                        
+                        // Scale transform position
+                        let mut transform = element.get_transform().clone();
+                        transform.position.x *= final_scale;
+                        transform.position.y *= final_scale;
+                        *element.get_transform_mut() = transform;
+                    }
+                }
+            }
+            
+            // Mark for rerender and layout
+            for &root_id in &root_element_ids {
+                ui.mark_element_needs_rerender(root_id);
+                ui.mark_element_needs_layout(root_id);
+            }
+            ui.mark_element_needs_rerender(preview_id);
+            ui.mark_element_needs_layout(preview_id);
+        });
     }
     
     /// Append FUR elements with a prefix on all IDs to ensure uniqueness
@@ -1492,13 +1650,17 @@ impl Script for ManagerScript {
                 
                 if let Some(hash) = current_hash {
                     if hash != self.last_fur_text_hash {
-                        // Text changed - reset timer and update cached hash
+                        // Text changed - reset timer and cache the new hash
+                        // We'll update after debounce period (0.5s)
                         self.last_fur_text_hash = hash;
                         self.live_preview_timer = 0.0;
                     } else if self.live_preview_timer >= 0.5 {
-                        // Text hasn't changed for 0.5 seconds - update preview
-                        self.live_preview_timer = 0.0;
-                        self.update_live_preview(api);
+                        // Timer expired - only update if hash has changed since last render
+                        // update_live_preview will check hash and early return if unchanged
+                        if hash != self.last_rendered_fur_hash {
+                            self.live_preview_timer = 0.0;
+                            self.update_live_preview(api);
+                        }
                     }
                 }
             }

@@ -281,6 +281,8 @@ impl UITextEdit {
             let pos = self.cursor_position - 1;
             content.remove(pos);
             self.cursor_position -= 1;
+            // Clear selection when deleting
+            self.clear_selection();
             // Invalidate cache when text changes
             self.invalidate_cache();
             self.update_line_info();
@@ -292,6 +294,8 @@ impl UITextEdit {
         let content = &mut self.text.props.content;
         if self.cursor_position < content.len() {
             content.remove(self.cursor_position);
+            // Clear selection when deleting
+            self.clear_selection();
             // Invalidate cache when text changes
             self.invalidate_cache();
             self.update_line_info();

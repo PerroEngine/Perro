@@ -44,25 +44,25 @@ use uuid::Uuid;
 //
 
 /// Pure serializable scene data (no runtime state)
-/// Uses u32 indices for keys to preserve order during serialization
+/// Uses u32 keys as scene-level node identifiers to preserve order during serialization
 #[derive(Debug)]
 pub struct SceneData {
-    pub root_index: u32,
+    pub root_key: u32,
     pub nodes: IndexMap<u32, SceneNode>,
-    // Mapping from index to temporary UUID (used during deserialization)
+    // Mapping from scene key to temporary UUID (used during deserialization)
     // This allows us to remap parent references when converting to runtime
     // Not serialized - handled manually in Serialize/Deserialize impls
-    index_to_uuid: HashMap<u32, Uuid>,
+    key_to_uuid: HashMap<u32, Uuid>,
 }
 
 impl Clone for SceneData {
     fn clone(&self) -> Self {
         Self {
-            root_index: self.root_index,
-            nodes: self.nodes.iter().map(|(idx, node)| {
-                (*idx, node.clone())
+            root_key: self.root_key,
+            nodes: self.nodes.iter().map(|(key, node)| {
+                (*key, node.clone())
             }).collect(),
-            index_to_uuid: self.index_to_uuid.clone(),
+            key_to_uuid: self.key_to_uuid.clone(),
         }
     }
 }
@@ -73,17 +73,18 @@ impl Serialize for SceneData {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("SceneData", 2)?;
-        state.serialize_field("root_index", &self.root_index)?;
+        // Support both "root_key" (new) and "root_index" (legacy) for backward compatibility
+        state.serialize_field("root_index", &self.root_key)?;
         
-        // Build reverse mapping: UUID -> index (for converting parent UUIDs to indices)
-        let uuid_to_index: HashMap<Uuid, u32> = self.index_to_uuid.iter()
-            .map(|(idx, uuid)| (*uuid, *idx))
+        // Build reverse mapping: UUID -> key (for converting parent UUIDs to scene keys)
+        let uuid_to_key: HashMap<Uuid, u32> = self.key_to_uuid.iter()
+            .map(|(key, uuid)| (*uuid, *key))
             .collect();
         
-        // Serialize nodes with u32 indices as keys
+        // Serialize nodes with u32 keys as identifiers
         struct NodesMap<'a> {
             nodes: &'a IndexMap<u32, SceneNode>,
-            uuid_to_index: &'a HashMap<Uuid, u32>,
+            uuid_to_key: &'a HashMap<Uuid, u32>,
         }
         
         impl<'a> Serialize for NodesMap<'a> {
@@ -93,37 +94,37 @@ impl Serialize for SceneData {
             {
                 use serde::ser::SerializeMap;
                 let mut map = serializer.serialize_map(Some(self.nodes.len()))?;
-                for (idx, node) in self.nodes.iter() {
-                    // Serialize node, but convert parent UUID to index
+                for (key, node) in self.nodes.iter() {
+                    // Serialize node, but convert parent UUID to scene key
                     let mut node_value: Value = serde_json::to_value(node)
                         .map_err(|e| S::Error::custom(format!("Failed to serialize node: {}", e)))?;
                     
-                    // Convert parent UUID to index if present
+                    // Convert parent UUID to scene key if present
                     if let Some(obj) = node_value.as_object_mut() {
                         if let Some(parent_value) = obj.get_mut("parent") {
                             if let Some(parent_obj) = parent_value.as_object_mut() {
                                 if let Some(id_value) = parent_obj.get("id") {
                                     if let Some(uuid_str) = id_value.as_str() {
                                         if let Ok(uuid) = Uuid::parse_str(uuid_str) {
-                                            if let Some(&parent_idx) = self.uuid_to_index.get(&uuid) {
-                                                // Replace parent object with just the index
-                                                *parent_value = serde_json::Value::Number(parent_idx.into());
+                                            if let Some(&parent_key) = self.uuid_to_key.get(&uuid) {
+                                                // Replace parent object with just the scene key
+                                                *parent_value = serde_json::Value::Number(parent_key.into());
                                             }
                                         }
                                     }
                                 }
                             } else if let Some(uuid_str) = parent_value.as_str() {
-                                // Parent is a UUID string, convert to index
+                                // Parent is a UUID string, convert to scene key
                                 if let Ok(uuid) = Uuid::parse_str(uuid_str) {
-                                    if let Some(&parent_idx) = self.uuid_to_index.get(&uuid) {
-                                        *parent_value = serde_json::Value::Number(parent_idx.into());
+                                    if let Some(&parent_key) = self.uuid_to_key.get(&uuid) {
+                                        *parent_value = serde_json::Value::Number(parent_key.into());
                                     }
                                 }
                             }
                         }
                     }
                     
-                    map.serialize_entry(idx, &node_value)?;
+                    map.serialize_entry(key, &node_value)?;
                 }
                 map.end()
             }
@@ -131,11 +132,12 @@ impl Serialize for SceneData {
         
         state.serialize_field("nodes", &NodesMap { 
             nodes: &self.nodes,
-            uuid_to_index: &uuid_to_index,
+            uuid_to_key: &uuid_to_key,
         })?;
         state.end()
     }
 }
+
 impl<'de> Deserialize<'de> for SceneData {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -143,14 +145,15 @@ impl<'de> Deserialize<'de> for SceneData {
     {
         use serde::de::Error;
         
-        // Deserialize as raw JSON first to extract parent indices
+        // Deserialize as raw JSON first to extract parent scene keys
         let raw_value: Value = Value::deserialize(deserializer)?;
         
-        // Accept both "root_index" and "root_id" for compatibility
-        let root_index = raw_value.get("root_index")
+        // Accept both "root_key" (new), "root_index" (legacy), and "root_id" (legacy) for compatibility
+        let root_key = raw_value.get("root_key")
+            .or_else(|| raw_value.get("root_index"))
             .or_else(|| raw_value.get("root_id"))
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| D::Error::custom("root_index or root_id must be a u32"))? as u32;
+            .ok_or_else(|| D::Error::custom("root_key, root_index, or root_id must be a u32"))? as u32;
         
         let nodes_obj = raw_value.get("nodes")
             .and_then(|v| v.as_object())
@@ -158,20 +161,20 @@ impl<'de> Deserialize<'de> for SceneData {
         
         let capacity = nodes_obj.len();
         
-        // Create index -> UUID mapping using deterministic UUIDs based on indices
-        // Format: 00000000-0000-0000-0000-0000000000XX (where XX is the index in hex)
-        let mut index_to_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(capacity);
-        for key in nodes_obj.keys() {
-            if let Ok(idx) = key.parse::<u32>() {
-                // Generate deterministic UUID from index
-                let uuid_str = format!("00000000-0000-0000-0000-{:012x}", idx);
+        // Create scene key -> UUID mapping using deterministic UUIDs based on keys
+        // Format: 00000000-0000-0000-0000-0000000000XX (where XX is the scene key in hex)
+        let mut key_to_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(capacity);
+        for key_str in nodes_obj.keys() {
+            if let Ok(key) = key_str.parse::<u32>() {
+                // Generate deterministic UUID from scene key
+                let uuid_str = format!("00000000-0000-0000-0000-{:012x}", key);
                 let uuid = Uuid::parse_str(&uuid_str)
                     .unwrap_or_else(|_| Uuid::nil());
-                index_to_uuid.insert(idx, uuid);
+                key_to_uuid.insert(key, uuid);
             }
         }
         
-        // Deserialize nodes, handling parent indices
+        // Deserialize nodes, handling parent scene keys
         let mut nodes = IndexMap::with_capacity(capacity);
         let mut parent_children: HashMap<u32, Vec<u32>> = HashMap::with_capacity(capacity / 4);
         
@@ -186,14 +189,14 @@ impl<'de> Deserialize<'de> for SceneData {
                 }
                 // Recursively search in nested objects
                 for (_, v) in obj {
-                    if let Some(parent_idx) = find_parent_recursive(v) {
-                        return Some(parent_idx);
+                    if let Some(parent_key) = find_parent_recursive(v) {
+                        return Some(parent_key);
                     }
                 }
             } else if let Some(arr) = value.as_array() {
                 for item in arr {
-                    if let Some(parent_idx) = find_parent_recursive(item) {
-                        return Some(parent_idx);
+                    if let Some(parent_key) = find_parent_recursive(item) {
+                        return Some(parent_key);
                     }
                 }
             }
@@ -201,11 +204,11 @@ impl<'de> Deserialize<'de> for SceneData {
         }
         
         for (key_str, node_value) in nodes_obj {
-            let idx = key_str.parse::<u32>()
-                .map_err(|_| D::Error::custom(format!("Node key must be a u32 index, got: {}", key_str)))?;
+            let key = key_str.parse::<u32>()
+                .map_err(|_| D::Error::custom(format!("Node key must be a u32 scene identifier, got: {}", key_str)))?;
             
-            // Extract parent index if present (recursively search nested objects)
-            let parent_idx = find_parent_recursive(node_value);
+            // Extract parent scene key if present (recursively search nested objects)
+            let parent_key = find_parent_recursive(node_value);
             
             // Deserialize node without parent field (we'll set it later)
             // Need to recursively remove "parent" from nested "base" objects
@@ -228,8 +231,8 @@ impl<'de> Deserialize<'de> for SceneData {
             let mut node: SceneNode = serde_json::from_value(node_json)
                 .map_err(|e| D::Error::custom(format!("Failed to deserialize node: {}", e)))?;
             
-            // Set node ID to deterministic UUID based on index
-            if let Some(&node_uuid) = index_to_uuid.get(&idx) {
+            // Set node ID to deterministic UUID based on scene key
+            if let Some(&node_uuid) = key_to_uuid.get(&key) {
                 node.set_id(node_uuid);
             }
             
@@ -237,30 +240,30 @@ impl<'de> Deserialize<'de> for SceneData {
             node.mark_transform_dirty_if_node2d();
             
             // Store parent relationship for later
-            if let Some(pidx) = parent_idx {
-                if index_to_uuid.contains_key(&pidx) {
-                    parent_children.entry(pidx).or_default().push(idx);
+            if let Some(pkey) = parent_key {
+                if key_to_uuid.contains_key(&pkey) {
+                    parent_children.entry(pkey).or_default().push(key);
                 }
             }
             
-            nodes.insert(idx, node);
+            nodes.insert(key, node);
         }
         
         // Second pass: set parent relationships with proper types and UUIDs
-        for (parent_idx, child_indices) in parent_children {
-            if let Some(&parent_uuid) = index_to_uuid.get(&parent_idx) {
-                if let Some(parent_node) = nodes.get(&parent_idx) {
+        for (parent_key, child_keys) in parent_children {
+            if let Some(&parent_uuid) = key_to_uuid.get(&parent_key) {
+                if let Some(parent_node) = nodes.get(&parent_key) {
                     let parent_type_enum = parent_node.get_type();
                     
-                    for child_idx in child_indices {
-                        if let Some(child) = nodes.get_mut(&child_idx) {
+                    for child_key in child_keys {
+                        if let Some(child) = nodes.get_mut(&child_key) {
                             let parent_type = crate::nodes::node::ParentType::new(parent_uuid, parent_type_enum);
                             child.set_parent(Some(parent_type));
                         }
                         // Add to parent's children list (using UUID)
                         // Only add if not already present to avoid duplicates
-                        if let Some(parent) = nodes.get_mut(&parent_idx) {
-                            if let Some(&child_uuid) = index_to_uuid.get(&child_idx) {
+                        if let Some(parent) = nodes.get_mut(&parent_key) {
+                            if let Some(&child_uuid) = key_to_uuid.get(&child_key) {
                                 if !parent.get_children().contains(&child_uuid) {
                                     parent.add_child(child_uuid);
                                 }
@@ -271,21 +274,21 @@ impl<'de> Deserialize<'de> for SceneData {
             }
         }
         
-        // Store index_to_uuid mapping for later use when converting to runtime
-        let index_to_uuid_map: HashMap<u32, Uuid> = index_to_uuid.into_iter().collect();
+        // Store key_to_uuid mapping for later use when converting to runtime
+        let key_to_uuid_map: HashMap<u32, Uuid> = key_to_uuid.into_iter().collect();
         
         Ok(SceneData {
-            root_index,
+            root_key,
             nodes,
-            index_to_uuid: index_to_uuid_map,
+            key_to_uuid: key_to_uuid_map,
         })
     }
 }
 
 impl SceneData {
-    /// Get the index to UUID mapping
-    pub fn index_to_uuid(&self) -> &HashMap<u32, Uuid> {
-        &self.index_to_uuid
+    /// Get the scene key to UUID mapping
+    pub fn key_to_uuid(&self) -> &HashMap<u32, Uuid> {
+        &self.key_to_uuid
     }
     
     /// Create a new data scene with a root node
@@ -293,26 +296,26 @@ impl SceneData {
         let root_id = root.get_id();
         let mut nodes = IndexMap::new();
         // OPTIMIZED: Use with_capacity(0) for known-empty map to avoid pre-allocation
-        let mut index_to_uuid = HashMap::with_capacity(0);
-        // Use index 0 for root
-        index_to_uuid.insert(0, root_id);
+        let mut key_to_uuid = HashMap::with_capacity(0);
+        // Use key 0 for root
+        key_to_uuid.insert(0, root_id);
         nodes.insert(0, root);
         Self { 
-            root_index: 0, 
+            root_key: 0, 
             nodes,
-            index_to_uuid,
+            key_to_uuid,
         }
     }
     
-    /// Create SceneData from nodes and root_index
-    /// Builds the index_to_uuid mapping and sets node IDs to deterministic UUIDs based on indices
-    pub fn from_nodes(root_index: u32, mut nodes: IndexMap<u32, SceneNode>) -> Self {
-        let mut index_to_uuid = HashMap::with_capacity(nodes.len());
+    /// Create SceneData from nodes and root_key
+    /// Builds the key_to_uuid mapping and sets node IDs to deterministic UUIDs based on scene keys
+    pub fn from_nodes(root_key: u32, mut nodes: IndexMap<u32, SceneNode>) -> Self {
+        let mut key_to_uuid = HashMap::with_capacity(nodes.len());
         
-        // Generate deterministic UUIDs based on indices: 00000000-0000-0000-0000-0000000000XX
-        for (&idx, node) in nodes.iter_mut() {
-            // Create deterministic UUID from index: format as 00000000-0000-0000-0000-0000000000XX
-            let uuid_str = format!("00000000-0000-0000-0000-{:012x}", idx);
+        // Generate deterministic UUIDs based on scene keys: 00000000-0000-0000-0000-0000000000XX
+        for (&key, node) in nodes.iter_mut() {
+            // Create deterministic UUID from scene key: format as 00000000-0000-0000-0000-0000000000XX
+            let uuid_str = format!("00000000-0000-0000-0000-{:012x}", key);
             let uuid = Uuid::parse_str(&uuid_str).unwrap_or_else(|_| {
                 // Fallback: use nil UUID if parsing fails (shouldn't happen)
                 Uuid::nil()
@@ -322,20 +325,20 @@ impl SceneData {
             node.set_id(uuid);
             
             // Store in mapping
-            index_to_uuid.insert(idx, uuid);
+            key_to_uuid.insert(key, uuid);
         }
         
         // Now update parent and child UUIDs to match the deterministic UUIDs
         for node in nodes.values_mut() {
             // Update parent UUID if it exists
             if let Some(parent) = node.get_parent() {
-                // Extract index from parent UUID (last 12 hex digits)
+                // Extract scene key from parent UUID (last 12 hex digits)
                 let parent_uuid_str = parent.id.to_string();
-                let parent_idx_opt = parent_uuid_str.split('-').last()
+                let parent_key_opt = parent_uuid_str.split('-').last()
                     .and_then(|hex| u32::from_str_radix(hex, 16).ok());
                 
-                if let Some(parent_idx) = parent_idx_opt {
-                    if let Some(&correct_uuid) = index_to_uuid.get(&parent_idx) {
+                if let Some(parent_key) = parent_key_opt {
+                    if let Some(&correct_uuid) = key_to_uuid.get(&parent_key) {
                         if parent.id != correct_uuid {
                             // Update parent UUID to match
                             let parent_type = crate::nodes::node::ParentType::new(correct_uuid, parent.node_type);
@@ -350,11 +353,11 @@ impl SceneData {
             node.clear_children();
             for child_uuid in children {
                 let child_uuid_str = child_uuid.to_string();
-                let child_idx_opt = child_uuid_str.split('-').last()
+                let child_key_opt = child_uuid_str.split('-').last()
                     .and_then(|hex| u32::from_str_radix(hex, 16).ok());
                 
-                if let Some(child_idx) = child_idx_opt {
-                    if let Some(&correct_uuid) = index_to_uuid.get(&child_idx) {
+                if let Some(child_key) = child_key_opt {
+                    if let Some(&correct_uuid) = key_to_uuid.get(&child_key) {
                         node.add_child(correct_uuid);
                     }
                 }
@@ -362,23 +365,23 @@ impl SceneData {
         }
         
         Self {
-            root_index,
+            root_key,
             nodes,
-            index_to_uuid,
+            key_to_uuid,
         }
     }
     
     /// Convert SceneData to runtime Scene format
-    /// Maps u32 indices to new UUIDs and remaps parent references
+    /// Maps u32 scene keys to new UUIDs and remaps parent references
     pub fn to_runtime_nodes(self) -> (FxHashMap<Uuid, SceneNode>, Uuid) {
         // Create new UUIDs for runtime
         let mut old_to_new_uuid: HashMap<Uuid, Uuid> = HashMap::with_capacity(self.nodes.len());
         println!("🔍 Building old_to_new_uuid mapping ({} nodes):", self.nodes.len());
-        for &idx in self.nodes.keys() {
-            let old_uuid = self.index_to_uuid[&idx];
+        for &key in self.nodes.keys() {
+            let old_uuid = self.key_to_uuid[&key];
             let new_uuid = Uuid::new_v4();
             old_to_new_uuid.insert(old_uuid, new_uuid);
-            println!("  Index {}: old_uuid={} -> new_uuid={}", idx, old_uuid, new_uuid);
+            println!("  Scene key {}: old_uuid={} -> new_uuid={}", key, old_uuid, new_uuid);
         }
         
         let mut runtime_nodes = FxHashMap::default();
@@ -387,26 +390,26 @@ impl SceneData {
         
         // First pass: create nodes with new UUIDs and collect parent relationships
         println!("🔍 First pass: remapping nodes and collecting parent relationships:");
-        for (idx, mut node) in self.nodes {
-            let old_uuid = self.index_to_uuid[&idx];
+        for (key, mut node) in self.nodes {
+            let old_uuid = self.key_to_uuid[&key];
             let new_uuid = old_to_new_uuid[&old_uuid];
             node.set_id(new_uuid);
             node.clear_children();
             
             // Remap parent UUID
             if let Some(parent) = node.get_parent() {
-                println!("  Node {} (idx={}): has parent with id={}", node.get_name(), idx, parent.id);
+                println!("  Node {} (key={}): has parent with id={}", node.get_name(), key, parent.id);
                 if let Some(&new_parent_uuid) = old_to_new_uuid.get(&parent.id) {
                     // We'll set parent after we have all node types
                     println!("    Found parent mapping: {} -> {}", parent.id, new_parent_uuid);
                     parent_children.entry(new_parent_uuid).or_default().push(new_uuid);
                 } else {
-                    eprintln!("⚠️ WARNING: Parent UUID {} not found in old_to_new_uuid for node {} (idx={}, name={})", 
-                        parent.id, new_uuid, idx, node.get_name());
+                    eprintln!("⚠️ WARNING: Parent UUID {} not found in old_to_new_uuid for node {} (key={}, name={})", 
+                        parent.id, new_uuid, key, node.get_name());
                     eprintln!("    Available old UUIDs in mapping: {:?}", old_to_new_uuid.keys().collect::<Vec<_>>());
                 }
             } else {
-                println!("  Node {} (idx={}): NO PARENT", node.get_name(), idx);
+                println!("  Node {} (key={}): NO PARENT", node.get_name(), key);
             }
             
             runtime_nodes.insert(new_uuid, node);
@@ -435,7 +438,7 @@ impl SceneData {
         }
         
         // Get root UUID
-        let root_old_uuid = self.index_to_uuid[&self.root_index];
+        let root_old_uuid = self.key_to_uuid[&self.root_key];
         let root_uuid = old_to_new_uuid[&root_old_uuid];
         
         (runtime_nodes, root_uuid)
@@ -459,7 +462,7 @@ impl SceneData {
     pub fn fix_relationships(data: &mut SceneData) {
         // This function is kept for compatibility but relationships are now
         // handled during deserialization. Parent relationships in SceneData
-        // use UUIDs from index_to_uuid, and children are already set.
+        // use UUIDs from key_to_uuid, and children are already set.
         // This function can be used to verify/rebuild relationships if needed.
         
         // OPTIMIZED: Use with_capacity(0) for known-empty map
@@ -469,16 +472,16 @@ impl SceneData {
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
         
-        for (&_idx, node) in data.nodes.iter() {
+        for (&_key, node) in data.nodes.iter() {
             if let Some(parent) = node.get_parent() {
-                // parent.id is a UUID from index_to_uuid
-                // Find which index it corresponds to
-                let parent_idx_opt = data.index_to_uuid.iter()
+                // parent.id is a UUID from key_to_uuid
+                // Find which scene key it corresponds to
+                let parent_key_opt = data.key_to_uuid.iter()
                     .find(|&(_, &uuid)| uuid == parent.id)
-                    .map(|(&idx, _)| idx);
+                    .map(|(&key, _)| key);
                 
-                if let Some(parent_idx) = parent_idx_opt {
-                    if let Some(parent_node) = data.nodes.get(&parent_idx) {
+                if let Some(parent_key) = parent_key_opt {
+                    if let Some(parent_node) = data.nodes.get(&parent_key) {
                         parent_types.insert(parent.id, parent_node.get_type());
                     }
                 }
@@ -486,16 +489,16 @@ impl SceneData {
         }
 
         // Rebuild parent-child relationships
-        for (&idx, node) in data.nodes.iter() {
+        for (&key, node) in data.nodes.iter() {
             if let Some(parent) = node.get_parent() {
                 let parent_uuid = parent.id;
-                // Find parent index
-                let parent_idx_opt = data.index_to_uuid.iter()
+                // Find parent scene key
+                let parent_key_opt = data.key_to_uuid.iter()
                     .find(|&(_, &uuid)| uuid == parent_uuid)
-                    .map(|(&idx, _)| idx);
+                    .map(|(&key, _)| key);
                 
-                if let Some(_parent_idx) = parent_idx_opt {
-                    let node_uuid = data.index_to_uuid[&idx];
+                if let Some(_parent_key) = parent_key_opt {
+                    let node_uuid = data.key_to_uuid[&key];
                     parent_children.entry(parent_uuid).or_default().push(node_uuid);
                 }
             }
@@ -504,12 +507,12 @@ impl SceneData {
         // Apply relationships
         for (parent_uuid, children) in parent_children {
             // Find parent node by UUID
-            let parent_idx_opt = data.index_to_uuid.iter()
+            let parent_key_opt = data.key_to_uuid.iter()
                 .find(|&(_, &uuid)| uuid == parent_uuid)
-                .map(|(&idx, _)| idx);
+                .map(|(&key, _)| key);
             
-            if let Some(parent_idx) = parent_idx_opt {
-                if let Some(parent) = data.nodes.get_mut(&parent_idx) {
+            if let Some(parent_key) = parent_key_opt {
+                if let Some(parent) = data.nodes.get_mut(&parent_key) {
                     for child_uuid in children {
                         parent.add_child(child_uuid);
                     }
@@ -725,53 +728,53 @@ impl<P: ScriptProvider> Scene<P> {
     }
     
     /// Convert runtime Scene to SceneData for serialization
-    /// Assigns u32 indices to nodes based on traversal order
+    /// Assigns u32 scene keys to nodes based on traversal order
     pub fn to_scene_data(&self) -> SceneData {
-        // Assign indices based on traversal order (root first, then children)
-        let mut index = 0u32;
+        // Assign scene keys based on traversal order (root first, then children)
+        let mut key = 0u32;
         // OPTIMIZED: Use with_capacity(0) for known-empty maps initially
-        let mut uuid_to_index: HashMap<Uuid, u32> = HashMap::with_capacity(0);
+        let mut uuid_to_key: HashMap<Uuid, u32> = HashMap::with_capacity(0);
         let mut nodes = IndexMap::new();
-        let mut index_to_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(0);
+        let mut key_to_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(0);
         
         // Traverse tree starting from root
         let mut to_process = vec![self.root_id];
         while let Some(node_id) = to_process.pop() {
-            if uuid_to_index.contains_key(&node_id) {
+            if uuid_to_key.contains_key(&node_id) {
                 continue; // Already processed
             }
             
             if let Some(node) = self.nodes.get(&node_id) {
-                uuid_to_index.insert(node_id, index);
-                index_to_uuid.insert(index, node_id);
-                nodes.insert(index, node.clone());
+                uuid_to_key.insert(node_id, key);
+                key_to_uuid.insert(key, node_id);
+                nodes.insert(key, node.clone());
                 
                 // Add children to processing queue
                 for child_id in node.get_children() {
                     to_process.push(*child_id);
                 }
                 
-                index += 1;
+                key += 1;
             }
         }
         
-        // Find root index
-        let root_index = uuid_to_index.get(&self.root_id)
+        // Find root scene key
+        let root_key = uuid_to_key.get(&self.root_id)
             .copied()
             .unwrap_or(0);
         
-        // Convert parent UUIDs to match index_to_uuid (so serialization can find them)
-        // The parent.id should be the UUID from index_to_uuid for that parent's index
-        for (_idx, node) in nodes.iter_mut() {
+        // Convert parent UUIDs to match key_to_uuid (so serialization can find them)
+        // The parent.id should be the UUID from key_to_uuid for that parent's scene key
+        for (_key, node) in nodes.iter_mut() {
             if let Some(parent) = node.get_parent() {
-                // Find which index this parent UUID corresponds to
-                if let Some(&parent_idx) = uuid_to_index.get(&parent.id) {
-                    // Get the UUID from index_to_uuid for this parent index
-                    if let Some(&parent_uuid_from_index) = index_to_uuid.get(&parent_idx) {
-                        // Update parent.id to match the UUID in index_to_uuid
+                // Find which scene key this parent UUID corresponds to
+                if let Some(&parent_key) = uuid_to_key.get(&parent.id) {
+                    // Get the UUID from key_to_uuid for this parent scene key
+                    if let Some(&parent_uuid_from_key) = key_to_uuid.get(&parent_key) {
+                        // Update parent.id to match the UUID in key_to_uuid
                         // This ensures serialization can find it in the reverse mapping
                         let parent_type = crate::nodes::node::ParentType::new(
-                            parent_uuid_from_index,
+                            parent_uuid_from_key,
                             parent.node_type
                         );
                         node.set_parent(Some(parent_type));
@@ -781,9 +784,9 @@ impl<P: ScriptProvider> Scene<P> {
         }
         
         SceneData {
-            root_index,
+            root_key,
             nodes,
-            index_to_uuid,
+            key_to_uuid,
         }
     }
     
@@ -992,24 +995,24 @@ impl<P: ScriptProvider> Scene<P> {
         let merge_start = Instant::now();
     
         // ───────────────────────────────────────────────
-        // 1️⃣ BUILD INDEX → NEW RUNTIME ID MAP
+        // 1️⃣ BUILD SCENE KEY → NEW RUNTIME ID MAP
         // ───────────────────────────────────────────────
         let id_map_start = Instant::now();
-        // Map from old UUID (from index_to_uuid) to new runtime UUID
+        // Map from old UUID (from key_to_uuid) to new runtime UUID
         let mut old_uuid_to_new_uuid: HashMap<Uuid, Uuid> = HashMap::with_capacity(other.nodes.len() + 1);
-        // Also build index -> new UUID map for easier lookup
-        let mut index_to_new_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(other.nodes.len() + 1);
+        // Also build scene key -> new UUID map for easier lookup
+        let mut key_to_new_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(other.nodes.len() + 1);
     
         println!("🔍 merge_scene_data: Building UUID mapping for {} nodes:", other.nodes.len());
         // Generate new UUIDs for all nodes
-        for &idx in other.nodes.keys() {
-            let old_uuid = other.index_to_uuid()[&idx];
+        for &key in other.nodes.keys() {
+            let old_uuid = other.key_to_uuid()[&key];
             let new_uuid = Uuid::new_v4();
             old_uuid_to_new_uuid.insert(old_uuid, new_uuid);
-            index_to_new_uuid.insert(idx, new_uuid);
-            if let Some(node) = other.nodes.get(&idx) {
-                println!("  Index {}: old_uuid={} -> new_uuid={} (node: {})", 
-                    idx, old_uuid, new_uuid, node.get_name());
+            key_to_new_uuid.insert(key, new_uuid);
+            if let Some(node) = other.nodes.get(&key) {
+                println!("  Scene key {}: old_uuid={} -> new_uuid={} (node: {})", 
+                    key, old_uuid, new_uuid, node.get_name());
             }
         }
     
@@ -1023,13 +1026,13 @@ impl<P: ScriptProvider> Scene<P> {
         let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::with_capacity(0);
     
         // Get the subscene root's NEW runtime ID
-        let subscene_root_index = other.root_index;
-        let subscene_root_new_id = index_to_new_uuid[&subscene_root_index];
+        let subscene_root_key = other.root_key;
+        let subscene_root_new_id = key_to_new_uuid[&subscene_root_key];
     
         // Check if root has is_root_of (determines if we skip the root later)
         let root_is_root_of = other
             .nodes
-            .get(&other.root_index)
+            .get(&other.root_key)
             .and_then(|n| Self::get_is_root_of(n));
     
         let skip_root_id: Option<Uuid> = if root_is_root_of.is_some() {
@@ -1039,31 +1042,31 @@ impl<P: ScriptProvider> Scene<P> {
         };
     
         // First, collect parent node types from other.nodes before mutable iteration
-        // Parent IDs in nodes are UUIDs from index_to_uuid, so we need to map them
+        // Parent IDs in nodes are UUIDs from key_to_uuid, so we need to map them
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
-        for (&_idx, node) in other.nodes.iter() {
+        for (&_key, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
-                // parent.id is a UUID from index_to_uuid, find which index it corresponds to
-                // We need to reverse lookup: find index where index_to_uuid[index] == parent.id
-                let parent_idx_opt = other.index_to_uuid().iter()
+                // parent.id is a UUID from key_to_uuid, find which scene key it corresponds to
+                // We need to reverse lookup: find scene key where key_to_uuid[key] == parent.id
+                let parent_key_opt = other.key_to_uuid().iter()
                     .find(|&(_, &uuid)| uuid == parent.id)
-                    .map(|(&idx, _)| idx);
+                    .map(|(&key, _)| key);
                 
-                if let Some(parent_idx) = parent_idx_opt {
-                    if let Some(parent_node) = other.nodes.get(&parent_idx) {
+                if let Some(parent_key) = parent_key_opt {
+                    if let Some(parent_node) = other.nodes.get(&parent_key) {
                         other_parent_types.insert(parent.id, parent_node.get_type());
                     }
                 }
             }
         }
 
-        // Collect index_to_uuid mapping before mutable iteration
-        let index_to_uuid_copy: HashMap<u32, Uuid> = other.index_to_uuid().iter().map(|(&k, &v)| (k, v)).collect();
+        // Collect key_to_uuid mapping before mutable iteration
+        let key_to_uuid_copy: HashMap<u32, Uuid> = other.key_to_uuid().iter().map(|(&k, &v)| (k, v)).collect();
 
         // Remap all nodes
-        for (idx, node) in other.nodes.iter_mut() {
-            let new_id = index_to_new_uuid[idx];
+        for (key, node) in other.nodes.iter_mut() {
+            let new_id = key_to_new_uuid[key];
             node.set_id(new_id);
             node.clear_children();
             node.mark_transform_dirty_if_node2d();
@@ -1092,11 +1095,11 @@ impl<P: ScriptProvider> Scene<P> {
                         .push(new_id);
                 } else {
                     // Parent not in subscene - check if it exists in main scene
-                    // parent_old_uuid is from other's index_to_uuid, so we need to find which index it corresponds to
-                    // and then check if that index's UUID exists in self.nodes
-                    let _parent_idx_opt = index_to_uuid_copy.iter()
+                    // parent_old_uuid is from other's key_to_uuid, so we need to find which scene key it corresponds to
+                    // and then check if that scene key's UUID exists in self.nodes
+                    let _parent_key_opt = key_to_uuid_copy.iter()
                         .find(|&(_, &uuid)| uuid == parent_old_uuid)
-                        .map(|(&idx, _)| idx);
+                        .map(|(&key, _)| key);
                     
                     // For now, don't set parent - this is an invalid reference
                 }
@@ -1405,6 +1408,9 @@ impl<P: ScriptProvider> Scene<P> {
             self.nodes.len(),
             inserted_ids.len()
         );
+        
+        // Print scene tree for debugging
+        self.print_scene_tree();
     
         println!(
             "⏱ Timing: total={:.2}ms | id_map={:.2}ms | remap={:.2}ms | insert={:.2}ms | fur={:.2}ms | scripts={:.2}ms",
@@ -1434,29 +1440,29 @@ impl<P: ScriptProvider> Scene<P> {
             replacement_root_id
         );
     
-        // Build mapping from old UUID (from index_to_uuid) to new runtime UUID
+        // Build mapping from old UUID (from key_to_uuid) to new runtime UUID
         let mut old_uuid_to_new_uuid: HashMap<Uuid, Uuid> = HashMap::with_capacity(other.nodes.len());
-        let mut index_to_new_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(other.nodes.len());
+        let mut key_to_new_uuid: HashMap<u32, Uuid> = HashMap::with_capacity(other.nodes.len());
     
         // Generate UUIDs for all nodes EXCEPT the root
-        let subscene_root_index = other.root_index;
+        let subscene_root_key = other.root_key;
     
-        for &idx in other.nodes.keys() {
-            let old_uuid = other.index_to_uuid()[&idx];
-            if idx == subscene_root_index {
+        for &key in other.nodes.keys() {
+            let old_uuid = other.key_to_uuid()[&key];
+            if key == subscene_root_key {
                 // Root maps to the replacement node (which already exists)
                 old_uuid_to_new_uuid.insert(old_uuid, replacement_root_id);
-                index_to_new_uuid.insert(idx, replacement_root_id);
+                key_to_new_uuid.insert(key, replacement_root_id);
             } else {
                 let new_uuid = Uuid::new_v4();
                 old_uuid_to_new_uuid.insert(old_uuid, new_uuid);
-                index_to_new_uuid.insert(idx, new_uuid);
+                key_to_new_uuid.insert(key, new_uuid);
             }
         }
     
         println!(
-            "   ✅ Mapped nested scene root index {} → {}",
-            subscene_root_index, replacement_root_id
+            "   ✅ Mapped nested scene root key {} → {}",
+            subscene_root_key, replacement_root_id
         );
     
         // Build parent-children relationships
@@ -1464,18 +1470,18 @@ impl<P: ScriptProvider> Scene<P> {
         let mut parent_children: HashMap<Uuid, Vec<Uuid>> = HashMap::with_capacity(0);
         
         // First, collect parent node types from other.nodes before mutable iteration
-        // Parent IDs in nodes are UUIDs from index_to_uuid, so we need to map them
+        // Parent IDs in nodes are UUIDs from key_to_uuid, so we need to map them
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut other_parent_types: HashMap<Uuid, crate::node_registry::NodeType> = HashMap::with_capacity(0);
-        for (&_idx, node) in other.nodes.iter() {
+        for (&_key, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
-                // parent.id is a UUID from index_to_uuid, find which index it corresponds to
-                let parent_idx_opt = other.index_to_uuid.iter()
+                // parent.id is a UUID from key_to_uuid, find which scene key it corresponds to
+                let parent_key_opt = other.key_to_uuid().iter()
                     .find(|&(_, &uuid)| uuid == parent.id)
-                    .map(|(&idx, _)| idx);
+                    .map(|(&key, _)| key);
                 
-                if let Some(parent_idx) = parent_idx_opt {
-                    if let Some(parent_node) = other.nodes.get(&parent_idx) {
+                if let Some(parent_key) = parent_key_opt {
+                    if let Some(parent_node) = other.nodes.get(&parent_key) {
                         other_parent_types.insert(parent.id, parent_node.get_type());
                     }
                 }
@@ -1483,8 +1489,8 @@ impl<P: ScriptProvider> Scene<P> {
         }
     
         // Remap all nodes
-        for (idx, node) in other.nodes.iter_mut() {
-            let new_id = index_to_new_uuid[idx];
+        for (key, node) in other.nodes.iter_mut() {
+            let new_id = key_to_new_uuid[key];
             node.set_id(new_id);
             node.clear_children();
             node.mark_transform_dirty_if_node2d();
@@ -1712,8 +1718,27 @@ impl<P: ScriptProvider> Scene<P> {
     
 
     pub fn print_scene_tree(&self) {
-        // Debug function - currently disabled
-        // Can be re-enabled for debugging scene structure
+        println!("\n🌳 Scene Tree:");
+        println!("═══════════════════════════════════════════════════════════");
+        
+        // Find all root nodes (nodes with no parent)
+        let root_nodes: Vec<Uuid> = self.nodes.iter()
+            .filter(|(_, node)| node.get_parent().is_none())
+            .map(|(id, _)| *id)
+            .collect();
+        
+        if root_nodes.is_empty() {
+            println!("⚠️ No root nodes found!");
+            return;
+        }
+        
+        for (i, root_id) in root_nodes.iter().enumerate() {
+            let is_last = i == root_nodes.len() - 1;
+            self.print_node_recursive(*root_id, 0, is_last);
+        }
+        
+        println!("═══════════════════════════════════════════════════════════");
+        println!("Total nodes: {}\n", self.nodes.len());
     }
 
     #[allow(dead_code)]
@@ -2385,6 +2410,15 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Remove from needs_rerender set (if it was there)
         self.needs_rerender.remove(&node_id);
+        
+        // IMPORTANT: Clean up Area2D's previous_collisions tracking when a node is removed
+        // This prevents Area2D from trying to emit signals for nodes that no longer exist
+        // Iterate through all Area2D nodes and remove the deleted node from their previous_collisions
+        for (area_id, area_node) in self.nodes.iter_mut() {
+            if let SceneNode::Area2D(area) = area_node {
+                area.previous_collisions.remove(&node_id);
+            }
+        }
     }
 
     /// Get the global transform for a node, calculating it lazily if dirty

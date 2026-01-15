@@ -41,8 +41,6 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
             ppos = (collision.get_parent() as Sprite2D).transform.position
     }
 
- 
-
     if (collision.get_parent() == self) {
         pos.y += 100
         self.transform.position = pos
