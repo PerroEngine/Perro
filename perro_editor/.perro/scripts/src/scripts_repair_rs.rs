@@ -99,9 +99,12 @@ impl RepairScript {
             let essential_exist = cargo.exists() && rustc.exists();
             
             if !essential_exist {
-                eprintln!("⚠️  Toolchain verification failed:");
-                eprintln!("   cargo: {}", if cargo.exists() { "✅" } else { "❌" });
-                eprintln!("   rustc: {}", if rustc.exists() { "✅" } else { "❌" });
+                // [stripped for release] eprintln!("⚠️  Toolchain verification failed:");
+
+                // [stripped for release] eprintln!("   cargo: {}", if cargo.exists() { "✅" } else { "❌" });
+
+                // [stripped for release] eprintln!("   rustc: {}", if rustc.exists() { "✅" } else { "❌" });
+
                 return false;
             }
             
@@ -130,34 +133,40 @@ impl RepairScript {
                         .unwrap_or(false);
                     if has_files {
                         found_location = Some(name);
-                        eprintln!("✅ Standard library found at {}: {}", name, rustlib_dir.display());
+                        // [stripped for release] eprintln!("✅ Standard library found at {}: {}", name, rustlib_dir.display());
+
                         break;
                     }
                 }
             }
             
             if found_location.is_none() {
-                eprintln!("⚠️  Warning: Standard library not found in expected locations:");
+                // [stripped for release] eprintln!("⚠️  Warning: Standard library not found in expected locations:");
+
                 for (name, loc) in &possible_locations {
-                    eprintln!("   ❌ {}: {}", name, loc.display());
+                    // [stripped for release] eprintln!("   ❌ {}: {}", name, loc.display());
+
                 }
-                eprintln!("   This may cause build errors, but toolchain cargo/rustc are present");
-                
+                // [stripped for release] eprintln!("   This may cause build errors, but toolchain cargo/rustc are present");
+
                 // Diagnostic: list what's actually in the toolchain directory
-                eprintln!("   📂 Toolchain directory contents:");
+                // [stripped for release] eprintln!("   📂 Toolchain directory contents:");
+
                 if let Ok(entries) = std::fs::read_dir(base) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         let name = entry.file_name().to_string_lossy().to_string();
                         if path.is_dir() {
-                            eprintln!("      📁 {}", name);
+                            // [stripped for release] eprintln!("      📁 {}", name);
+
                             // Check if this directory might contain rustlib
                             if name == "lib" || name == "rustc" {
                                 if let Ok(sub_entries) = std::fs::read_dir(&path) {
                                     for sub_entry in sub_entries.flatten() {
                                         let sub_name = sub_entry.file_name().to_string_lossy().to_string();
                                         if sub_name == "rustlib" {
-                                            eprintln!("         📁 rustlib/ (found!)");
+                                            // [stripped for release] eprintln!("         📁 rustlib/ (found!)");
+
                                         }
                                     }
                                 }
@@ -180,8 +189,8 @@ impl RepairScript {
     }
 
     fn download_file(&self, url: &str, dest_path: &Path) -> Result<(), String> {
-        eprintln!("📥 Downloading: {}", url);
-        
+        // [stripped for release] eprintln!("📥 Downloading: {}", url);
+
         if let Some(parent) = dest_path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create dir: {}", e))?;
@@ -204,11 +213,13 @@ impl RepairScript {
 
         match curl_result {
             Ok(output) if output.status.success() => {
-                eprintln!("✅ Downloaded with curl");
+                // [stripped for release] eprintln!("✅ Downloaded with curl");
+
                 return Ok(());
             }
             Ok(output) => {
-                eprintln!("⚠️ curl failed: {}", String::from_utf8_lossy(&output.stderr));
+                // [stripped for release] eprintln!("⚠️ curl failed: {}", String::from_utf8_lossy(&output.stderr));
+
             }
             Err(_) => eprintln!("⚠️ curl not available, trying wget..."),
         }
@@ -226,7 +237,8 @@ impl RepairScript {
 
         match wget_result {
             Ok(output) if output.status.success() => {
-                eprintln!("✅ Downloaded with wget");
+                // [stripped for release] eprintln!("✅ Downloaded with wget");
+
                 Ok(())
             }
             Ok(output) => Err(format!(
@@ -251,13 +263,15 @@ impl RepairScript {
         let toolchain_dir = Path::new(&toolchain_path);
 
         if self.toolchain_exists(api, toolchain) {
-            eprintln!("✅ Toolchain already installed: {}", toolchain_name);
+            // [stripped for release] eprintln!("✅ Toolchain already installed: {}", toolchain_name);
+
             return Ok(());
         }
 
-        eprintln!("📦 Installing Rust toolchain: {}", toolchain_name);
-        eprintln!("⏳ This may take several minutes...");
-        
+        // [stripped for release] eprintln!("📦 Installing Rust toolchain: {}", toolchain_name);
+
+        // [stripped for release] eprintln!("⏳ This may take several minutes...");
+
         std::fs::create_dir_all(toolchain_dir)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
 
@@ -266,10 +280,12 @@ impl RepairScript {
 
         self.download_file(&url, &tar_path)?;
 
-        eprintln!("📦 Extracting toolchain...");
-        eprintln!("⏳ This may take several minutes (extracting ~1GB)...");
-        eprintln!("💡 Tip: Extraction may appear to hang, but it's working in the background");
-        
+        // [stripped for release] eprintln!("📦 Extracting toolchain...");
+
+        // [stripped for release] eprintln!("⏳ This may take several minutes (extracting ~1GB)...");
+
+        // [stripped for release] eprintln!("💡 Tip: Extraction may appear to hang, but it's working in the background");
+
         // Use PowerShell to run tar.exe with better feedback
         // Note: Rust doesn't provide .zip files, only .tar.gz, so we use tar.exe
         // The MinGW extraction uses zip because w64devkit provides zip files
@@ -311,8 +327,8 @@ impl RepairScript {
             std::fs::write(&temp_script, &ps_script)
                 .map_err(|e| format!("Failed to write PowerShell script: {}", e))?;
             
-            eprintln!("🔧 Starting extraction process...");
-            
+            // [stripped for release] eprintln!("🔧 Starting extraction process...");
+
             // Start PowerShell process (don't wait for it - it may hang)
             let mut child = Command::new("powershell")
                 .args(&[
@@ -328,8 +344,10 @@ impl RepairScript {
             
             // Don't wait for the process - instead poll for extraction completion
             // This way we can detect when extraction actually finishes even if PowerShell hangs
-            eprintln!("🔍 Monitoring extraction progress...");
-            eprintln!("📦 Rust toolchain extraction is in progress...");
+            // [stripped for release] eprintln!("🔍 Monitoring extraction progress...");
+
+            // [stripped for release] eprintln!("📦 Rust toolchain extraction is in progress...");
+
             let cargo_dir = toolchain_dir.join("cargo");
             let rustc_dir = toolchain_dir.join("rustc");
             let cargo_exe = cargo_dir.join("bin").join("cargo.exe");
@@ -348,14 +366,16 @@ impl RepairScript {
                 // This is what toolchain_exists will check, so verify the same thing
                 if cargo_exe.exists() && rustc_exe.exists() {
                     extraction_complete = true;
-                    eprintln!("✅ Extraction completed and verified (executables found)");
+                    // [stripped for release] eprintln!("✅ Extraction completed and verified (executables found)");
+
                     break;
                 }
                 
                 // Give progress feedback similar to Expand-Archive
                 if !directories_found && (cargo_dir.exists() || rustc_dir.exists()) {
                     directories_found = true;
-                    eprintln!("📁 Toolchain directories detected, extraction continuing...");
+                    // [stripped for release] eprintln!("📁 Toolchain directories detected, extraction continuing...");
+
                 }
                 
                 // Check if PowerShell process finished
@@ -364,25 +384,30 @@ impl RepairScript {
                         Ok(Some(status)) => {
                             script_completed = true;
                             if status.success() {
-                                eprintln!("✅ Extraction script completed, verifying files...");
+                                // [stripped for release] eprintln!("✅ Extraction script completed, verifying files...");
+
                             } else {
-                                eprintln!("⚠️  Extraction script exited with error, but checking if files were extracted...");
+                                // [stripped for release] eprintln!("⚠️  Extraction script exited with error, but checking if files were extracted...");
+
                             }
                         }
                         Ok(None) => {
                             // Process still running - show periodic progress
                             if attempts % 10 == 0 {
-                                eprintln!("📦 Rust toolchain extraction is in progress... ({}s elapsed)", attempts * 2);
+                                // [stripped for release] eprintln!("📦 Rust toolchain extraction is in progress... ({}s elapsed)", attempts * 2);
+
                             }
                         }
                         Err(e) => {
-                            eprintln!("⚠️  Error checking extraction process: {}", e);
+                            // [stripped for release] eprintln!("⚠️  Error checking extraction process: {}", e);
+
                         }
                     }
                 } else {
                     // Script finished but files not verified yet - extraction might still be syncing
                     if attempts % 5 == 0 {
-                        eprintln!("⏳ Verifying extracted files... ({}s elapsed)", attempts * 2);
+                        // [stripped for release] eprintln!("⏳ Verifying extracted files... ({}s elapsed)", attempts * 2);
+
                     }
                 }
                 
@@ -399,7 +424,8 @@ impl RepairScript {
                 if !cargo_dir.exists() || !rustc_dir.exists() {
                     return Err("Rust toolchain extraction did not complete - cargo or rustc directories not found".into());
                 } else {
-                    eprintln!("⚠️  Extraction verification timeout, but directories exist - continuing...");
+                    // [stripped for release] eprintln!("⚠️  Extraction verification timeout, but directories exist - continuing...");
+
                 }
             }
         }
@@ -429,13 +455,16 @@ impl RepairScript {
         // This way if extraction fails, we can retry without re-downloading
         if toolchain_dir.join("cargo").exists() && toolchain_dir.join("rustc").exists() {
             std::fs::remove_file(&tar_path).ok();
-            eprintln!("🗑️  Cleaned up tar.gz file");
+            // [stripped for release] eprintln!("🗑️  Cleaned up tar.gz file");
+
         } else {
-            eprintln!("⚠️  Keeping tar.gz file - extraction may not have completed");
+            // [stripped for release] eprintln!("⚠️  Keeping tar.gz file - extraction may not have completed");
+
         }
 
         // Wait a moment for filesystem to sync, then verify the toolchain
-        eprintln!("🔍 Verifying toolchain installation...");
+        // [stripped for release] eprintln!("🔍 Verifying toolchain installation...");
+
         std::thread::sleep(std::time::Duration::from_millis(1000)); // Give filesystem a moment
         
         // Retry verification a few times in case filesystem hasn't synced yet
@@ -447,19 +476,22 @@ impl RepairScript {
             }
             
             if attempt < 5 {
-                eprintln!("⏳ Waiting for filesystem to sync (attempt {}/5)...", attempt);
+                // [stripped for release] eprintln!("⏳ Waiting for filesystem to sync (attempt {}/5)...", attempt);
+
                 std::thread::sleep(std::time::Duration::from_millis(2000));
             }
         }
         
         if !verification_ok {
-            eprintln!("❌ Toolchain verification failed after multiple attempts");
-            eprintln!("💡 This might be a filesystem sync issue. Try restarting the editor.");
+            // [stripped for release] eprintln!("❌ Toolchain verification failed after multiple attempts");
+
+            // [stripped for release] eprintln!("💡 This might be a filesystem sync issue. Try restarting the editor.");
+
             return Err("Toolchain install verification failed - files may still be syncing".into());
         }
 
-        eprintln!("✅ Rust toolchain installed successfully");
-        
+        // [stripped for release] eprintln!("✅ Rust toolchain installed successfully");
+
         // Install minimal GCC compiler (w64devkit) for C/C++ compilation
         self.install_mingw(api, &toolchain_name)?;
         
@@ -477,13 +509,15 @@ impl RepairScript {
         // Check if MinGW is already installed
         let gcc_exe = mingw_dir.join("bin").join("gcc.exe");
         if gcc_exe.exists() {
-            eprintln!("✅ MinGW GCC already installed");
+            // [stripped for release] eprintln!("✅ MinGW GCC already installed");
+
             return Ok(());
         }
         
-        eprintln!("📦 Installing minimal GCC compiler (w64devkit)...");
-        eprintln!("⏳ This may take a minute...");
-        
+        // [stripped for release] eprintln!("📦 Installing minimal GCC compiler (w64devkit)...");
+
+        // [stripped for release] eprintln!("⏳ This may take a minute...");
+
         // Download w64devkit - minimal MinGW-w64 distribution
         // Using version 1.20.0 which is stable and minimal (~50MB)
         let mingw_url = "https://github.com/skeeto/w64devkit/releases/download/v1.20.0/w64devkit-1.20.0.zip";
@@ -491,9 +525,10 @@ impl RepairScript {
         
         self.download_file(mingw_url, &zip_path)?;
         
-        eprintln!("📦 Extracting MinGW...");
-        eprintln!("⏳ This may take a while (extracting ~50MB)...");
-        
+        // [stripped for release] eprintln!("📦 Extracting MinGW...");
+
+        // [stripped for release] eprintln!("⏳ This may take a while (extracting ~50MB)...");
+
         // Extract zip file - on Windows we can use PowerShell
         #[cfg(target_os = "windows")]
         {
@@ -525,7 +560,8 @@ impl RepairScript {
             std::fs::write(&temp_script, &ps_script)
                 .map_err(|e| format!("Failed to write PowerShell script: {}", e))?;
             
-            eprintln!("🔧 Running extraction script...");
+            // [stripped for release] eprintln!("🔧 Running extraction script...");
+
             let output = Command::new("powershell")
                 .args(&[
                     "-NoProfile",
@@ -544,20 +580,24 @@ impl RepairScript {
             let stderr = String::from_utf8_lossy(&output.stderr);
             
             if !stdout.is_empty() {
-                eprintln!("{}", stdout);
+                // [stripped for release] eprintln!("{}", stdout);
+
             }
             
             if !output.status.success() {
-                eprintln!("❌ MinGW extraction failed");
+                // [stripped for release] eprintln!("❌ MinGW extraction failed");
+
                 if !stderr.is_empty() {
-                    eprintln!("Error: {}", stderr);
+                    // [stripped for release] eprintln!("Error: {}", stderr);
+
                 }
                 return Err(format!("MinGW extraction failed: {}", stderr));
             }
             
             // Check if extraction actually completed by looking for the extracted directory
             // Sometimes PowerShell hangs even though extraction completes
-            eprintln!("🔍 Verifying extraction...");
+            // [stripped for release] eprintln!("🔍 Verifying extraction...");
+
             let mut extraction_verified = false;
             let mut attempts = 0;
             let max_attempts = 30; // Wait up to 30 seconds
@@ -567,7 +607,8 @@ impl RepairScript {
                 let extracted_dir = toolchain_dir.join("w64devkit-1.20.0");
                 if extracted_dir.exists() {
                     extraction_verified = true;
-                    eprintln!("✅ Extraction verified (found w64devkit-1.20.0)");
+                    // [stripped for release] eprintln!("✅ Extraction verified (found w64devkit-1.20.0)");
+
                 } else {
                     // Try to find any w64devkit directory
                     if let Ok(entries) = std::fs::read_dir(toolchain_dir) {
@@ -577,7 +618,8 @@ impl RepairScript {
                                 if let Some(name) = path.file_name() {
                                     if name.to_string_lossy().starts_with("w64devkit") {
                                         extraction_verified = true;
-                                        eprintln!("✅ Extraction verified (found {})", name.to_string_lossy());
+                                        // [stripped for release] eprintln!("✅ Extraction verified (found {})", name.to_string_lossy());
+
                                         break;
                                     }
                                 }
@@ -590,7 +632,8 @@ impl RepairScript {
                     attempts += 1;
                     std::thread::sleep(std::time::Duration::from_millis(1000));
                     if attempts % 5 == 0 {
-                        eprintln!("⏳ Still waiting for extraction... ({}s)", attempts);
+                        // [stripped for release] eprintln!("⏳ Still waiting for extraction... ({}s)", attempts);
+
                     }
                 }
             }
@@ -598,7 +641,8 @@ impl RepairScript {
             if !extraction_verified {
                 // Check if output status was successful even though we didn't find the dir
                 if output.status.success() {
-                    eprintln!("⚠️  PowerShell reported success but directory not found, checking again...");
+                    // [stripped for release] eprintln!("⚠️  PowerShell reported success but directory not found, checking again...");
+
                     // Give it one more second
                     std::thread::sleep(std::time::Duration::from_millis(1000));
                 } else {
@@ -629,7 +673,8 @@ impl RepairScript {
                 }
             }
             
-            eprintln!("✅ Extraction completed and verified");
+            // [stripped for release] eprintln!("✅ Extraction completed and verified");
+
         }
         
         #[cfg(not(target_os = "windows"))]
@@ -684,7 +729,8 @@ impl RepairScript {
             return Err("MinGW GCC installation verification failed".into());
         }
         
-        eprintln!("✅ MinGW GCC installed successfully");
+        // [stripped for release] eprintln!("✅ MinGW GCC installed successfully");
+
         Ok(())
     }
 
@@ -694,20 +740,24 @@ impl RepairScript {
     /// Check and repair toolchain (called in editor mode)
     pub fn check_and_repair_toolchain(&self, api: &ScriptApi) -> Result<(), String> {
         if self.toolchain_ver.is_empty() {
-            eprintln!("⚠️ No toolchain specified in project metadata");
+            // [stripped for release] eprintln!("⚠️ No toolchain specified in project metadata");
+
             return Ok(());
         }
 
         // Normalize to full toolchain name for display and operations
         let toolchain_name = self.normalize_toolchain_name(&self.toolchain_ver);
-        eprintln!("🔧 Checking toolchain: {} (from version: {})", toolchain_name, self.toolchain_ver);
+        // [stripped for release] eprintln!("🔧 Checking toolchain: {} (from version: {})", toolchain_name, self.toolchain_ver);
 
         if !self.toolchain_exists(api, &self.toolchain_ver) {
-            eprintln!("❌ Toolchain not found: {}", toolchain_name);
-            eprintln!("🔄 Installing required toolchain...");
+            // [stripped for release] eprintln!("❌ Toolchain not found: {}", toolchain_name);
+
+            // [stripped for release] eprintln!("🔄 Installing required toolchain...");
+
             self.install_rust_toolchain(api, &self.toolchain_ver)?;
         } else {
-            eprintln!("✅ Toolchain verified: {}", toolchain_name);
+            // [stripped for release] eprintln!("✅ Toolchain verified: {}", toolchain_name);
+
             // Note: Standard library merge is no longer needed - compiler uses rust-std directory directly
         }
         
@@ -717,11 +767,14 @@ impl RepairScript {
             let toolchain_dir = Path::new(&toolchain_path);
             let gcc_exe = toolchain_dir.join("mingw").join("bin").join("gcc.exe");
             if !gcc_exe.exists() {
-                eprintln!("❌ MinGW GCC compiler not found");
-                eprintln!("🔄 Installing MinGW GCC compiler...");
+                // [stripped for release] eprintln!("❌ MinGW GCC compiler not found");
+
+                // [stripped for release] eprintln!("🔄 Installing MinGW GCC compiler...");
+
                 self.install_mingw(api, &toolchain_name)?;
             } else {
-                eprintln!("✅ MinGW GCC compiler verified");
+                // [stripped for release] eprintln!("✅ MinGW GCC compiler verified");
+
             }
         }
 
@@ -730,40 +783,49 @@ impl RepairScript {
 
     /// Full repair - checks toolchain
     pub fn full_repair(&self, api: &ScriptApi) -> Result<(), String> {
-        eprintln!("🔧 Starting full repair...");
-        eprintln!("================================");
+        // [stripped for release] eprintln!("🔧 Starting full repair...");
+
+        // [stripped for release] eprintln!("================================");
 
         // Check toolchain
         if let Err(e) = self.check_and_repair_toolchain(api) {
-            eprintln!("❌ Toolchain repair failed: {}", e);
+            // [stripped for release] eprintln!("❌ Toolchain repair failed: {}", e);
+
         }
 
-        eprintln!("================================");
-        eprintln!("✅ Repair complete");
+        // [stripped for release] eprintln!("================================");
+
+        // [stripped for release] eprintln!("✅ Repair complete");
+
         Ok(())
     }
 
     /// Handle editor_mode signal - triggered when manager switches to editor mode
     pub fn on_editor_mode(&mut self, api: &mut ScriptApi) {
-        eprintln!("🔄 Editor mode signal received: checking dependencies...");
-        
+        // [stripped for release] eprintln!("🔄 Editor mode signal received: checking dependencies...");
+
         // Step 1: Check/install toolchain
         if let Err(e) = self.check_and_repair_toolchain(api) {
-            eprintln!("❌ Toolchain repair failed: {}", e);
-            eprintln!("⚠️ Build functionality may not work");
+            // [stripped for release] eprintln!("❌ Toolchain repair failed: {}", e);
+
+            // [stripped for release] eprintln!("⚠️ Build functionality may not work");
+
             return; // Can't compile without toolchain
         }
 
-        eprintln!("✅ Dependencies verified");
-        
+        // [stripped for release] eprintln!("✅ Dependencies verified");
+
         // Step 3: Always compile scripts when entering editor mode
-        eprintln!("🔧 Compiling scripts...");
+        // [stripped for release] eprintln!("🔧 Compiling scripts...");
+
         match api.compile_scripts() {
             Ok(_) => {
-                eprintln!("✅ Scripts compiled successfully");
+                // [stripped for release] eprintln!("✅ Scripts compiled successfully");
+
             }
             Err(e) => {
-                eprintln!("❌ Script compilation failed: {}", e);
+                // [stripped for release] eprintln!("❌ Script compilation failed: {}", e);
+
             }
         }
     }
@@ -778,25 +840,32 @@ impl Script for RepairScript {
             .unwrap_or("")
             .to_string();
 
-        eprintln!("🔧 Repair script initialized");
-        eprintln!("   Engine: {}", self.engine_ver);
-        eprintln!("   Toolchain: {}", if self.toolchain_ver.is_empty() { "none" } else { &self.toolchain_ver });
-        eprintln!("   Waiting for editor_mode signal...");
+        // [stripped for release] eprintln!("🔧 Repair script initialized");
+
+        // [stripped for release] eprintln!("   Engine: {}", self.engine_ver);
+
+        // [stripped for release] eprintln!("   Toolchain: {}", if self.toolchain_ver.is_empty() { "none" } else { &self.toolchain_ver });
+
+        // [stripped for release] eprintln!("   Waiting for editor_mode signal...");
 
         // Skip in debug builds
         if cfg!(debug_assertions) {
-            eprintln!("🐛 Debug build: repair disabled");
+            // [stripped for release] eprintln!("🐛 Debug build: repair disabled");
+
             return;
         }
 
         // Connect to editor_mode signal - will be triggered when manager switches to editor mode
         if self.id == Uuid::nil() {
-            eprintln!("❌ ERROR: self.id is nil when trying to connect signal!");
+            // [stripped for release] eprintln!("❌ ERROR: self.id is nil when trying to connect signal!");
+
             return;
         }
-        eprintln!("🔗 Connecting signal 'editor_mode' to function 'on_editor_mode' for node {}", self.id);
+        // [stripped for release] eprintln!("🔗 Connecting signal 'editor_mode' to function 'on_editor_mode' for node {}", self.id);
+
         api.connect_signal("editor_mode", self.id, "on_editor_mode");
-        eprintln!("✅ Signal connection made");
+        // [stripped for release] eprintln!("✅ Signal connection made");
+
     }
 
 }

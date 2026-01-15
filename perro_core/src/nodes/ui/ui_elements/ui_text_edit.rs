@@ -88,6 +88,16 @@ pub struct UITextEdit {
     pub line_heights: Vec<f32>, // Height of each line
     #[serde(skip)]
     pub line_start_positions: Vec<usize>, // Character index where each line starts
+    
+    // Backspace repeat state (for speed-up when held)
+    #[serde(skip)]
+    pub backspace_repeat_timer: f32, // Timer for backspace repeat
+    #[serde(skip)]
+    pub backspace_last_delete_time: f32, // Time when we last performed a delete (for repeat)
+    #[serde(skip)]
+    pub delete_repeat_timer: f32, // Timer for delete key repeat
+    #[serde(skip)]
+    pub delete_last_delete_time: f32, // Time when we last performed a delete (for repeat)
 }
 
 fn default_padding() -> crate::ui_elements::ui_container::Padding {
@@ -128,6 +138,10 @@ impl Default for UITextEdit {
             line_breaks: Vec::new(),
             line_heights: Vec::new(),
             line_start_positions: vec![0], // First line starts at position 0
+            backspace_repeat_timer: 0.0,
+            backspace_last_delete_time: 0.0,
+            delete_repeat_timer: 0.0,
+            delete_last_delete_time: 0.0,
         }
     }
 }
@@ -759,26 +773,118 @@ impl UIElementUpdate for UITextEdit {
                 }
             }
             
-            // Handle special keys
-            if ctx.is_key_triggered(KeyCode::Backspace) {
+            // Handle backspace with repeat when held down
+            const BACKSPACE_INITIAL_DELAY: f32 = 0.5; // 500ms before repeat starts
+            const BACKSPACE_REPEAT_INTERVAL: f32 = 0.05; // 50ms between repeats (20 chars/sec)
+            const DELTA_TIME: f32 = 0.016; // ~60fps
+            
+            let backspace_pressed = ctx.is_key_pressed(KeyCode::Backspace);
+            let backspace_triggered = ctx.is_key_triggered(KeyCode::Backspace);
+            
+            if backspace_triggered {
+                // Initial press - delete immediately and start timer
                 if self.has_selection() {
                     self.delete_selection();
                 } else {
                     self.delete_backward();
                 }
                 self.cursor_blink_timer = 0.0;
+                self.backspace_repeat_timer = 0.0;
+                self.backspace_last_delete_time = 0.0;
                 text_changed = true;
                 needs_rerender = true;
+            } else if backspace_pressed {
+                // Key is held - check if we should repeat
+                self.backspace_repeat_timer += DELTA_TIME;
+                
+                // Check if initial delay has passed
+                if self.backspace_repeat_timer >= BACKSPACE_INITIAL_DELAY {
+                    // Check if enough time has passed since last delete
+                    let time_since_last_delete = self.backspace_repeat_timer - self.backspace_last_delete_time;
+                    
+                    if self.backspace_last_delete_time == 0.0 {
+                        // First repeat after initial delay
+                        if self.has_selection() {
+                            self.delete_selection();
+                        } else {
+                            self.delete_backward();
+                        }
+                        self.cursor_blink_timer = 0.0;
+                        self.backspace_last_delete_time = self.backspace_repeat_timer;
+                        text_changed = true;
+                        needs_rerender = true;
+                    } else if time_since_last_delete >= BACKSPACE_REPEAT_INTERVAL {
+                        // Repeat interval passed - delete again
+                        if self.has_selection() {
+                            self.delete_selection();
+                        } else {
+                            self.delete_backward();
+                        }
+                        self.cursor_blink_timer = 0.0;
+                        self.backspace_last_delete_time = self.backspace_repeat_timer;
+                        text_changed = true;
+                        needs_rerender = true;
+                    }
+                }
+            } else {
+                // Key released - reset timers
+                self.backspace_repeat_timer = 0.0;
+                self.backspace_last_delete_time = 0.0;
             }
-            if ctx.is_key_triggered(KeyCode::Delete) {
+            
+            // Handle delete key with repeat when held down
+            let delete_pressed = ctx.is_key_pressed(KeyCode::Delete);
+            let delete_triggered = ctx.is_key_triggered(KeyCode::Delete);
+            
+            if delete_triggered {
+                // Initial press - delete immediately and start timer
                 if self.has_selection() {
                     self.delete_selection();
                 } else {
                     self.delete_forward();
                 }
                 self.cursor_blink_timer = 0.0;
+                self.delete_repeat_timer = 0.0;
+                self.delete_last_delete_time = 0.0;
                 text_changed = true;
                 needs_rerender = true;
+            } else if delete_pressed {
+                // Key is held - check if we should repeat
+                self.delete_repeat_timer += DELTA_TIME;
+                
+                // Check if initial delay has passed
+                if self.delete_repeat_timer >= BACKSPACE_INITIAL_DELAY {
+                    // Check if enough time has passed since last delete
+                    let time_since_last_delete = self.delete_repeat_timer - self.delete_last_delete_time;
+                    
+                    if self.delete_last_delete_time == 0.0 {
+                        // First repeat after initial delay
+                        if self.has_selection() {
+                            self.delete_selection();
+                        } else {
+                            self.delete_forward();
+                        }
+                        self.cursor_blink_timer = 0.0;
+                        self.delete_last_delete_time = self.delete_repeat_timer;
+                        text_changed = true;
+                        needs_rerender = true;
+                    } else if time_since_last_delete >= BACKSPACE_REPEAT_INTERVAL {
+                        // Repeat interval passed - delete again
+                        if self.has_selection() {
+                            self.delete_selection();
+                        } else {
+                            self.delete_forward();
+                        }
+                        self.cursor_blink_timer = 0.0;
+                        self.delete_last_delete_time = self.delete_repeat_timer;
+                        text_changed = true;
+                        needs_rerender = true;
+                    }
+                }
+            } else {
+                // Key released - reset timers
+                self.delete_repeat_timer = 0.0;
+                self.delete_last_delete_time = 0.0;
             }
             
             // Check if shift is pressed for selection extension

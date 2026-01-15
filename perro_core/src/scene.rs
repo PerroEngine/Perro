@@ -1932,12 +1932,6 @@ impl<P: ScriptProvider> Scene<P> {
         self.true_updates += 1;
 
         if self.delta_accum >= 3.0 {
-            let ups = self.true_updates as f32 / self.delta_accum;
-            let avg_delta = self.delta_accum / self.true_updates as f32;
-            println!(
-                "🔹 UPS: {:.2}, Avg Delta: {:.6}, Current Delta: {:.6}",
-                ups, avg_delta, true_delta
-            );
             self.delta_accum = 0.0;
             self.true_updates = 0;
         }

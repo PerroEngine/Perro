@@ -1545,12 +1545,18 @@ fn update_global_transforms_with_layout_impl(
                         }
                     }
 
-                    // Position percentages still use immediate parent
+                    // Position percentages (tx/ty)
+                    // For layout children, skip applying here - they will be applied AFTER layout positioning as a final offset
+                    // For non-layout children, apply immediately
                     "transform.position.x" => {
-                        element.get_transform_mut().position.x = parent_size.x * fraction;
+                        if !is_child_of_layout {
+                            element.get_transform_mut().position.x = parent_size.x * fraction;
+                        }
                     }
                     "transform.position.y" => {
-                        element.get_transform_mut().position.y = parent_size.y * fraction;
+                        if !is_child_of_layout {
+                            element.get_transform_mut().position.y = parent_size.y * fraction;
+                        }
                     }
 
                     // Scale percentages use parent scale
@@ -1649,12 +1655,50 @@ fn update_global_transforms_with_layout_impl(
             let child_size = *element.get_size();
             let pivot = *element.get_pivot();
 
-            // STEP 1: Layout positioning (if this element is in a layout)
+            // STEP 1: Store tx/ty offsets if they exist (for layout children, these will be applied after layout positioning)
+            let style_map = element.get_style_map();
+            let (tx_offset_pct, ty_offset_pct, tx_offset_abs, ty_offset_abs) = if is_in_vlayout || is_in_hlayout {
+                // For layout children, extract both percentage and absolute tx/ty values
+                // Percentage values are in style_map (they weren't applied earlier for layout children)
+                // Absolute values might be in local.position if they were set directly (not via percentage)
+                let tx_pct = style_map.get("transform.position.x").copied().unwrap_or(0.0);
+                let ty_pct = style_map.get("transform.position.y").copied().unwrap_or(0.0);
+                // For absolute values, check if they're in style_map (they shouldn't be for percentages)
+                // If not in style_map and local.position is non-zero, it's an absolute value
+                let tx_abs = if tx_pct == 0.0 && local.position.x != 0.0 {
+                    local.position.x
+                } else {
+                    0.0
+                };
+                let ty_abs = if ty_pct == 0.0 && local.position.y != 0.0 {
+                    local.position.y
+                } else {
+                    0.0
+                };
+                (tx_pct, ty_pct, tx_abs, ty_abs)
+            } else {
+                (0.0, 0.0, 0.0, 0.0)
+            };
+            
+            // For layout children, reset position to 0 so layout system has full control
+            // (tx/ty will be applied later as a final offset)
+            if is_in_vlayout || is_in_hlayout {
+                local.position.x = 0.0;
+                local.position.y = 0.0;
+            }
+            
+            // STEP 2: Layout positioning (if this element is in a layout)
             let mut layout_offset = Vector2::new(0.0, 0.0);
             
             if let Some(&layout_pos) = layout_positions.get(current_id) {
                 layout_offset = layout_pos;
+            } else if is_in_vlayout || is_in_hlayout {
+                // Element is in a layout but doesn't have a layout position
+                // This should not happen - the parent should have calculated it
+                // Leave layout_offset at (0,0) - this will cause overlap, but it's better than crashing
+                // In debug builds, we could log a warning here
             } else {
+                // Not in a layout - use anchor positioning
                 // STEP 2: Anchor positioning (only if NOT in a layout)
                 // For anchoring, we want to use the immediate parent's size for positioning
                 // The parent's local coordinate system has its center at (0,0)
@@ -1727,24 +1771,29 @@ fn update_global_transforms_with_layout_impl(
                     FurAnchor::Center => (0.0, 0.0),
                 };
                 
-                // If parent is a VLayout, children should be centered horizontally (x = 0)
-                // If parent is an HLayout, children should be centered vertically (y = 0)
-                if is_in_vlayout {
-                    layout_offset.x = 0.0; // Center horizontally in VLayout
-                    layout_offset.y = anchor_y; // Use anchor for vertical positioning
-                } else if is_in_hlayout {
-                    layout_offset.x = anchor_x; // Use anchor for horizontal positioning
-                    layout_offset.y = 0.0; // Center vertically in HLayout
-                } else {
-                    layout_offset.x = anchor_x;
-                    layout_offset.y = anchor_y;
-                }
-             
+                layout_offset.x = anchor_x;
+                layout_offset.y = anchor_y;
             }
+            // If element is in a layout but doesn't have a layout position, leave layout_offset at (0,0)
+            // This should not happen in normal operation, but prevents anchor positioning from interfering
 
-            // STEP 3: Apply layout/anchor offset + user translation
+            // STEP 3: Apply layout/anchor offset
             local.position.x += layout_offset.x;
             local.position.y += layout_offset.y;
+            
+            // STEP 4: Apply tx/ty as final offset (for layout children, this is applied after layout positioning)
+            if is_in_vlayout || is_in_hlayout {
+                // Apply percentage offsets relative to parent size
+                if tx_offset_pct != 0.0 {
+                    local.position.x += parent_size.x * (tx_offset_pct / 100.0);
+                }
+                if ty_offset_pct != 0.0 {
+                    local.position.y += parent_size.y * (ty_offset_pct / 100.0);
+                }
+                // Apply absolute offsets
+                local.position.x += tx_offset_abs;
+                local.position.y += ty_offset_abs;
+            }
             
             // For text elements, adjust position to account for baseline positioning
             // Bottom anchors: move down by full height (text bottom should be at anchor)

@@ -2041,10 +2041,8 @@ impl<'a> ScriptApi<'a> {
         // Copy out listeners before calling functions
         let script_map_opt = self.scene.get_signal_connections(id);
         if script_map_opt.is_none() {
-            eprintln!("⚠️ [Signal] Signal id={} has no connections, skipping", id);
             return;
         }
-        eprintln!("✅ [Signal] Signal id={} has connections, processing...", id);
 
         // OPTIMIZED: Use SmallVec with inline capacity of 4 listeners
         // Most signals have 1-3 listeners, so this avoids heap allocation in common case

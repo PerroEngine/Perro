@@ -149,6 +149,8 @@ fn apply_base_attributes(
     attrs: &HashMap<Cow<'static, str>, Cow<'static, str>>,
 ) {
     base.style_map.clear();
+    // Pre-allocate style_map capacity based on number of attributes (heuristic: ~30% will be style attributes)
+    base.style_map.reserve(attrs.len() / 3);
 
     // OPT: static defaults cached in BaseUIElement::default() as well
     base.size = Vector2::new(32.0, 32.0);
@@ -189,7 +191,7 @@ fn apply_base_attributes(
             "tx" => {
                 let (n, pct) = parse_f32_percent(v, 0.0);
                 if pct {
-                    base.style_map.insert(POS_X.into(), n);
+                    base.style_map.insert(POS_X.to_string(), n);
                 } else {
                     base.transform.position.x = n;
                 }
@@ -197,7 +199,7 @@ fn apply_base_attributes(
             "ty" => {
                 let (n, pct) = parse_f32_percent(v, 0.0);
                 if pct {
-                    base.style_map.insert(POS_Y.into(), n);
+                    base.style_map.insert(POS_Y.to_string(), n);
                 } else {
                     base.transform.position.y = n;
                 }
@@ -207,7 +209,7 @@ fn apply_base_attributes(
                 if let Some(xv) = x {
                     let (f, pct) = parse_f32_percent(xv, 1.0);
                     if pct {
-                        base.style_map.insert(SCALE_X.into(), f);
+                        base.style_map.insert(SCALE_X.to_string(), f);
                     } else {
                         base.transform.scale.x = f;
                     }
@@ -215,7 +217,7 @@ fn apply_base_attributes(
                 if let Some(yv) = y {
                     let (f, pct) = parse_f32_percent(yv, 1.0);
                     if pct {
-                        base.style_map.insert(SCALE_Y.into(), f);
+                        base.style_map.insert(SCALE_Y.to_string(), f);
                     } else {
                         base.transform.scale.y = f;
                     }
@@ -234,7 +236,7 @@ fn apply_base_attributes(
                 if let Some(xv) = x_val {
                     let (f, pct) = parse_f32_percent(xv, base.size.x);
                     if pct {
-                        base.style_map.insert(SIZE_X.into(), f);
+                        base.style_map.insert(SIZE_X.to_string(), f);
                     } else {
                         base.size.x = f;
                     }
@@ -242,7 +244,7 @@ fn apply_base_attributes(
                 if let Some(yv) = y_val {
                     let (f, pct) = parse_f32_percent(yv, base.size.y);
                     if pct {
-                        base.style_map.insert(SIZE_Y.into(), f);
+                        base.style_map.insert(SIZE_Y.to_string(), f);
                     } else {
                         base.size.y = f;
                     }
@@ -252,32 +254,32 @@ fn apply_base_attributes(
             "w" | "sz-x" => {
                 if v.trim().eq_ignore_ascii_case("auto") {
                     // Use -1.0 as sentinel value for auto-sizing
-                    base.style_map.insert(SIZE_X.into(), -1.0);
+                    base.style_map.insert(SIZE_X.to_string(), -1.0);
                 } else {
                     let (f, pct) = parse_f32_percent(v, base.size.x);
                     if pct {
-                        base.style_map.insert(SIZE_X.into(), f);
+                        base.style_map.insert(SIZE_X.to_string(), f);
                     } else {
                         // Store absolute values in style_map with a marker (> 10000) to distinguish from percentages
                         // This allows the layout system to know it's an explicit absolute size
                         base.size.x = f;
-                        base.style_map.insert(SIZE_X.into(), 10000.0 + f);
+                        base.style_map.insert(SIZE_X.to_string(), 10000.0 + f);
                     }
                 }
             }
             "h" | "sz-y" => {
                 if v.trim().eq_ignore_ascii_case("auto") {
                     // Use -1.0 as sentinel value for auto-sizing
-                    base.style_map.insert(SIZE_Y.into(), -1.0);
+                    base.style_map.insert(SIZE_Y.to_string(), -1.0);
                 } else {
                     let (f, pct) = parse_f32_percent(v, base.size.y);
                     if pct {
-                        base.style_map.insert(SIZE_Y.into(), f);
+                        base.style_map.insert(SIZE_Y.to_string(), f);
                     } else {
                         // Store absolute values in style_map with a marker (> 10000) to distinguish from percentages
                         // This allows the layout system to know it's an explicit absolute size
                         base.size.y = f;
-                        base.style_map.insert(SIZE_Y.into(), 10000.0 + f);
+                        base.style_map.insert(SIZE_Y.to_string(), 10000.0 + f);
                     }
                 }
             }
@@ -285,7 +287,7 @@ fn apply_base_attributes(
             "rot" => {
                 let (f, pct) = parse_f32_percent(v, base.transform.rotation);
                 if pct {
-                    base.style_map.insert(ROT.into(), f);
+                    base.style_map.insert(ROT.to_string(), f);
                 } else {
                     base.transform.rotation = f;
                 }
@@ -328,8 +330,8 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             let mut ui = BoxContainer::default();
             ui.set_name(&fur.id);
             apply_base_attributes(&mut ui.base, &fur.attributes);
-            ui.base.style_map.insert(SIZE_X.into(), 100.0);
-            ui.base.style_map.insert(SIZE_Y.into(), 100.0);
+            ui.base.style_map.insert(SIZE_X.to_string(), 100.0);
+            ui.base.style_map.insert(SIZE_Y.to_string(), 100.0);
             Some(UIElement::BoxContainer(ui))
         }
 
@@ -589,18 +591,13 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             apply_base_attributes(&mut text.base, &fur.attributes);
 
             // Extract text content from children and trim whitespace
-            let text_content: String = fur
-                .children
-                .iter()
-                .filter_map(|n| {
-                    if let FurNode::Text(s) = n {
-                        Some(s.as_ref())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<&str>>()
-                .join("");
+            // Optimized: collect directly into String without intermediate Vec
+            let mut text_content = String::new();
+            for n in &fur.children {
+                if let FurNode::Text(s) = n {
+                    text_content.push_str(s.as_ref());
+                }
+            }
             
             // Trim the text content to remove any leading/trailing whitespace
             text.props.content = text_content.trim().to_string();
@@ -1352,6 +1349,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
                 return Vec::new();
             }
             
+            // Store path string for later removal
             let path_string = path.to_string();
             included_paths.insert(path_string.clone());
             
@@ -1501,18 +1499,28 @@ pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_i
                 // Store initial z-index for new element
                 ui.initial_z_indices.insert(uuid, e.get_z_index());
                 
+                // Get the actual parent ID from the element (might be set during conversion)
+                let actual_parent_id = e.get_parent();
+                
                 // If parent is nil, add to root_ids
-                if e.get_parent().is_nil() {
+                if actual_parent_id.is_nil() {
                     root_ids.push(uuid);
                 } else {
                     // If parent is set, add to parent's children list
-                    if let Some(parent_uuid) = parent_id {
-                        if let Some(parent_element) = elements.get_mut(&parent_uuid) {
-                            let mut children = parent_element.get_children().to_vec();
-                            if !children.contains(&uuid) {
-                                children.push(uuid);
-                                parent_element.set_children(children);
-                            }
+                    // Use actual_parent_id (from element) or parent_id (parameter) - prefer actual_parent_id
+                    let parent_to_use = if !actual_parent_id.is_nil() {
+                        actual_parent_id
+                    } else if let Some(pid) = parent_id {
+                        pid
+                    } else {
+                        continue; // No parent to add to
+                    };
+                    
+                    if let Some(parent_element) = elements.get_mut(&parent_to_use) {
+                        let mut children = parent_element.get_children().to_vec();
+                        if !children.contains(&uuid) {
+                            children.push(uuid);
+                            parent_element.set_children(children);
                         }
                     }
                 }
@@ -1525,6 +1533,16 @@ pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_i
     // Now mark all added elements for rerender (after the borrow is released)
     for uuid in added_uuids {
         ui.mark_element_needs_layout(uuid);
+        
+        // Also mark the element's actual parent for layout (in case it's different from parent_id parameter)
+        if let Some(elements) = &ui.elements {
+            if let Some(element) = elements.get(&uuid) {
+                let actual_parent_id = element.get_parent();
+                if !actual_parent_id.is_nil() {
+                    ui.mark_element_needs_layout(actual_parent_id);
+                }
+            }
+        }
     }
     
     // Also mark parent as needing layout if provided

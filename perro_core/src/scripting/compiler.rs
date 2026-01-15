@@ -2828,10 +2828,26 @@ impl Compiler {
                     .to_string();
 
                 node_str = node_str.replace(": []", ": vec![]");
-                // Handle HashSet fields (like previous_collisions in Area2D, needs_rerender and needs_layout_recalc in UINode)
+                // Handle HashSet fields (like previous_collisions in Area2D, needs_rerender, needs_layout_recalc, and pending_deletion in UINode)
                 node_str = node_str.replace("previous_collisions: {},", "previous_collisions: HashSet::new(),");
                 node_str = node_str.replace("needs_rerender: {},", "needs_rerender: HashSet::new(),");
                 node_str = node_str.replace("needs_layout_recalc: {},", "needs_layout_recalc: HashSet::new(),");
+                node_str = node_str.replace("pending_deletion: {},", "pending_deletion: HashSet::new(),");
+                // Ensure last_cursor_icon is set to None (it's a public field but skipped in serialization)
+                // Replace any existing last_cursor_icon value with None
+                let last_cursor_icon_regex = Regex::new(r"last_cursor_icon:\s*(?:None|Some\([^)]*\))")?;
+                node_str = last_cursor_icon_regex.replace_all(&node_str, "last_cursor_icon: None").to_string();
+                // If last_cursor_icon is missing entirely, add it after focused_element
+                if !node_str.contains("last_cursor_icon:") {
+                    if node_str.contains("focused_element:") {
+                        node_str = node_str.replace("focused_element: None,", "focused_element: None,\n            last_cursor_icon: None,");
+                    } else if node_str.contains("initial_z_indices:") {
+                        node_str = node_str.replace("initial_z_indices: HashMap::new(),", "initial_z_indices: HashMap::new(),\n            last_cursor_icon: None,");
+                    } else if node_str.contains("UINode {") {
+                        // Add it right after the opening brace if no other fields are found
+                        node_str = node_str.replace("UINode {", "UINode {\n            last_cursor_icon: None,");
+                    }
+                }
                 // Handle other HashMap fields
                 node_str = node_str.replace(": {},", ": HashMap::new(),");
                 

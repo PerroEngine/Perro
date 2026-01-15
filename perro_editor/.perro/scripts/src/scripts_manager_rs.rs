@@ -61,9 +61,9 @@ struct ManagerScript {
     uid_registry: HashMap<Uuid, AssetMetadata>, // UID -> metadata
     path_to_uid: HashMap<String, Uuid>, // path -> UID (reverse lookup)
     // Note: Mouse tracking and double-click tracking are now handled by UIListTree internally
-    // Live preview debouncing - updates preview 1 second after last text change
-    live_preview_timer: f32, // Accumulator for 1 second timer after text change
-    last_fur_text: String, // Track last text content to detect changes
+    // Live preview debouncing - updates preview 2 seconds after last text change
+    live_preview_timer: f32, // Accumulator for debounce timer after text change
+    last_fur_text_hash: u64, // Hash of last text content to detect changes efficiently
 }
 
 #[unsafe(no_mangle)]
@@ -89,7 +89,7 @@ pub extern "C" fn scripts_manager_rs_create_script() -> *mut dyn ScriptObject {
         uid_registry: HashMap::new(),
         path_to_uid: HashMap::new(),
         live_preview_timer: 0.0,
-        last_fur_text: String::new(),
+        last_fur_text_hash: 0,
     })) as *mut dyn ScriptObject
 }
 
@@ -224,15 +224,18 @@ impl ManagerScript {
                     if nodes_updated > 0 {
                         // Save the scene back to disk
                         if let Err(e) = scene_data.save(&scene_res_path) {
-                            eprintln!("⚠️ Failed to save scene {}: {}", scene_res_path, e);
+                            // [stripped for release] eprintln!("⚠️ Failed to save scene {}: {}", scene_res_path, e);
+
                         } else {
                             total_nodes_updated += nodes_updated;
-                            eprintln!("✅ Updated {} node(s) in scene: {}", nodes_updated, scene_res_path);
+                            // [stripped for release] eprintln!("✅ Updated {} node(s) in scene: {}", nodes_updated, scene_res_path);
+
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("⚠️ Failed to load scene {}: {}", scene_res_path, e);
+                    // [stripped for release] eprintln!("⚠️ Failed to load scene {}: {}", scene_res_path, e);
+
                 }
             }
         }
@@ -314,8 +317,8 @@ impl ManagerScript {
     fn launch_editor_via_cargo(&self, project_path: &str) -> Result<(), String> {
         use std::process::Command;
         
-        eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
-        
+        // [stripped for release] eprintln!("🚀 Launching editor via cargo: cargo run -p perro_core -- --path --editor {} --run", project_path);
+
         let mut cmd = Command::new("cargo");
         cmd.args(&["run", "-p", "perro_core", "--", "--path", "--editor", project_path, "--run"]);
         
@@ -355,8 +358,8 @@ impl ManagerScript {
             .parent()
             .ok_or("Could not determine parent directory")?;
         
-        eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
-        
+        // [stripped for release] eprintln!("🚀 Launching editor: {} --editor {}", exe_path.display(), project_path);
+
         let mut cmd = Command::new(exe_path);
         cmd.arg("--editor").arg(project_path);
         cmd.current_dir(parent_dir);
@@ -1002,25 +1005,29 @@ impl ManagerScript {
     
     /// Called when a file tree item is clicked
     pub fn on_file_tree_item_clicked(&mut self, api: &mut ScriptApi) {
-        eprintln!("🎯 [Manager] on_file_tree_item_clicked HANDLER CALLED!");
+        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_clicked HANDLER CALLED!");
+
         api.print("📄 File tree item clicked");
         // TODO: Handle file selection (e.g., update inspector)
     }
     
     /// Called when a file tree item is double-clicked
     pub fn on_file_tree_item_double_clicked(&mut self, api: &mut ScriptApi) {
-        eprintln!("🎯 [Manager] on_file_tree_item_double_clicked HANDLER CALLED!");
+        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_double_clicked HANDLER CALLED!");
+
         api.print("📂 File tree item double-clicked");
         // TODO: Handle file opening (e.g., open scene, open script editor, etc.)
     }
     
     /// Called when a file tree item is right-clicked
     pub fn on_file_tree_item_right_clicked(&mut self, api: &mut ScriptApi) {
-        eprintln!("🎯 [Manager] on_file_tree_item_right_clicked HANDLER CALLED!");
+        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_right_clicked HANDLER CALLED!");
+
         api.print("🖱️ File tree item right-clicked");
         
         let Some(menu_id) = self.context_menu_id else { 
-            eprintln!("⚠️ [Manager] Context menu ID not set!");
+            // [stripped for release] eprintln!("⚠️ [Manager] Context menu ID not set!");
+
             return 
         };
         let ui_node_id = self.id;
@@ -1076,14 +1083,7 @@ impl ManagerScript {
         // Verify final state after parsing
         api.with_ui_node(ui_node_id, |ui| {
             if let Some(preview_element) = ui.find_element_by_name("UIPreview") {
-                let final_children_count = preview_element.get_children().len();
-                eprintln!("🔍 [update_live_preview] After parsing, UIPreview has {} children", final_children_count);
-                if final_children_count > 0 {
-                    eprintln!("🔍 [update_live_preview] UIPreview children IDs:");
-                    for child_id in preview_element.get_children() {
-                        eprintln!("  - Child ID: {}", child_id);
-                    }
-                }
+                let _final_children_count = preview_element.get_children().len();
             }
         });
         
@@ -1095,23 +1095,17 @@ impl ManagerScript {
                 if let Some(preview_element) = ui.find_element_by_name("UIPreview") {
                     let children_count = preview_element.get_children().len();
                     if children_count > 0 {
-                        eprintln!("⚠️ [update_live_preview] Warning: UIPreview still has {} children after clearing! Forcing clear...", children_count);
                         // Force clear if somehow children remain
                         if let Some(preview_element_mut) = ui.find_element_by_name_mut("UIPreview") {
                             preview_element_mut.set_children(Vec::new());
                         }
-                    } else {
-                        eprintln!("✅ [update_live_preview] UIPreview is properly cleared (0 children)");
                     }
                 }
                 // Ensure preview is marked for rerender to show the cleared state
                 ui.mark_element_needs_rerender(preview_id);
                 ui.mark_element_needs_layout(preview_id);
-                eprintln!("🔄 [update_live_preview] Marked UIPreview (id: {}) for rerender after parse failure", preview_id);
             });
             // Note: with_ui_node automatically marks the UI node itself for rerender
-        } else {
-            eprintln!("✅ [update_live_preview] Successfully parsed and added FUR elements");
         }
     }
     
@@ -1150,7 +1144,8 @@ impl ManagerScript {
         let mut parser: perro_core::nodes::ui::parser::FurParser = match FurParser::new(fur_string) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("❌ Failed to create FUR parser: {}", e);
+                // [stripped for release] eprintln!("❌ Failed to create FUR parser: {}", e);
+
                 return false;
             }
         };
@@ -1158,7 +1153,8 @@ impl ManagerScript {
         let fur_ast: Vec<perro_core::nodes::ui::fur_ast::FurNode> = match parser.parse() {
             Ok(ast) => ast,
             Err(e) => {
-                eprintln!("❌ Failed to parse FUR string: {}", e);
+                // [stripped for release] eprintln!("❌ Failed to parse FUR string: {}", e);
+
                 return false;
             }
         };
@@ -1176,7 +1172,8 @@ impl ManagerScript {
             .collect();
         
         if fur_elements.is_empty() {
-            eprintln!("⚠️ No FUR elements found in string");
+            // [stripped for release] eprintln!("⚠️ No FUR elements found in string");
+
             return false;
         }
         
@@ -1199,8 +1196,6 @@ impl ManagerScript {
             } else {
                 return (Uuid::nil(), Vec::new(), Vec::new());
             };
-            
-            eprintln!("🧹 [clear_preview_children] Clearing {} direct children from UIPreview", direct_children.len());
             
             // Recursively collect ALL descendant IDs (not just direct children)
             // This ensures we remove nested children from the elements map
@@ -1227,8 +1222,6 @@ impl ManagerScript {
             return;
         }
         
-        eprintln!("🧹 [clear_preview_children] Found {} total descendant elements to remove", all_descendant_ids.len());
-        
         // Use the new mark_for_deletion mechanism - this properly handles deletion
         // by removing from primitive renderer cache and then from the elements map
         api.with_ui_node(ui_node_id, |ui| {
@@ -1241,22 +1234,20 @@ impl ManagerScript {
             // Clear the children list from UIPreview
             if let Some(preview_element) = ui.find_element_by_name_mut("UIPreview") {
                 preview_element.set_children(Vec::new());
-                eprintln!("🧹 [clear_preview_children] Cleared UIPreview children list");
             }
             
             // Mark preview element for rerender and layout to ensure UI updates
             ui.mark_element_needs_rerender(preview_id);
             ui.mark_element_needs_layout(preview_id);
-            eprintln!("🧹 [clear_preview_children] Marked {} elements for deletion and UIPreview for rerender", all_descendant_ids.len());
         });
         // Note: with_ui_node automatically marks the UI node itself for rerender
-        eprintln!("🧹 [clear_preview_children] UI node {} marked for rerender", ui_node_id);
     }
     
     /// Called when a file tree item is renamed
     /// Params: old_path (String), new_path (String)
     pub fn on_file_tree_item_renamed(&mut self, api: &mut ScriptApi, old_path: String, new_path: String) {
-        eprintln!("🎯 [Manager] on_file_tree_item_renamed HANDLER CALLED! old_path='{}' new_path='{}'", old_path, new_path);
+        // [stripped for release] eprintln!("🎯 [Manager] on_file_tree_item_renamed HANDLER CALLED! old_path='{}' new_path='{}'", old_path, new_path);
+
         api.print(&format!("🔄 File rename: {} -> {}", old_path, new_path));
         
         // Get UID for old path
@@ -1408,17 +1399,22 @@ impl Script for ManagerScript {
             
             // Connect file tree signals (emitted by UIListTree component)
             api.print("🔗 Connecting file tree signals...");
-            eprintln!("🔗 [Manager] Connecting ResourceFileTree_Clicked to on_file_tree_item_clicked");
+            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_Clicked to on_file_tree_item_clicked");
+
             api.connect_signal("ResourceFileTree_Clicked", self.id, "on_file_tree_item_clicked");
-            eprintln!("🔗 [Manager] Connecting ResourceFileTree_DoubleClicked to on_file_tree_item_double_clicked");
+            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_DoubleClicked to on_file_tree_item_double_clicked");
+
             api.connect_signal("ResourceFileTree_DoubleClicked", self.id, "on_file_tree_item_double_clicked");
-            eprintln!("🔗 [Manager] Connecting ResourceFileTree_RightClicked to on_file_tree_item_right_clicked");
+            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_RightClicked to on_file_tree_item_right_clicked");
+
             api.connect_signal("ResourceFileTree_RightClicked", self.id, "on_file_tree_item_right_clicked");
-            eprintln!("🔗 [Manager] Connecting ResourceFileTree_Renamed to on_file_tree_item_renamed");
+            // [stripped for release] eprintln!("🔗 [Manager] Connecting ResourceFileTree_Renamed to on_file_tree_item_renamed");
+
             api.connect_signal("ResourceFileTree_Renamed", self.id, "on_file_tree_item_renamed");
             
             api.print("✅ Signal connections complete");
-            eprintln!("✅ [Manager] All signal connections registered");
+            // [stripped for release] eprintln!("✅ [Manager] All signal connections registered");
+
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
@@ -1480,31 +1476,43 @@ impl Script for ManagerScript {
             self.run_project_key_pressed = false;
         }
         
-        // Update live preview with debouncing: 1 second after last text change (only in UI editor mode)
+        // Update live preview with debouncing: 0.5 seconds after last text change (only in UI editor mode)
+        // Use hash comparison to efficiently detect changes without expensive string comparisons
         if self.current_mode == Some(EditorMode::UI) {
-            // Get current text to detect changes
-            let current_text = api.with_ui_node(self.id, |ui| {
-                if let Some(element) = ui.find_element_by_name("TextEditorContainer") {
-                    match element {
-                        UIElement::TextEdit(text_edit) => Some(text_edit.get_text().to_string()),
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            });
+            let delta = api.Time.get_delta();
+            self.live_preview_timer += delta;
             
-            // Check if text has changed
-            if let Some(text) = current_text {
-                if text != self.last_fur_text {
-                    // Text changed - reset timer
-                    self.last_fur_text = text;
-                    self.live_preview_timer = 0.0;
-                } else {
-                    // Text hasn't changed - increment timer
-                    self.live_preview_timer += api.Time.get_delta();
-                    // Update preview if 1 second has passed since last change
-                    if self.live_preview_timer >= 1.0 {
+            // Check for changes when timer is near threshold (0.4s+) or just started (<0.05s)
+            // This avoids expensive hashing every single frame while still being responsive
+            let should_check = self.live_preview_timer < 0.05 || self.live_preview_timer >= 0.4;
+            
+            if should_check {
+                // Hash the text directly without cloning the string first
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let current_hash = api.with_ui_node(self.id, |ui| {
+                    if let Some(element) = ui.find_element_by_name("TextEditorContainer") {
+                        match element {
+                            UIElement::TextEdit(text_edit) => {
+                                let text = text_edit.get_text();
+                                let mut hasher = DefaultHasher::new();
+                                text.hash(&mut hasher);
+                                Some(hasher.finish())
+                            },
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                });
+                
+                if let Some(hash) = current_hash {
+                    if hash != self.last_fur_text_hash {
+                        // Text changed - reset timer and update cached hash
+                        self.last_fur_text_hash = hash;
+                        self.live_preview_timer = 0.0;
+                    } else if self.live_preview_timer >= 0.5 {
+                        // Text hasn't changed for 0.5 seconds - update preview
                         self.live_preview_timer = 0.0;
                         self.update_live_preview(api);
                     }

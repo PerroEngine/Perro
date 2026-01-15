@@ -74,7 +74,7 @@ pub struct UINode {
 
     /// Previous cursor icon state to avoid redundant updates
     #[serde(skip)]
-    last_cursor_icon: Option<u8>, // Store as u8 to avoid importing CursorIcon here
+    pub last_cursor_icon: Option<u8>, // Store as u8 to avoid importing CursorIcon here
 
     pub base: Node,
 }
