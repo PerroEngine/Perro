@@ -1254,12 +1254,11 @@ impl Expr {
                                                 // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                                 // The "api" identifier should NEVER be renamed - it's always the API parameter
                                                 inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
-                                                let temp_var = match api {
-                                                    ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id",
-                                                    ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id",
-                                                    _ => "__temp_id",
-                                                };
-                                                (Some(inner_call_str), Some(temp_var.to_string()))
+                                                // Generate a unique UUID for this temp variable (very low collision chance)
+                                                let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+                                                let unique_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                                let temp_var = format!("__temp_api_{}", unique_id);
+                                                (Some(inner_call_str), Some(temp_var))
                                             } else {
                                                 (None, None)
                                             }
@@ -1278,12 +1277,10 @@ impl Expr {
                                                     // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                                     // The "api" identifier should NEVER be renamed - it's always the API parameter
                                                     inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
-                                                    let temp_var = match api {
-                                                        ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id",
-                                                        ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id",
-                                                        _ => "__temp_id",
-                                                    };
-                                                    (Some(inner_call_str), Some(temp_var.to_string()))
+                                                    // Generate a unique UUID for this temp variable (guaranteed no collisions)
+                                                    let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                                    let temp_var = format!("__temp_api_{}", unique_id);
+                                                    (Some(inner_call_str), Some(temp_var))
                                                 } else {
                                                     (None, None)
                                                 }
@@ -1970,12 +1967,9 @@ impl Expr {
                                             // The "api" identifier should NEVER be renamed - it's always the API parameter
                                             inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                             
-                                            // Generate temp variable name based on inner API
-                                            let temp_var = match inner_api {
-                                                ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id".to_string(),
-                                                ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id".to_string(),
-                                                _ => "__temp_id".to_string(),
-                                            };
+                                            // Generate a unique UUID for this temp variable (guaranteed no collisions)
+                                            let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                            let temp_var = format!("__temp_api_{}", unique_id);
                                             
                                             temp_decl_opt = Some(format!("let {}: Uuid = {};", temp_var, inner_call_str));
                                             temp_var_opt = Some(temp_var);

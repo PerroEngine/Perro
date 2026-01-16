@@ -712,10 +712,20 @@ impl PupParser {
                 if args.len() == 2 {
                     let node = args[0].clone();
                     let field = args[1].clone();
-                    Ok(Stmt::Expr(self.typed_expr(Expr::ApiCall(
-                        ApiModule::NodeSugar(NodeSugarApi::SetVar),
-                        vec![node, field, typed_rhs.expr],
-                    ))))
+                    // Extract node variable name and field name for ScriptAssign/ScriptAssignOp
+                    if let (Expr::Ident(node_var), Expr::Literal(Literal::String(field_name))) = (&args[0], &args[1]) {
+                        // Use ScriptAssign/ScriptAssignOp for proper codegen
+                        Ok(match op {
+                            None => Stmt::ScriptAssign(node_var.clone(), field_name.clone(), typed_rhs),
+                            Some(op) => Stmt::ScriptAssignOp(node_var.clone(), field_name.clone(), op, typed_rhs),
+                        })
+                    } else {
+                        // Fallback to SetVar API call for complex expressions
+                        Ok(Stmt::Expr(self.typed_expr(Expr::ApiCall(
+                            ApiModule::NodeSugar(NodeSugarApi::SetVar),
+                            vec![node, field, typed_rhs.expr],
+                        ))))
+                    }
                 } else {
                     Err("Invalid NodeSugar get_var arg count".into())
                 }
@@ -1262,23 +1272,64 @@ impl PupParser {
             }
             PupToken::DoubleColon => {
                 self.next_token();
-                let f = if let PupToken::Ident(n) = &self.current_token {
-                    n.clone()
+                
+                // Check for dynamic access syntax: ::[expr] or ::(expr)
+                let var_name_expr = if self.current_token == PupToken::LBracket {
+                    // Dynamic access with brackets: VARNAME::[expr]
+                    self.next_token();
+                    let expr = self.parse_expression(2)?;
+                    self.expect(PupToken::RBracket)?;
+                    expr
+                } else if self.current_token == PupToken::LParen {
+                    // Dynamic access with parentheses: VARNAME::(expr)
+                    self.next_token();
+                    let expr = self.parse_expression(2)?;
+                    self.expect(PupToken::RParen)?;
+                    expr
+                } else if let PupToken::Ident(n) = &self.current_token {
+                    // Static access: VARNAME::var_name
+                    let name = n.clone();
+                    self.next_token();
+                    Expr::Literal(Literal::String(name))
                 } else {
-                    return Err("Expected identifier after '::'".into());
+                    return Err("Expected identifier, '[', or '(' after '::'".into());
                 };
-                self.next_token();
-                if self.current_token == PupToken::Assign {
+                
+                // Check if this is a method call (followed by '(') or variable access
+                if self.current_token == PupToken::LParen {
+                    // Method call: VARNAME::method_name(params) or VARNAME::[expr](params)
+                    // Support both static and dynamic function names
+                    self.next_token(); // consume '('
+                    let mut args = Vec::new();
+                    if self.current_token != PupToken::RParen {
+                        args.push(self.parse_expression(2)?);
+                        while self.current_token == PupToken::Comma {
+                            self.next_token();
+                            args.push(self.parse_expression(2)?);
+                        }
+                    }
+                    self.expect(PupToken::RParen)?;
+                    // Build args: [node_expr, method_name_expr, ...params]
+                    // method_name_expr can be either a literal string (static) or an expression (dynamic)
+                    let mut call_args = vec![left, var_name_expr];
+                    call_args.extend(args);
+                    Ok(Expr::ApiCall(
+                        ApiModule::NodeSugar(NodeSugarApi::CallFunction),
+                        call_args,
+                    ))
+                } else if self.current_token == PupToken::Assign {
+                    // Variable assignment: VARNAME::var_name = value or VARNAME::[expr] = value
                     self.next_token();
                     let val = self.parse_expression(2)?;
                     Ok(Expr::ApiCall(
                         ApiModule::NodeSugar(NodeSugarApi::SetVar),
-                        vec![left, Expr::Literal(Literal::String(f)), val],
+                        vec![left, var_name_expr, val],
                     ))
                 } else {
+                    // Variable access: VARNAME::var_name or VARNAME::[expr]
                     Ok(Expr::ApiCall(
                         ApiModule::NodeSugar(NodeSugarApi::GetVar),
-                        vec![left, Expr::Literal(Literal::String(f))],
+                        vec![left, var_name_expr],
                     ))
                 }
             }

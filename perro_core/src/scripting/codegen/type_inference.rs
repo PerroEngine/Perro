@@ -73,7 +73,31 @@ impl Script {
             (Number(Signed(_) | Unsigned(_)), Number(Float(64))) => {
                 return format!("({} as f64)", expr);
             }
+            // String -> StrRef conversion
+            (String, StrRef) => {
+                return format!("{}.as_str()", expr);
+            }
+            // StrRef -> String conversion
+            (StrRef, String) => {
+                return format!("{}.to_string()", expr);
+            }
             _ => {}
+        }
+        
+        // Special case: if expr is already the target type (e.g., c_par_id is already Uuid), no cast needed
+        // Check if expr ends with _id and target is Uuid (node variables are already Uuid)
+        if expr.ends_with("_id") && matches!(to, Type::Uuid) {
+            return expr.to_string();
+        }
+        
+        // Special case: if expr is a variable name that's already the target type, no cast needed
+        // This prevents unnecessary casts like (c_par_id as Uuid) when c_par_id is already Uuid
+        if !expr.contains(' ') && !expr.contains('(') && !expr.contains('.') {
+            // It's a simple variable name - check if we can skip the cast
+            // For Uuid types, variables ending in _id are already Uuid
+            if matches!(to, Type::Uuid) && (expr.ends_with("_id") || expr == "self.id") {
+                return expr.to_string();
+            }
         }
         
         // For now, use simple cast syntax

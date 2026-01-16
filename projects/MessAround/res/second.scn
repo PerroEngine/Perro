@@ -17,7 +17,6 @@
           "type": "Node",
           "name": "PlayerofSubScene",
           "parent": 0,
-          "script_path": "res://player.pup"
         },
         "transform": {
           "position": [

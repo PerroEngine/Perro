@@ -89,9 +89,11 @@ impl Function {
                 .params
                 .iter()
                 .map(|p| {
+                    // Always rename parameters with the transpiled ident prefix
+                    let renamed = rename_variable(&p.name, Some(&p.typ));
+                    
                     // Check if it's a type that becomes Uuid or Option<Uuid>
                     if type_becomes_id(&p.typ) {
-                        let renamed = rename_variable(&p.name, Some(&p.typ));
                         if matches!(&p.typ, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
                             format!("mut {}: Option<Uuid>", renamed)
                         } else {
@@ -99,9 +101,9 @@ impl Function {
                         }
                     } else {
                         match &p.typ {
-                            Type::String => format!("mut {}: String", p.name),
-                            Type::Custom(name) => format!("mut {}: {}", p.name, name),
-                            _ => format!("mut {}: {}", p.name, p.typ.to_rust_type()),
+                            Type::String => format!("mut {}: String", renamed),
+                            Type::Custom(name) => format!("mut {}: {}", renamed, name),
+                            _ => format!("mut {}: {}", renamed, p.typ.to_rust_type()),
                         }
                     }
                 })

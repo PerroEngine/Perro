@@ -242,17 +242,11 @@ pub(crate) fn extract_mutable_api_call(node_id: &str) -> (String, String) {
     }
     
     // Check if node_id is an API call that requires mutable borrow (like api.get_parent)
-    if node_id.starts_with("api.get_parent(") {
-        // Generate a unique temporary variable name
-        // Extract a hint from the argument if possible (e.g., "api.get_parent(collision_id)" -> "parent_collision_id")
-        let temp_var = if let Some(start) = node_id.find('(') {
-            let end = node_id.rfind(')').unwrap_or(node_id.len());
-            let _args = &node_id[start + 1..end];
-            // Use a simple name based on the function
-            format!("__parent_id")
-        } else {
-            "__parent_id".to_string()
-        };
+    if node_id.starts_with("api.get_parent(") || node_id.starts_with("api.get_child_by_name(") {
+        // Generate a unique UUID-based temporary variable name (no collisions)
+        let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+        let unique_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+        let temp_var = format!("__temp_api_{}", unique_id);
         
         let decl = format!("let {}: Uuid = {};", temp_var, node_id);
         (decl, temp_var)

@@ -484,46 +484,51 @@ impl ApiCodegen for ConsoleApi {
         let arg = if args.len() == 1 {
             // Check if the single argument is a node type
             if let Some(arg_expr) = args.get(0) {
-                let arg_type = script.infer_expr_type(arg_expr, current_func);
-                // Check if it's a node type, DynNode, or a Uuid that represents a node
-                // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
-                let is_node = match arg_type {
-                    Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                    None | Some(Type::Uuid) => {
-                        if let Expr::Ident(var_name) = arg_expr {
-                            // First check the variable's declared type directly (before it gets converted to Uuid)
-                            let var_declared_type = if let Some(func) = current_func {
-                                func.locals.iter()
-                                    .find(|v| v.name == *var_name)
-                                    .and_then(|v| v.typ.as_ref())
-                                    .or_else(|| {
-                                        find_variable_in_body(var_name, &func.body)
-                                            .and_then(|v| v.typ.as_ref())
-                                    })
-                            } else {
-                                script.variables.iter()
-                                    .find(|v| v.name == *var_name)
-                                    .and_then(|v| v.typ.as_ref())
-                            };
-                            
-                            // If declared type is a node, it's definitely a node
-                            if let Some(typ) = var_declared_type {
-                                if matches!(typ, Type::Node(_) | Type::DynNode) {
-                                    true
+                // Skip node checking for literals - they're never nodes
+                if matches!(arg_expr, Expr::Literal(_)) {
+                    // Literal - just use it directly, no node extraction needed
+                    joined
+                } else {
+                    let arg_type = script.infer_expr_type(arg_expr, current_func);
+                    // Check if it's a node type, DynNode, or a Uuid that represents a node
+                    // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
+                    let is_node = match arg_type {
+                        Some(Type::Node(_)) | Some(Type::DynNode) => true,
+                        None | Some(Type::Uuid) => {
+                            if let Expr::Ident(var_name) = arg_expr {
+                                // First check the variable's declared type directly (before it gets converted to Uuid)
+                                let var_declared_type = if let Some(func) = current_func {
+                                    func.locals.iter()
+                                        .find(|v| v.name == *var_name)
+                                        .and_then(|v| v.typ.as_ref())
+                                        .or_else(|| {
+                                            find_variable_in_body(var_name, &func.body)
+                                                .and_then(|v| v.typ.as_ref())
+                                        })
                                 } else {
-                                    // Fall back to checking the variable's value expression
+                                    script.variables.iter()
+                                        .find(|v| v.name == *var_name)
+                                        .and_then(|v| v.typ.as_ref())
+                                };
+                                
+                                // If declared type is a node, it's definitely a node
+                                if let Some(typ) = var_declared_type {
+                                    if matches!(typ, Type::Node(_) | Type::DynNode) {
+                                        true
+                                    } else {
+                                        // Fall back to checking the variable's value expression
+                                        check_if_node_var(var_name, script, current_func)
+                                    }
+                                } else {
+                                    // No declared type, check the variable's value expression
                                     check_if_node_var(var_name, script, current_func)
                                 }
                             } else {
-                                // No declared type, check the variable's value expression
-                                check_if_node_var(var_name, script, current_func)
+                                false
                             }
-                        } else {
-                            false
-                        }
-                    },
-                    _ => false,
-                };
+                        },
+                        _ => false,
+                    };
                 
                 if is_node {
                     // This is a node - convert to print its type instead of UUID
@@ -565,6 +570,7 @@ impl ApiCodegen for ConsoleApi {
                         }
                     }
                 }
+                }
             } else {
                 joined
             }
@@ -574,6 +580,11 @@ impl ApiCodegen for ConsoleApi {
             let processed_args: Vec<String> = args.iter()
                 .zip(args_strs.iter())
                 .map(|(arg_expr, arg_str)| {
+                    // Skip node checking for literals - they're never nodes
+                    if matches!(arg_expr, Expr::Literal(_)) {
+                        arg_str.clone()
+                    } else {
+                    
                     let arg_type = script.infer_expr_type(arg_expr, current_func);
                     let is_node = match arg_type {
                         Some(Type::Node(_)) | Some(Type::DynNode) => true,
@@ -617,6 +628,7 @@ impl ApiCodegen for ConsoleApi {
                         format!("__EXTRACT_NODE_TYPE__({})", arg_str)
                     } else {
                         arg_str.clone()
+                    }
                     }
                 })
                 .collect();
@@ -783,45 +795,148 @@ impl ApiCodegen for NodeSugarApi {
     ) -> String {
         match self {
             NodeSugarApi::GetVar => {
-                let (node, name) = (args_strs.get(0), args_strs.get(1));
-                let node_id = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(node_str) = node {
-                    if node_str == "self" {
-                        "self.id".to_string()
-                    } else {
-                        // Node variable is already in _id form (bob_id) or is self.bob_id
-                        node_str.clone()
-                    }
+                let (node, name) = (args_strs.get(0), args.get(1));
+                // args_strs[0] is already processed by generate_rust_args, which handles _id conversion
+                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                
+                // Check if the variable name is a static literal string or a dynamic expression
+                if let Some(Expr::Literal(crate::ast::Literal::String(var_name))) = name {
+                    // Static variable name - use _id method with precomputed hash
+                    let var_id = string_to_u64(var_name);
+                    // Remove & from node_id if present (it should be Uuid, not &Uuid)
+                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
+                    format!(
+                        "api.get_script_var_id({}, {}u64)",
+                        node_id_clean, var_id
+                    )
                 } else {
-                    "self.id".to_string()
-                };
-                format!(
-                    "api.get_script_var(&{}, {})",
-                    node_id,
-                    name.map(|s| s.as_str()).unwrap_or("\"\"")
-                )
+                    // Dynamic variable name - use string method (not _id)
+                    // The expression (e.g., `b`) will be resolved at runtime by Rust
+                    // generate_rust_args should convert it to &str based on param_types, but ensure it's converted
+                    let mut name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                    // If it's not already a string literal or &str, ensure it's converted to &str
+                    if !name_str.starts_with('"') && !name_str.starts_with('&') && !name_str.contains(".as_str()") {
+                        // It's likely a String variable - convert to &str
+                        name_str = format!("{}.as_str()", name_str);
+                    }
+                    // Remove & from node_id if present
+                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
+                    format!(
+                        "api.get_script_var({}, {})",
+                        node_id_clean, name_str
+                    )
+                }
             }
             NodeSugarApi::SetVar => {
-                let (node, name, val) = (args_strs.get(0), args_strs.get(1), args_strs.get(2));
-                let node_id = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(node_str) = node {
-                    if node_str == "self" {
-                        "self.id".to_string()
+                let (node, name, val) = (args_strs.get(0), args.get(1), args_strs.get(2));
+                // args_strs[0] is already processed by generate_rust_args, which handles _id conversion
+                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let val_str = val.cloned().unwrap_or_else(|| "Value::Null".to_string());
+                
+                // Check if the variable name is a static literal string or a dynamic expression
+                if let Some(Expr::Literal(crate::ast::Literal::String(var_name))) = name {
+                    // Static variable name - use _id method with precomputed hash
+                    let var_id = string_to_u64(var_name);
+                    // Remove & from node_id if present
+                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
+                    // Convert value to Value if needed
+                    let val_clean = if val_str.starts_with("json!(") || val_str.contains("Value::") {
+                        val_str
                     } else {
-                        // Node variable is already in _id form (bob_id) or is self.bob_id
-                        node_str.clone()
+                        format!("json!({})", val_str)
+                    };
+                    format!(
+                        "api.set_script_var_id({}, {}u64, {})",
+                        node_id_clean, var_id, val_clean
+                    )
+                } else {
+                    // Dynamic variable name - use string method (not _id)
+                    // The expression (e.g., `b`) will be resolved at runtime by Rust
+                    // generate_rust_args should convert it to &str based on param_types, but ensure it's converted
+                    let mut name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                    // If it's not already a string literal or &str, ensure it's converted to &str
+                    if !name_str.starts_with('"') && !name_str.starts_with('&') && !name_str.contains(".as_str()") {
+                        // It's likely a String variable - convert to &str
+                        name_str = format!("{}.as_str()", name_str);
+                    }
+                    // Remove & from node_id if present
+                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
+                    // Convert value to Value if needed
+                    let val_clean = if val_str.starts_with("json!(") || val_str.contains("Value::") {
+                        val_str
+                    } else {
+                        format!("json!({})", val_str)
+                    };
+                    format!(
+                        "api.set_script_var({}, {}, {})",
+                        node_id_clean, name_str, val_clean
+                    )
+                }
+            }
+            NodeSugarApi::CallFunction => {
+                // VARNAME::method_name(params) or VARNAME::[b](params)
+                // Args: [node_expr, method_name_expr, ...params]
+                // args_strs[0] is already processed by generate_rust_args, which handles _id conversion
+                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
+                
+                // Check if the function name is a static literal string or a dynamic expression
+                if let Some(Expr::Literal(crate::ast::Literal::String(func_name))) = args.get(1) {
+                    // Static function name - use call_function_id with precomputed hash
+                    let func_id = string_to_u64(func_name);
+                    
+                    // Build params array - all args after the first two (node and method_name)
+                    // Convert each param to Value using json!() unless it's already a Value
+                    let params: Vec<String> = args_strs.iter()
+                        .skip(2)
+                        .map(|param_str| {
+                            // Check if it's already a Value type or json!() wrapped
+                            if param_str.starts_with("json!(") || param_str.contains("Value") {
+                                param_str.clone()
+                            } else {
+                                // Wrap in json!() to convert to Value
+                                format!("json!({})", param_str)
+                            }
+                        })
+                        .collect();
+                    
+                    if params.is_empty() {
+                        format!("api.call_function_id({}, {}u64, &[])", node_id_clean, func_id)
+                    } else {
+                        format!("api.call_function_id({}, {}u64, &[{}])", node_id_clean, func_id, params.join(", "))
                     }
                 } else {
-                    "self.id".to_string()
-                };
-                format!(
-                    "api.set_script_var(&{}, {}, {})",
-                    node_id,
-                    name.map(|s| s.as_str()).unwrap_or("\"\""),
-                    val.map(|s| s.as_str()).unwrap_or("Value::Null")
-                )
+                    // Dynamic function name - use call_function with string (not _id)
+                    // The expression (e.g., `b`) will be resolved at runtime by Rust
+                    // generate_rust_args should convert it to &str based on param_types, but ensure it's converted
+                    let mut method_name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                    // If it's not already a string literal or &str, ensure it's converted to &str
+                    if !method_name_str.starts_with('"') && !method_name_str.starts_with('&') && !method_name_str.contains(".as_str()") {
+                        // It's likely a String variable - convert to &str
+                        method_name_str = format!("{}.as_str()", method_name_str);
+                    }
+                    
+                    // Build params array - all args after the first two (node and method_name)
+                    // Convert each param to Value using json!() unless it's already a Value
+                    let params: Vec<String> = args_strs.iter()
+                        .skip(2)
+                        .map(|param_str| {
+                            // Check if it's already a Value type or json!() wrapped
+                            if param_str.starts_with("json!(") || param_str.contains("Value") {
+                                param_str.clone()
+                            } else {
+                                // Wrap in json!() to convert to Value
+                                format!("json!({})", param_str)
+                            }
+                        })
+                        .collect();
+                    
+                    if params.is_empty() {
+                        format!("api.call_function({}, {}, &[])", node_id_clean, method_name_str)
+                    } else {
+                        format!("api.call_function({}, {}, &[{}])", node_id_clean, method_name_str, params.join(", "))
+                    }
+                }
             }
             NodeSugarApi::GetChildByName => {
                 // self.get_node("name") -> api.get_child_by_name(self.id, "name")
@@ -994,6 +1109,7 @@ impl ApiTypes for NodeSugarApi {
         match self {
             NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
             NodeSugarApi::SetVar => Some(Type::Void),
+            NodeSugarApi::CallFunction => Some(Type::Object), // Returns Value (can be any type)
             NodeSugarApi::GetChildByName => Some(Type::DynNode), // Returns DynNode - child node ID (no type resolution)
             NodeSugarApi::GetParent => Some(Type::DynNode), // Returns DynNode - parent node ID (no type resolution)
             NodeSugarApi::AddChild => Some(Type::Void),
@@ -1009,6 +1125,22 @@ impl ApiTypes for NodeSugarApi {
             NodeSugarApi::GetType | NodeSugarApi::GetParentType => {
                 // Both take Uuid as first parameter
                 Some(vec![Type::Uuid])
+            }
+            NodeSugarApi::GetVar | NodeSugarApi::SetVar => {
+                // First param: Uuid (node ID), Second param: &str (variable name)
+                // For SetVar, third param: Value
+                if matches!(self, NodeSugarApi::SetVar) {
+                    Some(vec![Type::Uuid, Type::StrRef, Type::Object])
+                } else {
+                    Some(vec![Type::Uuid, Type::StrRef])
+                }
+            }
+            NodeSugarApi::CallFunction => {
+                // First param: Uuid (node ID), Second param: &str (function name)
+                // Remaining params: Value (function arguments)
+                // Note: We don't know how many params there are at type-checking time,
+                // so we just specify the first two. The rest are handled dynamically.
+                Some(vec![Type::Uuid, Type::StrRef])
             }
             _ => None,
         }

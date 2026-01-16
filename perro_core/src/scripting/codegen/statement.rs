@@ -17,14 +17,152 @@ impl Stmt {
     ) -> String {
         match self {
             Stmt::Expr(expr) => {
-                let expr_str = expr.to_rust(needs_self, script, current_func);
-                // expr is TypedExpr, which already passes span through
-                if expr_str.trim().is_empty() {
-                    String::new()
-                } else if expr_str.trim_end().ends_with(';') {
-                    format!("        {}\n", expr_str)
+                // SECOND PASS: Extract nested API calls to avoid borrow checker issues
+                // This handles cases like api.call_function_id(api.get_parent(collision_id), ...)
+                // Only extracts NESTED API calls, not top-level ones
+                let mut extracted_api_calls = Vec::new();
+                let mut temp_var_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
+                
+                // Generate a unique ID for this code generation session using UUID (no hyphens)
+                let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+                let session_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                
+                // Helper function to recursively extract nested API calls from an expression
+                // is_top_level: true when processing the root expression, false when nested
+                fn extract_all_nested_api_calls(
+                    expr: &Expr,
+                    script: &Script,
+                    current_func: Option<&Function>,
+                    extracted: &mut Vec<(String, String)>,
+                    temp_var_types: &mut std::collections::HashMap<String, Type>,
+                    needs_self: bool,
+                    is_top_level: bool,
+                    session_id: &str,
+                ) -> Expr {
+                    match expr {
+                        // Extract API calls (like api.get_parent, api.call_function_id, etc.)
+                        Expr::ApiCall(api_module, api_args) => {
+                            // First, recursively extract nested API calls from arguments
+                            let new_args: Vec<Expr> = api_args.iter()
+                                .map(|arg| extract_all_nested_api_calls(arg, script, current_func, extracted, temp_var_types, needs_self, false, session_id))
+                                .collect();
+                            
+                            // Check if this API call returns an ID type (Uuid, NodeType, etc.) that should be extracted
+                            let should_extract_top_level = is_top_level && {
+                                if let Some(return_type) = api_module.return_type() {
+                                    matches!(return_type, Type::Uuid | Type::NodeType | Type::DynNode) ||
+                                    matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid))
+                                } else {
+                                    false
+                                }
+                            };
+                            
+                            // If this is a top-level API call that doesn't need extraction, just return it with processed arguments
+                            if is_top_level && !should_extract_top_level {
+                                return Expr::ApiCall(api_module.clone(), new_args);
+                            }
+                            
+                            // Generate a unique UUID for this temp variable (very low collision chance)
+                            let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+                            let unique_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                            
+                            // Generate temp variable name using UUID for guaranteed uniqueness
+                            let temp_var = format!("__temp_api_{}", unique_id);
+                            
+                            // Generate the API call code with extracted arguments
+                            let mut api_call_str = api_module.to_rust(&new_args, script, needs_self, current_func);
+                            
+                            // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                            api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
+                            
+                            // Infer the return type for the temp variable
+                            let inferred_type = api_module.return_type();
+                            let type_annotation = inferred_type
+                                .as_ref()
+                                .map(|t| format!(": {}", t.to_rust_type()))
+                                .unwrap_or_default();
+                            
+                            // Store the type for this temp variable
+                            if let Some(ty) = inferred_type {
+                                temp_var_types.insert(temp_var.clone(), ty);
+                            }
+                            
+                            extracted.push((format!("let {}{} = {};", temp_var, type_annotation, api_call_str), temp_var.clone()));
+                            
+                            // Return an identifier expression for the temp variable
+                            Expr::Ident(temp_var)
+                        }
+                        Expr::Call(target, args) => {
+                            // Recursively extract API calls from target and all arguments
+                            let new_target = extract_all_nested_api_calls(target, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            let new_args: Vec<Expr> = args.iter()
+                                .map(|arg| extract_all_nested_api_calls(arg, script, current_func, extracted, temp_var_types, needs_self, false, session_id))
+                                .collect();
+                            Expr::Call(Box::new(new_target), new_args)
+                        }
+                        Expr::MemberAccess(base, field) => {
+                            // Recursively extract API calls from base
+                            let new_base = extract_all_nested_api_calls(base, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            Expr::MemberAccess(Box::new(new_base), field.clone())
+                        }
+                        Expr::BinaryOp(left, op, right) => {
+                            let new_left = extract_all_nested_api_calls(left, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            let new_right = extract_all_nested_api_calls(right, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            Expr::BinaryOp(Box::new(new_left), op.clone(), Box::new(new_right))
+                        }
+                        Expr::Cast(inner, target_type) => {
+                            let new_inner = extract_all_nested_api_calls(inner, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            Expr::Cast(Box::new(new_inner), target_type.clone())
+                        }
+                        Expr::Index(array, index) => {
+                            let new_array = extract_all_nested_api_calls(array, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            let new_index = extract_all_nested_api_calls(index, script, current_func, extracted, temp_var_types, needs_self, false, session_id);
+                            Expr::Index(Box::new(new_array), Box::new(new_index))
+                        }
+                        _ => expr.clone(),
+                    }
+                }
+                
+                // Extract nested API calls from the expression (pass true for is_top_level)
+                let modified_expr = extract_all_nested_api_calls(
+                    &expr.expr,
+                    script,
+                    current_func,
+                    &mut extracted_api_calls,
+                    &mut temp_var_types,
+                    needs_self,
+                    true, // This is the top-level expression
+                    &session_id,
+                );
+                
+                // Generate the expression string from the modified expression
+                let expr_str = modified_expr.to_rust(needs_self, script, None, current_func, None);
+                
+                // Combine all temp declarations on the same line
+                let combined_temp_decl = if !extracted_api_calls.is_empty() {
+                    Some(extracted_api_calls.iter().map(|(decl, _): &(String, String)| decl.clone()).collect::<Vec<_>>().join(" "))
                 } else {
-                    format!("        {};\n", expr_str)
+                    None
+                };
+                
+                // Format the final statement with temp declarations on the same line
+                if let Some(ref temp_decl) = combined_temp_decl {
+                    if expr_str.trim().is_empty() {
+                        format!("        {};\n", temp_decl)
+                    } else if expr_str.trim_end().ends_with(';') {
+                        format!("        {} {}\n", temp_decl, expr_str.trim())
+                    } else {
+                        format!("        {} {};\n", temp_decl, expr_str)
+                    }
+                } else {
+                    // No temp declarations, use original formatting
+                    if expr_str.trim().is_empty() {
+                        String::new()
+                    } else if expr_str.trim_end().ends_with(';') {
+                        format!("        {}\n", expr_str)
+                    } else {
+                        format!("        {};\n", expr_str)
+                    }
                 }
             }
 
@@ -240,6 +378,10 @@ impl Stmt {
 
                 // FIRST: Check for nested API calls at AST level BEFORE generating the string
                 // This ensures we extract temp variables correctly and api is never renamed
+                // Generate a unique ID for this code generation session using UUID (no hyphens)
+                let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+                let session_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                
                 let (temp_decl_opt, modified_expr) = match &expr.expr {
                     Expr::ApiCall(outer_api, outer_args) => {
                         // Check if any argument is itself an API call that returns Uuid (or wrapped in a Cast)
@@ -265,7 +407,7 @@ impl Stmt {
                                 if let Some(return_type) = inner_api.return_type() {
                                     // Check if it returns Uuid, DynNode, or Option<Uuid> (all need extraction)
                                     let needs_extraction = matches!(return_type, Type::Uuid | Type::DynNode) || 
-                                        matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid));
+                                        matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uuid));
                                     
                                     if needs_extraction {
                                         has_nested = true;
@@ -277,27 +419,26 @@ impl Stmt {
                                         // The "api" identifier should NEVER be renamed - it's always the API parameter
                                         inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                         
-                                        // Generate temp variable name based on inner API
-                                        let temp_var = match inner_api {
-                                            ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id",
-                                            ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id",
-                                            _ => "__temp_id",
-                                        };
+                                        // Generate a unique UUID for this temp variable (very low collision chance)
+                                        let unique_id = uuid::Uuid::new_v4().simple().to_string().replace('-', "").chars().take(12).collect::<String>(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                        let temp_var = format!("__temp_api_{}", unique_id);
                                         
                                         // Only add temp declaration if we haven't seen this temp var yet
                                         if !temp_decls.iter().any(|(var, _)| *var == temp_var) {
-                                            let type_annotation = if temp_var == "__parent_id" || temp_var == "__child_id" {
+                                            let type_annotation = if matches!(return_type, Type::Uuid) {
                                                 ": Uuid"
+                                            } else if matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
+                                                ": Option<Uuid>"
                                             } else {
                                                 ""
                                             };
-                                            temp_decls.push((temp_var, format!("let {}{} = {};", temp_var, type_annotation, inner_call_str)));
+                                            temp_decls.push((temp_var.clone(), format!("let {}{} = {};", temp_var, type_annotation, inner_call_str)));
                                         }
                                         
                                         // Replace the nested call with a temp variable identifier
                                         // If the original was a Cast, we don't need the cast anymore since we're extracting to a temp var
                                         // The temp var is already a Uuid, so we can use it directly
-                                        new_args.push(Expr::Ident(temp_var.to_string()));
+                                        new_args.push(Expr::Ident(temp_var));
                                     } else {
                                         new_args.push(arg.clone());
                                     }
@@ -331,7 +472,7 @@ impl Stmt {
                                 if let Some(return_type) = inner_api.return_type() {
                                     // Check if it returns Uuid, DynNode, or Option<Uuid> (all need extraction)
                                     let needs_extraction = matches!(return_type, Type::Uuid | Type::DynNode) || 
-                                        matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid));
+                                        matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uuid));
                                     
                                     if needs_extraction {
                                         has_nested = true;
@@ -343,25 +484,24 @@ impl Stmt {
                                         // The "api" identifier should NEVER be renamed - it's always the API parameter
                                         inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                         
-                                        // Generate temp variable name based on inner API
-                                        let temp_var = match inner_api {
-                                            ApiModule::NodeSugar(NodeSugarApi::GetParent) => "__parent_id",
-                                            ApiModule::NodeSugar(NodeSugarApi::GetChildByName) => "__child_id",
-                                            _ => "__temp_id",
-                                        };
+                                        // Generate a unique UUID for this temp variable (very low collision chance)
+                                        let unique_id = uuid::Uuid::new_v4().simple().to_string().replace('-', "").chars().take(12).collect::<String>(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                        let temp_var = format!("__temp_api_{}", unique_id);
                                         
                                         // Only add temp declaration if we haven't seen this temp var yet
                                         if !temp_decls.iter().any(|(var, _)| *var == temp_var) {
-                                            let type_annotation = if temp_var == "__parent_id" || temp_var == "__child_id" {
+                                            let type_annotation = if matches!(return_type, Type::Uuid) {
                                                 ": Uuid"
+                                            } else if matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
+                                                ": Option<Uuid>"
                                             } else {
                                                 ""
                                             };
-                                            temp_decls.push((temp_var, format!("let {}{} = {};", temp_var, type_annotation, inner_call_str)));
+                                            temp_decls.push((temp_var.clone(), format!("let {}{} = {};", temp_var, type_annotation, inner_call_str)));
                                         }
                                         
                                         // Replace the nested call with a temp variable identifier
-                                        new_call_args.push(Expr::Ident(temp_var.to_string()));
+                                        new_call_args.push(Expr::Ident(temp_var));
                                     } else {
                                         new_call_args.push(arg.clone());
                                     }
@@ -445,35 +585,34 @@ impl Stmt {
                             
                             let inner_call = &expr_str[start..end];
                             // Check if this inner call is already a temp variable (avoid redeclaration)
-                            if inner_call.starts_with("__") && !inner_call.contains("(") {
+                            if inner_call.starts_with("__temp_api_") && !inner_call.contains("(") {
                                 // It's already a temp variable, don't redeclare
                                 (None, expr_str)
                             } else {
-                                let temp_var = if inner_call.contains("get_parent") {
-                                    "__parent_id"
-                                } else {
-                                    "__child_id"
-                                };
+                                // Generate a unique UUID for this temp variable (guaranteed no collisions)
+                                let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                let temp_var = format!("__temp_api_{}", unique_id);
                                 
                                 // Fix the inner call - replace any incorrect renaming of "api" back to "api"
                                 // The "api" identifier should NEVER be renamed - it's always the API parameter
                                 let fixed_inner_call = inner_call.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                 
-                                // Check if we're trying to assign temp_var to itself (avoid "__parent_id = __parent_id")
+                                // Check if we're trying to assign temp_var to itself
                                 if fixed_inner_call == temp_var {
                                     (None, expr_str)
                                 } else if expr_str.contains(&format!("let {} =", temp_var)) {
                                     // Already declared earlier, just replace the inner call
-                                    let final_expr = expr_str.replace(inner_call, temp_var);
+                                    let final_expr = expr_str.replace(inner_call, &temp_var);
                                     (None, final_expr)
                                 } else {
-                                    let type_annotation = if temp_var == "__parent_id" || temp_var == "__child_id" {
+                                    // Determine type annotation based on the call
+                                    let type_annotation = if fixed_inner_call.contains("get_parent") || fixed_inner_call.contains("get_child_by_name") {
                                         ": Uuid"
                                     } else {
                                         ""
                                     };
                                     let temp_decl = format!("let {}{} = {};", temp_var, type_annotation, fixed_inner_call);
-                                    let final_expr = expr_str.replace(inner_call, temp_var);
+                                    let final_expr = expr_str.replace(inner_call, &temp_var);
                                     (Some(temp_decl), final_expr)
                                 }
                             }
@@ -671,24 +810,34 @@ impl Stmt {
                             // Extract ALL API calls from RHS expression to avoid borrow checker issues
                             // API calls inside mutate_node closures need to be extracted before the closure
                             let mut extracted_api_calls = Vec::new();
-                            let mut temp_counter = 0;
                             let mut temp_var_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
+                            
+                            // Generate a unique ID for this code generation session using UUID
+                            let session_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
                             
                             // Helper function to extract API calls from expressions
                             fn extract_api_calls_from_expr_helper(expr: &Expr, script: &Script, current_func: Option<&Function>, 
-                                                       extracted: &mut Vec<(String, String)>, counter: &mut usize,
+                                                       extracted: &mut Vec<(String, String)>,
                                                        temp_var_types: &mut std::collections::HashMap<String, Type>,
-                                                       needs_self: bool, expected_type: Option<&Type>) -> Expr {
+                                                       needs_self: bool, expected_type: Option<&Type>,
+                                                       session_id: &str) -> Expr {
                                 match expr {
                                     // Extract API calls (like Math.random_range, Texture.load, etc.)
                                     Expr::ApiCall(api_module, api_args) => {
+                                        // First, recursively extract nested API calls from arguments
+                                        let new_args: Vec<Expr> = api_args.iter()
+                                            .map(|arg| extract_api_calls_from_expr_helper(arg, script, current_func, extracted, temp_var_types, needs_self, None, session_id))
+                                            .collect();
+                                        
+                                        // Generate a unique UUID for this temp variable (very low collision chance)
+                                        let unique_id = uuid::Uuid::new_v4().simple().to_string().replace('-', "").chars().take(12).collect::<String>(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                        
                                         // Extract ALL API calls, not just ones returning Uuid
                                         // This prevents borrow checker issues when API calls are inside closures
-                                        let temp_var = format!("__temp_api_{}", counter);
-                                        *counter += 1;
+                                        let temp_var = format!("__temp_api_{}", unique_id);
                                         
-                                        // Generate the API call code
-                                        let mut api_call_str = api_module.to_rust(api_args, script, needs_self, current_func);
+                                        // Generate the API call code with extracted arguments
+                                        let mut api_call_str = api_module.to_rust(&new_args, script, needs_self, current_func);
                                         
                                         // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                         api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
@@ -711,17 +860,23 @@ impl Stmt {
                                         Expr::Ident(temp_var)
                                     }
                                     Expr::MemberAccess(base, field) => {
+                                        // First, recursively extract API calls from base
+                                        let new_base = extract_api_calls_from_expr_helper(base, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                        
                                         // Check if this member access would generate a read_node call
-                                        if let Some((_node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
+                                        let test_expr = Expr::MemberAccess(Box::new(new_base.clone()), field.clone());
+                                        if let Some((_node_id, _, _, _)) = extract_node_member_info(&test_expr, script, current_func) {
                                             // This is a node member access - extract it to a temp variable
-                                            let temp_var = format!("__temp_read_{}", counter);
-                                            *counter += 1;
+                                            // Generate a unique UUID for this temp variable (very low collision chance)
+                                            let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+                                            let unique_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                            let temp_var = format!("__temp_read_{}", unique_id);
                                             
                                             // Generate the read_node call
-                                            let read_code = expr.to_rust(needs_self, script, expected_type, current_func, None);
+                                            let read_code = test_expr.to_rust(needs_self, script, expected_type, current_func, None);
                                             
                                             // Infer the type for the temp variable
-                                            let inferred_type = script.infer_expr_type(expr, current_func);
+                                            let inferred_type = script.infer_expr_type(&test_expr, current_func);
                                             let type_annotation = inferred_type
                                                 .as_ref()
                                                 .map(|t| format!(": {}", t.to_rust_type()))
@@ -737,22 +892,30 @@ impl Stmt {
                                             // Return an identifier expression for the temp variable
                                             Expr::Ident(temp_var)
                                         } else {
-                                            // Not a node member access, recurse into base
-                                            let new_base = extract_api_calls_from_expr_helper(base, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                            // Not a node member access, return the member access with processed base
                                             Expr::MemberAccess(Box::new(new_base), field.clone())
                                         }
                                     }
                                     Expr::BinaryOp(left, op, right) => {
-                                        let new_left = extract_api_calls_from_expr_helper(left, script, current_func, extracted, counter, temp_var_types, needs_self, None);
-                                        let new_right = extract_api_calls_from_expr_helper(right, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        let new_left = extract_api_calls_from_expr_helper(left, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                        let new_right = extract_api_calls_from_expr_helper(right, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
                                         Expr::BinaryOp(Box::new(new_left), op.clone(), Box::new(new_right))
                                     }
                                     Expr::Call(target, args) => {
-                                        let new_target = extract_api_calls_from_expr_helper(target, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        let new_target = extract_api_calls_from_expr_helper(target, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
                                         let new_args: Vec<Expr> = args.iter()
-                                            .map(|arg| extract_api_calls_from_expr_helper(arg, script, current_func, extracted, counter, temp_var_types, needs_self, None))
+                                            .map(|arg| extract_api_calls_from_expr_helper(arg, script, current_func, extracted, temp_var_types, needs_self, None, session_id))
                                             .collect();
                                         Expr::Call(Box::new(new_target), new_args)
+                                    }
+                                    Expr::Cast(inner, target_type) => {
+                                        let new_inner = extract_api_calls_from_expr_helper(inner, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                        Expr::Cast(Box::new(new_inner), target_type.clone())
+                                    }
+                                    Expr::Index(array, index) => {
+                                        let new_array = extract_api_calls_from_expr_helper(array, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                        let new_index = extract_api_calls_from_expr_helper(index, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                        Expr::Index(Box::new(new_array), Box::new(new_index))
                                     }
                                     _ => expr.clone(),
                                 }
@@ -763,10 +926,10 @@ impl Stmt {
                                 script, 
                                 current_func, 
                                 &mut extracted_api_calls, 
-                                &mut temp_counter,
                                 &mut temp_var_types,
                                 needs_self,
-                                lhs_type.as_ref()
+                                lhs_type.as_ref(),
+                                &session_id,
                             );
                             
                             // Combine all temp declarations
@@ -913,20 +1076,31 @@ impl Stmt {
                         let mut temp_counter = 0;
                         let mut temp_var_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
                         
+                        // Generate a unique ID for this code generation session using UUID
+                        let session_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                        
                         fn extract_api_calls_from_expr(expr: &Expr, script: &Script, current_func: Option<&Function>, 
-                                                       extracted: &mut Vec<(String, String)>, counter: &mut usize,
+                                                       extracted: &mut Vec<(String, String)>,
                                                        temp_var_types: &mut std::collections::HashMap<String, Type>,
-                                                       needs_self: bool, expected_type: Option<&Type>) -> Expr {
+                                                       needs_self: bool, expected_type: Option<&Type>,
+                                                       session_id: &str) -> Expr {
                             match expr {
                                 // Extract API calls (like Math.random_range, Texture.load, etc.)
                                 Expr::ApiCall(api_module, api_args) => {
+                                    // First, recursively extract nested API calls from arguments
+                                    let new_args: Vec<Expr> = api_args.iter()
+                                        .map(|arg| extract_api_calls_from_expr(arg, script, current_func, extracted, temp_var_types, needs_self, None, session_id))
+                                        .collect();
+                                    
+                                    // Generate a unique UUID for this temp variable (guaranteed no collisions)
+                                    let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                    
                                     // Extract ALL API calls, not just ones returning Uuid
                                     // This prevents borrow checker issues when API calls are inside closures
-                                    let temp_var = format!("__temp_api_{}", counter);
-                                    *counter += 1;
+                                    let temp_var = format!("__temp_api_{}", unique_id);
                                     
-                                    // Generate the API call code
-                                    let mut api_call_str = api_module.to_rust(api_args, script, needs_self, current_func);
+                                    // Generate the API call code with extracted arguments
+                                    let mut api_call_str = api_module.to_rust(&new_args, script, needs_self, current_func);
                                     
                                     // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                     api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
@@ -949,17 +1123,22 @@ impl Stmt {
                                     Expr::Ident(temp_var)
                                 }
                                 Expr::MemberAccess(base, field) => {
+                                    // First, recursively extract API calls from base
+                                    let new_base = extract_api_calls_from_expr(base, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    
                                     // Check if this member access would generate a read_node call
-                                    if let Some((_node_id, _, _, _)) = extract_node_member_info(expr, script, current_func) {
+                                    let test_expr = Expr::MemberAccess(Box::new(new_base.clone()), field.clone());
+                                    if let Some((_node_id, _, _, _)) = extract_node_member_info(&test_expr, script, current_func) {
                                         // This is a node member access - extract it to a temp variable
-                                        let temp_var = format!("__temp_read_{}", counter);
-                                        *counter += 1;
+                                        // Generate a unique UUID for this temp variable (very low collision chance)
+                                        let unique_id = uuid::Uuid::new_v4().simple().to_string().replace('-', "").chars().take(12).collect::<String>(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                        let temp_var = format!("__temp_read_{}", unique_id);
                                         
                                         // Generate the read_node call
-                                        let read_code = expr.to_rust(needs_self, script, expected_type, current_func, None);
+                                        let read_code = test_expr.to_rust(needs_self, script, expected_type, current_func, None);
                                         
                                         // Infer the type for the temp variable
-                                        let inferred_type = script.infer_expr_type(expr, current_func);
+                                        let inferred_type = script.infer_expr_type(&test_expr, current_func);
                                         let type_annotation = inferred_type
                                             .as_ref()
                                             .map(|t| format!(": {}", t.to_rust_type()))
@@ -975,22 +1154,30 @@ impl Stmt {
                                         // Return an identifier expression for the temp variable
                                         Expr::Ident(temp_var)
                                     } else {
-                                        // Not a node member access, recurse into base
-                                        let new_base = extract_api_calls_from_expr(base, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                        // Not a node member access, return the member access with processed base
                                         Expr::MemberAccess(Box::new(new_base), field.clone())
                                     }
                                 }
                                 Expr::BinaryOp(left, op, right) => {
-                                    let new_left = extract_api_calls_from_expr(left, script, current_func, extracted, counter, temp_var_types, needs_self, None);
-                                    let new_right = extract_api_calls_from_expr(right, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                    let new_left = extract_api_calls_from_expr(left, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    let new_right = extract_api_calls_from_expr(right, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
                                     Expr::BinaryOp(Box::new(new_left), op.clone(), Box::new(new_right))
                                 }
                                 Expr::Call(target, args) => {
-                                    let new_target = extract_api_calls_from_expr(target, script, current_func, extracted, counter, temp_var_types, needs_self, None);
+                                    let new_target = extract_api_calls_from_expr(target, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
                                     let new_args: Vec<Expr> = args.iter()
-                                        .map(|arg| extract_api_calls_from_expr(arg, script, current_func, extracted, counter, temp_var_types, needs_self, None))
+                                        .map(|arg| extract_api_calls_from_expr(arg, script, current_func, extracted, temp_var_types, needs_self, None, session_id))
                                         .collect();
                                     Expr::Call(Box::new(new_target), new_args)
+                                }
+                                Expr::Cast(inner, target_type) => {
+                                    let new_inner = extract_api_calls_from_expr(inner, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    Expr::Cast(Box::new(new_inner), target_type.clone())
+                                }
+                                Expr::Index(array, index) => {
+                                    let new_array = extract_api_calls_from_expr(array, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    let new_index = extract_api_calls_from_expr(index, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    Expr::Index(Box::new(new_array), Box::new(new_index))
                                 }
                                 _ => expr.clone(),
                             }
@@ -1002,10 +1189,10 @@ impl Stmt {
                             script, 
                             current_func, 
                             &mut extracted_api_calls, 
-                            &mut temp_counter,
                             &mut temp_var_types,
                             needs_self,
-                            lhs_type.as_ref()
+                            lhs_type.as_ref(),
+                            &session_id,
                         );
                         
                         // Combine all temp declarations from extracted API calls
@@ -1603,51 +1790,56 @@ impl Stmt {
             Stmt::ScriptAssign(var, field, rhs) => {
                 let rhs_str = rhs.to_rust(needs_self, script, current_func);
                 // rhs is TypedExpr, which already passes span through
-
-                let ctor = match script.infer_expr_type(&rhs.expr, current_func) {
-                    Some(Type::Number(NumberKind::Signed(_))) => "I32",
-                    Some(Type::Number(NumberKind::Unsigned(_))) => "U32",
-                    Some(Type::Number(NumberKind::Float(_))) => "F32",
-                    Some(Type::Number(NumberKind::Decimal)) => "Decimal",
-                    Some(Type::Number(NumberKind::BigInt)) => "BigInt",
-                    Some(Type::Bool) => "Bool",
-                    Some(Type::String) => "String",
-                    _ => "F32",
+                
+                // Get the node ID variable name (should already have _id suffix from parser)
+                let node_id_var = format!("{}_id", var);
+                
+                // Precompute the variable ID hash at compile time
+                use crate::prelude::string_to_u64;
+                let var_id = string_to_u64(field);
+                
+                // Convert rhs to Value using json!
+                let val_expr = if rhs_str.starts_with("json!(") || rhs_str.contains("Value::") {
+                    rhs_str
+                } else {
+                    format!("json!({})", rhs_str)
                 };
 
                 format!(
-                    "        api.update_script_var(&{}_id, \"{}\", UpdateOp::Set, Var::{}({}));\n",
-                    var, field, ctor, rhs_str
+                    "        api.set_script_var_id({}, {}u64, {});\n",
+                    node_id_var, var_id, val_expr
                 )
             }
 
             Stmt::ScriptAssignOp(var, field, op, rhs) => {
                 let rhs_str = rhs.to_rust(needs_self, script, current_func);
                 // rhs is TypedExpr, which already passes span through
-                let op_str = match op {
-                    Op::Add => "Add",
-                    Op::Sub => "Sub",
-                    Op::Mul => "Mul",
-                    Op::Div => "Div",
+                
+                // Get the node ID variable name (should already have _id suffix from parser)
+                let node_id_var = format!("{}_id", var);
+                
+                // Precompute the variable ID hash at compile time
+                use crate::prelude::string_to_u64;
+                let var_id = string_to_u64(field);
+                
+                // For assign-op, we need to get the current value, apply the operation, then set it
+                // This requires a get, compute, set pattern
+                let op_rust = match op {
+                    Op::Add => "+",
+                    Op::Sub => "-",
+                    Op::Mul => "*",
+                    Op::Div => "/",
                     Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
                         unreachable!("Comparison operators cannot be used in assignment operations")
                     }
                 };
-
-                let ctor = match script.infer_expr_type(&rhs.expr, current_func) {
-                    Some(Type::Number(NumberKind::Signed(_))) => "I32",
-                    Some(Type::Number(NumberKind::Unsigned(_))) => "U32",
-                    Some(Type::Number(NumberKind::Float(_))) => "F32",
-                    Some(Type::Number(NumberKind::Decimal)) => "Decimal",
-                    Some(Type::Number(NumberKind::BigInt)) => "BigInt",
-                    Some(Type::Bool) => "Bool",
-                    Some(Type::String) => "String",
-                    _ => "F32",
-                };
-
+                
+                // Convert rhs to a number for the operation
+                // We'll need to extract the numeric value from the Value
+                // For now, assume it's a simple numeric expression
                 format!(
-                    "        api.update_script_var(&{}_id, \"{}\", UpdateOp::{}, Var::{}({}));\n",
-                    var, field, op_str, ctor, rhs_str
+                    "        {{\n            let __current_val = api.get_script_var_id({}, {}u64);\n            let __rhs_val = json!({});\n            let __new_val = json!((__current_val.as_f64().unwrap_or(0.0) {} __rhs_val.as_f64().unwrap_or(0.0)));\n            api.set_script_var_id({}, {}u64, __new_val);\n        }}\n",
+                    node_id_var, var_id, rhs_str, op_rust, node_id_var, var_id
                 )
             }
 
@@ -1976,6 +2168,14 @@ impl Stmt {
             }
             (CowStr, StrRef) => {
                 format!("{}.as_ref()", expr)
+            }
+            // String -> StrRef conversion
+            (String, StrRef) => {
+                format!("{}.as_str()", expr)
+            }
+            // StrRef -> String conversion
+            (StrRef, String) => {
+                format!("{}.to_string()", expr)
             }
             // String/StrRef/CowStr -> Option<CowStr> conversions
             (String, Option(inner)) if matches!(inner.as_ref(), CowStr) => {

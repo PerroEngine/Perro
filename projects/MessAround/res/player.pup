@@ -2,6 +2,10 @@
 
 var time = 0
 
+var test_var = 0
+
+var test_b = false
+
 var tex: Texture
 
 fn init() {
@@ -29,13 +33,36 @@ fn update() {
 
 }
 
+fn test(u: int) {
+    test_b = true
+    Console.info("I was called externally through double colon", test_b, u)
+}
+
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
+            Console.print("before", test_b)
+        var c_par = collision.get_parent()
+    var t = "test"
+       c_par::[t](12)
+       c_par::test(98)
+       Console.info(c_par::test_var)
+       var b = "test_var"
+
+       var tv = c_par::test_var
+   
+       c_par::test_var = 12
+   
+       c_par::[b] = 15
+   
+
+       Console.warn(c_par::[b])
+        Console.print("fter", test_var)
+        
     var pos = self.transform.position
 
-    var pty = collision.get_parent().get_type()
+    var p_type = collision.get_parent().get_type()
 
     var ppos
-    if pty == NODE_TYPE.Sprite2D {
+    if p_type == NODE_TYPE.Sprite2D {
             var tex = Texture.load("res://doug.PNG")
             self.texture = tex
             ppos = (collision.get_parent() as Sprite2D).transform.position
@@ -44,12 +71,13 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     if (collision.get_parent() == self) {
         pos.y += 100
         self.transform.position = pos
-        self.remove()
+
     }
 }
 
 on Deadzone_AreaExited(c: CollisionShape2D) {
    if (c.get_parent() == self) {
+    Console.info("area exit")
         self.transform.position.y += 100
         self.texture = Texture.load("res://obama.jpg")
         self.transform.scale = new Vector2(0.25,0.25)

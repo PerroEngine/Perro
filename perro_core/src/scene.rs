@@ -29,7 +29,7 @@ use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     collections::{HashMap, HashSet},
     io,
     path::{Path, PathBuf},
@@ -533,7 +533,16 @@ pub struct Scene<P: ScriptProvider> {
     pub(crate) root_id: Uuid,
     pub signals: SignalBus,
     queued_signals: Vec<(u64, SmallVec<[Value; 3]>)>,
-    pub scripts: FxHashMap<Uuid, Box<dyn ScriptObject>>,
+    /// Scripts stored as Rc<UnsafeCell<Box<dyn ScriptObject>>>
+    /// 
+    /// SAFETY: Using UnsafeCell is safe because:
+    /// - All script access is controlled by the ScriptApi
+    /// - Scripts are never accessed directly by user code
+    /// - All execution is synchronous and single-threaded
+    /// - The transpiler ensures all script code goes through the API
+    /// - Nested calls are safe because they're part of the same synchronous call chain
+    /// - Variable access (get/set) is safe because it's controlled by the API
+    pub scripts: FxHashMap<Uuid, Rc<UnsafeCell<Box<dyn ScriptObject>>>>,
     pub provider: P,
     pub project: Rc<RefCell<Project>>,
     pub app_command_tx: Option<Sender<AppCommand>>, // NEW field
@@ -889,7 +898,8 @@ impl<P: ScriptProvider> Scene<P> {
             if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
                 if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
                     let root_id = game_scene.get_root().get_id();
-                    let handle = game_scene.instantiate_script(ctor, root_id);
+                    let boxed = game_scene.instantiate_script(ctor, root_id);
+                    let handle = Rc::new(UnsafeCell::new(boxed));
                     game_scene.scripts.insert(root_id, handle);
 
                     let project_ref = game_scene.project.clone();
@@ -1366,10 +1376,11 @@ impl<P: ScriptProvider> Scene<P> {
                 let ident = script_path_to_identifier(&script_path)
                     .map_err(|e| anyhow::anyhow!("Invalid script path {}: {}", script_path, e))?;
                 let ctor = self.ctor(&ident)?;
-                let handle = Self::instantiate_script(ctor, id);
+                let boxed = self.instantiate_script(ctor, id);
+                let handle = Rc::new(UnsafeCell::new(boxed));
                 
                 // Check flags and add to appropriate vectors
-                let flags = handle.script_flags();
+                let flags = unsafe { (*handle.get()).script_flags() };
                 
                 if flags.has_update() && !self.scripts_with_update.contains(&id) {
                     self.scripts_with_update.push(id);
@@ -1652,10 +1663,11 @@ impl<P: ScriptProvider> Scene<P> {
             for (id, script_path) in script_targets {
                 if let Ok(ident) = script_path_to_identifier(&script_path) {
                     if let Ok(ctor) = self.ctor(&ident) {
-                        let handle = Self::instantiate_script(ctor, id);
+                        let boxed = self.instantiate_script(ctor, id);
+                        let handle = Rc::new(UnsafeCell::new(boxed));
                         
                         // Check flags and add to appropriate vectors
-                        let flags = handle.script_flags();
+                        let flags = unsafe { (*handle.get()).script_flags() };
                         
                         if flags.has_update() && !self.scripts_with_update.contains(&id) {
                             self.scripts_with_update.push(id);
@@ -2213,13 +2225,6 @@ impl<P: ScriptProvider> Scene<P> {
         return;
     }
 
-    pub fn instantiate_script(ctor: CreateFn, node_id: Uuid) -> Box<dyn ScriptObject> {
-        let raw = ctor();
-        let mut boxed: Box<dyn ScriptObject> = unsafe { Box::from_raw(raw) };
-        boxed.set_id(node_id);
-        boxed
-    }
-
     pub fn add_node_to_scene(&mut self, mut node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<()> {
         let id = node.get_id();
 
@@ -2280,10 +2285,11 @@ impl<P: ScriptProvider> Scene<P> {
             let ctor = self.ctor(&identifier)?;
 
             // Create the script
-            let handle = self.instantiate_script(ctor, id);
+            let boxed = self.instantiate_script(ctor, id);
+            let handle = Rc::new(UnsafeCell::new(boxed));
             
             // Check flags and add to appropriate vectors
-            let flags = handle.script_flags();
+            let flags = unsafe { (*handle.get()).script_flags() };
             
             if flags.has_update() && !self.scripts_with_update.contains(&id) {
                 self.scripts_with_update.push(id);
@@ -3806,7 +3812,11 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         ctor: CreateFn,
         node_id: Uuid,
     ) -> Box<dyn ScriptObject> {
-        Self::instantiate_script(ctor, node_id)
+        // Trait requires Box, but we wrap it in Rc<RefCell<>> when inserting into scripts HashMap
+        let raw = ctor();
+        let mut boxed: Box<dyn ScriptObject> = unsafe { Box::from_raw(raw) };
+        boxed.set_id(node_id);
+        boxed
     }
 
     fn add_node_to_scene(&mut self, node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<()> {
@@ -3830,24 +3840,23 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
         self.emit_signal_id_deferred(signal, params);
     }
 
-    fn get_script(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>> {
-        self.scripts.get_mut(&id)
+    fn get_script(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+        // Clone the Rc so the script stays in the HashMap
+        self.scripts.get(&id).map(|rc| Rc::clone(rc))
     }
     
-    fn get_script_mut(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>> {
-        self.scripts.get_mut(&id)
+    fn get_script_mut(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+        self.get_script(id)
     }
     
-    fn take_script(&mut self, id: Uuid) -> Option<Box<dyn ScriptObject>> {
-        // Just remove from HashMap, DON'T modify the filtered vectors
-        // This is used for temporary borrowing during update calls
-        self.scripts.remove(&id)
+    fn take_script(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+        // Scripts are now always in memory, just clone the Rc
+        self.get_script(id)
     }
     
-    fn insert_script(&mut self, id: Uuid, script: Box<dyn ScriptObject>) {
-        // Just insert into HashMap, DON'T modify the filtered vectors
-        // This is used for temporary put-back during update calls
-        self.scripts.insert(id, script);
+    fn insert_script(&mut self, _id: Uuid, _script: Box<dyn ScriptObject>) {
+        // Scripts are now stored as Rc<RefCell<Box<>>>, so we don't need to insert them back
+        // This method is kept for compatibility but does nothing
     }
 
     // NEW method implementation
@@ -4059,7 +4068,8 @@ impl Scene<DllScriptProvider> {
             if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
                 if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
                     let root_id = game_scene.get_root().get_id();
-                    let handle = game_scene.instantiate_script(ctor, root_id);
+                    let boxed = game_scene.instantiate_script(ctor, root_id);
+                    let handle = Rc::new(UnsafeCell::new(boxed));
                     game_scene.scripts.insert(root_id, handle);
 
                     let project_ref = game_scene.project.clone();

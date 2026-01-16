@@ -2,6 +2,8 @@
 use std::sync::mpsc::Sender;
 use std::collections::HashMap;
 use std::io;
+use std::cell::{RefCell, UnsafeCell};
+use std::rc::Rc;
 
 use serde_json::Value;
 use uuid::Uuid;
@@ -125,16 +127,26 @@ pub trait SceneAccess {
     }
     
     fn add_node_to_scene(&mut self, node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<()>;
-    fn get_script(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>>;
+    fn get_script(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>>;
     
     /// Get mutable reference to a script (for direct update calls)
-    fn get_script_mut(&mut self, id: Uuid) -> Option<&mut Box<dyn ScriptObject>>;
+    /// NOTE: This is now deprecated - use get_script() and UnsafeCell::get() instead
+    fn get_script_mut(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+        self.get_script(id)
+    }
     
-    /// Temporarily take a script out of storage, returns None if not found
-    fn take_script(&mut self, id: Uuid) -> Option<Box<dyn ScriptObject>>;
+    /// Get a script by cloning its Rc (scripts are now always in memory)
+    /// NOTE: This replaces take_script - scripts are no longer taken out
+    fn take_script(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+        self.get_script(id)
+    }
     
     /// Put a script back into storage
-    fn insert_script(&mut self, id: Uuid, script: Box<dyn ScriptObject>);
+    /// NOTE: This is now a no-op since scripts stay in memory, but kept for compatibility
+    fn insert_script(&mut self, _id: Uuid, _script: Box<dyn ScriptObject>) {
+        // Scripts are now stored as Rc<UnsafeCell<Box<>>>, so we don't need to insert them back
+        // This method is kept for compatibility but does nothing
+    }
     
     fn get_command_sender(&self) -> Option<&Sender<AppCommand>>;
     fn get_controller_manager(&self) -> Option<&Mutex<ControllerManager>>;

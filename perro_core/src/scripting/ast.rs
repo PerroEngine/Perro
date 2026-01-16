@@ -356,13 +356,18 @@ impl Type {
 
             Type::Signal => "u64".to_string(),
             Type::Custom(name) => {
-                // Rename custom structs with __t_ prefix (but not node types or engine structs)
-                use crate::scripting::codegen::{is_node_type, rename_struct};
-                if is_node_type(name) {
-                    // Node types should be Type::Node, but handle gracefully
-                    name.clone()
+                // Special case: "Value" is serde_json::Value, not a custom struct
+                if name == "Value" {
+                    "Value".to_string()
                 } else {
-                    rename_struct(name)
+                    // Rename custom structs with __t_ prefix (but not node types or engine structs)
+                    use crate::scripting::codegen::{is_node_type, rename_struct};
+                    if is_node_type(name) {
+                        // Node types should be Type::Node, but handle gracefully
+                        name.clone()
+                    } else {
+                        rename_struct(name)
+                    }
                 }
             },
             Type::Node(_) => "Uuid".to_string(), // Nodes are now Uuid IDs
@@ -468,6 +473,10 @@ impl Type {
             (Type::Number(Float(_)), Type::Number(Decimal)) => true,
 
             // String type conversions
+            // String -> StrRef (String can be converted to &str via .as_str())
+            (Type::String, Type::StrRef) => true,
+            // StrRef -> String (borrowed string can become owned String)
+            (Type::StrRef, Type::String) => true,
             // String -> CowStr (owned string can become Cow::Owned)
             (Type::String, Type::CowStr) => true,
             // StrRef -> CowStr (borrowed string can become Cow::Borrowed)
