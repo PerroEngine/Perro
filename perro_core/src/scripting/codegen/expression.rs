@@ -705,23 +705,32 @@ impl Expr {
                             false
                         };
                         
-                        let field_access = if should_unwrap {
-                            format!("{}.{}.unwrap()", closure_var, resolved_field_path)
-                        } else if needs_clone {
-                            format!("{}.{}.clone()", closure_var, resolved_field_path)
-                        } else {
-                            format!("{}.{}", closure_var, resolved_field_path)
-                        };
-                        
                         // Extract mutable API calls to temporary variables to avoid borrow checker issues
                         let (temp_decl, actual_node_id) = extract_mutable_api_call(&node_id);
                         
-                        // Use read_node with the determined node type (type must be known via cast or variable annotation)
-                        if !temp_decl.is_empty() {
-                            return format!("{}{}api.read_node({}, |{}: &{}| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, closure_var, node_type, field_access);
+                        // Ensure node_id has self. prefix if it's a script variable (not self.id or api.get_parent)
+                        let node_id_with_self = if !node_id.starts_with("self.") && !node_id.starts_with("api.") {
+                            format!("self.{}", node_id)
                         } else {
-                            return format!("api.read_node({}, |{}: &{}| {})", node_id, closure_var, node_type, field_access);
-                        }
+                            node_id.clone()
+                        };
+                        
+                        // Ensure closure_var doesn't have "self." prefix (it's a new variable in the closure)
+                        let clean_closure_var = closure_var.strip_prefix("self.").unwrap_or(&closure_var);
+                        
+                        // Use clean_closure_var for field access (not the original closure_var which might have self.)
+                        let field_access = if should_unwrap {
+                            format!("{}.{}.unwrap()", clean_closure_var, resolved_field_path)
+                        } else if needs_clone {
+                            format!("{}.{}.clone()", clean_closure_var, resolved_field_path)
+                        } else {
+                            format!("{}.{}", clean_closure_var, resolved_field_path)
+                        };
+                        
+                        // Use read_node with the determined node type (type must be known via cast or variable annotation)
+                        // Wrap in parentheses to allow chaining (e.g., (api.read_node(...)).position.y)
+                        // Note: temp_decl should be handled at statement level, not here in expression
+                        return format!("(api.read_node({}, |{}: &{}| {}))", node_id_with_self, clean_closure_var, node_type, field_access);
                     }
                 }
                 

@@ -88,6 +88,7 @@ zstd = { version = "0.13", features = ["zstdmt"] }
 
 # Cryptography
 aes-gcm = "0.10"
+sha2 = "0.10"
 
 # Time & Text processing
 chrono = "0.4"

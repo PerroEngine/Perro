@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 use walkdir::WalkDir;
+use sha2::{Sha256, Digest};
 
 use crate::{
     codegen::derive_rust_perro_script,
@@ -102,6 +103,61 @@ fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
     }
 
     Ok(scripts)
+}
+
+/// Compute a hash of all script files in res/ directory
+/// Files are sorted alphabetically for deterministic hashing
+pub fn compute_script_hash(project_root: &Path) -> Result<String, String> {
+    let script_paths = discover_scripts(project_root)?;
+    
+    // Sort paths alphabetically for deterministic ordering
+    let mut sorted_paths: Vec<_> = script_paths.iter().collect();
+    sorted_paths.sort_by(|a, b| {
+        a.to_string_lossy().cmp(&b.to_string_lossy())
+    });
+    
+    let mut hasher = Sha256::new();
+    
+    for path in sorted_paths {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        
+        // Hash the file path and content
+        hasher.update(path.to_string_lossy().as_bytes());
+        hasher.update(b"\0"); // Separator
+        hasher.update(content.as_bytes());
+        hasher.update(b"\0"); // Separator
+    }
+    
+    let hash = hasher.finalize();
+    Ok(format!("{:x}", hash))
+}
+
+/// Read the stored script hash from builds directory
+pub fn read_stored_hash(project_root: &Path) -> Result<Option<String>, String> {
+    let hash_file = project_root.join(".perro/scripts/builds/scripts_hash");
+    
+    if !hash_file.exists() {
+        return Ok(None);
+    }
+    
+    match fs::read_to_string(&hash_file) {
+        Ok(content) => Ok(Some(content.trim().to_string())),
+        Err(e) => Err(format!("Failed to read script hash file: {}", e)),
+    }
+}
+
+/// Write the script hash to builds directory
+pub fn write_script_hash(project_root: &Path, hash: &str) -> Result<(), String> {
+    let builds_dir = project_root.join(".perro/scripts/builds");
+    fs::create_dir_all(&builds_dir)
+        .map_err(|e| format!("Failed to create builds directory: {}", e))?;
+    
+    let hash_file = builds_dir.join("scripts_hash");
+    fs::write(&hash_file, hash)
+        .map_err(|e| format!("Failed to write script hash file: {}", e))?;
+    
+    Ok(())
 }
 
 /// Clean up orphaned script files
@@ -365,6 +421,18 @@ fn setup_dll_panic_handler() {
 pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     let total_start = Instant::now();
 
+    // Compute hash of all script files before transpiling
+    let current_hash = compute_script_hash(project_root)?;
+    let stored_hash = read_stored_hash(project_root)?;
+    
+    // If hash matches, skip transpilation
+    if let Some(stored) = stored_hash {
+        if stored == current_hash {
+            println!("✅ Script hash unchanged, skipping transpilation");
+            return Ok(());
+        }
+    }
+
     let script_paths = discover_scripts(project_root)?;
 
     // Always ensure lib.rs exists, even if there are no scripts
@@ -379,6 +447,8 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
         println!("📜 No scripts found. Creating minimal lib.rs...");
         // Still create a minimal lib.rs so the DLL can be built
         rebuild_lib_rs(project_root, &std::collections::HashSet::new())?;
+        // Save hash even for empty scripts
+        write_script_hash(project_root, &current_hash)?;
         return Ok(());
     }
 
@@ -608,6 +678,9 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     } else {
         eprintln!("⚠️  Warning: Failed to serialize source map");
     }
+
+    // Note: Hash is written after successful compilation, not here
+    // This allows the compile step to check if recompilation is needed
 
     Ok(())
 }

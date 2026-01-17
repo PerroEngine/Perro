@@ -702,6 +702,7 @@ impl PupParser {
                 Some(op) => Stmt::AssignOp(name, op, typed_rhs),
             }),
             Expr::MemberAccess(obj, field) => {
+                // Handle both single-level and nested MemberAccess (e.g., s.transform.position.y)
                 let typed_lhs = self.typed_expr(Expr::MemberAccess(obj, field));
                 Ok(match op {
                     None => Stmt::MemberAssign(typed_lhs, typed_rhs),

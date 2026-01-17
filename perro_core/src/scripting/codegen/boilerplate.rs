@@ -240,6 +240,19 @@ pub fn implement_script_boilerplate_internal(
                             None
                         }},"
                     ).unwrap();
+                } else if accessor == "__NODE__" {
+                    // Node variables are stored as Uuid, extract from JSON
+                    // Nodes are serialized as UUID strings, so extract the string and parse it
+                    writeln!(
+                        set_entries,
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                            if let Some(vNodeType) = val.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()) {{
+                                script.{renamed_name} = vNodeType;
+                                return Some(());
+                            }}
+                            None
+                        }},"
+                    ).unwrap();
                 } else {
                     writeln!(
                         set_entries,

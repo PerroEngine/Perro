@@ -204,7 +204,14 @@ impl Variable {
 
             Type::Signal => ("as_u64", "".into()),
             Type::NodeType => ("as_str", ".parse::<NodeType>().unwrap()".into()), // NodeType is serialized as string
-            Type::Custom(type_name) => ("__CUSTOM__", type_name.clone()),
+            Type::Custom(type_name) => {
+                use crate::scripting::codegen::{is_node_type, rename_struct};
+                if is_node_type(type_name) {
+                    ("__CUSTOM__", type_name.clone())
+                } else {
+                    ("__CUSTOM__", rename_struct(type_name))
+                }
+            },
             Type::Void => panic!("Void invalid"),
             Type::Node(_node_type) => ("__NODE__", "NodeType".to_owned()),
             Type::DynNode => ("as_str", ".parse::<Uuid>().unwrap()".into()), // DynNode is Uuid, serialized as string

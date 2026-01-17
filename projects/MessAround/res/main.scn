@@ -135,7 +135,8 @@
         "base": {
           "type": "Node",
           "name": "PlayerCollision",
-          "parent": 4
+          "parent": 4,
+          "script_path": "res://col.pup"
         },
         "transform": {
           "position": [

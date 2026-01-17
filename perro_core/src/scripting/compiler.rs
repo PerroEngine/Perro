@@ -16,6 +16,7 @@ use crate::brk::build_brk;
 use crate::fur_ast::{FurElement, FurNode};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::node_registry::BaseNode;
+use crate::scripting::transpiler::{compute_script_hash, read_stored_hash, write_script_hash};
 use image::GenericImageView;
 use walkdir::WalkDir;
 
@@ -915,6 +916,27 @@ impl Compiler {
 
     /// Build and copy the output to the final location
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
+        // For Scripts target, check hash before compiling
+        if matches!(self.target, CompileTarget::Scripts) {
+            let current_hash = compute_script_hash(&self.project_root)?;
+            let stored_hash = read_stored_hash(&self.project_root)?;
+            
+            // If hash matches, skip compilation
+            if let Some(stored) = stored_hash {
+                if stored == current_hash {
+                    // Check if the DLL already exists
+                    let builds_dir = self.project_root.join(".perro/scripts/builds");
+                    let dll_name = script_dylib_name();
+                    let dll_path = builds_dir.join(dll_name);
+                    
+                    if dll_path.exists() {
+                        println!("✅ Script hash unchanged and DLL exists, skipping compilation");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        
         // Handle verbose project builds (remove Windows subsystem flag for console visibility)
         if matches!(self.target, CompileTarget::VerboseProject) {
             self.remove_windows_subsystem_flag()?;
@@ -1017,6 +1039,13 @@ impl Compiler {
 
             self.copy_script_dll(profile_str)
                 .map_err(|e| format!("Failed to copy DLL: {}", e))?;
+            
+            // Write script hash after successful compilation and DLL copy
+            // This ensures the hash is only written when everything is complete
+            let current_hash = compute_script_hash(&self.project_root)?;
+            if let Err(e) = write_script_hash(&self.project_root, &current_hash) {
+                eprintln!("⚠️  Warning: Failed to write script hash: {}", e);
+            }
         }
 
         Ok(())

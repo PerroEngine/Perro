@@ -1,0 +1,120 @@
+{
+	"editor.tokenColorCustomizations": {
+		"textMateRules": [
+			{
+				"scope": "meta.annotation.pup",
+				"settings": {
+					"foreground": "#FF8C00"
+				}
+			},
+			{
+				"scope": "variable.language.self.pup",
+				"settings": {
+					"foreground": "#FF8C00"
+				}
+			},
+			{
+				"scope": "meta.operator.script-access.pup",
+				"settings": {
+					"foreground": "#CC9966"
+				}
+			},
+			{
+				"scope": "keyword.operator.script-access.pup",
+				"settings": {
+					"foreground": "#CC9966"
+				}
+			},
+			{
+				"scope": "keyword.control.pup",
+				"settings": {
+					"foreground": "#FF4444"
+				}
+			},
+			{
+				"scope": "keyword.control.event.pup",
+				"settings": {
+					"foreground": "#FF4444"
+				}
+			},
+			{
+				"scope": "keyword.declaration.struct.pup",
+				"settings": {
+					"foreground": "#FF4444"
+				}
+			},
+			{
+				"scope": "keyword.declaration.variable.pup",
+				"settings": {
+					"foreground": "#FF4444"
+				}
+			},
+			{
+				"scope": "keyword.other.pup",
+				"settings": {
+					"foreground": "#FF4444"
+				}
+			},
+			{
+				"scope": "entity.name.function.pup",
+				"settings": {
+					"foreground": "#4A9EFF"
+				}
+			},
+			{
+				"scope": "entity.name.function.call.pup",
+				"settings": {
+					"foreground": "#4A9EFF"
+				}
+			},
+			{
+				"scope": "variable.parameter.pup",
+				"settings": {
+					"foreground": "#FFFFFF"
+				}
+			},
+			{
+				"scope": "string.quoted.double.pup",
+				"settings": {
+					"foreground": "#D4AF37"
+				}
+			},
+			{
+				"scope": "variable.other.pup",
+				"settings": {
+					"foreground": "#B0B0B0"
+				}
+			},
+			{
+				"scope": "variable.other.field.pup",
+				"settings": {
+					"foreground": "#808080"
+				}
+			},
+			{
+				"scope": "entity.name.type.class.pup",
+				"settings": {
+					"foreground": "#90EE90"
+				}
+			},
+			{
+				"scope": "entity.name.type.struct.pup",
+				"settings": {
+					"foreground": "#90EE90"
+				}
+			},
+			{
+				"scope": "entity.name.type.pup",
+				"settings": {
+					"foreground": "#90EE90"
+				}
+			},
+			{
+				"scope": "storage.type.builtin.pup",
+				"settings": {
+					"foreground": "#90EE90"
+				}
+			}
+		]
+	}
+}

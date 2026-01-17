@@ -1,0 +1,13 @@
+@script Col extends CollisionShape2D
+
+var s: Sprite2D
+
+fn init() {
+    Console.print("hello there col")
+    s = self.get_parent() as Sprite2D
+}
+
+fn update() {
+    s.transform.position.y += 20 * Time.get_delta()
+    s.transform.position.x
+}

@@ -7,40 +7,42 @@ id = "player_pup"
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 87
+g_end = 112
 
 [[scripts.player_pup.lines]]
 s_start = 31
 s_end = 31
-g_start = 87
-g_end = 92
+g_start = 112
+g_end = 117
 
 [[scripts.player_pup.lines]]
 s_start = 71
 s_end = 71
-g_start = 92
-g_end = 104
+g_start = 117
+g_end = 129
 
 [[scripts.player_pup.lines]]
 s_start = 121
 s_end = 121
-g_start = 104
-g_end = 131
+g_start = 129
+g_end = 156
 
 [[scripts.player_pup.lines]]
 s_start = 181
 s_end = 181
-g_start = 131
-g_end = 143
+g_start = 156
+g_end = 168
 
 [scripts.player_pup.names]
 tex_id = "tex"
 __t_Deadzone_AreaExited = "Deadzone_AreaExited"
-__t_time = "time"
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-__t_test_b = "test_b"
-__t_test = "test"
+__t_Cabbage = "Cabbage"
 __t_test_var = "test_var"
+__t_time = "time"
+__t_cab = "cab"
+__t_test = "test"
+__t_test_b = "test_b"
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
 
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
@@ -66,9 +68,42 @@ g_start = 83
 g_end = 90
 
 [scripts.test_engine_structs_pup.names]
-__t_test_nested_access = "test_nested_access"
 __t_test_variable_access = "test_variable_access"
+__t_test_nested_access = "test_nested_access"
 __t_test_constructors = "test_constructors"
+
+[scripts.p2_pup]
+src = "res://p2.pup"
+lang = "pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 69
+
+[scripts.p2_pup.names]
+
+[scripts.col_pup]
+src = "res://col.pup"
+lang = "pup"
+id = "col_pup"
+
+[[scripts.col_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 72
+
+[[scripts.col_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 72
+g_end = 78
+
+[scripts.col_pup.names]
+s_id = "s"
 
 [scripts.camera_pup]
 src = "res://camera.pup"
@@ -83,19 +118,6 @@ g_end = 88
 
 [scripts.camera_pup.names]
 __t_speed = "speed"
-
-[scripts.p2_pup]
-src = "res://p2.pup"
-lang = "pup"
-id = "p2_pup"
-
-[[scripts.p2_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 69
-
-[scripts.p2_pup.names]
 
 [scripts.root_pup]
 src = "res://root.pup"

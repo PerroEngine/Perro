@@ -785,6 +785,13 @@ impl Stmt {
                 if let Some((node_id, node_type, field_path, closure_var)) = 
                     extract_node_member_info(&lhs_expr.expr, script, current_func) 
                 {
+                    // Clean closure_var (remove self. prefix) and ensure node_id has self. prefix
+                    let clean_closure_var = closure_var.strip_prefix("self.").unwrap_or(&closure_var);
+                    let node_id_with_self = if !node_id.starts_with("self.") && !node_id.starts_with("api.") {
+                        format!("self.{}", node_id)
+                    } else {
+                        node_id.clone()
+                    };
                     // Check if this is a DynNode (special marker)
                     if node_type == "__DYN_NODE__" {
                         // Build field path from the expression
@@ -995,7 +1002,7 @@ impl Stmt {
                                         let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                         format!(
                                             "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                                            temp_decl, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                            temp_decl, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, final_rhs
                                         )
                                     } else {
                                         let mut match_arms = Vec::new();
@@ -1008,17 +1015,17 @@ impl Stmt {
                                             let resolved_field_path = resolved_path.join(".");
                                             match_arms.push(format!(
                                                 "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }}),",
-                                                node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                                node_type_name, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, final_rhs
                                             ));
                                         }
                                         
                                         let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                         format!(
-                                            "{}        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
-                                            temp_decl, node_id,
+                                            "{}        match api.get_node_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_node_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
+                                            temp_decl, node_id_with_self,
                                             match_arms.join("\n"),
-                                            node_id,
-                                            node_id,
+                                            node_id_with_self,
+                                            node_id_with_self,
                                             field_path
                                         )
                                     }
@@ -1036,7 +1043,7 @@ impl Stmt {
                                     let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                                     format!(
                                         "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                                        temp_decl, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                        temp_decl, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, final_rhs
                                     )
                                 } else {
                                     let mut match_arms = Vec::new();
@@ -1049,7 +1056,7 @@ impl Stmt {
                                         let resolved_field_path = resolved_path.join(".");
                                         match_arms.push(format!(
                                             "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }}),",
-                                            node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, final_rhs
+                                            node_type_name, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, final_rhs
                                         ));
                                     }
                                     
@@ -1262,7 +1269,7 @@ impl Stmt {
                         let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                         format!(
                             "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                            temp_decl, node_id, closure_var, node_type, closure_var, resolved_field_path, final_rhs
+                            temp_decl, node_id_with_self, clean_closure_var, node_type, clean_closure_var, resolved_field_path, final_rhs
                         )
                     }
                 } else {
@@ -1307,6 +1314,13 @@ impl Stmt {
                 if let Some((node_id, node_type, field_path, closure_var)) = 
                     extract_node_member_info(&lhs_expr.expr, script, current_func) 
                 {
+                    // Clean closure_var (remove self. prefix) and ensure node_id has self. prefix
+                    let clean_closure_var = closure_var.strip_prefix("self.").unwrap_or(&closure_var);
+                    let node_id_with_self = if !node_id.starts_with("self.") && !node_id.starts_with("api.") {
+                        format!("self.{}", node_id)
+                    } else {
+                        node_id.clone()
+                    };
                     // Check if this is a DynNode (special marker)
                     if node_type == "__DYN_NODE__" {
                         // Build field path from the expression
@@ -1344,7 +1358,7 @@ impl Stmt {
                                     let resolved_field_path = resolved_path.join(".");
                                     return format!(
                                         "        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
-                                        node_id, closure_var, node_type_name, closure_var, resolved_field_path, rhs_code
+                                        node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, rhs_code
                                     );
                                 } else {
                                     let mut match_arms = Vec::new();
@@ -1357,15 +1371,15 @@ impl Stmt {
                                         let resolved_field_path = resolved_path.join(".");
                                         match_arms.push(format!(
                                             "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }}),",
-                                            node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, rhs_code
+                                            node_type_name, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, rhs_code
                                         ));
                                     }
                                     return format!(
                                         "        match api.get_node_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_node_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
-                                        node_id,
+                                        node_id_with_self,
                                         match_arms.join("\n"),
-                                        node_id,
-                                        node_id,
+                                        node_id_with_self,
+                                        node_id_with_self,
                                         field_path
                                     );
                                 }
@@ -1396,7 +1410,7 @@ impl Stmt {
                                 let resolved_field_path = resolved_path.join(".");
                                 format!(
                                     "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
-                                    node_id, closure_var, node_type_name, closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
+                                    node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
                                 )
                             } else {
                                 let mut match_arms = Vec::new();
@@ -1409,16 +1423,16 @@ impl Stmt {
                                     let resolved_field_path = resolved_path.join(".");
                                     match_arms.push(format!(
                                         "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }}),",
-                                        node_type_name, node_id, closure_var, node_type_name, closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
+                                        node_type_name, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
                                     ));
                                 }
                                 
                                 format!(
-                                    "        match api.get_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
-                                    node_id,
+                                    "        match api.get_node_type({}) {{\n{}\n            _ => {{\n                let node_name = api.read_scene_node({}, |n| n.get_name().to_string());\n                let node_type = format!(\"{{:?}}\", api.get_node_type({}));\n                panic!(\"{{}} of type {{}} doesn't have field {{}}\", node_name, node_type, \"{}\");\n            }}\n        }}\n",
+                                    node_id_with_self,
                                     match_arms.join("\n"),
-                                    node_id,
-                                    node_id,
+                                    node_id_with_self,
+                                    node_id_with_self,
                                     field_path
                                 )
                             }
@@ -1426,11 +1440,142 @@ impl Stmt {
                     } else {
                         // This is a node member assignment - use mutate_node
                         let lhs_type = script.infer_expr_type(&lhs_expr.expr, current_func);
+                        let rhs_type = script.infer_expr_type(&rhs_expr.expr, current_func);
                         
-                        let rhs_code =
-                            rhs_expr
-                                .expr
-                                .to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
+                        // Extract ALL API calls and read_node calls from RHS expression to avoid borrow checker issues
+                        // API calls inside mutate_node closures need to be extracted before the closure
+                        let mut extracted_api_calls = Vec::new();
+                        let mut temp_var_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
+                        
+                        // Generate a unique ID for this code generation session using UUID
+                        let session_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                        
+                        fn extract_api_calls_from_expr(expr: &Expr, script: &Script, current_func: Option<&Function>, 
+                                                       extracted: &mut Vec<(String, String)>,
+                                                       temp_var_types: &mut std::collections::HashMap<String, Type>,
+                                                       needs_self: bool, expected_type: Option<&Type>,
+                                                       session_id: &str) -> Expr {
+                            match expr {
+                                // Extract API calls (like Math.random_range, Texture.load, etc.)
+                                Expr::ApiCall(api_module, api_args) => {
+                                    // First, recursively extract nested API calls from arguments
+                                    let new_args: Vec<Expr> = api_args.iter()
+                                        .map(|arg| extract_api_calls_from_expr(arg, script, current_func, extracted, temp_var_types, needs_self, None, session_id))
+                                        .collect();
+                                    
+                                    // Generate a unique UUID for this temp variable (guaranteed no collisions)
+                                    let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                    
+                                    // Extract ALL API calls, not just ones returning Uuid
+                                    // This prevents borrow checker issues when API calls are inside closures
+                                    let temp_var = format!("__temp_api_{}", unique_id);
+                                    
+                                    // Generate the API call code with extracted arguments
+                                    let mut api_call_str = api_module.to_rust(&new_args, script, needs_self, current_func);
+                                    
+                                    // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
+                                    api_call_str = api_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
+                                    
+                                    // Infer the return type for the temp variable
+                                    let inferred_type = api_module.return_type();
+                                    let type_annotation = inferred_type
+                                        .as_ref()
+                                        .map(|t| format!(": {}", t.to_rust_type()))
+                                        .unwrap_or_default();
+                                    
+                                    // Store the type for this temp variable
+                                    if let Some(ty) = inferred_type {
+                                        temp_var_types.insert(temp_var.clone(), ty);
+                                    }
+                                    
+                                    extracted.push((format!("let {}{} = {};", temp_var, type_annotation, api_call_str), temp_var.clone()));
+                                    
+                                    // Return an identifier expression for the temp variable
+                                    Expr::Ident(temp_var)
+                                }
+                                Expr::MemberAccess(base, field) => {
+                                    // First, recursively extract API calls from base
+                                    let new_base = extract_api_calls_from_expr(base, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    
+                                    // Check if this member access would generate a read_node call
+                                    let test_expr = Expr::MemberAccess(Box::new(new_base.clone()), field.clone());
+                                    if let Some((_node_id, _, _, _)) = extract_node_member_info(&test_expr, script, current_func) {
+                                        // This is a node member access - extract it to a temp variable
+                                        // Generate a unique UUID for this temp variable (very low collision chance)
+                                        let unique_id = uuid::Uuid::new_v4().simple().to_string().replace('-', "").chars().take(12).collect::<String>(); // First 12 hex chars (48 bits) from UUID without hyphens
+                                        let temp_var = format!("__temp_read_{}", unique_id);
+                                        
+                                        // Generate the read_node call
+                                        let read_code = test_expr.to_rust(needs_self, script, expected_type, current_func, None);
+                                        
+                                        // Infer the type for the temp variable
+                                        let inferred_type = script.infer_expr_type(&test_expr, current_func);
+                                        let type_annotation = inferred_type
+                                            .as_ref()
+                                            .map(|t| format!(": {}", t.to_rust_type()))
+                                            .unwrap_or_default();
+                                        
+                                        // Store the type for this temp variable so we can check if it needs cloning
+                                        if let Some(ty) = inferred_type {
+                                            temp_var_types.insert(temp_var.clone(), ty);
+                                        }
+                                        
+                                        extracted.push((format!("let {}{} = {};", temp_var, type_annotation, read_code), temp_var.clone()));
+                                        
+                                        // Return an identifier expression for the temp variable
+                                        Expr::Ident(temp_var)
+                                    } else {
+                                        // Not a node member access, return the member access with processed base
+                                        Expr::MemberAccess(Box::new(new_base), field.clone())
+                                    }
+                                }
+                                Expr::BinaryOp(left, op, right) => {
+                                    let new_left = extract_api_calls_from_expr(left, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    let new_right = extract_api_calls_from_expr(right, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    Expr::BinaryOp(Box::new(new_left), op.clone(), Box::new(new_right))
+                                }
+                                Expr::Call(target, args) => {
+                                    let new_target = extract_api_calls_from_expr(target, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    let new_args: Vec<Expr> = args.iter()
+                                        .map(|arg| extract_api_calls_from_expr(arg, script, current_func, extracted, temp_var_types, needs_self, None, session_id))
+                                        .collect();
+                                    Expr::Call(Box::new(new_target), new_args)
+                                }
+                                Expr::Cast(inner, target_type) => {
+                                    let new_inner = extract_api_calls_from_expr(inner, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    Expr::Cast(Box::new(new_inner), target_type.clone())
+                                }
+                                Expr::Index(array, index) => {
+                                    let new_array = extract_api_calls_from_expr(array, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    let new_index = extract_api_calls_from_expr(index, script, current_func, extracted, temp_var_types, needs_self, None, session_id);
+                                    Expr::Index(Box::new(new_array), Box::new(new_index))
+                                }
+                                _ => expr.clone(),
+                            }
+                        }
+                        
+                        // Extract API calls and read_node calls from RHS expression
+                        let modified_rhs_expr = extract_api_calls_from_expr(
+                            &rhs_expr.expr, 
+                            script, 
+                            current_func, 
+                            &mut extracted_api_calls, 
+                            &mut temp_var_types,
+                            needs_self,
+                            lhs_type.as_ref(),
+                            &session_id,
+                        );
+                        
+                        // Combine all temp declarations from extracted API calls
+                        let combined_temp_decl = if !extracted_api_calls.is_empty() {
+                            Some(extracted_api_calls.iter().map(|(decl, _): &(String, String)| decl.clone()).collect::<Vec<_>>().join(" "))
+                        } else {
+                            None
+                        };
+                        
+                        // Generate code for the (possibly modified) RHS expression
+                        // If API calls were extracted, the modified expression uses temp variables
+                        let rhs_code = modified_rhs_expr.to_rust(needs_self, script, lhs_type.as_ref(), current_func, rhs_expr.span.as_ref());
                         
                         // Resolve field names in path (e.g., "texture" -> "texture_id")
                         let resolved_field_path = if let Some(node_type_enum) = string_to_node_type(&node_type) {
@@ -1444,15 +1589,15 @@ impl Stmt {
                         };
                         
                         if matches!(op, Op::Add) && lhs_type == Some(Type::String) {
+                            let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                             return format!(
-                                "        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
-                                node_id, closure_var, node_type, closure_var, resolved_field_path, rhs_code
+                                "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{}.push_str({}.as_str()); }});\n",
+                                temp_decl, node_id_with_self, clean_closure_var, node_type, clean_closure_var, resolved_field_path, rhs_code
                             );
                         }
                         
                         let final_rhs = if let Some(lhs_ty) = &lhs_type {
-                            let rhs_ty = script.infer_expr_type(&rhs_expr.expr, current_func);
-                            if let Some(rhs_ty) = &rhs_ty {
+                            if let Some(rhs_ty) = &rhs_type {
                                 if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
                                     script.generate_implicit_cast_for_expr(&rhs_code, rhs_ty, lhs_ty)
                                 } else {
@@ -1465,9 +1610,10 @@ impl Stmt {
                             rhs_code
                         };
                         
+                        let temp_decl = combined_temp_decl.as_ref().map(|d| format!("        {}\n", d)).unwrap_or_default();
                         format!(
-                            "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
-                            node_id, closure_var, node_type, closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
+                            "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
+                            temp_decl, node_id_with_self, clean_closure_var, node_type, clean_closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
                         )
                     }
                 } else {

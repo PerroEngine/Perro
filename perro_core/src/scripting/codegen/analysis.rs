@@ -268,7 +268,7 @@ pub(crate) fn extract_node_member_info(
         script: &Script,
         current_func: Option<&Function>,
         field_path: &mut Vec<String>,
-    ) -> Option<(String, String, String)> {
+    ) -> Option<(String, String, String, String)> {
         match expr {
             Expr::MemberAccess(base, field) => {
                 field_path.push(field.clone());
@@ -277,7 +277,7 @@ pub(crate) fn extract_node_member_info(
             Expr::SelfAccess => {
                 // self.transform.position.x
                 let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                Some(("self.id".to_string(), script.node_type.clone(), path.join(".")))
+                Some(("self.id".to_string(), script.node_type.clone(), path.join("."), "self_node".to_string()))
             }
             Expr::Ident(var_name) => {
                 // Helper to find variable in nested blocks (for loops, if statements, etc.)
@@ -333,6 +333,11 @@ pub(crate) fn extract_node_member_info(
                     let var_type_ref = var_type_ref.or_else(|| {
                         find_variable_in_body(lookup_name, &func.body)
                             .and_then(|v| v.typ.as_ref())
+                    });
+                    
+                    // Strategy 3: Fall back to script-level variables if not found in function
+                    let var_type_ref = var_type_ref.or_else(|| {
+                        script.get_variable_type(lookup_name)
                     });
                     
                     // Always try to infer from value expression, even if we have a type
@@ -405,6 +410,10 @@ pub(crate) fn extract_node_member_info(
                                         None
                                     }
                                 })
+                        })
+                        // Fall back to script-level variable type if not found in function
+                        .or_else(|| {
+                            script.get_variable_type(lookup_name).cloned()
                         });
                     
                     (var_type_ref, inferred)
@@ -424,8 +433,9 @@ pub(crate) fn extract_node_member_info(
                             _ => return None,
                         };
                         let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                        let _closure_var = format!("t_id_{}", lookup_name);
-                        Some((renamed, node_type_name, path.join(".")))
+                        // Use the original variable name as the closure parameter (like mutate_node does)
+                        let closure_var = lookup_name.to_string();
+                        Some((renamed, node_type_name, path.join("."), closure_var))
                     } else {
                         None
                     }
@@ -439,7 +449,7 @@ pub(crate) fn extract_node_member_info(
                     Type::Node(node_type_enum) => {
                         // Cast to a specific node type - extract node_id from inner expression
                         // The inner might be GetParent which returns None, so we need to handle it specially
-                        let node_id = match inner.as_ref() {
+                        let (node_id, closure_var) = match inner.as_ref() {
                             Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), args) => {
                                 // Extract the node ID argument
                                 let arg_expr = if let Some(Expr::SelfAccess) = args.get(0) {
@@ -470,12 +480,12 @@ pub(crate) fn extract_node_member_info(
                                 } else {
                                     "self.id".to_string()
                                 };
-                                format!("api.get_parent({})", arg_expr)
+                                (format!("api.get_parent({})", arg_expr), "parent_node".to_string())
                             }
                             _ => {
                                 // Try to extract from inner recursively
-                                if let Some((node_id, _, _)) = extract_recursive(inner, script, current_func, field_path) {
-                                    node_id
+                                if let Some((node_id, _, _, closure_var)) = extract_recursive(inner, script, current_func, field_path) {
+                                    (node_id, closure_var)
                                 } else {
                                     return None;
                                 }
@@ -483,11 +493,11 @@ pub(crate) fn extract_node_member_info(
                         };
                         let node_type_name = format!("{:?}", node_type_enum);
                         let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                        Some((node_id, node_type_name, path.join(".")))
+                        Some((node_id, node_type_name, path.join("."), closure_var))
                     }
                     Type::Custom(type_name) if is_node_type(&type_name) => {
                         // Cast to a node type by name - extract node_id from inner expression
-                        let node_id = match inner.as_ref() {
+                        let (node_id, closure_var) = match inner.as_ref() {
                             Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), args) => {
                                 // Extract the node ID argument
                                 let arg_expr = if let Some(Expr::SelfAccess) = args.get(0) {
@@ -518,19 +528,19 @@ pub(crate) fn extract_node_member_info(
                                 } else {
                                     "self.id".to_string()
                                 };
-                                format!("api.get_parent({})", arg_expr)
+                                (format!("api.get_parent({})", arg_expr), "parent_node".to_string())
                             }
                             _ => {
                                 // Try to extract from inner recursively
-                                if let Some((node_id, _, _)) = extract_recursive(inner, script, current_func, field_path) {
-                                    node_id
+                                if let Some((node_id, _, _, closure_var)) = extract_recursive(inner, script, current_func, field_path) {
+                                    (node_id, closure_var)
                                 } else {
                                     return None;
                                 }
                             }
                         };
                         let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                        Some((node_id, type_name.clone(), path.join(".")))
+                        Some((node_id, type_name.clone(), path.join("."), closure_var))
                     }
                     _ => {
                         // Not a node type cast - continue extracting from inner
@@ -588,7 +598,7 @@ pub(crate) fn extract_node_member_info(
     }
     
     let mut field_path = Vec::new();
-    if let Some((node_id, node_type, path)) = extract_recursive(expr, script, current_func, &mut field_path) {
+    if let Some((node_id, node_type, path, closure_var)) = extract_recursive(expr, script, current_func, &mut field_path) {
         // Check if the first field is a script member (for self access)
         if let Expr::MemberAccess(base, field) = expr {
             if matches!(base.as_ref(), Expr::SelfAccess) {
@@ -599,18 +609,6 @@ pub(crate) fn extract_node_member_info(
                 }
             }
         }
-        
-        let closure_var = if node_id == "self.id" {
-            "self_node".to_string()
-        } else if node_id.starts_with("api.get_parent(") {
-            // For api.get_parent(...), use "parent_node" as the closure variable name
-            "parent_node".to_string()
-        } else {
-            // For node variables, node_id is like "bob_id", closure var should be "bob"
-            // Extract original variable name by removing "_id" suffix
-            let var_name = node_id.strip_suffix("_id").unwrap_or(&node_id);
-            var_name.to_string()
-        };
         
         Some((node_id, node_type, path, closure_var))
     } else {

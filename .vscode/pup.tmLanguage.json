@@ -1,0 +1,397 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Pup",
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#script-name"
+		},
+		{
+			"include": "#event-handler"
+		},
+		{
+			"include": "#at-symbol"
+		},
+		{
+			"include": "#annotations"
+		},
+		{
+			"include": "#struct-definition"
+		},
+		{
+			"include": "#function-definition"
+		},
+		{
+			"include": "#function-parameters"
+		},
+		{
+			"include": "#function-call"
+		},
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#operators"
+		},
+		{
+			"include": "#punctuation"
+		},
+		{
+			"include": "#builtins"
+		},
+		{
+			"include": "#constants"
+		},
+		{
+			"include": "#fields"
+		},
+		{
+			"include": "#variables"
+		}
+	],
+	"repository": {
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.double-slash.pup",
+					"match": "//.*$"
+				},
+				{
+					"name": "comment.line.number-sign.pup",
+					"match": "#.*$"
+				}
+			]
+		},
+		"event-handler": {
+			"patterns": [
+				{
+					"begin": "\\b(on)\\s+",
+					"beginCaptures": {
+						"1": {
+							"name": "keyword.control.event.pup"
+						}
+					},
+					"end": "(?=\\s*\\()",
+					"patterns": [
+						{
+							"name": "entity.name.function.call.pup",
+							"match": "[a-zA-Z_][a-zA-Z0-9_]*"
+						}
+					]
+				}
+			]
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.event.pup",
+					"match": "\\bon\\b"
+				},
+				{
+					"name": "keyword.control.pup",
+					"match": "\\b(if|else|for|in|pass)\\b"
+				},
+				{
+					"name": "keyword.declaration.variable.pup",
+					"match": "\\bvar\\b"
+				},
+				{
+					"name": "keyword.other.pup",
+					"match": "\\b(fn|extends|import|new|as|expose|super)\\b"
+				},
+				{
+					"name": "constant.numeric.boolean.pup",
+					"match": "\\b(true|false)\\b"
+				},
+				{
+					"name": "variable.language.self.pup",
+					"match": "\\bself\\b"
+				}
+			]
+		},
+		"at-symbol": {
+			"patterns": [
+				{
+					"name": "variable.language.self.pup",
+					"match": "@[a-zA-Z_][a-zA-Z0-9_.]*"
+				}
+			]
+		},
+		"annotations": {
+			"patterns": [
+				{
+					"name": "meta.annotation.pup",
+					"match": "@(?!script\\b)[a-zA-Z_][a-zA-Z0-9_]*"
+				}
+			]
+		},
+		"script-name": {
+			"patterns": [
+				{
+					"match": "(@script)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+					"captures": {
+						"1": {
+							"name": "meta.annotation.pup"
+						},
+						"2": {
+							"name": "entity.name.script.pup"
+						}
+					}
+				},
+				{
+					"match": "(extends)\\s+([A-Z][a-zA-Z0-9_]*)",
+					"captures": {
+						"1": {
+							"name": "keyword.other.pup"
+						},
+						"2": {
+							"name": "entity.name.type.class.pup"
+						}
+					}
+				}
+			]
+		},
+		"function-definition": {
+			"patterns": [
+				{
+					"match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+					"captures": {
+						"1": {
+							"name": "keyword.other.pup"
+						},
+						"2": {
+							"name": "entity.name.function.pup"
+						}
+					}
+				}
+			]
+		},
+		"function-parameters": {
+			"patterns": [
+				{
+					"begin": "(?<=\\b(fn|on)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*)\\(",
+					"end": "\\)",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.group.begin.pup"
+						}
+					},
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.group.end.pup"
+						}
+					},
+					"patterns": [
+						{
+							"match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*:",
+							"captures": {
+								"1": {
+									"name": "variable.parameter.pup"
+								}
+							}
+						},
+						{
+							"match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*[,)])",
+							"captures": {
+								"1": {
+									"name": "variable.parameter.pup"
+								}
+							}
+						},
+						{
+							"include": "#types"
+						},
+						{
+							"include": "#punctuation"
+						}
+					]
+				}
+			]
+		},
+		"struct-definition": {
+			"patterns": [
+				{
+					"match": "\\b(struct)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+					"captures": {
+						"1": {
+							"name": "keyword.declaration.struct.pup"
+						},
+						"2": {
+							"name": "entity.name.type.struct.pup"
+						}
+					}
+				}
+			]
+		},
+		"function-call": {
+			"patterns": [
+				{
+					"match": "\\[([a-zA-Z_][a-zA-Z0-9_]*)\\]\\s*(?=\\()",
+					"captures": {
+						"0": {
+							"name": "entity.name.function.call.pup"
+						},
+						"1": {
+							"name": "entity.name.function.call.pup"
+						}
+					}
+				},
+				{
+					"name": "entity.name.function.call.pup",
+					"match": "[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()"
+				}
+			]
+		},
+		"fields": {
+			"patterns": [
+				{
+					"name": "variable.other.field.pup",
+					"match": "(?<=\\.)[a-z_][a-zA-Z0-9_]*"
+				}
+			]
+		},
+		"variables": {
+			"patterns": [
+				{
+					"name": "variable.other.pup",
+					"match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.other.allcaps.pup",
+					"match": "\\b[A-Z][A-Z0-9_]*\\b"
+				}
+			]
+		},
+		"types": {
+			"patterns": [
+				{
+					"name": "storage.type.builtin.pup",
+					"match": "\\b(int|float|bool|string|Texture|Vector2)\\b"
+				},
+				{
+					"name": "entity.name.type.class.pup",
+					"match": "\\b(Node|Node2D|Sprite2D|Area2D|CollisionShape2D|Shape2D|Camera2D|Node3D|MeshInstance3D|Camera3D|DirectionalLight3D|OmniLight3D|SpotLight3D|UINode)\\b"
+				},
+				{
+					"name": "entity.name.type.pup",
+					"match": "\\b[A-Z][a-z][a-zA-Z0-9_]*\\b"
+				}
+			]
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.pup",
+					"begin": "\"",
+					"end": "\"",
+					"patterns": [
+						{
+							"name": "constant.character.escape.pup",
+							"match": "\\\\."
+						}
+					]
+				}
+			]
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric.float.pup",
+					"match": "\\b\\d+\\.\\d+\\b"
+				},
+				{
+					"name": "constant.numeric.integer.pup",
+					"match": "\\b\\d+\\b"
+				}
+			]
+		},
+		"operators": {
+			"patterns": [
+				{
+					"name": "meta.operator.script-access.pup",
+					"match": "::"
+				},
+				{
+					"name": "keyword.operator.arithmetic.pup",
+					"match": "(\\+\\+|--|\\+|\\-|\\*|/|%|\\*\\*|\\+\\=|\\-\\=|\\*\\=|/\\=)"
+				},
+				{
+					"name": "keyword.operator.comparison.pup",
+					"match": "(==|!=|<=|>=|<|>)"
+				},
+				{
+					"name": "keyword.operator.assignment.pup",
+					"match": "="
+				},
+				{
+					"name": "keyword.operator.access.pup",
+					"match": "\\."
+				}
+			]
+		},
+		"punctuation": {
+			"patterns": [
+				{
+					"name": "punctuation.definition.group.begin.pup",
+					"match": "\\("
+				},
+				{
+					"name": "punctuation.definition.group.end.pup",
+					"match": "\\)"
+				},
+				{
+					"name": "punctuation.definition.block.begin.pup",
+					"match": "\\{"
+				},
+				{
+					"name": "punctuation.definition.block.end.pup",
+					"match": "\\}"
+				},
+				{
+					"name": "punctuation.definition.array.begin.pup",
+					"match": "\\["
+				},
+				{
+					"name": "punctuation.definition.array.end.pup",
+					"match": "\\]"
+				},
+				{
+					"name": "punctuation.separator.pup",
+					"match": "(,|;|:)"
+				}
+			]
+		},
+		"builtins": {
+			"patterns": [
+				{
+					"name": "support.class.api.pup",
+					"match": "\\b(Time|Console|Texture|JSON|OS|Script|Signal|Input|Math|Array|Map)\\b"
+				},
+				{
+					"name": "support.function.builtin.pup",
+					"match": "\\b(Time\\.get_delta|Time\\.sleep_msec|Time\\.get_unix_time_msec|Texture\\.load|Console\\.(print|log|info|warn|error)|JSON\\.(parse|stringify)|OS\\.(get_env|get_platform_name)|Script\\.new|Signal\\.(new|connect|emit|emit_deferred)|Input\\.get_action|Math\\.(sin|cos|tan|sqrt|abs|min|max)|Array\\.(new|push|pop|insert|remove|len)|Map\\.(new|insert|remove|get|contains|len|clear))\\b"
+				},
+				{
+					"name": "support.variable.builtin.pup",
+					"match": "\\bsuper\\b"
+				}
+			]
+		}
+	},
+	"scopeName": "source.pup"
+}

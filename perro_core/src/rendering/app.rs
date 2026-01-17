@@ -164,6 +164,10 @@ pub struct App<P: ScriptProvider> {
     fps_frames: u32,
     fps_measurement_start: std::time::Instant,
 
+    // UPS tracking
+    ups_updates: u32,
+    ups_measurement_start: std::time::Instant,
+
     // Frame pacing (limits rendering to target FPS)
     target_fps: f32,
     frame_debt: f32,
@@ -213,6 +217,10 @@ impl<P: ScriptProvider> App<P> {
             // FPS tracking
             fps_frames: 0,
             fps_measurement_start: now,
+
+            // UPS tracking
+            ups_updates: 0,
+            ups_measurement_start: now,
 
             // Frame pacing (capped)
             target_fps,
@@ -333,6 +341,17 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
+    fn update_ups_measurement(&mut self, now: std::time::Instant) {
+        let measurement_interval = (now - self.ups_measurement_start).as_secs_f32();
+        if measurement_interval >= FPS_MEASUREMENT_INTERVAL {
+            let ups = self.ups_updates as f32 / measurement_interval;
+            println!("UPS: {:.1}", ups);
+
+            self.ups_updates = 0;
+            self.ups_measurement_start = now;
+        }
+    }
+
     fn process_game(&mut self) {
         #[cfg(feature = "profiling")]
         let _span = tracing::span!(tracing::Level::INFO, "process_game").entered();
@@ -369,6 +388,14 @@ impl<P: ScriptProvider> App<P> {
                 let _span = tracing::span!(tracing::Level::INFO, "scene_update").entered();
                 // OPTIMIZED: Pass now to avoid duplicate Instant::now() call
                 scene.update(&mut gfx, now);
+            }
+            
+            // Track UPS (updates happen every frame, uncapped)
+            self.ups_updates += 1;
+            {
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "update_ups_measurement").entered();
+                self.update_ups_measurement(now);
             }
         }
 
@@ -696,6 +723,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         let now = std::time::Instant::now();
         self.start_time = now;
         self.fps_measurement_start = now;
+        self.ups_measurement_start = now;
 
         self.state = State { graphics: Some(graphics) };
     }
