@@ -183,6 +183,19 @@ pub trait ToSceneNode {
     fn to_scene_node(self) -> SceneNode;
 }
 
+/// Sealed trait for types that can be extracted from SceneNode via match dispatch
+/// This allows compile-time optimization of type extraction
+/// Implemented automatically for all node types via the define_nodes! macro
+pub trait NodeTypeDispatch: 'static {
+    /// Extract a reference to this type from a SceneNode if it matches
+    /// Returns None if the SceneNode is not of this type
+    fn extract_ref(node: &SceneNode) -> Option<&Self>;
+    
+    /// Extract a mutable reference to this type from a SceneNode if it matches
+    /// Returns None if the SceneNode is not of this type
+    fn extract_mut(node: &mut SceneNode) -> Option<&mut Self>;
+}
+
 /// Common macro implementing `BaseNode` for each concrete node type.
 /// This version supports `Option<Vec<Uid32>>` for `children`.
 #[macro_export]
@@ -325,6 +338,25 @@ macro_rules! impl_scene_node {
                         stringify!($ty),
                         self
                     ),
+                }
+            }
+        }
+
+        // Implement NodeTypeDispatch for optimized type extraction
+        impl crate::nodes::node_registry::NodeTypeDispatch for $ty {
+            #[inline(always)]
+            fn extract_ref(node: &crate::nodes::node_registry::SceneNode) -> Option<&Self> {
+                match node {
+                    crate::nodes::node_registry::SceneNode::$variant(inner) => Some(inner),
+                    _ => None,
+                }
+            }
+
+            #[inline(always)]
+            fn extract_mut(node: &mut crate::nodes::node_registry::SceneNode) -> Option<&mut Self> {
+                match node {
+                    crate::nodes::node_registry::SceneNode::$variant(inner) => Some(inner),
+                    _ => None,
                 }
             }
         }
@@ -580,6 +612,38 @@ macro_rules! define_nodes {
             /// Uses Deref to access transform through Node2D
             pub fn get_node2d_transform(&self) -> Option<crate::structs2d::Transform2D> {
                 self.as_node2d().map(|node2d| node2d.transform)
+            }
+
+            /// Optimized typed access using compile-time match dispatch instead of Any downcast
+            /// This uses a match statement on the enum variant, which the compiler can optimize to a jump table
+            /// Returns Some(result) if the node matches type T, None otherwise
+            /// 
+            /// This is faster than `Any::downcast_ref` because:
+            /// 1. The match on enum variant can be optimized to a jump table
+            /// 2. We only check the specific variant that matches, not all possible types
+            /// 3. The compiler can inline and optimize the entire call chain
+            /// 4. No trait dispatch overhead - match is generated directly
+            #[inline(always)]
+            pub fn with_typed_ref<T: NodeTypeDispatch, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+                // Use trait method but with always_inline - compiler will optimize away the call
+                // The trait method itself is #[inline] so this should inline completely
+                T::extract_ref(self).map(f)
+            }
+
+            /// Optimized typed mutable access using compile-time match dispatch instead of Any downcast
+            /// This uses a match statement on the enum variant, which the compiler can optimize to a jump table
+            /// Returns Some(result) if the node matches type T, None otherwise
+            /// 
+            /// This is faster than `Any::downcast_mut` because:
+            /// 1. The match on enum variant can be optimized to a jump table
+            /// 2. We only check the specific variant that matches, not all possible types
+            /// 3. The compiler can inline and optimize the entire call chain
+            /// 4. No trait dispatch overhead - match is generated directly
+            #[inline(always)]
+            pub fn with_typed_mut<T: NodeTypeDispatch, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+                // Use trait method but with always_inline - compiler will optimize away the call
+                // The trait method itself is #[inline] so this should inline completely
+                T::extract_mut(self).map(f)
             }
         }
 

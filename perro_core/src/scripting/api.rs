@@ -2317,8 +2317,10 @@ impl<'a> ScriptApi<'a> {
     /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent);`
     /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
-    #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_node<T: 'static, R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&T) -> R) -> R {
+    /// 
+    /// Uses optimized compile-time match dispatch instead of Any downcast for better performance
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub fn read_node<T: crate::nodes::node_registry::NodeTypeDispatch, R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&T) -> R) -> R {
         // Check if node_id is nil (from get_parent() when node was removed)
         if node_id.is_nil() {
             return R::default();
@@ -2326,8 +2328,8 @@ impl<'a> ScriptApi<'a> {
         
         // Check if node exists (might have been removed during signal handling)
         if let Some(node) = self.scene.get_scene_node_ref(node_id) {
-            if let Some(typed_node) = node.as_any().downcast_ref::<T>() {
-                return f(typed_node);
+            if let Some(result) = node.with_typed_ref(f) {
+                return result;
             }
         }
         
@@ -2341,7 +2343,7 @@ impl<'a> ScriptApi<'a> {
     /// Safer than read_node::<Node2D> when you don't know the exact type
     /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let pos = api.read_node2d_transform(parent_id, |n2d| n2d.transform.position);`
-    #[cfg_attr(not(debug_assertions), inline)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn read_node2d_transform<R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
         // Check if node_id is nil (from get_parent() when node was removed)
         if node_id.is_nil() {
@@ -2364,25 +2366,31 @@ impl<'a> ScriptApi<'a> {
     /// The closure receives &mut T where T is the node type
     /// Returns true if the node was found and successfully mutated, false otherwise
     /// Example: `api.mutate_node::<Node2D>(node_id, |n| n.transform.position.x = 5.0);`
-    #[cfg_attr(not(debug_assertions), inline)]
-    pub fn mutate_node<T: 'static, F>(&mut self, id: NodeID, f: F)
+    /// 
+    /// Uses optimized compile-time match dispatch instead of Any downcast for better performance
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub fn mutate_node<T: crate::nodes::node_registry::NodeTypeDispatch, F>(&mut self, id: NodeID, f: F)
     where
         F: FnOnce(&mut T),
     {
         // Get mutable access to the node
-        {
+        let is_node2d = {
             let node = self.scene.get_scene_node_mut(id)
                 .unwrap_or_else(|| panic!("Node {} not found", id));
             
-            // Try to downcast to the requested type and mutate in place
-            let typed_node = node.as_any_mut().downcast_mut::<T>()
+            // Use optimized match dispatch instead of Any downcast
+            // The closure is called directly within with_typed_mut, which handles the type extraction
+            node.with_typed_mut(f)
                 .unwrap_or_else(|| panic!("Node {} is not of type {}", id, std::any::type_name::<T>()));
             
-            f(typed_node); // mutate in place
+            // Check if Node2D before releasing borrow (avoid redundant lookup)
+            let is_node2d = node.as_node2d().is_some();
             
             // Mark transform dirty if Node2D
             node.mark_transform_dirty_if_node2d();
-        } // node borrow released here
+            
+            is_node2d
+        }; // node borrow released here
         
         // Always call mark_needs_rerender - it will check HashSet.contains() (O(1)) 
         // and only add if not already in the set
@@ -2391,7 +2399,7 @@ impl<'a> ScriptApi<'a> {
         // If this is a Node2D, mark transform dirty recursively (including children)
         // This ensures children's global transforms are recalculated when parent moves
         // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
-        if self.scene.get_scene_node_ref(id).and_then(|n| n.as_node2d()).is_some() {
+        if is_node2d {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
@@ -2400,21 +2408,26 @@ impl<'a> ScriptApi<'a> {
     /// This works with any node type without needing to know the specific type
     /// Only allows access to base Node fields (name, id, parent, children, etc.)
     /// Example: `api.mutate_scene_node(node_id, |n| n.set_name("test".into()));`
-    #[cfg_attr(not(debug_assertions), inline)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn mutate_scene_node<F>(&mut self, id: NodeID, f: F)
     where
         F: FnOnce(&mut crate::nodes::node_registry::SceneNode),
     {
         // Get mutable access to the node
-        {
+        let is_node2d = {
             let node = self.scene.get_scene_node_mut(id)
                 .unwrap_or_else(|| panic!("Node {} not found", id));
             
             f(node); // mutate in place using BaseNode methods
             
+            // Check if Node2D before releasing borrow (avoid redundant lookup)
+            let is_node2d = node.as_node2d().is_some();
+            
             // Mark transform dirty if Node2D
             node.mark_transform_dirty_if_node2d();
-        } // node borrow released here
+            
+            is_node2d
+        }; // node borrow released here
         
         // Always call mark_needs_rerender - it will check HashSet.contains() (O(1))
         // and only add if not already in the set
@@ -2422,7 +2435,7 @@ impl<'a> ScriptApi<'a> {
         
         // If this is a Node2D, mark transform dirty recursively (including children)
         // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
-        if self.scene.get_scene_node_ref(id).and_then(|n| n.as_node2d()).is_some() {
+        if is_node2d {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
@@ -2475,6 +2488,9 @@ impl<'a> ScriptApi<'a> {
     /// Get a UINode by node ID and execute a closure with mutable access
     /// This allows you to modify UI elements dynamically
     /// Example: `api.with_ui_node(ui_node_id, |ui| { ui.add_element(...); });`
+    /// 
+    /// Uses optimized compile-time match dispatch instead of Any downcast for better performance
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn with_ui_node<F, R>(&mut self, node_id: NodeID, f: F) -> R
     where
         F: FnOnce(&mut crate::nodes::ui::ui_node::UINode) -> R,
@@ -2482,10 +2498,8 @@ impl<'a> ScriptApi<'a> {
         let node = self.scene.get_scene_node_mut(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         
-        let ui_node = node.as_any_mut().downcast_mut::<crate::nodes::ui::ui_node::UINode>()
+        let result = node.with_typed_mut(f)
             .unwrap_or_else(|| panic!("Node {} is not a UINode", node_id));
-        
-        let result = f(ui_node);
         
         // Mark the UI node as needing rerender after modification
         self.scene.mark_needs_rerender(node_id);
