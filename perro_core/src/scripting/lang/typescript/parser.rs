@@ -5,7 +5,9 @@ use tree_sitter::Parser;
 
 use crate::{
     ast::*,
-    lang::typescript::api::{TypeScriptAPI, TypeScriptArray, TypeScriptMap},
+    call_modules::CallModule,
+    lang::typescript::api::TypeScriptAPI,
+    lang::typescript::resource_api::{TypeScriptArray, TypeScriptMap},
 };
 
 pub struct TypeScriptParser {
@@ -564,6 +566,7 @@ impl TypeScriptParser {
             attributes,
             is_on_signal: false,
             signal_name: None,
+            is_lifecycle_method: false,
         })
     }
 
@@ -1289,11 +1292,11 @@ impl TypeScriptParser {
                     // Try both the original case and lowercase for console
                     let module_lower = module.to_lowercase();
                     if let Some(api_sem) = TypeScriptAPI::resolve(&module_lower, method) {
-                        return Ok(Expr::ApiCall(api_sem, args));
+                        return Ok(Expr::ApiCall(CallModule::Module(api_sem), args));
                     }
                     // Also try original case
                     if let Some(api_sem) = TypeScriptAPI::resolve(module, method) {
-                        return Ok(Expr::ApiCall(api_sem, args));
+                        return Ok(Expr::ApiCall(CallModule::Module(api_sem), args));
                     }
                 }
 
@@ -1301,23 +1304,23 @@ impl TypeScriptParser {
                 // For array/map methods, the base is the array/map expression, and the method is the API method
                 // We need to check if the method matches array/map API methods
                 let method_lower = method.to_lowercase();
-                if let Some(api_sem) = TypeScriptArray::resolve_method(&method_lower) {
+                if let Some(resource) = TypeScriptArray::resolve_method(&method_lower) {
                     // This is an array method call - the base is the array, prepend it to args
                     // API expects: [array_expr, ...method_args]
                     // Note: obj is Box<Expr>, so we need to dereference and clone to get Expr
                     let base_expr = (**obj).clone();
                     let mut array_args = vec![base_expr];
                     array_args.extend(args);
-                    return Ok(Expr::ApiCall(api_sem, array_args));
+                    return Ok(Expr::ApiCall(CallModule::Resource(resource), array_args));
                 }
-                if let Some(api_sem) = TypeScriptMap::resolve_method(&method_lower) {
+                if let Some(resource) = TypeScriptMap::resolve_method(&method_lower) {
                     // This is a map method call - the base is the map, prepend it to args
                     // API expects: [map_expr, ...method_args]
                     // Note: obj is Box<Expr>, so we need to dereference and clone to get Expr
                     let base_expr = (**obj).clone();
                     let mut map_args = vec![base_expr];
                     map_args.extend(args);
-                    return Ok(Expr::ApiCall(api_sem, map_args));
+                    return Ok(Expr::ApiCall(CallModule::Resource(resource), map_args));
                 }
             }
 
@@ -1388,14 +1391,14 @@ impl TypeScriptParser {
             // Check if this is array.length or map.size - convert to API call
             let member_lower = member.to_lowercase();
             if member_lower == "length" || member_lower == "len" {
-                // array.length -> ArrayApi::Len
-                if let Some(api_sem) = TypeScriptArray::resolve_method(&member_lower) {
-                    return Ok(Expr::ApiCall(api_sem, vec![obj]));
+                // array.length -> ArrayResource::Len
+                if let Some(resource) = TypeScriptArray::resolve_method(&member_lower) {
+                    return Ok(Expr::ApiCall(CallModule::Resource(resource), vec![obj]));
                 }
             } else if member_lower == "size" {
-                // map.size -> MapApi::Len
-                if let Some(api_sem) = TypeScriptMap::resolve_method(&member_lower) {
-                    return Ok(Expr::ApiCall(api_sem, vec![obj]));
+                // map.size -> MapResource::Len
+                if let Some(resource) = TypeScriptMap::resolve_method(&member_lower) {
+                    return Ok(Expr::ApiCall(CallModule::Resource(resource), vec![obj]));
                 }
             }
 
@@ -1828,7 +1831,8 @@ impl TypeScriptParser {
             "number" => Type::Number(NumberKind::Float(64)),
             "string" => Type::String,
             "boolean" => Type::Bool,
-            "any" | "unknown" => Type::Object,
+            "any" => Type::Any, // Dynamic any type
+            "unknown" | "object" | "Object" | "Value" => Type::Object, // JSON/Value representation
             "bigint" => Type::Number(NumberKind::BigInt),
             // Handle Map and Array as standalone types (without generics)
             "Map" => Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),

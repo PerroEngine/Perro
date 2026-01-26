@@ -1,11 +1,16 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Font family/style helpers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Weight {
     Regular,
     Bold,
+    Light,
+    Medium,
+    SemiBold,
+    Thin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -14,33 +19,80 @@ pub enum Style {
     Italic,
 }
 
+/// Font source - either embedded static data or loaded from file/system
 #[derive(Debug, Clone)]
-pub struct Font {
-    pub data: &'static [u8],
+pub enum FontData {
+    Static(&'static [u8]),
+    Owned(Vec<u8>),
 }
 
-type FontKey = (Weight, Style);
+/// Font representation that can be from embedded, file, or system fonts
+#[derive(Debug, Clone)]
+pub struct Font {
+    pub data: FontData,
+    pub family_name: Option<String>, // Font family name if known
+    pub weight: Weight,
+    pub style: Style,
+}
 
-/// Embedded NotoSans fonts (expandable)
-static NOTO_SANS: Lazy<HashMap<FontKey, &'static [u8]>> = Lazy::new(|| {
-    let mut m = HashMap::new();
-    m.insert(
-        (Weight::Regular, Style::Normal),
-        include_bytes!("fonts/NotoSans/NotoSans-Regular.ttf").as_ref(),
-    );
-    m.insert(
-        (Weight::Bold, Style::Normal),
-        include_bytes!("fonts/NotoSans/NotoSans-Bold.ttf").as_ref(),
-    );
-    m
-});
+// Embedded fonts removed - we now use native system fonts via cosmic-text
+
+// Font database removed - egui handles font loading natively
 
 impl Font {
-    pub fn from_name(family: &str, weight: Weight, style: Style) -> Option<Self> {
-        match family {
-            "NotoSans" => NOTO_SANS.get(&(weight, style)).map(|&data| Font { data }),
-            _ => None,
+    /// Create font from embedded name (deprecated - use system fonts instead)
+    /// This method is kept for backward compatibility but always returns None
+    /// since embedded fonts have been removed in favor of native system fonts
+    #[deprecated(note = "Embedded fonts removed. Use system fonts via TextRenderer instead.")]
+    pub fn from_name(_family: &str, _weight: Weight, _style: Style) -> Option<Self> {
+        None
+    }
+    
+    /// Load font from file path (supports res:// paths)
+    pub fn from_file(path: &str, weight: Weight, style: Style) -> Result<Self, String> {
+        // Handle res:// paths
+        let file_path = if path.starts_with("res://") {
+            &path[6..] // Remove "res://" prefix
+        } else {
+            path
+        };
+        
+        let font_data = std::fs::read(file_path)
+            .map_err(|e| format!("Failed to read font file {}: {}", path, e))?;
+        
+        Ok(Font {
+            data: FontData::Owned(font_data),
+            family_name: None, // Will be extracted from font if needed
+            weight,
+            style,
+        })
+    }
+    
+    /// Load font from system by family name
+    /// Note: Font loading now handled by egui - this is a stub for compatibility
+    pub fn from_system(_family: &str, _weight: Weight, _style: Style) -> Option<Self> {
+        // Font loading now handled by egui
+        None
+    }
+    
+    /// Get font data as bytes
+    pub fn data(&self) -> &[u8] {
+        match &self.data {
+            FontData::Static(data) => data,
+            FontData::Owned(data) => data,
         }
+    }
+    
+    /// Try to load font from various sources (file or system)
+    /// Note: This is deprecated in favor of the native TextRenderer system
+    pub fn load(font_spec: &str, weight: Weight, style: Style) -> Option<Self> {
+        // Try file path first (res:// or regular path)
+        if font_spec.starts_with("res://") || font_spec.contains('.') {
+            return Self::from_file(font_spec, weight, style).ok();
+        }
+        
+        // Try system font
+        Self::from_system(font_spec, weight, style)
     }
 }
 
@@ -51,7 +103,7 @@ pub struct Glyph {
     pub v0: f32,
     pub u1: f32,
     pub v1: f32,
-    pub metrics: fontdue::Metrics,
+    pub metrics: (f32, f32, f32, f32), // width, height, advance_width, advance_height (stub)
     pub bearing_x: f32,
     pub bearing_y: f32,
 }
@@ -69,105 +121,18 @@ pub struct FontAtlas {
 }
 
 impl FontAtlas {
-    pub fn new(font: Font, design_size: f32) -> Self {
-        use fontdue::Font as Fontdue;
-        use fontdue::FontSettings;
-
-        let fd_font =
-            Fontdue::from_bytes(font.data, FontSettings::default()).expect("Invalid font data");
-
-        // ✅ Get horizontal line metrics for proper baseline alignment
-        let line_metrics = fd_font
-            .horizontal_line_metrics(design_size)
-            .expect("Font missing horizontal line metrics");
-
-        // Preload ASCII 32-126
-        let chars: Vec<char> = (32u8..=126u8).map(|c| c as char).collect();
-        
-        // Scale atlas size based on design_size to ensure all glyphs fit
-        // Base size of 1024 works well for design_size ~64
-        // Scale proportionally: 64->1024, 128->2048, 192->3072, 256->4096
-        let scale_factor = (design_size / 64.0).ceil() as u32;
-        let atlas_w: u32 = 1024 * scale_factor;
-        let atlas_h: u32 = 1024 * scale_factor;
-
-        let mut bitmap = vec![0u8; (atlas_w * atlas_h) as usize];
-        let mut glyphs = HashMap::new();
-
-        let mut pen_x: u32 = 2;
-        let mut pen_y: u32 = 2;
-        let mut row_h: u32 = 0;
-
-        for ch in chars {
-            let (metrics, bmp) = fd_font.rasterize(ch, design_size);
-
-            let gw = metrics.width as u32;
-            let gh = metrics.height as u32;
-
-            if gw == 0 || gh == 0 {
-                glyphs.insert(
-                    ch,
-                    Glyph {
-                        u0: 0.0,
-                        v0: 0.0,
-                        u1: 0.0,
-                        v1: 0.0,
-                        metrics,
-                        bearing_x: metrics.xmin as f32,
-                        bearing_y: metrics.ymin as f32,
-                    },
-                );
-                continue;
-            }
-
-            if pen_x + gw + 2 > atlas_w {
-                pen_x = 2;
-                pen_y += row_h + 2;
-                row_h = 0;
-            }
-            if pen_y + gh + 2 > atlas_h {
-                break;
-            }
-
-            // Blit glyph bitmap into atlas
-            for y in 0..gh {
-                for x in 0..gw {
-                    let src = (y as usize * gw as usize) + x as usize;
-                    let dst = ((pen_y + y) as usize * atlas_w as usize) + (pen_x + x) as usize;
-                    bitmap[dst] = bmp[src];
-                }
-            }
-
-            let u0 = pen_x as f32 / atlas_w as f32;
-            let v0 = pen_y as f32 / atlas_h as f32;
-            let u1 = (pen_x + gw) as f32 / atlas_w as f32;
-            let v1 = (pen_y + gh) as f32 / atlas_h as f32;
-
-            glyphs.insert(
-                ch,
-                Glyph {
-                    u0,
-                    v0,
-                    u1,
-                    v1,
-                    metrics,
-                    bearing_x: metrics.xmin as f32,
-                    bearing_y: metrics.ymin as f32,
-                },
-            );
-
-            pen_x += gw + 2;
-            row_h = row_h.max(gh);
-        }
-
+    /// FontAtlas is deprecated - text rendering now handled by egui
+    /// This is kept for backward compatibility but returns empty atlas
+    pub fn new(_font: Font, design_size: f32) -> Self {
+        // Font atlas creation removed - egui handles font rendering natively
         FontAtlas {
-            bitmap,
-            width: atlas_w,
-            height: atlas_h,
+            bitmap: Vec::new(),
+            width: 0,
+            height: 0,
             design_size,
-            glyphs,
-            ascent: line_metrics.ascent,
-            descent: line_metrics.descent,
+            glyphs: HashMap::new(),
+            ascent: design_size * 0.8,
+            descent: design_size * 0.2,
         }
     }
 

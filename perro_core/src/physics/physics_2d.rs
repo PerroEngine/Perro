@@ -3,7 +3,7 @@
 use rapier2d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use uuid::Uuid;
+use crate::uid32::NodeID;
 
 /// Manages the Rapier2D physics world
 pub struct PhysicsWorld2D {
@@ -27,12 +27,12 @@ pub struct PhysicsWorld2D {
     pub query_pipeline: QueryPipeline,
     /// CCD solver for continuous collision detection
     pub ccd_solver: CCDSolver,
-    /// Map from node UUID to collider handle
-    pub node_to_collider: HashMap<Uuid, ColliderHandle>,
-    /// Map from collider handle to node UUID
-    pub collider_to_node: HashMap<ColliderHandle, Uuid>,
-    /// Map from Area2D node UUID to its child collider handles
-    pub area_to_colliders: HashMap<Uuid, Vec<ColliderHandle>>,
+    /// Map from node ID to collider handle
+    pub node_to_collider: HashMap<NodeID, ColliderHandle>,
+    /// Map from collider handle to node ID
+    pub collider_to_node: HashMap<ColliderHandle, NodeID>,
+    /// Map from Area2D node ID to its child collider handles
+    pub area_to_colliders: HashMap<NodeID, Vec<ColliderHandle>>,
 }
 
 impl PhysicsWorld2D {
@@ -102,7 +102,7 @@ impl PhysicsWorld2D {
     /// Returns the collider handle
     pub fn create_sensor_collider(
         &mut self,
-        node_id: Uuid,
+        node_id: NodeID,
         shape: ColliderShape,
         position: [f32; 2],
         rotation: f32,
@@ -121,7 +121,7 @@ impl PhysicsWorld2D {
     }
 
     /// Remove a collider
-    pub fn remove_collider(&mut self, node_id: Uuid) {
+    pub fn remove_collider(&mut self, node_id: NodeID) {
         if let Some(handle) = self.node_to_collider.remove(&node_id) {
             self.collider_to_node.remove(&handle);
             let _ = self.colliders.remove(
@@ -134,7 +134,7 @@ impl PhysicsWorld2D {
     }
 
     /// Register a collider as a child of an Area2D
-    pub fn register_area_collider(&mut self, area_id: Uuid, collider_handle: ColliderHandle) {
+    pub fn register_area_collider(&mut self, area_id: NodeID, collider_handle: ColliderHandle) {
         self.area_to_colliders
             .entry(area_id)
             .or_insert_with(Vec::new)
@@ -190,7 +190,7 @@ impl PhysicsWorld2D {
     /// Update collider transform based on node transform
     pub fn update_collider_transform(
         &mut self,
-        node_id: Uuid,
+        node_id: NodeID,
         position: [f32; 2],
         rotation: f32,
     ) {
@@ -203,7 +203,7 @@ impl PhysicsWorld2D {
     }
 
     /// Get the node ID for a collider handle
-    pub fn get_node_id(&self, collider_handle: ColliderHandle) -> Option<Uuid> {
+    pub fn get_node_id(&self, collider_handle: ColliderHandle) -> Option<NodeID> {
         self.collider_to_node.get(&collider_handle).copied()
     }
 }

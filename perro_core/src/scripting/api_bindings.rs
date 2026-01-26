@@ -1,7 +1,8 @@
 use crate::{
-    api_modules::*,
+    api_modules::*, // Import module API enums and ApiModule
     ast::*,
     engine_structs::EngineStruct,
+    node_registry::NodeType,
     prelude::string_to_u64,
     scripting::ast::{ContainerKind, NumberKind},
 };
@@ -12,7 +13,7 @@ use super::codegen::is_node_type;
 // ===========================================================
 
 /// Provides type semantics for API calls (return types, parameter types).
-pub trait ApiTypes {
+pub trait ModuleTypes {
     /// Returns the return type of the API call.
     fn return_type(&self) -> Option<Type>;
 
@@ -21,10 +22,17 @@ pub trait ApiTypes {
     fn param_types(&self) -> Option<Vec<Type>> {
         None // Default implementation, no specific param types
     }
+    
+    /// Returns friendly parameter names for the API call, in order.
+    /// Should match the length of param_types() if both are Some.
+    /// Default is `None` (no specific parameter names).
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        None // Default implementation, no specific param names
+    }
 }
 
 /// Converts a generic API call into Rust source code output.
-pub trait ApiCodegen {
+pub trait ModuleCodegen {
     /// Generates the final Rust code string for a specific API call.
     /// The `args_strs` parameter contains the already-processed (and potentially casted)
     /// Rust code strings for each argument. This trait's implementors are purely
@@ -46,7 +54,7 @@ pub trait ApiCodegen {
 impl ApiModule {
     /// Primary entry point for code generation of an API call from its AST representation.
     /// This orchestrates the argument processing (including `self.` prefixing and type-aware casting)
-    /// before delegating to the specific `ApiCodegen` implementation for final Rust string assembly.
+        /// before delegating to the specific `ModuleCodegen` implementation for final Rust string assembly.
     pub fn to_rust(
         &self,
         args: &[Expr], // Raw AST expressions for arguments
@@ -55,7 +63,7 @@ impl ApiModule {
         current_func: Option<&Function>,
     ) -> String {
         // 1. Get the expected parameter types for *this specific* API call.
-        // This call dispatches to the correct `ApiTypes` implementation (e.g., `ArrayApi`'s `param_types`).
+        // This call dispatches to the correct `ModuleTypes` implementation (e.g., `ArrayResource`'s `param_types`).
         let expected_arg_types = self.param_types();
 
         // 2. Process the raw AST arguments into Rust code strings.
@@ -63,15 +71,37 @@ impl ApiModule {
         //    - Converting `Expr` to basic Rust code string.
         //    - Applying `self.` prefixing for script fields.
         //    - Applying implicit type casts based on `expected_arg_types`.
-        let rust_args_strings = generate_rust_args(
+        let mut rust_args_strings = generate_rust_args(
             args,
             script,
             needs_self,
             current_func,
             expected_arg_types.as_ref(),
         );
+        
+        // DEBUG: Check if rust_args_strings is wrong
+        if !args.is_empty() && (rust_args_strings.is_empty() || rust_args_strings.iter().any(|s| s.trim().is_empty())) {
+            eprintln!("[DEBUG ApiModule::to_rust] args.len()={}, rust_args_strings.len()={}, rust_args_strings={:?}, args={:?}", 
+                args.len(), rust_args_strings.len(), rust_args_strings, args);
+        }
+        
+        // If generate_rust_args returned empty strings, regenerate directly from args
+        // This handles cases where temp variables aren't properly converted
+        if rust_args_strings.iter().any(|s| s.trim().is_empty()) && !args.is_empty() {
+            rust_args_strings = args.iter()
+                .enumerate()
+                .map(|(i, a)| {
+                    let expected_ty_hint = expected_arg_types.as_ref().and_then(|v| v.get(i).cloned());
+                    let code = a.to_rust(needs_self, script, expected_ty_hint.as_ref(), current_func, None);
+                    if code.trim().is_empty() {
+                        eprintln!("[DEBUG ApiModule::to_rust] to_rust returned empty for arg[{}]: {:?}", i, a);
+                    }
+                    code
+                })
+                .collect();
+        }
 
-        // 3. Delegate to the specific `ApiCodegen` implementation to build the final Rust call string.
+        // 3. Delegate to the specific `ModuleCodegen` implementation to build the final Rust call string.
         // This `match self` ensures the correct `to_rust_prepared` method is called based on the `ApiModule` variant.
         match self {
             ApiModule::JSON(api) => {
@@ -86,25 +116,7 @@ impl ApiModule {
             ApiModule::Console(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
-            ApiModule::ScriptType(api) => {
-                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
-            }
-            ApiModule::NodeSugar(api) => {
-                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
-            }
-            ApiModule::Signal(api) => {
-                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
-            }
-            ApiModule::ArrayOp(api) => {
-                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
-            }
-            ApiModule::MapOp(api) => {
-                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
-            }
             ApiModule::Input(api) => {
-                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
-            }
-            ApiModule::Texture(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
             ApiModule::Math(api) => {
@@ -113,49 +125,50 @@ impl ApiModule {
         }
     }
 
-    /// Dispatches the `return_type` call to the appropriate `ApiTypes` implementation for this module variant.
+    /// Dispatches the `return_type` call to the appropriate `ModuleTypes` implementation for this module variant.
     pub fn return_type(&self) -> Option<Type> {
         match self {
             ApiModule::JSON(api) => api.return_type(),
             ApiModule::Time(api) => api.return_type(),
             ApiModule::OS(api) => api.return_type(),
             ApiModule::Console(api) => api.return_type(),
-            ApiModule::ScriptType(api) => api.return_type(),
-            ApiModule::NodeSugar(api) => api.return_type(),
-            ApiModule::Signal(api) => api.return_type(),
-            ApiModule::ArrayOp(api) => api.return_type(),
-            ApiModule::MapOp(api) => api.return_type(),
             ApiModule::Input(api) => api.return_type(),
-            ApiModule::Texture(api) => api.return_type(),
             ApiModule::Math(api) => api.return_type(),
         }
     }
 
-    /// Dispatches the `param_types` call to the appropriate `ApiTypes` implementation for this module variant.
+    /// Dispatches the `param_types` call to the appropriate `ModuleTypes` implementation for this module variant.
     pub fn param_types(&self) -> Option<Vec<Type>> {
         let result = match self {
             ApiModule::JSON(api) => api.param_types(),
             ApiModule::Time(api) => api.param_types(),
             ApiModule::OS(api) => api.param_types(),
             ApiModule::Console(api) => api.param_types(),
-            ApiModule::ScriptType(api) => api.param_types(),
-            ApiModule::NodeSugar(api) => api.param_types(),
-            ApiModule::Signal(api) => api.param_types(),
-            ApiModule::ArrayOp(api) => api.param_types(),
-            ApiModule::MapOp(api) => api.param_types(),
             ApiModule::Input(api) => api.param_types(),
-            ApiModule::Texture(api) => api.param_types(),
             ApiModule::Math(api) => api.param_types(),
         };
         // Add this line:
         result
+    }
+    
+    /// Dispatches the `param_names` call to the appropriate `ModuleTypes` implementation for this module variant.
+    /// Returns script-side parameter names (what PUP users see), not internal Rust parameter names.
+    pub fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            ApiModule::JSON(api) => api.param_names(),
+            ApiModule::Time(api) => api.param_names(),
+            ApiModule::OS(api) => api.param_names(),
+            ApiModule::Console(api) => api.param_names(),
+            ApiModule::Input(api) => api.param_names(),
+            ApiModule::Math(api) => api.param_names(),
+        }
     }
 }
 
 /// Helper function to process raw `Expr` arguments into formatted Rust code strings.
 /// This includes converting the `Expr` to its basic Rust code, applying `self.` prefixing
 /// for script fields, and handling implicit type casts based on `expected_arg_types`.
-fn generate_rust_args(
+pub(crate) fn generate_rust_args(
     args: &[Expr],
     script: &Script,
     needs_self: bool,
@@ -189,7 +202,27 @@ fn generate_rust_args(
             // 3. Now, take the (potentially casted) `code_raw` and apply `self.` prefixing.
             //    This is the *last* step to construct the final argument string.
             let mut final_code = code_raw;
+            
+            // If code_raw is empty, try to generate it directly from the expression
+            // This handles cases where temp variables aren't found in the script's variable list
+            if final_code.trim().is_empty() {
+                if let Expr::Ident(name) = a {
+                    // For temp variables, just return the name as-is
+                    if name.starts_with("temp_api_var_") || name.starts_with("__temp_api_") {
+                        return name.to_string();
+                    }
+                }
+                // Last resort: try to_rust again without expected type hint
+                final_code = a.to_rust(needs_self, script, None, current_func, None);
+            }
+            
             if let Expr::Ident(name) = a {
+                // Special case: temp variables (temp_api_var_*) should NEVER get .clone() or be renamed
+                // They're already in the correct format from to_rust
+                if name.starts_with("temp_api_var_") || name.starts_with("__temp_api_") {
+                    // Return as-is, don't add self. prefix or any modifications
+                    return final_code;
+                }
                 if script.is_struct_field(name) && !final_code.starts_with("self.") {
                     final_code = format!("self.{final_code}");
                 }
@@ -203,7 +236,7 @@ fn generate_rust_args(
 // JSON API Implementations
 // ===========================================================
 
-impl ApiCodegen for JSONApi {
+impl ModuleCodegen for JSONApi {
     fn to_rust_prepared(
         &self,
         _args: &[Expr],
@@ -228,7 +261,7 @@ impl ApiCodegen for JSONApi {
     }
 }
 
-impl ApiTypes for JSONApi {
+impl ModuleTypes for JSONApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             JSONApi::Parse => Some(Type::Object),
@@ -242,13 +275,21 @@ impl ApiTypes for JSONApi {
             JSONApi::Stringify => Some(vec![Type::Object]),
         }
     }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            JSONApi::Parse => Some(vec!["json_string"]),
+            JSONApi::Stringify => Some(vec!["object"]),
+        }
+    }
 }
 
 // ===========================================================
 // Time API Implementations
 // ===========================================================
 
-impl ApiCodegen for TimeApi {
+impl ModuleCodegen for TimeApi {
     fn to_rust_prepared(
         &self,
         _args: &[Expr],
@@ -268,7 +309,7 @@ impl ApiCodegen for TimeApi {
     }
 }
 
-impl ApiTypes for TimeApi {
+impl ModuleTypes for TimeApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             TimeApi::DeltaTime => Some(Type::Number(NumberKind::Float(32))),
@@ -283,14 +324,21 @@ impl ApiTypes for TimeApi {
             _ => None,
         }
     }
-    // No specific param_types for Time APIs needed by default, uses None.
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            TimeApi::SleepMsec => Some(vec!["milliseconds"]),
+            _ => None,
+        }
+    }
 }
 
 // ===========================================================
 // OS API Implementations
 // ===========================================================
 
-impl ApiCodegen for OSApi {
+impl ModuleCodegen for OSApi {
     fn to_rust_prepared(
         &self,
         _args: &[Expr],
@@ -309,7 +357,7 @@ impl ApiCodegen for OSApi {
     }
 }
 
-impl ApiTypes for OSApi {
+impl ModuleTypes for OSApi {
     fn return_type(&self) -> Option<Type> {
         match self {
             OSApi::GetPlatformName => Some(Type::String),
@@ -323,14 +371,21 @@ impl ApiTypes for OSApi {
             _ => None,
         }
     }
-    // No specific param_types for OS APIs needed by default, uses None.
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            OSApi::GetEnv => Some(vec!["name"]),
+            _ => None,
+        }
+    }
 }
 
 // ===========================================================
 // Console API Implementations
 // ===========================================================
 
-impl ApiCodegen for ConsoleApi {
+impl ModuleCodegen for ConsoleApi {
     fn to_rust_prepared(
         &self,
         args: &[Expr],
@@ -339,8 +394,180 @@ impl ApiCodegen for ConsoleApi {
         _needs_self: bool,
         current_func: Option<&Function>,
     ) -> String {
+        // DEBUG: Log what we're receiving
+        if !args.is_empty() && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty())) {
+            eprintln!("[DEBUG ConsoleApi::to_rust_prepared] args.len()={}, args_strs.len()={}, args_strs={:?}, args={:?}", 
+                args.len(), args_strs.len(), args_strs, args);
+        }
+        
+        // Ensure we have arguments - if args_strs is empty but args is not, regenerate from args
+        // This is critical when nested API calls are extracted to temp variables
+        // Use the same needs_self that was passed to to_rust_prepared
+        let mut args_strs = if args_strs.is_empty() && !args.is_empty() {
+            // Fallback: generate args_strs directly from args using generate_rust_args
+            generate_rust_args(args, script, _needs_self, current_func, None)
+        } else {
+            args_strs.to_vec()
+        };
+        
+        // Check if args_strs has wrong length or contains empty strings - regenerate if so
+        // This handles cases where args_strs was generated before temp variable extraction
+        if args_strs.len() != args.len() || args_strs.iter().any(|s| s.trim().is_empty()) {
+            args_strs = generate_rust_args(args, script, _needs_self, current_func, None);
+        }
+        
+        // Double-check: if args_strs is still empty but args is not, something is very wrong
+        // In this case, generate args_strs from args directly using generate_rust_args again
+        // This handles cases where generate_rust_args might have failed the first time
+        if args_strs.is_empty() && !args.is_empty() {
+            // Last resort: try generate_rust_args again, or convert args to strings directly
+            let regenerated = generate_rust_args(args, script, _needs_self, current_func, None);
+            if regenerated.is_empty() {
+                // If still empty, convert Expr to strings directly as last resort
+                args_strs = args.iter()
+                    .map(|a| {
+                        // Use the Expr's to_rust method directly
+                        a.to_rust(_needs_self, script, None, current_func, None)
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                args_strs = regenerated;
+            }
+        }
+        
+        // Ensure args_strs is not empty - if it is, we have a serious problem
+        if args_strs.is_empty() && !args.is_empty() {
+            // This should never happen if the fallbacks above worked, but just in case
+            // Generate a format string with the arguments directly
+            let direct_args: Vec<String> = args.iter()
+                .map(|a| a.to_rust(_needs_self, script, None, current_func, None))
+                .collect();
+            if !direct_args.is_empty() {
+                return match self {
+                    ConsoleApi::Log => format!("api.print(format!(\"{}\", {}))", 
+                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
+                        direct_args.join(", ")),
+                    ConsoleApi::Warn => format!("api.print_warn(format!(\"{}\", {}))", 
+                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
+                        direct_args.join(", ")),
+                    ConsoleApi::Error => format!("api.print_error(format!(\"{}\", {}))", 
+                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
+                        direct_args.join(", ")),
+                    ConsoleApi::Info => format!("api.print_info(format!(\"{}\", {}))", 
+                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
+                        direct_args.join(", ")),
+                };
+            }
+        }
+        
+        // Final check: if args_strs is still empty or all empty strings, regenerate from args
+        let args_strs = if args_strs.is_empty() || args_strs.iter().all(|s| s.trim().is_empty()) {
+            if !args.is_empty() {
+                // Last resort: convert args directly
+                args.iter()
+                    .map(|a| {
+                        let code = a.to_rust(_needs_self, script, None, current_func, None);
+                        // Remove .clone() from temp_api_var_* if it was added
+                        if code.starts_with("temp_api_var_") && code.ends_with(".clone()") {
+                            code.strip_suffix(".clone()").unwrap_or(&code).to_string()
+                        } else {
+                            code
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                args_strs
+            }
+        } else {
+            args_strs
+        };
+        
+        // CRITICAL: If args_strs still contains empty strings but args is not empty, force regenerate
+        // This handles cases where generate_rust_args returned empty strings incorrectly
+        let args_strs = if (!args.is_empty() && args_strs.iter().any(|s| s.trim().is_empty())) || args_strs.len() != args.len() {
+            // Force regenerate from args using to_rust directly
+            args.iter()
+                .map(|a| {
+                    let code = a.to_rust(_needs_self, script, None, current_func, None);
+                    // Remove .clone() from temp_api_var_* if it was added
+                    if code.starts_with("temp_api_var_") && code.ends_with(".clone()") {
+                        code.strip_suffix(".clone()").unwrap_or(&code).to_string()
+                    } else {
+                        code
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else {
+            args_strs
+        };
+        
+        // ONE MORE CHECK: Right before using args_strs, verify it's not empty or contains empty strings
+        // This is the last chance to fix it before it causes api.print_info("") to be generated
+        let args_strs = if (!args.is_empty() && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty()))) || args_strs.len() != args.len() {
+            // Force regenerate from args - this should NEVER fail
+            args.iter()
+                .map(|a| {
+                    let code = a.to_rust(_needs_self, script, None, current_func, None);
+                    if code.trim().is_empty() {
+                        // If to_rust returned empty, try with expected type hint
+                        let expected_ty = self.param_types().and_then(|v| v.get(0).cloned());
+                        a.to_rust(_needs_self, script, expected_ty.as_ref(), current_func, None)
+                    } else {
+                        // Remove .clone() from temp_api_var_* if it was added
+                        if code.starts_with("temp_api_var_") && code.ends_with(".clone()") {
+                            code.strip_suffix(".clone()").unwrap_or(&code).to_string()
+                        } else {
+                            code
+                        }
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else {
+            args_strs
+        };
+        
+        // ABSOLUTE LAST CHECK: If args_strs is still wrong, force regenerate from args
+        // This should NEVER happen, but if it does, we need to fix it
+        let args_strs = if (!args.is_empty() && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty()))) || args_strs.len() != args.len() {
+            eprintln!("[WARNING] args_strs is wrong in ConsoleApi::to_rust_prepared! args.len()={}, args_strs.len()={}, args_strs={:?}", args.len(), args_strs.len(), args_strs);
+            // Force regenerate - this should work
+            args.iter()
+                .map(|a| {
+                    let code = a.to_rust(_needs_self, script, None, current_func, None);
+                    if code.trim().is_empty() {
+                        eprintln!("[WARNING] to_rust returned empty string for arg: {:?}", a);
+                        // Try with expected type
+                        let expected_ty = self.param_types().and_then(|v| v.get(0).cloned());
+                        a.to_rust(_needs_self, script, expected_ty.as_ref(), current_func, None)
+                    } else {
+                        code
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else {
+            args_strs
+        };
+        
         let joined = if args_strs.len() <= 1 {
-            args_strs.get(0).cloned().unwrap_or("\"\"".into())
+            // If args_strs is still empty or contains empty string, but args is not empty, use the first arg directly
+            if (args_strs.is_empty() || args_strs[0].trim().is_empty()) && !args.is_empty() {
+                let code = args[0].to_rust(_needs_self, script, None, current_func, None);
+                if code.trim().is_empty() {
+                    eprintln!("[ERROR] to_rust returned empty string for first arg: {:?}", args[0]);
+                    // Try with expected type hint
+                    let expected_ty = self.param_types().and_then(|v| v.get(0).cloned());
+                    let code_with_hint = args[0].to_rust(_needs_self, script, expected_ty.as_ref(), current_func, None);
+                    if code_with_hint.trim().is_empty() {
+                        format!("{:?}", args[0]) // Fallback to debug format
+                    } else {
+                        code_with_hint
+                    }
+                } else {
+                    code
+                }
+            } else {
+                args_strs.get(0).cloned().unwrap_or("\"\"".into())
+            }
         } else {
             format!(
                 "format!(\"{}\", {})",
@@ -410,8 +637,8 @@ impl ApiCodegen for ConsoleApi {
                         // Check if assigned from node expression
                         match &val.expr {
                             Expr::StructNew(ty, _) => return is_node_type(ty),
-                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) |
-                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) |
+                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), _) |
+                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetChildByName), _) |
                             Expr::Cast(_, Type::Node(_)) => return true,
                             Expr::Cast(_, Type::Custom(name)) => return is_node_type(name),
                             _ => {}
@@ -481,9 +708,14 @@ impl ApiCodegen for ConsoleApi {
         }
 
         // Check if the argument is a node (Uuid) - if so, convert to print node type instead
-        let arg = if args.len() == 1 {
+        // Build the format string - handle both single and multiple arguments
+        let format_str = if args.len() == 1 {
+            // Single argument case
+            let arg_expr = args.get(0);
+            let arg_str = args_strs.get(0).cloned().unwrap_or_default();
+            
             // Check if the single argument is a node type
-            if let Some(arg_expr) = args.get(0) {
+            if let Some(arg_expr) = arg_expr {
                 // Skip node checking for literals - they're never nodes
                 if matches!(arg_expr, Expr::Literal(_)) {
                     // Literal - just use it directly, no node extraction needed
@@ -494,7 +726,7 @@ impl ApiCodegen for ConsoleApi {
                     // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
                     let is_node = match arg_type {
                         Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                        None | Some(Type::Uuid) => {
+                        None | Some(Type::Uid32) => {
                             if let Expr::Ident(var_name) = arg_expr {
                                 // First check the variable's declared type directly (before it gets converted to Uuid)
                                 let var_declared_type = if let Some(func) = current_func {
@@ -530,46 +762,45 @@ impl ApiCodegen for ConsoleApi {
                         _ => false,
                     };
                 
-                if is_node {
-                    // This is a node - convert to print its type instead of UUID
-                    // Use the already-processed arg string, which should be the node ID
-                    let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".to_string());
-                    // api.get_type() requires &mut self, so we must extract it to a temp variable
-                    // to avoid borrow checker errors when used as argument to api.print() (which takes &self)
-                    // Return a special marker that codegen will detect and extract
-                    format!("__EXTRACT_NODE_TYPE__({})", node_id_expr)
-                } else {
-                    // Not a node - use normal logic
-                    // Optimize: if joined is a string literal (starts and ends with quotes), 
-                    // pass it directly without &String::from() since print accepts Display.
-                    // For variables, borrow them with &.
-                    if joined.starts_with('"') && joined.ends_with('"') {
-                        // It's already a string literal, use it directly
-                        joined
-                    } else if joined.starts_with("String::from(") && joined.ends_with(')') {
-                        // Extract the inner string literal from String::from("...")
-                        let inner = &joined["String::from(".len()..joined.len() - 1].trim();
-                        if inner.starts_with('"') && inner.ends_with('"') {
-                            // Use the string literal directly (optimization: avoid String::from allocation)
-                            inner.to_string()
-                        } else {
-                            // Fallback: use as-is
-                            joined
-                        }
+                    if is_node {
+                        // This is a node - convert to print its type instead of UUID
+                        // Use the already-processed arg string, which should be the node ID
+                        let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".to_string());
+                        // api.get_type() requires &mut self, so we must extract it to a temp variable
+                        // to avoid borrow checker errors when used as argument to api.print() (which takes &self)
+                        // Return a special marker that codegen will detect and extract
+                        format!("__EXTRACT_NODE_TYPE__({})", node_id_expr)
                     } else {
-                        // For variables or format!() expressions, borrow them
-                        // Check if it's a simple identifier (variable name) - if so, borrow it
-                        let trimmed = joined.trim();
-                        // Simple heuristic: if it's just an identifier (alphanumeric + underscore, no dots/parens),
-                        // it's likely a variable and should be borrowed
-                        if trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') && !trimmed.is_empty() {
-                            format!("&{}", trimmed)
-                        } else {
-                            // For format!() or complex expressions, use as-is (they already produce Display types)
-                            joined
-                        }
+                        // Not a node - use normal logic
+                        // Optimize: remove unnecessary clones and String::from() wrappers
+                        let optimized = {
+                            let trimmed = joined.trim();
+                            // Remove .clone() from the end if present
+                            let without_clone = if trimmed.ends_with(".clone()") {
+                                &trimmed[..trimmed.len() - ".clone()".len()]
+                            } else {
+                                trimmed
+                            };
+                            
+                            // Remove String::from() wrapper for string literals
+                            if without_clone.starts_with("String::from(") && without_clone.ends_with(')') {
+                                let inner = &without_clone["String::from(".len()..without_clone.len() - 1].trim();
+                                if inner.starts_with('"') && inner.ends_with('"') {
+                                    // Use the string literal directly (optimization: avoid String::from allocation)
+                                    inner.to_string()
+                                } else {
+                                    without_clone.to_string()
+                                }
+                            } else if without_clone.starts_with('"') && without_clone.ends_with('"') {
+                                // It's already a string literal, use it directly
+                                without_clone.to_string()
+                            } else {
+                                // For variables or format!() expressions, use as-is (they already produce Display types)
+                                without_clone.to_string()
+                            }
+                        };
+                        optimized
                     }
-                }
                 }
             } else {
                 joined
@@ -577,18 +808,51 @@ impl ApiCodegen for ConsoleApi {
         } else {
             // Multiple arguments - check each one individually for nodes
             // Process each argument to see if it's a node and wrap with __EXTRACT_NODE_TYPE__
+            // Also optimize arguments to remove unnecessary clones
+            // Ensure args_strs has the same length as args - if not, regenerate it
+            let args_strs = if args_strs.len() != args.len() {
+                // Regenerate args_strs to match args length
+                generate_rust_args(args, script, false, current_func, None)
+            } else {
+                args_strs
+            };
+            
             let processed_args: Vec<String> = args.iter()
                 .zip(args_strs.iter())
                 .map(|(arg_expr, arg_str)| {
+                    // Optimize the argument string to remove unnecessary clones
+                    let optimized_arg = {
+                        // Remove .clone() from the end if present
+                        let trimmed = arg_str.trim();
+                        if trimmed.ends_with(".clone()") {
+                            &trimmed[..trimmed.len() - ".clone()".len()]
+                        } else {
+                            trimmed
+                        }
+                    };
+                    
+                    // Remove String::from() wrapper for string literals
+                    let optimized_arg = if optimized_arg.starts_with("String::from(") && optimized_arg.ends_with(')') {
+                        let inner = &optimized_arg["String::from(".len()..optimized_arg.len() - 1].trim();
+                        if inner.starts_with('"') && inner.ends_with('"') {
+                            // It's a string literal, use it directly
+                            inner.to_string()
+                        } else {
+                            optimized_arg.to_string()
+                        }
+                    } else {
+                        optimized_arg.to_string()
+                    };
+                    
                     // Skip node checking for literals - they're never nodes
                     if matches!(arg_expr, Expr::Literal(_)) {
-                        arg_str.clone()
+                        optimized_arg
                     } else {
                     
                     let arg_type = script.infer_expr_type(arg_expr, current_func);
                     let is_node = match arg_type {
                         Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                        None | Some(Type::Uuid) => {
+                        None | Some(Type::Uid32) => {
                             if let Expr::Ident(var_name) = arg_expr {
                                 // First check the variable's declared type directly (before it gets converted to Uuid)
                                 let var_declared_type = if let Some(func) = current_func {
@@ -625,32 +889,71 @@ impl ApiCodegen for ConsoleApi {
                     };
                     
                     if is_node {
-                        format!("__EXTRACT_NODE_TYPE__({})", arg_str)
+                        format!("__EXTRACT_NODE_TYPE__({})", optimized_arg)
                     } else {
-                        arg_str.clone()
+                        optimized_arg
                     }
                     }
                 })
                 .collect();
             
             // Build format string with processed arguments
-            format!(
-                "format!(\"{}\", {})",
-                (0..processed_args.len())
-                    .map(|_| "{}")
-                    .collect::<Vec<_>>()
-                    .join(" "),
-                processed_args.join(", "),
-            )
+            // Ensure we have arguments - if processed_args is empty, something went wrong
+            if processed_args.is_empty() {
+                // Fallback: use original args_strs if processed_args is empty
+                if args_strs.is_empty() && !args.is_empty() {
+                    // Last resort: generate from args directly
+                    let direct_args: Vec<String> = args.iter()
+                        .map(|a| a.to_rust(false, script, None, current_func, None))
+                        .collect();
+                    if !direct_args.is_empty() {
+                        format!(
+                            "format!(\"{}\", {})",
+                            (0..direct_args.len())
+                                .map(|_| "{}")
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                            direct_args.join(", "),
+                        )
+                    } else {
+                        // Truly no arguments - use empty string
+                        "\"\"".into()
+                    }
+                } else if !args_strs.is_empty() {
+                    format!(
+                        "format!(\"{}\", {})",
+                        (0..args_strs.len())
+                            .map(|_| "{}")
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        args_strs.join(", "),
+                    )
+                } else {
+                    // No arguments at all
+                    "\"\"".into()
+                }
+            } else {
+                format!(
+                    "format!(\"{}\", {})",
+                    (0..processed_args.len())
+                        .map(|_| "{}")
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    processed_args.join(", "),
+                )
+            }
         };
+        
+        // Assign format_str to arg for further processing
+        let arg = format_str;
 
         // Check if arg contains the extraction marker for node type
         // This can be either a direct marker or inside a format!() string
         let (final_arg, temp_decl) = if arg.starts_with("__EXTRACT_NODE_TYPE__(") {
             // Single argument case - direct marker
             let node_id = arg.strip_prefix("__EXTRACT_NODE_TYPE__(")
-                .and_then(|s| s.strip_suffix(")"))
-                .unwrap_or("Uuid::nil()");
+                .and_then(|s: &str| s.strip_suffix(")"))
+                .unwrap_or("Uid32::nil()");
             let temp_var = "__node_type";
             let decl = format!("let {} = api.get_type({});", temp_var, node_id);
             (format!("format!(\"{{:?}}\", {})", temp_var), Some(decl))
@@ -743,879 +1046,20 @@ impl ApiCodegen for ConsoleApi {
     }
 }
 
-impl ApiTypes for ConsoleApi {
+impl ModuleTypes for ConsoleApi {
     fn return_type(&self) -> Option<Type> {
         Some(Type::Void)
     }
-    // No specific param_types for Console APIs needed by default, uses None.
-}
-
-// ===========================================================
-// ScriptType API Implementations
-// ===========================================================
-
-impl ApiCodegen for ScriptTypeApi {
-    fn to_rust_prepared(
-        &self,
-        _args: &[Expr],
-        args_strs: &[String],
-        _script: &Script,
-        _needs_self: bool,
-        _current_func: Option<&Function>,
-    ) -> String {
-        match self {
-            ScriptTypeApi::Instantiate => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                format!("api.instantiate_script({})", arg)
-            }
-        }
-    }
-}
-
-impl ApiTypes for ScriptTypeApi {
-    fn return_type(&self) -> Option<Type> {
-        // ScriptTypeApi removed - scripts are no longer a type
-        None
-    }
-    // No specific param_types for ScriptType APIs needed by default, uses None.
-}
-
-// ===========================================================
-// NodeSugar API Implementations
-// ===========================================================
-
-impl ApiCodegen for NodeSugarApi {
-    fn to_rust_prepared(
-        &self,
-        args: &[Expr],
-        args_strs: &[String],
-        _script: &Script,
-        _needs_self: bool,
-        _current_func: Option<&Function>,
-    ) -> String {
-        match self {
-            NodeSugarApi::GetVar => {
-                let (node, name) = (args_strs.get(0), args.get(1));
-                // args_strs[0] is already processed by generate_rust_args, which handles _id conversion
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                
-                // Check if the variable name is a static literal string or a dynamic expression
-                if let Some(Expr::Literal(crate::ast::Literal::String(var_name))) = name {
-                    // Static variable name - use _id method with precomputed hash
-                    let var_id = string_to_u64(var_name);
-                    // Remove & from node_id if present (it should be Uuid, not &Uuid)
-                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                    format!(
-                        "api.get_script_var_id({}, {}u64)",
-                        node_id_clean, var_id
-                    )
-                } else {
-                    // Dynamic variable name - use string method (not _id)
-                    // The expression (e.g., `b`) will be resolved at runtime by Rust
-                    // generate_rust_args should convert it to &str based on param_types, but ensure it's converted
-                    let mut name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
-                    // If it's not already a string literal or &str, ensure it's converted to &str
-                    if !name_str.starts_with('"') && !name_str.starts_with('&') && !name_str.contains(".as_str()") {
-                        // It's likely a String variable - convert to &str
-                        name_str = format!("{}.as_str()", name_str);
-                    }
-                    // Remove & from node_id if present
-                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                    format!(
-                        "api.get_script_var({}, {})",
-                        node_id_clean, name_str
-                    )
-                }
-            }
-            NodeSugarApi::SetVar => {
-                let (node, name, val) = (args_strs.get(0), args.get(1), args_strs.get(2));
-                // args_strs[0] is already processed by generate_rust_args, which handles _id conversion
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                let val_str = val.cloned().unwrap_or_else(|| "Value::Null".to_string());
-                
-                // Check if the variable name is a static literal string or a dynamic expression
-                if let Some(Expr::Literal(crate::ast::Literal::String(var_name))) = name {
-                    // Static variable name - use _id method with precomputed hash
-                    let var_id = string_to_u64(var_name);
-                    // Remove & from node_id if present
-                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                    // Convert value to Value if needed
-                    let val_clean = if val_str.starts_with("json!(") || val_str.contains("Value::") {
-                        val_str
-                    } else {
-                        format!("json!({})", val_str)
-                    };
-                    format!(
-                        "api.set_script_var_id({}, {}u64, {})",
-                        node_id_clean, var_id, val_clean
-                    )
-                } else {
-                    // Dynamic variable name - use string method (not _id)
-                    // The expression (e.g., `b`) will be resolved at runtime by Rust
-                    // generate_rust_args should convert it to &str based on param_types, but ensure it's converted
-                    let mut name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
-                    // If it's not already a string literal or &str, ensure it's converted to &str
-                    if !name_str.starts_with('"') && !name_str.starts_with('&') && !name_str.contains(".as_str()") {
-                        // It's likely a String variable - convert to &str
-                        name_str = format!("{}.as_str()", name_str);
-                    }
-                    // Remove & from node_id if present
-                    let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                    // Convert value to Value if needed
-                    let val_clean = if val_str.starts_with("json!(") || val_str.contains("Value::") {
-                        val_str
-                    } else {
-                        format!("json!({})", val_str)
-                    };
-                    format!(
-                        "api.set_script_var({}, {}, {})",
-                        node_id_clean, name_str, val_clean
-                    )
-                }
-            }
-            NodeSugarApi::CallFunction => {
-                // VARNAME::method_name(params) or VARNAME::[b](params)
-                // Args: [node_expr, method_name_expr, ...params]
-                // args_strs[0] is already processed by generate_rust_args, which handles _id conversion
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                
-                // Check if the function name is a static literal string or a dynamic expression
-                if let Some(Expr::Literal(crate::ast::Literal::String(func_name))) = args.get(1) {
-                    // Static function name - use call_function_id with precomputed hash
-                    let func_id = string_to_u64(func_name);
-                    
-                    // Build params array - all args after the first two (node and method_name)
-                    // Convert each param to Value using json!() unless it's already a Value
-                    let params: Vec<String> = args_strs.iter()
-                        .skip(2)
-                        .map(|param_str| {
-                            // Check if it's already a Value type or json!() wrapped
-                            if param_str.starts_with("json!(") || param_str.contains("Value") {
-                                param_str.clone()
-                            } else {
-                                // Wrap in json!() to convert to Value
-                                format!("json!({})", param_str)
-                            }
-                        })
-                        .collect();
-                    
-                    if params.is_empty() {
-                        format!("api.call_function_id({}, {}u64, &[])", node_id_clean, func_id)
-                    } else {
-                        format!("api.call_function_id({}, {}u64, &[{}])", node_id_clean, func_id, params.join(", "))
-                    }
-                } else {
-                    // Dynamic function name - use call_function with string (not _id)
-                    // The expression (e.g., `b`) will be resolved at runtime by Rust
-                    // generate_rust_args should convert it to &str based on param_types, but ensure it's converted
-                    let mut method_name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
-                    // If it's not already a string literal or &str, ensure it's converted to &str
-                    if !method_name_str.starts_with('"') && !method_name_str.starts_with('&') && !method_name_str.contains(".as_str()") {
-                        // It's likely a String variable - convert to &str
-                        method_name_str = format!("{}.as_str()", method_name_str);
-                    }
-                    
-                    // Build params array - all args after the first two (node and method_name)
-                    // Convert each param to Value using json!() unless it's already a Value
-                    let params: Vec<String> = args_strs.iter()
-                        .skip(2)
-                        .map(|param_str| {
-                            // Check if it's already a Value type or json!() wrapped
-                            if param_str.starts_with("json!(") || param_str.contains("Value") {
-                                param_str.clone()
-                            } else {
-                                // Wrap in json!() to convert to Value
-                                format!("json!({})", param_str)
-                            }
-                        })
-                        .collect();
-                    
-                    if params.is_empty() {
-                        format!("api.call_function({}, {}, &[])", node_id_clean, method_name_str)
-                    } else {
-                        format!("api.call_function({}, {}, &[{}])", node_id_clean, method_name_str, params.join(", "))
-                    }
-                }
-            }
-            NodeSugarApi::GetChildByName => {
-                // self.get_node("name") -> api.get_child_by_name(self.id, "name")
-                // Returns the child node's ID (Option<Uuid>), which can be cast to a node type
-                // Extract the string literal value from args[1] if it's a Literal::String
-                let child_name =
-                    if let Some(Expr::Literal(crate::ast::Literal::String(s))) = args.get(1) {
-                        // It's a string literal, use it directly with quotes
-                        format!("\"{}\"", s)
-                    } else {
-                        // Fallback to args_strs[1] if it's not a literal
-                        args_strs
-                            .get(1)
-                            .cloned()
-                            .unwrap_or_else(|| "\"\"".to_string())
-                    };
-                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(node_str) = args_strs.get(0) {
-                    if node_str == "self" {
-                        "self.id".to_string()
-                    } else {
-                        // Node variable is already in _id form (bob_id) or is self.bob_id
-                        node_str.clone()
-                    }
-                } else {
-                    "self.id".to_string()
-                };
-                format!("api.get_child_by_name({}, {})", node_expr, child_name)
-            }
-            NodeSugarApi::GetParent => {
-                // node.get_parent() -> returns Option<Uuid> (None if no parent)
-                // For self.get_parent(): api.get_parent(self.id)
-                // For c.get_parent(): api.get_parent(c_id)
-                // When cast to a node type (e.g., "as Node2D"), property access will use read_node with unwrap
-                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    // Check args[0] FIRST - if it's an Ident (like "c"), use it directly
-                    // This bypasses any incorrect processing in args_strs
-                    // Node variables are stored as {name}_id
-                    format!("{}_id", name)
-                } else if let Some(node_str) = args_strs.get(0) {
-                    // Fallback: use args_strs if args[0] is not a simple Ident
-                    node_str.clone()
-                } else {
-                    "self.id".to_string()
-                };
-                format!("api.get_parent({})", node_expr)
-            }
-            NodeSugarApi::AddChild => {
-                // self.add_child(child) -> api.reparent(parent_id, child_id)
-                // Extract parent ID from AST
-                let parent_id = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    // Direct identifier like "bob" -> bob_id
-                    format!("{}_id", name)
-                } else if let Some(node_str) = args_strs.get(0) {
-                    // Complex expression - if it's already an ID, use as-is
-                    if node_str.ends_with("_id") || node_str.ends_with(".id") {
-                        node_str.clone()
-                    } else {
-                        format!("{}_id", node_str)
-                    }
-                } else {
-                    "self.id".to_string()
-                };
-                
-                // Extract child ID from AST (same logic as parent)
-                let child_id = if let Some(Expr::Ident(name)) = args.get(1) {
-                    // Direct identifier like "bob" -> bob_id
-                    format!("{}_id", name)
-                } else if let Some(node_str) = args_strs.get(1) {
-                    // Complex expression - if it's already an ID, use as-is
-                    if node_str.ends_with("_id") || node_str.ends_with(".id") {
-                        node_str.clone()
-                    } else {
-                        format!("{}_id", node_str)
-                    }
-                } else {
-                    return "// Error: add_child requires a child node".to_string();
-                };
-                
-                format!("api.reparent({}, {})", parent_id, child_id)
-            }
-            NodeSugarApi::ClearChildren => {
-                // self.clear_children() -> api.clear_children(self.id)
-                let parent_id = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    format!("{}_id", name)
-                } else if let Some(node_str) = args_strs.get(0) {
-                    if node_str.ends_with("_id") || node_str.ends_with(".id") {
-                        node_str.clone()
-                    } else {
-                        format!("{}_id", node_str)
-                    }
-                } else {
-                    "self.id".to_string()
-                };
-                format!("api.clear_children({})", parent_id)
-            }
-            NodeSugarApi::GetType => {
-                // node.get_type() -> api.get_type(node_id)
-                // Takes Uuid as first parameter
-                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    // Check if it's a temp variable (starts with __) - use as-is since it's already a Uuid
-                    if name.starts_with("__") {
-                        name.clone()
-                    } else {
-                        // Regular node variable - add _id suffix
-                        format!("{}_id", name)
-                    }
-                } else if let Some(node_str) = args_strs.get(0) {
-                    node_str.clone()
-                } else {
-                    "self.id".to_string()
-                };
-                format!("api.get_type({})", node_expr)
-            }
-            NodeSugarApi::GetParentType => {
-                // node.get_parent_type() -> api.get_parent_type(node_id)
-                // Takes Uuid as first parameter
-                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    // Check if it's a temp variable (starts with __) - use as-is since it's already a Uuid
-                    if name.starts_with("__") {
-                        name.clone()
-                    } else {
-                        // Regular node variable - add _id suffix
-                        format!("{}_id", name)
-                    }
-                } else if let Some(node_str) = args_strs.get(0) {
-                    node_str.clone()
-                } else {
-                    "self.id".to_string()
-                };
-                format!("api.get_parent_type({})", node_expr)
-            }
-            NodeSugarApi::Remove => {
-                // node.remove() -> api.remove_node(node_id)
-                // Removes the node from the scene and its parent's children list
-                let node_expr = if let Some(Expr::SelfAccess) = args.get(0) {
-                    "self.id".to_string()
-                } else if let Some(Expr::Ident(name)) = args.get(0) {
-                    // Check if it's a temp variable (starts with __) - use as-is since it's already a Uuid
-                    if name.starts_with("__") {
-                        name.clone()
-                    } else {
-                        // Regular node variable - add _id suffix
-                        format!("{}_id", name)
-                    }
-                } else if let Some(node_str) = args_strs.get(0) {
-                    node_str.clone()
-                } else {
-                    "self.id".to_string()
-                };
-                format!("api.remove_node({})", node_expr)
-            }
-        }
-    }
-}
-
-impl ApiTypes for NodeSugarApi {
-    fn return_type(&self) -> Option<Type> {
-        match self {
-            NodeSugarApi::GetVar => Some(Type::Custom("Value".into())),
-            NodeSugarApi::SetVar => Some(Type::Void),
-            NodeSugarApi::CallFunction => Some(Type::Object), // Returns Value (can be any type)
-            NodeSugarApi::GetChildByName => Some(Type::DynNode), // Returns DynNode - child node ID (no type resolution)
-            NodeSugarApi::GetParent => Some(Type::DynNode), // Returns DynNode - parent node ID (no type resolution)
-            NodeSugarApi::AddChild => Some(Type::Void),
-            NodeSugarApi::ClearChildren => Some(Type::Void), // Returns Void - no return value
-            NodeSugarApi::GetType => Some(Type::NodeType), // Returns NodeType
-            NodeSugarApi::GetParentType => Some(Type::NodeType), // Returns NodeType
-            NodeSugarApi::Remove => Some(Type::Void), // Returns Void - no return value
-        }
+    
+    // Console methods take variadic arguments, so we don't specify param types
+    fn param_types(&self) -> Option<Vec<Type>> {
+        None // Console methods accept any number of arguments
     }
     
-    fn param_types(&self) -> Option<Vec<Type>> {
-        match self {
-            NodeSugarApi::GetType | NodeSugarApi::GetParentType => {
-                // Both take Uuid as first parameter
-                Some(vec![Type::Uuid])
-            }
-            NodeSugarApi::GetVar | NodeSugarApi::SetVar => {
-                // First param: Uuid (node ID), Second param: &str (variable name)
-                // For SetVar, third param: Value
-                if matches!(self, NodeSugarApi::SetVar) {
-                    Some(vec![Type::Uuid, Type::StrRef, Type::Object])
-                } else {
-                    Some(vec![Type::Uuid, Type::StrRef])
-                }
-            }
-            NodeSugarApi::CallFunction => {
-                // First param: Uuid (node ID), Second param: &str (function name)
-                // Remaining params: Value (function arguments)
-                // Note: We don't know how many params there are at type-checking time,
-                // so we just specify the first two. The rest are handled dynamically.
-                Some(vec![Type::Uuid, Type::StrRef])
-            }
-            _ => None,
-        }
-    }
-}
-
-// ===========================================================
-// Signal API Implementations
-// ===========================================================
-
-impl ApiCodegen for SignalApi {
-    fn to_rust_prepared(
-        &self,
-        args: &[Expr],
-        args_strs: &[String],
-        script: &Script, // <-- Remove leading underscore
-        _needs_self: bool,
-        current_func: Option<&Function>, // <-- Remove leading underscore
-    ) -> String {
-        fn prehash_if_literal(arg: &str) -> String {
-            let trimmed = arg.trim();
-            if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
-                let inner = &trimmed[1..trimmed.len() - 1];
-                let id = string_to_u64(inner);
-                return format!("{id}u64");
-            }
-            if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
-                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
-                if inner_section.starts_with('"') && inner_section.ends_with('"') {
-                    let inner = &inner_section[1..inner_section.len() - 1];
-                    let id = string_to_u64(inner);
-                    return format!("{id}u64");
-                }
-            }
-            format!("string_to_u64(&{trimmed})")
-        }
-
-        fn strip_string_from(arg: &str) -> String {
-            let trimmed = arg.trim();
-            if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
-                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
-                if inner_section.starts_with('"') && inner_section.ends_with('"') {
-                    return inner_section[1..inner_section.len() - 1].to_string();
-                }
-            }
-            if trimmed.starts_with('"') && trimmed.ends_with('"') {
-                return trimmed[1..trimmed.len() - 1].to_string();
-            }
-            trimmed.to_string()
-        }
-
-        match self {
-            SignalApi::New => {
-                let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                prehash_if_literal(&signal)
-            }
-            SignalApi::Connect | SignalApi::Emit | SignalApi::EmitDeferred => {
-                // -- Fix: Accept both u64 and Type::Custom("Signal") as passthrough variables
-                let arg_expr = args.get(0).unwrap();
-                let arg_type = script.infer_expr_type(arg_expr, current_func);
-
-                let signal = match arg_type {
-                    Some(Type::Number(NumberKind::Unsigned(64))) => args_strs[0].clone(),
-                    Some(Type::Custom(ref s)) if s == "Signal" => args_strs[0].clone(),
-                    _ => prehash_if_literal(&args_strs[0]),
-                };
-
-                match self {
-                    SignalApi::Connect => {
-                        // New format: Signal.connect(signal, function_reference)
-                        // function_reference can be:
-                        // - String literal (function name) -> use self.id
-                        // - MemberAccess (bob.function) -> use bob_id (node variable is already bob_id)
-                        // - Ident (function) -> use self.id
-                        let func_expr = args.get(1).unwrap();
-                        let (node_code, func_name) = match func_expr {
-                            Expr::Literal(Literal::String(func_name)) => {
-                                // String literal -> function on self
-                                ("self".to_string(), func_name.clone())
-                            }
-                            Expr::MemberAccess(base, field) => {
-                                // MemberAccess like bob.function -> node_code is already bob_id
-                                let node_code = base.to_rust(false, script, None, current_func, None);
-                                (node_code, field.clone())
-                            }
-                            Expr::Ident(func_name) => {
-                                // Just an identifier -> function on self
-                                ("self".to_string(), func_name.clone())
-                            }
-                            _ => {
-                                // Fallback: treat as string literal
-                                let func = strip_string_from(args_strs.get(1).unwrap());
-                                ("self".to_string(), func)
-                            }
-                        };
-
-                        let func_id = string_to_u64(&func_name);
-                        // If node_code is "self", use self.id. Otherwise, node_code is already the node ID variable (bob_id or self.bob_id)
-                        let node_id = if node_code == "self" {
-                            "self.id".to_string()
-                        } else {
-                            node_code
-                        };
-                        format!("api.connect_signal_id({signal}, {}, {func_id}u64)", node_id)
-                    }
-                    SignalApi::Emit => {
-                        if args_strs.len() > 1 {
-                            let params: Vec<String> = args_strs[1..]
-                                .iter()
-                                .map(|a| format!("json!({a})"))
-                                .collect();
-                            // Use array literal - converted to slice automatically (zero-cost)
-                            format!(
-                                "api.emit_signal_id({signal}, &[{}])",
-                                params.join(", ")
-                            )
-                        } else {
-                            // Empty array literal - zero allocation
-                            format!("api.emit_signal_id({signal}, &[])")
-                        }
-                    }
-                    SignalApi::EmitDeferred => {
-                        if args_strs.len() > 1 {
-                            let params: Vec<String> = args_strs[1..]
-                                .iter()
-                                .map(|a| format!("json!({a})"))
-                                .collect();
-                            // Use array literal - converted to slice automatically (zero-cost)
-                            format!(
-                                "api.emit_signal_id_deferred({signal}, &[{}])",
-                                params.join(", ")
-                            )
-                        } else {
-                            // Empty array literal - zero allocation
-                            format!("api.emit_signal_id_deferred({signal}, &[])")
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
-    }
-}
-
-impl ApiTypes for SignalApi {
-    fn return_type(&self) -> Option<Type> {
-        match self {
-            SignalApi::New => Some(Type::Custom("Signal".into())),
-            _ => Some(Type::Void),
-        }
-    }
-
-    fn param_types(&self) -> Option<Vec<Type>> {
-        match self {
-            SignalApi::New => Some(vec![Type::String]),
-            SignalApi::Emit | SignalApi::EmitDeferred => Some(vec![Type::Custom("Signal".to_string()), Type::Object]),
-            SignalApi::Connect => Some(vec![Type::Custom("Signal".to_string())]),
-        }
-    }
-    // No specific param_types for Signal APIs needed by default, uses None.
-}
-
-// ===========================================================
-// ArrayOp API Implementations
-// ===========================================================
-
-impl ApiCodegen for ArrayApi {
-    fn to_rust_prepared(
-        &self,
-        args: &[Expr],
-        args_strs: &[String],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
-    ) -> String {
-        match self {
-            ArrayApi::Push => {
-                // args[0] is the array expression, args[1] is the value to push
-                let array_expr = &args[0];
-                let value_expr = &args[1]; // The raw AST expression for the value
-
-                // Infer the type of the array itself to get its inner type
-                let array_type = script.infer_expr_type(array_expr, current_func);
-
-                let inner_type =
-                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
-                        inner_types.get(0).cloned().unwrap_or(Type::Object)
-                    } else {
-                        Type::Object // Fallback if array type couldn't be inferred
-                    };
-
-                let mut value_code =
-                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
-
-                // If the value_code itself still indicates a JSON value AND the target is not Type::Object,
-                // we should attempt to deserialize it.
-                if value_code.starts_with("json!(") && inner_type != Type::Object {
-                    // Strip the json! and try to deserialize if possible
-                    let raw_json_content = value_code
-                        .strip_prefix("json!(")
-                        .and_then(|s| s.strip_suffix(")"))
-                        .unwrap_or(&value_code);
-                    value_code = format!(
-                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
-                        inner_type.to_rust_type(),
-                        raw_json_content
-                    );
-                } else if value_code.starts_with("json!(") && inner_type == Type::Object {
-                    // If target is Type::Object, json! is fine, just use the string directly
-                    // No change needed.
-                } else if inner_type == Type::Object {
-                    // For dynamic arrays (any[]), wrap the value in json!()
-                    value_code = format!("json!({})", value_code);
-                } else {
-                    // Perform implicit cast if needed and not already handled
-                    if let Some(actual_value_type) =
-                        script.infer_expr_type(value_expr, current_func)
-                    {
-                        if actual_value_type.can_implicitly_convert_to(&inner_type)
-                            && actual_value_type != inner_type
-                        {
-                            value_code = script.generate_implicit_cast_for_expr(
-                                &value_code,
-                                &actual_value_type,
-                                &inner_type,
-                            );
-                        }
-                    }
-                    // Handle cloning if the type requires it (e.g., custom structs)
-                    if inner_type.requires_clone()
-                        && !value_code.contains(".clone()")
-                        && !value_code.starts_with("String::from")
-                    {
-                        // Prevent double cloning if value_code already implies it (e.g., "new Player(...)")
-                        let produces_owned_value = matches!(
-                            value_expr,
-                            Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..)
-                        );
-                        if !produces_owned_value {
-                            value_code = format!("{}.clone()", value_code);
-                        }
-                    }
-                }
-
-                format!("{}.push({})", args_strs[0], value_code)
-            }
-            ArrayApi::Pop => {
-                format!("{}.pop()", args_strs[0])
-            }
-            ArrayApi::Len => {
-                format!("{}.len()", args_strs[0])
-            }
-            ArrayApi::Insert => {
-                let array_expr = &args[0];
-                let value_expr = &args[2]; // value is the third arg for insert
-                let array_type = script.infer_expr_type(array_expr, current_func);
-                let inner_type =
-                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
-                        inner_types.get(0).cloned().unwrap_or(Type::Object)
-                    } else {
-                        Type::Object
-                    };
-
-                let mut value_code =
-                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
-
-                // Apply the same logic as Push for value_code conversion/cloning
-                if value_code.starts_with("json!(") && inner_type != Type::Object {
-                    let raw_json_content = value_code
-                        .strip_prefix("json!(")
-                        .and_then(|s| s.strip_suffix(")"))
-                        .unwrap_or(&value_code);
-                    value_code = format!(
-                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
-                        inner_type.to_rust_type(),
-                        raw_json_content
-                    );
-                } else if !value_code.starts_with("json!(") {
-                    // Only do this if it's not already a json! and needs conversion
-                    if let Some(actual_value_type) =
-                        script.infer_expr_type(value_expr, current_func)
-                    {
-                        if actual_value_type.can_implicitly_convert_to(&inner_type)
-                            && actual_value_type != inner_type
-                        {
-                            value_code = script.generate_implicit_cast_for_expr(
-                                &value_code,
-                                &actual_value_type,
-                                &inner_type,
-                            );
-                        }
-                    }
-                    if inner_type.requires_clone()
-                        && !value_code.contains(".clone()")
-                        && !value_code.starts_with("String::from")
-                    {
-                        let produces_owned_value = matches!(
-                            value_expr,
-                            Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..)
-                        );
-                        if !produces_owned_value {
-                            value_code = format!("{}.clone()", value_code);
-                        }
-                    }
-                }
-
-                format!(
-                    "{}.insert({} as usize, {})",
-                    args_strs[0], args_strs[1], value_code
-                )
-            }
-            ArrayApi::Remove => {
-                format!("{}.remove({} as usize)", args_strs[0], args_strs[1])
-            }
-            ArrayApi::New => {
-                format!("Vec::new()")
-            }
-        }
-    }
-}
-
-impl ApiTypes for ArrayApi {
-    fn return_type(&self) -> Option<Type> {
-        match self {
-            ArrayApi::Push => Some(Type::Void),
-            ArrayApi::Pop => Some(Type::Object),
-            ArrayApi::Insert => Some(Type::Void),
-            ArrayApi::Remove => Some(Type::Object),
-            ArrayApi::Len => Some(Type::Number(NumberKind::Unsigned(32))),
-            ArrayApi::New => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
-        }
-    }
-
-    fn param_types(&self) -> Option<Vec<Type>> {
-        use ContainerKind::*;
-        use NumberKind::*;
-
-        match self {
-            ArrayApi::Push => Some(vec![
-                Type::Container(Array, vec![Type::Object]),
-                Type::Object, // any value; just “Value”
-            ]),
-            ArrayApi::Insert => Some(vec![
-                Type::Container(Array, vec![Type::Object]),
-                Type::Number(Unsigned(32)), // index
-                Type::Object,               // value
-            ]),
-            ArrayApi::Remove => Some(vec![
-                Type::Container(Array, vec![Type::Object]),
-                Type::Number(Unsigned(32)), // index expected
-            ]),
-            ArrayApi::Len | ArrayApi::Pop | ArrayApi::New => None,
-        }
-    }
-}
-
-impl ApiCodegen for MapApi {
-    fn to_rust_prepared(
-        &self,
-        args: &[Expr],
-        args_strs: &[String],
-        script: &Script,
-        needs_self: bool,
-        current_func: Option<&Function>,
-    ) -> String {
-        match self {
-            // args: [map, key (string), value]
-            MapApi::Insert => {
-                let key_type = script.infer_map_key_type(&args[0], current_func);
-                let val_type = script.infer_map_value_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
-                let mut val_code =
-                    args[2].to_rust(needs_self, script, val_type.as_ref(), current_func, None);
-
-                // For dynamic maps (any value type), wrap the value in json!()
-                if let Some(Type::Object) = val_type.as_ref() {
-                    if !val_code.starts_with("json!(") {
-                        val_code = format!("json!({})", val_code);
-                    }
-                }
-
-                format!("{}.insert({}, {})", args_strs[0], key_code, val_code)
-            }
-
-            // args: [map, key]
-            MapApi::Remove => {
-                let key_type = script.infer_map_key_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
-                if let Some(Type::String) = key_type.as_ref() {
-                    format!("{}.remove({}.as_str())", args_strs[0], key_code)
-                } else {
-                    format!("{}.remove(&{})", args_strs[0], key_code)
-                }
-            }
-
-            // args: [map, key]
-            MapApi::Get => {
-                // 1. Infer key type from map
-                let key_type = script.infer_map_key_type(&args[0], current_func);
-                // 2. Render the key argument with the right type hint
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
-
-                if let Some(Type::String) = key_type.as_ref() {
-                    // for String keys, .as_str() may be appropriate
-                    format!(
-                        "{}.get({}.as_str()).cloned().unwrap_or_default()",
-                        args_strs[0], key_code
-                    )
-                } else {
-                    // for any other key type (i32, u64, f32, etc)
-                    format!(
-                        "{}.get(&{}).cloned().unwrap_or_default()",
-                        args_strs[0], key_code
-                    )
-                }
-            }
-
-            // args: [map, key]
-            MapApi::Contains => {
-                let key_type = script.infer_map_key_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
-                if let Some(Type::String) = key_type.as_ref() {
-                    format!("{}.contains_key({}.as_str())", args_strs[0], key_code)
-                } else {
-                    format!("{}.contains_key(&{})", args_strs[0], key_code)
-                }
-            }
-
-            // args: [map]
-            MapApi::Len => {
-                format!("{}.len()", args_strs[0])
-            }
-
-            // args: [map]
-            MapApi::Clear => {
-                format!("{}.clear()", args_strs[0])
-            }
-
-            // no args
-            MapApi::New => "HashMap::new()".into(),
-        }
-    }
-}
-
-impl ApiTypes for MapApi {
-    fn return_type(&self) -> Option<Type> {
-        match self {
-            MapApi::Insert | MapApi::Clear => Some(Type::Void),
-            MapApi::Remove | MapApi::Get => Some(Type::Object),
-            MapApi::Contains => Some(Type::Bool),
-            MapApi::Len => Some(Type::Number(NumberKind::Unsigned(32))),
-            MapApi::New => Some(Type::Container(
-                ContainerKind::Map,
-                vec![Type::String, Type::Object],
-            )),
-        }
-    }
-
-    fn param_types(&self) -> Option<Vec<Type>> {
-        match self {
-            MapApi::Insert => Some(vec![
-                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
-                Type::String,
-                Type::Object,
-            ]),
-            MapApi::Remove | MapApi::Get => Some(vec![
-                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
-                Type::String,
-            ]),
-            MapApi::Contains => Some(vec![
-                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
-                Type::String,
-            ]),
-            _ => None,
-        }
+    /// Script-side parameter names (what PUP users see)
+    /// Console methods take variadic arguments, so we don't specify names
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        None // Console methods accept any number of arguments
     }
 }
 
@@ -1623,7 +1067,7 @@ impl ApiTypes for MapApi {
 // Input API Implementations
 // ===========================================================
 
-impl ApiCodegen for InputApi {
+impl ModuleCodegen for InputApi {
     fn to_rust_prepared(
         &self,
         _args: &[Expr],
@@ -1681,7 +1125,7 @@ impl ApiCodegen for InputApi {
     }
 }
 
-impl ApiTypes for InputApi {
+impl ModuleTypes for InputApi {
     fn return_type(&self) -> Option<Type> {
         use NumberKind::*;
         match self {
@@ -1694,7 +1138,7 @@ impl ApiTypes for InputApi {
             InputApi::GetTextInput => Some(Type::String),
             InputApi::GetMousePosition
             | InputApi::GetMousePositionWorld
-            | InputApi::ScreenToWorld => Some(Type::Custom("Vector2".into())),
+            | InputApi::ScreenToWorld => Some(Type::EngineStruct(crate::engine_structs::EngineStruct::Vector2)),
             InputApi::GetScrollDelta => Some(Type::Number(Float(32))),
             InputApi::ClearTextInput => Some(Type::Void),
         }
@@ -1707,7 +1151,7 @@ impl ApiTypes for InputApi {
                 Some(vec![Type::String])
             }
             InputApi::ScreenToWorld => Some(vec![
-                Type::Custom("Vector2".into()),
+                Type::EngineStruct(crate::engine_structs::EngineStruct::Vector2),
                 Type::Number(Float(32)),
                 Type::Number(Float(32)),
                 Type::Number(Float(32)),
@@ -1718,95 +1162,33 @@ impl ApiTypes for InputApi {
             _ => None,
         }
     }
-}
-
-// ===========================================================
-// Texture API Implementations
-// ===========================================================
-
-impl ApiCodegen for TextureApi {
-    fn to_rust_prepared(
-        &self,
-        _args: &[Expr],
-        args_strs: &[String],
-        _script: &Script,
-        _needs_self: bool,
-        _current_func: Option<&Function>,
-    ) -> String {
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
-            TextureApi::Load => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                // Handle string parameters: literals stay as &str, variables need & prefix
-                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
-                    // String literal - use directly as &str
-                    arg
-                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
-                    // Extract string literal from String::from("...")
-                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
-                    if inner.starts_with('"') && inner.ends_with('"') {
-                        // Use the string literal directly as &str
-                        inner.to_string()
-                    } else {
-                        // Fallback: borrow the String
-                        format!("&{}", arg)
-                    }
-                } else {
-                    // Variable or complex expression - borrow it
-                    format!("&{}", arg)
-                };
-                
-                format!("api.Texture.load({})", arg_str)
-            }
-            TextureApi::CreateFromBytes => {
-                let bytes = args_strs.get(0).cloned().unwrap_or_else(|| "vec![]".into());
-                let width = args_strs.get(1).cloned().unwrap_or_else(|| "0".into());
-                let height = args_strs.get(2).cloned().unwrap_or_else(|| "0".into());
-                format!("api.Texture.create_from_bytes({}, {}, {})", bytes, width, height)
-            }
-            TextureApi::GetWidth => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".into());
-                format!("api.Texture.get_width({})", arg)
-            }
-            TextureApi::GetHeight => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".into());
-                format!("api.Texture.get_height({})", arg)
-            }
-            TextureApi::GetSize => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uuid::nil()".into());
-                format!("api.Texture.get_size({})", arg)
-            }
-        }
-    }
-}
-
-impl ApiTypes for TextureApi {
-    fn return_type(&self) -> Option<Type> {
-        match self {
-            TextureApi::Load => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID (like GetParent returns DynNode)
-            TextureApi::CreateFromBytes => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID
-            TextureApi::GetWidth | TextureApi::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
-            TextureApi::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
-        }
-    }
-
-    fn param_types(&self) -> Option<Vec<Type>> {
-        match self {
-            TextureApi::Load => Some(vec![Type::String]),
-            TextureApi::CreateFromBytes => Some(vec![
-                Type::Container(ContainerKind::Array, vec![Type::Number(NumberKind::Unsigned(8))]),
-                Type::Number(NumberKind::Unsigned(32)),
-                Type::Number(NumberKind::Unsigned(32)),
+            InputApi::GetAction => Some(vec!["action_name"]),
+            InputApi::IsKeyPressed => Some(vec!["key"]),
+            InputApi::IsButtonPressed => Some(vec!["button"]),
+            InputApi::ScreenToWorld => Some(vec![
+                "screen_pos",
+                "camera_rotation",
+                "camera_zoom",
+                "virtual_width",
+                "virtual_height",
+                "window_width",
+                "window_height",
             ]),
-            TextureApi::GetWidth | TextureApi::GetHeight | TextureApi::GetSize => Some(vec![Type::Uuid]),
+            _ => None,
         }
     }
 }
+
 
 // ===========================================================
 // Math API Implementations
 // ===========================================================
 
-impl ApiCodegen for MathApi {
+impl ModuleCodegen for MathApi {
     fn to_rust_prepared(
         &self,
         _args: &[Expr],
@@ -1831,7 +1213,7 @@ impl ApiCodegen for MathApi {
     }
 }
 
-impl ApiTypes for MathApi {
+impl ModuleTypes for MathApi {
     fn return_type(&self) -> Option<Type> {
         use NumberKind::*;
         match self {
@@ -1854,4 +1236,14 @@ impl ApiTypes for MathApi {
             ]),
         }
     }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            MathApi::Random => None,
+            MathApi::RandomRange => Some(vec!["min", "max"]),
+            MathApi::RandomInt => Some(vec!["min", "max"]),
+        }
+    }
 }
+

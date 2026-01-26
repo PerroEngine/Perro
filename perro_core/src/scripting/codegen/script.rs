@@ -1,5 +1,6 @@
 // Script code generation - main to_rust method
 use crate::ast::*;
+use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 use std::fmt::Write as _;
 use std::path::Path;
 use regex::Regex;
@@ -55,7 +56,7 @@ impl Script {
         out.push_str("use serde::{Deserialize, Serialize};\n");
         out.push_str("use serde_json::{json, Value};\n");
         out.push_str("use smallvec::{smallvec, SmallVec};\n");
-        out.push_str("use uuid::Uuid;\n\n");
+        out.push_str("use perro_core::{Uid32, TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};\n\n");
 
         // Internal modules
         out.push_str("use perro_core::prelude::*;\n\n");
@@ -172,11 +173,18 @@ impl Script {
         out.push_str("};\n\n");
 
         write!(out, "pub struct {}Script {{\n", pascal_struct_name).unwrap();
-        write!(out, "    id: Uuid,\n").unwrap();
+        write!(out, "    id: NodeID,\n").unwrap();
 
         for var in all_script_vars {
             let renamed_name = rename_variable(&var.name, var.typ.as_ref());
-            write!(out, "    {}: {},\n", renamed_name, var.rust_type()).unwrap();
+            // Special case: Texture (EngineStruct) becomes Option<TextureID> in Rust struct fields
+            let rust_type = match var.typ.as_ref() {
+                Some(Type::EngineStruct(EngineStructKind::Texture)) => {
+                    "Option<TextureID>".to_string()
+                }
+                _ => var.rust_type(),
+            };
+            write!(out, "    {}: {},\n", renamed_name, rust_type).unwrap();
         }
 
         out.push_str("}\n\n");
@@ -195,7 +203,7 @@ impl Script {
 
         write!(
             out,
-            "    let id = Uuid::nil(); // Will be set when attached to node\n"
+            "    let id = NodeID::nil(); // Will be set when attached to node\n"
         )
         .unwrap();
 

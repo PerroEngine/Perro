@@ -1,10 +1,10 @@
 // ----------------------------------------------------------------
-// Central router used by the parser to map syntax → semantic call
+// Module APIs - Global utility functions
+// These are different from Resource APIs (types/resources that can be instantiated)
 // ----------------------------------------------------------------
 
 use crate::{
     api_modules::*,
-    ast::{ContainerKind, Type},
 };
 
 pub struct PupAPI;
@@ -16,28 +16,44 @@ impl PupAPI {
             PupTime::NAME => PupTime::resolve_method(func),
             PupOS::NAME => PupOS::resolve_method(func),
             PupConsole::NAME => PupConsole::resolve_method(func),
-            PupScriptType::NAME => PupScriptType::resolve_method(func),
-            PupSignal::NAME => PupSignal::resolve_method(func),
             PupInput::NAME => PupInput::resolve_method(func),
-            PupTexture::NAME => PupTexture::resolve_method(func),
             PupMath::NAME => PupMath::resolve_method(func),
-
-            PupArray::NAME => PupArray::resolve_method(func),
-            PupMap::NAME => PupMap::resolve_method(func),
-            _ => PupNodeSugar::resolve_method(func),
+            _ => None,
+        }
+    }
+    
+    /// Get all available module API names
+    pub fn get_all_module_names() -> Vec<&'static str> {
+        vec![
+            PupJSON::NAME,
+            PupTime::NAME,
+            PupOS::NAME,
+            PupConsole::NAME,
+            PupInput::NAME,
+            PupMath::NAME,
+        ]
+    }
+    
+    /// Check if a name is a valid module API name
+    pub fn is_module_name(name: &str) -> bool {
+        Self::get_all_module_names().contains(&name)
+    }
+    
+    /// Get all method names for a given module name
+    pub fn get_method_names_for_module(module_name: &str) -> Vec<&'static str> {
+        match module_name {
+            PupJSON::NAME => PupJSON::get_all_method_names(),
+            PupTime::NAME => PupTime::get_all_method_names(),
+            PupOS::NAME => PupOS::get_all_method_names(),
+            PupConsole::NAME => PupConsole::get_all_method_names(),
+            PupInput::NAME => PupInput::get_all_method_names(),
+            PupMath::NAME => PupMath::get_all_method_names(),
+            _ => Vec::new(),
         }
     }
 }
 
-pub fn normalize_type_name(type_: &Type) -> &str {
-    match type_ {
-        Type::Container(ContainerKind::Array, _) => "Array",
-        Type::Container(ContainerKind::Map, _) => "Map",
-        Type::Object => "Object",
-        Type::Custom(s) => s.as_str(),
-        _ => "",
-    }
-}
+
 
 pub struct PupJSON;
 impl PupJSON {
@@ -49,6 +65,11 @@ impl PupJSON {
             "stringify" => Some(ApiModule::JSON(JSONApi::Stringify)),
             _ => None,
         }
+    }
+
+    /// Returns all method names available for this API module
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["parse", "stringify"]
     }
 }
 
@@ -64,6 +85,11 @@ impl PupTime {
             _ => None,
         }
     }
+
+    /// Returns all method names available for this API module
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["get_delta", "sleep_msec", "get_unix_time_msec"]
+    }
 }
 
 pub struct PupOS;
@@ -76,6 +102,10 @@ impl PupOS {
             "get_platform_name" => Some(ApiModule::OS(OSApi::GetPlatformName)),
             _ => None,
         }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["get_env", "get_platform_name"]
     }
 }
 
@@ -92,90 +122,13 @@ impl PupConsole {
             _ => None,
         }
     }
-}
 
-pub struct PupScriptType;
-impl PupScriptType {
-    pub const NAME: &'static str = "Script";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "new" => Some(ApiModule::ScriptType(ScriptTypeApi::Instantiate)),
-            _ => None,
-        }
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["print", "log", "warn", "error", "info"]
     }
 }
 
-pub struct PupNodeSugar;
-impl PupNodeSugar {
-    pub const NAME: &'static str = "NodeSugar";
 
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "get_var" => Some(ApiModule::NodeSugar(NodeSugarApi::GetVar)),
-            "set_var" => Some(ApiModule::NodeSugar(NodeSugarApi::SetVar)),
-            "get_node" => Some(ApiModule::NodeSugar(NodeSugarApi::GetChildByName)),
-            "get_parent" => Some(ApiModule::NodeSugar(NodeSugarApi::GetParent)),
-            "add_child" => Some(ApiModule::NodeSugar(NodeSugarApi::AddChild)),
-            "clear_children" => Some(ApiModule::NodeSugar(NodeSugarApi::ClearChildren)),
-            "get_type" => Some(ApiModule::NodeSugar(NodeSugarApi::GetType)),
-            "get_parent_type" => Some(ApiModule::NodeSugar(NodeSugarApi::GetParentType)),
-            "remove" => Some(ApiModule::NodeSugar(NodeSugarApi::Remove)),
-            _ => None,
-        }
-    }
-}
-
-pub struct PupSignal;
-impl PupSignal {
-    pub const NAME: &'static str = "Signal";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "new" => Some(ApiModule::Signal(SignalApi::New)),
-            "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
-            "emit" => Some(ApiModule::Signal(SignalApi::Emit)),
-            "emit_deferred" => Some(ApiModule::Signal(SignalApi::EmitDeferred)),
-            _ => None,
-        }
-    }
-}
-
-pub struct PupArray;
-impl PupArray {
-    pub const NAME: &'static str = "Array";
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "push" | "append" => Some(ApiModule::ArrayOp(ArrayApi::Push)),
-            "insert" => Some(ApiModule::ArrayOp(ArrayApi::Insert)),
-            "remove" => Some(ApiModule::ArrayOp(ArrayApi::Remove)),
-            "pop" => Some(ApiModule::ArrayOp(ArrayApi::Pop)),
-            "len" | "size" => Some(ApiModule::ArrayOp(ArrayApi::Len)),
-
-            "new" => Some(ApiModule::ArrayOp(ArrayApi::New)),
-            // Add more mappings here!
-            _ => None,
-        }
-    }
-}
-
-pub struct PupMap;
-impl PupMap {
-    pub const NAME: &'static str = "Map";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "insert" => Some(ApiModule::MapOp(MapApi::Insert)),
-            "remove" => Some(ApiModule::MapOp(MapApi::Remove)),
-            "get" => Some(ApiModule::MapOp(MapApi::Get)),
-            "contains" | "contains_key" => Some(ApiModule::MapOp(MapApi::Contains)),
-            "len" | "size" => Some(ApiModule::MapOp(MapApi::Len)),
-            "clear" => Some(ApiModule::MapOp(MapApi::Clear)),
-            "new" => Some(ApiModule::MapOp(MapApi::New)),
-            _ => None,
-        }
-    }
-}
 
 pub struct PupInput;
 impl PupInput {
@@ -213,23 +166,16 @@ impl PupInput {
             _ => None,
         }
     }
-}
 
-pub struct PupTexture;
-impl PupTexture {
-    pub const NAME: &'static str = "Texture";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "load" => Some(ApiModule::Texture(TextureApi::Load)),
-            "create_from_bytes" => Some(ApiModule::Texture(TextureApi::CreateFromBytes)),
-            "get_width" => Some(ApiModule::Texture(TextureApi::GetWidth)),
-            "get_height" => Some(ApiModule::Texture(TextureApi::GetHeight)),
-            "get_size" => Some(ApiModule::Texture(TextureApi::GetSize)),
-            _ => None,
-        }
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["get_action", "controller_enable", "enable_controller", "is_key_pressed", 
+             "get_key_pressed", "get_text_input", "clear_text_input", "is_button_pressed",
+             "is_mouse_button_pressed", "get_mouse_position", "get_mouse_pos",
+             "get_mouse_position_world", "get_mouse_pos_world", "get_scroll_delta",
+             "get_scroll", "is_wheel_up", "is_wheel_down", "screen_to_world"]
     }
 }
+
 
 pub struct PupMath;
 impl PupMath {
@@ -243,4 +189,34 @@ impl PupMath {
             _ => None,
         }
     }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["random", "random_range", "random_int"]
+    }
 }
+
+/// Normalize a Type to a string name that can be used to resolve APIs
+/// Returns an empty string if the type doesn't map to any API module
+pub fn normalize_type_name(typ: &crate::ast::Type) -> String {
+    use crate::ast::Type;
+    match typ {
+        Type::Signal => "Signal".to_string(),
+        Type::Container(crate::ast::ContainerKind::Array, _) => "Array".to_string(),
+        Type::Container(crate::ast::ContainerKind::Map, _) => "Map".to_string(),
+        Type::Custom(name) => {
+            // Check if it matches any module API names
+            match name.as_str() {
+                "JSON" | "json" => "JSON".to_string(),
+                "Time" | "time" => "Time".to_string(),
+                "OS" | "os" => "OS".to_string(),
+                "Console" | "console" => "Console".to_string(),
+                "Input" | "input" => "Input".to_string(),
+                "Math" | "math" => "Math".to_string(),
+                _ => String::new(),
+            }
+        }
+        _ => String::new(),
+    }
+}
+
+

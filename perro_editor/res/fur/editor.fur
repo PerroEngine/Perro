@@ -55,16 +55,17 @@
                   [Panel w=13% h=100% anchor=c bg=steel-10 z=50]
                         [VLayout w=100% h=100% anchor=c align=c gap=0]
                               // Scene Graph Section - included from separate file
+                              
                               [Include path="res://fur/scene_graph.fur"]
                               [/Include]
 
-                              // Resource Tree Section - MUST HAVE HEIGHT!
+                              // Resource Tree Section
                               [Panel w=100% anchor=c bg=steel-10]
                                     [VLayout w=100% h=100% anchor=c align=s gap=0]
                                           // Resource Tree header
                                           [Panel w=100% h=32 anchor=c bg=steel-8 z=51]
                                                 [Text fsz=15 color=white anchor=c]
-                                                Resources (res://)
+                                                Resources ("res://")
                                                 [/Text]
                                           [/Panel]
                                           // Content area - remaining space

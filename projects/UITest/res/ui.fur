@@ -1,33 +1,56 @@
-[UI]
 
 
-[Button id=bob sz=15% bg=red-5 rounding=0.5 anchor=c fsz=25 align=c text-anchor=c]
-Center
-[/Button]
+  [HLayout w=950 h=15% anchor=c dist=pack]
+    [Text fsz=25 align=c]Center[/Text]
 
-[Button id=bob2 sz=15% bg=blue-5 rounding=half anchor=tl fsz=25 align=c text-anchor=tl]
-TopLeft
-[/Button]
+    [Text fsz=25 align=c]Left[/Text]
 
-[Button id=bob3 sz=15% bg=green-5 rounding=third anchor=tr fsz=25 align=c text-anchor=tr]
-TopRight
-[/Button]
-
-[Button id=bob4 sz=15% bg=yellow-5 rounding=0.1 anchor=bl fsz=25 align=c text-anchor=bl]
-BottomLeft
-[/Button]
-
-[Button id=bob5 sz=15% bg=purple-5 rounding=0.1 anchor=br fsz=25 align=c text-anchor=br]
-BottomRight
-[/Button]
-
-[Button id=bob6 sz=15% bg=orange-5 rounding=0.1 anchor=t fsz=25 align=c text-anchor=t]
-Top
-[/Button]
-
-[Button id=bob7 sz=15% bg=cyan-5 rounding=0.1 anchor=b fsz=25 align=c text-anchor=b]
-Bottom
-[/Button]
+    [Text fsz=25 align=c]Centr 2[/Text]
+  [/HLayout]
 
 
-[/UI]
+
+  [Panel w=500 h=15% anchor=l bg=sea-5 rounding=50%]
+    [Text fsz=25 align=c anchor=l]Left[/Text]
+  [/Panel]
+
+
+
+  [Panel w=15% h=15% anchor=r bg=blue-5 rounding=50%]
+    [Text fsz=25 align=c anchor=r]Right[/Text]
+  [/Panel]
+
+
+  [Panel w=15% h=15% anchor=tl bg=purple-5 rounding=50%]
+    [Text fsz=25 align=c anchor=tl]TopLeft[/Text]
+  [/Panel]
+
+
+
+  [Panel w=15% h=15% anchor=tr bg=gold-5 rounding=50%]
+    [Text fsz=25 align=c anchor=tr]TopRight[/Text]
+  [/Panel]
+
+
+
+  [Panel w=15% h=15% anchor=bl bg=red-5 rounding=50%]
+    [Text fsz=25 align=c anchor=bl ]BottomLeft[/Text]
+  [/Panel]
+
+
+  [Panel w=15% h=15% anchor=br bg=sea-5 rounding=50%]
+    [Text fsz=25 align=c anchor=br]BottomRight[/Text]
+  [/Panel]
+
+
+
+  [Panel w=15% h=15% anchor=t bg=blue-5 rounding=50%]
+    [Text fsz=25 align=c anchor=t]Top[/Text]
+  [/Panel]
+
+
+
+  [Panel w=15% h=15% anchor=b bg=purple-5 rounding=50%]
+    [Text fsz=25 align=c anchor=b]Bottom[/Text]
+  [/Panel]
+

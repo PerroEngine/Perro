@@ -41,6 +41,14 @@ impl Literal {
 
             Literal::Bool(b) => b.to_string(),
 
+            Literal::Null => {
+                // null literal converts to None for Option<T> types
+                match expected_type {
+                    Some(Type::Option(_)) => "None".to_string(),
+                    _ => "None".to_string(), // Default to None, will be type-checked elsewhere
+                }
+            }
+
             Literal::Interpolated(s) => {
                 let re = Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)\}").unwrap();
                 let mut fmt = String::new();

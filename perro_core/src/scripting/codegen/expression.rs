@@ -1,5 +1,7 @@
 // Expression code generation - Expr and TypedExpr
 use crate::api_modules::*;
+use crate::resource_modules::{ArrayResource, MapResource};
+use crate::call_modules::CallModule;
 use crate::ast::*;
 use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Stmt, Type, TypedExpr};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
@@ -72,11 +74,11 @@ impl Expr {
 
         match expr {
             Expr::Ident(name) => {
-                // For temp variables (__temp_*), we need to check their actual type
+                // For temp variables (__temp_* or temp_api_var_*), we need to check their actual type
                 // Since they're not in the script's variable list, infer_expr_type won't find them
                 // But we know from context that most read_node results are Copy types (f32, i32, etc.)
                 // So we'll try to infer, and if we can't, we'll check if it looks like a Copy type
-                if name.starts_with("__temp_") {
+                if name.starts_with("__temp_") || name.starts_with("temp_api_var_") {
                     // Try to infer type first
                     if let Some(ty) = script.infer_expr_type(expr, current_func) {
                         // We have the type - check if it requires cloning
@@ -174,9 +176,9 @@ impl Expr {
                 // Check against `script_vars` to see if it's a field
                 let is_field = script.variables.iter().any(|v| v.name == *name);
                 
-                // Special case: temp variables (__temp_*) should NEVER be renamed if they're NOT user variables
-                // If a user actually named a variable __temp_*, we need to rename it to avoid collisions
-                if name.starts_with("__temp_") && !is_local && !is_field {
+                // Special case: temp variables (__temp_* or temp_api_var_*) should NEVER be renamed if they're NOT user variables
+                // If a user actually named a variable __temp_* or temp_api_var_*, we need to rename it to avoid collisions
+                if (name.starts_with("__temp_") || name.starts_with("temp_api_var_")) && !is_local && !is_field {
                     return name.to_string();
                 }
                 
@@ -342,16 +344,16 @@ impl Expr {
                     renamed_name
                 };
 
-                // ✨ Add this: wrap in json! if going to Value/Object
-                if let Some(Type::Object) = expected_type {
+                // ✨ Add this: wrap in json! if going to Value/Object/Any
+                if matches!(expected_type, Some(Type::Object | Type::Any)) {
                     format!("json!({})", ident_code)
                 } else {
                     ident_code
                 }
             }
             Expr::Literal(lit) => {
-                // New: check if the expected_type is Type::Object
-                if let Some(Type::Object) = expected_type {
+                // New: check if the expected_type is Type::Object or Type::Any
+                if matches!(expected_type, Some(Type::Object | Type::Any)) {
                     format!("json!({})", lit.to_rust(None))
                 } else if let Some(expected) = expected_type {
                     // Pass expected type to literal generation
@@ -431,11 +433,11 @@ impl Expr {
                 // Check if left/right are len() calls BEFORE generating code
                 let left_is_len = matches!(
                     left.as_ref(),
-                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
+                    Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::ArrayOp(ArrayResource::Len)), _)
                 ) || matches!(left.as_ref(), Expr::MemberAccess(_, field) if field == "Length" || field == "length" || field == "len");
                 let right_is_len = matches!(
                     right.as_ref(),
-                    Expr::ApiCall(ApiModule::ArrayOp(ArrayApi::Len), _)
+                    Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::ArrayOp(ArrayResource::Len)), _)
                 ) || matches!(right.as_ref(), Expr::MemberAccess(_, field) if field == "Length" || field == "length" || field == "len");
 
                 let left_raw =
@@ -573,11 +575,12 @@ impl Expr {
                 }
 
                 // Handle null checks: body != null -> body.is_some(), body == null -> body.is_none()
-                // Check if one side is the identifier "null" and the other is an Option type
+                // Check if one side is null (either Literal::Null or identifier "null") and the other is an Option type
                 if matches!(op, Op::Ne | Op::Eq) {
-                    let left_is_null = matches!(left.as_ref(), Expr::Ident(name) if name == "null");
-                    let right_is_null =
-                        matches!(right.as_ref(), Expr::Ident(name) if name == "null");
+                    let left_is_null = matches!(left.as_ref(), Expr::Literal(Literal::Null)) 
+                        || matches!(left.as_ref(), Expr::Ident(name) if name == "null");
+                    let right_is_null = matches!(right.as_ref(), Expr::Literal(Literal::Null))
+                        || matches!(right.as_ref(), Expr::Ident(name) if name == "null");
 
                     if left_is_null && !right_is_null {
                         // null != body -> body.is_none(), null == body -> body.is_none()
@@ -599,13 +602,54 @@ impl Expr {
                 format!("({} {} {})", left_final, op.to_rust(), right_final)
             }
             Expr::MemberAccess(base, field) => {
+                // Special case: chained API calls like api.get_parent(...).get_type()
+                // Convert to api.get_parent_type(...)
+                if let Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), parent_args) = base.as_ref() {
+                    if field == "get_type" {
+                        // Extract the node ID argument from get_parent
+                        let node_id_expr = if let Some(Expr::SelfAccess) = parent_args.get(0) {
+                            "self.id".to_string()
+                        } else if let Some(Expr::Ident(name)) = parent_args.get(0) {
+                            // Check if it's a type that becomes Uuid/Option<Uuid> (should have _id suffix)
+                            let is_node_var = if let Some(func) = current_func {
+                                func.locals.iter()
+                                    .find(|v| v.name == *name)
+                                    .and_then(|v| v.typ.as_ref())
+                                    .map(|t| super::utils::type_becomes_id(t))
+                                    .or_else(|| {
+                                        func.params.iter()
+                                            .find(|p| p.name == *name)
+                                            .map(|p| super::utils::type_becomes_id(&p.typ))
+                                    })
+                                    .unwrap_or(false)
+                            } else {
+                                script.get_variable_type(name)
+                                    .map(|t| super::utils::type_becomes_id(&t))
+                                    .unwrap_or(false)
+                            };
+                            
+                            if is_node_var {
+                                format!("{}_id", name)
+                            } else {
+                                name.clone()
+                            }
+                        } else {
+                            // For complex expressions, generate the expression string
+                            // The statement-level extraction will handle temp variables if needed
+                            parent_args[0].to_rust(needs_self, script, None, current_func, None)
+                        };
+                        
+                        return format!("api.get_parent_type({})", node_id_expr);
+                    }
+                }
+                
                 // Special case: accessing .id or .node_type on parent field
-                // self.parent.id -> api.read_node(self.id, |n| n.parent.as_ref().map(|p| p.id).unwrap_or(Uuid::nil()))
+                // self.parent.id -> api.read_node(self.id, |n| n.parent.as_ref().map(|p| p.id).unwrap_or(Uid32::nil()))
                 // self.parent.node_type -> api.read_node(self.id, |n| n.parent.as_ref().map(|p| p.node_type.clone()).unwrap())
                 if let Expr::MemberAccess(parent_base, parent_field) = base.as_ref() {
                     if matches!(parent_base.as_ref(), Expr::SelfAccess) && parent_field == "parent" {
                         if field == "id" {
-                            return format!("api.read_node(self.id, |self_node: &{}| self_node.parent.as_ref().map(|p| p.id).unwrap_or(Uuid::nil()))", script.node_type);
+                            return format!("api.read_node(self.id, |self_node: &{}| self_node.parent.as_ref().map(|p| p.id).unwrap_or(Uid32::nil()))", script.node_type);
                         } else if field == "node_type" {
                             return format!("api.read_node(self.id, |self_node: &{}| self_node.parent.as_ref().map(|p| p.node_type.clone()).unwrap())", script.node_type);
                         }
@@ -787,7 +831,7 @@ impl Expr {
                 let base_type = script.infer_expr_type(base, current_func);
 
                 match base_type {
-                    Some(Type::Object) => {
+                    Some(Type::Object | Type::Any) => {
                         // dynamic object (serde_json::Value)
                         let base_code = base.to_rust(needs_self, script, None, current_func, None);
                         format!("{}[\"{}\"].clone()", base_code, field)
@@ -831,9 +875,9 @@ impl Expr {
                             // Check if base is an Option<Uuid> variable (from get_parent() or get_node())
                             // Check in current function's locals first, then script-level variables
                             let is_option_uuid = if let Some(current_func) = current_func {
-                                current_func.locals.iter().any(|v| v.name == base_code && matches!(v.typ.as_ref(), Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::Uuid)))
+                                current_func.locals.iter().any(|v| v.name == base_code && matches!(v.typ.as_ref(), Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::Uid32)))
                             } else {
-                                script.get_variable_type(&base_code).map_or(false, |t| matches!(t, Type::Option(inner) if matches!(inner.as_ref(), Type::Uuid)))
+                                script.get_variable_type(&base_code).map_or(false, |t| matches!(t, Type::Option(inner) if matches!(inner.as_ref(), Type::Uid32)))
                             };
                             
                             if is_node_id_var || is_option_uuid {
@@ -1245,28 +1289,86 @@ impl Expr {
                 }
             }
             Expr::Call(target, args) => {
+                // Special case: chained API calls like api.get_parent(...).get_type()
+                // Convert to api.get_parent_type(...) - this should NOT be treated as a call
+                if let Expr::MemberAccess(base, field) = target.as_ref() {
+                    if let Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), parent_args) = base.as_ref() {
+                        if field == "get_type" && args.is_empty() {
+                            // Extract the node ID argument from get_parent
+                            let node_id_expr = if let Some(Expr::SelfAccess) = parent_args.get(0) {
+                                "self.id".to_string()
+                            } else if let Some(Expr::Ident(name)) = parent_args.get(0) {
+                                // Check if it's a type that becomes Uuid/Option<Uuid> (should have _id suffix)
+                                let is_node_var = if let Some(func) = current_func {
+                                    func.locals.iter()
+                                        .find(|v| v.name == *name)
+                                        .and_then(|v| v.typ.as_ref())
+                                        .map(|t| super::utils::type_becomes_id(t))
+                                        .or_else(|| {
+                                            func.params.iter()
+                                                .find(|p| p.name == *name)
+                                                .map(|p| super::utils::type_becomes_id(&p.typ))
+                                        })
+                                        .unwrap_or(false)
+                                } else {
+                                    script.get_variable_type(name)
+                                        .map(|t| super::utils::type_becomes_id(&t))
+                                        .unwrap_or(false)
+                                };
+                                
+                                if is_node_var {
+                                    format!("{}_id", name)
+                                } else {
+                                    name.clone()
+                                }
+                            } else {
+                                // For complex expressions, generate the expression string
+                                // The statement-level extraction will handle temp variables if needed
+                                parent_args[0].to_rust(needs_self, script, None, current_func, None)
+                            };
+                            
+                            // Return directly without adding () - this is not a function call
+                            return format!("api.get_parent_type({})", node_id_expr);
+                        }
+                    }
+                }
+                
                 // Check for chained calls where an ApiCall returning Uuid is followed by
                 // a NodeSugar API method that accepts Uuid as its first parameter
                 if let Expr::MemberAccess(base, method) = target.as_ref() {
-                    // Try to resolve the method as a NodeSugar API
-                    if let Some(outer_api) = crate::lang::pup::api::PupNodeSugar::resolve_method(method) {
-                        // Check if this API's first parameter is Uuid
-                        if let Some(param_types) = outer_api.param_types() {
+                    // Try to resolve the method as a node method by looking it up in the engine registry
+                    // Try NodeType::Node first since most methods are registered there
+                    let method_ref_opt = ENGINE_REGISTRY.method_ref_map.get(&(crate::node_registry::NodeType::Node, method.clone()))
+                        .or_else(|| {
+                            // Try other node types if not found on Node
+                            ENGINE_REGISTRY.node_defs.keys()
+                                .find_map(|node_type| {
+                                    ENGINE_REGISTRY.method_ref_map.get(&(*node_type, method.clone()))
+                                })
+                        })
+                        .copied();
+                    
+                    if let Some(method_ref) = method_ref_opt {
+                        // Check if this method's first parameter is Uuid
+                        if let Some(param_types) = method_ref.param_types() {
                             if let Some(first_param_type) = param_types.get(0) {
-                                if matches!(first_param_type, Type::Uuid) {
+                                if matches!(first_param_type, Type::Uid32) {
                                     // Check if base is an ApiCall that returns Uuid, or a MemberAccess that should be treated as one
                                     let (inner_call_str, temp_var_name) = if let Expr::ApiCall(api, args) = base.as_ref() {
                                         // Direct ApiCall
                                         if let Some(return_type) = api.return_type() {
-                                            if matches!(return_type, Type::Uuid) {
+                                            if matches!(return_type, Type::Uid32) {
                                                 let mut inner_call_str = api.to_rust(args, script, needs_self, current_func);
                                                 // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                                 // The "api" identifier should NEVER be renamed - it's always the API parameter
                                                 inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
-                                                // Generate a unique UUID for this temp variable (very low collision chance)
-                                                let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
-                                                let unique_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
-                                                let temp_var = format!("__temp_api_{}", unique_id);
+                                                // Generate deterministic temp variable name using hash of the API call
+                                                use std::collections::hash_map::DefaultHasher;
+                                                use std::hash::{Hash, Hasher};
+                                                let mut hasher = DefaultHasher::new();
+                                                inner_call_str.hash(&mut hasher);
+                                                let hash = hasher.finish();
+                                                let temp_var = format!("__temp_api_{}", hash);
                                                 (Some(inner_call_str), Some(temp_var))
                                             } else {
                                                 (None, None)
@@ -1276,19 +1378,42 @@ impl Expr {
                                         }
                                     } else if let Expr::MemberAccess(inner_base, inner_method) = base.as_ref() {
                                         // Handle nested MemberAccess like collision.get_parent()
-                                        // Check if this is a NodeSugar API call
-                                        if let Some(api) = crate::lang::pup::api::PupNodeSugar::resolve_method(inner_method) {
-                                            if let Some(return_type) = api.return_type() {
-                                                if matches!(return_type, Type::Uuid) {
+                                        // Check if this is a node method call
+                                        let inner_method_ref_opt = ENGINE_REGISTRY.method_ref_map.get(&(crate::node_registry::NodeType::Node, inner_method.clone()))
+                                            .or_else(|| {
+                                                ENGINE_REGISTRY.node_defs.keys()
+                                                    .find_map(|node_type| {
+                                                        ENGINE_REGISTRY.method_ref_map.get(&(*node_type, inner_method.clone()))
+                                                    })
+                                            })
+                                            .copied();
+                                        
+                                        if let Some(inner_method_ref) = inner_method_ref_opt {
+                                            if let Some(return_type) = inner_method_ref.return_type() {
+                                                if matches!(return_type, Type::Uid32) {
                                                     // Create args for the inner API call - the base becomes the first arg
                                                     let inner_api_args = vec![*inner_base.clone()];
-                                                    let mut inner_call_str = api.to_rust(&inner_api_args, script, needs_self, current_func);
+                                                    use crate::api_bindings::generate_rust_args;
+                                                    use crate::structs::engine_bindings::EngineMethodCodegen;
+                                                    let expected_arg_types = inner_method_ref.param_types();
+                                                    let rust_args_strings = generate_rust_args(
+                                                        &inner_api_args,
+                                                        script,
+                                                        needs_self,
+                                                        current_func,
+                                                        expected_arg_types.as_ref(),
+                                                    );
+                                                    let mut inner_call_str = inner_method_ref.to_rust_prepared(&inner_api_args, &rust_args_strings, script, needs_self, current_func);
                                                     // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                                     // The "api" identifier should NEVER be renamed - it's always the API parameter
                                                     inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
-                                                    // Generate a unique UUID for this temp variable (guaranteed no collisions)
-                                                    let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
-                                                    let temp_var = format!("__temp_api_{}", unique_id);
+                                                    // Generate deterministic temp variable name using hash of the API call
+                                                    use std::collections::hash_map::DefaultHasher;
+                                                    use std::hash::{Hash, Hasher};
+                                                    let mut hasher = DefaultHasher::new();
+                                                    inner_call_str.hash(&mut hasher);
+                                                    let hash = hasher.finish();
+                                                    let temp_var = format!("__temp_api_{}", hash);
                                                     (Some(inner_call_str), Some(temp_var))
                                                 } else {
                                                     (None, None)
@@ -1310,14 +1435,17 @@ impl Expr {
                                         // so we MUST extract the inner call to a temporary variable
                                         // to avoid borrow checker errors
                                         
-                                        let temp_decl = format!("let {}: Uuid = {};", temp_var, inner_call_str);
+                                        let temp_decl = format!("let {}: NodeID = {};", temp_var, inner_call_str);
                                         
                                         // Create an Ident expression for the temp variable
                                         let temp_var_expr = Expr::Ident(temp_var.clone());
                                         let outer_args = vec![temp_var_expr];
                                         
                                         // Generate the outer call with the temp variable as argument
-                                        let outer_call = outer_api.to_rust(&outer_args, script, needs_self, current_func);
+                                        // Use CallModule::NodeMethod to generate the call
+                                        use crate::call_modules::CallModule;
+                                        let outer_call_module = CallModule::NodeMethod(method_ref);
+                                        let outer_call = outer_call_module.to_rust(&outer_args, script, needs_self, current_func);
                                         
                                         // Combine temp declaration with outer call
                                         return format!("{}{}{}", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, outer_call);
@@ -1338,6 +1466,18 @@ impl Expr {
                     .as_ref()
                     .map(|name| script.functions.iter().any(|f| f.name == *name))
                     .unwrap_or(false);
+
+                // ✅ Check if this is a lifecycle method - lifecycle methods cannot be called
+                if let Some(name) = &func_name {
+                    if let Some(func) = script.functions.iter().find(|f| f.name == *name) {
+                        if func.is_lifecycle_method {
+                            return format!(
+                                "compile_error!(\"Cannot call lifecycle method '{}' - lifecycle methods (defined with 'on {}()') are not callable\");",
+                                name, name
+                            );
+                        }
+                    }
+                }
 
                 let is_engine_method = matches!(target.as_ref(), Expr::MemberAccess(_base, _method))
                     && !is_local_function;
@@ -1433,7 +1573,54 @@ impl Expr {
                     })
                     .collect();
 
+                // Check if this is an API module call FIRST, before processing arguments
+                // API module calls should NOT have (api) appended - they're already complete
+                let (is_api_module_call, api_module_opt) = if let Expr::MemberAccess(base, method) = target.as_ref() {
+                    if let Expr::MemberAccess(inner_base, inner_method) = base.as_ref() {
+                        // Check if inner_base is "api" and inner_method is an API module name
+                        if let Expr::Ident(api_mod) = inner_base.as_ref() {
+                            if api_mod == "api" {
+                                // Check if this resolves to an API module
+                                use crate::scripting::lang::pup::api::PupAPI;
+                                if let Some(api) = PupAPI::resolve(inner_method, method) {
+                                    (true, Some(api))
+                                } else {
+                                    (false, None)
+                                }
+                            } else {
+                                (false, None)
+                            }
+                        } else {
+                            (false, None)
+                        }
+                    } else if let Expr::Ident(mod_name) = base.as_ref() {
+                        // Direct module access like Time.get_delta (without api. prefix)
+                        use crate::scripting::lang::pup::api::PupAPI;
+                        if let Some(api) = PupAPI::resolve(mod_name, method) {
+                            (true, Some(api))
+                        } else {
+                            (false, None)
+                        }
+                    } else {
+                        (false, None)
+                    }
+                } else {
+                    (false, None)
+                };
+
+                // If this is an API module call, generate it directly without processing arguments again
+                if is_api_module_call {
+                    if let Some(api_module) = api_module_opt {
+                        // Args are already Vec<Expr>, just clone them
+                        let api_args: Vec<Expr> = args.iter().cloned().collect();
+                        // Generate the API call using the module's codegen
+                        use crate::api_modules::ApiModule;
+                        return api_module.to_rust(&api_args, script, needs_self, current_func);
+                    }
+                }
+
                 // Convert the target expression (e.g., func or self.method)
+                // This is needed for non-API calls (script functions, engine methods, etc.)
                 let mut target_str = target.to_rust(needs_self, script, None, current_func, None);
 
                 // If this is a local user-defined function, prefix with `self.`
@@ -1445,6 +1632,7 @@ impl Expr {
                 // Finally, build the Rust call string
                 // Handles API injection and empty arg lists
                 // ==============================================================
+                // Note: API module calls are already handled above and returned early
                 if is_engine_method {
                     // ✅ Engine methods: just pass normal args
                     if args_rust.is_empty() {
@@ -1453,18 +1641,19 @@ impl Expr {
                         format!("{}({})", target_str, args_rust.join(", "))
                     }
                 } else if is_local_function {
-                    // Local script functions: add api
+                    // Local script functions: add api (ONLY for functions in script.functions)
                     if args_rust.is_empty() {
                         format!("{}(api);", target_str)
                     } else {
                         format!("{}({}, api);", target_str, args_rust.join(", "))
                     }
                 } else {
-                    // Fallback: treat as external function with api
+                    // Unknown function - don't append api, just call it normally
+                    // This handles external functions, engine methods that weren't detected, etc.
                     if args_rust.is_empty() {
-                        format!("{}(api);", target_str)
+                        format!("{}()", target_str)
                     } else {
-                        format!("{}({}, api);", target_str, args_rust.join(", "))
+                        format!("{}({})", target_str, args_rust.join(", "))
                     }
                 }
             }
@@ -1534,7 +1723,7 @@ impl Expr {
                                 };
 
                                 // Wrap value in json!() if this is a dynamic map (Value type) or custom type
-                                let v_final = if *expected_val_type == Type::Object
+                                let v_final = if matches!(expected_val_type, Type::Object | Type::Any)
                                     || matches!(expected_val_type, Type::Custom(_))
                                 {
                                     // For dynamic maps or custom types, wrap in json!()
@@ -1559,7 +1748,7 @@ impl Expr {
                             .collect();
 
                         // Determine the correct HashMap type based on expected types
-                        let final_code = if *expected_val_type == Type::Object
+                        let final_code = if matches!(expected_val_type, Type::Object | Type::Any)
                             || matches!(expected_val_type, Type::Custom(_))
                         {
                             // Dynamic map: HashMap<String, Value>
@@ -1578,7 +1767,7 @@ impl Expr {
                         final_code
                     };
 
-                    if matches!(expected_type, Some(Type::Object)) {
+                    if matches!(expected_type, Some(Type::Object | Type::Any)) {
                         format!("json!({})", code)
                     } else {
                         code
@@ -1609,7 +1798,7 @@ impl Expr {
 
                                 // If this is a custom type array or any[]/object[] array, wrap each element in json!()
                                 let final_rendered = match elem_ty {
-                                    Type::Custom(_) | Type::Object => {
+                                    Type::Custom(_) | Type::Object | Type::Any => {
                                         // Custom types and any[]/object[] arrays need to be serialized to Value
                                         format!("json!({})", rendered)
                                     }
@@ -1633,7 +1822,7 @@ impl Expr {
                         format!("vec![{}]", elements.join(", "))
                     };
 
-                    if matches!(expected_type, Some(Type::Object)) {
+                    if matches!(expected_type, Some(Type::Object | Type::Any)) {
                         format!("json!({})", code)
                     } else {
                         code
@@ -1706,7 +1895,7 @@ impl Expr {
                         format!("[{}]", body.join(", "))
                     };
 
-                    if matches!(expected_type, Some(Type::Object)) {
+                    if matches!(expected_type, Some(Type::Object | Type::Any)) {
                         format!("json!({})", code)
                     } else {
                         code
@@ -1950,7 +2139,7 @@ impl Expr {
                 
                 if let Some(param_types) = &expected_param_types {
                     if let Some(first_param_type) = param_types.get(0) {
-                        if matches!(first_param_type, Type::Uuid) {
+                        if matches!(first_param_type, Type::Uid32) {
                             if let Some(first_arg) = args.get(0) {
                                 // Check if first_arg is a Cast containing an ApiCall, or a direct ApiCall
                                 let inner_api_call = if let Expr::Cast(inner_expr, _) = first_arg {
@@ -1967,8 +2156,8 @@ impl Expr {
                                 
                                 if let Some((inner_api, inner_args)) = inner_api_call {
                                     if let Some(return_type) = inner_api.return_type() {
-                                        if matches!(return_type, Type::Uuid | Type::DynNode) || 
-                                           matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid)) {
+                                        if matches!(return_type, Type::Uid32 | Type::DynNode) || 
+                                           matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uid32)) {
                                             // Both APIs require mutable borrows - extract inner call to temp variable
                                             let mut inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
                                             
@@ -1976,11 +2165,15 @@ impl Expr {
                                             // The "api" identifier should NEVER be renamed - it's always the API parameter
                                             inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                             
-                                            // Generate a unique UUID for this temp variable (guaranteed no collisions)
-                                            let unique_id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
-                                            let temp_var = format!("__temp_api_{}", unique_id);
+                                            // Generate deterministic temp variable name using hash of the API call
+                                            use std::collections::hash_map::DefaultHasher;
+                                            use std::hash::{Hash, Hasher};
+                                            let mut hasher = DefaultHasher::new();
+                                            inner_call_str.hash(&mut hasher);
+                                            let hash = hasher.finish();
+                                            let temp_var = format!("__temp_api_{}", hash);
                                             
-                                            temp_decl_opt = Some(format!("let {}: Uuid = {};", temp_var, inner_call_str));
+                                            temp_decl_opt = Some(format!("let {}: NodeID = {};", temp_var, inner_call_str));
                                             temp_var_opt = Some(temp_var);
                                         }
                                     }
@@ -2060,9 +2253,9 @@ impl Expr {
                 if let Some(expected_ty) = expected_type {
                     let api_return_type = module.return_type();
                     if let Some(Type::Object) = api_return_type.as_ref() {
-                        // Check if this is MapApi::Get and if the map is actually dynamic
-                        let should_cast = if let ApiModule::MapOp(MapApi::Get) = module {
-                            // For MapApi::Get, check if the map's value type is Object (dynamic)
+                        // Check if this is MapResource::Get and if the map is actually dynamic
+                        let should_cast = if let crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::MapOp(MapResource::Get)) = module {
+                            // For MapResource::Get, check if the map's value type is Object (dynamic)
                             // If it's not Object, then it's a static map and we shouldn't cast
                             if let Some(map_expr) = args.get(0) {
                                 let map_value_type =
@@ -2294,7 +2487,7 @@ impl Expr {
                         format!("{}.as_ref()", inner_code)
                     }
                     // Node types -> Uuid (nodes are Uuid IDs)
-                    (Some(Type::Node(_)), Type::Uuid) => {
+                    (Some(Type::Node(_)), Type::Uid32) => {
                         // Special case: if inner_code is "self" or contains "self", ensure it's self.id
                         if inner_code == "self" || (inner_code.starts_with("self") && !inner_code.contains("self.id")) {
                             "self.id".to_string()
@@ -2306,7 +2499,7 @@ impl Expr {
                         }
                     }
                     // Uuid -> Node type (for type checking, just pass through)
-                    (Some(Type::Uuid), Type::Node(_)) => {
+                    (Some(Type::Uid32), Type::Node(_)) => {
                         inner_code // Already a Uuid, no conversion needed
                     }
                     // T -> Option<T> conversions (wrapping in Some)
@@ -2315,7 +2508,7 @@ impl Expr {
                     }
                     // UuidOption (Option<Uuid>) -> Uuid
                     // This is for get_child_by_name() which returns Option<Uuid>
-                    (Some(Type::Custom(from_name)), Type::Uuid)
+                    (Some(Type::Custom(from_name)), Type::Uid32)
                         if from_name == "UuidOption" =>
                     {
                         // Unwrap the Option<Uuid>
@@ -2554,7 +2747,7 @@ impl Expr {
                                 // Pattern: self.get_node("name") as Sprite2D
                                 // Note: get_parent() now returns Node directly, so it doesn't need special handling here
                                 if let Expr::ApiCall(
-                                    ApiModule::NodeSugar(NodeSugarApi::GetChildByName),
+                                    crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetChildByName),
                                     _,
                                 ) = inner.as_ref()
                                 {

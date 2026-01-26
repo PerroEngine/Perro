@@ -938,7 +938,6 @@ pub fn run_dev_with_path(project_root: PathBuf) {
                 depth_stencil_attachment: Some(depth_attachment),
                 timestamp_writes: None,
                 occlusion_query_set: None,
-                multiview_mask: None,
             });
             graphics.render(&mut rpass);
         }

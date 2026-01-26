@@ -1,6 +1,6 @@
 @script Player extends Sprite2D
 
-var time = 0
+@expose var time = 0
 var test_var = 0
 var test_b = false
 var tex: Texture
@@ -9,16 +9,16 @@ struct Cabbage {
     var x: int
 }
 
-var cab = new Cabbage { x: 100 }
+var cab = new Cabbage { x: 1001 }
 
-fn init() {
-    self.transform.position.x = -710
-    
+on init() {
     tex = Texture.load("res://doug.PNG")
     self.texture = tex
+
+
 }
 
-fn update() {
+on update() {
     var delta = Time.get_delta()
     self.transform.position.x += 150 * delta
 }
@@ -33,12 +33,13 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     Console.print("before", test_b)
     var c_par = collision.get_parent()
     var t = "test"
-    c_par::[t](12)
+    c_par::[t](1122)
     c_par::test(927)
+    c_par.name = "cabb12age"
     Console.info(c_par::test_var)
     var b = "test_var"
     
-    var tv = c_par::test_var
+    var tv = c_par.get_var(b)
     c_par::test_var = 12
     c_par::[b] = 15
     

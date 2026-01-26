@@ -228,6 +228,7 @@ pub fn derive_rust_perro_script(
                     attributes: vec![],
                     is_on_signal: false,
                     signal_name: None,
+                    is_lifecycle_method: false,
                     span: None,
                 });
             }
@@ -319,9 +320,9 @@ pub fn derive_rust_perro_script(
                     let typ_str_trimmed = typ_str.trim();
                     
                     // Keep ScriptApi parameters in the list (we'll handle them specially in boilerplate)
-                    // Mark them as Custom("ScriptApi") type so we can detect them
+                    // Mark them as ScriptApi type so we can detect them
                     let typ = if typ_str_trimmed.contains("ScriptApi") {
-                        Type::Custom("ScriptApi".to_string())
+                        Type::ScriptApi
                     } else {
                         // For Rust scripts, preserve reference information in Custom types
                         // If it's a reference type like &Path or &Manifest, store it as "&Path" or "&Manifest"
@@ -367,6 +368,7 @@ pub fn derive_rust_perro_script(
                 locals: vec![],
                 attributes: func_attributes,
                 is_on_signal: false,
+                is_lifecycle_method: false,
                 signal_name: None,
             });
         }

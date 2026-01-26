@@ -13,8 +13,9 @@ use wgpu::{
 };
 
 use crate::{
-    font::FontAtlas,
     rendering::TextureManager,
+    // Text rendering now handled by egui
+    // rendering::{text_renderer::TextRenderer, native_glyph_cache::NativeGlyphAtlas},
     structs2d::{Transform2D, Vector2},
     ui_elements::ui_container::CornerRadius,
     vertex::Vertex,
@@ -89,57 +90,36 @@ impl Default for TextureInstance {
         }
     }
 }
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
-pub struct FontInstance {
-    pub transform_0: [f32; 3],
-    pub transform_1: [f32; 3],
-    pub transform_2: [f32; 3],
-
-    pub color: [f32; 4],
-    pub uv_offset: [f32; 2],
-    pub uv_size: [f32; 2],
-
-    pub z_index: i32,
-    pub _pad: [f32; 3],
-}
 pub struct PrimitiveRenderer {
     rect_instance_buffer: wgpu::Buffer,
     texture_instance_buffer: wgpu::Buffer,
-    font_instance_buffer: wgpu::Buffer,
 
     rect_instanced_pipeline: RenderPipeline,
     texture_instanced_pipeline: RenderPipeline,
-    font_instanced_pipeline: RenderPipeline,
 
     texture_bind_group_layout: BindGroupLayout,
-    font_bind_group_layout: BindGroupLayout,
 
-    font_atlas: Option<FontAtlas>,
-    font_bind_group: Option<wgpu::BindGroup>,
+    // egui integration for text rendering
+    egui_context: egui::Context,
+    egui_renderer: Option<egui_wgpu::Renderer>,
 
     // Optimized rect storage
     rect_instance_slots: Vec<Option<(RenderLayer, RectInstance, u64)>>, // Added timestamp for sorting
-    rect_uuid_to_slot: FxHashMap<uuid::Uuid, usize>,
+    rect_uuid_to_slot: FxHashMap<crate::uid32::Uid32, usize>,
     free_rect_slots: SmallVec<[usize; 16]>,
     rect_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Optimized texture storage
     texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String, Vector2, u64)>>, // Added texture size and timestamp for sorting
-    texture_uuid_to_slot: FxHashMap<uuid::Uuid, usize>,
+    texture_uuid_to_slot: FxHashMap<crate::uid32::Uid32, usize>,
     free_texture_slots: SmallVec<[usize; 16]>,
     texture_dirty_ranges: SmallVec<[Range<usize>; 8]>,
-
-    // Text storage (less critical to optimize since text changes more frequently)
-    cached_text: FxHashMap<uuid::Uuid, (RenderLayer, Vec<FontInstance>, u64)>, // Added timestamp for sorting
 
     // Rendered instances (built from slots when needed)
     world_rect_instances: Vec<RectInstance>,
     ui_rect_instances: Vec<RectInstance>,
     world_texture_groups: Vec<(String, Vec<TextureInstance>)>,
     ui_texture_groups: Vec<(String, Vec<TextureInstance>)>,
-    world_text_instances: Vec<FontInstance>,
-    ui_text_instances: Vec<FontInstance>,
 
     world_texture_group_offsets: Vec<(usize, usize)>,
     ui_texture_group_offsets: Vec<(usize, usize)>,
@@ -149,7 +129,6 @@ pub struct PrimitiveRenderer {
     temp_texture_map: FxHashMap<String, Vec<TextureInstance>>,
     temp_sorted_groups: Vec<(String, Vec<TextureInstance>)>,
     temp_all_texture_instances: Vec<TextureInstance>,
-    temp_all_font_instances: Vec<FontInstance>,
 
     // Batching optimization fields
     last_rebuild_time: Instant,
@@ -158,7 +137,6 @@ pub struct PrimitiveRenderer {
     dirty_threshold: usize,
 
     instances_need_rebuild: bool,
-    text_instances_need_rebuild: bool,
     
     // OPTIMIZED: 2D viewport culling - cache camera info
     camera_position: Vector2,
@@ -192,29 +170,6 @@ impl PrimitiveRenderer {
                 ],
             });
 
-        let font_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Font BGL"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
-
         let rect_instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Rect Instance Buffer"),
             size: (std::mem::size_of::<RectInstance>() * MAX_INSTANCES) as u64,
@@ -229,30 +184,23 @@ impl PrimitiveRenderer {
             mapped_at_creation: false,
         });
 
-        let font_instance_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("Font Instance Buffer"),
-            size: (std::mem::size_of::<FontInstance>() * MAX_INSTANCES) as u64,
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         let rect_instanced_pipeline = Self::create_rect_pipeline(device, camera_bgl, format);
         let texture_instanced_pipeline =
             Self::create_texture_pipeline(device, &texture_bind_group_layout, camera_bgl, format);
-        let font_instanced_pipeline =
-            Self::create_font_pipeline(device, &font_bind_group_layout, camera_bgl, format);
+        
+        // Initialize egui (TODO: fix API call once we verify egui-wgpu version)
+        let egui_context = egui::Context::default();
+        // TODO: Initialize egui_wgpu::Renderer with correct API
+        // let egui_renderer = egui_wgpu::Renderer::new(...);
 
         Self {
             rect_instance_buffer,
             texture_instance_buffer,
-            font_instance_buffer,
             rect_instanced_pipeline,
             texture_instanced_pipeline,
-            font_instanced_pipeline,
             texture_bind_group_layout,
-            font_bind_group_layout,
-            font_atlas: None,
-            font_bind_group: None,
+            egui_context,
+            egui_renderer: None, // TODO: Initialize once API is fixed
 
             // Optimized storage
             rect_instance_slots: Vec::with_capacity(MAX_INSTANCES),
@@ -265,14 +213,10 @@ impl PrimitiveRenderer {
             free_texture_slots: SmallVec::new(),
             texture_dirty_ranges: SmallVec::new(),
 
-            cached_text: FxHashMap::default(),
-
             world_rect_instances: Vec::new(),
             ui_rect_instances: Vec::new(),
             world_texture_groups: Vec::new(),
             ui_texture_groups: Vec::new(),
-            world_text_instances: Vec::new(),
-            ui_text_instances: Vec::new(),
             world_texture_group_offsets: Vec::new(),
             ui_texture_group_offsets: Vec::new(),
             world_texture_buffer_ranges: Vec::new(),
@@ -280,7 +224,6 @@ impl PrimitiveRenderer {
             temp_texture_map: FxHashMap::default(),
             temp_sorted_groups: Vec::new(),
             temp_all_texture_instances: Vec::new(),
-            temp_all_font_instances: Vec::new(),
 
             // Batching optimization
             last_rebuild_time: Instant::now(),
@@ -289,7 +232,6 @@ impl PrimitiveRenderer {
             dirty_threshold: 100,                            // Rebuild when 100+ elements are dirty (reduced rebuild frequency)
 
             instances_need_rebuild: false,
-            text_instances_need_rebuild: false,
             
             // OPTIMIZED: Initialize camera culling info
             camera_position: Vector2::ZERO,
@@ -461,7 +403,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_rect(
         &mut self,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::Uid32,
         layer: RenderLayer,
         transform: Transform2D,
         size: Vector2,
@@ -594,7 +536,7 @@ impl PrimitiveRenderer {
 
     /// Remove a rect instance from the render cache
     /// Call this when an element becomes invisible to clear it from GPU buffers
-    pub fn remove_rect(&mut self, uuid: uuid::Uuid) {
+    pub fn remove_rect(&mut self, uuid: crate::uid32::Uid32) {
         if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
             if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                 self.rect_instance_slots[slot] = None;
@@ -609,15 +551,13 @@ impl PrimitiveRenderer {
 
     /// Remove a text instance from the render cache
     /// Call this when an element becomes invisible to clear it from GPU buffers
-    pub fn remove_text(&mut self, uuid: uuid::Uuid) {
-        if self.cached_text.remove(&uuid).is_some() {
-            self.text_instances_need_rebuild = true;
-        }
+    pub fn remove_text(&mut self, _uuid: crate::uid32::Uid32) {
+        // Text rendering now handled by egui
     }
 
     pub fn queue_texture(
         &mut self,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::Uid32,
         layer: RenderLayer,
         texture_path: &str,
         transform: Transform2D,
@@ -776,203 +716,58 @@ impl PrimitiveRenderer {
 
     pub fn queue_text(
         &mut self,
-        uuid: uuid::Uuid,
-        layer: RenderLayer,
-        text: &str,
-        font_size: f32,
-        transform: Transform2D,
+        _uuid: crate::uid32::Uid32,
+        _layer: RenderLayer,
+        _text: &str,
+        _font_size: f32,
+        _transform: Transform2D,
         _pivot: Vector2,
-        color: crate::structs::Color,
-        z_index: i32,
-        created_timestamp: u64,
+        _color: crate::structs::Color,
+        _z_index: i32,
+        _created_timestamp: u64,
+        _device: &Device,
+        _queue: &Queue,
     ) {
-        self.queue_text_aligned(
-            uuid,
-            layer,
-            text,
-            font_size,
-            transform,
-            _pivot,
-            color,
-            z_index,
-            created_timestamp,
-            crate::ui_elements::ui_text::TextAlignment::Left,
-            crate::ui_elements::ui_text::TextAlignment::Center,
-        );
+        // Text rendering now handled by egui
     }
 
     pub fn queue_text_aligned(
         &mut self,
-        uuid: uuid::Uuid,
-        layer: RenderLayer,
-        text: &str,
-        font_size: f32,
-        transform: Transform2D,
+        _uuid: crate::uid32::Uid32,
+        _layer: RenderLayer,
+        _text: &str,
+        _font_size: f32,
+        _transform: Transform2D,
         _pivot: Vector2,
-        color: crate::structs::Color,
-        z_index: i32,
-        created_timestamp: u64,
-        align_h: crate::ui_elements::ui_text::TextAlignment,
-        align_v: crate::ui_elements::ui_text::TextAlignment,
+        _color: crate::structs::Color,
+        _z_index: i32,
+        _created_timestamp: u64,
+        _align_h: crate::ui_elements::ui_text::TextAlignment,
+        _align_v: crate::ui_elements::ui_text::TextAlignment,
+        _device: &Device,
+        _queue: &Queue,
     ) {
-        // DISABLED: Occlusion culling for text - O(n²) performance bottleneck
-        // The GPU can handle overdraw efficiently
-        // if layer == RenderLayer::World2D {
-        //     // Estimate text bounding box (rough approximation)
-        //     // Average character width is about 0.6 * font_size, height is font_size
-        //     let estimated_width = text.len() as f32 * font_size * 0.6;
-        //     let estimated_height = font_size;
-        //     let text_size = Vector2::new(estimated_width, estimated_height);
-        //     
-        //     let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &text_size, z_index, "text");
-        //     if is_occluded {
-        //         // Remove from text cache if it exists
-        //         if self.cached_text.remove(&uuid).is_some() {
-        //             self.text_instances_need_rebuild = true;
-        //         }
-        //         return; // Don't queue occluded text
-        //     }
-        // }
-        
-        if let Some(ref atlas) = self.font_atlas {
-            let scale = font_size / atlas.design_size;
-
-            // First pass: measure text width
-            let mut text_width = 0.0;
-            for ch in text.chars() {
-                if let Some(g) = atlas.get_glyph(ch) {
-                    text_width += g.metrics.advance_width as f32 * scale;
-                }
-            }
-
-            // Adjust starting position based on horizontal alignment
-            let mut cursor_x = transform.position.x;
-            match align_h {
-                crate::ui_elements::ui_text::TextAlignment::Left => {
-                    // Start at the left edge (no adjustment needed)
-                }
-                crate::ui_elements::ui_text::TextAlignment::Center => {
-                    // Center the text: move left by half the text width
-                    cursor_x -= text_width * 0.5;
-                }
-                crate::ui_elements::ui_text::TextAlignment::Right => {
-                    // Right align: move left by the full text width
-                    cursor_x -= text_width;
-                }
-                _ => {
-                    // Top/Bottom are invalid for horizontal alignment, default to center
-                    cursor_x -= text_width * 0.5;
-                }
-            }
-
-            // Adjust vertical position based on vertical alignment
-            // For vertical alignment, we use the font's line metrics
-            // Text block extends from (baseline - ascent) to (baseline + descent)
-            let baseline_y = match align_v {
-                crate::ui_elements::ui_text::TextAlignment::Top => {
-                    // Position baseline so text top aligns with position
-                    // Top of text = baseline - ascent, so: position.y = baseline - ascent * scale
-                    transform.position.y + atlas.ascent * scale
-                }
-                crate::ui_elements::ui_text::TextAlignment::Center => {
-                    // Center vertically: position is where the center of the text block should be
-                    // Text block center = baseline + (descent - ascent) * scale * 0.5
-                    // We want center = position.y, so: baseline = position.y - (descent - ascent) * scale * 0.5
-                    // Simplifying: baseline = position.y - (descent * scale) / 2 + (ascent * scale) / 2
-                    // Or: baseline = position.y + (ascent - descent) * scale * 0.5
-                    transform.position.y + (atlas.ascent - atlas.descent) * scale * 0.5
-                }
-                crate::ui_elements::ui_text::TextAlignment::Bottom => {
-                    // Position baseline so text bottom aligns with position
-                    // Bottom of text = baseline + descent, so: position.y = baseline + descent * scale
-                    transform.position.y - atlas.descent * scale
-                }
-                _ => {
-                    // Left/Right are invalid for vertical alignment, default to center
-                    transform.position.y + (atlas.ascent - atlas.descent) * scale * 0.5
-                }
-            };
-
-            // Pre-allocate with estimated capacity (most characters will produce glyphs)
-            let mut instances = Vec::with_capacity(text.chars().count());
-
-            fn srgb_to_linear(c: f32) -> f32 {
-                if c <= 0.04045 {
-                    c / 12.92
-                } else {
-                    ((c + 0.055) / 1.055).powf(2.4)
-                }
-            }
-
-            let color_lin = [
-                srgb_to_linear(color.r as f32 / 255.0),
-                srgb_to_linear(color.g as f32 / 255.0),
-                srgb_to_linear(color.b as f32 / 255.0),
-                color.a as f32 / 255.0,
-            ];
-
-            for ch in text.chars() {
-                if let Some(g) = atlas.get_glyph(ch) {
-                    let m = &g.metrics;
-
-                    let gw = m.width as f32 * scale;
-                    let gh = m.height as f32 * scale;
-
-                    if gw > 0.0 && gh > 0.0 {
-                        // bearing_x is xmin (typically negative or zero), offset from origin to left edge
-                        let gx = cursor_x + g.bearing_x * scale;
-                        
-                        // In fontdue: ymin is bottom edge (negative), ymax = ymin + height (positive)
-                        // Glyph bitmap in atlas starts at top-left of bounding box
-                        // Glyph top edge Y = baseline_y + (ymin + height) * scale = baseline_y + ymax * scale
-                        // Glyph center Y = baseline_y + (ymin + height) * scale - gh * 0.5
-                        // Simplifying: center Y = baseline_y + ymin * scale + gh * 0.5
-                        // Or: center Y = baseline_y + (ymin + height/2) * scale
-                        let cy = baseline_y + g.bearing_y * scale + gh * 0.5;
-                        
-                        // bearing_x positions the left edge, center is at left + half width
-                        let cx = gx + gw * 0.5;
-
-                        let glyph_transform = Transform2D {
-                            position: Vector2::new(cx, cy),
-                            rotation: 0.0,
-                            scale: Vector2::new(gw, gh),
-                        };
-
-                        let tfm = glyph_transform.to_mat3().to_cols_array();
-
-                        let instance = FontInstance {
-                            transform_0: [tfm[0], tfm[1], tfm[2]],
-                            transform_1: [tfm[3], tfm[4], tfm[5]],
-                            transform_2: [tfm[6], tfm[7], tfm[8]],
-                        
-                            color: color_lin,
-                            uv_offset: [g.u0, g.v0],
-                            uv_size: [g.u1 - g.u0, g.v1 - g.v0],
-                            z_index,
-                            _pad: [0.0; 3],
-                        };
-                        instances.push(instance);
-                    }
-
-                    cursor_x += m.advance_width as f32 * scale;
-                }
-            }
-
-            // Only update if text actually changed
-            let needs_update = if let Some(existing) = self.cached_text.get(&uuid) {
-                existing.0 != layer || existing.1 != instances
-            } else {
-                true
-            };
-
-            if needs_update {
-                // If text is empty (no instances), we still need to update the cache
-                // to clear any previously rendered glyphs
-                self.cached_text.insert(uuid, (layer, instances, created_timestamp));
-                self.text_instances_need_rebuild = true;
-            }
-        }
+        // Text rendering now handled by egui
+    }
+    
+    pub fn queue_text_aligned_with_font(
+        &mut self,
+        _uuid: crate::uid32::Uid32,
+        _layer: RenderLayer,
+        _text: &str,
+        _font_size: f32,
+        _transform: Transform2D,
+        _pivot: Vector2,
+        _color: crate::structs::Color,
+        _z_index: i32,
+        _created_timestamp: u64,
+        _align_h: crate::ui_elements::ui_text::TextAlignment,
+        _align_v: crate::ui_elements::ui_text::TextAlignment,
+        _font_spec: Option<&str>,
+        _device: &Device,
+        _queue: &Queue,
+    ) {
+        // Text rendering now handled by egui
     }
 
     // OPTIMIZED: Proper range tracking with merging
@@ -1081,83 +876,10 @@ impl PrimitiveRenderer {
         self.texture_dirty_ranges.extend(consolidated);
     }
 
-    pub fn initialize_font_atlas(&mut self, device: &Device, queue: &Queue, font_atlas: FontAtlas) {
-        // Calculate mip levels for high-quality downscaling
-        let mip_level_count = (font_atlas.width.max(font_atlas.height) as f32).log2().floor() as u32 + 1;
-        
-        let atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Font Atlas"),
-            size: wgpu::Extent3d {
-                width: font_atlas.width,
-                height: font_atlas.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING 
-                | wgpu::TextureUsages::COPY_DST 
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-
-        // Convert font atlas to gamma space before uploading (gamma-correct rendering)
-        // Fontdue rasterizes in linear space, but mipmaps work better in sRGB/gamma space
-        let gamma_corrected = self.apply_gamma_to_font_atlas(&font_atlas.bitmap);
-        
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &atlas_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &gamma_corrected,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(font_atlas.width),
-                rows_per_image: Some(font_atlas.height),
-            },
-            wgpu::Extent3d {
-                width: font_atlas.width,
-                height: font_atlas.height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        // Generate mipmaps for smooth scaling
-        self.generate_mipmaps(device, queue, &atlas_texture, mip_level_count, font_atlas.width, font_atlas.height);
-
-        let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let atlas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Font Atlas Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        let font_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Font Bind Group"),
-            layout: &self.font_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
-                },
-            ],
-        });
-
-        self.font_atlas = Some(font_atlas);
-        self.font_bind_group = Some(font_bind_group);
+    #[allow(dead_code)]
+    pub fn initialize_font_atlas(&mut self, _device: &Device, _queue: &Queue, _font_atlas: crate::font::FontAtlas) {
+        // DEPRECATED: This method is kept for compatibility but does nothing
+        // Native text rendering uses glyph_atlas instead, initialized on-demand
     }
 
     /// Apply gamma correction to font atlas for better mipmap quality
@@ -1222,7 +944,6 @@ impl PrimitiveRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -1251,7 +972,7 @@ impl PrimitiveRenderer {
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Mipmap Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
-            immediate_size: 0,
+            push_constant_ranges: &[],
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -1276,7 +997,7 @@ impl PrimitiveRenderer {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
+            multiview: None,
             cache: None,
         });
 
@@ -1334,7 +1055,6 @@ impl PrimitiveRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-                multiview_mask: None,
             });
 
             rpass.set_pipeline(&pipeline);
@@ -1346,7 +1066,7 @@ impl PrimitiveRenderer {
         queue.submit(Some(encoder.finish()));
     }
 
-    pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {
+    pub fn stop_rendering(&mut self, uuid: crate::uid32::Uid32) {
         // Remove from rect slots
         if let Some(slot) = self.rect_uuid_to_slot.remove(&uuid) {
             self.rect_instance_slots[slot] = None;
@@ -1365,10 +1085,7 @@ impl PrimitiveRenderer {
             self.instances_need_rebuild = true;
         }
 
-        // Remove from text cache
-        if self.cached_text.remove(&uuid).is_some() {
-            self.text_instances_need_rebuild = true;
-        }
+        // Text rendering now handled by egui
     }
 
     // OPTIMIZED: Smart batching with time and dirty count thresholds
@@ -1396,10 +1113,7 @@ impl PrimitiveRenderer {
             self.last_rebuild_time = now;
         }
 
-        if self.text_instances_need_rebuild {
-            self.rebuild_text_instances(queue);
-            self.text_instances_need_rebuild = false;
-        }
+        // Text rendering now handled by egui
 
         match layer {
             RenderLayer::World2D => {
@@ -1421,12 +1135,7 @@ impl PrimitiveRenderer {
                     camera_bind_group,
                     vertex_buffer,
                 );
-                self.render_text(
-                    &self.world_text_instances,
-                    rpass,
-                    camera_bind_group,
-                    vertex_buffer,
-                );
+                // Text rendering now handled by egui
             }
 
             RenderLayer::UI => {
@@ -1449,12 +1158,7 @@ impl PrimitiveRenderer {
                     camera_bind_group,
                     vertex_buffer,
                 );
-                self.render_text(
-                    &self.ui_text_instances,
-                    rpass,
-                    camera_bind_group,
-                    vertex_buffer,
-                );
+                // Text rendering now handled by egui
             }
         }
     }
@@ -1583,54 +1287,7 @@ impl PrimitiveRenderer {
         self.texture_dirty_ranges.clear();
     }
 
-    fn rebuild_text_instances(&mut self, queue: &Queue) {
-        self.world_text_instances.clear();
-        self.ui_text_instances.clear();
-
-        let mut world_with_ts: Vec<(FontInstance, u64)> = Vec::new();
-        let mut ui_with_ts: Vec<(FontInstance, u64)> = Vec::new();
-        
-        for (layer, instances, timestamp) in self.cached_text.values() {
-            match layer {
-                RenderLayer::World2D => {
-                    world_with_ts.extend(instances.iter().map(|inst| (*inst, *timestamp)));
-                }
-                RenderLayer::UI => {
-                    ui_with_ts.extend(instances.iter().map(|inst| (*inst, *timestamp)));
-                }
-            }
-        }
-
-        // Sort by z_index first, then by timestamp (newer nodes render above older when z_index is same)
-        if world_with_ts.len() > 1 {
-            world_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
-        }
-        if ui_with_ts.len() > 1 {
-            ui_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
-        }
-        
-        self.world_text_instances = world_with_ts.into_iter().map(|(inst, _)| inst).collect();
-        self.ui_text_instances = ui_with_ts.into_iter().map(|(inst, _)| inst).collect();
-
-        self.temp_all_font_instances.clear();
-        self.temp_all_font_instances
-            .extend(&self.world_text_instances);
-        self.temp_all_font_instances.extend(&self.ui_text_instances);
-
-        if !self.temp_all_font_instances.is_empty() {
-            // Clamp to MAX_INSTANCES to prevent buffer overflow
-            let instances_to_write = self.temp_all_font_instances.len().min(MAX_INSTANCES);
-            if instances_to_write < self.temp_all_font_instances.len() {
-                eprintln!("Warning: {} font instances queued, but buffer only supports {}. Truncating.", 
-                    self.temp_all_font_instances.len(), MAX_INSTANCES);
-            }
-            queue.write_buffer(
-                &self.font_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.temp_all_font_instances[..instances_to_write]),
-            );
-        }
-    }
+    // Text rendering now handled by egui - rebuild_text_instances removed
 
     fn rebuild_texture_groups_by_layer(&mut self) {
         self.world_texture_groups.clear();
@@ -1920,22 +1577,7 @@ impl PrimitiveRenderer {
         }
     }
 
-    fn render_text(
-        &self,
-        instances: &[FontInstance],
-        rpass: &mut RenderPass<'_>,
-        camera_bind_group: &wgpu::BindGroup,
-        vertex_buffer: &wgpu::Buffer,
-    ) {
-        if !instances.is_empty() && self.font_bind_group.is_some() {
-            rpass.set_pipeline(&self.font_instanced_pipeline);
-            rpass.set_bind_group(0, self.font_bind_group.as_ref().unwrap(), &[]);
-            rpass.set_bind_group(1, camera_bind_group, &[]);
-            rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            rpass.set_vertex_buffer(1, self.font_instance_buffer.slice(..));
-            rpass.draw(0..6, 0..instances.len() as u32);
-        }
-    }
+    // Text rendering now handled by egui - render_text removed
 
     // [Pipeline creation methods remain the same - keeping them for completeness but truncating for space]
     fn create_rect_pipeline(
@@ -1951,7 +1593,7 @@ impl PrimitiveRenderer {
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Rect Instanced Pipeline Layout"),
             bind_group_layouts: &[camera_bgl],
-            immediate_size: 0,
+            push_constant_ranges: &[],
         });
 
         device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -2024,7 +1666,7 @@ impl PrimitiveRenderer {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Default::default(),
-            multiview_mask: None,
+            multiview: None,
             cache: None,
         })
     }
@@ -2045,7 +1687,7 @@ impl PrimitiveRenderer {
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Sprite Instanced Pipeline Layout"),
             bind_group_layouts: &[texture_bgl, camera_bgl],
-            immediate_size: 0,
+            push_constant_ranges: &[],
         });
 
         device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -2105,89 +1747,10 @@ impl PrimitiveRenderer {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: Default::default(),
-            multiview_mask: None,
+            multiview: None,
             cache: None,
         })
     }
 
-    fn create_font_pipeline(
-        device: &Device,
-        font_texture_bind_group_layout: &BindGroupLayout,
-        camera_bgl: &BindGroupLayout,
-        format: TextureFormat,
-    ) -> RenderPipeline {
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("Font Instanced Shader"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/font_instanced.wgsl"))),
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("Font Pipeline Layout"),
-            bind_group_layouts: &[font_texture_bind_group_layout, camera_bgl],
-            immediate_size: 0,
-        });
-
-        device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("Font Instanced Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    VertexBufferLayout {
-                        array_stride: std::mem::size_of::<Vertex>() as _,
-                        step_mode: VertexStepMode::Vertex,
-                        attributes: &[
-                            VertexAttribute {
-                                offset: 0,
-                                shader_location: 0,
-                                format: VertexFormat::Float32x2,
-                            },
-                            VertexAttribute {
-                                offset: 8,
-                                shader_location: 1,
-                                format: VertexFormat::Float32x2,
-                            },
-                        ],
-                    },
-                    VertexBufferLayout {
-                        array_stride: std::mem::size_of::<FontInstance>() as _,
-                        step_mode: VertexStepMode::Instance,
-                        attributes: &[
-                            VertexAttribute { offset: 0,  shader_location: 2, format: VertexFormat::Float32x3 },
-                            VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32x3 },
-                            VertexAttribute { offset: 24, shader_location: 4, format: VertexFormat::Float32x3 },
-                    
-                            VertexAttribute { offset: 36, shader_location: 5, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 52, shader_location: 6, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 60, shader_location: 7, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 68, shader_location: 8, format: VertexFormat::Sint32 },
-                        ],
-                    }
-                ],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(ColorTargetState {
-                    format,
-                    blend: Some(BlendState::ALPHA_BLENDING),
-                    write_mask: ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: Default::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        })
-    }
+    // Text rendering now handled by egui - create_font_pipeline removed
 }

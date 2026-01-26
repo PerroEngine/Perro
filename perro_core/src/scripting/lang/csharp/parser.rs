@@ -3,7 +3,7 @@ use tree_sitter::Parser;
 
 // Assuming these are defined in your crate
 
-use crate::{ast::*, lang::csharp::api::CSharpAPI};
+use crate::{ast::*, lang::csharp::api::CSharpAPI, call_modules::CallModule};
 
 pub struct CsParser {
     source: String,
@@ -543,6 +543,7 @@ impl CsParser {
             attributes,
             is_on_signal: false,
             signal_name: None,
+            is_lifecycle_method: false,
         })
     }
 
@@ -1028,7 +1029,7 @@ impl CsParser {
             if let Expr::MemberAccess(obj, method) = &expr {
                 if let Expr::Ident(module) = &**obj {
                     if let Some(api_sem) = CSharpAPI::resolve(module, method) {
-                        return Ok(Expr::ApiCall(api_sem, args));
+                        return Ok(Expr::ApiCall(CallModule::Module(api_sem), args));
                     }
                 }
             }

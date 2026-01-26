@@ -2,36 +2,31 @@ use std::collections::HashMap;
 
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::uid32::UIElementID;
 
 use crate::{
     fur_ast::FurAnchor,
     structs::Color,
     structs2d::{Transform2D, Vector2},
     ui_elements::{
-        ui_container::{BoxContainer, GridLayout, Layout, UIPanel},
+        ui_container::UIPanel,
         ui_text::UIText,
-        ui_button::UIButton,
-        ui_text_input::UITextInput,
-        ui_text_edit::UITextEdit,
-        ui_list_tree::UIListTree,
-        ui_context_menu::UIContextMenu,
     },
 };
 
 // Helper function for serde default
-fn uuid_nil() -> Uuid {
-    Uuid::nil()
+fn uielementid_nil() -> UIElementID {
+    UIElementID::nil()
 }
 
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaseUIElement {
-    pub id: Uuid,
+    pub id: UIElementID,
     pub name: String,
-    #[serde(rename = "parent", default = "uuid_nil", skip_serializing_if = "Uuid::is_nil")]
-    pub parent_id: Uuid,
-    pub children: Vec<Uuid>,
+    #[serde(rename = "parent", default = "uielementid_nil", skip_serializing_if = "UIElementID::is_nil")]
+    pub parent_id: UIElementID,
+    pub children: Vec<UIElementID>,
 
     pub visible: bool,
 
@@ -53,11 +48,11 @@ pub struct BaseUIElement {
 
 impl Default for BaseUIElement {
     fn default() -> Self {
-        let id = Uuid::new_v4();
+        let id = UIElementID::new();
         Self {
             id,
             name: id.to_string(),
-            parent_id: Uuid::nil(),
+            parent_id: UIElementID::nil(),
             children: Vec::new(),
             visible: true,
             transform: Transform2D::default(),
@@ -76,8 +71,8 @@ impl Default for BaseUIElement {
 /// Trait implemented by all UI elements
 #[enum_dispatch]
 pub trait BaseElement {
-    fn get_id(&self) -> Uuid;
-    fn set_id(&mut self, id: Uuid);
+    fn get_id(&self) -> UIElementID;
+    fn set_id(&mut self, id: UIElementID);
 
     fn get_name(&self) -> &str;
     fn set_name(&mut self, name: &str);
@@ -85,11 +80,11 @@ pub trait BaseElement {
     fn get_visible(&self) -> bool;
     fn set_visible(&mut self, visible: bool);
 
-    fn get_parent(&self) -> Uuid;
-    fn set_parent(&mut self, parent: Option<Uuid>);
+    fn get_parent(&self) -> UIElementID;
+    fn set_parent(&mut self, parent: Option<UIElementID>);
 
-    fn get_children(&self) -> &[Uuid];
-    fn set_children(&mut self, children: Vec<Uuid>);
+    fn get_children(&self) -> &[UIElementID];
+    fn set_children(&mut self, children: Vec<UIElementID>);
 
     // Local transform
     fn get_transform(&self) -> &Transform2D;
@@ -129,10 +124,10 @@ pub trait BaseElement {
 macro_rules! impl_ui_element {
     ($ty:ty) => {
         impl crate::ui_element::BaseElement for $ty {
-            fn get_id(&self) -> uuid::Uuid {
+            fn get_id(&self) -> crate::uid32::UIElementID {
                 self.base.id
             }
-            fn set_id(&mut self, id: uuid::Uuid) {
+            fn set_id(&mut self, id: crate::uid32::UIElementID) {
                 self.base.id = id;
             }
 
@@ -150,17 +145,17 @@ macro_rules! impl_ui_element {
                 self.base.visible = visible;
             }
 
-            fn get_parent(&self) -> uuid::Uuid {
+            fn get_parent(&self) -> crate::uid32::UIElementID {
                 self.base.parent_id
             }
-            fn set_parent(&mut self, parent: Option<uuid::Uuid>) {
-                self.base.parent_id = parent.unwrap_or(uuid::Uuid::nil());
+            fn set_parent(&mut self, parent: Option<crate::uid32::UIElementID>) {
+                self.base.parent_id = parent.unwrap_or(crate::uid32::UIElementID::nil());
             }
 
-            fn get_children(&self) -> &[uuid::Uuid] {
+            fn get_children(&self) -> &[crate::uid32::UIElementID] {
                 &self.base.children
             }
-            fn set_children(&mut self, children: Vec<uuid::Uuid>) {
+            fn set_children(&mut self, children: Vec<crate::uid32::UIElementID>) {
                 self.base.children = children;
             }
 
@@ -256,21 +251,21 @@ pub struct UIUpdateContext<'a> {
     /// Script API for emitting signals and accessing scene
     pub api: &'a mut crate::scripting::api::ScriptApi<'a>,
     /// Currently focused element ID (for text inputs, etc.)
-    pub focused_element: Option<uuid::Uuid>,
+    pub focused_element: Option<UIElementID>,
     /// Callback to mark an element as needing rerender
     /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
-    pub mark_dirty: Box<dyn FnMut(uuid::Uuid) + 'static>,
+    pub mark_dirty: Box<dyn FnMut(UIElementID) + 'static>,
     /// Callback to mark UI node as needing rerender
     /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
     pub mark_ui_dirty: Box<dyn FnMut() + 'static>,
     /// Callback to mark an element as needing layout recalculation
     /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
-    pub mark_layout_dirty: Box<dyn FnMut(uuid::Uuid) + 'static>,
+    pub mark_layout_dirty: Box<dyn FnMut(UIElementID) + 'static>,
     /// Whether this element is currently focused
     pub is_focused: bool,
     /// Callback to request focus for this element (returns the previously focused element ID)
     /// Uses 'static because closures are move closures that only capture owned values (Rc<RefCell<>>)
-    pub request_focus: Option<Box<dyn FnMut(uuid::Uuid) -> Option<uuid::Uuid> + 'static>>,
+    pub request_focus: Option<Box<dyn FnMut(UIElementID) -> Option<UIElementID> + 'static>>,
 }
 
 impl<'a> UIUpdateContext<'a> {
@@ -414,17 +409,8 @@ pub fn is_point_in_rounded_rect(
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[enum_dispatch(BaseElement)]
 pub enum UIElement {
-    BoxContainer(BoxContainer),
     Panel(UIPanel),
-    Layout(Layout),
-    GridLayout(GridLayout),
-
     Text(UIText),
-    Button(UIButton),
-    TextInput(UITextInput),
-    TextEdit(UITextEdit),
-    ListTree(UIListTree),
-    ContextMenu(UIContextMenu),
 }
 
 // Implement IntoUIInner for each UI element type
@@ -437,90 +423,11 @@ impl IntoUIInner<UIText> for UIElement {
     }
 }
 
-impl IntoUIInner<BoxContainer> for UIElement {
-    fn into_ui_inner(self) -> BoxContainer {
-        match self {
-            UIElement::BoxContainer(inner) => inner,
-            _ => panic!(
-                "Cannot extract BoxContainer from UIElement variant {:?}",
-                self
-            ),
-        }
-    }
-}
-
 impl IntoUIInner<UIPanel> for UIElement {
     fn into_ui_inner(self) -> UIPanel {
         match self {
             UIElement::Panel(inner) => inner,
             _ => panic!("Cannot extract UIPanel from UIElement variant {:?}", self),
-        }
-    }
-}
-
-impl IntoUIInner<Layout> for UIElement {
-    fn into_ui_inner(self) -> Layout {
-        match self {
-            UIElement::Layout(inner) => inner,
-            _ => panic!("Cannot extract Layout from UIElement variant {:?}", self),
-        }
-    }
-}
-
-impl IntoUIInner<GridLayout> for UIElement {
-    fn into_ui_inner(self) -> GridLayout {
-        match self {
-            UIElement::GridLayout(inner) => inner,
-            _ => panic!(
-                "Cannot extract GridLayout from UIElement variant {:?}",
-                self
-            ),
-        }
-    }
-}
-
-impl IntoUIInner<UIButton> for UIElement {
-    fn into_ui_inner(self) -> UIButton {
-        match self {
-            UIElement::Button(inner) => inner,
-            _ => panic!("Cannot extract UIButton from UIElement variant {:?}", self),
-        }
-    }
-}
-
-impl IntoUIInner<UITextInput> for UIElement {
-    fn into_ui_inner(self) -> UITextInput {
-        match self {
-            UIElement::TextInput(inner) => inner,
-            _ => panic!("Cannot extract UITextInput from UIElement variant {:?}", self),
-        }
-    }
-}
-
-impl IntoUIInner<UITextEdit> for UIElement {
-    fn into_ui_inner(self) -> UITextEdit {
-        match self {
-            UIElement::TextEdit(inner) => inner,
-            _ => panic!("Cannot extract UITextEdit from UIElement variant {:?}", self),
-        }
-    }
-}
-
-
-impl IntoUIInner<UIListTree> for UIElement {
-    fn into_ui_inner(self) -> UIListTree {
-        match self {
-            UIElement::ListTree(inner) => inner,
-            _ => panic!("Cannot extract UIListTree from UIElement variant {:?}", self),
-        }
-    }
-}
-
-impl IntoUIInner<UIContextMenu> for UIElement {
-    fn into_ui_inner(self) -> UIContextMenu {
-        match self {
-            UIElement::ContextMenu(inner) => inner,
-            _ => panic!("Cannot extract UIContextMenu from UIElement variant {:?}", self),
         }
     }
 }

@@ -487,7 +487,6 @@ impl<P: ScriptProvider> App<P> {
                 depth_stencil_attachment: Some(depth_attachment), // ADD THIS
                 timestamp_writes: None,
                 occlusion_query_set: None,
-                multiview_mask: None,
             });
 
             // Execute all batched draw calls
@@ -496,6 +495,13 @@ impl<P: ScriptProvider> App<P> {
                 let _span = tracing::span!(tracing::Level::INFO, "gfx_render").entered();
                 gfx.render(&mut rpass);
             }
+        }
+        
+        // Render egui UI (after main render pass, before end_frame)
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "egui_render").entered();
+            gfx.render_egui(&mut encoder, &view);
         }
 
         // End frame
@@ -662,7 +668,6 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                     depth_stencil_attachment: Some(depth_attachment), // ADD THIS
                     timestamp_writes: None,
                     occlusion_query_set: None,
-                    multiview_mask: None,
                 });
             }
             graphics.end_frame(frame, encoder);
@@ -702,7 +707,6 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                     depth_stencil_attachment: Some(depth_attachment), // ADD THIS
                     timestamp_writes: None,
                     occlusion_query_set: None,
-                    multiview_mask: None,
                 });
                 graphics.render(&mut rpass);
             }

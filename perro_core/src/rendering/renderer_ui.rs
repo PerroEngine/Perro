@@ -2,6 +2,7 @@ use crate::{
     rendering::{PrimitiveRenderer, RenderLayer, TextureManager},
     structs2d::{Transform2D, Vector2},
     ui_elements::{ui_container::CornerRadius, ui_text::TextAlignment},
+    uid32::UIElementID,
 };
 use wgpu::{Device, Queue, RenderPass};
 
@@ -16,7 +17,7 @@ impl RendererUI {
     pub fn queue_panel(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: uuid::Uuid,
+        uuid: UIElementID,
         transform: Transform2D,
         size: Vector2,
         pivot: Vector2,
@@ -28,7 +29,7 @@ impl RendererUI {
         created_timestamp: u64,
     ) {
         primitive_renderer.queue_rect(
-            uuid,
+            uuid.as_uid32(),
             RenderLayer::UI,
             transform,
             size,
@@ -48,7 +49,7 @@ impl RendererUI {
         texture_manager: &mut TextureManager,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::Uid32,
         texture_path: &str,
         transform: Transform2D,
         pivot: Vector2,
@@ -72,7 +73,7 @@ impl RendererUI {
     pub fn queue_text(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::Uid32,
         text: &str,
         font_size: f32,
         transform: Transform2D,
@@ -80,8 +81,11 @@ impl RendererUI {
         color: crate::structs::Color,
         z_index: i32,
         created_timestamp: u64,
+        font_spec: Option<&str>,
+        device: &Device,
+        queue: &Queue,
     ) {
-        primitive_renderer.queue_text(
+        primitive_renderer.queue_text_aligned_with_font(
             uuid,
             RenderLayer::UI,
             text,
@@ -91,13 +95,18 @@ impl RendererUI {
             color,
             z_index,
             created_timestamp,
+            TextAlignment::Left,
+            TextAlignment::Center,
+            font_spec,
+            device,
+            queue,
         );
     }
 
     pub fn queue_text_aligned(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: uuid::Uuid,
+        uuid: UIElementID,
         text: &str,
         font_size: f32,
         transform: Transform2D,
@@ -107,9 +116,12 @@ impl RendererUI {
         created_timestamp: u64,
         align_h: TextAlignment,
         align_v: TextAlignment,
+        font_spec: Option<&str>,
+        device: &Device,
+        queue: &Queue,
     ) {
-        primitive_renderer.queue_text_aligned(
-            uuid,
+        primitive_renderer.queue_text_aligned_with_font(
+            uuid.as_uid32(),
             RenderLayer::UI,
             text,
             font_size,
@@ -120,19 +132,22 @@ impl RendererUI {
             created_timestamp,
             align_h,
             align_v,
+            font_spec,
+            device,
+            queue,
         );
     }
 
     /// Remove a panel from the render cache
     /// Call this when an element becomes invisible
-    pub fn remove_panel(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: uuid::Uuid) {
-        primitive_renderer.remove_rect(uuid);
+    pub fn remove_panel(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: UIElementID) {
+        primitive_renderer.remove_rect(uuid.as_uid32());
     }
 
     /// Remove text from the render cache
     /// Call this when an element becomes invisible
-    pub fn remove_text(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: uuid::Uuid) {
-        primitive_renderer.remove_text(uuid);
+    pub fn remove_text(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: UIElementID) {
+        primitive_renderer.remove_text(uuid.as_uid32());
     }
 
     pub fn render(

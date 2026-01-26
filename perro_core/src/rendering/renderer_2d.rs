@@ -16,7 +16,7 @@ impl Renderer2D {
     pub fn queue_rect(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::NodeID,
         transform: Transform2D,
         size: Vector2,
         pivot: Vector2,
@@ -28,7 +28,7 @@ impl Renderer2D {
         created_timestamp: u64,
     ) {
         primitive_renderer.queue_rect(
-            uuid,
+            uuid.as_uid32(),
             RenderLayer::World2D,
             transform,
             size,
@@ -48,7 +48,7 @@ impl Renderer2D {
         texture_manager: &mut TextureManager,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::NodeID,
         texture_path: &str,
         transform: Transform2D,
         pivot: Vector2,
@@ -56,7 +56,7 @@ impl Renderer2D {
         created_timestamp: u64,
     ) {
         primitive_renderer.queue_texture(
-            uuid,
+            uuid.as_uid32(),
             RenderLayer::World2D,
             texture_path,
             transform,
@@ -72,7 +72,7 @@ impl Renderer2D {
     pub fn queue_text(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::NodeID,
         text: &str,
         font_size: f32,
         transform: Transform2D,
@@ -80,9 +80,11 @@ impl Renderer2D {
         color: crate::structs::Color,
         z_index: i32,
         created_timestamp: u64,
+        device: &Device,
+        queue: &Queue,
     ) {
         primitive_renderer.queue_text(
-            uuid,
+            uuid.as_uid32(),
             RenderLayer::World2D,
             text,
             font_size,
@@ -91,6 +93,8 @@ impl Renderer2D {
             color,
             z_index,
             created_timestamp,
+            device,
+            queue,
         );
     }
 

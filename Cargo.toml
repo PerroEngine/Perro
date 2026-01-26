@@ -2,7 +2,7 @@
 members = [
     "perro_core",
     "perro_dev",
+    "perro_lsp",
 ]
 
 resolver = "3"
-

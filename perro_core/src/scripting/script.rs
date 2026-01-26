@@ -6,7 +6,7 @@ use std::cell::{RefCell, UnsafeCell};
 use std::rc::Rc;
 
 use serde_json::Value;
-use uuid::Uuid;
+use crate::uid32::{Uid32, NodeID};
 
 use crate::SceneData;
 use crate::api::ScriptApi;
@@ -73,8 +73,8 @@ pub trait ScriptObject: Script {
     fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>);
     fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &[Value]);
 
-    fn set_id(&mut self, id: Uuid);
-    fn get_id(&self) -> Uuid;
+    fn set_id(&mut self, id: NodeID);
+    fn get_id(&self) -> NodeID;
 
     fn attributes_of(&self, member: &str) -> Vec<String>;
     fn members_with(&self, attribute: &str) -> Vec<String>;
@@ -112,38 +112,38 @@ use std::sync::Mutex;
 /// Direct borrowing with compile-time lifetime guarantees
 pub trait SceneAccess {
     /// Get immutable reference to a node (can have multiple at once)
-    fn get_scene_node_ref(&self, id: Uuid) -> Option<&SceneNode>;
+    fn get_scene_node_ref(&self, id: NodeID) -> Option<&SceneNode>;
     
     /// Get mutable reference to a node (compile-time borrow checking)
-    fn get_scene_node_mut(&mut self, id: Uuid) -> Option<&mut SceneNode>;
+    fn get_scene_node_mut(&mut self, id: NodeID) -> Option<&mut SceneNode>;
     
     /// Mark a node as needing rerender (only if not already in set)
     /// This is used to track nodes needing rerender without iterating over all nodes
-    fn mark_needs_rerender(&mut self, node_id: Uuid);
+    fn mark_needs_rerender(&mut self, node_id: NodeID);
     
     /// Legacy method for compatibility
-    fn get_scene_node(&mut self, id: Uuid) -> Option<&mut SceneNode> {
+    fn get_scene_node(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         self.get_scene_node_mut(id)
     }
     
     fn add_node_to_scene(&mut self, node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<()>;
-    fn get_script(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>>;
+    fn get_script(&mut self, id: NodeID) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>>;
     
     /// Get mutable reference to a script (for direct update calls)
     /// NOTE: This is now deprecated - use get_script() and UnsafeCell::get() instead
-    fn get_script_mut(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+    fn get_script_mut(&mut self, id: NodeID) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
         self.get_script(id)
     }
     
     /// Get a script by cloning its Rc (scripts are now always in memory)
     /// NOTE: This replaces take_script - scripts are no longer taken out
-    fn take_script(&mut self, id: Uuid) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
+    fn take_script(&mut self, id: NodeID) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {
         self.get_script(id)
     }
     
     /// Put a script back into storage
     /// NOTE: This is now a no-op since scripts stay in memory, but kept for compatibility
-    fn insert_script(&mut self, _id: Uuid, _script: Box<dyn ScriptObject>) {
+    fn insert_script(&mut self, _id: NodeID, _script: Box<dyn ScriptObject>) {
         // Scripts are now stored as Rc<UnsafeCell<Box<>>>, so we don't need to insert them back
         // This method is kept for compatibility but does nothing
     }
@@ -153,16 +153,16 @@ pub trait SceneAccess {
     fn enable_controller_manager(&self) -> bool;
     
     /// Update the Node2D children cache when a child is added
-    fn update_node2d_children_cache_on_add(&mut self, parent_id: Uuid, child_id: Uuid);
+    fn update_node2d_children_cache_on_add(&mut self, parent_id: NodeID, child_id: NodeID);
     
     /// Update the Node2D children cache when a child is removed
-    fn update_node2d_children_cache_on_remove(&mut self, parent_id: Uuid, child_id: Uuid);
+    fn update_node2d_children_cache_on_remove(&mut self, parent_id: NodeID, child_id: NodeID);
     
     /// Clear the Node2D children cache when all children are removed
-    fn update_node2d_children_cache_on_clear(&mut self, parent_id: Uuid);
+    fn update_node2d_children_cache_on_clear(&mut self, parent_id: NodeID);
     
     /// Remove a node from the scene, stopping rendering and cleaning up scripts
-    fn remove_node(&mut self, node_id: Uuid, gfx: &mut crate::rendering::Graphics);
+    fn remove_node(&mut self, node_id: NodeID, gfx: &mut crate::rendering::Graphics);
     
     fn get_input_manager(&self) -> Option<&Mutex<InputManager>>;
     fn get_physics_2d(&self) -> Option<&CellRefCell<PhysicsWorld2D>>;
@@ -171,13 +171,13 @@ pub trait SceneAccess {
     fn instantiate_script(
         &mut self,
         ctor: CreateFn,
-        node_id: Uuid,
+        node_id: NodeID,
     ) -> Box<dyn ScriptObject>;
 
-    fn connect_signal_id(&mut self, signal: u64, target_id: Uuid, function: u64);
+    fn connect_signal_id(&mut self, signal: u64, target_id: NodeID, function: u64);
     
     /// Get signal connections for a signal ID (for direct emission within API context)
-    fn get_signal_connections(&self, signal: u64) -> Option<&std::collections::HashMap<Uuid, smallvec::SmallVec<[u64; 4]>>>;
+    fn get_signal_connections(&self, signal: u64) -> Option<&std::collections::HashMap<NodeID, smallvec::SmallVec<[u64; 4]>>>;
     
     /// Emit signal instantly (zero-allocation, direct call)
     /// Params are passed as compile-time slice, never stored
@@ -193,11 +193,11 @@ pub trait SceneAccess {
     }
 
     /// Get the global transform for a node (calculates lazily if dirty)
-    fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D>;
+    fn get_global_transform(&mut self, node_id: NodeID) -> Option<crate::structs2d::Transform2D>;
     
     /// Set the global transform for a node (marks it as dirty)
-    fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()>;
+    fn set_global_transform(&mut self, node_id: NodeID, transform: crate::structs2d::Transform2D) -> Option<()>;
     
     /// Mark a node's transform as dirty (and all its children)
-    fn mark_transform_dirty_recursive(&mut self, node_id: Uuid);
+    fn mark_transform_dirty_recursive(&mut self, node_id: NodeID);
 }

@@ -1,6 +1,6 @@
 use crate::structs::Color;
 use crate::structs2d::Vector2;
-use crate::{impl_ui_element, ui_element::BaseUIElement};
+use crate::{impl_ui_element, ui_element::BaseUIElement, UIElementID};
 use serde::{Deserialize, Serialize};
 /// =========================
 /// 1. Placeholder container
@@ -77,7 +77,7 @@ pub enum ContainerMode {
     Grid,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DistributionMode {
     Pack,
     Even,
@@ -96,7 +96,7 @@ impl Default for LayoutAlignment {
     }
 }
 
-/// Horizontal/Vertical layout
+/// Horizontal/Vertical layout (deprecated - use VLayout or HLayout instead)
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Layout {
     pub base: BaseUIElement,
@@ -114,23 +114,75 @@ impl Default for Layout {
 
 impl_ui_element!(Layout);
 
-/// Grid layout
+/// Vertical layout - positions children vertically
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct VLayout {
+    pub base: BaseUIElement,
+    pub gap: Vector2,                   // spacing between children
+    pub distribution: DistributionMode, // pack or even spacing
+    pub padding: Padding,               // padding that reduces effective parent size for children
+    #[serde(default)]
+    pub align: LayoutAlignment,        // alignment of children (start/center/end)
+}
+
+impl Default for VLayout {
+    fn default() -> Self {
+        Self {
+            base: BaseUIElement::default(),
+            gap: Vector2::new(0.0, 0.0),
+            distribution: DistributionMode::Pack,
+            padding: Padding::default(),
+            align: LayoutAlignment::Center,
+        }
+    }
+}
+
+impl_ui_element!(VLayout);
+
+/// Horizontal layout - positions children horizontally
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HLayout {
+    pub base: BaseUIElement,
+    pub gap: Vector2,                   // spacing between children
+    pub distribution: DistributionMode, // pack or even spacing
+    pub padding: Padding,               // padding that reduces effective parent size for children
+    #[serde(default)]
+    pub align: LayoutAlignment,        // alignment of children (start/center/end)
+}
+
+impl Default for HLayout {
+    fn default() -> Self {
+        Self {
+            base: BaseUIElement::default(),
+            gap: Vector2::new(0.0, 0.0),
+            distribution: DistributionMode::Pack,
+            padding: Padding::default(),
+            align: LayoutAlignment::Center,
+        }
+    }
+}
+
+impl_ui_element!(HLayout);
+
+/// Grid layout - positions children in a grid
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GridLayout {
     pub base: BaseUIElement,
-    pub container: Container,
     pub cols: usize,
+    pub gap: Vector2,                   // spacing between grid cells
+    pub padding: Padding,               // padding that reduces effective parent size for children
+    #[serde(default)]
+    pub align: LayoutAlignment,        // alignment of children within cells
 }
 
 impl Default for GridLayout {
     fn default() -> Self {
         Self {
             base: BaseUIElement::default(),
-            container: Container {
-                mode: ContainerMode::Grid,
-                ..Default::default()
-            },
             cols: 1,
+            gap: Vector2::new(0.0, 0.0),
+            padding: Padding::default(),
+            align: LayoutAlignment::Center,
         }
     }
 }
@@ -138,9 +190,11 @@ impl Default for GridLayout {
 impl_ui_element!(GridLayout);
 
 /// =========================
-/// 3. Visual container
+/// 3. Visual container - wraps egui Frame
 /// =========================
 
+/// UIPanel wraps egui Frame for visual styling
+/// It provides background, border, and corner radius styling
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UIPanel {
     pub base: BaseUIElement,

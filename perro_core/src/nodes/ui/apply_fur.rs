@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use std::{borrow::Cow, collections::HashMap, time::Instant};
-use uuid::Uuid;
+use crate::uid32::{Uid32, UIElementID};
 
 use crate::{
     asset_io::load_asset,
@@ -9,12 +9,8 @@ use crate::{
     structs2d::Vector2,
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
-        ui_container::{BoxContainer, ContainerMode, CornerRadius, GridLayout, Layout, LayoutAlignment, Padding, UIPanel},
+        ui_container::{CornerRadius, UIPanel},
         ui_text::{TextFlow, UIText},
-        ui_button::UIButton,
-        ui_text_input::UITextInput,
-        ui_text_edit::UITextEdit,
-        ui_list_tree::UIListTree,
     },
     ui_node::UINode,
 };
@@ -238,7 +234,10 @@ fn apply_base_attributes(
                     if pct {
                         base.style_map.insert(SIZE_X.to_string(), f);
                     } else {
+                        // Store absolute values in style_map with a marker (> 10000) to distinguish from percentages
+                        // This allows the layout system to know it's an explicit absolute size
                         base.size.x = f;
+                        base.style_map.insert(SIZE_X.to_string(), 10000.0 + f);
                     }
                 }
                 if let Some(yv) = y_val {
@@ -246,7 +245,10 @@ fn apply_base_attributes(
                     if pct {
                         base.style_map.insert(SIZE_Y.to_string(), f);
                     } else {
+                        // Store absolute values in style_map with a marker (> 10000) to distinguish from percentages
+                        // This allows the layout system to know it's an explicit absolute size
                         base.size.y = f;
+                        base.style_map.insert(SIZE_Y.to_string(), 10000.0 + f);
                     }
                 }
             }
@@ -326,22 +328,6 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
     let tag = fur.tag_name.as_ref();
 
     match tag {
-        "UI" => {
-            let mut ui = BoxContainer::default();
-            ui.set_name(&fur.id);
-            apply_base_attributes(&mut ui.base, &fur.attributes);
-            ui.base.style_map.insert(SIZE_X.to_string(), 100.0);
-            ui.base.style_map.insert(SIZE_Y.to_string(), 100.0);
-            Some(UIElement::BoxContainer(ui))
-        }
-
-        "Box" => {
-            let mut el = BoxContainer::default();
-            el.set_name(&fur.id);
-            apply_base_attributes(&mut el.base, &fur.attributes);
-            Some(UIElement::BoxContainer(el))
-        }
-
         "Panel" => {
             let mut panel = UIPanel::default();
             panel.set_name(&fur.id);
@@ -441,150 +427,6 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             Some(UIElement::Panel(panel))
         }
 
-        "Layout" | "HLayout" | "VLayout" | "Grid" => {
-            // Helper to parse a single float value
-            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
-                v.and_then(|s| s.trim().parse().ok())
-            }
-            
-            // Helper to parse padding
-            fn parse_padding(fur: &FurElement) -> Padding {
-                let mut padding = Padding::default();
-                
-                // Step 1: base padding list (like "p: 10,20,30,40" or "p: 10")
-                if let Some(value) = fur.attributes.get("p") {
-                    let mut vals = [0.0; 4];
-                    for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-                        vals[i] = v.parse().unwrap_or(0.0);
-                    }
-                    
-                    match value.split(',').count() {
-                        0 | 1 => padding = Padding::uniform(vals[0]),
-                        2 => {
-                            // vertical, horizontal
-                            padding.top = vals[0];
-                            padding.bottom = vals[0];
-                            padding.left = vals[1];
-                            padding.right = vals[1];
-                        }
-                        3 => {
-                            // top, horizontal, bottom
-                            padding.top = vals[0];
-                            padding.left = vals[1];
-                            padding.right = vals[1];
-                            padding.bottom = vals[2];
-                        }
-                        4 => {
-                            // top, right, bottom, left
-                            padding.top = vals[0];
-                            padding.right = vals[1];
-                            padding.bottom = vals[2];
-                            padding.left = vals[3];
-                        }
-                        _ => {}
-                    }
-                }
-                
-                // Step 2: horizontal and vertical shortcuts (px, py)
-                if let Some(v) = parse_val(fur.attributes.get("px")) {
-                    padding.left = v;
-                    padding.right = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("py")) {
-                    padding.top = v;
-                    padding.bottom = v;
-                }
-                
-                // Step 3: individual side overrides (pt, pr, pb, pl) - highest priority
-                if let Some(v) = parse_val(fur.attributes.get("pt")) {
-                    padding.top = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("pr")) {
-                    padding.right = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("pb")) {
-                    padding.bottom = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("pl")) {
-                    padding.left = v;
-                }
-                
-                padding
-            }
-            
-            if tag == "Grid"
-                || fur
-                    .attributes
-                    .get("mode")
-                    .map(|s| s.eq_ignore_ascii_case("g"))
-                    .unwrap_or(false)
-            {
-                let mut g = GridLayout::default();
-                g.set_name(&fur.id);
-
-                apply_base_attributes(&mut g.base, &fur.attributes);
-                if let Some(c) = fur.attributes.get("cols") {
-                    g.cols = c.parse().unwrap_or(1);
-                }
-                if let Some(gap) = fur.attributes.get("gap") {
-                    let (x, y) = parse_compound(gap);
-                    g.container.gap.x = x.and_then(|x| x.parse::<f64>().ok()).unwrap_or(0.0) as f32;
-                    g.container.gap.y = y.and_then(|y| y.parse::<f64>().ok()).unwrap_or(g.container.gap.x as f64) as f32;
-                }
-                g.container.padding = parse_padding(fur);
-                
-                // Parse alignment (align=s/c/e for start/center/end)
-                if let Some(align_str) = fur.attributes.get("align") {
-                    g.container.align = match align_str.as_ref() {
-                        "start" | "s" => LayoutAlignment::Start,
-                        "center" | "c" => LayoutAlignment::Center,
-                        "end" | "e" => LayoutAlignment::End,
-                        _ => LayoutAlignment::Center,
-                    };
-                }
-                
-                return Some(UIElement::GridLayout(g));
-            }
-
-            let mut layout = Layout::default();
-            layout.set_name(&fur.id);
-            apply_base_attributes(&mut layout.base, &fur.attributes);
-
-            layout.container.mode = match (tag, fur.attributes.get("mode").map(|v| v.as_ref())) {
-                ("VLayout", _) | (_, Some("v") | Some("V")) => ContainerMode::Vertical,
-                _ => ContainerMode::Horizontal,
-            };
-
-            if let Some(g) = fur.attributes.get("gap") {
-                // Gap is a single value that adds EXTRA spacing on top of default
-                // Use f64 for precision during parsing, then convert to f32
-                let parsed = if g.trim().ends_with('%') {
-                    g.trim().trim_end_matches('%').parse::<f64>().unwrap_or(0.0) as f32
-                } else {
-                    g.parse::<f64>().unwrap_or(0.0) as f32
-                };
-                match layout.container.mode {
-                    ContainerMode::Horizontal => layout.container.gap.x = parsed,
-                    ContainerMode::Vertical => layout.container.gap.y = parsed,
-                    _ => {}
-                }
-            }
-            
-            layout.container.padding = parse_padding(fur);
-            
-            // Parse alignment (align=s/c/e for start/center/end)
-            if let Some(align_str) = fur.attributes.get("align") {
-                layout.container.align = match align_str.as_ref() {
-                    "start" | "s" => LayoutAlignment::Start,
-                    "center" | "c" => LayoutAlignment::Center,
-                    "end" | "e" => LayoutAlignment::End,
-                    _ => LayoutAlignment::Center,
-                };
-            }
-
-            Some(UIElement::Layout(layout))
-        }
-
         "Text" => {
             let mut text = UIText::default();
             text.set_name(&fur.id);
@@ -608,6 +450,14 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                 .or(fur.attributes.get("font-size"))
             {
                 text.props.font_size = fs.parse().unwrap_or(text.props.font_size);
+            }
+
+            // Parse font specification (file path or system font name)
+            if let Some(font_spec) = fur.attributes.get("font") {
+                let font_str = font_spec.trim();
+                if !font_str.is_empty() {
+                    text.props.font = Some(font_str.to_string());
+                }
             }
 
             // Parse text flow alignment (how text flows relative to anchor point)
@@ -642,682 +492,6 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             Some(UIElement::Text(text))
         }
 
-        "Button" => {
-            let mut button = UIButton::default();
-            button.set_name(&fur.id);
-            apply_base_attributes(&mut button.base, &fur.attributes);
-
-            // Apply panel properties (bg, border, rounding)
-            if let Some(bg) = fur.attributes.get("bg") {
-                if let Ok(c) = parse_color_with_opacity(bg) {
-                    button.panel_props_mut().background_color = Some(c);
-                }
-            }
-            
-            // Parse hover and pressed background colors
-            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
-                if let Ok(c) = parse_color_with_opacity(hover_bg) {
-                    button.hover_bg = Some(c);
-                }
-            }
-            if let Some(pressed_bg) = fur.attributes.get("pressed-bg") {
-                if let Ok(c) = parse_color_with_opacity(pressed_bg) {
-                    button.pressed_bg = Some(c);
-                }
-            }
-            if let Some(c) = fur.attributes.get("border-c") {
-                if let Ok(c) = parse_color_with_opacity(c) {
-                    button.panel_props_mut().border_color = Some(c);
-                }
-            }
-            if let Some(b) = fur.attributes.get("border") {
-                button.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
-            }
-
-            if let Some(opacity_str) = fur.attributes.get("opacity") {
-                if let Some(opacity) = parse_opacity(opacity_str) {
-                    button.panel_props_mut().opacity = opacity;
-                }
-            }
-
-            // Apply corner radius (same logic as Panel)
-            let mut corner = CornerRadius::default();
-            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
-                v.and_then(|s| s.trim().parse().ok())
-            }
-
-            if let Some(value) = fur.attributes.get("rounding") {
-                let mut vals = [0.0; 4];
-                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-                    vals[i] = v.parse().unwrap_or(0.0);
-                }
-
-                match value.split(',').count() {
-                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
-                    2 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[0];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[1];
-                    }
-                    3 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[2];
-                    }
-                    4 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[2];
-                        corner.bottom_right = vals[3];
-                    }
-                    _ => {}
-                }
-            }
-
-            // Directional and individual corner overrides
-            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
-                corner.top_left = v;
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
-                corner.bottom_left = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
-                corner.top_left = v;
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
-                corner.top_right = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
-                corner.top_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
-                corner.bottom_right = v;
-            }
-
-            button.panel_props_mut().corner_radius = corner;
-
-            // Apply text properties - extract text from children
-            let text_content: String = fur
-                .children
-                .iter()
-                .filter_map(|n| {
-                    if let FurNode::Text(s) = n {
-                        Some(s.as_ref())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<&str>>()
-                .join("");
-            
-            // Trim the text content (whitespace from parsing)
-            let trimmed_content = text_content.trim();
-            button.text_props_mut().content = trimmed_content.to_string();
-            
-            // Debug: verify text content is set
-            if !trimmed_content.is_empty() {
-                println!("Button '{}' text content: '{}' (len: {})", fur.id, trimmed_content, trimmed_content.len());
-            } else {
-                println!("WARNING: Button '{}' has empty text content! Children: {:?}", fur.id, fur.children.len());
-            }
-            
-            // Set default text color to white if not specified (visible on colored backgrounds)
-            if fur.attributes.get("text-c").is_none() {
-                button.text_props_mut().color = Color::new(255, 255, 255, 255);
-            }
-            
-            // Parse text-anchor for buttons (controls where text is positioned within button)
-            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
-                button.text_anchor = match anchor_str.as_ref() {
-                    "tl" => FurAnchor::TopLeft,
-                    "t" => FurAnchor::Top,
-                    "tr" => FurAnchor::TopRight,
-                    "l" => FurAnchor::Left,
-                    "c" => FurAnchor::Center,
-                    "r" => FurAnchor::Right,
-                    "bl" => FurAnchor::BottomLeft,
-                    "b" => FurAnchor::Bottom,
-                    "br" => FurAnchor::BottomRight,
-                    _ => FurAnchor::Center,
-                };
-            }
-            
-            // Parse text flow alignment for buttons (how text flows relative to anchor point)
-            if let Some(align_str) = fur.attributes.get("align") {
-                button.text_props_mut().align = match align_str.as_ref() {
-                    "start" | "s" => TextFlow::Start,
-                    "center" | "c" => TextFlow::Center,
-                    "end" | "e" => TextFlow::End,
-                    // Backward compatibility
-                    "left" | "l" | "top" | "t" => TextFlow::Start,
-                    "right" | "r" | "bottom" | "b" => TextFlow::End,
-                    _ => TextFlow::Center,
-                };
-            }
-            
-            // Backward compatibility: support old align-h and align-v
-            if let Some(align_str) = fur.attributes.get("align-h") {
-                let align = match align_str.as_ref() {
-                    "left" | "l" => TextFlow::Start,
-                    "center" | "c" => TextFlow::Center,
-                    "right" | "r" => TextFlow::End,
-                    _ => TextFlow::Center,
-                };
-                button.text_props_mut().align = align;
-            }
-            // Note: align-v is deprecated and no longer used - vertical alignment is always Center
-            
-            // Set a reasonable default font size for buttons if not specified
-            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
-                button.text_props_mut().font_size = 16.0; // Larger default for buttons
-            }
-            
-            println!("Button '{}' text props: content='{}', font_size={}, color={:?}", 
-                fur.id, 
-                button.text_props().content, 
-                button.text_props().font_size,
-                button.text_props().color
-            );
-
-            if let Some(fs) = fur
-                .attributes
-                .get("fsz")
-                .or(fur.attributes.get("font-size"))
-            {
-                button.text_props_mut().font_size = fs.parse().unwrap_or(button.text_props().font_size);
-            }
-
-            if let Some(tc) = fur.attributes.get("text-c") {
-                if let Ok(c) = parse_color_with_opacity(tc) {
-                    button.text_props_mut().color = c;
-                }
-            }
-
-            Some(UIElement::Button(button))
-        }
-
-        "TextInput" => {
-            let mut text_input = UITextInput::default();
-            text_input.set_name(&fur.id);
-            apply_base_attributes(&mut text_input.base, &fur.attributes);
-
-            // Apply panel properties (same as Button)
-            if let Some(bg) = fur.attributes.get("bg") {
-                if let Ok(c) = parse_color_with_opacity(bg) {
-                    text_input.panel_props_mut().background_color = Some(c);
-                }
-            }
-            
-            // Parse hover and focused background colors
-            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
-                if let Ok(c) = parse_color_with_opacity(hover_bg) {
-                    text_input.hover_bg = Some(c);
-                }
-            }
-            if let Some(focused_bg) = fur.attributes.get("focused-bg") {
-                if let Ok(c) = parse_color_with_opacity(focused_bg) {
-                    text_input.focused_bg = Some(c);
-                }
-            }
-            if let Some(c) = fur.attributes.get("border-c") {
-                if let Ok(c) = parse_color_with_opacity(c) {
-                    text_input.panel_props_mut().border_color = Some(c);
-                }
-            }
-            if let Some(b) = fur.attributes.get("border") {
-                text_input.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
-            }
-
-            if let Some(opacity_str) = fur.attributes.get("opacity") {
-                if let Some(opacity) = parse_opacity(opacity_str) {
-                    text_input.panel_props_mut().opacity = opacity;
-                }
-            }
-
-            // Apply corner radius (same logic as Button)
-            let mut corner = CornerRadius::default();
-            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
-                v.and_then(|s| s.trim().parse().ok())
-            }
-
-            if let Some(value) = fur.attributes.get("rounding") {
-                let mut vals = [0.0; 4];
-                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-                    vals[i] = v.parse().unwrap_or(0.0);
-                }
-
-                match value.split(',').count() {
-                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
-                    2 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[0];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[1];
-                    }
-                    3 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[2];
-                    }
-                    4 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[2];
-                        corner.bottom_right = vals[3];
-                    }
-                    _ => {}
-                }
-            }
-
-            // Directional and individual corner overrides
-            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
-                corner.top_left = v;
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
-                corner.bottom_left = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
-                corner.top_left = v;
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
-                corner.top_right = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
-                corner.top_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
-                corner.bottom_right = v;
-            }
-
-            text_input.panel_props_mut().corner_radius = corner;
-
-            // Apply text properties - extract text from children
-            let text_content: String = fur
-                .children
-                .iter()
-                .filter_map(|n| {
-                    if let FurNode::Text(s) = n {
-                        Some(s.as_ref())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<&str>>()
-                .join("");
-            
-            let trimmed_content = text_content.trim();
-            text_input.text_props_mut().content = trimmed_content.to_string();
-            
-            // Set default text color to white if not specified
-            if fur.attributes.get("text-c").is_none() {
-                text_input.text_props_mut().color = Color::new(255, 255, 255, 255);
-            }
-            
-            // Parse text-anchor
-            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
-                text_input.text_anchor = match anchor_str.as_ref() {
-                    "tl" => FurAnchor::TopLeft,
-                    "t" => FurAnchor::Top,
-                    "tr" => FurAnchor::TopRight,
-                    "l" => FurAnchor::Left,
-                    "c" => FurAnchor::Center,
-                    "r" => FurAnchor::Right,
-                    "bl" => FurAnchor::BottomLeft,
-                    "b" => FurAnchor::Bottom,
-                    "br" => FurAnchor::BottomRight,
-                    _ => FurAnchor::Center,
-                };
-            }
-            
-            // Parse text flow alignment - defaults to Center like other UI elements
-            if let Some(align_str) = fur.attributes.get("align") {
-                text_input.text_props_mut().align = match align_str.as_ref() {
-                    "start" | "s" => TextFlow::Start,
-                    "center" | "c" => TextFlow::Center,
-                    "end" | "e" => TextFlow::End,
-                    "left" | "l" => TextFlow::Start,
-                    "right" | "r" => TextFlow::End,
-                    _ => TextFlow::Center,
-                };
-            }
-            
-            // Set default font size if not specified
-            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
-                text_input.text_props_mut().font_size = 16.0;
-            }
-
-            if let Some(fs) = fur
-                .attributes
-                .get("fsz")
-                .or(fur.attributes.get("font-size"))
-            {
-                text_input.text_props_mut().font_size = fs.parse().unwrap_or(text_input.text_props().font_size);
-            }
-
-            if let Some(tc) = fur.attributes.get("text-c") {
-                if let Ok(c) = parse_color_with_opacity(tc) {
-                    text_input.text_props_mut().color = c;
-                }
-            }
-
-            Some(UIElement::TextInput(text_input))
-        }
-
-        "TextEdit" => {
-            let mut text_edit = UITextEdit::default();
-            text_edit.set_name(&fur.id);
-            apply_base_attributes(&mut text_edit.base, &fur.attributes);
-
-            // Apply panel properties (same as Button)
-            if let Some(bg) = fur.attributes.get("bg") {
-                if let Ok(c) = parse_color_with_opacity(bg) {
-                    text_edit.panel_props_mut().background_color = Some(c);
-                }
-            }
-            
-            // Parse hover and focused background colors
-            if let Some(hover_bg) = fur.attributes.get("hover-bg") {
-                if let Ok(c) = parse_color_with_opacity(hover_bg) {
-                    text_edit.hover_bg = Some(c);
-                }
-            }
-            if let Some(focused_bg) = fur.attributes.get("focused-bg") {
-                if let Ok(c) = parse_color_with_opacity(focused_bg) {
-                    text_edit.focused_bg = Some(c);
-                }
-            }
-            if let Some(c) = fur.attributes.get("border-c") {
-                if let Ok(c) = parse_color_with_opacity(c) {
-                    text_edit.panel_props_mut().border_color = Some(c);
-                }
-            }
-            if let Some(b) = fur.attributes.get("border") {
-                text_edit.panel_props_mut().border_thickness = b.parse().unwrap_or(0.0);
-            }
-
-            if let Some(opacity_str) = fur.attributes.get("opacity") {
-                if let Some(opacity) = parse_opacity(opacity_str) {
-                    text_edit.panel_props_mut().opacity = opacity;
-                }
-            }
-
-            // Apply corner radius (same logic as Button)
-            let mut corner = CornerRadius::default();
-            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
-                v.and_then(|s| s.trim().parse().ok())
-            }
-
-            if let Some(value) = fur.attributes.get("rounding") {
-                let mut vals = [0.0; 4];
-                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-                    vals[i] = v.parse().unwrap_or(0.0);
-                }
-
-                match value.split(',').count() {
-                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
-                    2 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[0];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[1];
-                    }
-                    3 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[2];
-                    }
-                    4 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[2];
-                        corner.bottom_right = vals[3];
-                    }
-                    _ => {}
-                }
-            }
-
-            // Directional and individual corner overrides
-            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
-                corner.top_left = v;
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
-                corner.bottom_left = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
-                corner.top_left = v;
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
-                corner.top_right = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
-                corner.top_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
-                corner.bottom_right = v;
-            }
-
-            text_edit.panel_props_mut().corner_radius = corner;
-
-            // Parse padding (inline version since parse_padding is local to Layout/Grid)
-            {
-                let mut padding = Padding::default();
-                
-                // Step 1: base padding list (like "p: 10,20,30,40" or "p: 10")
-                if let Some(value) = fur.attributes.get("p") {
-                    let mut vals = [0.0; 4];
-                    for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-                        vals[i] = v.parse().unwrap_or(0.0);
-                    }
-                    
-                    match value.split(',').count() {
-                        0 | 1 => padding = Padding::uniform(vals[0]),
-                        2 => {
-                            // vertical, horizontal
-                            padding.top = vals[0];
-                            padding.bottom = vals[0];
-                            padding.left = vals[1];
-                            padding.right = vals[1];
-                        }
-                        3 => {
-                            // top, horizontal, bottom
-                            padding.top = vals[0];
-                            padding.left = vals[1];
-                            padding.right = vals[1];
-                            padding.bottom = vals[2];
-                        }
-                        4 => {
-                            // top, right, bottom, left
-                            padding.top = vals[0];
-                            padding.right = vals[1];
-                            padding.bottom = vals[2];
-                            padding.left = vals[3];
-                        }
-                        _ => {}
-                    }
-                }
-                
-                // Step 2: horizontal and vertical shortcuts (px, py)
-                if let Some(v) = parse_val(fur.attributes.get("px")) {
-                    padding.left = v;
-                    padding.right = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("py")) {
-                    padding.top = v;
-                    padding.bottom = v;
-                }
-                
-                // Step 3: individual side overrides (pt, pr, pb, pl) - highest priority
-                if let Some(v) = parse_val(fur.attributes.get("pt")) {
-                    padding.top = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("pr")) {
-                    padding.right = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("pb")) {
-                    padding.bottom = v;
-                }
-                if let Some(v) = parse_val(fur.attributes.get("pl")) {
-                    padding.left = v;
-                }
-                
-                text_edit.padding = padding;
-            }
-
-            // Apply text properties - extract text from children
-            let text_content: String = fur
-                .children
-                .iter()
-                .filter_map(|n| {
-                    if let FurNode::Text(s) = n {
-                        Some(s.as_ref())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<&str>>()
-                .join("");
-            
-            let trimmed_content = text_content.trim();
-            text_edit.text_props_mut().content = trimmed_content.to_string();
-            
-            // Set default text color to white if not specified
-            if fur.attributes.get("text-c").is_none() {
-                text_edit.text_props_mut().color = Color::new(255, 255, 255, 255);
-            }
-            
-            // Parse text-anchor
-            if let Some(anchor_str) = fur.attributes.get("text-anchor") {
-                text_edit.text_anchor = match anchor_str.as_ref() {
-                    "tl" => FurAnchor::TopLeft,
-                    "t" => FurAnchor::Top,
-                    "tr" => FurAnchor::TopRight,
-                    "l" => FurAnchor::Left,
-                    "c" => FurAnchor::Center,
-                    "r" => FurAnchor::Right,
-                    "bl" => FurAnchor::BottomLeft,
-                    "b" => FurAnchor::Bottom,
-                    "br" => FurAnchor::BottomRight,
-                    _ => FurAnchor::Center,
-                };
-            }
-            
-            // Parse text flow alignment - defaults to Center like other UI elements
-            if let Some(align_str) = fur.attributes.get("align") {
-                text_edit.text_props_mut().align = match align_str.as_ref() {
-                    "start" | "s" => TextFlow::Start,
-                    "center" | "c" => TextFlow::Center,
-                    "end" | "e" => TextFlow::End,
-                    "left" | "l" => TextFlow::Start,
-                    "right" | "r" => TextFlow::End,
-                    _ => TextFlow::Center,
-                };
-            }
-            
-            // Set default font size if not specified
-            if fur.attributes.get("fsz").is_none() && fur.attributes.get("font-size").is_none() {
-                text_edit.text_props_mut().font_size = 16.0;
-            }
-
-            if let Some(fs) = fur
-                .attributes
-                .get("fsz")
-                .or(fur.attributes.get("font-size"))
-            {
-                text_edit.text_props_mut().font_size = fs.parse().unwrap_or(text_edit.text_props().font_size);
-            }
-
-            if let Some(tc) = fur.attributes.get("text-c") {
-                if let Ok(c) = parse_color_with_opacity(tc) {
-                    text_edit.text_props_mut().color = c;
-                }
-            }
-
-            Some(UIElement::TextEdit(text_edit))
-        }
-
-        // ListTree and FileTree are the same (ListTree is the generic name)
-        "ListTree" | "FileTree" => {
-            let mut file_tree = UIListTree::default();
-            file_tree.set_name(&fur.id);
-            apply_base_attributes(&mut file_tree.base, &fur.attributes);
-
-            // Parse background color
-            if let Some(bg) = fur.attributes.get("bg") {
-                if let Ok(c) = parse_color_with_opacity(bg) {
-                    file_tree.background_color = c;
-                }
-            }
-
-            // Parse text color
-            if let Some(text_c) = fur.attributes.get("text-c") {
-                if let Ok(c) = parse_color_with_opacity(text_c) {
-                    file_tree.text_color = c;
-                }
-            }
-
-            // Parse selected/hover colors
-            if let Some(sel_c) = fur.attributes.get("selected-c") {
-                if let Ok(c) = parse_color_with_opacity(sel_c) {
-                    file_tree.selected_color = c;
-                }
-            }
-            if let Some(hover_c) = fur.attributes.get("hover-c") {
-                if let Ok(c) = parse_color_with_opacity(hover_c) {
-                    file_tree.hover_color = c;
-                }
-            }
-
-            // Parse item height
-            if let Some(item_h) = fur.attributes.get("item-h") {
-                if let Ok(h) = item_h.parse::<f32>() {
-                    file_tree.item_height = h;
-                }
-            }
-
-            // Parse indent size
-            if let Some(indent) = fur.attributes.get("indent") {
-                if let Ok(i) = indent.parse::<f32>() {
-                    file_tree.indent_size = i;
-                }
-            }
-
-            Some(UIElement::ListTree(file_tree))
-        }
-
         _ => {
             println!("Warning: Unsupported element '{}'", tag);
             None
@@ -1329,16 +503,16 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
 
 fn convert_fur_element_to_ui_elements(
     fur: &FurElement,
-    parent_uuid: Option<Uuid>,
-) -> Vec<(Uuid, UIElement)> {
+    parent_uuid: Option<UIElementID>,
+) -> Vec<(UIElementID, UIElement)> {
     convert_fur_element_to_ui_elements_with_includes(fur, parent_uuid, &mut std::collections::HashSet::new())
 }
 
 fn convert_fur_element_to_ui_elements_with_includes(
     fur: &FurElement,
-    parent_uuid: Option<Uuid>,
+    parent_uuid: Option<UIElementID>,
     included_paths: &mut std::collections::HashSet<String>,
-) -> Vec<(Uuid, UIElement)> {
+) -> Vec<(UIElementID, UIElement)> {
     // Handle Include elements
     if fur.tag_name.eq_ignore_ascii_case("Include") {
         if let Some(path) = fur.attributes.get("path") {
@@ -1418,13 +592,15 @@ fn convert_fur_element_to_ui_elements_with_includes(
             .collect();
     };
 
-    let id = Uuid::new_v4();
+    let id = UIElementID::new();
     ui.set_id(id);
     ui.set_parent(parent_uuid);
 
     let mut results = Vec::with_capacity(fur.children.len() + 1);
     let mut children = Vec::with_capacity(fur.children.len());
 
+    // Panels and Buttons are now fully compositional - they only accept explicit child elements
+    // Text nodes are IGNORED - you must use [Text] elements explicitly
     for child in &fur.children {
         if let FurNode::Element(e) = child {
             let child_nodes = convert_fur_element_to_ui_elements_with_includes(e, Some(id), included_paths);
@@ -1433,6 +609,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
             }
             results.extend(child_nodes);
         }
+        // Text nodes (FurNode::Text) are ignored - use [Text] elements instead
     }
 
     ui.set_children(children);
@@ -1479,7 +656,7 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
 /// Append FUR elements to an existing UINode without clearing existing elements
 /// This allows dynamically adding UI elements at runtime
 /// parent_id: If Some, the new elements will be children of that parent element. If None, they'll be root elements.
-pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_id: Option<Uuid>) {
+pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_id: Option<UIElementID>) {
     // Collect all UUIDs that will be added, so we can mark them for rerender after the borrow is released
     let mut added_uuids = Vec::new();
 

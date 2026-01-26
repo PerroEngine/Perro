@@ -17,7 +17,7 @@ use btleplug::platform::{Adapter, Manager, Peripheral as PlatformPeripheral};
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::time::{Duration, timeout};
-use uuid::Uuid;
+use uuid::Uuid;  // Required for btleplug GATT characteristics
 
 // Joy-Con 2 GATT characteristic UUIDs for input reports
 // Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md
@@ -131,7 +131,7 @@ impl JoyCon2 {
 
         println!("  Discovering services and characteristics...");
 
-        // Parse the known UUIDs
+        // Parse the known UUIDs (must use uuid::Uuid for btleplug compatibility)
         let report_05_uuid = Uuid::parse_str(INPUT_REPORT_05_UUID)
             .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
         let report_07_uuid = Uuid::parse_str(INPUT_REPORT_07_UUID)

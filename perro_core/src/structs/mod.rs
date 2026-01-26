@@ -4,6 +4,7 @@ pub mod structs2d;
 pub mod structs3d;
 
 pub mod engine_registry;
+pub mod engine_bindings;
 
 pub use color::Color;
 pub use engine_structs::EngineStruct;

@@ -2,33 +2,33 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{borrow::Cow, collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
-use uuid::Uuid;
+use crate::uid32::{Uid32, NodeID};
 
 use crate::node_registry::NodeType;
 
-// Note: uuid_nil helper removed - use Uuid::nil() directly if needed
+// Note: Use Uid32::nil() for nil IDs
 
 /// Represents a parent node with both its ID and type
 /// This allows runtime type checking without needing to query the scene
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ParentType {
-    pub id: Uuid,
+    pub id: NodeID,
     #[serde(rename = "type")]
     pub node_type: NodeType,
 }
 
 impl ParentType {
-    pub fn new(id: Uuid, node_type: NodeType) -> Self {
+    pub fn new(id: NodeID, node_type: NodeType) -> Self {
         Self { id, node_type }
     }
 }
 
 /// Custom deserializer for parent field that accepts either:
 /// - A u32 index (for new format with SceneData)
-/// - A UUID string (e.g., "00000000-0000-0000-0000-000000000000") - legacy format
+/// - A Uid32 hex string (e.g., "a1b2c3d4") - legacy format
 /// - A full ParentType object with id and type fields
 /// 
-/// Note: When deserializing from SceneData, u32 indices will be converted to UUIDs
+/// Note: When deserializing from SceneData, u32 indices will be converted to Uid32s
 /// during SceneData deserialization, so this should not be called directly for SceneData.
 fn deserialize_parent<'de, D>(deserializer: D) -> Result<Option<ParentType>, D::Error>
 where
@@ -40,24 +40,24 @@ where
     
     match value {
         Value::Number(n) => {
-            // u32 index - this should be converted to UUID during SceneData deserialization
-            // For now, we'll create a temporary UUID from the index
+            // u32 index - this should be converted to Uid32 during SceneData deserialization
+            // For now, we'll create a temporary Uid32 from the index
             // This is a fallback - SceneData should handle conversion
             if let Some(idx) = n.as_u64() {
-                // Create a deterministic UUID from the index for now
+                // Create a Uid32 from the index
                 // SceneData will remap this properly
-                let uuid = Uuid::parse_str(&format!("{:08x}-0000-0000-0000-000000000000", idx))
-                    .unwrap_or_else(|_| Uuid::nil());
-                Ok(Some(ParentType::new(uuid, NodeType::Node)))
+                let uid = NodeID::from_uid32(Uid32::from_u32(idx as u32));
+                Ok(Some(ParentType::new(uid, NodeType::Node)))
             } else {
                 Err(D::Error::custom("parent index must be a u32"))
             }
         }
-        Value::String(uuid_str) => {
-            // Parse UUID string and create ParentType with default NodeType
+        Value::String(uid_str) => {
+            // Parse Uid32 hex string and create ParentType with default NodeType
             // The node_type will be fixed later in fix_relationships
-            let id = Uuid::parse_str(&uuid_str)
-                .map_err(|e| D::Error::custom(format!("Invalid UUID string: {}", e)))?;
+            let uid = Uid32::parse_str(&uid_str)
+                .map_err(|e| D::Error::custom(format!("Invalid Uid32 string: {}", e)))?;
+            let id = NodeID::from_uid32(uid);
             Ok(Some(ParentType::new(id, NodeType::Node)))
         }
         Value::Object(_) => {
@@ -67,14 +67,14 @@ where
             Ok(Some(parent))
         }
         Value::Null => Ok(None),
-        _ => Err(D::Error::custom("parent must be a u32 index, UUID string, ParentType object, or null")),
+        _ => Err(D::Error::custom("parent must be a u32 index, Uid32 hex string, ParentType object, or null")),
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Node {
     #[serde(skip)]
-    pub id: Uuid,
+    pub id: NodeID,
 
     #[serde(rename = "type")]
     pub ty: NodeType,
@@ -91,7 +91,7 @@ pub struct Node {
     pub parent: Option<ParentType>,
 
     #[serde(skip)]
-    pub children: Option<Vec<Uuid>>,
+    pub children: Option<Vec<NodeID>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, Value>>,
@@ -114,7 +114,7 @@ impl Node {
             .as_secs();
         
         Self {
-            id: Uuid::new_v4(),
+            id: NodeID::new(),
             ty: NodeType::Node,
             name: Cow::Borrowed("Node"),
 

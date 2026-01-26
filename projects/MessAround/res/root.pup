@@ -1,6 +1,6 @@
 @script Root extends Node
 
-fn init() {
+on init() {
 
 }
 

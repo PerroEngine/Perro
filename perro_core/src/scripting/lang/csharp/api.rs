@@ -13,6 +13,7 @@ impl CSharpAPI {
             CSharpOS::NAME => CSharpOS::resolve_method(func),
             CSharpConsole::NAME => CSharpConsole::resolve_method(func),
             CSharpInput::NAME => CSharpInput::resolve_method(func),
+            CSharpMath::NAME => CSharpMath::resolve_method(func),
             _ => None,
         }
     }
@@ -114,5 +115,23 @@ impl CSharpInput {
             "ScreenToWorld" => Some(ApiModule::Input(InputApi::ScreenToWorld)),
             _ => None,
         }
+    }
+}
+
+pub struct CSharpMath;
+impl CSharpMath {
+    pub const NAME: &'static str = "Math";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "Random" => Some(ApiModule::Math(MathApi::Random)),
+            "RandomRange" => Some(ApiModule::Math(MathApi::RandomRange)),
+            "RandomInt" => Some(ApiModule::Math(MathApi::RandomInt)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["Random", "RandomRange", "RandomInt"]
     }
 }

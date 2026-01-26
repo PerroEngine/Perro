@@ -41,7 +41,7 @@ pub struct Node2D {
     /// This avoids hashmap lookups when marking transforms dirty recursively
     /// Updated when children are added/removed
     #[serde(skip, default)]
-    pub node2d_children_cache: Option<Vec<uuid::Uuid>>,
+    pub node2d_children_cache: Option<Vec<crate::uid32::NodeID>>,
 
     #[serde(
         skip_serializing_if = "Vector2::is_half_half",

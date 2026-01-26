@@ -1,6 +1,7 @@
 // Type inference for Script AST
 use crate::api_modules::*;
-use crate::ast::*;
+use crate::resource_modules::{ArrayResource, MapResource};
+use crate::ast::{BuiltInEnumVariant, *};
 use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Type};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
@@ -53,12 +54,12 @@ impl Script {
         }
         
         // Special case: if expr is "self.id" or already ends with ".id", and target is Uuid, no cast needed
-        if expr == "self.id" || (expr.ends_with(".id") && matches!(to, Type::Uuid)) {
+        if expr == "self.id" || (expr.ends_with(".id") && matches!(to, Type::Uid32)) {
             return expr.to_string();
         }
         
         // Special case: if expr is "self" and target type is Uuid, just return "self.id"
-        if expr == "self" && matches!(to, Type::Uuid) {
+        if expr == "self" && matches!(to, Type::Uid32) {
             return "self.id".to_string();
         }
         
@@ -86,7 +87,7 @@ impl Script {
         
         // Special case: if expr is already the target type (e.g., c_par_id is already Uuid), no cast needed
         // Check if expr ends with _id and target is Uuid (node variables are already Uuid)
-        if expr.ends_with("_id") && matches!(to, Type::Uuid) {
+        if expr.ends_with("_id") && matches!(to, Type::Uid32) {
             return expr.to_string();
         }
         
@@ -95,7 +96,7 @@ impl Script {
         if !expr.contains(' ') && !expr.contains('(') && !expr.contains('.') {
             // It's a simple variable name - check if we can skip the cast
             // For Uuid types, variables ending in _id are already Uuid
-            if matches!(to, Type::Uuid) && (expr.ends_with("_id") || expr == "self.id") {
+            if matches!(to, Type::Uid32) && (expr.ends_with("_id") || expr == "self.id") {
                 return expr.to_string();
             }
         }
@@ -106,7 +107,19 @@ impl Script {
     }
 
     pub fn is_struct_field(&self, name: &str) -> bool {
-        self.variables.iter().any(|v| v.name == name)
+        // Check if the name matches a variable directly
+        if self.variables.iter().any(|v| v.name == name) {
+            return true;
+        }
+        // If the name ends with _id, check if the original variable name (without _id) exists
+        // This handles cases where node variables are renamed (e.g., s -> s_id)
+        if name.ends_with("_id") {
+            let original_name = &name[..name.len() - 3];
+            if self.variables.iter().any(|v| v.name == original_name) {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn get_variable_type(&self, name: &str) -> Option<&Type> {
@@ -198,6 +211,12 @@ impl Script {
                     _ => Some(Number(NumberKind::Float(32))),
                 }
             }
+            Expr::EnumAccess(variant) => {
+                // Enum access like NODE_TYPE.Sprite2D returns NodeType enum
+                match variant {
+                    BuiltInEnumVariant::NodeType(_) => Some(Type::NodeType),
+                }
+            }
             Expr::MemberAccess(base, field) => {
                 let base_type = self.infer_expr_type(base, current_func)?;
                 self.get_member_type(&base_type, field)
@@ -220,7 +239,7 @@ impl Script {
             },
             Expr::Cast(_, target_type) => Some(target_type.clone()),
             Expr::ApiCall(api, args) => match api {
-                ApiModule::MapOp(MapApi::Get) => {
+                crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::MapOp(MapResource::Get)) => {
                     if let Some(Type::Container(ContainerKind::Map, ref params)) =
                         self.infer_expr_type(&args[0], current_func)
                     {
@@ -228,7 +247,7 @@ impl Script {
                     }
                     Some(Type::Object)
                 }
-                ApiModule::ArrayOp(ArrayApi::Pop) => {
+                crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::ArrayOp(ArrayResource::Pop)) => {
                     if let Some(Type::Container(ContainerKind::Array, ref params)) =
                         self.infer_expr_type(&args[0], current_func)
                     {
@@ -254,7 +273,7 @@ impl Script {
                     Some(Custom(self.node_type.clone()))
                 }
             }
-            Expr::ObjectLiteral(_) => Some(Type::Object),
+            Expr::ObjectLiteral(_) => Some(Type::Any), // Use Any as the preferred dynamic type
             Expr::ContainerLiteral(kind, _) => match kind {
                 ContainerKind::Array => {
                     Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
@@ -274,15 +293,15 @@ impl Script {
                     Type::Container(container_kind, inner_types) => {
                         match container_kind {
                             ContainerKind::Array => {
-                                if inner_types.first() == Some(&Type::Object) {
-                                    Some(Type::Object)
+                                if matches!(inner_types.first(), Some(Type::Object | Type::Any)) {
+                                    Some(Type::Any)
                                 } else {
                                     inner_types.first().cloned()
                                 }
                             }
                             ContainerKind::Map => {
-                                if inner_types.last() == Some(&Type::Object) {
-                                    Some(Type::Object)
+                                if matches!(inner_types.last(), Some(Type::Object | Type::Any)) {
+                                    Some(Type::Any)
                                 } else {
                                     inner_types.last().cloned()
                                 }
@@ -292,7 +311,7 @@ impl Script {
                             }
                         }
                     }
-                    Type::Object => Some(Type::Object),
+                    Type::Object | Type::Any => Some(Type::Any),
                     _ => None,
                 }
             }
@@ -324,6 +343,17 @@ impl Script {
                     _ => Some(Type::String),
                 }
             }
+            Literal::Null => {
+                // null can be assigned to any Option<T>
+                // If we have an expected type that's Option<T>, use it; otherwise return None (will be inferred from context)
+                expected_type.and_then(|t| {
+                    if matches!(t, Type::Option(_)) {
+                        Some(t.clone())
+                    } else {
+                        None
+                    }
+                })
+            }
         }
     }
 
@@ -333,11 +363,11 @@ impl Script {
         }
 
         match (left, right) {
-            (Type::Uuid, Type::Node(_)) | (Type::Node(_), Type::Uuid) => {
-                Some(Type::Uuid)
+            (Type::Uid32, Type::Node(_)) | (Type::Node(_), Type::Uid32) => {
+                Some(Type::Uid32)
             }
-            (Type::Uuid, Type::Custom(tn)) | (Type::Custom(tn), Type::Uuid) if is_node_type(tn) => {
-                Some(Type::Uuid)
+            (Type::Uid32, Type::Custom(tn)) | (Type::Custom(tn), Type::Uid32) if is_node_type(tn) => {
+                Some(Type::Uid32)
             }
             (Type::Number(NumberKind::BigInt), Type::Number(_))
             | (Type::Number(_), Type::Number(NumberKind::BigInt)) => {
@@ -390,10 +420,19 @@ impl Script {
 
         match base_type {
             Type::Node(node_type) => {
-                let rust_field = ENGINE_REGISTRY.resolve_field_name(node_type, member);
-                ENGINE_REGISTRY.get_field_type_node(node_type, &rust_field)
+                // Use PUP_NODE_API to get the script type (e.g., Texture instead of Option<Uuid>)
+                use crate::scripting::lang::pup::node_api::PUP_NODE_API;
+                let fields = PUP_NODE_API.get_fields(node_type);
+                if let Some(api_field) = fields.iter().find(|f| f.script_name == member) {
+                    // Return the script-side type (e.g., Texture, not Option<Uuid>)
+                    Some(api_field.get_script_type())
+                } else {
+                    // Fallback to engine registry if field not found in node API
+                    let rust_field = ENGINE_REGISTRY.resolve_field_name(node_type, member);
+                    ENGINE_REGISTRY.get_field_type_node(node_type, &rust_field)
+                }
             }
-            Type::Uuid => {
+            Type::Uid32 => {
                 let nodes_with_field = ENGINE_REGISTRY.find_nodes_with_field(member);
                 if nodes_with_field.is_empty() {
                     return None;
@@ -410,8 +449,8 @@ impl Script {
             Type::Custom(type_name) => {
                 if type_name == "ParentType" {
                     match member {
-                        "id" => return Some(Type::Uuid),
-                        "node_type" => return Some(Type::Custom("NodeType".into())),
+                        "id" => return Some(Type::Uid32),
+                        "node_type" => return Some(Type::NodeType),
                         _ => return None,
                     }
                 }

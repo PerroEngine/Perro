@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashSet;
-use uuid::Uuid;
+use crate::uid32::NodeID;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Area2D {
@@ -23,7 +23,7 @@ pub struct Area2D {
     /// Track which colliders were intersecting in the previous frame
     /// Used to detect enter/exit events
     #[serde(skip)]
-    pub previous_collisions: HashSet<Uuid>,
+    pub previous_collisions: HashSet<NodeID>,
 }
 
 impl Default for Area2D {
@@ -54,7 +54,7 @@ impl Area2D {
         // IMPORTANT: Only collect handles from children that still exist and are CollisionShape2D
         let mut collider_handles = Vec::new();
         {
-            let children_ids: Vec<Uuid> = children.iter().copied().collect();
+            let children_ids: Vec<NodeID> = children.iter().copied().collect();
             for child_id in children_ids {
                 // Check if child still exists before accessing it
                 if let Some(child_node) = api.scene.get_scene_node_ref(child_id) {
@@ -136,13 +136,13 @@ impl Area2D {
         let signal_base = self.name.as_ref();
         
         // Determine which colliders entered (new collisions)
-        let entered: Vec<Uuid> = current_colliding_node_ids
+        let entered: Vec<NodeID> = current_colliding_node_ids
             .difference(&self.previous_collisions)
             .copied()
             .collect();
 
         // Determine which colliders exited (no longer colliding)
-        let exited: Vec<Uuid> = self
+        let exited: Vec<NodeID> = self
             .previous_collisions
             .difference(&current_colliding_node_ids)
             .copied()

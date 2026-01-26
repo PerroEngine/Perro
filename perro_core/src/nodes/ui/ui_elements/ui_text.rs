@@ -46,6 +46,12 @@ pub struct TextProps {
     pub content: String,
     pub font_size: f32,
     pub color: Color,
+    /// Font specification: can be:
+    /// - "res://path/to/font.ttf" (load from file)
+    /// - "Arial", "Helvetica", etc. (system font name)
+    /// If None or empty, uses system default font
+    #[serde(default)]
+    pub font: Option<String>,
     /// How text flows relative to its anchor point (start/center/end)
     /// This applies to both horizontal and vertical alignment
     #[serde(default)]
@@ -65,6 +71,7 @@ impl Default for TextProps {
             content: String::new(),
             font_size: 12.0,
             color: Color::default(),
+            font: None, // None = use system default or fallback
             align: TextFlow::Center,
             #[allow(deprecated)]
             align_h: TextAlignment::Center,

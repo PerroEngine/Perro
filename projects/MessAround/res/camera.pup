@@ -2,7 +2,7 @@
 
 var speed = 1000.0
 
-fn update() {
+on update() {
     var delta = Time.get_delta()
     var move_speed = speed * delta
     

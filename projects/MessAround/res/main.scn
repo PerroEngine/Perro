@@ -68,7 +68,7 @@
       }
     },
     "3": {
-      "type": "Shape2D",
+      "type": "ShapeInstance2D",
       "base": {
         "type": "Node2D",
         "base": {
@@ -89,7 +89,7 @@
         },
         "z_index": 1
       },
-      "shape_type": {
+      "shape": {
         "Rectangle": {
           "width": 200.0,
           "height": 1000.0
@@ -157,7 +157,7 @@
       }
     },
     "6": {
-      "type": "Shape2D",
+      "type": "ShapeInstance2D",
       "base": {
         "type": "Node2D",
         "base": {
@@ -178,7 +178,7 @@
         },
         "z_index": -1
       },
-      "shape_type": {
+      "shape": {
         "Rectangle": {
           "width": 310.0,
           "height": 310.0

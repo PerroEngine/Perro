@@ -1,5 +1,5 @@
 use std::{borrow::Cow, collections::HashMap};
-use uuid::Uuid;
+use crate::uid32::{Uid32, UIElementID};
 
 use crate::fur_ast::{FurElement, FurNode};
 
@@ -318,7 +318,7 @@ impl<'a> FurParser<'a> {
                 id: attributes
                     .get("id")
                     .cloned()
-                    .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into())
+                    .unwrap_or_else(|| format!("{}_{}", tag_name, UIElementID::new()).into())
                     .into(),
                 attributes,
                 children: vec![FurNode::Text(content.into())],
@@ -362,7 +362,7 @@ impl<'a> FurParser<'a> {
         let id = attributes
             .get("id")
             .cloned()
-            .unwrap_or_else(|| format!("{}_{}", tag_name, Uuid::new_v4()).into());
+            .unwrap_or_else(|| format!("{}_{}", tag_name, UIElementID::new()).into());
 
         Ok(FurNode::Element(FurElement {
             tag_name: Cow::Owned(tag_name.to_string()),

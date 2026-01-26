@@ -342,7 +342,7 @@ fn test_static_containers_ops() {
 // FUNCTION: init & update
 // Orchestrates tests
 // =====================================================
-fn init() {
+on init() {
     Console.log("--- START PUP MEGA TEST SUITE ---")
     test_primitive_operations()
     test_explicit_casting()
@@ -353,7 +353,7 @@ fn init() {
     Console.log("--- ALL PUP TESTS COMPLETE ---")
 }
 
-fn update() {
+on update() {
      test_primitive_operations()
     test_explicit_casting()
     test_assignments()

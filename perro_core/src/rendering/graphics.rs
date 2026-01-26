@@ -1,6 +1,6 @@
 use std::{borrow::Cow, time::Instant};
 use rustc_hash::FxHashMap;
-use uuid::Uuid;
+use crate::uid32::{Uid32, TextureID, NodeID};
 
 use wgpu::{
     Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
@@ -22,6 +22,7 @@ use crate::{
     runtime::get_static_textures,
     structs2d::ImageTexture,
     vertex::Vertex,
+    nodes::ui::egui_integration::EguiIntegration,
 };
 
 use crate::rendering::image_loader;
@@ -42,8 +43,8 @@ pub const VIRTUAL_HEIGHT: f32 = 1080.0;
 #[derive(Debug)]
 pub struct TextureManager {
     textures: FxHashMap<String, ImageTexture>, // path -> texture (primary storage)
-    path_to_id: FxHashMap<String, Uuid>, // path -> id (new)
-    id_to_path: FxHashMap<Uuid, String>, // id -> path (for reverse lookup)
+    path_to_id: FxHashMap<String, TextureID>, // path -> id (new)
+    id_to_path: FxHashMap<TextureID, String>, // id -> path (for reverse lookup)
     bind_groups: FxHashMap<String, wgpu::BindGroup>,
     // OPTIMIZED: Cache bind group layout to avoid recreating for each texture
     cached_bind_group_layout: Option<wgpu::BindGroupLayout>,
@@ -161,8 +162,8 @@ impl TextureManager {
                 texture
             };
             
-            // Get or create UUID for this path
-            let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(Uuid::new_v4);
+            // Get or create Uid32 for this path (Texture namespace)
+            let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(|| TextureID::new());
             self.id_to_path.insert(texture_id, key.clone());
             
             // Store by path (textures_by_id will look up through path)
@@ -180,7 +181,7 @@ impl TextureManager {
         path: &str,
         device: &Device,
         queue: &Queue,
-    ) -> Result<Uuid, String> {
+    ) -> Result<TextureID, String> {
         // Check if already loaded
         if let Some(id) = self.path_to_id.get(path) {
             return Ok(*id);
@@ -275,8 +276,8 @@ impl TextureManager {
             texture
         };
         
-        // Get or create UUID for this path
-        let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(Uuid::new_v4);
+        // Get or create TextureID for this path
+        let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(|| TextureID::new());
         self.id_to_path.insert(texture_id, key.clone());
         
         // Store by path (textures_by_id will look up through path)
@@ -285,10 +286,10 @@ impl TextureManager {
         Ok(texture_id)
     }
 
-    /// Get texture by UUID (for script access)
+    /// Get texture by TextureID (for script access)
     /// Returns a reference if the texture exists
     /// Looks up path from ID, then gets texture by path
-    pub fn get_texture_by_id(&self, id: &Uuid) -> Option<&ImageTexture> {
+    pub fn get_texture_by_id(&self, id: &TextureID) -> Option<&ImageTexture> {
         // Look up path from ID, then get texture by path
         if let Some(path) = self.id_to_path.get(id) {
             self.textures.get(path)
@@ -297,8 +298,8 @@ impl TextureManager {
         }
     }
 
-    /// Get texture path from UUID (for rendering fallback)
-    pub fn get_texture_path_from_id(&self, id: &Uuid) -> Option<&str> {
+    /// Get texture path from TextureID (for rendering fallback)
+    pub fn get_texture_path_from_id(&self, id: &TextureID) -> Option<&str> {
         self.id_to_path.get(id).map(|s| s.as_str())
     }
 
@@ -311,9 +312,9 @@ impl TextureManager {
         height: u32,
         device: &Device,
         queue: &Queue,
-    ) -> Uuid {
+    ) -> TextureID {
         let texture = ImageTexture::from_rgba8_bytes(rgba_bytes, width, height, device, queue);
-        let texture_id = Uuid::new_v4();
+        let texture_id = TextureID::new();
         // Create a synthetic path for programmatically created textures
         let synthetic_path = format!("__synthetic__{}", texture_id);
         self.path_to_id.insert(synthetic_path.clone(), texture_id);
@@ -330,7 +331,7 @@ impl TextureManager {
     }
 
     /// Get texture size by UUID (for script access)
-    pub fn get_texture_size_by_id(&self, id: &Uuid) -> Option<crate::Vector2> {
+    pub fn get_texture_size_by_id(&self, id: &TextureID) -> Option<crate::Vector2> {
         self.get_texture_by_id(id).map(|tex| {
             crate::Vector2::new(tex.width as f32, tex.height as f32)
         })
@@ -508,8 +509,8 @@ impl MaterialManager {
         // Load the material data
         let material = self.load_material(path);
 
-        // Create deterministic UUID from path
-        let mat_uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, path.as_bytes());
+        // Create deterministic Uid32 from path
+        let mat_uuid = Uid32::from_string(path);
 
         // Queue to renderer
         let slot = renderer.queue_material(mat_uuid, material);
@@ -541,8 +542,8 @@ impl MaterialManager {
         // Load the material data
         let material = self.load_material(path);
 
-        // Create deterministic UUID from path
-        let mat_uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, path.as_bytes());
+        // Create deterministic Uid32 from path
+        let mat_uuid = Uid32::from_string(path);
 
         // Queue to renderer
         let slot = renderer.queue_material(mat_uuid, material);
@@ -601,6 +602,10 @@ pub struct Graphics {
     pub renderer_2d: Renderer2D,
     pub renderer_ui: RendererUI,
     pub renderer_3d: Renderer3D,
+    
+    // egui integration for native text rendering
+    pub egui_integration: EguiIntegration,
+    pub egui_renderer: Option<egui_wgpu::Renderer>,
 
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
@@ -1141,6 +1146,16 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     });
 
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    
+    // Initialize egui integration
+    let egui_integration = EguiIntegration::new();
+    
+    // Initialize egui-wgpu renderer
+    // egui-wgpu 0.33.3 uses its own wgpu re-exports (egui_wgpu::wgpu)
+    // We need to use those types, but wgpu types are compatible
+    // Create renderer lazily in render() to avoid type issues
+    let egui_renderer = None; // Will be initialized lazily in render() 
+    
     let gfx = Graphics {
         window: window.clone(),
         instance,
@@ -1171,7 +1186,9 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 
         depth_texture,
         depth_view,
-
+        
+        egui_integration,
+        egui_renderer,
 
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -1662,6 +1679,9 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         renderer_3d,
         depth_texture,
         depth_view,
+        
+        egui_integration: EguiIntegration::new(),
+        egui_renderer: None,
 
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -1873,19 +1893,20 @@ impl Graphics {
             .maybe_update_culling(&self.mesh_manager, &view, &projection, &self.queue);
     }
 
-    pub fn initialize_font_atlas(&mut self, font_atlas: FontAtlas) {
-        self.renderer_prim
-            .initialize_font_atlas(&self.device, &self.queue, font_atlas);
+    #[allow(dead_code)]
+    pub fn initialize_font_atlas(&mut self, _font_atlas: FontAtlas) {
+        // DEPRECATED: Native text rendering initializes glyph atlas on-demand
+        // This method is kept for compatibility but does nothing
     }
 
-    pub fn stop_rendering(&mut self, uuid: uuid::Uuid) {
-        self.renderer_prim.stop_rendering(uuid);
+    pub fn stop_rendering(&mut self, uuid: NodeID) {
+        self.renderer_prim.stop_rendering(uuid.as_uid32());
     }
 
     /// Queue a 3D mesh with automatic material resolution
     pub fn queue_mesh_3d(
         &mut self,
-        uuid: uuid::Uuid,
+        uuid: NodeID,
         mesh_path: &str,
         material_path: &str,
         transform: Transform3D,
@@ -1903,7 +1924,7 @@ impl Graphics {
     }
 
     /// Batch queue multiple meshes (more efficient for scenes with many objects)
-    pub fn queue_meshes_3d(&mut self, meshes: &[(uuid::Uuid, &str, &str, Transform3D)]) {
+    pub fn queue_meshes_3d(&mut self, meshes: &[(NodeID, &str, &str, Transform3D)]) {
         // Pre-resolve all unique material paths
         let unique_materials: std::collections::HashSet<&str> =
             meshes.iter().map(|(_, _, mat, _)| *mat).collect();
@@ -1989,7 +2010,7 @@ impl Graphics {
             );
         }
 
-        // Render UI on top
+        // Render UI on top (panels, images - still using old system)
         {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "renderer_ui_render").entered();
@@ -2003,6 +2024,10 @@ impl Graphics {
                 &self.vertex_buffer,
             );
         }
+        
+        // TODO: Render egui UI elements here
+        // egui rendering is prepared in render_ui() and will be rendered here
+        // For now, egui context is updated but not yet rendered to screen
     }
 
     pub fn begin_frame(
@@ -2051,5 +2076,120 @@ impl Graphics {
         // Wait is used in resize() where we need to ensure completion, but Poll is
         // more efficient for regular frame rendering where we don't need to block
         let _ = self.device.poll(wgpu::PollType::Poll);
+    }
+
+    /// Ensure egui renderer is initialized
+    fn ensure_egui_renderer(&mut self) {
+        if self.egui_renderer.is_none() {
+            use egui_wgpu::{Renderer, RendererOptions};
+            // Now that we're using wgpu 27.0.1 (same as egui-wgpu), types are compatible
+            let renderer = Renderer::new(
+                &self.device,
+                self.surface_config.format,
+                RendererOptions {
+                    msaa_samples: 1,
+                    depth_stencil_format: None,
+                    ..Default::default()
+                },
+            );
+            self.egui_renderer = Some(renderer);
+            log::info!("🎨 [EGUI] Renderer initialized");
+        }
+    }
+
+    /// Render egui UI output to the screen
+    /// Must be called after the main render pass, before end_frame
+    pub fn render_egui(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) {
+        // Ensure renderer is initialized first
+        self.ensure_egui_renderer();
+
+        // Get the output if available - early return if no output
+        let full_output = match &self.egui_integration.last_output {
+            Some(output) => output,
+            None => return,
+        };
+
+        // Update textures if needed
+        if let Some(renderer) = &mut self.egui_renderer {
+            for (id, image_delta) in &full_output.textures_delta.set {
+                renderer.update_texture(
+                    &self.device,
+                    &self.queue,
+                    *id,
+                    image_delta,
+                );
+            }
+
+            // Remove old textures
+            for id in &full_output.textures_delta.free {
+                renderer.free_texture(id);
+            }
+        } else {
+            log::warn!("🎨 [EGUI] Renderer not initialized, skipping render");
+            return;
+        }
+
+        // Paint egui shapes to screen
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.surface_config.width, self.surface_config.height],
+            pixels_per_point: self.egui_integration.context.pixels_per_point(),
+        };
+
+        // Paint the shapes
+        let paint_jobs = self.egui_integration.context.tessellate(
+            full_output.shapes.clone(),
+            self.egui_integration.context.pixels_per_point(),
+        );
+
+        // Skip rendering if there are no paint jobs
+        if paint_jobs.is_empty() {
+            return;
+        }
+
+        // Update buffers first
+        if let Some(renderer) = &mut self.egui_renderer {
+            renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                encoder,
+                &paint_jobs,
+                &screen_descriptor,
+            );
+
+            // Create render pass for egui and render
+            let rpass_descriptor = wgpu::RenderPassDescriptor {
+                label: Some("egui_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // Load existing content (don't clear)
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            };
+            
+            // SAFETY: egui-wgpu re-exports wgpu, so types should be compatible
+            // We need to convert the render pass to egui_wgpu's wgpu type
+            let mut rpass = encoder.begin_render_pass(&rpass_descriptor);
+            // Use egui_wgpu's wgpu types explicitly
+            use egui_wgpu::wgpu as egui_wgpu_types;
+            let rpass_egui: &mut egui_wgpu_types::RenderPass<'_> = unsafe {
+                std::mem::transmute::<&mut wgpu::RenderPass<'_>, &mut egui_wgpu_types::RenderPass<'_>>(&mut rpass)
+            };
+            renderer.render(
+                rpass_egui,
+                &paint_jobs,
+                &screen_descriptor,
+            );
+        }
     }
 }

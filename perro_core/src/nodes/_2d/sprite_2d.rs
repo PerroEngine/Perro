@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::nodes::_2d::node_2d::Node2D;
 use crate::nodes::node_registry::NodeType;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::uid32::TextureID;
 
 use std::borrow::Cow;
 
@@ -12,9 +12,9 @@ pub struct Sprite2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
 
-    // Script-accessible: texture handle (Uuid reference to TextureManager)
+    // Script-accessible: texture handle (TextureID reference to TextureManager)
     #[serde(skip)] // Not serialized - loaded from texture_path on scene load
-    pub texture_id: Option<Uuid>,
+    pub texture_id: Option<TextureID>,
 
     // Internal: used for scene serialization/loading
     #[serde(skip_serializing_if = "Option::is_none")]

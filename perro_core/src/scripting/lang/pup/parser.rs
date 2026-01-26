@@ -1,10 +1,29 @@
 use std::collections::HashMap;
 
 use crate::api_modules::*;
+use crate::call_modules::CallModule;
 use crate::ast::*;
-use crate::lang::pup::api::{PupAPI, PupNodeSugar, normalize_type_name};
+use crate::lang::pup::api::{PupAPI, normalize_type_name};
+use crate::lang::pup::resource_api::PupResourceAPI;
+use crate::lang::pup::node_api::{PupNodeApiRegistry, PUP_NODE_API};
 use crate::lang::pup::enums::resolve_enum_access;
 use crate::lang::pup::lexer::{PupLexer, PupToken};
+
+/// Convert PascalCase to snake_case (e.g., "Sprite2D" -> "sprite2d", "NodeType" -> "node_type")
+fn pascal_to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        if ch.is_uppercase() && !result.is_empty() {
+            // Add underscore before uppercase (except at start)
+            result.push('_');
+        }
+        result.push(ch.to_ascii_lowercase());
+    }
+    
+    result
+}
 
 pub struct PupParser {
     lexer: PupLexer,
@@ -19,6 +38,9 @@ pub struct PupParser {
     /// Start position of the current token (for source location tracking)
     current_token_line: u32,
     current_token_column: u32,
+    /// If true, the parser will try to recover from incomplete syntax that is common
+    /// while typing (e.g. `self.`) instead of hard-failing. Intended for LSP usage.
+    error_tolerant: bool,
 }
 
 impl PupParser {
@@ -37,11 +59,17 @@ impl PupParser {
             source_file: None,
             current_token_line: line,
             current_token_column: column,
+            error_tolerant: false,
         }
     }
     
     pub fn set_source_file(&mut self, file: String) {
         self.source_file = Some(file);
+    }
+
+    /// Enable/disable error-tolerant parsing (LSP-friendly).
+    pub fn set_error_tolerant(&mut self, tolerant: bool) {
+        self.error_tolerant = tolerant;
     }
     
     fn current_source_span(&self) -> Option<crate::scripting::source_span::SourceSpan> {
@@ -147,21 +175,32 @@ impl PupParser {
                     }
                 }
                 PupToken::On => {
-                    // Handle "on SIGNALNAME() {}" syntax
+                    // Handle "on init() {}" (lifecycle) or "on SIGNALNAME() {}" (signal) syntax
                     self.next_token();
-                    let signal_name = if let PupToken::Ident(name) = &self.current_token {
+                    let name = if let PupToken::Ident(name) = &self.current_token {
                         name.clone()
                     } else {
-                        return Err("Expected signal name after 'on'".into());
+                        return Err("Expected identifier after 'on'".into());
                     };
                     self.next_token();
                     
-                    // Parse function with signal name as function name
-                    let mut func = self.parse_function_with_name(signal_name.clone())?;
-                    func.is_on_signal = true;
-                    func.signal_name = Some(signal_name.clone());
-                    on_signal_functions.push(signal_name);
-                    functions.push(func);
+                    // Check if this is a lifecycle method (init, update, fixed_update, draw)
+                    let is_lifecycle = name == "init" || name == "update" || name == "fixed_update" || name == "draw";
+                    
+                    if is_lifecycle {
+                        // Parse as lifecycle method - not callable, but still a trait method
+                        let mut func = self.parse_function_with_name(name.clone())?;
+                        func.is_trait_method = true;
+                        func.is_lifecycle_method = true;
+                        functions.push(func);
+                    } else {
+                        // Parse as signal handler
+                        let mut func = self.parse_function_with_name(name.clone())?;
+                        func.is_on_signal = true;
+                        func.signal_name = Some(name.clone());
+                        on_signal_functions.push(name);
+                        functions.push(func);
+                    }
                 }
                 PupToken::Struct => {
                     let def = self.parse_struct_def()?;
@@ -211,6 +250,7 @@ impl PupParser {
                     attributes: Vec::new(),
                     is_on_signal: false,
                     signal_name: None,
+                    is_lifecycle_method: false, // Auto-generated init is not from "on init()" syntax
                 });
             }
         }
@@ -397,7 +437,19 @@ impl PupParser {
         }
         self.expect(PupToken::RParen)?;
 
+        // Add function parameters to type environment so they can be recognized as node types
+        // when parsing the function body (e.g., collision.get_parent() where collision is a parameter)
+        for param in &params {
+            self.type_env.insert(param.name.clone(), param.typ.clone());
+        }
+
         let body = self.parse_block()?;
+        
+        // Remove function parameters from type environment after parsing body
+        // (they're scoped to this function only)
+        for param in &params {
+            self.type_env.remove(&param.name);
+        }
         let is_trait = name == "init" || name == "update" || name == "fixed_update" || name == "draw";
         let locals = self.collect_locals(&body);
 
@@ -414,6 +466,7 @@ impl PupParser {
             attributes, // Use the parsed attributes
             is_on_signal: false,
             signal_name: None,
+            is_lifecycle_method: false, // Will be set to true if parsed with "on init()" syntax
         })
     }
 
@@ -421,8 +474,9 @@ impl PupParser {
         use crate::scripting::ast::{Expr, Literal};
         // Create: Signal.connect("SIGNALNAME", function_name)
         // The function name is the same as the signal name, and it's on self
+        use crate::resource_modules::{SignalResource, ResourceModule};
         Stmt::Expr(self.typed_expr(Expr::ApiCall(
-            ApiModule::Signal(SignalApi::Connect),
+            CallModule::Resource(ResourceModule::Signal(SignalResource::Connect)),
             vec![
                 Expr::Literal(Literal::String(signal_name.clone())),
                 Expr::Literal(Literal::String(signal_name)),
@@ -709,7 +763,7 @@ impl PupParser {
                     Some(op) => Stmt::MemberAssignOp(typed_lhs, op, typed_rhs),
                 })
             }
-            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetVar), args) => {
+            Expr::ApiCall(CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetVar), args) => {
                 if args.len() == 2 {
                     let node = args[0].clone();
                     let field = args[1].clone();
@@ -722,13 +776,14 @@ impl PupParser {
                         })
                     } else {
                         // Fallback to SetVar API call for complex expressions
+                        use crate::structs::engine_registry::NodeMethodRef;
                         Ok(Stmt::Expr(self.typed_expr(Expr::ApiCall(
-                            ApiModule::NodeSugar(NodeSugarApi::SetVar),
+                            CallModule::NodeMethod(NodeMethodRef::SetVar),
                             vec![node, field, typed_rhs.expr],
                         ))))
                     }
                 } else {
-                    Err("Invalid NodeSugar get_var arg count".into())
+                    Err("Invalid get_var arg count".into())
                 }
             }
             Expr::Index(obj, key) => Ok(match op {
@@ -787,6 +842,7 @@ impl PupParser {
                         Some(Type::String)
                     }
                     Expr::Literal(Literal::Bool(_)) => Some(Type::Bool),
+                    Expr::Literal(Literal::Null) => None, // null can be assigned to any Option<T>, type will be inferred from context
 
                     Expr::ContainerLiteral(kind, _) => match kind {
                         ContainerKind::Map => Some(Type::Container(
@@ -1055,7 +1111,7 @@ impl PupParser {
 
                         // Otherwise treat `new Something()` as an API call or method
                         if let Some(api) = PupAPI::resolve(&type_name, "new") {
-                            return Ok(Expr::ApiCall(api, args));
+                            return Ok(Expr::ApiCall(CallModule::Module(api), args));
                         }
 
                         Ok(Expr::Call(
@@ -1127,6 +1183,10 @@ impl PupParser {
                 self.next_token();
                 Ok(Expr::Literal(Literal::Bool(false)))
             }
+            PupToken::Null => {
+                self.next_token();
+                Ok(Expr::Literal(Literal::Null))
+            }
             PupToken::Ident(n) => {
                 let name = n.clone();
                 self.next_token();
@@ -1190,6 +1250,12 @@ impl PupParser {
                 self.expect(PupToken::RParen)?;
 
                 // API sugar handling...
+                // Handle case where left is already an ApiCall (shouldn't happen, but handle gracefully)
+                if let Expr::ApiCall(_, _) = &left {
+                    // This means the Dot handler converted it too early - treat as function call
+                    return Ok(Expr::Call(Box::new(left), args));
+                }
+                
                 if let Expr::MemberAccess(obj, method) = &left {
                     // Handle nested member access like Input.Keyboard.is_key_pressed
                     // Check if obj is itself a MemberAccess (e.g., Input.Keyboard)
@@ -1200,44 +1266,108 @@ impl PupParser {
                             if let Some(api) = PupAPI::resolve(mod_name, method) {
                                 // For Input.Keyboard.method or Input.Mouse.method, 
                                 // resolve it as Input.method (the API binding handles Keyboard/Mouse prefix)
-                                return Ok(Expr::ApiCall(api, args));
+                                return Ok(Expr::ApiCall(CallModule::Module(api), args));
                             }
                         }
                     }
                     
-                    // Check PupNodeSugar methods FIRST (before PupAPI::resolve)
-                    // This ensures methods like get_parent() on node variables get the object as first arg
-                    if let Some(api) = PupNodeSugar::resolve_method(method) {
-                        // Handle self.get_node("name") - special case for getting child nodes
-                        if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node" {
-                            // args[0] should be the child name (string)
-                            let mut args_full = vec![Expr::SelfAccess];
-                            args_full.extend(args);
-                            // Store the position in parser state for later use when creating TypedExpr
-                            return Ok(Expr::ApiCall(api, args_full));
+                    // Check if obj is a node instance (self or node variable)
+                    let is_node_instance = match &**obj {
+                        Expr::SelfAccess => true,
+                        Expr::Ident(var_name) => {
+                            // Check if variable is a node type
+                            if let Some(var_type) = self.type_env.get(var_name) {
+                                matches!(var_type, Type::Node(_) | Type::DynNode)
+                            } else {
+                                false
+                            }
                         }
-                        // For other NodeSugar methods (like get_parent), add obj as first arg
-                        let mut args_full = vec![*obj.clone()];
-                        args_full.extend(args);
-                        return Ok(Expr::ApiCall(api, args_full));
+                        _ => false,
+                    };
+                    
+                    // Check node API registry for the method
+                    // This allows node.get_var("name") to work the same as node::var_name
+                    // even if we don't know the exact node type yet
+                    let node_type_to_check = match &**obj {
+                        Expr::SelfAccess => {
+                            // For self, check base Node type
+                            Some(crate::node_registry::NodeType::Node)
+                        }
+                        Expr::Ident(var_name) => {
+                            // If we know the type, use it; otherwise default to base Node
+                            if let Some(Type::Node(nt)) = self.type_env.get(var_name) {
+                                Some(*nt)
+                            } else {
+                                // Even if type is unknown, check base Node for node sugar methods
+                                // This allows c_par.get_var("name") to work when c_par type isn't inferred yet
+                                Some(crate::node_registry::NodeType::Node)
+                            }
+                        }
+                        _ => {
+                            // For other expressions (like method calls), try base Node
+                            Some(crate::node_registry::NodeType::Node)
+                        }
+                    };
+                    
+                    // If it's a known node instance OR we want to check for node methods anyway,
+                    // look up the method in the node API registry
+                    if is_node_instance || matches!(&**obj, Expr::SelfAccess | Expr::Ident(_)) {
+                        if let Some(nt) = node_type_to_check {
+                            // Check if method exists in node API registry (including inherited methods)
+                            if let Some(method_def) = PUP_NODE_API.get_methods(&nt)
+                                .iter()
+                                .find(|m| m.script_name == method)
+                            {
+                                // It's a node method - use NodeMethodRef from the method definition
+                                use crate::structs::engine_registry::NodeMethodRef;
+                                
+                                // Handle self.get_node("name") - special case
+                                if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node" {
+                                    let mut args_full = vec![Expr::SelfAccess];
+                                    args_full.extend(args);
+                                    return Ok(Expr::ApiCall(
+                                        CallModule::NodeMethod(method_def.rust_method),
+                                        args_full
+                                    ));
+                                }
+                                // For other node methods, add obj as first arg
+                                let mut args_full = vec![*obj.clone()];
+                                args_full.extend(args);
+                                return Ok(Expr::ApiCall(
+                                    CallModule::NodeMethod(method_def.rust_method),
+                                    args_full
+                                ));
+                            }
+                        }
                     }
                     
-                    // Then check PupAPI::resolve for module APIs (Time, JSON, etc.)
+                    // Check PupAPI::resolve for module APIs (Time, JSON, etc.)
                     if let Expr::Ident(mod_name) = &**obj {
                         if let Some(api) = PupAPI::resolve(mod_name, method) {
-                            // Store position for API calls - we'll need to modify Expr to carry this
-                            // For now, the position is captured but we can't attach it to Expr
-                            return Ok(Expr::ApiCall(api, args));
+                            return Ok(Expr::ApiCall(CallModule::Module(api), args));
+                        }
+                        // Check PupResourceAPI::resolve for resource APIs (Signal, Texture, etc.)
+                        if let Some(resource) = PupResourceAPI::resolve(mod_name, method) {
+                            return Ok(Expr::ApiCall(CallModule::Resource(resource), args));
                         }
                     }
+                    
+                    // Check if obj is a variable that might be a resource type
                     if let Expr::Ident(var_name) = &**obj {
                         if let Some(var_type) = self.type_env.get(var_name) {
                             let norm_type_name = normalize_type_name(var_type);
                             if !norm_type_name.is_empty() {
-                                if let Some(api) = PupAPI::resolve(norm_type_name, method) {
+                                // Try module APIs first
+                                if let Some(api) = PupAPI::resolve(&norm_type_name, method) {
                                     let mut call_args = vec![*obj.clone()];
                                     call_args.extend(args);
-                                    return Ok(Expr::ApiCall(api, call_args));
+                                    return Ok(Expr::ApiCall(CallModule::Module(api), call_args));
+                                }
+                                // Try resource APIs
+                                if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method) {
+                                    let mut call_args = vec![*obj.clone()];
+                                    call_args.extend(args);
+                                    return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
                                 }
                             }
                         }
@@ -1248,10 +1378,14 @@ impl PupParser {
             PupToken::Dot => {
                 self.next_token();
 
-                let field_name = match &self.current_token {
-                    PupToken::Ident(n) => n.clone(),
-                    PupToken::New => "new".to_string(), // ✅ allow `.new` keyword
-                    PupToken::Struct => "struct".to_string(), // (optional future‑proof)
+                let (field_name, should_advance) = match &self.current_token {
+                    PupToken::Ident(n) => (n.clone(), true),
+                    PupToken::New => ("new".to_string(), true), // ✅ allow `.new` keyword
+                    PupToken::Struct => ("struct".to_string(), true), // (optional future‑proof)
+                    // While typing, users frequently have `something.` with no field yet.
+                    // In error-tolerant mode, recover by producing an empty MemberAccess node
+                    // and DO NOT consume the current token (so higher-level parsers can continue).
+                    _ if self.error_tolerant => (String::new(), false),
                     _ => {
                         return Err(format!(
                             "Expected field after '.', got {:?}",
@@ -1260,14 +1394,36 @@ impl PupParser {
                     }
                 };
 
-                self.next_token();
+                if should_advance {
+                    self.next_token();
+                }
                 
-                // Check if this is enum access (e.g., NODE_TYPE.Sprite2D or NodeType.Sprite2D)
+                // Check if this is enum access (e.g., NODE_TYPE.Sprite2D)
+                // Enum names must be SCREAMING_SNAKE_CASE (all caps with underscores)
                 if let Expr::Ident(enum_type_name) = &left {
                     if let Some(enum_variant) = resolve_enum_access(enum_type_name, &field_name) {
                         return Ok(Expr::EnumAccess(enum_variant));
                     }
                 }
+                
+                // Check if this is API module field access (e.g., Shape2D.rectangle -> Shape2D.rectangle())
+                // NOTE: We should NOT eagerly convert to ApiCall here, because if there's a following '(',
+                // the LParen handler needs to see the MemberAccess to properly convert it with arguments.
+                // Only convert if we're sure there's no following call (but we can't peek ahead easily).
+                // Instead, let the LParen handler do the conversion - it will check for API modules.
+                // This fixes the issue where Console.info(125) was being parsed as api.print_info("")(125f32)
+                // 
+                // If we really need field-like access without parentheses, we could add a check here,
+                // but for now, let's keep it as MemberAccess and let the call handler convert it.
+                // 
+                // if let Expr::Ident(mod_name) = &left {
+                //     let method_name = pascal_to_snake_case(&field_name);
+                //     if let Some(api) = PupAPI::resolve(mod_name, &method_name) {
+                //         // Only convert if next token is NOT LParen
+                //         // But we can't easily peek ahead in this parser structure
+                //         // So we'll let the LParen handler do it
+                //     }
+                // }
                 
                 Ok(Expr::MemberAccess(Box::new(left), field_name))
             }
@@ -1314,22 +1470,25 @@ impl PupParser {
                     // method_name_expr can be either a literal string (static) or an expression (dynamic)
                     let mut call_args = vec![left, var_name_expr];
                     call_args.extend(args);
+                    use crate::structs::engine_registry::NodeMethodRef;
                     Ok(Expr::ApiCall(
-                        ApiModule::NodeSugar(NodeSugarApi::CallFunction),
+                        CallModule::NodeMethod(NodeMethodRef::CallFunction),
                         call_args,
                     ))
                 } else if self.current_token == PupToken::Assign {
                     // Variable assignment: VARNAME::var_name = value or VARNAME::[expr] = value
                     self.next_token();
                     let val = self.parse_expression(2)?;
+                    use crate::structs::engine_registry::NodeMethodRef;
                     Ok(Expr::ApiCall(
-                        ApiModule::NodeSugar(NodeSugarApi::SetVar),
+                        CallModule::NodeMethod(NodeMethodRef::SetVar),
                         vec![left, var_name_expr, val],
                     ))
                 } else {
                     // Variable access: VARNAME::var_name or VARNAME::[expr]
+                    use crate::structs::engine_registry::NodeMethodRef;
                     Ok(Expr::ApiCall(
-                        ApiModule::NodeSugar(NodeSugarApi::GetVar),
+                        CallModule::NodeMethod(NodeMethodRef::GetVar),
                         vec![left, var_name_expr],
                     ))
                 }

@@ -102,7 +102,7 @@ pub fn implement_script_boilerplate_internal(
                             .unwrap_or_default();
                         // Check if field is Vec<Value> (for custom types or Object)
                         let is_value_vec = field_rust_type == "Vec<Value>"
-                            || *elem_ty == Type::Object
+                            || matches!(elem_ty, Type::Object | Type::Any)
                             || matches!(elem_ty, Type::Custom(_));
                         if *elem_ty != Type::Object {
                             if is_value_vec {
@@ -186,7 +186,7 @@ pub fn implement_script_boilerplate_internal(
                             .unwrap_or_default();
                         // Check if field is HashMap<String, Value> (for custom types or Object)
                         let is_value_map = field_rust_type == "HashMap<String, Value>"
-                            || *val_ty == Type::Object
+                            || matches!(val_ty, Type::Object | Type::Any)
                             || matches!(val_ty, Type::Custom(_));
                         if *val_ty != Type::Object {
                             if is_value_map {
@@ -241,12 +241,14 @@ pub fn implement_script_boilerplate_internal(
                         }},"
                     ).unwrap();
                 } else if accessor == "__NODE__" {
-                    // Node variables are stored as Uuid, extract from JSON
-                    // Nodes are serialized as UUID strings, so extract the string and parse it
+                    // Node variables - try u32 first (from JSON number), then string parsing
                     writeln!(
                         set_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
-                            if let Some(vNodeType) = val.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()) {{
+                            if let Some(v) = val.as_u64().map(|n| n as u32) {{
+                                script.{renamed_name} = perro_core::NodeID::from_u32(v);
+                                return Some(());
+                            }} else if let Some(vNodeType) = val.as_str().and_then(|s| perro_core::Uid32::parse_uuid_str(s).ok()).map(|uid| perro_core::NodeID::from_u32(uid.as_u32())) {{
                                 script.{renamed_name} = vNodeType;
                                 return Some(());
                             }}
@@ -286,7 +288,7 @@ pub fn implement_script_boilerplate_internal(
                             .unwrap_or_default();
                         // Check if field is Vec<Value> (for custom types or Object)
                         let is_value_vec = field_rust_type == "Vec<Value>"
-                            || *elem_ty == Type::Object
+                            || matches!(elem_ty, Type::Object | Type::Any)
                             || matches!(elem_ty, Type::Custom(_));
                         if *elem_ty != Type::Object {
                             if is_value_vec {
@@ -361,7 +363,7 @@ pub fn implement_script_boilerplate_internal(
                             .unwrap_or_default();
                         // Check if field is HashMap<String, Value> (for custom types or Object)
                         let is_value_map = field_rust_type == "HashMap<String, Value>"
-                            || *val_ty == Type::Object
+                            || matches!(val_ty, Type::Object | Type::Any)
                             || matches!(val_ty, Type::Custom(_));
                         if *val_ty != Type::Object {
                             if is_value_map {
@@ -454,7 +456,7 @@ pub fn implement_script_boilerplate_internal(
             let mut actual_param_idx = 0;
             for param in func.params.iter() {
                 // Skip ScriptApi parameters when parsing from JSON - they use the api parameter from the closure
-                if matches!(param.typ, Type::Custom(ref tn) if tn == "ScriptApi") {
+                if matches!(param.typ, Type::ScriptApi) {
                     continue;
                 }
                 
@@ -497,17 +499,20 @@ pub fn implement_script_boilerplate_internal(
                             .and_then(|v| v.as_bool())
                             .unwrap_or_default();\n"
                     ),
-                    Type::Custom(tn) if tn == "Signal" => format!(
+                    Type::Signal => format!(
                         "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
                             .unwrap_or_default() as u64;\n"
                     ),
                     Type::Custom(tn) if is_node_type(tn) => {
-                        // For node types, parse UUID from string (nodes are just UUIDs)
+                        // For node types, try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok())
+                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u32(n as u32)))
+                            .or_else(|| params.get({actual_param_idx})
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uid32::parse_uuid_str(s).ok())
+                                .map(|uid| NodeID::from_u32(uid.as_u32())))
                             .unwrap_or_default();\n"
                         )
                     },
@@ -603,38 +608,50 @@ let {param_name} = match {param_name}_opt {{
                         }
                     },
                     Type::Node(_) => {
-                        // Handle Type::Node variant - nodes are just UUIDs
+                        // Handle Type::Node variant - nodes are NodeID
+                        // Try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok())
+                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u32(n as u32)))
+                            .or_else(|| params.get({actual_param_idx})
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uid32::parse_uuid_str(s).ok())
+                                .map(|uid| NodeID::from_u32(uid.as_u32())))
                             .unwrap_or_default();\n"
                         )
                     },
                     Type::EngineStruct(EngineStructKind::Texture) => {
-                        // Handle Texture - textures are just UUIDs
+                        // Handle Texture - textures use TextureID
+                        // Try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok())
+                            .and_then(|v| v.as_u64().map(|n| TextureID::from_u32(n as u32)))
+                            .or_else(|| params.get({actual_param_idx})
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uid32::parse_uuid_str(s).ok())
+                                .map(|uid| TextureID::from_u32(uid.as_u32())))
                             .unwrap_or_default();\n"
                         )
                     },
-                    Type::Uuid => {
-                        // Handle Uuid - parse from string
+                    Type::Uid32 => {
+                        // Handle Uid32 - try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok())
+                            .and_then(|v| v.as_u64().map(|n| Uid32::from_u32(n as u32)))
+                            .or_else(|| params.get({actual_param_idx})
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uid32::parse_uuid_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
                     },
-                    Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uuid) => {
-                        // Handle Option<Uuid> - parse from string, return None if parsing fails
+                    Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uid32) => {
+                        // Handle Option<Uid32> - try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| Uuid::parse_str(s).ok());\n"
+                            .and_then(|v| v.as_u64().map(|n| Uid32::from_u32(n as u32)))
+                            .or_else(|| params.get({actual_param_idx})
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| Uid32::parse_uuid_str(s).ok()));\n"
                         )
                     },
                     _ => format!("let {param_name} = Default::default();\n"),
@@ -647,7 +664,7 @@ let {param_name} = match {param_name}_opt {{
             // Preserve original parameter order
             let mut param_names: Vec<String> = Vec::new();
             for param in func.params.iter() {
-                if matches!(param.typ, Type::Custom(ref tn) if tn == "ScriptApi") {
+                if matches!(param.typ, Type::ScriptApi) {
                     // Insert 'api' for ScriptApi parameters
                     // If original was &ScriptApi (not &mut), we need to use &*api
                     // But actually, &mut ScriptApi can be coerced to &ScriptApi, so just use api
@@ -723,11 +740,11 @@ let {param_name} = match {param_name}_opt {{
         out,
         r#"
 impl ScriptObject for {struct_name} {{
-    fn set_id(&mut self, id: Uuid) {{
+    fn set_id(&mut self, id: NodeID) {{
         self.id = id;
     }}
 
-    fn get_id(&self) -> Uuid {{
+    fn get_id(&self) -> NodeID {{
         self.id
     }}
 

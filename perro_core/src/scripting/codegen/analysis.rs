@@ -170,8 +170,8 @@ pub(crate) fn collect_cloned_node_vars(
 ) {
     fn expr_contains_get_node(expr: &Expr, _verbose: bool) -> bool {
         match expr {
-            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetChildByName), _) => true,
-            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), _) => true,
+            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetChildByName), _) => true,
+            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), _) => true,
             Expr::Cast(inner, target_type) => {
                 let is_node_type_cast = match target_type {
                     Type::Custom(tn) => is_node_type(tn),
@@ -243,12 +243,16 @@ pub(crate) fn extract_mutable_api_call(node_id: &str) -> (String, String) {
     
     // Check if node_id is an API call that requires mutable borrow (like api.get_parent)
     if node_id.starts_with("api.get_parent(") || node_id.starts_with("api.get_child_by_name(") {
-        // Generate a unique UUID-based temporary variable name (no collisions)
-        let full_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
-        let unique_id = full_uuid[..12].to_string(); // First 12 hex chars (48 bits) from UUID without hyphens
-        let temp_var = format!("__temp_api_{}", unique_id);
+        // Generate deterministic temp variable name using hash of the API call string
+        // This ensures the same API call always generates the same temp variable name
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        node_id.hash(&mut hasher);
+        let hash = hasher.finish();
+        let temp_var = format!("__temp_api_{}", hash);
         
-        let decl = format!("let {}: Uuid = {};", temp_var, node_id);
+        let decl = format!("let {}: NodeID = {};", temp_var, node_id);
         (decl, temp_var)
     } else {
         (String::new(), node_id.to_string())
@@ -425,22 +429,75 @@ pub(crate) fn extract_node_member_info(
                 let var_type = var_type_ref.or_else(|| inferred_type_owned.as_ref());
                 if let Some(typ) = var_type {
                     if type_is_node(typ) || matches!(typ, Type::DynNode) {
+                        // Special case: Type::Node(NodeType::Node) accessing fields that don't exist on Node
+                        // should be treated as __DYN_NODE__ since it could be any node type
+                        let should_treat_as_dyn = if let Type::Node(nt) = typ {
+                            use crate::structs::engine_registry::ENGINE_REGISTRY;
+                            use crate::node_registry::NodeType;
+                            if *nt == NodeType::Node && !field_path.is_empty() {
+                                // Check if the first field exists on Node
+                                let first_field = field_path.first().unwrap();
+                                let field_exists_on_node = ENGINE_REGISTRY.get_field_type_node(&NodeType::Node, first_field).is_some();
+                                // If the field doesn't exist on Node, treat as dynamic
+                                !field_exists_on_node
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        
                         // Use the original variable name for renaming (not the _id version)
                         let renamed = rename_variable(lookup_name, Some(typ));
-                        let node_type_name = match typ {
-                            Type::Node(nt) => format!("{:?}", nt),
-                            Type::DynNode => "__DYN_NODE__".to_string(), // Special marker for DynNode
-                            _ => return None,
+                        let node_type_name = if should_treat_as_dyn {
+                            "__DYN_NODE__".to_string() // Treat as dynamic node
+                        } else {
+                            match typ {
+                                Type::Node(nt) => format!("{:?}", nt),
+                                Type::DynNode => "__DYN_NODE__".to_string(), // Special marker for DynNode
+                                _ => return None,
+                            }
                         };
                         let path: Vec<String> = field_path.iter().rev().cloned().collect();
                         // Use the original variable name as the closure parameter (like mutate_node does)
                         let closure_var = lookup_name.to_string();
                         Some((renamed, node_type_name, path.join("."), closure_var))
+                    } else if matches!(typ, Type::Uid32) && !field_path.is_empty() {
+                        // Uuid variable accessing member fields - check if these fields exist in engine registry
+                        // If they do, treat it as a __DYN_NODE__ (unknown node type)
+                        let field_path_only: Vec<String> = field_path.iter().rev().cloned().collect();
+                        use crate::structs::engine_registry::ENGINE_REGISTRY;
+                        let compatible_node_types = ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
+                        if !compatible_node_types.is_empty() {
+                            // This looks like a node field access - treat as __DYN_NODE__
+                            let renamed = rename_variable(lookup_name, Some(typ));
+                            let path: Vec<String> = field_path.iter().rev().cloned().collect();
+                            let closure_var = lookup_name.to_string();
+                            Some((renamed, "__DYN_NODE__".to_string(), path.join("."), closure_var))
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
                 } else {
-                    None
+                    // No type information - if it's a Uuid variable accessing member fields, check engine registry
+                    if var_name.ends_with("_id") && !field_path.is_empty() {
+                        let field_path_only: Vec<String> = field_path.iter().rev().cloned().collect();
+                        use crate::structs::engine_registry::ENGINE_REGISTRY;
+                        let compatible_node_types = ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
+                        if !compatible_node_types.is_empty() {
+                            // This looks like a node field access - treat as __DYN_NODE__
+                            let renamed = rename_variable(lookup_name, None);
+                            let path: Vec<String> = field_path.iter().rev().cloned().collect();
+                            let closure_var = lookup_name.to_string();
+                            Some((renamed, "__DYN_NODE__".to_string(), path.join("."), closure_var))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
             }
             Expr::Cast(inner, target_type) => {
@@ -450,7 +507,7 @@ pub(crate) fn extract_node_member_info(
                         // Cast to a specific node type - extract node_id from inner expression
                         // The inner might be GetParent which returns None, so we need to handle it specially
                         let (node_id, closure_var) = match inner.as_ref() {
-                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), args) => {
+                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), args) => {
                                 // Extract the node ID argument
                                 let arg_expr = if let Some(Expr::SelfAccess) = args.get(0) {
                                     "self.id".to_string()
@@ -498,7 +555,7 @@ pub(crate) fn extract_node_member_info(
                     Type::Custom(type_name) if is_node_type(&type_name) => {
                         // Cast to a node type by name - extract node_id from inner expression
                         let (node_id, closure_var) = match inner.as_ref() {
-                            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), args) => {
+                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), args) => {
                                 // Extract the node ID argument
                                 let arg_expr = if let Some(Expr::SelfAccess) = args.get(0) {
                                     "self.id".to_string()
@@ -548,7 +605,7 @@ pub(crate) fn extract_node_member_info(
                     }
                 }
             }
-            Expr::ApiCall(ApiModule::NodeSugar(NodeSugarApi::GetParent), args) => {
+            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), args) => {
                 // api.get_parent(node_id) returns Uuid - treat as node ID
                 // Generate the full api.get_parent(...) expression as the node_id_expr
                 // Extract the node ID argument similar to api_bindings.rs

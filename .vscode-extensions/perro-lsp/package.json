@@ -1,0 +1,55 @@
+{
+	"name": "perro-lsp",
+	"displayName": "Perro Language Server",
+	"description": "Language Server Protocol support for .pup and .fur files",
+	"version": "0.1.0",
+	"engines": {
+		"vscode": "^1.80.0"
+	},
+	"categories": [
+		"Programming Languages"
+	],
+	"activationEvents": [
+		"onLanguage:pup",
+		"onLanguage:fur"
+	],
+	"main": "./out/extension.js",
+	"contributes": {
+		"languages": [
+			{
+				"id": "pup",
+				"aliases": ["Pup", "pup"],
+				"extensions": [".pup"]
+			},
+			{
+				"id": "fur",
+				"aliases": ["Fur", "fur"],
+				"extensions": [".fur"]
+			}
+		],
+		"configuration": {
+			"type": "object",
+			"title": "Perro LSP",
+			"properties": {
+				"perro-lsp.serverPath": {
+					"type": "string",
+					"default": "perro-lsp",
+					"description": "Path to the perro-lsp executable"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"watch": "tsc -watch -p ./"
+	},
+	"devDependencies": {
+		"@types/node": "^18.0.0",
+		"@types/vscode": "^1.80.0",
+		"typescript": "^5.0.0"
+	},
+	"dependencies": {
+		"vscode-languageclient": "^8.1.0"
+	}
+}

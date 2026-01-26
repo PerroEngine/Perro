@@ -1,0 +1,787 @@
+// ===========================================================
+// Resource API Bindings - Types/resources that can be instantiated
+// These are different from Module API Bindings (global functions)
+// ===========================================================
+
+use crate::{
+    api_bindings::{ModuleCodegen, ModuleTypes}, // Import traits from api_bindings
+    resource_modules::*, // Import resource API enums
+    ast::*,
+    engine_structs::EngineStruct,
+    prelude::string_to_u64,
+    scripting::ast::{ContainerKind, NumberKind},
+};
+
+// ===========================================================
+// Signal API Implementations
+// ===========================================================
+
+impl ModuleCodegen for SignalResource {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        script: &Script,
+        _needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        fn prehash_if_literal(arg: &str) -> String {
+            let trimmed = arg.trim();
+            if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
+                let inner = &trimmed[1..trimmed.len() - 1];
+                let id = string_to_u64(inner);
+                return format!("{id}u64");
+            }
+            if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
+                if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                    let inner = &inner_section[1..inner_section.len() - 1];
+                    let id = string_to_u64(inner);
+                    return format!("{id}u64");
+                }
+            }
+            format!("string_to_u64(&{trimmed})")
+        }
+
+        fn strip_string_from(arg: &str) -> String {
+            let trimmed = arg.trim();
+            if trimmed.starts_with("String::from(") && trimmed.ends_with(')') {
+                let inner_section = &trimmed["String::from(".len()..trimmed.len() - 1].trim();
+                if inner_section.starts_with('"') && inner_section.ends_with('"') {
+                    return inner_section[1..inner_section.len() - 1].to_string();
+                }
+            }
+            if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                return trimmed[1..trimmed.len() - 1].to_string();
+            }
+            trimmed.to_string()
+        }
+
+        match self {
+            SignalResource::New => {
+                let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                prehash_if_literal(&signal)
+            }
+            SignalResource::Connect | SignalResource::Emit | SignalResource::EmitDeferred => {
+                // -- Fix: Accept both u64 and Type::Custom("Signal") as passthrough variables
+                let arg_expr = args.get(0).unwrap();
+                let arg_type = script.infer_expr_type(arg_expr, current_func);
+
+                let signal = match arg_type {
+                    Some(Type::Number(NumberKind::Unsigned(64))) => args_strs[0].clone(),
+                    Some(Type::Signal) => args_strs[0].clone(),
+                    _ => prehash_if_literal(&args_strs[0]),
+                };
+
+                match self {
+                    SignalResource::Connect => {
+                        // New format: Signal.connect(signal, function_reference)
+                        // function_reference can be:
+                        // - String literal (function name) -> use self.id
+                        // - MemberAccess (bob.function) -> use bob_id (node variable is already bob_id)
+                        // - Ident (function) -> use self.id
+                        let func_expr = args.get(1).unwrap();
+                        let (node_code, func_name) = match func_expr {
+                            Expr::Literal(Literal::String(func_name)) => {
+                                // String literal -> function on self
+                                ("self".to_string(), func_name.clone())
+                            }
+                            Expr::MemberAccess(base, field) => {
+                                // MemberAccess like bob.function -> node_code is already bob_id
+                                let node_code = base.to_rust(false, script, None, current_func, None);
+                                (node_code, field.clone())
+                            }
+                            Expr::Ident(func_name) => {
+                                // Just an identifier -> function on self
+                                ("self".to_string(), func_name.clone())
+                            }
+                            _ => {
+                                // Fallback: treat as string literal
+                                let func = strip_string_from(args_strs.get(1).unwrap());
+                                ("self".to_string(), func)
+                            }
+                        };
+
+                        let func_id = string_to_u64(&func_name);
+                        // If node_code is "self", use self.id. Otherwise, node_code is already the node ID variable (bob_id or self.bob_id)
+                        let node_id = if node_code == "self" {
+                            "self.id".to_string()
+                        } else {
+                            node_code
+                        };
+                        format!("api.connect_signal_id({signal}, {}, {func_id}u64)", node_id)
+                    }
+                    SignalResource::Emit => {
+                        if args_strs.len() > 1 {
+                            let params: Vec<String> = args_strs[1..]
+                                .iter()
+                                .map(|a| format!("json!({a})"))
+                                .collect();
+                            // Use array literal - converted to slice automatically (zero-cost)
+                            format!(
+                                "api.emit_signal_id({signal}, &[{}])",
+                                params.join(", ")
+                            )
+                        } else {
+                            // Empty array literal - zero allocation
+                            format!("api.emit_signal_id({signal}, &[])")
+                        }
+                    }
+                    SignalResource::EmitDeferred => {
+                        if args_strs.len() > 1 {
+                            let params: Vec<String> = args_strs[1..]
+                                .iter()
+                                .map(|a| format!("json!({a})"))
+                                .collect();
+                            // Use array literal - converted to slice automatically (zero-cost)
+                            format!(
+                                "api.emit_signal_id_deferred({signal}, &[{}])",
+                                params.join(", ")
+                            )
+                        } else {
+                            // Empty array literal - zero allocation
+                            format!("api.emit_signal_id_deferred({signal}, &[])")
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+impl ModuleTypes for SignalResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            SignalResource::New => Some(Type::Signal),
+            _ => Some(Type::Void),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            SignalResource::New => Some(vec![Type::String]),
+            SignalResource::Emit | SignalResource::EmitDeferred => Some(vec![Type::Signal, Type::Object]),
+            SignalResource::Connect => Some(vec![Type::Signal]),
+        }
+    }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            SignalResource::New => Some(vec!["name"]),
+            SignalResource::Emit | SignalResource::EmitDeferred => Some(vec!["signal", "data"]),
+            SignalResource::Connect => Some(vec!["signal"]),
+        }
+    }
+}
+
+// ===========================================================
+// ArrayOp API Implementations
+// ===========================================================
+
+impl ModuleCodegen for ArrayResource {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            ArrayResource::Push => {
+                // args[0] is the array expression, args[1] is the value to push
+                let array_expr = &args[0];
+                let value_expr = &args[1]; // The raw AST expression for the value
+
+                // Infer the type of the array itself to get its inner type
+                let array_type = script.infer_expr_type(array_expr, current_func);
+
+                let inner_type =
+                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                        inner_types.get(0).cloned().unwrap_or(Type::Object)
+                    } else {
+                        Type::Object // Fallback if array type couldn't be inferred
+                    };
+
+                let mut value_code =
+                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
+
+                // If the value_code itself still indicates a JSON value AND the target is not Type::Object,
+                // we should attempt to deserialize it.
+                if value_code.starts_with("json!(") && inner_type != Type::Object {
+                    // Strip the json! and try to deserialize if possible
+                    let raw_json_content = value_code
+                        .strip_prefix("json!(")
+                        .and_then(|s| s.strip_suffix(")"))
+                        .unwrap_or(&value_code);
+                    value_code = format!(
+                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
+                        inner_type.to_rust_type(),
+                        raw_json_content
+                    );
+                } else if value_code.starts_with("json!(") && matches!(inner_type, Type::Object | Type::Any) {
+                    // If target is Type::Object, json! is fine, just use the string directly
+                    // No change needed.
+                } else if matches!(inner_type, Type::Object | Type::Any) {
+                    // For dynamic arrays (any[]), wrap the value in json!()
+                    value_code = format!("json!({})", value_code);
+                } else {
+                    // Perform implicit cast if needed and not already handled
+                    if let Some(actual_value_type) =
+                        script.infer_expr_type(value_expr, current_func)
+                    {
+                        if actual_value_type.can_implicitly_convert_to(&inner_type)
+                            && actual_value_type != inner_type
+                        {
+                            value_code = script.generate_implicit_cast_for_expr(
+                                &value_code,
+                                &actual_value_type,
+                                &inner_type,
+                            );
+                        }
+                    }
+                    // Handle cloning if the type requires it (e.g., custom structs)
+                    if inner_type.requires_clone()
+                        && !value_code.contains(".clone()")
+                        && !value_code.starts_with("String::from")
+                    {
+                        // Prevent double cloning if value_code already implies it (e.g., "new Player(...)")
+                        let produces_owned_value = matches!(
+                            value_expr,
+                            Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..)
+                        );
+                        if !produces_owned_value {
+                            value_code = format!("{}.clone()", value_code);
+                        }
+                    }
+                }
+
+                format!("{}.push({})", args_strs[0], value_code)
+            }
+            ArrayResource::Pop => {
+                format!("{}.pop()", args_strs[0])
+            }
+            ArrayResource::Len => {
+                format!("{}.len()", args_strs[0])
+            }
+            ArrayResource::Insert => {
+                let array_expr = &args[0];
+                let value_expr = &args[2]; // value is the third arg for insert
+                let array_type = script.infer_expr_type(array_expr, current_func);
+                let inner_type =
+                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                        inner_types.get(0).cloned().unwrap_or(Type::Object)
+                    } else {
+                        Type::Object
+                    };
+
+                let mut value_code =
+                    value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
+
+                // Apply the same logic as Push for value_code conversion/cloning
+                if value_code.starts_with("json!(") && inner_type != Type::Object {
+                    let raw_json_content = value_code
+                        .strip_prefix("json!(")
+                        .and_then(|s| s.strip_suffix(")"))
+                        .unwrap_or(&value_code);
+                    value_code = format!(
+                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
+                        inner_type.to_rust_type(),
+                        raw_json_content
+                    );
+                } else if !value_code.starts_with("json!(") {
+                    // Only do this if it's not already a json! and needs conversion
+                    if let Some(actual_value_type) =
+                        script.infer_expr_type(value_expr, current_func)
+                    {
+                        if actual_value_type.can_implicitly_convert_to(&inner_type)
+                            && actual_value_type != inner_type
+                        {
+                            value_code = script.generate_implicit_cast_for_expr(
+                                &value_code,
+                                &actual_value_type,
+                                &inner_type,
+                            );
+                        }
+                    }
+                    if inner_type.requires_clone()
+                        && !value_code.contains(".clone()")
+                        && !value_code.starts_with("String::from")
+                    {
+                        let produces_owned_value = matches!(
+                            value_expr,
+                            Expr::StructNew(..) | Expr::Call(..) | Expr::ContainerLiteral(..)
+                        );
+                        if !produces_owned_value {
+                            value_code = format!("{}.clone()", value_code);
+                        }
+                    }
+                }
+
+                format!(
+                    "{}.insert({} as usize, {})",
+                    args_strs[0], args_strs[1], value_code
+                )
+            }
+            ArrayResource::Remove => {
+                format!("{}.remove({} as usize)", args_strs[0], args_strs[1])
+            }
+            ArrayResource::New => {
+                format!("Vec::new()")
+            }
+        }
+    }
+}
+
+impl ModuleTypes for ArrayResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            ArrayResource::Push => Some(Type::Void),
+            ArrayResource::Pop => Some(Type::Object),
+            ArrayResource::Insert => Some(Type::Void),
+            ArrayResource::Remove => Some(Type::Object),
+            ArrayResource::Len => Some(Type::Number(NumberKind::Unsigned(32))),
+            ArrayResource::New => Some(Type::Container(ContainerKind::Array, vec![Type::Object])),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        use ContainerKind::*;
+        use NumberKind::*;
+
+        match self {
+            ArrayResource::Push => Some(vec![
+                Type::Container(Array, vec![Type::Object]),
+                Type::Object, // any value; just "Value"
+            ]),
+            ArrayResource::Insert => Some(vec![
+                Type::Container(Array, vec![Type::Object]),
+                Type::Number(Unsigned(32)), // index
+                Type::Object,               // value
+            ]),
+            ArrayResource::Remove => Some(vec![
+                Type::Container(Array, vec![Type::Object]),
+                Type::Number(Unsigned(32)), // index expected
+            ]),
+            ArrayResource::Len | ArrayResource::Pop | ArrayResource::New => None,
+        }
+    }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            ArrayResource::Push => Some(vec!["array", "value"]),
+            ArrayResource::Insert => Some(vec!["array", "index", "value"]),
+            ArrayResource::Remove => Some(vec!["array", "index"]),
+            ArrayResource::Len | ArrayResource::Pop | ArrayResource::New => None,
+        }
+    }
+}
+
+// ===========================================================
+// Map API Implementations
+// ===========================================================
+
+impl ModuleCodegen for MapResource {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            // args: [map, key (string), value]
+            MapResource::Insert => {
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                let val_type = script.infer_map_value_type(&args[0], current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                let mut val_code =
+                    args[2].to_rust(needs_self, script, val_type.as_ref(), current_func, None);
+
+                // For dynamic maps (any value type), wrap the value in json!()
+                if let Some(Type::Object) = val_type.as_ref() {
+                    if !val_code.starts_with("json!(") {
+                        val_code = format!("json!({})", val_code);
+                    }
+                }
+
+                format!("{}.insert({}, {})", args_strs[0], key_code, val_code)
+            }
+
+            // args: [map, key]
+            MapResource::Remove => {
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                if let Some(Type::String) = key_type.as_ref() {
+                    format!("{}.remove({}.as_str())", args_strs[0], key_code)
+                } else {
+                    format!("{}.remove(&{})", args_strs[0], key_code)
+                }
+            }
+
+            // args: [map, key]
+            MapResource::Get => {
+                // 1. Infer key type from map
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                // 2. Render the key argument with the right type hint
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+
+                if let Some(Type::String) = key_type.as_ref() {
+                    // for String keys, .as_str() may be appropriate
+                    format!(
+                        "{}.get({}.as_str()).cloned().unwrap_or_default()",
+                        args_strs[0], key_code
+                    )
+                } else {
+                    // for any other key type (i32, u64, f32, etc)
+                    format!(
+                        "{}.get(&{}).cloned().unwrap_or_default()",
+                        args_strs[0], key_code
+                    )
+                }
+            }
+
+            // args: [map, key]
+            MapResource::Contains => {
+                let key_type = script.infer_map_key_type(&args[0], current_func);
+                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                if let Some(Type::String) = key_type.as_ref() {
+                    format!("{}.contains_key({}.as_str())", args_strs[0], key_code)
+                } else {
+                    format!("{}.contains_key(&{})", args_strs[0], key_code)
+                }
+            }
+
+            // args: [map]
+            MapResource::Len => {
+                format!("{}.len()", args_strs[0])
+            }
+
+            // args: [map]
+            MapResource::Clear => {
+                format!("{}.clear()", args_strs[0])
+            }
+
+            // no args
+            MapResource::New => "HashMap::new()".into(),
+        }
+    }
+}
+
+impl ModuleTypes for MapResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            MapResource::Insert | MapResource::Clear => Some(Type::Void),
+            MapResource::Remove | MapResource::Get => Some(Type::Object),
+            MapResource::Contains => Some(Type::Bool),
+            MapResource::Len => Some(Type::Number(NumberKind::Unsigned(32))),
+            MapResource::New => Some(Type::Container(
+                ContainerKind::Map,
+                vec![Type::String, Type::Object],
+            )),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            MapResource::Insert => Some(vec![
+                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
+                Type::String,
+                Type::Object,
+            ]),
+            MapResource::Remove | MapResource::Get => Some(vec![
+                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
+                Type::String,
+            ]),
+            MapResource::Contains => Some(vec![
+                Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
+                Type::String,
+            ]),
+            _ => None,
+        }
+    }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            MapResource::Insert => Some(vec!["map", "key", "value"]),
+            MapResource::Remove | MapResource::Get => Some(vec!["map", "key"]),
+            MapResource::Contains => Some(vec!["map", "key"]),
+            _ => None,
+        }
+    }
+}
+
+// ===========================================================
+// Texture API Implementations
+// ===========================================================
+
+impl ModuleCodegen for TextureResource {
+    fn to_rust_prepared(
+        &self,
+        _args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            TextureResource::Load => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                // Handle string parameters: literals stay as &str, variables need & prefix
+                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
+                    // String literal - use directly as &str
+                    arg
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    // Extract string literal from String::from("...")
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        // Use the string literal directly as &str
+                        inner.to_string()
+                    } else {
+                        // Fallback: borrow the String
+                        format!("&{}", arg)
+                    }
+                } else {
+                    // Variable or complex expression - borrow it
+                    format!("&{}", arg)
+                };
+                
+                format!("api.Texture.load({})", arg_str)
+            }
+            TextureResource::CreateFromBytes => {
+                let bytes = args_strs.get(0).cloned().unwrap_or_else(|| "vec![]".into());
+                let width = args_strs.get(1).cloned().unwrap_or_else(|| "0".into());
+                let height = args_strs.get(2).cloned().unwrap_or_else(|| "0".into());
+                format!("api.Texture.create_from_bytes({}, {}, {})", bytes, width, height)
+            }
+            TextureResource::GetWidth => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".into());
+                format!("api.Texture.get_width({})", arg)
+            }
+            TextureResource::GetHeight => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".into());
+                format!("api.Texture.get_height({})", arg)
+            }
+            TextureResource::GetSize => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".into());
+                format!("api.Texture.get_size({})", arg)
+            }
+        }
+    }
+}
+
+impl ModuleTypes for TextureResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            TextureResource::Load => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID
+            TextureResource::CreateFromBytes => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID
+            TextureResource::GetWidth | TextureResource::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
+            TextureResource::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            TextureResource::Load => Some(vec![Type::String]),
+            TextureResource::CreateFromBytes => Some(vec![
+                Type::Container(ContainerKind::Array, vec![Type::Number(NumberKind::Unsigned(8))]),
+                Type::Number(NumberKind::Unsigned(32)),
+                Type::Number(NumberKind::Unsigned(32)),
+            ]),
+            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec![Type::Uid32]),
+        }
+    }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            TextureResource::Load => Some(vec!["path"]),
+            TextureResource::CreateFromBytes => Some(vec!["bytes", "width", "height"]),
+            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec!["texture"]),
+        }
+    }
+}
+
+// ===========================================================
+// Shape2D API Implementations
+// ===========================================================
+
+impl ModuleCodegen for ShapeResource {
+    fn to_rust_prepared(
+        &self,
+        _args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            ShapeResource::Rectangle => {
+                let width = args_strs.get(0).cloned().unwrap_or_else(|| "0.0f32".into());
+                let height = args_strs.get(1).cloned().unwrap_or_else(|| "0.0f32".into());
+                // Ensure f32 suffix for float literals
+                let width = if width.parse::<f32>().is_ok() && !width.contains('f') {
+                    format!("{}f32", width)
+                } else {
+                    width
+                };
+                let height = if height.parse::<f32>().is_ok() && !height.contains('f') {
+                    format!("{}f32", height)
+                } else {
+                    height
+                };
+                format!("Shape2D::Rectangle {{ width: {}, height: {} }}", width, height)
+            }
+            ShapeResource::Circle => {
+                let radius = args_strs.get(0).cloned().unwrap_or_else(|| "0.0f32".into());
+                let radius = if radius.parse::<f32>().is_ok() && !radius.contains('f') {
+                    format!("{}f32", radius)
+                } else {
+                    radius
+                };
+                format!("Shape2D::Circle {{ radius: {} }}", radius)
+            }
+            ShapeResource::Square => {
+                let size = args_strs.get(0).cloned().unwrap_or_else(|| "0.0f32".into());
+                let size = if size.parse::<f32>().is_ok() && !size.contains('f') {
+                    format!("{}f32", size)
+                } else {
+                    size
+                };
+                format!("Shape2D::Square {{ size: {} }}", size)
+            }
+            ShapeResource::Triangle => {
+                let base = args_strs.get(0).cloned().unwrap_or_else(|| "0.0f32".into());
+                let height = args_strs.get(1).cloned().unwrap_or_else(|| "0.0f32".into());
+                let base = if base.parse::<f32>().is_ok() && !base.contains('f') {
+                    format!("{}f32", base)
+                } else {
+                    base
+                };
+                let height = if height.parse::<f32>().is_ok() && !height.contains('f') {
+                    format!("{}f32", height)
+                } else {
+                    height
+                };
+                format!("Shape2D::Triangle {{ base: {}, height: {} }}", base, height)
+            }
+        }
+    }
+}
+
+impl ModuleTypes for ShapeResource {
+    fn return_type(&self) -> Option<Type> {
+        // All Shape2D constructors return Shape2D enum
+        Some(Type::EngineStruct(EngineStruct::Shape2D))
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        use NumberKind::*;
+        match self {
+            ShapeResource::Rectangle => Some(vec![
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+            ]),
+            ShapeResource::Circle => Some(vec![
+                Type::Number(Float(32)),
+            ]),
+            ShapeResource::Square => Some(vec![
+                Type::Number(Float(32)),
+            ]),
+            ShapeResource::Triangle => Some(vec![
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+            ]),
+        }
+    }
+    
+    /// Script-side parameter names (what PUP users see)
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            ShapeResource::Rectangle => Some(vec!["width", "height"]),
+            ShapeResource::Circle => Some(vec!["radius"]),
+            ShapeResource::Square => Some(vec!["size"]),
+            ShapeResource::Triangle => Some(vec!["base", "height"]),
+        }
+    }
+}
+
+// ===========================================================
+// ResourceModule routing - similar to ApiModule
+// ===========================================================
+
+use crate::api_bindings::generate_rust_args;
+
+impl ResourceModule {
+    /// Primary entry point for code generation of a resource API call
+    pub fn to_rust(
+        &self,
+        args: &[Expr],
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        let expected_arg_types = self.param_types();
+        let rust_args_strings = generate_rust_args(
+            args,
+            script,
+            needs_self,
+            current_func,
+            expected_arg_types.as_ref(),
+        );
+
+        match self {
+            ResourceModule::Signal(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ResourceModule::Texture(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ResourceModule::Shape(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ResourceModule::ArrayOp(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+            ResourceModule::MapOp(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
+        }
+    }
+
+    pub fn return_type(&self) -> Option<Type> {
+        match self {
+            ResourceModule::Signal(api) => api.return_type(),
+            ResourceModule::Texture(api) => api.return_type(),
+            ResourceModule::Shape(api) => api.return_type(),
+            ResourceModule::ArrayOp(api) => api.return_type(),
+            ResourceModule::MapOp(api) => api.return_type(),
+        }
+    }
+
+    pub fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            ResourceModule::Signal(api) => api.param_types(),
+            ResourceModule::Texture(api) => api.param_types(),
+            ResourceModule::Shape(api) => api.param_types(),
+            ResourceModule::ArrayOp(api) => api.param_types(),
+            ResourceModule::MapOp(api) => api.param_types(),
+        }
+    }
+    
+    /// Get script-side parameter names (what PUP users see)
+    pub fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            ResourceModule::Signal(api) => api.param_names(),
+            ResourceModule::Texture(api) => api.param_names(),
+            ResourceModule::Shape(api) => api.param_names(),
+            ResourceModule::ArrayOp(api) => api.param_names(),
+            ResourceModule::MapOp(api) => api.param_names(),
+        }
+    }
+}

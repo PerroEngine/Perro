@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{any::Any, collections::HashMap};
-use uuid::Uuid;
+use crate::uid32::Uid32;
 
 use serde::{Serialize, Deserialize};
 
@@ -91,8 +91,8 @@ pub trait NodeWithInternalRenderUpdate: BaseNode {
 /// Base trait implemented by all engine node types.
 /// Provides unified access and manipulation for all node variants stored in `SceneNode`.
 pub trait BaseNode: Any + Debug + Send {
-    fn get_id(&self) -> Uuid;
-    fn set_id(&mut self, id: Uuid);
+    fn get_id(&self) -> crate::uid32::NodeID;
+    fn set_id(&mut self, id: crate::uid32::NodeID);
 
     fn get_name(&self) -> &str;
     fn set_name(&mut self, name: impl Into<Cow<'static, str>>);
@@ -101,14 +101,14 @@ pub trait BaseNode: Any + Debug + Send {
 
     /// Returns a reference to the children list.
     /// If the node has `None` for its children field, this returns an empty slice.
-    fn get_children(&self) -> &Vec<Uuid>;
+    fn get_children(&self) -> &Vec<crate::uid32::NodeID>;
 
     fn get_type(&self) -> NodeType;
     fn get_script_path(&self) -> Option<&str>;
 
     fn set_parent(&mut self, parent: Option<crate::nodes::node::ParentType>);
-    fn add_child(&mut self, child: Uuid);
-    fn remove_child(&mut self, c: &Uuid);
+    fn add_child(&mut self, child: crate::uid32::NodeID);
+    fn remove_child(&mut self, c: &crate::uid32::NodeID);
     fn set_script_path(&mut self, path: &str);
 
     fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>>;
@@ -118,7 +118,7 @@ pub trait BaseNode: Any + Debug + Send {
     /// Only renderable nodes should be added to needs_rerender
     fn is_renderable(&self) -> bool;
 
-    fn get_children_mut(&mut self) -> &mut Vec<Uuid>;
+    fn get_children_mut(&mut self) -> &mut Vec<crate::uid32::NodeID>;
 
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -184,15 +184,15 @@ pub trait ToSceneNode {
 }
 
 /// Common macro implementing `BaseNode` for each concrete node type.
-/// This version supports `Option<Vec<Uuid>>` for `children`.
+/// This version supports `Option<Vec<Uid32>>` for `children`.
 #[macro_export]
 macro_rules! impl_scene_node {
     ($ty:ty, $variant:ident, $needs_internal:expr, $needs_render:expr, $is_renderable:expr) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
-            fn get_id(&self) -> uuid::Uuid {
+            fn get_id(&self) -> crate::uid32::NodeID {
                 self.id
             }
-            fn set_id(&mut self, id: uuid::Uuid) {
+            fn set_id(&mut self, id: crate::uid32::NodeID) {
                 self.id = id;
             }
 
@@ -209,9 +209,9 @@ macro_rules! impl_scene_node {
                 self.parent.clone()
             }
 
-            fn get_children(&self) -> &Vec<uuid::Uuid> {
+            fn get_children(&self) -> &Vec<crate::uid32::NodeID> {
                 // Return empty vec reference if None
-                static EMPTY_CHILDREN: Vec<uuid::Uuid> = Vec::new();
+                static EMPTY_CHILDREN: Vec<crate::uid32::NodeID> = Vec::new();
                 match &self.children {
                     Some(children) => children,
                     None => &EMPTY_CHILDREN,
@@ -231,11 +231,11 @@ macro_rules! impl_scene_node {
                 self.parent = p;
             }
 
-            fn add_child(&mut self, c: uuid::Uuid) {
+            fn add_child(&mut self, c: crate::uid32::NodeID) {
                 self.children.get_or_insert_with(Vec::new).push(c);
             }
 
-            fn remove_child(&mut self, c: &uuid::Uuid) {
+            fn remove_child(&mut self, c: &crate::uid32::NodeID) {
                 if let Some(children) = &mut self.children {
                     children.retain(|x| x != c);
                 }
@@ -245,7 +245,7 @@ macro_rules! impl_scene_node {
                 self.script_path = Some(std::borrow::Cow::Owned(path.to_string()));
             }
 
-            fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
+            fn get_children_mut(&mut self) -> &mut Vec<crate::uid32::NodeID> {
                 self.children.get_or_insert_with(Vec::new)
             }
 
@@ -425,11 +425,11 @@ macro_rules! define_nodes {
         }
 
         impl crate::nodes::node_registry::BaseNode for SceneNode {
-            fn get_id(&self) -> uuid::Uuid {
+            fn get_id(&self) -> crate::uid32::NodeID {
                 match self { $( SceneNode::$variant(n) => n.get_id(), )+ }
             }
 
-            fn set_id(&mut self, id: uuid::Uuid) {
+            fn set_id(&mut self, id: crate::uid32::NodeID) {
                 match self { $( SceneNode::$variant(n) => n.set_id(id), )+ }
             }
 
@@ -449,7 +449,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_parent(), )+ }
             }
 
-            fn get_children(&self) -> &Vec<uuid::Uuid> {
+            fn get_children(&self) -> &Vec<crate::uid32::NodeID> {
                 match self { $( SceneNode::$variant(n) => n.get_children(), )+ }
             }
 
@@ -465,11 +465,11 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.set_parent(parent), )+ }
             }
 
-            fn add_child(&mut self, child: uuid::Uuid) {
+            fn add_child(&mut self, child: crate::uid32::NodeID) {
                 match self { $( SceneNode::$variant(n) => n.add_child(child), )+ }
             }
 
-            fn remove_child(&mut self, c: &uuid::Uuid) {
+            fn remove_child(&mut self, c: &crate::uid32::NodeID) {
                 match self { $( SceneNode::$variant(n) => n.remove_child(c), )+ }
             }
 
@@ -485,7 +485,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.set_script_exp_vars(vars), )+ }
             }
 
-            fn get_children_mut(&mut self) -> &mut Vec<uuid::Uuid> {
+            fn get_children_mut(&mut self) -> &mut Vec<crate::uid32::NodeID> {
                 match self { $( SceneNode::$variant(n) => n.get_children_mut(), )+ }
             }
 
@@ -557,7 +557,7 @@ macro_rules! define_nodes {
                     SceneNode::Sprite2D(sprite) => Some(&mut sprite.base),
                     SceneNode::Area2D(area) => Some(&mut area.base),
                     SceneNode::CollisionShape2D(cs) => Some(&mut cs.base),
-                    SceneNode::Shape2D(shape) => Some(&mut shape.base),
+                    SceneNode::ShapeInstance2D(shape) => Some(&mut shape.base),
                     SceneNode::Camera2D(cam) => Some(&mut cam.base),
                     _ => None,
                 }
@@ -570,7 +570,7 @@ macro_rules! define_nodes {
                     SceneNode::Sprite2D(sprite) => Some(&sprite.base),
                     SceneNode::Area2D(area) => Some(&area.base),
                     SceneNode::CollisionShape2D(cs) => Some(&cs.base),
-                    SceneNode::Shape2D(shape) => Some(&shape.base),
+                    SceneNode::ShapeInstance2D(shape) => Some(&shape.base),
                     SceneNode::Camera2D(cam) => Some(&cam.base),
                     _ => None,
                 }
@@ -600,7 +600,7 @@ define_nodes!(
     Sprite2D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_2d::sprite_2d::Sprite2D,
     Area2D(FixedUpdate::True, RenderUpdate::False, Renderable::False)   => crate::nodes::_2d::area_2d::Area2D,
     CollisionShape2D(FixedUpdate::False, RenderUpdate::False, Renderable::False) => crate::nodes::_2d::collision_shape_2d::CollisionShape2D,
-    Shape2D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_2d::shape_2d::Shape2D,
+    ShapeInstance2D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_2d::shape_instance_2d::ShapeInstance2D,
     Camera2D(FixedUpdate::False, RenderUpdate::False, Renderable::True)  => crate::nodes::_2d::camera_2d::Camera2D,
 
 

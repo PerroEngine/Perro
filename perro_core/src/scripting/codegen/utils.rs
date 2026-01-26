@@ -34,8 +34,8 @@ pub(crate) fn type_becomes_id(typ: &Type) -> bool {
         Type::Node(_) | 
         Type::DynNode | 
         Type::EngineStruct(EngineStructKind::Texture) |
-        Type::Uuid => true,
-        Type::Option(boxed) => matches!(boxed.as_ref(), Type::Uuid),
+        Type::Uid32 => true,
+        Type::Option(boxed) => matches!(boxed.as_ref(), Type::Uid32),
         _ => false,
     }
 }

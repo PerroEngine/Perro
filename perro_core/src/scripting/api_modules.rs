@@ -1,19 +1,20 @@
+// ----------------------------------------------------------------
+// Module API Enums - Global utility functions
+// These have explicit Rust versions in api.rs (JsonApi, TimeApi, etc.)
+// ----------------------------------------------------------------
+
 #[derive(Debug, Clone)]
 pub enum ApiModule {
+    // Module APIs (global utility functions with explicit Rust versions in api.rs)
     JSON(JSONApi),
     Time(TimeApi),
     OS(OSApi),
     Console(ConsoleApi),
-    ScriptType(ScriptTypeApi),
-    NodeSugar(NodeSugarApi),
-    Signal(SignalApi),
     Input(InputApi),
-    Texture(TextureApi),
     Math(MathApi),
-
-    ArrayOp(ArrayApi),
-    MapOp(MapApi),
 }
+
+
 
 #[derive(Debug, Clone)]
 pub enum JSONApi {
@@ -43,56 +44,6 @@ pub enum ConsoleApi {
 }
 
 #[derive(Debug, Clone)]
-pub enum ScriptTypeApi {
-    Instantiate,
-}
-
-#[derive(Debug, Clone)]
-pub enum NodeSugarApi {
-    GetVar,
-    SetVar,
-    CallFunction, // For VARNAME::method_name(params) - calls a method on another script's node
-    GetChildByName, // For self.get_node("name") - finds child by name and returns ID
-    GetParent, // For node.get_parent() - gets parent node ID
-    AddChild, // For self.add_child(child) - adds a child node and sets parent relationship
-    ClearChildren, // For self.clear_children() - deletes all children and their descendants
-    GetType, // For node.get_type() - gets the node's NodeType (takes Uuid as first param)
-    GetParentType, // For node.get_parent_type() - gets the parent's NodeType (takes Uuid as first param)
-    Remove, // For node.remove() - removes the node from the scene and its parent's children list
-}
-
-#[derive(Debug, Clone)]
-pub enum SignalApi {
-    New,
-    Connect,
-    Emit,
-    EmitDeferred,
-}
-
-#[derive(Debug, Clone)]
-pub enum ArrayApi {
-    Push,
-    Pop,
-    Insert,
-    Remove,
-    Len,
-
-    New,
-}
-
-#[derive(Debug, Clone)]
-pub enum MapApi {
-    Insert,
-    Remove,
-    Get,
-    Contains,
-    Len,
-    Clear,
-
-    New,
-}
-
-#[derive(Debug, Clone)]
 pub enum InputApi {
     // Actions
     GetAction,
@@ -116,18 +67,9 @@ pub enum InputApi {
 }
 
 #[derive(Debug, Clone)]
-pub enum TextureApi {
-    Load, // api.Texture.load(path: String) -> Uuid
-    CreateFromBytes, // api.Texture.create_from_bytes(bytes: Array<u8>, width: u32, height: u32) -> Uuid
-    GetWidth, // api.Texture.get_width(id: Uuid) -> u32
-    GetHeight, // api.Texture.get_height(id: Uuid) -> u32
-    GetSize, // api.Texture.get_size(id: Uuid) -> Vector2
-    // Future: as_bytes, set_bytes, etc.
-}
-
-#[derive(Debug, Clone)]
 pub enum MathApi {
     Random, // api.Math.random() -> f32
     RandomRange, // api.Math.random_range(min: f32, max: f32) -> f32
     RandomInt, // api.Math.random_int(min: i32, max: i32) -> i32
 }
+

@@ -6,7 +6,7 @@ use std::{
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::uid32::UIElementID;
 
 
 use crate::{
@@ -40,9 +40,9 @@ pub struct UINode {
     pub loaded_fur_path: Option<Cow<'static, str>>,
 
     #[serde(skip)]
-    pub elements: Option<IndexMap<Uuid, UIElement>>,
+    pub elements: Option<IndexMap<UIElementID, UIElement>>,
     #[serde(skip)]
-    pub root_ids: Option<Vec<Uuid>>,
+    pub root_ids: Option<Vec<UIElementID>>,
 
     #[serde(
         default = "default_visible",
@@ -51,23 +51,23 @@ pub struct UINode {
     pub visible: bool,
 
     #[serde(skip)]
-    pub needs_rerender: HashSet<Uuid>,
+    pub needs_rerender: HashSet<UIElementID>,
     
     #[serde(skip)]
-    pub needs_layout_recalc: HashSet<Uuid>,
+    pub needs_layout_recalc: HashSet<UIElementID>,
     
     /// Elements marked for deletion - will be removed from primitive renderer and then from elements map
     /// This set tracks element IDs (including all descendants) that should be deleted
     #[serde(skip)]
-    pub pending_deletion: HashSet<Uuid>,
+    pub pending_deletion: HashSet<UIElementID>,
     
     /// Store initial z-indices from FUR file to prevent accumulation across frames
     #[serde(skip)]
-    pub initial_z_indices: HashMap<Uuid, i32>,
+    pub initial_z_indices: HashMap<UIElementID, i32>,
     
     /// Currently focused UI element (for text input, etc.)
     #[serde(skip)]
-    pub focused_element: Option<Uuid>,
+    pub focused_element: Option<UIElementID>,
 
     /// Previous cursor icon state to avoid redundant updates
     #[serde(skip)]
@@ -99,12 +99,12 @@ impl UINode {
     }
     
     /// Mark an element as needing rerender (visual only, no layout recalculation)
-    pub fn mark_element_needs_rerender(&mut self, element_id: Uuid) {
+    pub fn mark_element_needs_rerender(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
     }
     
     /// Mark an element as needing layout recalculation (triggers full layout update)
-    pub fn mark_element_needs_layout(&mut self, element_id: Uuid) {
+    pub fn mark_element_needs_layout(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
         self.needs_layout_recalc.insert(element_id);
     }
@@ -245,7 +245,7 @@ impl UINode {
 
     /// Recursively collect all descendant IDs of an element
     /// This is useful for marking all children as needing rerender when parent visibility changes
-    fn collect_all_descendants(&self, element_id: Uuid) -> Vec<Uuid> {
+    fn collect_all_descendants(&self, element_id: UIElementID) -> Vec<UIElementID> {
         let mut descendants = Vec::new();
         
         if let Some(elements) = &self.elements {
@@ -266,7 +266,7 @@ impl UINode {
 
     /// Mark an element and all its descendants as needing rerender
     /// Use this when changing visibility to ensure all descendants are properly updated
-    pub fn mark_element_with_descendants_needs_rerender(&mut self, element_id: Uuid) {
+    pub fn mark_element_with_descendants_needs_rerender(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
         
         let descendants = self.collect_all_descendants(element_id);
@@ -277,7 +277,7 @@ impl UINode {
 
     /// Mark an element and all its descendants as needing layout recalculation
     /// Use this when changing visibility to ensure all descendants are properly updated
-    pub fn mark_element_with_descendants_needs_layout(&mut self, element_id: Uuid) {
+    pub fn mark_element_with_descendants_needs_layout(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
         self.needs_layout_recalc.insert(element_id);
         
@@ -291,7 +291,7 @@ impl UINode {
     /// Mark an element and all its descendants for deletion
     /// Elements marked for deletion will be removed from the primitive renderer cache
     /// and then removed from the elements map by the renderer
-    pub fn mark_for_deletion(&mut self, element_id: Uuid) {
+    pub fn mark_for_deletion(&mut self, element_id: UIElementID) {
         self.pending_deletion.insert(element_id);
         
         // Recursively mark all descendants for deletion
@@ -341,40 +341,7 @@ impl UINode {
         };
     
         if screen_mouse.x == 0.0 && screen_mouse.y == 0.0 {
-            let mut needs_rerender = false;
-            for (_, el) in elements.iter_mut() {
-                match el {
-                    UIElement::Button(b) => {
-                        if b.is_hovered || b.is_pressed {
-                            b.is_hovered = false;
-                            b.is_pressed = false;
-                            needs_rerender = true;
-                        }
-                    }
-                    UIElement::TextInput(ti) => {
-                        if ti.is_hovered {
-                            ti.is_hovered = false;
-                            needs_rerender = true;
-                        }
-                    }
-                    UIElement::TextEdit(te) => {
-                        if te.is_hovered {
-                            te.is_hovered = false;
-                            needs_rerender = true;
-                        }
-                    }
-                    UIElement::ListTree(list_tree) => {
-                        if list_tree.hovered_item.is_some() {
-                            list_tree.hovered_item = None;
-                            needs_rerender = true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            if needs_rerender {
-                api.scene.mark_needs_rerender(self.base.id);
-            }
+            // No interactive elements to reset hover state for
             return;
         }
     
@@ -457,146 +424,7 @@ impl UINode {
         // 
         // Rust's borrow checker can't prove this is safe because it analyzes all match arms
         // together, but we know at runtime only one executes and contexts don't overlap.
-        for (_, element) in elements.iter_mut() {
-            match element {
-                UIElement::Button(button) => {
-                    let dirty_ids = dirty_element_ids.clone();
-                    let ui_dirty = needs_ui_rerender.clone();
-                    let layout_ids = layout_dirty_element_ids.clone();
-                    let any_button = any_button_hovered.clone();
-                    
-                    // SAFETY: See comment above loop - this borrow doesn't overlap with others
-                    let api_borrow = unsafe { &mut *(api as *mut ScriptApi<'_>) };
-                    
-                    let mut ctx = UIUpdateContext {
-                        mouse_pos,
-                        mouse_pressed,
-                        mouse_just_pressed,
-                        mouse_is_held,
-                        api: api_borrow,
-                        focused_element: current_focused_element,
-                        mark_dirty: Box::new(move |id| dirty_ids.borrow_mut().push(id)),
-                        mark_ui_dirty: Box::new(move || *ui_dirty.borrow_mut() = true),
-                        mark_layout_dirty: Box::new(move |id| layout_ids.borrow_mut().push(id)),
-                        is_focused: false,
-                        request_focus: None,
-                    };
-                    
-                    button.internal_render_update(&mut ctx);
-                    // Check hover state independently - cursor icon should update even if no other changes
-                    if button.is_hovered {
-                        *any_button.borrow_mut() = true;
-                    }
-                }
-                UIElement::TextInput(text_input) => {
-                    let is_focused = current_focused_element == Some(text_input.get_id());
-                    let element_id = text_input.get_id();
-                    let dirty_ids = dirty_element_ids.clone();
-                    let ui_dirty = needs_ui_rerender.clone();
-                    let layout_ids = layout_dirty_element_ids.clone();
-                    let any_text = any_text_input_hovered.clone();
-                    let clicked_id = clicked_text_input_id.clone();
-                    let new_focused = new_focused_element.clone();
-                    let current_focused = current_focused_element;
-                    
-                    // SAFETY: See comment above loop - this borrow doesn't overlap with others
-                    let api_borrow = unsafe { &mut *(api as *mut ScriptApi<'_>) };
-                    
-                    let mut ctx = UIUpdateContext {
-                        mouse_pos,
-                        mouse_pressed,
-                        mouse_just_pressed,
-                        mouse_is_held,
-                        api: api_borrow,
-                        focused_element: current_focused_element,
-                        mark_dirty: Box::new(move |id| dirty_ids.borrow_mut().push(id)),
-                        mark_ui_dirty: Box::new(move || *ui_dirty.borrow_mut() = true),
-                        mark_layout_dirty: Box::new(move |id| layout_ids.borrow_mut().push(id)),
-                        is_focused,
-                        request_focus: Some(Box::new(move |id| {
-                            *new_focused.borrow_mut() = Some(id);
-                            current_focused
-                        })),
-                    };
-                    
-                    if text_input.internal_render_update(&mut ctx) {
-                        if text_input.is_focused && current_focused_element != Some(element_id) {
-                            *clicked_id.borrow_mut() = Some(element_id);
-                        }
-                    }
-                    // Check hover state independently - cursor icon should update even if no other changes
-                    if text_input.is_hovered {
-                        *any_text.borrow_mut() = true;
-                    }
-                }
-                UIElement::TextEdit(text_edit) => {
-                    let is_focused = current_focused_element == Some(text_edit.get_id());
-                    let element_id = text_edit.get_id();
-                    let dirty_ids = dirty_element_ids.clone();
-                    let ui_dirty = needs_ui_rerender.clone();
-                    let layout_ids = layout_dirty_element_ids.clone();
-                    let any_text = any_text_input_hovered.clone();
-                    let clicked_id = clicked_text_input_id.clone();
-                    let new_focused = new_focused_element.clone();
-                    let current_focused = current_focused_element;
-                    
-                    // SAFETY: See comment above loop - this borrow doesn't overlap with others
-                    let api_borrow = unsafe { &mut *(api as *mut ScriptApi<'_>) };
-                    
-                    let mut ctx = UIUpdateContext {
-                        mouse_pos,
-                        mouse_pressed,
-                        mouse_just_pressed,
-                        mouse_is_held,
-                        api: api_borrow,
-                        focused_element: current_focused_element,
-                        mark_dirty: Box::new(move |id| dirty_ids.borrow_mut().push(id)),
-                        mark_ui_dirty: Box::new(move || *ui_dirty.borrow_mut() = true),
-                        mark_layout_dirty: Box::new(move |id| layout_ids.borrow_mut().push(id)),
-                        is_focused,
-                        request_focus: Some(Box::new(move |id| {
-                            *new_focused.borrow_mut() = Some(id);
-                            current_focused
-                        })),
-                    };
-                    
-                    if text_edit.internal_render_update(&mut ctx) {
-                        if text_edit.is_focused && current_focused_element != Some(element_id) {
-                            *clicked_id.borrow_mut() = Some(element_id);
-                        }
-                    }
-                    // Check hover state independently - cursor icon should update even if no other changes
-                    if text_edit.is_hovered {
-                        *any_text.borrow_mut() = true;
-                    }
-                }
-                UIElement::ListTree(list_tree) => {
-                    let dirty_ids = dirty_element_ids.clone();
-                    let ui_dirty = needs_ui_rerender.clone();
-                    let layout_ids = layout_dirty_element_ids.clone();
-                    
-                    // SAFETY: See comment above loop - this borrow doesn't overlap with others
-                    let api_borrow = unsafe { &mut *(api as *mut ScriptApi<'_>) };
-                    
-                    let mut ctx = UIUpdateContext {
-                        mouse_pos,
-                        mouse_pressed,
-                        mouse_just_pressed,
-                        mouse_is_held,
-                        api: api_borrow,
-                        focused_element: current_focused_element,
-                        mark_dirty: Box::new(move |id| dirty_ids.borrow_mut().push(id)),
-                        mark_ui_dirty: Box::new(move || *ui_dirty.borrow_mut() = true),
-                        mark_layout_dirty: Box::new(move |id| layout_ids.borrow_mut().push(id)),
-                        is_focused: false,
-                        request_focus: None,
-                    };
-                    
-                    list_tree.internal_render_update(&mut ctx);
-                }
-                _ => {}
-            }
-        }
+        // No interactive elements to update
         
         // Extract values from Rc<RefCell<>>
         let mut dirty_element_ids_vec = dirty_element_ids.borrow_mut();
@@ -620,21 +448,7 @@ impl UINode {
         if let Some(new_focused) = new_focused_element.or(clicked_text_input_id) {
             if self.focused_element != Some(new_focused) {
                 // Unfocus previously focused element
-                if let Some(old_focused) = self.focused_element {
-                    if let Some(old_element) = elements.get_mut(&old_focused) {
-                        match old_element {
-                            UIElement::TextInput(ti) => {
-                                ti.is_focused = false;
-                                dirty_element_ids.push(old_focused);
-                            }
-                            UIElement::TextEdit(te) => {
-                                te.is_focused = false;
-                                dirty_element_ids.push(old_focused);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
+                // No focusable elements to unfocus
                 self.focused_element = Some(new_focused);
             }
         }

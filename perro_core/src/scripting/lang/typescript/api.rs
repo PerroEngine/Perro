@@ -12,11 +12,10 @@ impl TypeScriptAPI {
             TypeScriptTime::NAME => TypeScriptTime::resolve_method(func),
             TypeScriptOS::NAME => TypeScriptOS::resolve_method(func),
             TypeScriptConsole::NAME => TypeScriptConsole::resolve_method(func),
-            TypeScriptScriptType::NAME => TypeScriptScriptType::resolve_method(func),
-            TypeScriptSignal::NAME => TypeScriptSignal::resolve_method(func),
-            TypeScriptArray::NAME => TypeScriptArray::resolve_method(func),
-            TypeScriptMap::NAME => TypeScriptMap::resolve_method(func),
+            // ScriptType instantiation is handled through node methods, not as an API module
+            // TypeScriptScriptType::NAME => TypeScriptScriptType::resolve_method(func),
             TypeScriptInput::NAME => TypeScriptInput::resolve_method(func),
+            TypeScriptMath::NAME => TypeScriptMath::resolve_method(func),
             _ => None,
         }
     }
@@ -81,67 +80,18 @@ impl TypeScriptConsole {
     }
 }
 
-pub struct TypeScriptScriptType;
-impl TypeScriptScriptType {
-    pub const NAME: &'static str = "ScriptType";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "instantiate" => Some(ApiModule::ScriptType(ScriptTypeApi::Instantiate)),
-            _ => None,
-        }
-    }
-}
-
-pub struct TypeScriptSignal;
-impl TypeScriptSignal {
-    pub const NAME: &'static str = "Signal";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "new" | "create" => Some(ApiModule::Signal(SignalApi::New)),
-            "connect" => Some(ApiModule::Signal(SignalApi::Connect)),
-            "emit" => Some(ApiModule::Signal(SignalApi::Emit)),
-            "emitDeferred" | "emit_deferred" => Some(ApiModule::Signal(SignalApi::EmitDeferred)),
-            _ => None,
-        }
-    }
-}
-
-pub struct TypeScriptArray;
-impl TypeScriptArray {
-    pub const NAME: &'static str = "Array";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "push" => Some(ApiModule::ArrayOp(ArrayApi::Push)),
-            "pop" => Some(ApiModule::ArrayOp(ArrayApi::Pop)),
-            "insert" => Some(ApiModule::ArrayOp(ArrayApi::Insert)),
-            "remove" => Some(ApiModule::ArrayOp(ArrayApi::Remove)),
-            "length" | "len" => Some(ApiModule::ArrayOp(ArrayApi::Len)),
-            "new" | "create" => Some(ApiModule::ArrayOp(ArrayApi::New)),
-            _ => None,
-        }
-    }
-}
-
-pub struct TypeScriptMap;
-impl TypeScriptMap {
-    pub const NAME: &'static str = "Map";
-
-    pub fn resolve_method(method: &str) -> Option<ApiModule> {
-        match method {
-            "set" | "insert" => Some(ApiModule::MapOp(MapApi::Insert)),
-            "delete" | "remove" => Some(ApiModule::MapOp(MapApi::Remove)),
-            "get" => Some(ApiModule::MapOp(MapApi::Get)),
-            "has" | "contains" => Some(ApiModule::MapOp(MapApi::Contains)),
-            "size" | "len" => Some(ApiModule::MapOp(MapApi::Len)),
-            "clear" => Some(ApiModule::MapOp(MapApi::Clear)),
-            "new" | "create" => Some(ApiModule::MapOp(MapApi::New)),
-            _ => None,
-        }
-    }
-}
+// ScriptType instantiation is handled through node methods, not as an API module
+// pub struct TypeScriptScriptType;
+// impl TypeScriptScriptType {
+//     pub const NAME: &'static str = "ScriptType";
+//
+//     pub fn resolve_method(method: &str) -> Option<ApiModule> {
+//         match method {
+//             "instantiate" => Some(ApiModule::ScriptType(ScriptTypeApi::Instantiate)),
+//             _ => None,
+//         }
+//     }
+// }
 
 pub struct TypeScriptInput;
 impl TypeScriptInput {
@@ -184,5 +134,23 @@ impl TypeScriptInput {
             "screenToWorld" | "screen_to_world" => Some(ApiModule::Input(InputApi::ScreenToWorld)),
             _ => None,
         }
+    }
+}
+
+pub struct TypeScriptMath;
+impl TypeScriptMath {
+    pub const NAME: &'static str = "Math";
+
+    pub fn resolve_method(method: &str) -> Option<ApiModule> {
+        match method {
+            "random" => Some(ApiModule::Math(MathApi::Random)),
+            "randomRange" | "random_range" => Some(ApiModule::Math(MathApi::RandomRange)),
+            "randomInt" | "random_int" => Some(ApiModule::Math(MathApi::RandomInt)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["random", "randomRange", "random_range", "randomInt", "random_int"]
     }
 }

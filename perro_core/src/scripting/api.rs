@@ -19,7 +19,7 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use uuid::Uuid; // For date/time formatting
+use crate::uid32::{Uid32, NodeID, TextureID};
 
 use crate::{
     app_command::AppCommand,
@@ -154,7 +154,7 @@ thread_local! {
     // Track the current script ID being executed (for nested call detection)
     // Scripts are now stored as Rc<RefCell<Box<dyn ScriptObject>>>, so they're always in the HashMap
     // We just track the ID to detect when a script calls itself (nested calls)
-    static CURRENT_SCRIPT_ID: RefCell<Option<Uuid>> = RefCell::new(None);
+    static CURRENT_SCRIPT_ID: RefCell<Option<NodeID>> = RefCell::new(None);
 }
 
 pub struct JoyConApi {
@@ -1093,7 +1093,7 @@ impl TextureApi {
 
     /// Load a texture from a path
     /// Panics if Graphics is not available or texture cannot be loaded
-    pub fn load(&mut self, path: &str) -> Option<Uuid> {
+    pub fn load(&mut self, path: &str) -> Option<crate::uid32::TextureID> {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1118,7 +1118,7 @@ impl TextureApi {
 
     /// Internal implementation that actually does the load
     /// Panics if Graphics is not available or texture cannot be loaded
-    pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> Uuid {
+    pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> crate::uid32::TextureID {
         if let Some(gfx) = api.gfx.as_mut() {
             match gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue) {
                 Ok(id) => id,
@@ -1132,7 +1132,7 @@ impl TextureApi {
     }
 
     /// Create a texture from raw RGBA8 bytes and return its UUID
-    pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
+    pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<TextureID> {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1156,7 +1156,7 @@ impl TextureApi {
     }
 
     /// Internal implementation that actually creates the texture
-    pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u32, height: u32) -> Option<Uuid> {
+    pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u32, height: u32) -> Option<TextureID> {
         if let Some(gfx) = api.gfx.as_mut() {
             Some(gfx.texture_manager.create_texture_from_bytes(bytes, width, height, &gfx.device, &gfx.queue))
         } else {
@@ -1166,7 +1166,7 @@ impl TextureApi {
     }
 
     /// Get the width of a texture by its UUID
-    pub fn get_width(&self, id: Uuid) -> u32 {
+    pub fn get_width(&self, id: TextureID) -> u32 {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1192,7 +1192,7 @@ impl TextureApi {
     }
 
     /// Internal implementation
-    pub(crate) fn get_width_impl(api: &mut ScriptApi, id: Uuid) -> u32 {
+    pub(crate) fn get_width_impl(api: &mut ScriptApi, id: TextureID) -> u32 {
         if let Some(gfx) = api.gfx.as_mut() {
             gfx.texture_manager
                 .get_texture_by_id(&id)
@@ -1206,7 +1206,7 @@ impl TextureApi {
     }
 
     /// Get the height of a texture by its UUID
-    pub fn get_height(&self, id: Uuid) -> u32 {
+    pub fn get_height(&self, id: TextureID) -> u32 {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1232,7 +1232,7 @@ impl TextureApi {
     }
 
     /// Internal implementation
-    pub(crate) fn get_height_impl(api: &mut ScriptApi, id: Uuid) -> u32 {
+    pub(crate) fn get_height_impl(api: &mut ScriptApi, id: TextureID) -> u32 {
         if let Some(gfx) = api.gfx.as_mut() {
             gfx.texture_manager
                 .get_texture_by_id(&id)
@@ -1244,7 +1244,7 @@ impl TextureApi {
     }
 
     /// Get the size of a texture by its UUID (returns Vector2)
-    pub fn get_size(&self, id: Uuid) -> crate::Vector2 {
+    pub fn get_size(&self, id: TextureID) -> crate::Vector2 {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1270,7 +1270,7 @@ impl TextureApi {
     }
 
     /// Internal implementation
-    pub(crate) fn get_size_impl(api: &mut ScriptApi, id: Uuid) -> crate::Vector2 {
+    pub(crate) fn get_size_impl(api: &mut ScriptApi, id: TextureID) -> crate::Vector2 {
         if let Some(gfx) = api.gfx.as_mut() {
             gfx.texture_manager
                 .get_texture_size_by_id(&id)
@@ -1882,7 +1882,7 @@ impl<'a> ScriptApi<'a> {
     /// - Only one script's init() is called at a time
     /// - Scripts are never accessed concurrently
     /// - All script code goes through the API (transpiler guarantee)
-    pub fn call_init(&mut self, script_id: Uuid) {
+    pub fn call_init(&mut self, script_id: NodeID) {
         self.set_context();
         // Set current script ID in thread-local context
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(script_id));
@@ -1910,7 +1910,7 @@ impl<'a> ScriptApi<'a> {
     /// - Scripts are called one at a time in a controlled sequence
     /// - Nested calls (through call_function_id) are safe (same execution context)
     /// - All script code goes through the API (transpiler guarantee)
-    pub fn call_update(&mut self, id: Uuid) {
+    pub fn call_update(&mut self, id: NodeID) {
         self.set_context();
         // Set current script ID in thread-local context
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
@@ -1931,7 +1931,7 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
-    pub fn call_fixed_update(&mut self, id: Uuid) {
+    pub fn call_fixed_update(&mut self, id: NodeID) {
         self.set_context();
         // Set current script ID in thread-local context
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
@@ -1952,7 +1952,7 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
-    pub fn call_draw(&mut self, id: Uuid) {
+    pub fn call_draw(&mut self, id: NodeID) {
         self.set_context();
         // Set current script ID in thread-local context
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
@@ -1973,7 +1973,7 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
-    pub fn call_node_internal_fixed_update(&mut self, node_id: Uuid) {
+    pub fn call_node_internal_fixed_update(&mut self, node_id: NodeID) {
         // We need to get the node and call the method, but we can't hold a RefMut
         // while also borrowing self mutably. So we check if update is needed first,
         // then drop that borrow before calling the method.
@@ -2007,7 +2007,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_node_internal_render_update(&mut self, node_id: Uuid) {
+    pub fn call_node_internal_render_update(&mut self, node_id: NodeID) {
         // We need to get the node and call the method, but we can't hold a RefMut
         // while also borrowing self mutably. So we check if update is needed first,
         // then drop that borrow before calling the method.
@@ -2038,7 +2038,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_function(&mut self, id: Uuid, func: &str, params: &[Value]) {
+    pub fn call_function(&mut self, id: NodeID, func: &str, params: &[Value]) {
         let func_id = self.string_to_u64(func);
         self.call_function_id(id, func_id, params);
     }
@@ -2057,16 +2057,13 @@ impl<'a> ScriptApi<'a> {
     /// because all access goes through the API, execution is synchronous, and the API controls
     /// all state mutations. There's no memory safety concern - each script is independently
     /// stored in the HashMap and accessed through the API.
-    pub fn call_function_id(&mut self, id: Uuid, func: u64, params: &[Value]) {
+    pub fn call_function_id(&mut self, id: NodeID, func: u64, params: &[Value]) {
         // Set ScriptApi context (for JoyCon API thread-local access)
         // This is idempotent - safe to call multiple times
         self.set_context();
         
-        eprintln!("🔄 [CallFunction] Calling func {} on script {}", func, id);
-        
         // Check if this is a nested call to the same script
         let current_id_opt = CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow());
-        eprintln!("🔄 [CallFunction] Current script ID: {:?}, target ID: {}", current_id_opt, id);
         
         // Store previous script ID before setting new one
         let previous_script_id = current_id_opt;
@@ -2076,7 +2073,6 @@ impl<'a> ScriptApi<'a> {
         
         // Scripts are now always in memory as Rc<UnsafeCell<Box<dyn ScriptObject>>>, so we can access them directly
         if let Some(script_rc) = self.scene.get_script(id) {
-            eprintln!("🔄 [CallFunction] Successfully got script from HashMap");
             
             // With UnsafeCell, we can always get a mutable reference, even for nested calls
             // 
@@ -2130,11 +2126,6 @@ impl<'a> ScriptApi<'a> {
                 let script_mut = Box::as_mut(script_mut);
                 script_mut.call_function(func, self, params);
             }
-            
-            eprintln!("🔄 [CallFunction] Function call completed");
-        } else {
-            // Script not found - might have been deleted or doesn't exist
-            eprintln!("🔄 [CallFunction] Script not found in HashMap - script may not exist or was deleted");
         }
         
         // Restore previous script ID (if any)
@@ -2145,7 +2136,7 @@ impl<'a> ScriptApi<'a> {
     /// Alias for call_function_id (for backwards compatibility)
     /// The "fast" version was meant to skip context setup, but we always do it now
     #[cfg_attr(not(debug_assertions), inline)]
-    pub(crate) fn call_function_id_fast(&mut self, id: Uuid, func: u64, params: &[Value]) {
+    pub(crate) fn call_function_id_fast(&mut self, id: NodeID, func: u64, params: &[Value]) {
         self.call_function_id(id, func, params);
     }
 
@@ -2161,7 +2152,6 @@ impl<'a> ScriptApi<'a> {
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal(&mut self, name: &str, params: &[Value]) {
         let id = self.string_to_u64(name);
-        eprintln!("📡 [Signal] Emitting signal '{}' (id={}) with {} params", name, id, params.len());
         self.emit_signal_id(id, params);
     }
 
@@ -2179,7 +2169,7 @@ impl<'a> ScriptApi<'a> {
         // OPTIMIZED: Use SmallVec with inline capacity of 4 listeners
         // Most signals have 1-3 listeners, so this avoids heap allocation in common case
         let script_map = script_map_opt.unwrap();
-        let mut call_list = SmallVec::<[(Uuid, u64); 4]>::new();
+        let mut call_list = SmallVec::<[(NodeID, u64); 4]>::new();
         for (uuid, fns) in script_map.iter() {
             for &fn_id in fns.iter() {
                 call_list.push((*uuid, fn_id));
@@ -2189,18 +2179,12 @@ impl<'a> ScriptApi<'a> {
         // OPTIMIZED: Set context once for all calls instead of per-call
         self.set_context();
         
-        eprintln!("📞 [Signal] Calling {} handler(s) for signal id={}", call_list.len(), id);
-        
         // OPTIMIZED: Use fast-path calls that skip redundant context operations
         // IMPORTANT: Check if node still exists before EACH handler call
         // (previous handler might have deleted the node)
-        eprintln!("📞 [Signal] Found {} handler(s) for signal id={}", call_list.len(), id);
         for (target_id, fn_id) in call_list.iter() {
-            eprintln!("  → [Signal] Attempting to call handler: target={}, fn_id={}", target_id, fn_id);
-            
             // First, check if the target node still exists (it might have been deleted)
             if self.scene.get_scene_node_ref(*target_id).is_none() {
-                eprintln!("  ⚠️ [Signal] Target node {} was deleted, skipping handler", target_id);
                 continue; // Target node was deleted, skip this handler
             }
             
@@ -2209,7 +2193,8 @@ impl<'a> ScriptApi<'a> {
             // as a scene node at all, it might be a different type of UUID (like file tree item_id), so proceed.
             let should_call = if let Some(first_param) = params.get(0) {
                 if let Some(node_id_str) = first_param.as_str() {
-                    if let Ok(node_id) = uuid::Uuid::parse_str(node_id_str) {
+                    if let Ok(uid) = Uid32::parse_uuid_str(node_id_str) {
+                        let node_id = NodeID::from_uid32(uid);
                         // Check if this UUID exists as a scene node
                         if let Some(_) = self.scene.get_scene_node_ref(node_id) {
                             // It's a scene node and it exists, proceed
@@ -2230,11 +2215,7 @@ impl<'a> ScriptApi<'a> {
             };
             
             if should_call {
-                eprintln!("  ✅ [Signal] Calling handler: target={}, fn_id={}", target_id, fn_id);
                 self.call_function_id_fast(*target_id, *fn_id, params);
-                eprintln!("  ✅ [Signal] Handler call completed: target={}, fn_id={}", target_id, fn_id);
-            } else {
-                eprintln!("  ⚠️ [Signal] Skipping handler call (node in params was deleted): target={}, fn_id={}", target_id, fn_id);
             }
         }
         
@@ -2260,16 +2241,14 @@ impl<'a> ScriptApi<'a> {
     }
 
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn connect_signal(&mut self, name: &str, target: Uuid, function: &'static str) {
+    pub fn connect_signal(&mut self, name: &str, target: NodeID, function: &'static str) {
         let id = string_to_u64(name);
         let fn_id = string_to_u64(function);
-        eprintln!("🔗 [Signal] Connecting signal '{}' (id={}) to target {} function '{}' (fn_id={})", name, id, target, function, fn_id);
         self.scene.connect_signal_id(id, target, fn_id);
-        eprintln!("✅ [Signal] Connection complete for '{}'", name);
     }
 
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn connect_signal_id(&mut self, id: u64, target: Uuid, function_id: u64) {
+    pub fn connect_signal_id(&mut self, id: u64, target: NodeID, function_id: u64) {
         self.scene.connect_signal_id(id, target, function_id);
     }
 
@@ -2293,7 +2272,7 @@ impl<'a> ScriptApi<'a> {
         // Construct script without registering it
         let raw = ctor();
         let mut boxed: ScriptType = unsafe { Box::from_raw(raw) };
-        boxed.set_id(Uuid::nil()); // explicitly detached
+        boxed.set_id(NodeID::nil()); // explicitly detached
 
         // run init() safely using a temporary sub‑APIs
         // note: doesn't touch scene.scripts, only passes mut ref
@@ -2339,7 +2318,7 @@ impl<'a> ScriptApi<'a> {
     /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent);`
     /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_node<T: 'static, R: Clone + Default>(&self, node_id: Uuid, f: impl FnOnce(&T) -> R) -> R {
+    pub fn read_node<T: 'static, R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&T) -> R) -> R {
         // Check if node_id is nil (from get_parent() when node was removed)
         if node_id.is_nil() {
             return R::default();
@@ -2363,7 +2342,7 @@ impl<'a> ScriptApi<'a> {
     /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let pos = api.read_node2d_transform(parent_id, |n2d| n2d.transform.position);`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_node2d_transform<R: Clone + Default>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
+    pub fn read_node2d_transform<R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
         // Check if node_id is nil (from get_parent() when node was removed)
         if node_id.is_nil() {
             return R::default();
@@ -2386,7 +2365,7 @@ impl<'a> ScriptApi<'a> {
     /// Returns true if the node was found and successfully mutated, false otherwise
     /// Example: `api.mutate_node::<Node2D>(node_id, |n| n.transform.position.x = 5.0);`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn mutate_node<T: 'static, F>(&mut self, id: Uuid, f: F)
+    pub fn mutate_node<T: 'static, F>(&mut self, id: NodeID, f: F)
     where
         F: FnOnce(&mut T),
     {
@@ -2422,7 +2401,7 @@ impl<'a> ScriptApi<'a> {
     /// Only allows access to base Node fields (name, id, parent, children, etc.)
     /// Example: `api.mutate_scene_node(node_id, |n| n.set_name("test".into()));`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn mutate_scene_node<F>(&mut self, id: Uuid, f: F)
+    pub fn mutate_scene_node<F>(&mut self, id: NodeID, f: F)
     where
         F: FnOnce(&mut crate::nodes::node_registry::SceneNode),
     {
@@ -2453,8 +2432,8 @@ impl<'a> ScriptApi<'a> {
     /// Only allows access to base Node fields (name, id, parent, children, etc.)
     /// Example: `let name = api.read_scene_node(node_id, |n| n.get_name().to_string());`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_scene_node<R: Clone>(&self, node_id: Uuid, f: impl FnOnce(&crate::nodes::node_registry::SceneNode) -> R) -> R {
-        let target_node = uuid::Uuid::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok();
+    pub fn read_scene_node<R: Clone>(&self, node_id: NodeID, f: impl FnOnce(&crate::nodes::node_registry::SceneNode) -> R) -> R {
+        let target_node = Uid32::parse_uuid_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok().map(NodeID::from_uid32);
         let is_target = target_node.map(|t| node_id == t).unwrap_or(false);
         
         if is_target {
@@ -2476,7 +2455,7 @@ impl<'a> ScriptApi<'a> {
     /// Create a new node of the specified type and add it to the scene
     /// Returns the ID of the newly created node
     /// Example: `let node_id = api.create_node::<Node2D>();`
-    pub fn create_node<T>(&mut self) -> Uuid
+    pub fn create_node<T>(&mut self) -> NodeID
     where
         T: Default,
         T: crate::nodes::node_registry::ToSceneNode,
@@ -2496,7 +2475,7 @@ impl<'a> ScriptApi<'a> {
     /// Get a UINode by node ID and execute a closure with mutable access
     /// This allows you to modify UI elements dynamically
     /// Example: `api.with_ui_node(ui_node_id, |ui| { ui.add_element(...); });`
-    pub fn with_ui_node<F, R>(&mut self, node_id: Uuid, f: F) -> R
+    pub fn with_ui_node<F, R>(&mut self, node_id: NodeID, f: F) -> R
     where
         F: FnOnce(&mut crate::nodes::ui::ui_node::UINode) -> R,
     {
@@ -2521,11 +2500,11 @@ impl<'a> ScriptApi<'a> {
     /// Example: `api.add_ui_element(ui_node_id, "my_button", UIElement::Button(...), Some(parent_element_id));`
     pub fn add_ui_element(
         &mut self,
-        ui_node_id: Uuid,
+        ui_node_id: NodeID,
         element_name: &str,
         mut element: crate::ui_element::UIElement,
-        parent_element_id: Option<Uuid>,
-    ) -> Option<Uuid> {
+        parent_element_id: Option<crate::uid32::UIElementID>,
+    ) -> Option<crate::uid32::UIElementID> {
         self.with_ui_node(ui_node_id, |ui| {
             use indexmap::IndexMap;
             
@@ -2580,9 +2559,9 @@ impl<'a> ScriptApi<'a> {
     /// Example: `api.append_fur_to_ui(ui_node_id, "[Button]Click Me[/Button]", Some(parent_id));`
     pub fn append_fur_to_ui(
         &mut self,
-        ui_node_id: Uuid,
+        ui_node_id: NodeID,
         fur_string: &str,
-        parent_element_id: Option<Uuid>,
+        parent_element_id: Option<crate::uid32::UIElementID>,
     ) -> bool {
         use crate::nodes::ui::parser::FurParser;
         use crate::nodes::ui::apply_fur::append_fur_elements_to_ui;
@@ -2629,7 +2608,7 @@ impl<'a> ScriptApi<'a> {
     /// Reparent a child node to a new parent
     /// Handles removing from old parent if it exists
     /// Example: `api.reparent(parent_id, child_id);`
-    pub fn reparent(&mut self, new_parent_id: Uuid, child_id: Uuid) {
+    pub fn reparent(&mut self, new_parent_id: NodeID, child_id: NodeID) {
 
         if self.scene.get_scene_node_ref(child_id).is_none() {
             eprintln!("⚠️ reparent: Child node {} does not exist, cannot reparent to {}", child_id, new_parent_id);
@@ -2676,8 +2655,8 @@ impl<'a> ScriptApi<'a> {
 
     /// Get a child node by name, searching through the parent's children
     /// Returns the child node's ID if found, None otherwise
-    pub fn get_child_by_name(&mut self, parent_id: Uuid, child_name: &str) -> Option<Uuid> {
-        let children: Vec<Uuid> = {
+    pub fn get_child_by_name(&mut self, parent_id: NodeID, child_name: &str) -> Option<NodeID> {
+        let children: Vec<NodeID> = {
             if let Some(parent_node) = self.scene.get_scene_node_ref(parent_id) {
                 parent_node.get_children().iter().copied().collect()
             } else {
@@ -2701,7 +2680,7 @@ impl<'a> ScriptApi<'a> {
     /// Panics if the node is not found or has no parent
     /// NOTE: Callers should check if the node exists before calling this
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn get_parent(&mut self, node_id: Uuid) -> Uuid {
+    pub fn get_parent(&mut self, node_id: NodeID) -> NodeID {
         let node = self.scene.get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         
@@ -2714,7 +2693,7 @@ impl<'a> ScriptApi<'a> {
     /// Panics if the node is not found or has no parent
     /// NOTE: Callers should check if the node exists before calling this
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn get_parent_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
+    pub fn get_parent_type(&mut self, node_id: NodeID) -> crate::node_registry::NodeType {
         let node = self.scene.get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         node.get_parent()
@@ -2728,7 +2707,7 @@ impl<'a> ScriptApi<'a> {
     /// Useful for runtime type checking before casting
     /// Example: `match api.get_type(node_id) { NodeType::Sprite2D => ..., _ => ... }`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn get_type(&mut self, node_id: Uuid) -> crate::node_registry::NodeType {
+    pub fn get_type(&mut self, node_id: NodeID) -> crate::node_registry::NodeType {
         let node = self.scene.get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         // Use the node's get_type() method which now returns NodeType directly
@@ -2736,7 +2715,7 @@ impl<'a> ScriptApi<'a> {
     }
     
     /// Helper to create a ParentType from a node ID by looking up its type in the scene
-    fn create_parent_type(&self, parent_id: Uuid) -> Option<crate::nodes::node::ParentType> {
+    fn create_parent_type(&self, parent_id: NodeID) -> Option<crate::nodes::node::ParentType> {
         if let Some(parent_node) = self.scene.get_scene_node_ref(parent_id) {
             // Get the node type - we need to match on the SceneNode enum to get the actual type
             let node_type = match parent_node {
@@ -2745,7 +2724,7 @@ impl<'a> ScriptApi<'a> {
                 crate::nodes::node_registry::SceneNode::Sprite2D(_) => crate::node_registry::NodeType::Sprite2D,
                 crate::nodes::node_registry::SceneNode::Area2D(_) => crate::node_registry::NodeType::Area2D,
                 crate::nodes::node_registry::SceneNode::CollisionShape2D(_) => crate::node_registry::NodeType::CollisionShape2D,
-                crate::nodes::node_registry::SceneNode::Shape2D(_) => crate::node_registry::NodeType::Shape2D,
+                crate::nodes::node_registry::SceneNode::ShapeInstance2D(_) => crate::node_registry::NodeType::ShapeInstance2D,
                 crate::nodes::node_registry::SceneNode::Camera2D(_) => crate::node_registry::NodeType::Camera2D,
                 crate::nodes::node_registry::SceneNode::UINode(_) => crate::node_registry::NodeType::UINode,
                 crate::nodes::node_registry::SceneNode::Node3D(_) => crate::node_registry::NodeType::Node3D,
@@ -2765,7 +2744,7 @@ impl<'a> ScriptApi<'a> {
     /// This works with any node type through the BaseNode trait
     /// Remove a child from its parent
     /// Sets the child's parent to None and removes it from parent's children list
-    pub fn remove_child(&mut self, parent_id: Uuid, child_id: Uuid) {
+    pub fn remove_child(&mut self, parent_id: NodeID, child_id: NodeID) {
         // Remove from parent's children list
         if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
             parent.remove_child(&child_id);
@@ -2779,7 +2758,7 @@ impl<'a> ScriptApi<'a> {
     
     /// Clear all children of a node, recursively deleting them and all their descendants
     /// This removes nodes from the hashmap, removes scripts, clears child lists, and updates caches
-    pub fn clear_children(&mut self, parent_id: Uuid) {
+    pub fn clear_children(&mut self, parent_id: NodeID) {
         // Check if parent exists
         if self.scene.get_scene_node_ref(parent_id).is_none() {
             return;
@@ -2798,16 +2777,17 @@ impl<'a> ScriptApi<'a> {
         // Stack-based post-order traversal
         // Each element is (node_id, children_processed)
         // Only collect children that actually exist in the scene
-        let mut stack: Vec<(Uuid, bool)> = {
+        let mut stack: Vec<(NodeID, bool)> = {
             let children = self.scene.get_scene_node_ref(parent_id)
                 .map(|node| {
-                    node.get_children().iter().copied().collect::<Vec<Uuid>>()
+                    node.get_children().iter().copied().collect::<Vec<NodeID>>()
                 })
                 .unwrap_or_default();
             
             children.iter()
-                .filter(|&&id| self.scene.get_scene_node_ref(id).is_some())
-                .map(|&id| (id, false))
+                .copied()
+                .filter(|&id| self.scene.get_scene_node_ref(id).is_some())
+                .map(|id| (id, false))
                 .collect()
         };
         
@@ -2869,7 +2849,7 @@ impl<'a> ScriptApi<'a> {
     /// Remove a node from the scene
     /// This recursively removes all children first, then removes the node from its parent's children list (if it has a parent), and finally deletes the node
     /// Example: `api.remove_node(node_id);`
-    pub fn remove_node(&mut self, node_id: Uuid) {
+    pub fn remove_node(&mut self, node_id: NodeID) {
         // Check if node exists
         if self.scene.get_scene_node_ref(node_id).is_none() {
             return; // Node doesn't exist, nothing to do
@@ -2901,12 +2881,12 @@ impl<'a> ScriptApi<'a> {
     }
 
     /// Get the global transform for a node (calculates lazily if dirty)
-    pub fn get_global_transform(&mut self, node_id: Uuid) -> Option<crate::structs2d::Transform2D> {
+    pub fn get_global_transform(&mut self, node_id: NodeID) -> Option<crate::structs2d::Transform2D> {
         self.scene.get_global_transform(node_id)
     }
 
     /// Set the global transform for a node (marks it as dirty)
-    pub fn set_global_transform(&mut self, node_id: Uuid, transform: crate::structs2d::Transform2D) -> Option<()> {
+    pub fn set_global_transform(&mut self, node_id: NodeID, transform: crate::structs2d::Transform2D) -> Option<()> {
         self.scene.set_global_transform(node_id, transform)
     }
 
@@ -2914,13 +2894,13 @@ impl<'a> ScriptApi<'a> {
     /// 
     /// Self-calls are now supported - you can call this with `self.id` from within the same script.
     /// The script will use the stored script pointer to access variables directly.
-    pub fn set_script_var(&mut self, node_id: Uuid, name: &str, val: Value) -> Option<()> {
+    pub fn set_script_var(&mut self, node_id: NodeID, name: &str, val: Value) -> Option<()> {
         let var_id = string_to_u64(name);
 
         self.set_script_var_id(node_id, var_id, val)
     }
 
-    pub fn set_script_var_id(&mut self, node_id: Uuid, var_id: u64, val: Value) -> Option<()> {
+    pub fn set_script_var_id(&mut self, node_id: NodeID, var_id: u64, val: Value) -> Option<()> {
         // Scripts are now always in memory as Rc<UnsafeCell<>>, so we can access them directly
         // SAFETY: Setting variables is safe because:
         // - It's equivalent to calling a mutable function on the script
@@ -2947,13 +2927,13 @@ impl<'a> ScriptApi<'a> {
     /// 
     /// Self-calls are now supported - you can call this with `self.id` from within the same script.
     /// The script will use the stored script pointer to access variables directly.
-    pub fn get_script_var(&mut self, id: Uuid, name: &str) -> Value {
+    pub fn get_script_var(&mut self, id: NodeID, name: &str) -> Value {
         let var_id = string_to_u64(name);
 
         self.get_script_var_id(id, var_id)
     }
 
-    pub fn get_script_var_id(&mut self, id: Uuid, var_id: u64) -> Value {
+    pub fn get_script_var_id(&mut self, id: NodeID, var_id: u64) -> Value {
         // Scripts are now always in memory as Rc<UnsafeCell<>>, so we can access them directly
         // SAFETY: Reading variables is safe because:
         // - We're only reading (immutable access)

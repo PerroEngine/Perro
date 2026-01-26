@@ -89,7 +89,7 @@ pub struct Renderer3D {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_slots: Vec<Option<LightUniform>>,
-    light_uuid_to_slot: HashMap<uuid::Uuid, usize>,
+    light_uuid_to_slot: HashMap<crate::uid32::Uid32, usize>,
     free_light_slots: Vec<usize>,
     lights_need_rebuild: bool,
 
@@ -97,13 +97,13 @@ pub struct Renderer3D {
     material_buffer: wgpu::Buffer,
     material_bind_group: wgpu::BindGroup,
     material_slots: Vec<Option<MaterialUniform>>,
-    material_uuid_to_slot: HashMap<uuid::Uuid, usize>,
+    material_uuid_to_slot: HashMap<crate::uid32::Uid32, usize>,
     free_material_slots: Vec<usize>,
     materials_need_rebuild: bool,
 
     // Instancing - Updated to use MeshSlot
     mesh_instance_slots: Vec<Option<MeshSlot>>,
-    mesh_uuid_to_slot: HashMap<uuid::Uuid, usize>,
+    mesh_uuid_to_slot: HashMap<crate::uid32::Uid32, usize>,
     free_mesh_slots: Vec<usize>,
 
     // Batching info - Updated for better material batching
@@ -212,7 +212,7 @@ impl Renderer3D {
                 &light_bind_group_layout,
                 &material_bind_group_layout,
             ],
-            immediate_size: 0,
+            push_constant_ranges: &[],
         });
 
         // Build pipeline descriptor step by step to isolate the issue
@@ -303,7 +303,7 @@ impl Renderer3D {
             primitive: primitive_state,
             depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
+            multiview: None,
             cache: None,
         };
 
@@ -351,8 +351,9 @@ impl Renderer3D {
     }
 
     // ===== LIGHT MANAGEMENT =====
-    pub fn queue_light(&mut self, id: uuid::Uuid, light_uniform: LightUniform) {
-        let _slot = if let Some(&slot_idx) = self.light_uuid_to_slot.get(&id) {
+    pub fn queue_light(&mut self, id: crate::uid32::NodeID, light_uniform: LightUniform) {
+        let id_uid32 = id.as_uid32();
+        let _slot = if let Some(&slot_idx) = self.light_uuid_to_slot.get(&id_uid32) {
             if let Some(existing_light) = &mut self.light_slots[slot_idx] {
                 if *existing_light != light_uniform {
                     *existing_light = light_uniform;
@@ -363,7 +364,7 @@ impl Renderer3D {
         } else {
             if let Some(free_slot_idx) = self.free_light_slots.pop() {
                 self.light_slots[free_slot_idx] = Some(light_uniform);
-                self.light_uuid_to_slot.insert(id, free_slot_idx);
+                self.light_uuid_to_slot.insert(id_uid32, free_slot_idx);
                 self.lights_need_rebuild = true;
                 println!(
                     "💡 Queued new light UUID: {:?}, slot: {}",
@@ -406,7 +407,7 @@ impl Renderer3D {
         }
     }
 
-    pub fn stop_rendering_light(&mut self, uuid: uuid::Uuid) {
+    pub fn stop_rendering_light(&mut self, uuid: crate::uid32::Uid32) {
         if let Some(&slot_idx) = self.light_uuid_to_slot.get(&uuid) {
             self.light_slots[slot_idx] = None;
             self.free_light_slots.push(slot_idx);
@@ -420,7 +421,7 @@ impl Renderer3D {
     }
 
     // ===== MATERIAL MANAGEMENT =====
-    pub fn queue_material(&mut self, id: uuid::Uuid, material: MaterialUniform) -> u32 {
+    pub fn queue_material(&mut self, id: crate::uid32::Uid32, material: MaterialUniform) -> u32 {
         let slot = if let Some(&slot_idx) = self.material_uuid_to_slot.get(&id) {
             if let Some(existing_mat) = &mut self.material_slots[slot_idx] {
                 if *existing_mat != material {
@@ -476,7 +477,7 @@ impl Renderer3D {
         }
     }
 
-    pub fn stop_rendering_material(&mut self, uuid: uuid::Uuid) {
+    pub fn stop_rendering_material(&mut self, uuid: crate::uid32::Uid32) {
         if let Some(&slot_idx) = self.material_uuid_to_slot.get(&uuid) {
             self.material_slots[slot_idx] = None;
             self.free_material_slots.push(slot_idx);
@@ -488,7 +489,7 @@ impl Renderer3D {
     // ===== MESH MANAGEMENT =====
     pub fn queue_mesh(
         &mut self,
-        uuid: uuid::Uuid,
+        uuid: crate::uid32::NodeID,
         mesh_path: &str,
         transform: Transform3D,
         material_path: Option<&str>, // Accept Option<&str>
@@ -519,7 +520,8 @@ impl Renderer3D {
             instance_visible: true,
         };
 
-        if let Some(&slot) = self.mesh_uuid_to_slot.get(&uuid) {
+        let uuid_uid32 = uuid.as_uid32();
+        if let Some(&slot) = self.mesh_uuid_to_slot.get(&uuid_uid32) {
             if let Some(existing) = &mut self.mesh_instance_slots[slot] {
                 // Check if anything changed
                 if existing.instance != new_instance
@@ -539,12 +541,12 @@ impl Renderer3D {
                 self.mesh_instance_slots.push(None);
             }
             self.mesh_instance_slots[slot] = Some(new_slot);
-            self.mesh_uuid_to_slot.insert(uuid, slot);
+            self.mesh_uuid_to_slot.insert(uuid_uid32, slot);
             self.instances_need_rebuild = true;
         }
     }
 
-    pub fn stop_rendering_mesh(&mut self, uuid: uuid::Uuid) {
+    pub fn stop_rendering_mesh(&mut self, uuid: crate::uid32::Uid32) {
         if let Some(&slot_idx) = self.mesh_uuid_to_slot.get(&uuid) {
             self.mesh_instance_slots[slot_idx] = None;
             self.free_mesh_slots.push(slot_idx);

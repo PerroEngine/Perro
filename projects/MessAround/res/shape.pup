@@ -1,5 +1,5 @@
 @script Shape extends Node
 
-fn init() {
+on init() {
     Console.print("hello there root")
 }
