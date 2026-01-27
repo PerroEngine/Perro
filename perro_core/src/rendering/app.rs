@@ -97,15 +97,10 @@ pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
     use image::imageops::FilterType;
     use winit::window::Icon;
 
-    println!("🔎 Loading icon from {path}");
 
     // Check static textures first (runtime mode)
     let img = if let Some(static_textures) = get_static_textures() {
         if let Some(static_data) = static_textures.get(path) {
-            println!(
-                "✅ Loading icon from static texture: {} ({}x{})",
-                path, static_data.width, static_data.height
-            );
             // Convert pre-decoded RGBA8 bytes to DynamicImage
             ImageBuffer::from_raw(
                 static_data.width,
@@ -133,7 +128,6 @@ pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
 
     match img {
         Ok(img) => {
-            println!("✅ Successfully decoded {path} as icon");
 
             let target_size = 32;
             let resized = img.resize_exact(target_size, target_size, FilterType::Lanczos3);

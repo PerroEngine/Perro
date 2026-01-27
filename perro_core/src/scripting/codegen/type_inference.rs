@@ -82,6 +82,30 @@ impl Script {
             (StrRef, String) => {
                 return format!("{}.to_string()", expr);
             }
+            // String -> CowStr conversion (for node names, etc.)
+            (String, CowStr) => {
+                // If expr is already a Cow::Borrowed or Cow::Owned, don't add .into()
+                if expr.starts_with("Cow::Borrowed(") || expr.starts_with("Cow::Owned(") {
+                    return expr.to_string();
+                }
+                // For String -> CowStr, just return the String as-is
+                // Methods like set_name accept impl Into<Cow<'static, str>>, so String works directly
+                // This avoids ambiguous .into() calls that the compiler can't resolve
+                return expr.to_string();
+            }
+            // StrRef -> CowStr conversion
+            (StrRef, CowStr) => {
+                return format!("Cow::Borrowed({})", expr);
+            }
+            // CowStr -> CowStr (no conversion needed, but handle if already a Cow)
+            (CowStr, CowStr) => {
+                // If expr is already a Cow::Borrowed or Cow::Owned, return as-is
+                if expr.starts_with("Cow::Borrowed(") || expr.starts_with("Cow::Owned(") {
+                    return expr.to_string();
+                }
+                // Otherwise, it's already a Cow, just return it
+                return expr.to_string();
+            }
             _ => {}
         }
         
@@ -166,9 +190,16 @@ impl Script {
                 inferred
             },
             Expr::Ident(name) => {
+                // Strip __t_ prefix if present to get original variable name for lookup
+                let original_name = if name.starts_with("__t_") {
+                    &name[4..] // Strip "__t_" prefix
+                } else {
+                    name
+                };
+                
                 if let Some(func) = current_func {
-                    // 1. Local variable
-                    if let Some(local) = func.locals.iter().find(|v| v.name == *name) {
+                    // 1. Local variable (check both original and renamed name)
+                    if let Some(local) = func.locals.iter().find(|v| v.name == *name || v.name == original_name) {
                         if let Some(t) = &local.typ {
                             Some(t.clone())
                         } else if let Some(val) = &local.value {
@@ -177,20 +208,26 @@ impl Script {
                             None
                         }
                     }
-                    // 2. Function parameter
-                    else if let Some(param) = func.params.iter().find(|p| p.name == *name) {
+                    // 2. Function parameter (check both original and renamed name)
+                    else if let Some(param) = func.params.iter().find(|p| p.name == *name || p.name == original_name) {
                         Some(param.typ.clone())
                     }
-                    // 3. Check if it's a loop variable
-                    else if self.is_loop_variable(name, &func.body) {
+                    // 3. Check if it's a loop variable (use original name for lookup)
+                    else if self.is_loop_variable(original_name, &func.body) {
                         Some(Type::Number(NumberKind::Signed(32)))
                     }
                     // 4. Script-level variable or exposed field
                     else {
-                        self.get_variable_type(name).cloned()
+                        // Try both original and renamed name
+                        self.get_variable_type(name)
+                            .or_else(|| self.get_variable_type(original_name))
+                            .cloned()
                     }
                 } else {
-                    self.get_variable_type(name).cloned()
+                    // Try both original and renamed name
+                    self.get_variable_type(name)
+                        .or_else(|| self.get_variable_type(original_name))
+                        .cloned()
                 }
             }
             Expr::Range(_, _) => {

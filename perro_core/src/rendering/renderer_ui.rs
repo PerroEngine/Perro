@@ -10,7 +10,6 @@ pub struct RendererUI {}
 
 impl RendererUI {
     pub fn new() -> Self {
-        println!("🟩 UI Renderer initialized");
         Self {}
     }
 

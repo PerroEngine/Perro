@@ -1,6 +1,7 @@
 //! "Public" API of your engine
 pub mod brk;
 pub mod input;
+pub mod node_arena;
 pub mod nodes;
 pub mod physics;
 pub mod project;

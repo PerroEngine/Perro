@@ -4,6 +4,7 @@ use rapier2d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::uid32::NodeID;
+use crate::structs2d::Shape2D;
 
 /// Manages the Rapier2D physics world
 pub struct PhysicsWorld2D {
@@ -103,11 +104,11 @@ impl PhysicsWorld2D {
     pub fn create_sensor_collider(
         &mut self,
         node_id: NodeID,
-        shape: ColliderShape,
+        shape: Shape2D,
         position: [f32; 2],
         rotation: f32,
     ) -> ColliderHandle {
-        let rapier_shape = shape.to_rapier_shape();
+        let rapier_shape = shape_to_rapier_shape(shape);
         let collider = ColliderBuilder::new(rapier_shape)
             .sensor(true) // This makes it a sensor - detects collisions but doesn't have physics
             .translation(vector![position[0], position[1]])
@@ -214,21 +215,21 @@ impl Default for PhysicsWorld2D {
     }
 }
 
-/// Shape types for collision shapes
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum ColliderShape {
-    Rectangle { width: f32, height: f32 },
-    Circle { radius: f32 },
-}
-
-impl ColliderShape {
-    /// Convert to Rapier shape
-    pub fn to_rapier_shape(&self) -> SharedShape {
-        match self {
-            ColliderShape::Rectangle { width, height } => {
-                SharedShape::cuboid(*width / 2.0, *height / 2.0)
-            }
-            ColliderShape::Circle { radius } => SharedShape::ball(*radius),
+/// Convert Shape2D to Rapier shape
+/// Only Rectangle and Circle are supported for physics (Square and Triangle are converted to Rectangle)
+pub fn shape_to_rapier_shape(shape: Shape2D) -> SharedShape {
+    match shape {
+        Shape2D::Rectangle { width, height } => {
+            SharedShape::cuboid(width / 2.0, height / 2.0)
+        }
+        Shape2D::Circle { radius } => SharedShape::ball(radius),
+        Shape2D::Square { size } => {
+            // Convert square to rectangle
+            SharedShape::cuboid(size / 2.0, size / 2.0)
+        }
+        Shape2D::Triangle { base, height } => {
+            // Convert triangle to rectangle (approximation)
+            SharedShape::cuboid(base / 2.0, height / 2.0)
         }
     }
 }

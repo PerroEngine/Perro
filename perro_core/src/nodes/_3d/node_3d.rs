@@ -55,6 +55,38 @@ impl Node3D {
             base,
         }
     }
+    
+    /// Create a new Node3D with a nil ID (for graphics-only nodes not in the scene tree).
+    pub fn new_with_nil_id() -> Self {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        use crate::uid32::NodeID;
+        
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let mut base = Node {
+            id: NodeID::nil(),
+            ty: NodeType::Node,
+            name: Cow::Borrowed("Node"),
+            script_path: None,
+            script_exp_vars: None,
+            parent: None,
+            children: None,
+            metadata: None,
+            is_root_of: None,
+            created_timestamp: timestamp,
+        };
+        base.name = Cow::Borrowed("Node3D");
+        Self {
+            ty: NodeType::Node3D,
+            transform: Transform3D::default(),
+            pivot: Vector3::new(0.5, 0.5, 0.5),
+            visible: default_visible(),
+            base,
+        }
+    }
 
     /// Returns if the node is visible
     pub fn get_visible(&self) -> bool {

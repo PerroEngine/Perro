@@ -14,7 +14,23 @@ var cab = new Cabbage { x: 1001 }
 on init() {
     tex = Texture.load("res://doug.PNG")
     self.texture = tex
+    var c = 0
+    for (i in 0..1000) {
+       var n = new Node2D()
+       n.name = "node" + i
+       n.transform.position = new Vector2(i * 105, 0)
 
+       for (j in 0..250) {
+        var n2 = new Node2D()
+        n2.name = "node" + i + "child" + j
+        n2.transform.position = new Vector2(j * 105, 0)
+        n.add_child(n2)
+        c++
+       }
+       self.add_child(n)
+      
+    }
+ Console.info("Count", c)
 
 }
 

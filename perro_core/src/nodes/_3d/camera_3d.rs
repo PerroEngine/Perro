@@ -42,7 +42,8 @@ impl Camera3D {
             far: Some(1000.0),
             active: false,
             base: {
-                let mut base = Node3D::new();
+                // Use nil ID for graphics-only cameras that aren't part of the scene tree
+                let mut base = Node3D::new_with_nil_id();
                 base.name = Cow::Borrowed("Camera3D");
                 base
             },

@@ -455,7 +455,6 @@ impl MaterialManager {
         }
 
         // Create different materials based on path for testing
-        println!("📦 Loading material: {}", path);
         let material = match path {
             "__default__" => MaterialUniform {
                 base_color: [1.0, 1.0, 1.0, 1.0],
@@ -551,7 +550,6 @@ impl MaterialManager {
         // Cache the slot (only allocate String when inserting)
         self.path_to_slot.insert(path.to_string(), slot);
 
-        println!("📦 Material '{}' assigned to slot {}", path, slot);
         slot
     }
 
@@ -1340,7 +1338,6 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     
     let (best_score, best_candidate) = scored_sorted.into_iter().next().unwrap();
     
-    println!("🎮 Using graphics backend: {} (score: {})", best_candidate.backend_name, best_score);
     
     let chosen_backend = best_candidate.backend;
     let _chosen_backend_name = best_candidate.backend_name;

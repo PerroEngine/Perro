@@ -155,7 +155,8 @@ macro_rules! define_id_type {
         impl $type_name {
             pub fn new() -> Self {
                 let counter = $counter.fetch_add(1, Ordering::Relaxed);
-                Self(Uid32::from_u32(if counter == 0 { 1 } else { counter }))
+                let id_value = if counter == 0 { 1 } else { counter };
+                Self(Uid32::from_u32(id_value))
             }
             
             pub fn nil() -> Self {
@@ -202,15 +203,20 @@ macro_rules! define_id_type {
 
         impl fmt::Debug for $type_name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, concat!(stringify!($type_name), "({:08x})"), self.0.as_u32())
+                write!(
+                    f,
+                    concat!(stringify!($type_name), "({})"),
+                    self.0.as_u32()
+                )
             }
         }
-
+        
         impl fmt::Display for $type_name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", self.0)
+                write!(f, "{}", self.0.as_u32())
             }
         }
+        
 
         // Serde trait implementations
         impl Serialize for $type_name {

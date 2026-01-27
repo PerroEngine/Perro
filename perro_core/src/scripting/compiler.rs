@@ -2707,13 +2707,14 @@ impl Compiler {
         writeln!(scenes_file, "#![allow(clippy::all)]")?;
         writeln!(scenes_file, "use once_cell::sync::Lazy;")?;
         writeln!(scenes_file, "use perro_core::Uid32;")?;
+        writeln!(scenes_file, "use perro_core::NodeID;")?;
         writeln!(scenes_file, "use indexmap::IndexMap;")?;
         writeln!(scenes_file, "use perro_core::scene::SceneData;")?;
         writeln!(scenes_file, "use perro_core::structs::*;")?;
+        writeln!(scenes_file, "use perro_core::structs2d::Shape2D;")?;
         writeln!(scenes_file, "use perro_core::node_registry::*;")?;
         writeln!(scenes_file, "use perro_core::nodes::*;")?;
         writeln!(scenes_file, "use perro_core::ui_node::UINode;")?;
-        writeln!(scenes_file, "use perro_core::physics::ColliderShape;")?;
         writeln!(
             scenes_file,
             "use std::{{borrow::Cow, collections::{{HashMap, HashSet}}}};"
@@ -2849,6 +2850,17 @@ impl Compiler {
                     .replace_all(&node_str, "uuid!(\"$1\")")
                     .to_string();
 
+                // Fix ID type constructor calls (all ID types have private fields, must use from_u32)
+                // Handle NodeID, TextureID, MaterialID, MeshID, LightID, UIElementID
+                let id_types = ["NodeID", "TextureID", "MaterialID", "MeshID", "LightID", "UIElementID"];
+                for id_type in &id_types {
+                    let pattern = format!(r"{}\((\d+)\)", id_type);
+                    let id_regex = Regex::new(&pattern)?;
+                    node_str = id_regex
+                        .replace_all(&node_str, &format!("{}::from_u32($1)", id_type))
+                        .to_string();
+                }
+
                 // Normalize whitespace and string conversions
                 node_str = node_str.replace("Some(\n", "Some(");
                 let string_some_regex = Regex::new(r#"Some\(\s*"([^"]+)"\s*,?\s*\)"#)?;
@@ -2904,14 +2916,22 @@ impl Compiler {
                     .replace_all(&node_str, "shape_type: Some(Shape2D::Triangle {")
                     .to_string();
                 
-                // ColliderShape variants (for CollisionShape2D)
-                let collider_shape_rectangle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Rectangle\s*\{")?;
-                let collider_shape_circle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Circle\s*\{")?;
-                node_str = collider_shape_rectangle_regex
-                    .replace_all(&node_str, "shape: Some(ColliderShape::Rectangle {")
+                // Shape2D variants (for CollisionShape2D - now uses Shape2D instead of ColliderShape)
+                let shape_rectangle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Rectangle\s*\{")?;
+                let shape_circle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Circle\s*\{")?;
+                let shape_square_regex = Regex::new(r"shape:\s*Some\s*\(\s*Square\s*\{")?;
+                let shape_triangle_regex = Regex::new(r"shape:\s*Some\s*\(\s*Triangle\s*\{")?;
+                node_str = shape_rectangle_regex
+                    .replace_all(&node_str, "shape: Some(Shape2D::Rectangle {")
                     .to_string();
-                node_str = collider_shape_circle_regex
-                    .replace_all(&node_str, "shape: Some(ColliderShape::Circle {")
+                node_str = shape_circle_regex
+                    .replace_all(&node_str, "shape: Some(Shape2D::Circle {")
+                    .to_string();
+                node_str = shape_square_regex
+                    .replace_all(&node_str, "shape: Some(Shape2D::Square {")
+                    .to_string();
+                node_str = shape_triangle_regex
+                    .replace_all(&node_str, "shape: Some(Shape2D::Triangle {")
                     .to_string();
 
                 // Fix ty and node_type fields: wrap node type names with NodeType::

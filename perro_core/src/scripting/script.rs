@@ -161,6 +161,10 @@ pub trait SceneAccess {
     /// Clear the Node2D children cache when all children are removed
     fn update_node2d_children_cache_on_clear(&mut self, parent_id: NodeID);
     
+    /// Get the next available node ID from the arena.
+    /// Used in DLL mode to ensure unique IDs across DLLs.
+    fn next_node_id(&mut self) -> NodeID;
+    
     /// Remove a node from the scene, stopping rendering and cleaning up scripts
     fn remove_node(&mut self, node_id: NodeID, gfx: &mut crate::rendering::Graphics);
     

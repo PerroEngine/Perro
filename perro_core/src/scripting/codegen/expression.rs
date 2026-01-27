@@ -60,6 +60,11 @@ impl Expr {
         script: &Script,
         current_func: Option<&Function>,
     ) -> bool {
+        // Don't clone cast expressions - they're already Copy types or the cast handles ownership
+        if expr_code.starts_with("(") && expr_code.contains(" as ") {
+            return false;
+        }
+        
         if expr_code.starts_with("json!(")
             || expr_code.starts_with("HashMap::from(")
             || expr_code.starts_with("vec![")
@@ -90,15 +95,16 @@ impl Expr {
                         // This is safe because Copy types don't need cloning
                         false
                     }
-                } else if name.starts_with("__t_") {
-                    // Loop variables (transpiled identifiers) are typically i32 from ranges, which is Copy
-                    // Even if type inference returns None, we know loop variables don't need cloning
-                    false
                 } else {
-                    // Regular variable - use normal type inference
+                    // Regular variable (including __t_ prefixed variables) - use normal type inference
+                    // The __t_ prefix is used for ALL transpiled identifiers, not just loop variables
+                    // So we need to check the actual type to determine if cloning is needed
                     if let Some(ty) = script.infer_expr_type(expr, current_func) {
                         ty.requires_clone()
                     } else {
+                        // If we can't infer the type, check if it's likely a loop variable
+                        // Loop variables from ranges are typically i32 (Copy), but other __t_ variables
+                        // might be non-Copy types, so we default to false (no clone) only if we can't determine
                         false
                     }
                 }
@@ -170,6 +176,13 @@ impl Expr {
                         f.locals.iter().any(|v| v.name == *name)
                             || f.params.iter().any(|p| p.name == *name)
                             || find_variable_in_body(name, &f.body).is_some()
+                            // Also check if this is a renamed variable (e.g., n_id from n)
+                            || (name.ends_with("_id") && {
+                                let original_name = &name[..name.len() - 3];
+                                f.locals.iter().any(|v| v.name == original_name)
+                                    || f.params.iter().any(|p| p.name == original_name)
+                                    || find_variable_in_body(original_name, &f.body).is_some()
+                            })
                     })
                     .unwrap_or(false);
 
@@ -452,8 +465,32 @@ impl Expr {
                 let left_is_len = left_is_len || left_raw.ends_with(".len()");
                 let right_is_len = right_is_len || right_raw.ends_with(".len()");
 
-                let mut l_str = left_raw.clone();
-                let mut r_str = right_raw.clone();
+                // Strip .clone() from Copy types before applying casts
+                // This prevents unnecessary cloning of i32, f32, etc.
+                // We'll check the types and strip .clone() for Copy types
+                // IMPORTANT: Always strip .clone() from simple identifiers (variables like __t_i, __t_delta)
+                // as they are always Copy types (i32, f32, etc.) and cloning is never needed
+                let strip_clone_if_copy = |s: &str, ty: Option<&Type>| -> String {
+                    if s.ends_with(".clone()") {
+                        // If we know the type and it's Copy, strip .clone()
+                        if let Some(t) = ty {
+                            if t.is_copy_type() {
+                                return s[..s.len() - 7].to_string();
+                            }
+                        }
+                        // Always strip .clone() from simple identifiers (variables like __t_i, __t_delta)
+                        // These are always Copy types (i32, f32, etc.) and cloning is never needed
+                        let base = &s[..s.len() - 7];
+                        if !base.contains('(') && !base.contains('.') && !base.contains('[') && !base.contains(' ') && !base.contains('{') {
+                            // Simple identifier - always Copy type (i32, f32, etc.) - strip .clone()
+                            return base.to_string();
+                        }
+                    }
+                    s.to_string()
+                };
+                
+                let mut l_str = strip_clone_if_copy(&left_raw, left_type.as_ref());
+                let mut r_str = strip_clone_if_copy(&right_raw, right_type.as_ref());
 
                 // If left is len() and right is u32/u64 or a literal that looks like u32, convert right to usize
                 if left_is_len {
@@ -493,71 +530,374 @@ impl Expr {
 
                 // Apply normal type conversions
                 // IMPORTANT: Special cases must come BEFORE the general case to ensure they match first
-                let (left_str, right_str) = match (&left_type, &right_type, &dominant_type) {
+                // CRITICAL: Integer-float mixing must ALWAYS cast for determinism - check this FIRST
+                // Check for integer-float mixing by examining both types AND generated code strings
+                // This ensures we catch cases even if type inference is incomplete
+                // RECURSIVE: Also check for loop variable patterns (__t_*) in code strings as they are always i32
+                let is_left_int_by_type = matches!(&left_type, Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))));
+                let is_right_int_by_type = matches!(&right_type, Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))));
+                // Check if left/right are loop variables (always i32) by checking code strings
+                // Loop variables have pattern __t_* and are always integers
+                let is_left_loop_var = left_raw.starts_with("__t_") && !left_raw.contains("f32") && !left_raw.contains("f64");
+                let is_right_loop_var = right_raw.starts_with("__t_") && !right_raw.contains("f32") && !right_raw.contains("f64");
+                // Also check if it's a simple identifier that looks like an integer (not containing f32/f64)
+                let is_left_int_like = is_left_loop_var || (is_left_int_by_type && !left_raw.contains("f32") && !left_raw.contains("f64") && !left_raw.contains(" as f"));
+                let is_right_int_like = is_right_loop_var || (is_right_int_by_type && !right_raw.contains("f32") && !right_raw.contains("f64") && !right_raw.contains(" as f"));
+                // Use the more aggressive check: type OR pattern-based detection
+                let is_left_int = is_left_int_by_type || is_left_loop_var;
+                let is_right_int = is_right_int_by_type || is_right_loop_var;
+                let is_left_float = matches!(&left_type, Some(Type::Number(NumberKind::Float(_))));
+                let is_right_float = matches!(&right_type, Some(Type::Number(NumberKind::Float(_))));
+                
+                // Check original expressions for float literals (e.g., "100f32", "5.0f32")
+                let right_is_float_literal_expr = matches!(right.as_ref(), Expr::Literal(Literal::Number(n)) if n.contains("f32") || n.contains("f64"));
+                let left_is_float_literal_expr = matches!(left.as_ref(), Expr::Literal(Literal::Number(n)) if n.contains("f32") || n.contains("f64"));
+                
+                // Also check generated code strings as fallback (in case literal was already processed)
+                let right_is_float_literal = right_is_float_literal_expr || right_raw.contains("f32") || right_raw.contains("f64");
+                let left_is_float_literal = left_is_float_literal_expr || left_raw.contains("f32") || left_raw.contains("f64");
+                
+                // Determine float width from types or literals
+                let float_width = if is_right_float {
+                    if let Some(Type::Number(NumberKind::Float(w))) = right_type { Some(w) } else { Some(32) }
+                } else if is_left_float {
+                    if let Some(Type::Number(NumberKind::Float(w))) = left_type { Some(w) } else { Some(32) }
+                } else if right_is_float_literal {
+                    Some(if right_raw.contains("f64") { 64 } else { 32 })
+                } else if left_is_float_literal {
+                    Some(if left_raw.contains("f64") { 64 } else { 32 })
+                } else {
+                    None
+                };
+                
+                // CRITICAL: Check for string concatenation FIRST and handle it immediately
+                // String concatenation uses + operator - we need to convert numbers to strings
+                // Check both types and raw code strings (for string literals and format! calls)
+                let is_string_concat = matches!(op, Op::Add) 
+                    && (left_type == Some(Type::String) || right_type == Some(Type::String)
+                        || left_raw.starts_with('"') || right_raw.starts_with('"')
+                        || left_raw.contains("String::from") || right_raw.contains("String::from")
+                        || left_raw.contains("format!") || right_raw.contains("format!"));
+                
+                // If this is string concatenation, handle it immediately and return
+                // This prevents any numeric type conversions from interfering
+                if is_string_concat {
+                    // For string concatenation, format! will handle Display for numbers
+                    // No need to cast integers to floats - format! handles all Display types
+                    return format!("format!(\"{{}}{{}}\", {}, {})", l_str, r_str);
+                }
+                
+                // CRITICAL: If we detect integer * float mixing, ALWAYS cast the integer to the float type
+                // This must happen BEFORE any other type conversion logic
+                let (left_str, right_str) = if is_left_int && (is_right_float || right_is_float_literal) {
+                    // Integer * Float -> cast integer to float
+                    let float_w = float_width.unwrap_or(32);
+                    let l_str_clean = if l_str.ends_with(".clone()") {
+                        &l_str[..l_str.len() - 7]
+                    } else {
+                        &l_str
+                    };
+                    let cast_type = if float_w == 64 { "f64" } else { "f32" };
+                    (format!("({} as {})", l_str_clean, cast_type), r_str)
+                } else if is_right_int && (is_left_float || left_is_float_literal) {
+                    // Float * Integer -> cast integer to float
+                    let float_w = float_width.unwrap_or(32);
+                    let r_str_clean = if r_str.ends_with(".clone()") {
+                        &r_str[..r_str.len() - 7]
+                    } else {
+                        &r_str
+                    };
+                    let cast_type = if float_w == 64 { "f64" } else { "f32" };
+                    (l_str, format!("({} as {})", r_str_clean, cast_type))
+                } else if let Some(Type::Number(NumberKind::Float(32))) = dominant_type {
+                    // Expected type is f32 - ensure integers are cast to f32 (use aggressive detection)
+                    let l_str_final = if is_left_int || is_left_int_like {
+                        let l_str_clean = if l_str.ends_with(".clone()") {
+                            &l_str[..l_str.len() - 7]
+                        } else {
+                            &l_str
+                        };
+                        format!("({} as f32)", l_str_clean)
+                    } else {
+                        l_str.clone()
+                    };
+                    let r_str_final = if is_right_int || is_right_int_like {
+                        let r_str_clean = if r_str.ends_with(".clone()") {
+                            &r_str[..r_str.len() - 7]
+                        } else {
+                            &r_str
+                        };
+                        format!("({} as f32)", r_str_clean)
+                    } else {
+                        r_str.clone()
+                    };
+                    (l_str_final, r_str_final)
+                } else if let Some(Type::Number(NumberKind::Float(64))) = dominant_type {
+                    // Expected type is f64 - ensure integers are cast to f64 (use aggressive detection)
+                    let l_str_final = if is_left_int || is_left_int_like {
+                        let l_str_clean = if l_str.ends_with(".clone()") {
+                            &l_str[..l_str.len() - 7]
+                        } else {
+                            &l_str
+                        };
+                        format!("({} as f64)", l_str_clean)
+                    } else {
+                        l_str.clone()
+                    };
+                    let r_str_final = if is_right_int || is_right_int_like {
+                        let r_str_clean = if r_str.ends_with(".clone()") {
+                            &r_str[..r_str.len() - 7]
+                        } else {
+                            &r_str
+                        };
+                        format!("({} as f64)", r_str_clean)
+                    } else {
+                        r_str.clone()
+                    };
+                    (l_str_final, r_str_final)
+                } else if (is_left_int || is_left_int_like) && (is_right_float || right_is_float_literal) {
+                    // Final catch-all: Integer * Float -> cast integer to float (even if dominant_type isn't float)
+                    let float_w = float_width.unwrap_or(32);
+                    let l_str_clean = if l_str.ends_with(".clone()") {
+                        &l_str[..l_str.len() - 7]
+                    } else {
+                        &l_str
+                    };
+                    let cast_type = if float_w == 64 { "f64" } else { "f32" };
+                    (format!("({} as {})", l_str_clean, cast_type), r_str)
+                } else if (is_right_int || is_right_int_like) && (is_left_float || left_is_float_literal) {
+                    // Final catch-all: Float * Integer -> cast integer to float (even if dominant_type isn't float)
+                    let float_w = float_width.unwrap_or(32);
+                    let r_str_clean = if r_str.ends_with(".clone()") {
+                        &r_str[..r_str.len() - 7]
+                    } else {
+                        &r_str
+                    };
+                    let cast_type = if float_w == 64 { "f64" } else { "f32" };
+                    (l_str, format!("({} as {})", r_str_clean, cast_type))
+                } else {
+                    // Normal type conversion logic
+                    // Also check patterns as fallback for cases where type inference might have failed
+                    match (&left_type, &right_type) {
                         // Special case: if left is float and right is integer (explicit cast for determinism)
-                        (Some(Type::Number(NumberKind::Float(32))), Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), _) => {
+                        // Also check patterns: loop variables (__t_*) are always integers
+                        (Some(Type::Number(NumberKind::Float(32))), _) if is_right_int || is_right_loop_var => {
                             // eprintln!("[BINARY_OP] MATCH: Float32 * Integer -> casting right to f32");
-                            (l_str, format!("({} as f32)", r_str))
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let r_str_clean = if r_str.ends_with(".clone()") {
+                                &r_str[..r_str.len() - 7]
+                            } else {
+                                &r_str
+                            };
+                            (l_str, format!("({} as f32)", r_str_clean))
                         }
-                        (Some(Type::Number(NumberKind::Float(64))), Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), _) => {
+                        (Some(Type::Number(NumberKind::Float(64))), _) if is_right_int || is_right_loop_var => {
                             // eprintln!("[BINARY_OP] MATCH: Float64 * Integer -> casting right to f64");
-                            (l_str, format!("({} as f64)", r_str))
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let r_str_clean = if r_str.ends_with(".clone()") {
+                                &r_str[..r_str.len() - 7]
+                            } else {
+                                &r_str
+                            };
+                            (l_str, format!("({} as f64)", r_str_clean))
                         }
-                        // Special case: if left is integer and right is float (reverse case)
-                        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Some(Type::Number(NumberKind::Float(32))), _) => {
+                        // Special case: if left is integer and right is float (reverse case) - MOST COMMON CASE
+                        // Also check patterns: loop variables (__t_*) are always integers
+                        (_, Some(Type::Number(NumberKind::Float(32)))) if is_left_int || is_left_loop_var => {
                             // eprintln!("[BINARY_OP] MATCH: Integer * Float32 -> casting left to f32");
-                            (format!("({} as f32)", l_str), r_str)
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let l_str_clean = if l_str.ends_with(".clone()") {
+                                &l_str[..l_str.len() - 7]
+                            } else {
+                                &l_str
+                            };
+                            (format!("({} as f32)", l_str_clean), r_str)
                         }
-                        (Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))), Some(Type::Number(NumberKind::Float(64))), _) => {
+                        (_, Some(Type::Number(NumberKind::Float(64)))) if is_left_int || is_left_loop_var => {
                             // eprintln!("[BINARY_OP] MATCH: Integer * Float64 -> casting left to f64");
-                            (format!("({} as f64)", l_str), r_str)
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let l_str_clean = if l_str.ends_with(".clone()") {
+                                &l_str[..l_str.len() - 7]
+                            } else {
+                                &l_str
+                            };
+                            (format!("({} as f64)", l_str_clean), r_str)
                         }
+                        // Fallback: check for integer-float mixing by pattern even if types don't match
+                        // BUT: Skip for string concatenation
+                        _ if !is_string_concat && (is_left_int || is_left_loop_var) && (is_right_float || right_is_float_literal) => {
+                            // Integer * Float -> cast integer to float
+                            let float_w = float_width.unwrap_or(32);
+                            let l_str_clean = if l_str.ends_with(".clone()") {
+                                &l_str[..l_str.len() - 7]
+                            } else {
+                                &l_str
+                            };
+                            let cast_type = if float_w == 64 { "f64" } else { "f32" };
+                            (format!("({} as {})", l_str_clean, cast_type), r_str)
+                        }
+                        _ if !is_string_concat && (is_right_int || is_right_loop_var) && (is_left_float || left_is_float_literal) => {
+                            // Float * Integer -> cast integer to float
+                            let float_w = float_width.unwrap_or(32);
+                            let r_str_clean = if r_str.ends_with(".clone()") {
+                                &r_str[..r_str.len() - 7]
+                            } else {
+                                &r_str
+                            };
+                            let cast_type = if float_w == 64 { "f64" } else { "f32" };
+                            (l_str, format!("({} as {})", r_str_clean, cast_type))
+                        }
+                        // Fall through to general case if not integer-float mix
+                        _ => {
+                            // Use the original match with dominant_type for other cases
+                            match (&left_type, &right_type, &dominant_type) {
                         // General case: use implicit conversion logic
                         (Some(l), Some(r), Some(dom)) => {
                             // eprintln!("[BINARY_OP] MATCH: General case - l={:?}, r={:?}, dom={:?}", l, r, dom);
-                            let l_cast = if l.can_implicitly_convert_to(dom) && l != dom {
-                                let casted = script.generate_implicit_cast_for_expr(&l_str, l, dom);
-                                // eprintln!("[BINARY_OP] Casting left: {} -> {}", l_str, casted);
-                                casted
-                            } else {
-                                // eprintln!("[BINARY_OP] No cast needed for left: {} (type: {:?})", l_str, l);
-                                l_str
+                            // Special handling: if mixing integer and float, always cast to float for determinism
+                            let l_cast = match (l, r) {
+                                (Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_)), Type::Number(NumberKind::Float(32))) => {
+                                    // Integer * Float32 -> cast integer to f32
+                                    let l_str_clean = if l_str.ends_with(".clone()") {
+                                        &l_str[..l_str.len() - 7]
+                                    } else {
+                                        &l_str
+                                    };
+                                    format!("({} as f32)", l_str_clean)
+                                }
+                                (Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_)), Type::Number(NumberKind::Float(64))) => {
+                                    // Integer * Float64 -> cast integer to f64
+                                    let l_str_clean = if l_str.ends_with(".clone()") {
+                                        &l_str[..l_str.len() - 7]
+                                    } else {
+                                        &l_str
+                                    };
+                                    format!("({} as f64)", l_str_clean)
+                                }
+                                _ => {
+                                    // Normal case: use implicit conversion
+                                    if l.can_implicitly_convert_to(dom) && l != dom {
+                                        // Strip .clone() before casting (casts handle conversion, Copy types don't need cloning)
+                                        let l_str_clean = if l_str.ends_with(".clone()") {
+                                            &l_str[..l_str.len() - 7]
+                                        } else {
+                                            &l_str
+                                        };
+                                        script.generate_implicit_cast_for_expr(l_str_clean, l, dom)
+                                    } else {
+                                        l_str
+                                    }
+                                }
                             };
-                            let r_cast = if r.can_implicitly_convert_to(dom) && r != dom {
-                                let casted = script.generate_implicit_cast_for_expr(&r_str, r, dom);
-                                // eprintln!("[BINARY_OP] Casting right: {} -> {}", r_str, casted);
-                                casted
-                            } else {
-                                // eprintln!("[BINARY_OP] No cast needed for right: {} (type: {:?})", r_str, r);
-                                r_str
+                            let r_cast = match (l, r) {
+                                (Type::Number(NumberKind::Float(32)), Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))) => {
+                                    // Float32 * Integer -> cast integer to f32
+                                    let r_str_clean = if r_str.ends_with(".clone()") {
+                                        &r_str[..r_str.len() - 7]
+                                    } else {
+                                        &r_str
+                                    };
+                                    format!("({} as f32)", r_str_clean)
+                                }
+                                (Type::Number(NumberKind::Float(64)), Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))) => {
+                                    // Float64 * Integer -> cast integer to f64
+                                    let r_str_clean = if r_str.ends_with(".clone()") {
+                                        &r_str[..r_str.len() - 7]
+                                    } else {
+                                        &r_str
+                                    };
+                                    format!("({} as f64)", r_str_clean)
+                                }
+                                _ => {
+                                    // Normal case: use implicit conversion
+                                    if r.can_implicitly_convert_to(dom) && r != dom {
+                                        // Strip .clone() before casting (casts handle conversion, Copy types don't need cloning)
+                                        let r_str_clean = if r_str.ends_with(".clone()") {
+                                            &r_str[..r_str.len() - 7]
+                                        } else {
+                                            &r_str
+                                        };
+                                        script.generate_implicit_cast_for_expr(r_str_clean, r, dom)
+                                    } else {
+                                        r_str
+                                    }
+                                }
                             };
                             (l_cast, r_cast)
                         }
                         // Fallback: if left type is unknown but right is a float, cast left to float
                         (None, Some(Type::Number(NumberKind::Float(32))), _) => {
-                            (format!("({} as f32)", l_str), r_str)
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let l_str_clean = if l_str.ends_with(".clone()") {
+                                &l_str[..l_str.len() - 7]
+                            } else {
+                                &l_str
+                            };
+                            (format!("({} as f32)", l_str_clean), r_str)
                         }
                         (None, Some(Type::Number(NumberKind::Float(64))), _) => {
-                            (format!("({} as f64)", l_str), r_str)
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let l_str_clean = if l_str.ends_with(".clone()") {
+                                &l_str[..l_str.len() - 7]
+                            } else {
+                                &l_str
+                            };
+                            (format!("({} as f64)", l_str_clean), r_str)
                         }
                         // Fallback: if right type is unknown but left is a float, cast right to float
                         (Some(Type::Number(NumberKind::Float(32))), None, _) => {
-                            (l_str, format!("({} as f32)", r_str))
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let r_str_clean = if r_str.ends_with(".clone()") {
+                                &r_str[..r_str.len() - 7]
+                            } else {
+                                &r_str
+                            };
+                            (l_str, format!("({} as f32)", r_str_clean))
                         }
                         (Some(Type::Number(NumberKind::Float(64))), None, _) => {
-                            (l_str, format!("({} as f64)", r_str))
+                            // Strip .clone() if present before applying cast (Copy types don't need cloning)
+                            let r_str_clean = if r_str.ends_with(".clone()") {
+                                &r_str[..r_str.len() - 7]
+                            } else {
+                                &r_str
+                            };
+                            (l_str, format!("({} as f64)", r_str_clean))
                         }
-                        _ => {
-                            // eprintln!("[BINARY_OP] MATCH: Fallback case - no casting");
-                            (l_str, r_str)
+                                _ => {
+                                    // eprintln!("[BINARY_OP] MATCH: Fallback case - no casting");
+                                    (l_str, r_str)
+                                }
+                            }
                         }
+                    }
                 };
                 
                 // eprintln!("[BINARY_OP] After casting: left_str={}, right_str={}", left_str, right_str);
                 
                 // Apply cloning if needed for non-Copy types (BigInt, Decimal, String, etc.)
-                let left_final = Expr::clone_if_needed(left_str.clone(), left, script, current_func);
-                let right_final = Expr::clone_if_needed(right_str.clone(), right, script, current_func);
+                // BUT: Don't clone if we've already applied a cast (cast expressions are Copy)
+                // Also don't clone if the type is Copy
+                // IMPORTANT: Never clone simple identifiers (variables like __t_i, __t_delta) as they're always Copy
+                let is_simple_identifier = |s: &str| -> bool {
+                    !s.contains('(') && !s.contains('.') && !s.contains('[') && !s.contains(' ') && !s.contains('{') && !s.contains(" as ")
+                };
+                
+                let left_final = if left_str.contains(" as ") 
+                    || left_type.as_ref().map_or(false, |t| t.is_copy_type())
+                    || is_simple_identifier(&left_str) {
+                    // Already casted, Copy type, or simple identifier - no clone needed
+                    left_str
+                } else {
+                    Expr::clone_if_needed(left_str.clone(), left, script, current_func)
+                };
+                let right_final = if right_str.contains(" as ") 
+                    || right_type.as_ref().map_or(false, |t| t.is_copy_type())
+                    || is_simple_identifier(&right_str) {
+                    // Already casted, Copy type, or simple identifier - no clone needed
+                    right_str
+                } else {
+                    Expr::clone_if_needed(right_str.clone(), right, script, current_func)
+                };
             
                 // if left_final != left_str {
                 //     eprintln!("[BINARY_OP] CLONE ADDED to left: {} -> {}", left_str, left_final);
@@ -568,9 +908,14 @@ impl Expr {
                 
                 // eprintln!("[BINARY_OP] FINAL: left_final={}, right_final={}", left_final, right_final);
 
+                // Fallback string concatenation check (should rarely be needed since we handle it early)
+                // This catches cases where type inference might have failed earlier
                 if matches!(op, Op::Add)
-                    && (left_type == Some(Type::String) || right_type == Some(Type::String))
+                    && (left_type == Some(Type::String) || right_type == Some(Type::String)
+                        || left_final.contains("format!") || right_final.contains("format!")
+                        || left_final.starts_with('"') || right_final.starts_with('"'))
                 {
+                    // format! handles Display for all types including numbers
                     return format!("format!(\"{{}}{{}}\", {}, {})", left_final, right_final);
                 }
 
@@ -599,7 +944,28 @@ impl Expr {
                     }
                 }
 
-                format!("({} {} {})", left_final, op.to_rust(), right_final)
+                // Final cast: if expected_type is a float but both operands are integers,
+                // cast the entire result to ensure determinism (e.g., i32 * i32 -> f32 when expected is f32)
+                let result_expr = format!("({} {} {})", left_final, op.to_rust(), right_final);
+                if let Some(Type::Number(NumberKind::Float(32))) = dominant_type {
+                    // Check if both operands are integers
+                    let both_integers = matches!(&left_type, Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))))
+                        && matches!(&right_type, Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))));
+                    if both_integers {
+                        // Cast the entire result to f32 for determinism
+                        return format!("({} as f32)", result_expr);
+                    }
+                } else if let Some(Type::Number(NumberKind::Float(64))) = dominant_type {
+                    // Check if both operands are integers
+                    let both_integers = matches!(&left_type, Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))))
+                        && matches!(&right_type, Some(Type::Number(NumberKind::Signed(_) | NumberKind::Unsigned(_))));
+                    if both_integers {
+                        // Cast the entire result to f64 for determinism
+                        return format!("({} as f64)", result_expr);
+                    }
+                }
+
+                result_expr
             }
             Expr::MemberAccess(base, field) => {
                 // Special case: chained API calls like api.get_parent(...).get_type()
@@ -752,8 +1118,51 @@ impl Expr {
                         // Extract mutable API calls to temporary variables to avoid borrow checker issues
                         let (temp_decl, actual_node_id) = extract_mutable_api_call(&node_id);
                         
-                        // Ensure node_id has self. prefix if it's a script variable (not self.id or api.get_parent)
-                        let node_id_with_self = if !node_id.starts_with("self.") && !node_id.starts_with("api.") {
+                        // Helper function to find a variable in nested blocks (if, for, etc.)
+                        fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
+                            use crate::scripting::ast::Stmt;
+                            for stmt in body {
+                                match stmt {
+                                    Stmt::VariableDecl(var) if var.name == name => {
+                                        return Some(var);
+                                    }
+                                    Stmt::If { then_body, else_body, .. } => {
+                                        if let Some(v) = find_variable_in_body(name, then_body) {
+                                            return Some(v);
+                                        }
+                                        if let Some(else_body) = else_body {
+                                            if let Some(v) = find_variable_in_body(name, else_body) {
+                                                return Some(v);
+                                            }
+                                        }
+                                    }
+                                    Stmt::For { body: for_body, .. } | Stmt::ForTraditional { body: for_body, .. } => {
+                                        if let Some(v) = find_variable_in_body(name, for_body) {
+                                            return Some(v);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            None
+                        }
+                        
+                        // Check if node_id is a local variable (check original name if it ends with _id)
+                        let is_local_node_id = if node_id.ends_with("_id") {
+                            let original_name = &node_id[..node_id.len() - 3];
+                            current_func
+                                .map(|f| {
+                                    f.locals.iter().any(|v| v.name == original_name)
+                                        || f.params.iter().any(|p| p.name == original_name)
+                                        || find_variable_in_body(original_name, &f.body).is_some()
+                                })
+                                .unwrap_or(false)
+                        } else {
+                            false
+                        };
+                        
+                        // Ensure node_id has self. prefix if it's a script variable (not self.id, api.get_parent, or a local variable)
+                        let node_id_with_self = if !node_id.starts_with("self.") && !node_id.starts_with("api.") && !is_local_node_id {
                             format!("self.{}", node_id)
                         } else {
                             node_id.clone()
@@ -2827,6 +3236,14 @@ impl Expr {
                         }
                     }
 
+                    // Uid32 to specific node type (e.g., get_parent() as Sprite2D)
+                    (Some(Type::Uid32), Type::Custom(to_name)) if is_node_type(to_name) => {
+                        // Cast from Uid32 (from get_parent() or other methods) to specific node type
+                        // Casting to a node type just returns the UUID - property access will use read_node/mutate_node
+                        // The inner_code is already a NodeID (Uuid), so just return it as-is
+                        inner_code.clone()
+                    }
+                    
                     // Node to specific node type (e.g., Node as Sprite2D)
                     (Some(Type::Node(_)), Type::Custom(to_name)) if is_node_type(to_name) => {
                         // Cast from base Node to specific node type

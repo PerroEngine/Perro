@@ -128,4 +128,28 @@ impl Node {
             created_timestamp: timestamp,
         }
     }
+    
+    /// Create a new Node with a nil ID (for use when ID will be set later)
+    pub fn new_with_nil_id() -> Self {
+        // Get current Unix timestamp in seconds
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        Self {
+            id: NodeID::nil(),
+            ty: NodeType::Node,
+            name: Cow::Borrowed("Node"),
+
+            script_path: None,
+            script_exp_vars: None,
+            parent: None,
+            children: None,
+            metadata: None,
+
+            is_root_of: None,
+            created_timestamp: timestamp,
+        }
+    }
 }

@@ -346,7 +346,6 @@ impl Renderer3D {
 
             last_frustum_matrix: Mat4::IDENTITY,
         };
-        println!("🟧 3D Renderer initialized");
         result
     }
 
@@ -435,10 +434,6 @@ impl Renderer3D {
                 self.material_slots[free_slot_idx] = Some(material);
                 self.material_uuid_to_slot.insert(id, free_slot_idx);
                 self.materials_need_rebuild = true;
-                println!(
-                    "🟦 Queued new material UUID: {:?}, slot: {},",
-                    id, free_slot_idx
-                );
                 free_slot_idx
             } else {
                 println!(

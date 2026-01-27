@@ -290,20 +290,46 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // Name the main thread
     crate::thread_utils::set_current_thread_name("Main");
     
-    // Set up a basic panic hook IMMEDIATELY to catch any early panics
-    // This will be replaced with a better one later, but at least we'll catch panics
+    // Set up a comprehensive panic hook to capture all crashes
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        eprintln!("❌ PANIC occurred (early hook)!");
+        let mut error_msg = String::new();
+        error_msg.push_str("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        error_msg.push_str("❌ PANIC occurred!\n");
+        
         if let Some(location) = panic_info.location() {
-            eprintln!("   Location: {}:{}:{}", location.file(), location.line(), location.column());
+            error_msg.push_str(&format!("   Location: {}:{}:{}\n", location.file(), location.line(), location.column()));
         }
+        
         if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            eprintln!("   Message: {}", s);
+            error_msg.push_str(&format!("   Message: {}\n", s));
         } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
-            eprintln!("   Message: {}", s);
+            error_msg.push_str(&format!("   Message: {}\n", s));
+        } else {
+            error_msg.push_str("   Message: (no message available)\n");
         }
-        eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        
+        // Try to get backtrace if available
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use std::backtrace::Backtrace;
+            let backtrace = Backtrace::capture();
+            if backtrace.status() == std::backtrace::BacktraceStatus::Captured {
+                error_msg.push_str("\n   Backtrace:\n");
+                let bt_str = format!("{}", backtrace);
+                // Indent each line of the backtrace
+                for line in bt_str.lines() {
+                    error_msg.push_str(&format!("   {}\n", line));
+                }
+            }
+        }
+        
+        error_msg.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        
+        // Print to stderr (visible in debug mode)
+        eprintln!("{}", error_msg);
+        
+        // Also log to file (critical for release mode with windows_subsystem)
+        log_error(&error_msg);
     }));
 
     {
@@ -410,6 +436,7 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // Note: ups_divisor runtime parameter will be checked by the root script in init()
     // and applied via api.set_ups_divisor()
 
+    // The panic hook set up earlier will capture any crashes and log them to errors.log
     run_app(event_loop, app);
 }
 

@@ -1,4 +1,4 @@
-use crate::{nodes::_2d::node_2d::Node2D, nodes::node_registry::NodeType, physics::physics_2d::ColliderShape};
+use crate::{nodes::_2d::node_2d::Node2D, nodes::node_registry::NodeType, structs2d::Shape2D};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -13,7 +13,7 @@ pub struct CollisionShape2D {
 
     /// The shape type and dimensions
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shape: Option<ColliderShape>,
+    pub shape: Option<Shape2D>,
 
     /// Rapier collider handle (runtime only, not serialized)
     #[serde(skip)]
@@ -32,11 +32,11 @@ impl CollisionShape2D {
         }
     }
 
-    pub fn set_shape(&mut self, shape: ColliderShape) {
+    pub fn set_shape(&mut self, shape: Shape2D) {
         self.shape = Some(shape);
     }
 
-    pub fn get_shape(&self) -> Option<ColliderShape> {
+    pub fn get_shape(&self) -> Option<Shape2D> {
         self.shape
     }
 }

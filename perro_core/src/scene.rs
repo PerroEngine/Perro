@@ -12,7 +12,8 @@ use crate::{
     input::joycon::ControllerManager,
     input::manager::InputManager,
     manifest::Project,
-    node_registry::{BaseNode, SceneNode},
+    node_arena::NodeArena,
+    node_registry::{BaseNode, NodeType, SceneNode},
     physics::physics_2d::PhysicsWorld2D,
     script::{CreateFn, SceneAccess, ScriptObject, ScriptProvider},
     transpiler::script_path_to_identifier,
@@ -330,9 +331,24 @@ impl SceneData {
         for node in nodes.values_mut() {
             // Update parent NodeID if it exists
             if let Some(parent) = node.get_parent() {
-                // Extract scene key from parent NodeID (subtract 1 to get original key)
-                let parent_key_opt = if parent.id.as_uid32().as_u32() > 0 {
-                    Some(parent.id.as_uid32().as_u32().wrapping_sub(1))
+                let parent_uid = parent.id.as_uid32().as_u32();
+                
+                // Try to find the parent key in two ways:
+                // 1. Check if parent ID matches a key directly (static scene data format)
+                // 2. Check if parent ID is key+1 (from_nodes format)
+                let parent_key_opt = if parent_uid > 0 {
+                    // First try: parent ID is the key directly (static scene data)
+                    if key_to_node_id.contains_key(&parent_uid) {
+                        Some(parent_uid)
+                    } else {
+                        // Second try: parent ID is key+1 (from_nodes format)
+                        let key_candidate = parent_uid.wrapping_sub(1);
+                        if key_to_node_id.contains_key(&key_candidate) {
+                            Some(key_candidate)
+                        } else {
+                            None
+                        }
+                    }
                 } else {
                     None
                 };
@@ -352,9 +368,24 @@ impl SceneData {
             let children = node.get_children().clone();
             node.clear_children();
             for child_id in children {
-                // Extract scene key from child NodeID (subtract 1 to get original key)
-                let child_key_opt = if child_id.as_uid32().as_u32() > 0 {
-                    Some(child_id.as_uid32().as_u32().wrapping_sub(1))
+                let child_uid = child_id.as_uid32().as_u32();
+                
+                // Try to find the child key in two ways:
+                // 1. Check if child ID matches a key directly (static scene data format)
+                // 2. Check if child ID is key+1 (from_nodes format)
+                let child_key_opt = if child_uid > 0 {
+                    // First try: child ID is the key directly (static scene data)
+                    if key_to_node_id.contains_key(&child_uid) {
+                        Some(child_uid)
+                    } else {
+                        // Second try: child ID is key+1 (from_nodes format)
+                        let key_candidate = child_uid.wrapping_sub(1);
+                        if key_to_node_id.contains_key(&key_candidate) {
+                            Some(key_candidate)
+                        } else {
+                            None
+                        }
+                    }
                 } else {
                     None
                 };
@@ -376,24 +407,33 @@ impl SceneData {
     
     /// Convert SceneData to runtime Scene format
     /// Maps u32 scene keys to new NodeIDs and remaps parent references
-    pub fn to_runtime_nodes(self) -> (FxHashMap<NodeID, SceneNode>, NodeID) {
+    pub fn to_runtime_nodes(self) -> (NodeArena, NodeID) {
         use crate::uid32::NodeID;
         // Create new NodeIDs for runtime
+        // Process root first to ensure it gets ID 1
         let mut old_to_new_id: HashMap<NodeID, NodeID> = HashMap::with_capacity(self.nodes.len());
-        println!("🔍 Building old_to_new_id mapping ({} nodes):", self.nodes.len());
+        
+        // Process root first to ensure it gets the first sequential ID
+        let root_old_node_id = self.key_to_node_id[&self.root_key];
+        let root_new_id = NodeID::new();
+        old_to_new_id.insert(root_old_node_id, root_new_id);
+        
+        // Then process all other nodes
         for &key in self.nodes.keys() {
+            if key == self.root_key {
+                continue; // Already processed
+            }
             let old_node_id = self.key_to_node_id[&key];
             let new_id = NodeID::new();
             old_to_new_id.insert(old_node_id, new_id);
             println!("  Scene key {}: old_node_id={} -> new_id={}", key, old_node_id, new_id);
         }
         
-        let mut runtime_nodes = FxHashMap::default();
+        let mut runtime_nodes = NodeArena::new();
         // OPTIMIZED: Use with_capacity(0) for known-empty map
         let mut parent_children: HashMap<NodeID, Vec<NodeID>> = HashMap::with_capacity(0);
         
         // First pass: create nodes with new IDs and collect parent relationships
-        println!("🔍 First pass: remapping nodes and collecting parent relationships:");
         for (key, mut node) in self.nodes {
             let old_node_id = self.key_to_node_id[&key];
             let new_id = old_to_new_id[&old_node_id];
@@ -405,7 +445,6 @@ impl SceneData {
                 println!("  Node {} (key={}): has parent with id={}", node.get_name(), key, parent.id);
                 if let Some(&new_parent_id) = old_to_new_id.get(&parent.id) {
                     // We'll set parent after we have all node types
-                    println!("    Found parent mapping: {} -> {}", parent.id, new_parent_id);
                     parent_children.entry(new_parent_id).or_default().push(new_id);
                 } else {
                     eprintln!("⚠️ WARNING: Parent ID {} not found in old_to_new_id for node {} (key={}, name={})", 
@@ -421,11 +460,11 @@ impl SceneData {
         
         // Second pass: set parent relationships with proper types
         for (parent_id, child_ids) in parent_children {
-            if let Some(parent_node) = runtime_nodes.get(&parent_id) {
+            if let Some(parent_node) = runtime_nodes.get(parent_id) {
                 let parent_type_enum = parent_node.get_type();
                 
                 for child_id in child_ids {
-                    if let Some(child) = runtime_nodes.get_mut(&child_id) {
+                    if let Some(child) = runtime_nodes.get_mut(child_id) {
                     let parent_type = crate::nodes::node::ParentType::new(parent_id, parent_type_enum);
                     child.set_parent(Some(parent_type));
                     // Debug: verify parent was set
@@ -434,7 +473,7 @@ impl SceneData {
                     }
                 }
                 // Add to parent's children list
-                if let Some(parent) = runtime_nodes.get_mut(&parent_id) {
+                if let Some(parent) = runtime_nodes.get_mut(parent_id) {
                     parent.add_child(child_id);
                 }
             }
@@ -532,7 +571,7 @@ impl SceneData {
 /// Runtime scene, parameterized by a script provider
 /// Now holds a reference to the project via Rc<RefCell<Project>>
 pub struct Scene<P: ScriptProvider> {
-    pub(crate) nodes: FxHashMap<NodeID, SceneNode>,
+    pub(crate) nodes: NodeArena,
     pub(crate) root_id: NodeID,
     pub signals: SignalBus,
     queued_signals: Vec<(u64, SmallVec<[Value; 3]>)>,
@@ -613,7 +652,7 @@ impl<P: ScriptProvider> Scene<P> {
     /// Create a runtime scene from a root node
     pub fn new(root: SceneNode, provider: P, project: Rc<RefCell<Project>>) -> Self {
         let root_id = root.get_id();
-        let mut nodes = FxHashMap::default();
+        let mut nodes = NodeArena::new();
         nodes.insert(root_id, root);
         
         Self {
@@ -719,7 +758,6 @@ impl<P: ScriptProvider> Scene<P> {
     /// OPTIMIZED: Only creates physics world when first needed
     fn get_or_init_physics_2d(&mut self) -> &mut std::cell::RefCell<PhysicsWorld2D> {
         if self.physics_2d.is_none() {
-            println!("🔵 PhysicsWorld2D initialized (lazy) - this should NOT appear for projects without physics!");
             self.physics_2d = Some(std::cell::RefCell::new(PhysicsWorld2D::new()));
         }
         self.physics_2d.as_mut().unwrap()
@@ -756,7 +794,7 @@ impl<P: ScriptProvider> Scene<P> {
                 continue; // Already processed
             }
             
-            if let Some(node) = self.nodes.get(&node_id) {
+            if let Some(node) = self.nodes.get(node_id) {
                 node_id_to_key.insert(node_id, key);
                 key_to_node_id.insert(key, node_id);
                 nodes.insert(key, node.clone());
@@ -875,6 +913,7 @@ impl<P: ScriptProvider> Scene<P> {
         provider: P,
         gfx: &mut crate::rendering::Graphics,
     ) -> anyhow::Result<Self> {
+        // Create game root - it will get ID 1 from NodeID::new()
         let mut root_node = Node::new();
         root_node.name = Cow::Borrowed("Root");
         let root_node = SceneNode::Node(root_node);
@@ -895,7 +934,6 @@ impl<P: ScriptProvider> Scene<P> {
             proj_ref.root_script().map(|s| s.to_string())
         };
 
-        println!("Root script path: {:?}", root_script_opt);
 
         if let Some(root_script_path) = root_script_opt {
             if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
@@ -919,7 +957,7 @@ impl<P: ScriptProvider> Scene<P> {
                     
                     // After script initialization, ensure renderable nodes are marked for rerender
                     // (old system would have called mark_dirty() here)
-                    if let Some(node) = game_scene.nodes.get(&root_id) {
+                    if let Some(node) = game_scene.nodes.get(root_id) {
                         if node.is_renderable() {
                             game_scene.needs_rerender.insert(root_id);
                         }
@@ -933,7 +971,6 @@ impl<P: ScriptProvider> Scene<P> {
         let main_scene_path: String = {
             let proj_ref = game_scene.project.borrow();
             let path = proj_ref.main_scene().to_string();
-            println!("📂 Loading main scene: {}", path);
             path
         };
 
@@ -1018,17 +1055,23 @@ impl<P: ScriptProvider> Scene<P> {
         use crate::uid32::NodeID;
         let mut key_to_new_id: HashMap<u32, NodeID> = HashMap::with_capacity(other.nodes.len() + 1);
     
-        println!("🔍 merge_scene_data: Building ID mapping for {} nodes:", other.nodes.len());
         // Generate new NodeIDs for all nodes
+        // Process root first to ensure it gets the next sequential ID
+        let root_key = other.root_key;
+        let root_old_node_id = other.key_to_node_id()[&root_key];
+        let root_new_id = NodeID::new();
+        old_node_id_to_new_node_id.insert(root_old_node_id, root_new_id);
+        key_to_new_id.insert(root_key, root_new_id);
+        
+        // Then process all other nodes
         for &key in other.nodes.keys() {
+            if key == root_key {
+                continue; // Already processed
+            }
             let old_node_id = other.key_to_node_id()[&key];
             let new_id = NodeID::new();
             old_node_id_to_new_node_id.insert(old_node_id, new_id);
             key_to_new_id.insert(key, new_id);
-            if let Some(node) = other.nodes.get(&key) {
-                println!("  Scene key {}: old_node_id={} -> new_id={} (node: {})", 
-                    key, old_node_id, new_id, node.get_name());
-            }
         }
     
         let id_map_time = id_map_start.elapsed();
@@ -1108,7 +1151,7 @@ impl<P: ScriptProvider> Scene<P> {
                     // Get parent type from other_parent_types (collected earlier) or from already-inserted nodes
                     let parent_type_enum = if let Some(&parent_type) = other_parent_types.get(&parent.id) {
                         parent_type
-                    } else if let Some(parent_node) = self.nodes.get(&mapped_parent_id) {
+                    } else if let Some(parent_node) = self.nodes.get(mapped_parent_id) {
                         parent_node.get_type()
                     } else {
                         // Fallback - shouldn't happen
@@ -1134,12 +1177,8 @@ impl<P: ScriptProvider> Scene<P> {
                 // This is the subscene root with no parent - attach to game's parent_id
                 // But only if we're NOT skipping it (is_root_of case)
                 if skip_root_id.is_none() {
-                    println!(
-                        "🔗 Attaching subscene root {} to game parent {}",
-                        new_id, parent_id
-                    );
                     // Create ParentType with the parent's type
-                    if let Some(parent_node) = self.nodes.get(&parent_id) {
+                    if let Some(parent_node) = self.nodes.get(parent_id) {
                         let parent_type = crate::nodes::node::ParentType::new(parent_id, parent_node.get_type());
                         node.set_parent(Some(parent_type));
                     }
@@ -1176,10 +1215,6 @@ impl<P: ScriptProvider> Scene<P> {
         }
     
         let remap_time = remap_start.elapsed();
-        println!(
-            "⏱ Node remapping: {:.2} ms",
-            remap_time.as_secs_f64() * 1000.0
-        );
     
         // ───────────────────────────────────────────────
         // 3️⃣ INSERT NODES INTO MAIN SCENE
@@ -1195,7 +1230,6 @@ impl<P: ScriptProvider> Scene<P> {
             // Skip root if it has is_root_of (will be replaced by nested scene content)
             if let Some(skip_id) = skip_root_id {
                 if node_id == skip_id {
-                    println!("⏭️ Skipping root node (runtime_id={})", skip_id);
                     continue;
                 }
             }
@@ -1219,14 +1253,14 @@ impl<P: ScriptProvider> Scene<P> {
             inserted_ids.push(node_id);
             
             // Add to needs_rerender set only if this is a renderable node
-            if let Some(node_ref) = self.nodes.get(&node_id) {
+            if let Some(node_ref) = self.nodes.get(node_id) {
                 if node_ref.is_renderable() {
                     self.needs_rerender.insert(node_id);
                 }
             }
     
             // Register node for internal fixed updates if needed
-            if let Some(node_ref) = self.nodes.get(&node_id) {
+            if let Some(node_ref) = self.nodes.get(node_id) {
                 if node_ref.needs_internal_fixed_update() {
                     // Optimize: HashSet insert is O(1) and handles duplicates automatically
                     self.nodes_with_internal_fixed_update.insert(node_id);
@@ -1241,7 +1275,7 @@ impl<P: ScriptProvider> Scene<P> {
     
         // Update the GAME's parent node to include new children
         if let Some(children_of_game_parent) = parent_children.get(&parent_id) {
-            if let Some(game_parent) = self.nodes.get_mut(&parent_id) {
+            if let Some(game_parent) = self.nodes.get_mut(parent_id) {
                 for child_id in children_of_game_parent {
                     if !game_parent.get_children().contains(child_id) {
                         game_parent.add_child(*child_id);
@@ -1256,11 +1290,6 @@ impl<P: ScriptProvider> Scene<P> {
         }
     
         let insert_time = insert_start.elapsed();
-        println!(
-            "⏱ Node insertion: {:.2} ms ({} nodes)",
-            insert_time.as_secs_f64() * 1000.0,
-            inserted_ids.len()
-        );
     
         // ───────────────────────────────────────────────
         // 4️⃣ HANDLE is_root_of SCENE REFERENCES (RECURSIVE)
@@ -1270,7 +1299,7 @@ impl<P: ScriptProvider> Scene<P> {
     
         // Collect nodes with is_root_of from newly inserted nodes
         for id in &inserted_ids {
-            if let Some(node) = self.nodes.get(id) {
+            if let Some(node) = self.nodes.get(*id) {
                 if let Some(scene_path) = Self::get_is_root_of(node) {
                     nodes_with_nested_scenes.push((*id, scene_path));
                 }
@@ -1305,10 +1334,6 @@ impl<P: ScriptProvider> Scene<P> {
         let physics_start = Instant::now();
         self.register_collision_shapes(&inserted_ids);
         let physics_time = physics_start.elapsed();
-        println!(
-            "⏱ Physics registration: {:.2} ms",
-            physics_time.as_secs_f64() * 1000.0
-        );
     
         // ───────────────────────────────────────────────
         // 6️⃣ FUR LOADING (UI FILES)
@@ -1318,7 +1343,7 @@ impl<P: ScriptProvider> Scene<P> {
         let fur_paths: Vec<(NodeID, String)> = inserted_ids
             .iter()
             .filter_map(|id| {
-                self.nodes.get(id).and_then(|node| {
+                self.nodes.get(*id).and_then(|node| {
                     if let SceneNode::UINode(u) = node {
                         u.fur_path.as_ref().map(|path| (*id, path.to_string()))
                     } else {
@@ -1346,7 +1371,7 @@ impl<P: ScriptProvider> Scene<P> {
     
         // Apply FUR results
         for (id, result) in fur_loads {
-            if let Some(node) = self.nodes.get_mut(&id) {
+            if let Some(node) = self.nodes.get_mut(id) {
                 if let SceneNode::UINode(u) = node {
                     match result {
                         Ok(fur_elements) => {
@@ -1374,7 +1399,7 @@ impl<P: ScriptProvider> Scene<P> {
             .iter()
             .filter_map(|id| {
                 self.nodes
-                    .get(id)
+                    .get(*id)
                     .and_then(|n| n.get_script_path().map(|p| (*id, p.to_string())))
             })
             .collect();
@@ -1417,7 +1442,7 @@ impl<P: ScriptProvider> Scene<P> {
                 
                 // After script initialization, ensure renderable nodes are marked for rerender
                 // (old system would have called mark_dirty() here)
-                if let Some(node) = self.nodes.get(&id) {
+                if let Some(node) = self.nodes.get(id) {
                     if node.is_renderable() {
                         self.needs_rerender.insert(id);
                     }
@@ -1431,24 +1456,7 @@ impl<P: ScriptProvider> Scene<P> {
         // ───────────────────────────────────────────────
         // 8️⃣ PERFORMANCE SUMMARY
         // ───────────────────────────────────────────────
-        println!(
-            "📦 Merge complete: {} total nodes (+{} new)",
-            self.nodes.len(),
-            inserted_ids.len()
-        );
-        
-        // Print scene tree for debugging
-        self.print_scene_tree();
     
-        println!(
-            "⏱ Timing: total={:.2}ms | id_map={:.2}ms | remap={:.2}ms | insert={:.2}ms | fur={:.2}ms | scripts={:.2}ms",
-            total_time.as_secs_f64() * 1000.0,
-            id_map_time.as_secs_f64() * 1000.0,
-            remap_time.as_secs_f64() * 1000.0,
-            insert_time.as_secs_f64() * 1000.0,
-            fur_time.as_secs_f64() * 1000.0,
-            script_time.as_secs_f64() * 1000.0,
-        );
     
         // Print scene tree for debugging
     
@@ -1464,10 +1472,6 @@ impl<P: ScriptProvider> Scene<P> {
         gfx: &mut crate::rendering::Graphics,
     ) -> anyhow::Result<()> {
         use crate::uid32::NodeID;
-        println!(
-            "🔄 merge_scene_data_with_root_replacement: replacement_root={}",
-            replacement_root_id
-        );
     
         // Build mapping from old NodeID (from key_to_node_id) to new runtime NodeID
         let mut old_node_id_to_new_id: HashMap<NodeID, NodeID> = HashMap::with_capacity(other.nodes.len());
@@ -1489,10 +1493,6 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
     
-        println!(
-            "   ✅ Mapped nested scene root key {} → {}",
-            subscene_root_key, replacement_root_id
-        );
     
         // Build parent-children relationships
         // OPTIMIZED: Use with_capacity(0) for known-empty map
@@ -1538,7 +1538,7 @@ impl<P: ScriptProvider> Scene<P> {
                     // Get parent type from other_parent_types (collected earlier) or from already-inserted nodes
                     let parent_type_enum = if let Some(&parent_type) = other_parent_types.get(&parent.id) {
                         parent_type
-                    } else if let Some(parent_node) = self.nodes.get(&mapped_parent_id) {
+                    } else if let Some(parent_node) = self.nodes.get(mapped_parent_id) {
                         parent_node.get_type()
                     } else {
                         // Fallback - shouldn't happen
@@ -1552,7 +1552,7 @@ impl<P: ScriptProvider> Scene<P> {
                         .push(new_id);
                 } else {
                     // Parent not in subscene - check if it exists in main scene
-                    if let Some(parent_node) = self.nodes.get(&parent_old_node_id) {
+                    if let Some(parent_node) = self.nodes.get(parent_old_node_id) {
                         // Parent exists in main scene - use its runtime ID
                         let parent_runtime_id = parent_node.get_id();
                         let parent_type = crate::nodes::node::ParentType::new(parent_runtime_id, parent_node.get_type());
@@ -1575,7 +1575,7 @@ impl<P: ScriptProvider> Scene<P> {
         for (parent_new_id, children) in &parent_children {
             // If parent is the replacement root, update the existing node in main scene
             if *parent_new_id == replacement_root_id {
-                if let Some(existing_node) = self.nodes.get_mut(&replacement_root_id) {
+                if let Some(existing_node) = self.nodes.get_mut(replacement_root_id) {
                     for child_id in children {
                         if !existing_node.get_children().contains(child_id) {
                             existing_node.add_child(*child_id);
@@ -1624,14 +1624,14 @@ impl<P: ScriptProvider> Scene<P> {
             inserted_ids.push(node_id);
             
             // Add to needs_rerender set only if this is a renderable node
-            if let Some(node_ref) = self.nodes.get(&node_id) {
+            if let Some(node_ref) = self.nodes.get(node_id) {
                 if node_ref.is_renderable() {
                     self.needs_rerender.insert(node_id);
                 }
             }
     
             // Register for internal fixed updates if needed
-            if let Some(node_ref) = self.nodes.get(&node_id) {
+            if let Some(node_ref) = self.nodes.get(node_id) {
                 if node_ref.needs_internal_fixed_update() {
                     // Optimize: HashSet insert is O(1) and handles duplicates automatically
                     self.nodes_with_internal_fixed_update.insert(node_id);
@@ -1650,7 +1650,7 @@ impl<P: ScriptProvider> Scene<P> {
         // Load FUR files for UI nodes
         // Optimize: use as_ref() instead of clone() for Option<String>
         for id in &inserted_ids {
-            if let Some(node) = self.nodes.get_mut(id) {
+            if let Some(node) = self.nodes.get_mut(*id) {
                 if let SceneNode::UINode(ui_node) = node {
                     if let Some(fur_path) = ui_node.fur_path.as_ref() {
                         if let Ok(fur_elements) = self.provider.load_fur_data(fur_path) {
@@ -1670,7 +1670,7 @@ impl<P: ScriptProvider> Scene<P> {
             .iter()
             .filter_map(|id| {
                 self.nodes
-                    .get(id)
+                    .get(*id)
                     .and_then(|n| n.get_script_path().map(|p: &str| (*id, p.to_string())))
             })
             .collect();
@@ -1711,7 +1711,7 @@ impl<P: ScriptProvider> Scene<P> {
                         
                         // After script initialization, ensure renderable nodes are marked for rerender
                         // (old system would have called mark_dirty() here)
-                        if let Some(node) = self.nodes.get(&id) {
+                        if let Some(node) = self.nodes.get(id) {
                             if node.is_renderable() {
                                 self.needs_rerender.insert(id);
                             }
@@ -1727,7 +1727,7 @@ impl<P: ScriptProvider> Scene<P> {
         let mut nodes_with_nested_scenes: Vec<(NodeID, String)> = Vec::new();
     
         for id in &inserted_ids {
-            if let Some(node) = self.nodes.get(id) {
+            if let Some(node) = self.nodes.get(*id) {
                 if let Some(scene_path) = Self::get_is_root_of(node) {
                     nodes_with_nested_scenes.push((*id, scene_path));
                 }
@@ -1747,24 +1747,23 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
     
-        // Print scene tree for debugging
-    
         Ok(())
     }
     
 
     pub fn print_scene_tree(&self) {
-        println!("\n🌳 Scene Tree:");
-        println!("═══════════════════════════════════════════════════════════");
+        println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("📊 SCENE TREE DEBUG:");
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         
-        // Find all root nodes (nodes with no parent)
+        // Find root nodes (nodes with no parent)
         let root_nodes: Vec<NodeID> = self.nodes.iter()
             .filter(|(_, node)| node.get_parent().is_none())
-            .map(|(id, _)| *id)
+            .map(|(id, _)| id)
             .collect();
         
         if root_nodes.is_empty() {
-            println!("⚠️ No root nodes found!");
+            println!("⚠️  No root nodes found!");
             return;
         }
         
@@ -1773,43 +1772,44 @@ impl<P: ScriptProvider> Scene<P> {
             self.print_node_recursive(*root_id, 0, is_last);
         }
         
-        println!("═══════════════════════════════════════════════════════════");
-        println!("Total nodes: {}\n", self.nodes.len());
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
     }
 
     #[allow(dead_code)]
     fn print_node_recursive(&self, node_id: NodeID, depth: usize, is_last: bool) {
-        if let Some(node) = self.nodes.get(&node_id) {
-            // Build the tree characters
-            let prefix = if depth == 0 {
-                String::new()
+        // Build the tree characters (needed in both branches)
+        let prefix = if depth == 0 {
+            String::new()
+        } else {
+            let mut p = String::new();
+            for _ in 0..(depth - 1) {
+                p.push_str("│   ");
+            }
+            if is_last {
+                p.push_str("└── ");
             } else {
-                let mut p = String::new();
-                for _ in 0..(depth - 1) {
-                    p.push_str("│   ");
-                }
-                if is_last {
-                    p.push_str("└── ");
-                } else {
-                    p.push_str("├── ");
-                }
-                p
-            };
-            
+                p.push_str("├── ");
+            }
+            p
+        };
+        
+        if let Some(node) = self.nodes.get(node_id) {
             // Get node info
             let name = node.get_name();
+            let node_type = node.get_type();
             let script_path = node.get_script_path();
             let parent_info = node.get_parent()
-                .map(|p| format!("parent={}", p.id))
+                .map(|p| format!("parent={} ({:?})", p.id, p.node_type))
                 .unwrap_or_else(|| "ROOT".to_string());
             let has_script = self.scripts.contains_key(&node_id);
             let script_status = if has_script { "✓SCRIPT" } else { "✗NO_SCRIPT" };
             
             // Print this node with detailed debug info
-            println!("{}{} [id={}] [{}] [{}] {}",
+            println!("{}{} [id={}] [type={:?}] [{}] [{}] {}",
                 prefix, 
                 name,
                 node_id,
+                node_type,
                 parent_info,
                 script_status,
                 script_path.map(|p| format!("script={}", p)).unwrap_or_default(),
@@ -1824,7 +1824,7 @@ impl<P: ScriptProvider> Scene<P> {
                 self.print_node_recursive(*child_id, depth + 1, is_last_child);
             }
         } else {
-            println!("{}⚠️ Missing node: {}", "  ".repeat(depth), node_id);
+            println!("{}⚠️  Node {} not found in scene!", prefix, node_id);
         }
     }
 
@@ -1855,7 +1855,7 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Walk up the tree checking each ancestor
         while let Some(id) = current_id {
-            if let Some(ancestor) = self.nodes.get(&id) {
+            if let Some(ancestor) = self.nodes.get(id) {
                 if ancestor.get_name() == name {
                     return true;
                 }
@@ -2153,10 +2153,6 @@ impl<P: ScriptProvider> Scene<P> {
     }
 
     fn connect_signal(&mut self, signal: u64, target_id: NodeID, function_id: u64) {
-        println!(
-            "🔗 Registering connection: signal '{}' → script {} → fn {}()",
-            signal, target_id, function_id
-        );
 
         // Top-level map: signal_id → inner map (script → list of fn ids)
         let script_map = self.signals.connections.entry(signal).or_default();
@@ -2169,12 +2165,6 @@ impl<P: ScriptProvider> Scene<P> {
             funcs.push(function_id);
         }
 
-        println!(
-            "   Total listeners for signal '{}': {} script(s), {} total function(s)",
-            signal,
-            script_map.len(),
-            script_map.values().map(|v| v.len()).sum::<usize>()
-        );
     }
 
     /// Emit signal deferred - queue for processing at end of frame
@@ -2282,7 +2272,7 @@ impl<P: ScriptProvider> Scene<P> {
         // Add to needs_rerender set since this is a newly created node
         // (mark_transform_dirty_recursive will add it if not already in set, but we know it's new)
         // Also ensure UINode is marked if FUR file was just loaded (elements are now ready to render)
-        if let Some(node) = self.nodes.get(&id) {
+        if let Some(node) = self.nodes.get(id) {
             if node.is_renderable() {
                 self.needs_rerender.insert(id);
             }
@@ -2290,7 +2280,7 @@ impl<P: ScriptProvider> Scene<P> {
 
 
         // Register node for internal fixed updates if needed
-        if let Some(node_ref) = self.nodes.get(&id) {
+        if let Some(node_ref) = self.nodes.get(id) {
             if node_ref.needs_internal_fixed_update() {
                 // Optimize: HashSet insert is O(1) and handles duplicates automatically
                 self.nodes_with_internal_fixed_update.insert(id);
@@ -2298,7 +2288,7 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         // node is moved already, so get it back immutably from scene
-        let script_path_opt = self.nodes.get(&id)
+        let script_path_opt = self.nodes.get(id)
             .and_then(|node_ref| node_ref.get_script_path().map(|s| s.to_string()));
         
         if let Some(script_path) = script_path_opt {
@@ -2343,20 +2333,19 @@ impl<P: ScriptProvider> Scene<P> {
             
             // After script initialization, ensure renderable nodes are marked for rerender
             // (old system would have called mark_dirty() here)
-            if let Some(node) = self.nodes.get(&id) {
+            if let Some(node) = self.nodes.get(id) {
                 if node.is_renderable() {
                     self.needs_rerender.insert(id);
                 }
             }
 
-            println!("   ✅ Script initialized");
         }
 
         Ok(())
     }
 
     pub fn get_root(&self) -> &SceneNode {
-        &self.nodes[&self.root_id]
+        self.nodes.get(self.root_id).expect("Root node not found")
     }
 
     /// Get reference to scripts that have draw() implemented
@@ -2368,18 +2357,18 @@ impl<P: ScriptProvider> Scene<P> {
     // Remove node and stop rendering
     pub fn remove_node(&mut self, node_id: NodeID, gfx: &mut Graphics) {
         // Check if node exists before trying to delete (might have been deleted already)
-        if !self.nodes.contains_key(&node_id) {
+        if !self.nodes.contains_key(node_id) {
             return; // Node already deleted, nothing to do
         }
         
         // If this is a CollisionShape2D, unregister it from physics BEFORE deleting
         // This prevents the physics system from trying to access the deleted node
-        if let Some(node) = self.nodes.get(&node_id) {
+        if let Some(node) = self.nodes.get(node_id) {
             if let SceneNode::CollisionShape2D(collision_shape) = node {
                 // Get parent info before we delete the node
                 let parent_id_opt = collision_shape.get_parent().map(|p| p.id);
                 let is_area2d_parent = parent_id_opt
-                    .and_then(|pid| self.nodes.get(&pid))
+                    .and_then(|pid| self.nodes.get(pid))
                     .map(|p| matches!(p, SceneNode::Area2D(_)))
                     .unwrap_or(false);
                 
@@ -2408,7 +2397,7 @@ impl<P: ScriptProvider> Scene<P> {
         self.stop_rendering_recursive(node_id, gfx);
 
         // Remove from scene
-        self.nodes.remove(&node_id);
+        self.nodes.remove(node_id);
 
         // Remove scripts - actually delete them from scene
         // Always clean up script vectors even if script doesn't exist (defensive cleanup)
@@ -2454,69 +2443,93 @@ impl<P: ScriptProvider> Scene<P> {
     /// Get the global transform for a node, calculating it lazily if dirty
     /// This recursively traverses up the parent chain until it finds a clean transform
     pub fn get_global_transform(&mut self, node_id: NodeID) -> Option<crate::structs2d::Transform2D> {
-        // First, check if this node exists and get its parent
-        let (parent_id_opt, local_transform, is_dirty) = if let Some(node) = self.nodes.get(&node_id) {
-            let node2d = match node.as_node2d() {
-                Some(n2d) => n2d,
-                None => {
-                    // Not a Node2D-based node - can't get global transform
-                    return None;
+        // OPTIMIZED: Reduced hashmap lookups by collecting all needed data in single pass
+        // Build chain from node to root, then calculate transforms top-down
+        
+        // First check if already cached (single lookup)
+        let (is_node2d, is_cached, cached_transform) = {
+            if let Some(node) = self.nodes.get(node_id) {
+                if let Some(node2d) = node.as_node2d() {
+                    if !node2d.transform_dirty {
+                        return Some(node2d.global_transform);
+                    }
+                    (true, false, crate::structs2d::Transform2D::default())
+                } else {
+                    return None; // Not a Node2D node
                 }
-            };
-            let local = match node.get_node2d_transform() {
-                Some(t) => t,
-                None => {
-                    return None;
-                }
-            };
-            (node.get_parent().map(|p| p.id), local, node2d.transform_dirty)
-        } else {
-            return None;
+            } else {
+                return None;
+            }
         };
-
-        // If not dirty, return cached global transform
-        if !is_dirty {
-            if let Some(node) = self.nodes.get(&node_id) {
-                return node.as_node2d().map(|n2d| n2d.global_transform);
+        
+        // Step 1: Build the chain from this node up to root (or first cached ancestor)
+        // OPTIMIZED: Collect local transforms and parent info in single pass to reduce lookups
+        let mut chain: Vec<(NodeID, crate::structs2d::Transform2D)> = Vec::new();
+        let mut current_id = Some(node_id);
+        let mut cached_ancestor_id = None;
+        let mut cached_ancestor_transform = crate::structs2d::Transform2D::default();
+        
+        while let Some(id) = current_id {
+            if let Some(node) = self.nodes.get(id) {
+                if let Some(node2d) = node.as_node2d() {
+                    // Check if already cached (not dirty)
+                    if !node2d.transform_dirty {
+                        // Found a cached ancestor - we can use it and stop
+                        cached_ancestor_id = Some(id);
+                        cached_ancestor_transform = node2d.global_transform;
+                        break;
+                    }
+                    // Collect local transform now to avoid second lookup later
+                    if let Some(local) = node.get_node2d_transform() {
+                        chain.push((id, local));
+                    } else {
+                        break;
+                    }
+                    current_id = node.get_parent().map(|p| p.id);
+                } else {
+                    // Not a Node2D node - stop here, use identity
+                    break;
+                }
+            } else {
+                break;
             }
         }
-
-        // Need to recalculate - get parent's global transform (recursively)
-        // If parent is not Node2D-based, use identity transform
-        let parent_global = if let Some(parent_id) = parent_id_opt {
-            // Try to get parent's global transform, but if parent is not Node2D-based, use identity
-            self.get_global_transform(parent_id).unwrap_or_else(|| {
-                // Parent exists but is not Node2D-based (e.g., regular Node) - use identity transform
-                crate::structs2d::Transform2D::default()
-            })
+        
+        if chain.is_empty() {
+            return None;
+        }
+        
+        // Step 2: Start with cached ancestor transform or identity
+        let mut parent_global = if cached_ancestor_id.is_some() {
+            cached_ancestor_transform
         } else {
-            // No parent - use identity transform
             crate::structs2d::Transform2D::default()
         };
-
-        // OPTIMIZED: Calculate this node's global transform using efficient matrix math
-        // This replaces the old component-wise calculation with a single SIMD matrix multiply
-        // Benefits:
-        // - Correct rotation inheritance (position rotates around parent)
-        // - 3-5x faster for deep hierarchies
-        // - SIMD-optimized (glam uses SSE2/NEON)
-        // - More accurate (less floating-point error)
-        let global = crate::structs2d::Transform2D::calculate_global(&parent_global, &local_transform);
-
-        // Cache the result and mark as clean
-        if let Some(node) = self.nodes.get_mut(&node_id) {
-            if let Some(node2d) = node.as_node2d_mut() {
-                node2d.global_transform = global;
-                node2d.transform_dirty = false;
+        
+        // Step 3: Process chain from root to target node (chain is built root->target, so reverse it)
+        // OPTIMIZED: Single mutable lookup per node instead of get + get_mut
+        for &(id, local) in chain.iter().rev() {
+            // Calculate global transform
+            let global = crate::structs2d::Transform2D::calculate_global(&parent_global, &local);
+            
+            // Cache the result (single mutable lookup)
+            if let Some(node) = self.nodes.get_mut(id) {
+                if let Some(node2d) = node.as_node2d_mut() {
+                    node2d.global_transform = global;
+                    node2d.transform_dirty = false;
+                }
             }
+            
+            parent_global = global;
         }
-
-        Some(global)
+        
+        Some(parent_global)
     }
     
     /// OPTIONAL: Batch-optimized version for precalculate_transforms_in_dependency_order
     /// Use this when calculating many siblings with the same parent
     /// ~20% faster than calling get_global_transform() in a loop
+    /// OPTIMIZED: Reduced hashmap lookups by collecting all data in single pass
     fn precalculate_transforms_batch(&mut self, parent_id: NodeID, child_ids: &[NodeID]) {
         // OPTIMIZED: Fast path for empty batches
         if child_ids.is_empty() {
@@ -2530,14 +2543,15 @@ impl<P: ScriptProvider> Scene<P> {
         // OPTIMIZED: Fast path for identity parent (common case - static nodes)
         if parent_global.is_default() {
             // Just copy local transforms directly, no calculation needed
+            // OPTIMIZED: Get local transform first (immutable borrow), then update (mutable borrow)
             for &child_id in child_ids {
                 // Get local transform first (immutable borrow)
-                let local = self.nodes.get(&child_id)
+                let local = self.nodes.get(child_id)
                     .and_then(|node| node.get_node2d_transform());
                 
                 // Then update (mutable borrow)
                 if let Some(local) = local {
-                    if let Some(node) = self.nodes.get_mut(&child_id) {
+                    if let Some(node) = self.nodes.get_mut(child_id) {
                         if let Some(node2d) = node.as_node2d_mut() {
                             node2d.global_transform = local;
                             node2d.transform_dirty = false;
@@ -2548,20 +2562,22 @@ impl<P: ScriptProvider> Scene<P> {
             return;
         }
         
-        // Collect local transforms and child IDs in parallel
-        // OPTIMIZED: Pre-allocate with exact capacity
+        // OPTIMIZED: Collect local transforms and child IDs in single pass
+        // Pre-allocate with exact capacity to avoid reallocations
         let mut local_transforms = Vec::with_capacity(child_ids.len());
         let mut valid_child_ids = Vec::with_capacity(child_ids.len());
         
+        // Single pass: collect all needed data
         for &child_id in child_ids {
-            if let Some(node) = self.nodes.get(&child_id) {
-                if let Some(local) = node.get_node2d_transform() {
-                    // OPTIMIZED: Skip if not dirty (already calculated)
-                    if let Some(node2d) = node.as_node2d() {
-                        if !node2d.transform_dirty {
-                            continue; // Skip already-clean nodes
-                        }
+            if let Some(node) = self.nodes.get(child_id) {
+                // OPTIMIZED: Skip if not dirty (already calculated) - check before collecting
+                if let Some(node2d) = node.as_node2d() {
+                    if !node2d.transform_dirty {
+                        continue; // Skip already-clean nodes
                     }
+                }
+                
+                if let Some(local) = node.get_node2d_transform() {
                     local_transforms.push(local);
                     valid_child_ids.push(child_id);
                 }
@@ -2576,10 +2592,10 @@ impl<P: ScriptProvider> Scene<P> {
         // Batch calculate (reuses parent matrix conversion)
         let globals = crate::structs2d::Transform2D::batch_calculate_global(&parent_global, &local_transforms);
         
-        // Cache results
+        // Cache results - single mutable lookup per node
         // OPTIMIZED: Use iterators for better performance
         for (child_id, global) in valid_child_ids.iter().zip(globals.iter()) {
-            if let Some(node) = self.nodes.get_mut(child_id) {
+            if let Some(node) = self.nodes.get_mut(*child_id) {
                 if let Some(node2d) = node.as_node2d_mut() {
                     node2d.global_transform = *global;
                     node2d.transform_dirty = false;
@@ -2591,7 +2607,7 @@ impl<P: ScriptProvider> Scene<P> {
 
     /// Set the global transform for a node (marks it as dirty)
     pub fn set_global_transform(&mut self, node_id: NodeID, transform: crate::structs2d::Transform2D) -> Option<()> {
-        if let Some(node) = self.nodes.get_mut(&node_id) {
+        if let Some(node) = self.nodes.get_mut(node_id) {
             if let Some(node2d) = node.as_node2d_mut() {
                 node2d.global_transform = transform;
                 node2d.transform_dirty = true;
@@ -2606,113 +2622,118 @@ impl<P: ScriptProvider> Scene<P> {
 
     /// Mark a node's transform as dirty (and all its children)
     /// Also marks nodes as needing rerender so they get picked up by get_nodes_needing_rerender()
+    /// OPTIMIZED: Uses iterative work queue instead of recursion for better performance and cache locality
     pub fn mark_transform_dirty_recursive(&mut self, node_id: NodeID) {
         // Check if node exists before processing (might have been deleted)
-        if !self.nodes.contains_key(&node_id) {
+        if !self.nodes.contains_key(node_id) {
             eprintln!("⚠️ mark_transform_dirty_recursive: Node {} does not exist, skipping", node_id);
             return;
         }
         
-        // OPTIMIZED: Use cached Node2D children if available (avoids hashmap lookups)
-        let node2d_child_ids: Vec<NodeID> = {
-            // Check if we have a cached list of Node2D children
-            let cached = self.nodes
-                .get(&node_id)
-                .and_then(|node| node.as_node2d())
-                .and_then(|n2d| n2d.node2d_children_cache.as_ref());
+        // OPTIMIZED: Use iterative work queue instead of recursion
+        // This provides better cache locality and avoids stack overhead
+        let mut work_queue = Vec::new();
+        work_queue.push(node_id);
+        
+        while let Some(current_id) = work_queue.pop() {
+            // Skip if node was deleted during processing
+            if !self.nodes.contains_key(current_id) {
+                continue;
+            }
             
-            if let Some(cached_ids) = cached {
-                // Use cache - but filter out any stale references to deleted nodes
-                let target_node = Uid32::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok().map(NodeID::from_uid32);
-                let is_target_parent = target_node.map(|t| node_id == t).unwrap_or(false);
-                if is_target_parent {
-                    println!("🔍 [MARK_DIRTY] Using cached children for {}: {:?}", node_id, cached_ids);
-                }
-                let filtered: Vec<NodeID> = cached_ids.iter()
-                    .filter(|&&child_id| {
-                        let exists = self.nodes.contains_key(&child_id);
-                        let is_target = target_node.map(|t| child_id == t).unwrap_or(false);
-                        if is_target {
-                            println!("🔍 [MARK_DIRTY] Checking cached child {}: exists={}", child_id, exists);
-                        }
-                        if !exists && is_target {
-                            eprintln!("⚠️ [MARK_DIRTY] CACHE HAS STALE REFERENCE! Child {} in cache for parent {} but node doesn't exist!", child_id, node_id);
-                        }
-                        exists
-                    })
-                    .copied()
-                    .collect();
-                if is_target_parent {
-                    println!("🔍 [MARK_DIRTY] Filtered cache for {}: {:?}", node_id, filtered);
-                }
-                filtered
-            } else {
-                // Cache miss - build cache and use it
-                let child_ids: Vec<NodeID> = self.nodes
-                    .get(&node_id)
-                    .map(|node| node.get_children().iter().copied().collect())
-                    .unwrap_or_default();
+            // Step 1: Get Node2D children list (immutable borrow)
+            let (node2d_child_ids, needs_cache_update): (Vec<NodeID>, bool) = {
+                // Check if we have a cached list of Node2D children
+                let cached = self.nodes
+                    .get(current_id)
+                    .and_then(|node| node.as_node2d())
+                    .and_then(|n2d| n2d.node2d_children_cache.as_ref());
                 
-                // Filter to only Node2D children and cache the result
-                let node2d_ids: Vec<NodeID> = child_ids.iter()
-                    .copied()
-                    .filter_map(|child_id| {
-                        if let Some(child_node) = self.nodes.get(&child_id) {
-                            if child_node.as_node2d().is_some() {
-                                Some(child_id)
+                if let Some(cached_ids) = cached {
+                    // Use cache - but filter out any stale references to deleted nodes
+                    let filtered: Vec<NodeID> = cached_ids.iter()
+                        .copied()
+                        .filter(|&child_id| {
+                            // Verify child exists and is still a child of this parent
+                            if let Some(child_node) = self.nodes.get(child_id) {
+                                // Verify it's still a child (parent might have changed)
+                                if let Some(parent) = child_node.get_parent() {
+                                    parent.id == current_id && child_node.as_node2d().is_some()
+                                } else {
+                                    false // Child has no parent, so it's not a child of this node
+                                }
+                            } else {
+                                false // Child doesn't exist
+                            }
+                        })
+                        .collect();
+                    
+                    // If we filtered out any entries, we need to update the cache
+                    let needs_update = filtered.len() != cached_ids.len();
+                    (filtered, needs_update)
+                } else {
+                    // Cache miss - build cache and use it
+                    let child_ids: Vec<NodeID> = self.nodes
+                        .get(current_id)
+                        .map(|node| node.get_children().iter().copied().collect())
+                        .unwrap_or_default();
+                    
+                    // Filter to only Node2D children and cache the result
+                    let node2d_ids: Vec<NodeID> = child_ids.iter()
+                        .copied()
+                        .filter_map(|child_id| {
+                            if let Some(child_node) = self.nodes.get(child_id) {
+                                if child_node.as_node2d().is_some() {
+                                    Some(child_id)
+                                } else {
+                                    None
+                                }
                             } else {
                                 None
                             }
-                        } else {
-                            None
+                        })
+                        .collect();
+                    
+                    // Update cache for future use
+                    if let Some(node) = self.nodes.get_mut(current_id) {
+                        if let Some(node2d) = node.as_node2d_mut() {
+                            node2d.node2d_children_cache = Some(node2d_ids.clone());
                         }
-                    })
-                    .collect();
+                    }
+                    
+                    (node2d_ids, false) // Cache was just built, no update needed
+                }
+            };
+            
+            // Step 2: Mark this node as dirty and update cache if needed (mutable borrow)
+            let is_renderable = {
+                let node = self.nodes.get_mut(current_id).unwrap();
                 
-                // Update cache for future use
-                if let Some(node) = self.nodes.get_mut(&node_id) {
-                    if let Some(node2d) = node.as_node2d_mut() {
-                        node2d.node2d_children_cache = Some(node2d_ids.clone());
+                // Mark transform as dirty if it's a Node2D-based node
+                if let Some(node2d) = node.as_node2d_mut() {
+                    node2d.transform_dirty = true;
+                    
+                    // Update cache if we filtered out stale entries
+                    if needs_cache_update {
+                        node2d.node2d_children_cache = Some(node2d_child_ids.clone());
                     }
                 }
                 
-                node2d_ids
+                // Check if renderable (before dropping mutable borrow)
+                node.is_renderable()
+            };
+            
+            // Step 3: Add to needs_rerender if renderable
+            if is_renderable && !self.needs_rerender.contains(&current_id) {
+                self.needs_rerender.insert(current_id);
             }
-        };
-        
-        // Mark this node's transform as dirty if it's a Node2D-based node
-        if let Some(node) = self.nodes.get_mut(&node_id) {
-            if let Some(node2d) = node.as_node2d_mut() {
-                node2d.transform_dirty = true;
-            }
-        }
-        
-        // Only add renderable nodes to needs_rerender
-        // Non-renderable nodes (like Node2D) don't need to be rendered,
-        // but their transform_dirty flag is still set so renderable children
-        // can recalculate their global transforms during rendering
-        if let Some(node) = self.nodes.get(&node_id) {
-            if node.is_renderable() && !self.needs_rerender.contains(&node_id) {
-                self.needs_rerender.insert(node_id);
-            }
-        }
-        
-        // OPTIMIZED: Only recurse into Node2D-based children (from cache or filtered)
-        // This avoids thousands of unnecessary recursive calls when a parent has many base Node children
-        // Validate each child exists before recursing (cache might have stale references)
-        let target_node = Uid32::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok().map(NodeID::from_uid32);
-        for child_id in node2d_child_ids {
-            let is_target = target_node.map(|t| child_id == t || node_id == t).unwrap_or(false);
-            if is_target {
-                println!("🔍 [MARK_DIRTY] Processing child {} of parent {} (from cache/filtered list)", child_id, node_id);
-            }
-            if self.nodes.contains_key(&child_id) {
-                self.mark_transform_dirty_recursive(child_id);
-            } else {
-                // Stale cache entry - log for debugging
-                eprintln!("⚠️ [MARK_DIRTY] Found stale child reference {} in cache for parent {}", child_id, node_id);
-                if is_target {
-                    eprintln!("⚠️ [MARK_DIRTY] THIS IS THE PROBLEMATIC NODE! Parent {} has stale cache entry for {}", node_id, child_id);
+            
+            // Step 4: Add Node2D children to work queue (process them iteratively)
+            // OPTIMIZED: Add to front of queue so we process depth-first (better cache locality)
+            // This ensures we process a subtree completely before moving to siblings
+            for child_id in node2d_child_ids.into_iter().rev() {
+                if self.nodes.contains_key(child_id) {
+                    work_queue.push(child_id);
                 }
             }
         }
@@ -2721,101 +2742,65 @@ impl<P: ScriptProvider> Scene<P> {
     /// Clear the Node2D children cache for a parent node (when all children are removed)
     /// This keeps the cache in sync so we don't need hashmap lookups every frame
     pub fn update_node2d_children_cache_on_clear(&mut self, parent_id: NodeID) {
-        // DEBUG: Track the problematic node (removed - was using wrong type)
-        let is_target = false;
-        
-        if is_target {
-            println!("🔍 [CACHE_CLEAR] Clearing cache for parent {}", parent_id);
-        }
-        
-        if let Some(node) = self.nodes.get_mut(&parent_id) {
+        if let Some(node) = self.nodes.get_mut(parent_id) {
             if let Some(node2d) = node.as_node2d_mut() {
-                let old_cache = node2d.node2d_children_cache.clone();
+                // Clear the cache - set to empty vec so it's ready for new children
                 node2d.node2d_children_cache = Some(Vec::new());
-                if is_target {
-                    println!("🔍 [CACHE_CLEAR] Cleared cache for {}. Old cache was: {:?}", parent_id, old_cache);
-                }
             }
-        } else if is_target {
-            eprintln!("⚠️ [CACHE_CLEAR] Parent {} does NOT exist!", parent_id);
         }
+        // If parent doesn't exist, that's fine - node was probably deleted
     }
     
     /// Update the Node2D children cache for a parent node when a child is added
     /// This keeps the cache in sync so we don't need hashmap lookups every frame
     pub fn update_node2d_children_cache_on_add(&mut self, parent_id: NodeID, child_id: NodeID) {
-        // DEBUG: Track the problematic node
-        let target_node = Uid32::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok().map(NodeID::from_uid32);
-        let is_target = target_node.map(|t| child_id == t || parent_id == t).unwrap_or(false);
-        
-        if is_target {
-            println!("🔍 [CACHE_ADD] Adding child {} to parent {} cache", child_id, parent_id);
-        }
-        
         // Check if child is Node2D first (immutable borrow)
-        let child_exists = self.nodes.contains_key(&child_id);
+        let child_exists = self.nodes.contains_key(child_id);
         let is_node2d = if child_exists {
             self.nodes
-                .get(&child_id)
+                .get(child_id)
                 .map(|child_node| child_node.as_node2d().is_some())
                 .unwrap_or(false)
         } else {
-            if is_target {
-                eprintln!("⚠️ [CACHE_ADD] Child {} does NOT exist in scene!", child_id);
-            }
-            false
+            // Child doesn't exist yet - can't update cache
+            return;
         };
         
+        // Only update cache if child is Node2D
+        if !is_node2d {
+            return;
+        }
+        
         // Now update parent's cache (mutable borrow)
-        if is_node2d {
-            if let Some(parent_node) = self.nodes.get_mut(&parent_id) {
-                if let Some(node2d) = parent_node.as_node2d_mut() {
-                    // Add to cache if it exists, otherwise invalidate (will rebuild on next use)
-                    if let Some(ref mut cache) = node2d.node2d_children_cache {
-                        if !cache.contains(&child_id) {
-                            cache.push(child_id);
-                            if is_target {
-                                println!("🔍 [CACHE_ADD] Added {} to cache. Cache now: {:?}", child_id, cache);
-                            }
-                        }
-                    } else {
-                        // Cache doesn't exist yet - invalidate so it rebuilds on next use
-                        node2d.node2d_children_cache = None;
+        if let Some(parent_node) = self.nodes.get_mut(parent_id) {
+            if let Some(node2d) = parent_node.as_node2d_mut() {
+                // Add to cache if it exists, otherwise invalidate (will rebuild on next use)
+                if let Some(ref mut cache) = node2d.node2d_children_cache {
+                    // Only add if not already present (avoid duplicates)
+                    if !cache.contains(&child_id) {
+                        cache.push(child_id);
                     }
+                } else {
+                    // Cache doesn't exist yet - invalidate so it rebuilds on next use
+                    // This ensures cache is rebuilt with all current children
+                    node2d.node2d_children_cache = None;
                 }
             }
-        } else if is_target {
-            println!("🔍 [CACHE_ADD] Child {} is not Node2D, not adding to cache", child_id);
         }
     }
     
     /// Update the Node2D children cache for a parent node when a child is removed
     fn update_node2d_children_cache_on_remove(&mut self, parent_id: NodeID, child_id: NodeID) {
-        // DEBUG: Track the problematic node
-        let target_node = Uid32::parse_str("d36d3c7f-7c49-497e-b5b2-8770e4e6d633").ok().map(NodeID::from_uid32);
-        let is_target = target_node.map(|t| child_id == t || parent_id == t).unwrap_or(false);
-        
-        if is_target {
-            println!("🔍 [CACHE_REMOVE] Removing child {} from parent {} cache", child_id, parent_id);
-        }
-        
-        if let Some(parent_node) = self.nodes.get_mut(&parent_id) {
+        if let Some(parent_node) = self.nodes.get_mut(parent_id) {
             if let Some(node2d) = parent_node.as_node2d_mut() {
                 // Remove from cache if it exists
                 if let Some(ref mut cache) = node2d.node2d_children_cache {
-                    let before_len = cache.len();
                     cache.retain(|&id| id != child_id);
-                    if is_target {
-                        println!("🔍 [CACHE_REMOVE] Removed {} from cache. Before: {}, After: {}, Cache: {:?}", 
-                            child_id, before_len, cache.len(), cache);
-                    }
-                } else if is_target {
-                    println!("🔍 [CACHE_REMOVE] No cache exists for parent {}", parent_id);
                 }
+                // If cache doesn't exist, that's fine - it will be rebuilt on next use
             }
-        } else if is_target {
-            eprintln!("⚠️ [CACHE_REMOVE] Parent {} does NOT exist!", parent_id);
         }
+        // If parent doesn't exist, that's also fine - node was probably deleted
     }
 
    
@@ -2825,7 +2810,9 @@ impl<P: ScriptProvider> Scene<P> {
         // OPTIMIZED: Parallelize node filtering (read-only operation)
         let node_ids: Vec<NodeID> = if self.nodes.len() >= 10 {
             // Use parallel iteration for larger node counts
-            self.nodes
+            // Convert to Vec first since NodeArena doesn't implement IntoParallelIterator
+            let nodes_vec: Vec<(NodeID, &SceneNode)> = self.nodes.iter().collect();
+            nodes_vec
                 .par_iter()
                 .filter_map(|(node_id, node)| {
                     if let SceneNode::CollisionShape2D(cs) = node {
@@ -2846,7 +2833,7 @@ impl<P: ScriptProvider> Scene<P> {
                 .filter_map(|(node_id, node)| {
                     if let SceneNode::CollisionShape2D(cs) = node {
                         if cs.collider_handle.is_some() {
-                            Some(*node_id)
+                            Some(node_id)
                         } else {
                             None
                         }
@@ -2862,7 +2849,7 @@ impl<P: ScriptProvider> Scene<P> {
         // wasn't set (e.g., if parent moved but child wasn't marked dirty)
         // Note: Can't parallelize this easily due to mutable borrow requirements
         for node_id in &node_ids {
-            if let Some(node) = self.nodes.get_mut(node_id) {
+            if let Some(node) = self.nodes.get_mut(*node_id) {
                 if let Some(node2d) = node.as_node2d_mut() {
                     node2d.transform_dirty = true;
                 }
@@ -2888,7 +2875,7 @@ impl<P: ScriptProvider> Scene<P> {
             let mut physics = physics.borrow_mut();
             for (node_id, position, rotation) in to_update {
                 // Only update if node still exists (might have been deleted)
-                if self.nodes.contains_key(&node_id) {
+                if self.nodes.contains_key(node_id) {
                     physics.update_collider_transform(node_id, position, rotation);
                 }
             }
@@ -2898,10 +2885,10 @@ impl<P: ScriptProvider> Scene<P> {
     /// Register CollisionShape2D nodes with the physics world
     fn register_collision_shapes(&mut self, node_ids: &[NodeID]) {
         // First, collect all the data we need (shape info, transforms, parent info)
-        let mut to_register: Vec<(NodeID, crate::physics::physics_2d::ColliderShape, Option<crate::nodes::node::ParentType>)> = Vec::new();
+        let mut to_register: Vec<(NodeID, crate::structs2d::Shape2D, Option<crate::nodes::node::ParentType>)> = Vec::new();
         
         for &node_id in node_ids {
-            if let Some(node) = self.nodes.get(&node_id) {
+            if let Some(node) = self.nodes.get(node_id) {
                 if let SceneNode::CollisionShape2D(collision_shape) = node {
                     // Only register if it has a shape defined
                     if let Some(shape) = collision_shape.shape {
@@ -2929,11 +2916,11 @@ impl<P: ScriptProvider> Scene<P> {
         
         // First, check which parents are Area2D nodes (before borrowing physics)
         // Store tuples of (node_id, shape, parent_opt, is_area2d_parent)
-        let mut registration_data: Vec<(NodeID, crate::physics::physics_2d::ColliderShape, Option<NodeID>, bool)> = Vec::new();
+        let mut registration_data: Vec<(NodeID, crate::structs2d::Shape2D, Option<NodeID>, bool)> = Vec::new();
         for (node_id, shape, parent_opt) in to_register {
             let is_area2d_parent = if let Some(parent) = &parent_opt {
                 let pid = parent.id;
-                if let Some(parent_node) = self.nodes.get(&pid) {
+                if let Some(parent_node) = self.nodes.get(pid) {
                     matches!(parent_node, SceneNode::Area2D(_))
                 } else {
                     false
@@ -2978,7 +2965,7 @@ impl<P: ScriptProvider> Scene<P> {
         
         // Store handles in collision shapes
         for (node_id, collider_handle, _) in handles_to_store {
-            if let Some(node) = self.nodes.get_mut(&node_id) {
+            if let Some(node) = self.nodes.get_mut(node_id) {
                 if let SceneNode::CollisionShape2D(cs) = node {
                     cs.collider_handle = Some(collider_handle);
                 }
@@ -2996,7 +2983,7 @@ impl<P: ScriptProvider> Scene<P> {
         }
         
         // Check if node exists before accessing (might have been deleted)
-        if let Some(node) = self.nodes.get(&node_id) {
+        if let Some(node) = self.nodes.get(node_id) {
             // Stop rendering this node itself
             gfx.stop_rendering(node_id);
 
@@ -3019,7 +3006,7 @@ impl<P: ScriptProvider> Scene<P> {
             }
             for child_id in child_ids {
                 // Only recurse if child still exists (might have been deleted)
-                if self.nodes.contains_key(&child_id) {
+                if self.nodes.contains_key(child_id) {
                     self.stop_rendering_recursive(child_id, gfx);
                 } else {
                     let is_target_child = target_node.map(|t| child_id == t).unwrap_or(false);
@@ -3047,137 +3034,64 @@ impl<P: ScriptProvider> Scene<P> {
     /// This is a major performance optimization when many children share the same moving parent.
     /// OPTIMIZED: Skips non-Node2D parents when calculating depth (they don't affect transform inheritance).
     fn precalculate_transforms_in_dependency_order(&mut self, node_ids: &[NodeID]) {
-        // Group nodes by parent for batch processing
-        // OPTIMIZED: Use with_capacity(0) for known-empty map initially
-        let mut nodes_by_parent: std::collections::HashMap<Option<NodeID>, Vec<(NodeID, usize)>> = 
-            std::collections::HashMap::with_capacity(0);
+        // OPTIMIZED: Simple topological sort approach - process nodes whose parents are already processed
+        // This avoids the expensive depth calculation that was walking parent chains for every node
         
-        // OPTIMIZED: Parallelize depth calculation for large node counts
-        // Each node's depth calculation is independent (read-only access to nodes)
-        let node_depths: Vec<(NodeID, Option<NodeID>, usize)> = if node_ids.len() >= 20 {
-            // Parallel path for larger node sets
-            node_ids
-                .par_iter()
-                .filter_map(|&node_id| {
-                    if let Some(node) = self.nodes.get(&node_id) {
-                        if node.as_node2d().is_some() {
-                            // Calculate depth (read-only traversal up parent chain)
-                            let mut depth = 0;
-                            let mut current_id = Some(node_id);
-                            while let Some(id) = current_id {
-                                if let Some(n) = self.nodes.get(&id) {
-                                    if let Some(parent) = n.get_parent() {
-                                        if let Some(parent_node) = self.nodes.get(&parent.id) {
-                                            if parent_node.as_node2d().is_some() {
-                                                depth += 1;
-                                            }
-                                        }
-                                        current_id = Some(parent.id);
-                                    } else {
-                                        break;
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
-                            
-                            let parent_id = node.get_parent().map(|p| p.id);
-                            Some((node_id, parent_id, depth))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            // Sequential path for small node sets (avoid parallel overhead)
-            node_ids
-                .iter()
-                .filter_map(|&node_id| {
-                    if let Some(node) = self.nodes.get(&node_id) {
-                        if node.as_node2d().is_some() {
-                            // Calculate depth
-                            let mut depth = 0;
-                            let mut current_id = Some(node_id);
-                            while let Some(id) = current_id {
-                                if let Some(n) = self.nodes.get(&id) {
-                                    if let Some(parent) = n.get_parent() {
-                                        if let Some(parent_node) = self.nodes.get(&parent.id) {
-                                            if parent_node.as_node2d().is_some() {
-                                                depth += 1;
-                                            }
-                                        }
-                                        current_id = Some(parent.id);
-                                    } else {
-                                        break;
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
-                            
-                            let parent_id = node.get_parent().map(|p| p.id);
-                            Some((node_id, parent_id, depth))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        };
+        // Step 1: Group Node2D nodes by parent (single pass)
+        let mut nodes_by_parent: std::collections::HashMap<Option<NodeID>, Vec<NodeID>> = 
+            std::collections::HashMap::new();
+        let mut node_set = std::collections::HashSet::new();
         
-        // Build the parent grouping map (sequential, but fast)
-        for (node_id, parent_id, depth) in node_depths {
-            nodes_by_parent.entry(parent_id).or_default().push((node_id, depth));
-        }
-        
-        // Sort each sibling group by depth
-        for siblings in nodes_by_parent.values_mut() {
-            siblings.sort_by_key(|(_, depth)| *depth);
-        }
-        
-        // Process in depth order, but batch siblings together
-        let mut processed_depths: Vec<_> = nodes_by_parent
-            .values()
-            .flat_map(|siblings| siblings.iter().map(|(_, depth)| *depth))
-            .collect();
-        processed_depths.sort_unstable();
-        processed_depths.dedup();
-        
-        // OPTIMIZED: Process by depth, but group siblings by parent for better batching
-        for depth in processed_depths {
-            // Group siblings by parent at this depth for batch processing
-            let mut siblings_by_parent: std::collections::HashMap<Option<NodeID>, Vec<NodeID>> = 
-                std::collections::HashMap::new();
-            
-            for (parent_id, siblings) in &nodes_by_parent {
-                let siblings_at_depth: Vec<NodeID> = siblings
-                    .iter()
-                    .filter(|(_, d)| *d == depth)
-                    .map(|(id, _)| *id)
-                    .collect();
-                
-                if !siblings_at_depth.is_empty() {
-                    siblings_by_parent.entry(*parent_id)
-                        .or_insert_with(Vec::new)
-                        .extend(siblings_at_depth);
+        for &node_id in node_ids {
+            if let Some(node) = self.nodes.get(node_id) {
+                if node.as_node2d().is_some() {
+                    let parent_id = node.get_parent().map(|p| p.id);
+                    nodes_by_parent.entry(parent_id).or_default().push(node_id);
+                    node_set.insert(node_id);
                 }
             }
+        }
+        
+        // Step 2: Process nodes iteratively - only process when parent is already processed
+        let mut processed = std::collections::HashSet::new();
+        let mut changed = true;
+        
+        while changed {
+            changed = false;
             
-            // Process all siblings with same parent together (better batching)
-            for (parent_id, siblings_at_depth) in siblings_by_parent {
-                if !siblings_at_depth.is_empty() {
-                    if let Some(parent) = parent_id {
-                        // Batch process siblings with same parent
-                        self.precalculate_transforms_batch(parent, &siblings_at_depth);
-                    } else {
-                        // Root nodes - process individually (but could batch if multiple root nodes)
-                        for node_id in siblings_at_depth {
-                            let _ = self.get_global_transform(node_id);
+            for (parent_id, siblings) in &nodes_by_parent {
+                // Skip if already processed or if parent is in node_set but not yet processed
+                let can_process = if let Some(parent) = parent_id {
+                    !node_set.contains(parent) || processed.contains(parent)
+                } else {
+                    true // Root nodes can always be processed
+                };
+                
+                if can_process {
+                    let siblings_to_process: Vec<NodeID> = siblings
+                        .iter()
+                        .copied()
+                        .filter(|&id| !processed.contains(&id))
+                        .collect();
+                    
+                    if !siblings_to_process.is_empty() {
+                        changed = true;
+                        
+                        // Collect node IDs for processing (need to clone since we iterate twice)
+                        let node_ids: Vec<NodeID> = siblings_to_process.iter().copied().collect();
+                        
+                        if let Some(parent) = *parent_id {
+                            // Batch process siblings with same parent
+                            self.precalculate_transforms_batch(parent, &node_ids);
+                        } else {
+                            // Root nodes - process individually
+                            for node_id in &node_ids {
+                                let _ = self.get_global_transform(*node_id);
+                            }
+                        }
+                        
+                        for node_id in &node_ids {
+                            processed.insert(*node_id);
                         }
                     }
                 }
@@ -3232,7 +3146,7 @@ impl<P: ScriptProvider> Scene<P> {
                 .par_iter()
                 .filter_map(|&node_id| {
                     // Read-only access to collect initial data
-                    if let Some(node) = self.nodes.get(&node_id) {
+                    if let Some(node) = self.nodes.get(node_id) {
                         let timestamp = node.get_created_timestamp();
                         let needs_transform = node.as_node2d().is_some();
                         let node_type = node.get_type();
@@ -3258,7 +3172,7 @@ impl<P: ScriptProvider> Scene<P> {
                 .par_iter()
                 .filter_map(|(node_id, timestamp, _needs_transform, _node_type, global_transform_opt)| {
                     // Read-only access to process the node
-                    if let Some(node) = self.nodes.get(node_id) {
+                    if let Some(node) = self.nodes.get(*node_id) {
                         match node {
                             SceneNode::Sprite2D(sprite) => {
                                 if sprite.visible {
@@ -3501,7 +3415,7 @@ impl<P: ScriptProvider> Scene<P> {
             
             // Step 4: Clear transform_dirty flags sequentially (needs mutable access)
             for &node_id in &nodes_needing_rerender {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
+                if let Some(node) = self.nodes.get_mut(node_id) {
                     if let Some(node2d) = node.as_node2d_mut() {
                         node2d.transform_dirty = false;
                     }
@@ -3544,7 +3458,7 @@ impl<P: ScriptProvider> Scene<P> {
             
             // Process UI nodes (they need mutable access to gfx)
             for node_id in ui_nodes {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
+                if let Some(node) = self.nodes.get_mut(node_id) {
                     if let SceneNode::UINode(ui_node) = node {
                         // Pass provider so FUR can be loaded using the correct method (dev vs release)
                         render_ui(ui_node, gfx, Some(&self.provider));
@@ -3554,7 +3468,7 @@ impl<P: ScriptProvider> Scene<P> {
             
             // Update cameras
             for node_id in camera_2d_updates {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
+                if let Some(node) = self.nodes.get_mut(node_id) {
                     if let SceneNode::Camera2D(camera) = node {
                         if camera.active {
                             gfx.update_camera_2d(camera);
@@ -3564,7 +3478,7 @@ impl<P: ScriptProvider> Scene<P> {
             }
             
             for node_id in camera_3d_updates {
-                if let Some(node) = self.nodes.get_mut(&node_id) {
+                if let Some(node) = self.nodes.get_mut(node_id) {
                     if let SceneNode::Camera3D(camera) = node {
                         if camera.active {
                             gfx.update_camera_3d(camera);
@@ -3595,7 +3509,7 @@ impl<P: ScriptProvider> Scene<P> {
             // Small batch - use original sequential approach (less overhead)
             for node_id in nodes_needing_rerender {
                 // Get global transform first (before borrowing node mutably)
-                let global_transform_opt = if let Some(node) = self.nodes.get(&node_id) {
+                let global_transform_opt = if let Some(node) = self.nodes.get(node_id) {
                     if node.as_node2d().is_some() {
                         self.get_global_transform(node_id)
                     } else {
@@ -3605,7 +3519,7 @@ impl<P: ScriptProvider> Scene<P> {
                     None
                 };
                 
-                if let Some(node) = self.nodes.get_mut(&node_id) {
+                if let Some(node) = self.nodes.get_mut(node_id) {
                     let timestamp = node.get_created_timestamp();
                     match node {
                         SceneNode::Sprite2D(sprite) => {
@@ -3801,17 +3715,17 @@ impl<P: ScriptProvider> Scene<P> {
 
 impl<P: ScriptProvider> SceneAccess for Scene<P> {
     fn get_scene_node_ref(&self, id: NodeID) -> Option<&SceneNode> {
-        self.nodes.get(&id)
+        self.nodes.get(id)
     }
     
     fn get_scene_node_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
-        self.nodes.get_mut(&id)
+        self.nodes.get_mut(id)
     }
     
     fn mark_needs_rerender(&mut self, node_id: NodeID) {
         // Only add renderable nodes to needs_rerender
         // Non-renderable nodes (like Node, Node2D, Area2D) don't need to be rendered
-        if let Some(node) = self.nodes.get(&node_id) {
+        if let Some(node) = self.nodes.get(node_id) {
             // Check if node is renderable before adding
             if !node.is_renderable() {
                 return; // Skip non-renderable nodes
@@ -3827,6 +3741,10 @@ impl<P: ScriptProvider> SceneAccess for Scene<P> {
     
     fn get_scene_node(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         self.get_scene_node_mut(id)
+    }
+    
+    fn next_node_id(&mut self) -> NodeID {
+        self.nodes.next_id()
     }
 
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn> {
@@ -4017,7 +3935,6 @@ impl Scene<DllScriptProvider> {
             };
             default_perro_rust_path_from_root(&root_path)
         };
-        println!("Loading script library from {:?}", lib_path);
         
         // Check if DLL exists before trying to load it
         if !lib_path.exists() {
@@ -4069,7 +3986,6 @@ impl Scene<DllScriptProvider> {
             eprintln!("   2. The perro_set_project_root symbol is missing from the DLL");
             eprintln!("   Try rebuilding scripts: cargo run -p perro_core -- --path <path> --scripts");
         } else {
-            println!("✅ Project root injected into DLL");
         }
 
         // Now move `project` into Scene
@@ -4112,7 +4028,7 @@ impl Scene<DllScriptProvider> {
                     
                     // After script initialization, ensure renderable nodes are marked for rerender
                     // (old system would have called mark_dirty() here)
-                    if let Some(node) = game_scene.nodes.get(&root_id) {
+                    if let Some(node) = game_scene.nodes.get(root_id) {
                         if node.is_renderable() {
                             game_scene.needs_rerender.insert(root_id);
                         }
