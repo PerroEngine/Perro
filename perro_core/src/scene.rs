@@ -3122,17 +3122,17 @@ impl<P: ScriptProvider> Scene<P> {
             for (node_id, timestamp, cmd) in render_data {
                 match cmd {
                     RenderCommand::Texture { texture_id, texture_path, global_transform, pivot, z_index } => {
-                        // Resolve texture path (needs gfx access, so do it sequentially)
-                        let texture_path_opt: Option<String> = if let Some(texture_id) = texture_id {
-                            gfx.texture_manager.get_texture_path_from_id(&texture_id).map(|s| s.to_string())
-                        } else {
-                            texture_path.map(|p| p.to_string())
+                        // Resolve texture_id (use existing or load from path)
+                        let resolved_id = match texture_id {
+                            Some(id) => Some(id),
+                            None => texture_path.as_deref().and_then(|path| {
+                                gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue).ok()
+                            }),
                         };
-                        
-                        if let Some(tex_path) = texture_path_opt {
+                        if let Some(tex_id) = resolved_id {
                             texture_commands.push((
                                 node_id,
-                                tex_path,
+                                tex_id,
                                 global_transform,
                                 pivot,
                                 z_index,
@@ -3207,15 +3207,15 @@ impl<P: ScriptProvider> Scene<P> {
                 );
             }
             
-            // Queue all textures
-            for (node_id, tex_path, global_transform, pivot, z_index, timestamp) in texture_commands {
+            // Queue all textures (by id; path→id already resolved above)
+            for (node_id, tex_id, global_transform, pivot, z_index, timestamp) in texture_commands {
                 gfx.renderer_2d.queue_texture(
                     &mut gfx.renderer_prim,
                     &mut gfx.texture_manager,
                     &gfx.device,
                     &gfx.queue,
                     node_id,
-                    &tex_path,
+                    tex_id,
                     global_transform,
                     pivot,
                     z_index,
@@ -3268,9 +3268,32 @@ impl<P: ScriptProvider> Scene<P> {
                 );
             }
             
-            // Queue lights
+            // Queue lights (allocate LightID from LightManager if needed)
             for (node_id, light_uniform) in light_commands {
-                gfx.renderer_3d.queue_light(node_id, light_uniform);
+                if let Some(node) = self.nodes.get_mut(node_id) {
+                    let light_id = match node {
+                        SceneNode::OmniLight3D(light) => {
+                            if light.light_id.is_none() {
+                                light.light_id = Some(gfx.light_manager.allocate());
+                            }
+                            light.light_id.unwrap()
+                        }
+                        SceneNode::DirectionalLight3D(light) => {
+                            if light.light_id.is_none() {
+                                light.light_id = Some(gfx.light_manager.allocate());
+                            }
+                            light.light_id.unwrap()
+                        }
+                        SceneNode::SpotLight3D(light) => {
+                            if light.light_id.is_none() {
+                                light.light_id = Some(gfx.light_manager.allocate());
+                            }
+                            light.light_id.unwrap()
+                        }
+                        _ => continue,
+                    };
+                    gfx.renderer_3d.queue_light(light_id, light_uniform);
+                }
             }
         } else {
             // Small batch - use original sequential approach (less overhead)
@@ -3291,13 +3314,13 @@ impl<P: ScriptProvider> Scene<P> {
                     match node {
                         SceneNode::Sprite2D(sprite) => {
                             if sprite.visible {
-                                let texture_path_opt: Option<String> = if let Some(texture_id) = &sprite.texture_id {
-                                    gfx.texture_manager.get_texture_path_from_id(texture_id).map(|s| s.to_string())
-                                } else {
-                                    sprite.texture_path.as_ref().map(|p| p.to_string())
+                                let resolved_id = match &sprite.texture_id {
+                                    Some(id) => Some(*id),
+                                    None => sprite.texture_path.as_deref().and_then(|path| {
+                                        gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue).ok()
+                                    }),
                                 };
-                                
-                                if let Some(tex_path) = texture_path_opt {
+                                if let Some(tex_id) = resolved_id {
                                     if let Some(global_transform) = global_transform_opt {
                                         gfx.renderer_2d.queue_texture(
                                             &mut gfx.renderer_prim,
@@ -3305,7 +3328,7 @@ impl<P: ScriptProvider> Scene<P> {
                                             &gfx.device,
                                             &gfx.queue,
                                             node_id,
-                                            &tex_path,
+                                            tex_id,
                                             global_transform,
                                             sprite.pivot,
                                             sprite.z_index,
@@ -3428,8 +3451,12 @@ impl<P: ScriptProvider> Scene<P> {
                             }
                         }
                         SceneNode::OmniLight3D(light) => {
+                            if light.light_id.is_none() {
+                                light.light_id = Some(gfx.light_manager.allocate());
+                            }
+                            let light_id = light.light_id.unwrap();
                             gfx.renderer_3d.queue_light(
-                                light.id,
+                                light_id,
                                 crate::renderer_3d::LightUniform {
                                     position: light.transform.position.to_array(),
                                     color: light.color.to_array(),
@@ -3440,9 +3467,13 @@ impl<P: ScriptProvider> Scene<P> {
                             );
                         }
                         SceneNode::DirectionalLight3D(light) => {
+                            if light.light_id.is_none() {
+                                light.light_id = Some(gfx.light_manager.allocate());
+                            }
+                            let light_id = light.light_id.unwrap();
                             let dir = light.transform.forward();
                             gfx.renderer_3d.queue_light(
-                                light.id,
+                                light_id,
                                 crate::renderer_3d::LightUniform {
                                     position: [dir.x, dir.y, dir.z],
                                     color: light.color.to_array(),
@@ -3453,9 +3484,13 @@ impl<P: ScriptProvider> Scene<P> {
                             );
                         }
                         SceneNode::SpotLight3D(light) => {
+                            if light.light_id.is_none() {
+                                light.light_id = Some(gfx.light_manager.allocate());
+                            }
+                            let light_id = light.light_id.unwrap();
                             let dir = light.transform.forward();
                             gfx.renderer_3d.queue_light(
-                                light.id,
+                                light_id,
                                 crate::renderer_3d::LightUniform {
                                     position: [dir.x, dir.y, dir.z],
                                     color: light.color.to_array(),

@@ -13,9 +13,8 @@ use wgpu::{
 };
 
 use crate::{
+    ids::TextureID,
     rendering::TextureManager,
-    // Text rendering now handled by egui
-    // rendering::{text_renderer::TextRenderer, native_glyph_cache::NativeGlyphAtlas},
     structs2d::{Transform2D, Vector2},
     ui_elements::ui_container::CornerRadius,
     vertex::Vertex,
@@ -109,8 +108,8 @@ pub struct PrimitiveRenderer {
     free_rect_slots: SmallVec<[usize; 16]>,
     rect_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
-    // Optimized texture storage
-    texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String, Vector2, u64)>>, // Added texture size and timestamp for sorting
+    // Optimized texture storage (by TextureID; path only at load time)
+    texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, TextureID, Vector2, u64)>>,
     texture_uuid_to_slot: FxHashMap<u64, usize>,
     free_texture_slots: SmallVec<[usize; 16]>,
     texture_dirty_ranges: SmallVec<[Range<usize>; 8]>,
@@ -118,16 +117,16 @@ pub struct PrimitiveRenderer {
     // Rendered instances (built from slots when needed)
     world_rect_instances: Vec<RectInstance>,
     ui_rect_instances: Vec<RectInstance>,
-    world_texture_groups: Vec<(String, Vec<TextureInstance>)>,
-    ui_texture_groups: Vec<(String, Vec<TextureInstance>)>,
+    world_texture_groups: Vec<(TextureID, Vec<TextureInstance>)>,
+    ui_texture_groups: Vec<(TextureID, Vec<TextureInstance>)>,
 
     world_texture_group_offsets: Vec<(usize, usize)>,
     ui_texture_group_offsets: Vec<(usize, usize)>,
     world_texture_buffer_ranges: Vec<Range<u64>>,
     ui_texture_buffer_ranges: Vec<Range<u64>>,
 
-    temp_texture_map: FxHashMap<String, Vec<TextureInstance>>,
-    temp_sorted_groups: Vec<(String, Vec<TextureInstance>)>,
+    temp_texture_map: FxHashMap<TextureID, Vec<TextureInstance>>,
+    temp_sorted_groups: Vec<(TextureID, Vec<TextureInstance>)>,
     temp_all_texture_instances: Vec<TextureInstance>,
 
     // Batching optimization fields
@@ -378,19 +377,15 @@ impl PrimitiveRenderer {
         
         // Check against all texture instances with higher z_index
         for slot in &self.texture_instance_slots {
-            if let Some((layer, texture_instance, texture_path, _texture_size, _timestamp)) = slot {
-                // Only check World2D layer textures
+            if let Some((layer, texture_instance, texture_id, _texture_size, _timestamp)) = slot {
                 if *layer == RenderLayer::World2D && texture_instance.z_index > visual_z_index {
-                    // Extract transform from texture instance (scale already includes texture size)
                     let texture_transform = Self::texture_instance_to_transform(texture_instance);
-                    // Use the scale from the transform as the size (it already includes texture size)
                     let texture_size = texture_transform.scale;
                     let texture_aabb = Self::calculate_aabb(&texture_transform, &texture_size);
-                    
                     if Self::aabb_contains(texture_aabb, visual_aabb) {
                         let occluder_info = format!(
-                            "{} (z={}) occluded by sprite '{}' (z={})",
-                            visual_type, visual_z_index, texture_path, texture_instance.z_index
+                            "{} (z={}) occluded by sprite {:?} (z={})",
+                            visual_type, visual_z_index, texture_id, texture_instance.z_index
                         );
                         return (true, Some(occluder_info));
                     }
@@ -559,37 +554,18 @@ impl PrimitiveRenderer {
         &mut self,
         uuid: u64,
         layer: RenderLayer,
-        texture_path: &str,
+        texture_id: TextureID,
         transform: Transform2D,
         pivot: Vector2,
         z_index: i32,
         created_timestamp: u64,
         texture_manager: &mut crate::rendering::TextureManager,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
     ) {
-        // OPTIMIZED: Only lookup texture if we don't already have it cached
-        // Check if sprite already exists and has same texture path
-        let tex_size = if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
-            if let Some(existing) = &self.texture_instance_slots[slot] {
-                // If texture path matches, reuse cached texture size
-                if existing.2 == texture_path {
-                    existing.3 // Reuse cached texture size
-                } else {
-                    // Texture path changed, need to lookup new texture
-                    let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
-                    Vector2::new(tex.width as f32, tex.height as f32)
-                }
-            } else {
-                // Slot exists but is None, lookup texture
-                let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
-                Vector2::new(tex.width as f32, tex.height as f32)
-            }
-        } else {
-            // New sprite, lookup texture
-            let tex = texture_manager.get_or_load_texture_sync(texture_path, device, queue);
-            Vector2::new(tex.width as f32, tex.height as f32)
-        };
+        let tex_size = texture_manager
+            .get_texture_size_by_id(&texture_id)
+            .unwrap_or_else(|| Vector2::new(1.0, 1.0));
 
         // Create a *new* version for rendering
         let adjusted_transform = Transform2D {
@@ -603,10 +579,8 @@ impl PrimitiveRenderer {
         
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size) {
-            // Remove from slots if it exists (sprite moved offscreen)
             if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
-                if let Some(_existing) = &mut self.texture_instance_slots[slot] {
-                    // Mark as removed by setting to None
+                if self.texture_instance_slots[slot].is_some() {
                     self.texture_instance_slots[slot] = None;
                     self.free_texture_slots.push(slot);
                     self.texture_uuid_to_slot.remove(&uuid);
@@ -615,7 +589,7 @@ impl PrimitiveRenderer {
                     self.instances_need_rebuild = true;
                 }
             }
-            return; // Don't queue offscreen sprites
+            return;
         }
         
         // DISABLED: Occlusion culling - O(n²) performance bottleneck (9M comparisons for 3000 sprites)
@@ -639,12 +613,9 @@ impl PrimitiveRenderer {
         //     }
         // }
 
-        // OPTIMIZED: Early exit if sprite exists and transform matrix hasn't changed
-        // Compare the instance data directly (cheaper than reconstructing transform)
         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
             if let Some(existing) = &self.texture_instance_slots[slot] {
-                // Quick checks: texture path and layer must match
-                if existing.0 == layer && existing.2 == texture_path {
+                if existing.0 == layer && existing.2 == texture_id {
                     // Create new instance to compare (but we need tex_size first, which we already have)
                     let test_instance = self.create_texture_instance(
                         Transform2D {
@@ -672,26 +643,20 @@ impl PrimitiveRenderer {
         }
 
         let new_instance = self.create_texture_instance(adjusted_transform, pivot, z_index, created_timestamp);
-        let texture_path = texture_path.to_string();
 
-        // The rest stays exactly the same
         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
             if let Some(ref mut existing) = self.texture_instance_slots[slot] {
-                // Always update if layer, instance, or texture path changed
-                // Use a more robust comparison for TextureInstance to handle floating point precision
                 let instance_changed =
-                existing.1.transform_0 != new_instance.transform_0
-                || existing.1.transform_1 != new_instance.transform_1
-                || existing.1.transform_2 != new_instance.transform_2
-                || existing.1.pivot != new_instance.pivot
-                || existing.1.z_index != new_instance.z_index;
-
-                if existing.0 != layer || instance_changed || existing.2 != texture_path {
+                    existing.1.transform_0 != new_instance.transform_0
+                    || existing.1.transform_1 != new_instance.transform_1
+                    || existing.1.transform_2 != new_instance.transform_2
+                    || existing.1.pivot != new_instance.pivot
+                    || existing.1.z_index != new_instance.z_index;
+                if existing.0 != layer || instance_changed || existing.2 != texture_id {
                     existing.0 = layer;
                     existing.1 = new_instance;
-                    existing.2 = texture_path;
-                    existing.3 = tex_size; // Update texture size
-                    // Keep existing timestamp (existing.4)
+                    existing.2 = texture_id;
+                    existing.3 = tex_size;
                     self.mark_texture_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -705,8 +670,7 @@ impl PrimitiveRenderer {
                 self.texture_instance_slots.push(None);
                 new_slot
             };
-
-            self.texture_instance_slots[slot] = Some((layer, new_instance, texture_path, tex_size, created_timestamp));
+            self.texture_instance_slots[slot] = Some((layer, new_instance, texture_id, tex_size, created_timestamp));
             self.texture_uuid_to_slot.insert(uuid, slot);
             self.mark_texture_slot_dirty(slot);
             self.dirty_count += 1;
@@ -1297,32 +1261,28 @@ impl PrimitiveRenderer {
         self.world_texture_buffer_ranges.clear();
         self.ui_texture_buffer_ranges.clear();
 
-        // OPTIMIZED: Fast path for single texture (common case)
-        // First pass: verify all sprites use the same texture, collect instances
         let mut world_instances: Vec<TextureInstance> = Vec::new();
         let mut ui_instances: Vec<TextureInstance> = Vec::new();
-        let mut world_texture_path: Option<String> = None;
-        let mut ui_texture_path: Option<String> = None;
+        let mut world_texture_id: Option<TextureID> = None;
+        let mut ui_texture_id: Option<TextureID> = None;
         let mut world_single_texture = true;
         let mut ui_single_texture = true;
 
         for slot in &self.texture_instance_slots {
-            if let Some((layer, instance, texture_path, _tex_size, _timestamp)) = slot {
+            if let Some((layer, instance, texture_id, _tex_size, _timestamp)) = slot {
                 match layer {
                     RenderLayer::World2D => {
-                        if world_texture_path.is_none() {
-                            world_texture_path = Some(texture_path.clone());
-                        } else if world_texture_path.as_ref().unwrap() != texture_path {
-                            // Different texture detected, can't use fast path
+                        if world_texture_id.is_none() {
+                            world_texture_id = Some(*texture_id);
+                        } else if world_texture_id != Some(*texture_id) {
                             world_single_texture = false;
                         }
                         world_instances.push(*instance);
                     }
                     RenderLayer::UI => {
-                        if ui_texture_path.is_none() {
-                            ui_texture_path = Some(texture_path.clone());
-                        } else if ui_texture_path.as_ref().unwrap() != texture_path {
-                            // Different texture detected, can't use fast path
+                        if ui_texture_id.is_none() {
+                            ui_texture_id = Some(*texture_id);
+                        } else if ui_texture_id != Some(*texture_id) {
                             ui_single_texture = false;
                         }
                         ui_instances.push(*instance);
@@ -1331,16 +1291,13 @@ impl PrimitiveRenderer {
             }
         }
 
-        // Use fast path only if all sprites use the same texture
         if world_single_texture && ui_single_texture {
-            // Fast path: single texture, skip hashmap grouping
             if !world_instances.is_empty() {
-                if let Some(path) = world_texture_path {
-                    // OPTIMIZED: Only sort if more than one instance
+                if let Some(tid) = world_texture_id {
                     if world_instances.len() > 1 {
                         world_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
                     }
-                    self.world_texture_groups.push((path, world_instances));
+                    self.world_texture_groups.push((tid, world_instances));
                     self.world_texture_group_offsets.push((0, self.world_texture_groups[0].1.len()));
                     const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
                     let size_bytes = self.world_texture_groups[0].1.len() * INSTANCE_SIZE;
@@ -1349,8 +1306,7 @@ impl PrimitiveRenderer {
             }
 
             if !ui_instances.is_empty() {
-                if let Some(path) = ui_texture_path {
-                    // OPTIMIZED: Only sort if more than one instance
+                if let Some(tid) = ui_texture_id {
                     if ui_instances.len() > 1 {
                         ui_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
                     }
@@ -1359,7 +1315,7 @@ impl PrimitiveRenderer {
                     } else {
                         0
                     };
-                    self.ui_texture_groups.push((path, ui_instances));
+                    self.ui_texture_groups.push((tid, ui_instances));
                     self.ui_texture_group_offsets.push((world_offset, self.ui_texture_groups[0].1.len()));
                     const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
                     let start_byte = world_offset * INSTANCE_SIZE;
@@ -1368,8 +1324,6 @@ impl PrimitiveRenderer {
                 }
             }
         } else {
-            // Fallback: multiple textures detected, use full grouping logic
-            // Multiple textures detected, use full grouping logic
             self.world_texture_groups.clear();
             self.ui_texture_groups.clear();
             self.world_texture_group_offsets.clear();
@@ -1377,22 +1331,21 @@ impl PrimitiveRenderer {
             self.world_texture_buffer_ranges.clear();
             self.ui_texture_buffer_ranges.clear();
 
-            // Reuse temp_texture_map instead of allocating new HashMaps
             self.temp_texture_map.clear();
-            let mut ui_texture_map: FxHashMap<String, Vec<TextureInstance>> = FxHashMap::default();
+            let mut ui_texture_map: FxHashMap<TextureID, Vec<TextureInstance>> = FxHashMap::default();
 
             for slot in &self.texture_instance_slots {
-                if let Some((layer, instance, texture_path, _tex_size, _timestamp)) = slot {
+                if let Some((layer, instance, texture_id, _tex_size, _timestamp)) = slot {
                     match layer {
                         RenderLayer::World2D => {
                             self.temp_texture_map
-                                .entry(texture_path.clone())
+                                .entry(*texture_id)
                                 .or_insert_with(Vec::new)
                                 .push(*instance);
                         }
                         RenderLayer::UI => {
                             ui_texture_map
-                                .entry(texture_path.clone())
+                                .entry(*texture_id)
                                 .or_insert_with(Vec::new)
                                 .push(*instance);
                         }
@@ -1477,49 +1430,37 @@ impl PrimitiveRenderer {
     }
 
     fn build_texture_groups(
-        mut texture_map: FxHashMap<String, Vec<TextureInstance>>,
-        groups: &mut Vec<(String, Vec<TextureInstance>)>,
+        mut texture_map: FxHashMap<TextureID, Vec<TextureInstance>>,
+        groups: &mut Vec<(TextureID, Vec<TextureInstance>)>,
         offsets: &mut Vec<(usize, usize)>,
         ranges: &mut Vec<Range<u64>>,
         buffer_offset: usize,
-        temp_sorted_groups: &mut Vec<(String, Vec<TextureInstance>)>,
+        temp_sorted_groups: &mut Vec<(TextureID, Vec<TextureInstance>)>,
     ) {
         temp_sorted_groups.clear();
         temp_sorted_groups.extend(texture_map.drain());
-        // OPTIMIZED: Only sort if more than one group
         if temp_sorted_groups.len() > 1 {
             temp_sorted_groups.sort_by(|a, b| {
-                // OPTIMIZED: Use first instance z_index as proxy (most groups have same z_index)
-                // This avoids iterating through all instances for each comparison
                 let z_a = a.1.first().map(|c| c.z_index).unwrap_or(0);
                 let z_b = b.1.first().map(|c| c.z_index).unwrap_or(0);
                 z_a.cmp(&z_b)
-                // Note: Timestamp sorting for texture groups would require storing timestamps separately
-                // For now, just sort by z_index within groups
             });
         }
 
         let mut current_offset = buffer_offset;
-
-        // OPTIMIZED: Pre-compute size_of constant to avoid repeated calculations
         const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
-        
-        for (path, mut instances) in temp_sorted_groups.drain(..) {
-            // OPTIMIZED: Only sort if more than one instance (no-op for single instance)
-            // Sort by z_index (timestamp sorting handled at higher level for texture groups)
+
+        for (texture_id, mut instances) in temp_sorted_groups.drain(..) {
             if instances.len() > 1 {
                 instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
             }
-
             let count = instances.len();
             let start_byte = current_offset * INSTANCE_SIZE;
             let size_bytes = count * INSTANCE_SIZE;
             let range = (start_byte as u64)..((start_byte + size_bytes) as u64);
-
-            groups.push((path, instances));
+            groups.push((texture_id, instances));
             offsets.push((current_offset, count));
             ranges.push(range);
-
             current_offset += count;
         }
     }
@@ -1543,7 +1484,7 @@ impl PrimitiveRenderer {
 
     fn render_textures(
         &self,
-        texture_groups: &[(String, Vec<TextureInstance>)],
+        texture_groups: &[(TextureID, Vec<TextureInstance>)],
         group_offsets: &[(usize, usize)],
         buffer_ranges: &[Range<u64>],
         rpass: &mut RenderPass<'_>,
@@ -1553,26 +1494,25 @@ impl PrimitiveRenderer {
         camera_bind_group: &wgpu::BindGroup,
         vertex_buffer: &wgpu::Buffer,
     ) {
-        for (i, (texture_path, _)) in texture_groups.iter().enumerate() {
+        for (i, (texture_id, _)) in texture_groups.iter().enumerate() {
             let (_, count) = group_offsets[i];
-
             if count > 0 {
-                let tex_bg = texture_manager.get_or_create_bind_group(
-                    texture_path,
+                if let Some(tex_bg) = texture_manager.get_or_create_bind_group_by_id(
+                    *texture_id,
                     device,
                     queue,
                     &self.texture_bind_group_layout,
-                );
-
-                rpass.set_pipeline(&self.texture_instanced_pipeline);
-                rpass.set_bind_group(0, tex_bg, &[]);
-                rpass.set_bind_group(1, camera_bind_group, &[]);
-                rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                rpass.set_vertex_buffer(
-                    1,
-                    self.texture_instance_buffer.slice(buffer_ranges[i].clone()),
-                );
-                rpass.draw(0..6, 0..count as u32);
+                ) {
+                    rpass.set_pipeline(&self.texture_instanced_pipeline);
+                    rpass.set_bind_group(0, tex_bg, &[]);
+                    rpass.set_bind_group(1, camera_bind_group, &[]);
+                    rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    rpass.set_vertex_buffer(
+                        1,
+                        self.texture_instance_buffer.slice(buffer_ranges[i].clone()),
+                    );
+                    rpass.draw(0..6, 0..count as u32);
+                }
             }
         }
     }

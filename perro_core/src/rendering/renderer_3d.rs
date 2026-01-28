@@ -1,15 +1,13 @@
 use glam::Mat4;
 use std::cmp::Ordering;
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-};
+use std::borrow::Cow;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device, Queue, RenderPass,
     RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat, util::DeviceExt,
 };
 
+use crate::ids::{LightID, MaterialID, MeshID};
 use crate::{Frustum, MaterialManager, MeshManager, Transform3D};
 
 use rayon::prelude::*;
@@ -68,8 +66,7 @@ pub struct MeshInstance {
 
 pub struct MeshSlot {
     pub instance: MeshInstance,
-    pub mesh_path: String,
-    pub material_path: String, // Store material path for cache validation
+    pub mesh_id: MeshID,
     pub instance_visible: bool,
 }
 
@@ -85,29 +82,29 @@ pub struct Mesh {
 pub struct Renderer3D {
     pipeline: RenderPipeline,
 
-    // Lighting
+    // Lighting (keyed by LightID from LightManager)
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_slots: Vec<Option<LightUniform>>,
-    light_uuid_to_slot: HashMap<u64, usize>,
+    light_id_to_slot: FxHashMap<LightID, usize>,
     free_light_slots: Vec<usize>,
     lights_need_rebuild: bool,
 
-    // Materials
+    // Materials (keyed by MaterialID; GPU slot index = u32)
     material_buffer: wgpu::Buffer,
     material_bind_group: wgpu::BindGroup,
     material_slots: Vec<Option<MaterialUniform>>,
-    material_uuid_to_slot: HashMap<u64, usize>,
+    material_id_to_slot: FxHashMap<MaterialID, usize>,
     free_material_slots: Vec<usize>,
     materials_need_rebuild: bool,
 
-    // Instancing - Updated to use MeshSlot
+    // Instancing - keyed by NodeID; each slot stores MeshID + GPU material slot
     mesh_instance_slots: Vec<Option<MeshSlot>>,
-    mesh_uuid_to_slot: HashMap<u64, usize>,
+    mesh_node_to_slot: FxHashMap<crate::ids::NodeID, usize>,
     free_mesh_slots: Vec<usize>,
 
-    // Batching info - Updated for better material batching
-    mesh_material_groups: Vec<(String, u32, Vec<MeshInstance>)>, // (mesh_path, material_id, instances)
+    // Batching: (MeshID, GPU material slot, instances)
+    mesh_material_groups: Vec<(MeshID, u32, Vec<MeshInstance>)>,
     mesh_instance_buffer: wgpu::Buffer,
 
     last_frustum_matrix: glam::Mat4,
@@ -325,19 +322,19 @@ impl Renderer3D {
             light_buffer,
             light_bind_group,
             light_slots: vec![None; MAX_LIGHTS],
-            light_uuid_to_slot: HashMap::new(),
+            light_id_to_slot: FxHashMap::default(),
             free_light_slots: (0..MAX_LIGHTS).collect(),
             lights_need_rebuild: false,
 
             material_buffer,
             material_bind_group,
             material_slots: vec![None; MAX_MATERIALS],
-            material_uuid_to_slot: HashMap::new(),
+            material_id_to_slot: FxHashMap::default(),
             free_material_slots: (0..MAX_MATERIALS).rev().collect(),
             materials_need_rebuild: false,
 
             mesh_instance_slots: Vec::new(),
-            mesh_uuid_to_slot: HashMap::new(),
+            mesh_node_to_slot: FxHashMap::default(),
             free_mesh_slots: Vec::new(),
             mesh_material_groups: Vec::new(),
             mesh_instance_buffer,
@@ -350,9 +347,8 @@ impl Renderer3D {
     }
 
     // ===== LIGHT MANAGEMENT =====
-    pub fn queue_light(&mut self, id: crate::ids::NodeID, light_uniform: LightUniform) {
-        let id_u64 = id.as_u64();
-        let _slot = if let Some(&slot_idx) = self.light_uuid_to_slot.get(&id_u64) {
+    pub fn queue_light(&mut self, id: LightID, light_uniform: LightUniform) {
+        let _slot = if let Some(&slot_idx) = self.light_id_to_slot.get(&id) {
             if let Some(existing_light) = &mut self.light_slots[slot_idx] {
                 if *existing_light != light_uniform {
                     *existing_light = light_uniform;
@@ -363,10 +359,10 @@ impl Renderer3D {
         } else {
             if let Some(free_slot_idx) = self.free_light_slots.pop() {
                 self.light_slots[free_slot_idx] = Some(light_uniform);
-                self.light_uuid_to_slot.insert(id_u64, free_slot_idx);
+                self.light_id_to_slot.insert(id, free_slot_idx);
                 self.lights_need_rebuild = true;
                 println!(
-                    "💡 Queued new light UUID: {:?}, slot: {}",
+                    "💡 Queued new light LightID: {:?}, slot: {}",
                     id, free_slot_idx
                 );
                 free_slot_idx
@@ -406,22 +402,21 @@ impl Renderer3D {
         }
     }
 
-    pub fn stop_rendering_light(&mut self, uuid: u64) {
-        if let Some(&slot_idx) = self.light_uuid_to_slot.get(&uuid) {
+    pub fn stop_rendering_light(&mut self, id: LightID) {
+        if let Some(slot_idx) = self.light_id_to_slot.remove(&id) {
             self.light_slots[slot_idx] = None;
             self.free_light_slots.push(slot_idx);
-            self.light_uuid_to_slot.remove(&uuid);
             self.lights_need_rebuild = true;
             println!(
-                "🟫 Stopped rendering light UUID: {:?}, slot: {}",
-                uuid, slot_idx
+                "🟫 Stopped rendering light LightID: {:?}, slot: {}",
+                id, slot_idx
             );
         }
     }
 
     // ===== MATERIAL MANAGEMENT =====
-    pub fn queue_material(&mut self, id: u64, material: MaterialUniform) -> u32 {
-        let slot = if let Some(&slot_idx) = self.material_uuid_to_slot.get(&id) {
+    pub fn queue_material(&mut self, id: MaterialID, material: MaterialUniform) -> u32 {
+        let slot = if let Some(&slot_idx) = self.material_id_to_slot.get(&id) {
             if let Some(existing_mat) = &mut self.material_slots[slot_idx] {
                 if *existing_mat != material {
                     *existing_mat = material;
@@ -432,7 +427,7 @@ impl Renderer3D {
         } else {
             if let Some(free_slot_idx) = self.free_material_slots.pop() {
                 self.material_slots[free_slot_idx] = Some(material);
-                self.material_uuid_to_slot.insert(id, free_slot_idx);
+                self.material_id_to_slot.insert(id, free_slot_idx);
                 self.materials_need_rebuild = true;
                 free_slot_idx
             } else {
@@ -472,11 +467,10 @@ impl Renderer3D {
         }
     }
 
-    pub fn stop_rendering_material(&mut self, uuid: u64) {
-        if let Some(&slot_idx) = self.material_uuid_to_slot.get(&uuid) {
+    pub fn stop_rendering_material(&mut self, id: MaterialID) {
+        if let Some(slot_idx) = self.material_id_to_slot.remove(&id) {
             self.material_slots[slot_idx] = None;
             self.free_material_slots.push(slot_idx);
-            self.material_uuid_to_slot.remove(&uuid);
             self.materials_need_rebuild = true;
         }
     }
@@ -484,45 +478,38 @@ impl Renderer3D {
     // ===== MESH MANAGEMENT =====
     pub fn queue_mesh(
         &mut self,
-        uuid: crate::ids::NodeID,
+        node_id: crate::ids::NodeID,
         mesh_path: &str,
         transform: Transform3D,
-        material_path: Option<&str>, // Accept Option<&str>
+        material_path: Option<&str>,
         mesh_manager: &mut MeshManager,
         material_manager: &mut MaterialManager,
         device: &Device,
         queue: &Queue,
     ) {
-        // Ensure mesh is loaded
-        mesh_manager.get_or_load_mesh(mesh_path, device, queue);
+        let mesh_id = match mesh_manager.get_or_load_mesh(mesh_path, device, queue) {
+            Some(id) => id,
+            None => return,
+        };
 
-        // Use default material if none provided
         let material_path = material_path.unwrap_or("__default__");
-
-        // Resolve material to slot ID
-        let material_id = material_manager.get_or_upload_material(material_path, self);
+        let material_gpu_slot = material_manager.get_or_upload_material(material_path, self);
 
         let new_instance = MeshInstance {
             model_matrix: transform.to_mat4().to_cols_array_2d(),
-            material_id,
+            material_id: material_gpu_slot,
             _padding: [0; 3],
         };
 
         let new_slot = MeshSlot {
             instance: new_instance,
-            mesh_path: mesh_path.to_owned(),
-            material_path: material_path.to_owned(),
+            mesh_id,
             instance_visible: true,
         };
 
-        let uuid_u64 = uuid.as_u64();
-        if let Some(&slot) = self.mesh_uuid_to_slot.get(&uuid_u64) {
+        if let Some(&slot) = self.mesh_node_to_slot.get(&node_id) {
             if let Some(existing) = &mut self.mesh_instance_slots[slot] {
-                // Check if anything changed
-                if existing.instance != new_instance
-                    || existing.mesh_path != mesh_path
-                    || existing.material_path != material_path
-                {
+                if existing.instance != new_instance || existing.mesh_id != mesh_id {
                     *existing = new_slot;
                     self.instances_need_rebuild = true;
                 }
@@ -536,20 +523,19 @@ impl Renderer3D {
                 self.mesh_instance_slots.push(None);
             }
             self.mesh_instance_slots[slot] = Some(new_slot);
-            self.mesh_uuid_to_slot.insert(uuid_u64, slot);
+            self.mesh_node_to_slot.insert(node_id, slot);
             self.instances_need_rebuild = true;
         }
     }
 
-    pub fn stop_rendering_mesh(&mut self, uuid: u64) {
-        if let Some(&slot_idx) = self.mesh_uuid_to_slot.get(&uuid) {
+    pub fn stop_rendering_mesh(&mut self, node_id: crate::ids::NodeID) {
+        if let Some(slot_idx) = self.mesh_node_to_slot.remove(&node_id) {
             self.mesh_instance_slots[slot_idx] = None;
             self.free_mesh_slots.push(slot_idx);
-            self.mesh_uuid_to_slot.remove(&uuid);
             self.instances_need_rebuild = true;
             println!(
-                "🟫 Stopped rendering mesh UUID: {:?}, slot: {}",
-                uuid, slot_idx
+                "🟫 Stopped rendering mesh NodeID: {:?}, slot: {}",
+                node_id, slot_idx
             );
         }
     }
@@ -562,7 +548,7 @@ impl Renderer3D {
         camera_view: &glam::Mat4,
         camera_projection: &glam::Mat4,
     ) {
-        type MeshGroupKey = (String, u32);
+        type MeshGroupKey = (MeshID, u32);
         type MeshGroupMap = FxHashMap<MeshGroupKey, Vec<MeshInstance>>;
 
         let need_recull = self.instances_need_rebuild; // Objects moved
@@ -578,8 +564,7 @@ impl Renderer3D {
                     let slot_data = slot.as_mut()?;
 
                     // Re-cull because objects moved
-                    let visible = if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path)
-                    {
+                    let visible = if let Some(mesh) = mesh_manager.get_mesh_by_id(slot_data.mesh_id) {
                         let model =
                             glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
                         let center_ws = model.transform_point3(mesh.bounds_center);
@@ -593,7 +578,7 @@ impl Renderer3D {
                     slot_data.instance_visible = visible;
 
                     if visible {
-                        let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
+                        let key = (slot_data.mesh_id, slot_data.instance.material_id);
                         Some((key, slot_data.instance))
                     } else {
                         None
@@ -624,7 +609,7 @@ impl Renderer3D {
                 .filter_map(|slot| slot.as_ref())
                 .filter(|slot_data| slot_data.instance_visible)
                 .map(|slot_data| {
-                    let key = (slot_data.mesh_path.clone(), slot_data.instance.material_id);
+                    let key = (slot_data.mesh_id, slot_data.instance.material_id);
                     (key, slot_data.instance)
                 })
                 .fold(
@@ -668,7 +653,7 @@ impl Renderer3D {
         sorted_groups.sort_by(|a, b| {
             let (mesh_a, mat_a) = &a.0;
             let (mesh_b, mat_b) = &b.0;
-            match mesh_a.cmp(mesh_b) {
+            match mesh_a.as_u64().cmp(&mesh_b.as_u64()) {
                 Ordering::Equal => mat_a.cmp(mat_b),
                 ord => ord,
             }
@@ -720,7 +705,7 @@ impl Renderer3D {
         // ---- 6️⃣  Save as final render batches ----
         self.mesh_material_groups = sorted_groups
             .into_iter()
-            .map(|((mesh_path, material_id), instances)| (mesh_path, material_id, instances))
+            .map(|((mesh_id, material_id), instances)| (mesh_id, material_id, instances))
             .collect();
 
         // ---- 7️⃣  Upload instance buffer ----
@@ -774,7 +759,7 @@ impl Renderer3D {
         let mut any_change = false;
         for slot in &mut self.mesh_instance_slots {
             if let Some(slot_data) = slot {
-                if let Some(mesh) = mesh_manager.meshes.get(&slot_data.mesh_path) {
+                if let Some(mesh) = mesh_manager.get_mesh_by_id(slot_data.mesh_id) {
                     let model = glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
                     let center_ws = model.transform_point3(mesh.bounds_center);
                     let scale = model.col(0).truncate().length();
@@ -844,8 +829,8 @@ impl Renderer3D {
         // -------------------------------------------------------------------------
         let mut instance_offset = 0;
 
-        for (mesh_path, _material_id, instances) in &self.mesh_material_groups {
-            if let Some(mesh) = mesh_manager.meshes.get(mesh_path) {
+        for (mesh_id, _material_id, instances) in &self.mesh_material_groups {
+            if let Some(mesh) = mesh_manager.get_mesh_by_id(*mesh_id) {
                 // Configure pipeline and all bindings
                 rpass.set_pipeline(&self.pipeline);
                 rpass.set_bind_group(0, camera_bind_group, &[]);

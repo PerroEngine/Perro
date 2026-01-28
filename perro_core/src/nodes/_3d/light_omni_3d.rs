@@ -5,9 +5,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::ids::LightID;
 use crate::{Color, Node3D, nodes::node_registry::NodeType};
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct OmniLight3D {
     #[serde(rename = "type")]
     pub ty: NodeType,
@@ -18,6 +19,23 @@ pub struct OmniLight3D {
 
     #[serde(rename = "base")]
     pub base: Node3D,
+
+    /// Runtime-only: allocated from Graphics.light_manager when first queued.
+    #[serde(skip)]
+    pub light_id: Option<LightID>,
+}
+
+impl Default for OmniLight3D {
+    fn default() -> Self {
+        Self {
+            ty: NodeType::OmniLight3D,
+            color: Color::default(),
+            intensity: 1.0,
+            range: 10.0,
+            base: Node3D::default(),
+            light_id: None,
+        }
+    }
 }
 
 impl OmniLight3D {
@@ -30,6 +48,7 @@ impl OmniLight3D {
             intensity: 1.0,
             range: 10.0,
             base,
+            light_id: None,
         }
     }
 }

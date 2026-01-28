@@ -66,6 +66,19 @@ When the `profiling` feature is **disabled** (default), there is **zero overhead
 
 When enabled, there is minimal overhead from tracing spans, but it's designed to be lightweight.
 
+## GPU Usage (simple 2D scenes)
+
+If you see ~15–25% GPU usage for a simple 2D scene, the main cause is **high frame rate**. The default `fps_cap` is 500 and present mode is **Immediate** (no VSync), so the engine renders as many frames as the cap allows. At 500 FPS the GPU is busy every frame; at 60 FPS it would be much lower.
+
+To reduce GPU usage for simple 2D:
+
+- **Lower FPS cap**: In your project’s `project.toml`, set `[performance] fps_cap = 60` (or your display’s refresh rate). The app will sleep between frames and GPU usage will drop.
+- **VSync**: Using Fifo present mode (VSync) would let the display cap the rate and idle the GPU between vsyncs; this is not currently selectable per-project but may be added later.
+</think>
+Summarizing texture storage and finishing up.
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
+TodoWrite
+
 ## Alternative: cargo-flamegraph
 
 You can also use `cargo-flamegraph` directly (doesn't require the feature flag):

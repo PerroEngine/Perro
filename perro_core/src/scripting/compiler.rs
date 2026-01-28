@@ -2834,14 +2834,21 @@ impl Compiler {
                     .replace_all(&node_str, "uuid!(\"$1\")")
                     .to_string();
 
-                // Fix ID type constructor calls (all ID types have private fields, must use from_u32)
-                // Handle NodeID, TextureID, MaterialID, MeshID, LightID, UIElementID
+                // Fix ID type constructor calls. Debug format is IdType(index:generation) which is
+                // not valid Rust. Default all IDs to nil since they get overridden at load anyway.
                 let id_types = ["NodeID", "TextureID", "MaterialID", "MeshID", "LightID", "UIElementID"];
                 for id_type in &id_types {
+                    // Match Debug format IdType(123:456) -> IdType::nil()
+                    let debug_pattern = format!(r"{}\(\d+:\d+\)", id_type);
+                    let debug_id_regex = Regex::new(&debug_pattern)?;
+                    node_str = debug_id_regex
+                        .replace_all(&node_str, &format!("{}::nil()", id_type))
+                        .to_string();
+                    // Match single-arg IdType(123) (legacy) -> IdType::nil()
                     let pattern = format!(r"{}\((\d+)\)", id_type);
                     let id_regex = Regex::new(&pattern)?;
                     node_str = id_regex
-                        .replace_all(&node_str, &format!("{}::from_u32($1)", id_type))
+                        .replace_all(&node_str, &format!("{}::nil()", id_type))
                         .to_string();
                 }
 

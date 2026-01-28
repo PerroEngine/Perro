@@ -1,3 +1,4 @@
+use crate::ids::LightID;
 use crate::{Color, nodes::_3d::node_3d::Node3D, nodes::node_registry::NodeType};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -16,6 +17,10 @@ pub struct DirectionalLight3D {
 
     #[serde(rename = "base", default = "Node3D::default")]
     pub base: Node3D,
+
+    /// Runtime-only: allocated from Graphics.light_manager when first queued.
+    #[serde(skip)]
+    pub light_id: Option<LightID>,
 }
 
 // ---------- Default fallback functions ----------
@@ -33,6 +38,7 @@ impl Default for DirectionalLight3D {
             color: Color::default(),
             intensity: default_intensity(),
             base: Node3D::default(),
+            light_id: None,
         }
     }
 }

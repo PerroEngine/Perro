@@ -5,6 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::ids::LightID;
 use crate::{Color, Node3D, nodes::node_registry::NodeType};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -29,6 +30,10 @@ pub struct SpotLight3D {
 
     #[serde(rename = "base", default = "Node3D::default")]
     pub base: Node3D,
+
+    /// Runtime-only: allocated from Graphics.light_manager when first queued.
+    #[serde(skip)]
+    pub light_id: Option<LightID>,
 }
 
 // ---------- Default fallback values ----------
@@ -61,6 +66,7 @@ impl Default for SpotLight3D {
             inner_angle: default_inner_angle(),
             outer_angle: default_outer_angle(),
             base: Node3D::default(),
+            light_id: None,
         }
     }
 }

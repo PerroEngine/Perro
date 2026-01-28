@@ -1,4 +1,5 @@
 use crate::{
+    ids::TextureID,
     rendering::{PrimitiveRenderer, RenderLayer, TextureManager},
     structs2d::{Transform2D, Vector2},
     ui_elements::ui_container::CornerRadius,
@@ -48,7 +49,7 @@ impl Renderer2D {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         uuid: crate::ids::NodeID,
-        texture_path: &str,
+        texture_id: TextureID,
         transform: Transform2D,
         pivot: Vector2,
         z_index: i32,
@@ -57,7 +58,7 @@ impl Renderer2D {
         primitive_renderer.queue_texture(
             uuid.as_u64(),
             RenderLayer::World2D,
-            texture_path,
+            texture_id,
             transform,
             pivot,
             z_index,

@@ -9,7 +9,7 @@ struct Cabbage {
     var x: int
 }
 
-var cab = new Cabbage { x: 11 }
+var cab = new Cabbage { x: 111 }
 
 on init() {
 

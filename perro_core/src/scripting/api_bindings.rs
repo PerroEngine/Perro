@@ -707,101 +707,41 @@ impl ModuleCodegen for ConsoleApi {
             false
         }
 
-        // True if this expression fetches a value from a script/module (e.g. c_par::test_var, c_par::arr[b]).
-        // In those cases we use the script's id only to get the value; we must never treat it as a node for get_type.
-        fn expr_uses_script_value_access(expr: &Expr, script: &Script) -> bool {
-            match expr {
-                Expr::MemberAccess(base, _field) => {
-                    if let Expr::Ident(mod_name) = base.as_ref() {
-                        script.module_variables.contains_key(mod_name) || script.module_names.contains(mod_name)
-                    } else {
-                        expr_uses_script_value_access(base, script)
-                    }
-                }
-                Expr::Index(base, key) => {
-                    expr_uses_script_value_access(base, script) || expr_uses_script_value_access(key, script)
-                }
-                Expr::Call(callee, call_args) => {
-                    expr_uses_script_value_access(callee, script)
-                        || call_args.iter().any(|a| expr_uses_script_value_access(a, script))
-                }
-                Expr::BinaryOp(l, _, r) => {
-                    expr_uses_script_value_access(l, script) || expr_uses_script_value_access(r, script)
-                }
-                Expr::Range(l, r) => {
-                    expr_uses_script_value_access(l, script) || expr_uses_script_value_access(r, script)
-                }
-                Expr::Cast(inner, _) => expr_uses_script_value_access(inner, script),
-                _ => false,
-            }
-        }
-
-        // Check if the argument is a node (Uuid) - if so, convert to print node type instead
-        // Build the format string - handle both single and multiple arguments
+        // When do we print node type (get_type) vs the value?
+        // Only when we KNOW the argument is a node: self (SelfAccess) or a variable typed Node/DynNode (e.g. c_par).
+        // c_par::test_var and c_par::[b] are expressions that resolve to a value that ISN'T a node (script var);
+        // we only use the node's id to fetch that value, so we print the result (temp_api_var), never get_type.
         let format_str = if args.len() == 1 {
-            // Single argument case
             let arg_expr = args.get(0);
             let arg_str = args_strs.get(0).cloned().unwrap_or_default();
             
-            // Check if the single argument is a node type
             if let Some(arg_expr) = arg_expr {
-                // Skip node checking for literals - they're never nodes
                 if matches!(arg_expr, Expr::Literal(_)) {
-                    // Literal - just use it directly, no node extraction needed
                     joined
                 } else {
-                    let arg_type = script.infer_expr_type(arg_expr, current_func);
-                    // Check if it's a node type, DynNode, or a Uuid that represents a node
-                    // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
-                    let is_node = match arg_type {
-                        Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                        None => {
-                            if let Expr::Ident(var_name) = arg_expr {
-                                // First check the variable's declared type directly (before it gets converted to Uuid)
-                                let var_declared_type = if let Some(func) = current_func {
-                                    func.locals.iter()
-                                        .find(|v| v.name == *var_name)
-                                        .and_then(|v| v.typ.as_ref())
-                                        .or_else(|| {
-                                            find_variable_in_body(var_name, &func.body)
-                                                .and_then(|v| v.typ.as_ref())
-                                        })
-                                } else {
-                                    script.variables.iter()
-                                        .find(|v| v.name == *var_name)
-                                        .and_then(|v| v.typ.as_ref())
-                                };
-                                
-                                // If declared type is a node, it's definitely a node
-                                if let Some(typ) = var_declared_type {
-                                    if matches!(typ, Type::Node(_) | Type::DynNode) {
-                                        true
-                                    } else {
-                                        // Fall back to checking the variable's value expression
-                                        check_if_node_var(var_name, script, current_func)
-                                    }
-                                } else {
-                                    // No declared type, check the variable's value expression
-                                    check_if_node_var(var_name, script, current_func)
-                                }
+                    // Only get_type for bare node refs: SelfAccess or Ident of a variable we KNOW is Node/DynNode.
+                    // MemberAccess (c_par::test_var) and Index (c_par::[b]) resolve to a non-node value → print value.
+                    let is_bare_node_ref = match arg_expr {
+                        Expr::SelfAccess => true,
+                        Expr::Ident(var_name) => {
+                            let var_typ = if let Some(func) = current_func {
+                                func.locals.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
+                                    .or_else(|| find_variable_in_body(var_name, &func.body).and_then(|v| v.typ.as_ref()))
                             } else {
-                                false
+                                script.variables.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
+                            };
+                            match var_typ {
+                                Some(t) if matches!(t, Type::Node(_) | Type::DynNode) => true,
+                                _ => check_if_node_var(var_name, script, current_func),
                             }
-                        },
-                        _ => false,
+                        }
+                        _ => false, // MemberAccess, Index, Call, etc. → expression is not a node, print value
                     };
-
-                    // Never treat "value from a script" (e.g. c_par::test_var, c_par::arr[b]) as a node.
-                    // We only use the script's id to fetch the value; we must print that value, not get_type(id).
-                    let is_script_value_access = expr_uses_script_value_access(arg_expr, script);
-                    let is_node = is_node && !is_script_value_access;
+                    let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".to_string());
                 
-                    if is_node {
+                    if is_bare_node_ref {
                         // This is a node - convert to print its type instead of UUID
-                        // Use the already-processed arg string, which should be the node ID
-                        let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".to_string());
                         // api.get_type() requires &mut self, so we must extract it to a temp variable
-                        // to avoid borrow checker errors when used as argument to api.print() (which takes &self)
                         // Return a special marker that codegen will detect and extract
                         format!("__EXTRACT_NODE_TYPE__({})", node_id_expr)
                     } else {
@@ -878,55 +818,28 @@ impl ModuleCodegen for ConsoleApi {
                         optimized_arg.to_string()
                     };
                     
-                    // Skip node checking for literals - they're never nodes
                     if matches!(arg_expr, Expr::Literal(_)) {
                         optimized_arg
                     } else {
-                    
-                    let arg_type = script.infer_expr_type(arg_expr, current_func);
-                    let is_node = match arg_type {
-                        Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                        None => {
-                            if let Expr::Ident(var_name) = arg_expr {
-                                // First check the variable's declared type directly (before it gets converted to Uuid)
-                                let var_declared_type = if let Some(func) = current_func {
-                                    func.locals.iter()
-                                        .find(|v| v.name == *var_name)
-                                        .and_then(|v| v.typ.as_ref())
-                                        .or_else(|| {
-                                            find_variable_in_body(var_name, &func.body)
-                                                .and_then(|v| v.typ.as_ref())
-                                        })
-                                } else {
-                                    script.variables.iter()
-                                        .find(|v| v.name == *var_name)
-                                        .and_then(|v| v.typ.as_ref())
-                                };
-                                
-                                // If declared type is a node, it's definitely a node
-                                if let Some(typ) = var_declared_type {
-                                    if matches!(typ, Type::Node(_) | Type::DynNode) {
-                                        true
-                                    } else {
-                                        // Fall back to checking the variable's value expression
-                                        check_if_node_var(var_name, script, current_func)
-                                    }
-                                } else {
-                                    // No declared type, check the variable's value expression
-                                    check_if_node_var(var_name, script, current_func)
-                                }
+                    // Only get_type for bare node refs: SelfAccess or Ident we KNOW is Node/DynNode.
+                    let is_bare_node_ref = match arg_expr {
+                        Expr::SelfAccess => true,
+                        Expr::Ident(var_name) => {
+                            let var_typ = if let Some(func) = current_func {
+                                func.locals.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
+                                    .or_else(|| find_variable_in_body(var_name, &func.body).and_then(|v| v.typ.as_ref()))
                             } else {
-                                false
+                                script.variables.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
+                            };
+                            match var_typ {
+                                Some(t) if matches!(t, Type::Node(_) | Type::DynNode) => true,
+                                _ => check_if_node_var(var_name, script, current_func),
                             }
-                        },
+                        }
                         _ => false,
                     };
-
-                    // Never treat "value from a script" (e.g. c_par::test_var, c_par::arr[b]) as a node.
-                    let is_script_value_access = expr_uses_script_value_access(arg_expr, script);
-                    let is_node = is_node && !is_script_value_access;
                     
-                    if is_node {
+                    if is_bare_node_ref {
                         format!("__EXTRACT_NODE_TYPE__({})", optimized_arg)
                     } else {
                         optimized_arg

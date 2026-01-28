@@ -1,7 +1,6 @@
 use std::{borrow::Cow, time::Instant};
 use rustc_hash::FxHashMap;
-use crate::ids::{MaterialID, TextureID, NodeID};
-use crate::prelude::string_to_u64;
+use crate::ids::{LightID, MaterialID, MeshID, TextureID, NodeID};
 
 use wgpu::{
     Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
@@ -41,34 +40,56 @@ pub type SharedWindow = std::sync::Arc<Window>;
 pub const VIRTUAL_WIDTH: f32 = 1920.0;
 pub const VIRTUAL_HEIGHT: f32 = 1080.0;
 
-#[derive(Debug)]
+/// One slot in the texture arena. TextureID = 1-based index into slots.
+struct TextureSlot {
+    texture: ImageTexture,
+    path: String,
+    bind_group: Option<wgpu::BindGroup>,
+}
+
+/// Texture arena: slot-based storage like NodeArena. TextureID is generational (index + generation).
+/// path_to_id used only when loading (scene or Texture.load()); rendering uses id.
 pub struct TextureManager {
-    textures: FxHashMap<String, ImageTexture>, // path -> texture (primary storage)
-    path_to_id: FxHashMap<String, TextureID>, // path -> id (new)
-    id_to_path: FxHashMap<TextureID, String>, // id -> path (for reverse lookup)
-    bind_groups: FxHashMap<String, wgpu::BindGroup>,
+    /// Slots: index 0 = TextureID index 1, etc. None = free slot.
+    slots: Vec<Option<TextureSlot>>,
+    /// Generation per slot; checked on lookup so stale IDs are invalid.
+    generations: Vec<u32>,
+    /// Free slot indices for reuse (when textures are removed).
+    free_slots: Vec<usize>,
+    /// Path → TextureID for loading; hot path uses id only.
+    path_to_id: FxHashMap<String, TextureID>,
     cached_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    /// Next index for allocating TextureIDs (no global counter — manager owns allocation)
-    next_texture_index: u64,
 }
 
 impl TextureManager {
     pub fn new() -> Self {
         Self {
-            textures: FxHashMap::default(),
+            slots: Vec::new(),
+            generations: Vec::new(),
+            free_slots: Vec::new(),
             path_to_id: FxHashMap::default(),
-            id_to_path: FxHashMap::default(),
-            bind_groups: FxHashMap::default(),
             cached_bind_group_layout: None,
-            next_texture_index: 1, // 0 reserved for nil
         }
     }
 
-    /// Allocate a new TextureID from this manager (used when loading or creating textures).
-    fn allocate_texture_id(&mut self) -> TextureID {
-        let id = TextureID::from_u64(self.next_texture_index);
-        self.next_texture_index = self.next_texture_index.saturating_add(1);
-        id
+    /// 0-based slot index from TextureID; returns None if nil or index 0.
+    #[inline]
+    fn slot_index(id: TextureID) -> Option<usize> {
+        if id.is_nil() {
+            return None;
+        }
+        let idx = id.index() as usize;
+        if idx == 0 {
+            None
+        } else {
+            Some(idx - 1)
+        }
+    }
+
+    /// Returns true if slot at idx exists and generation matches id.
+    #[inline]
+    fn slot_valid(&self, idx: usize, id: TextureID) -> bool {
+        self.generations.get(idx).copied() == Some(id.generation())
     }
 
     /// Get or create the cached bind group layout for textures
@@ -79,134 +100,49 @@ impl TextureManager {
         self.cached_bind_group_layout.as_ref().unwrap()
     }
 
+    /// Insert a loaded texture into the arena; returns its TextureID.
+    /// Reuses free slot (bumping generation) if available, otherwise appends new slot.
+    fn insert_slot(&mut self, texture: ImageTexture, path: String) -> TextureID {
+        let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
+            self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
+            let generation = self.generations[free_idx];
+            let id = TextureID::from_parts((free_idx + 1) as u32, generation);
+            (free_idx, id)
+        } else {
+            let slot_idx = self.slots.len();
+            self.slots.push(None);
+            self.generations.push(0);
+            let id = TextureID::from_parts((slot_idx + 1) as u32, 0);
+            (slot_idx, id)
+        };
+
+        self.path_to_id.insert(path.clone(), id);
+        self.slots[slot_idx] = Some(TextureSlot {
+            texture,
+            path,
+            bind_group: None,
+        });
+        id
+    }
+
     pub fn get_or_load_texture_sync(
         &mut self,
         path: &str,
         device: &Device,
         queue: &Queue,
     ) -> &ImageTexture {
-        // Optimize: check with &str first, only allocate String if we need to insert
-        if !self.textures.contains_key(path) {
-            let key = path.to_string();
-            let start = Instant::now();
-
-            // Runtime mode: check static textures first, then fall back to disk/BRK
-            // Dev mode: static textures will be None, so it loads from disk/BRK
-            let img_texture = if let Some(static_textures) = get_static_textures() {
-                if let Some(static_data) = static_textures.get(path) {
-                    println!(
-                        "🖼️ Loading static texture: {} ({}x{})",
-                        path, static_data.width, static_data.height
-                    );
-                    // Use pre-decoded RGBA8 data to create ImageTexture
-                    let texture = static_data.to_image_texture(device, queue);
-                    let elapsed = start.elapsed();
-                    println!(
-                        "⏱️ Static texture loaded in {:.2}ms",
-                        elapsed.as_secs_f64() * 1000.0
-                    );
-                    texture
-                } else {
-                    // Not in static textures, load from disk/BRK
-                    let load_start = Instant::now();
-                    let img_bytes = load_asset(path).expect("Failed to read image file");
-                    let load_elapsed = load_start.elapsed();
-
-                    let decode_start = Instant::now();
-                    let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
-                    let decode_elapsed = decode_start.elapsed();
-
-                    println!(
-                        "🖼️ Loading texture: {} ({}x{})",
-                        path,
-                        img.width(),
-                        img.height()
-                    );
-
-                    let upload_start = Instant::now();
-                    let texture = ImageTexture::from_image(&img, device, queue);
-                    let upload_elapsed = upload_start.elapsed();
-
-                    let total_elapsed = start.elapsed();
-                    println!(
-                        "⏱️ Runtime texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
-                        total_elapsed.as_secs_f64() * 1000.0,
-                        load_elapsed.as_secs_f64() * 1000.0,
-                        decode_elapsed.as_secs_f64() * 1000.0,
-                        upload_elapsed.as_secs_f64() * 1000.0
-                    );
-                    texture
-                }
-            } else {
-                // Dev mode: no static textures, load from disk/BRK with optimized decoder
-                let load_start = Instant::now();
-                let img_bytes = load_asset(path).expect("Failed to read image file");
-                let load_elapsed = load_start.elapsed();
-
-                let decode_start = Instant::now();
-                // Use optimized fast decoder (format-specific decoders for PNG/JPEG)
-                let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
-                    .expect("Failed to decode image");
-                let decode_elapsed = decode_start.elapsed();
-
-                println!(
-                    "🖼️ Loading texture: {} ({}x{})",
-                    path,
-                    width,
-                    height
-                );
-
-                let upload_start = Instant::now();
-                // Use direct RGBA8 path (avoids DynamicImage conversion)
-                let texture = ImageTexture::from_rgba8(&rgba, device, queue);
-                let upload_elapsed = upload_start.elapsed();
-
-                let total_elapsed = start.elapsed();
-                println!(
-                    "⏱️ Dev texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
-                    total_elapsed.as_secs_f64() * 1000.0,
-                    load_elapsed.as_secs_f64() * 1000.0,
-                    decode_elapsed.as_secs_f64() * 1000.0,
-                    upload_elapsed.as_secs_f64() * 1000.0
-                );
-                texture
-            };
-            
-            let texture_id = self.allocate_texture_id();
-            self.path_to_id.insert(key.clone(), texture_id);
-            self.id_to_path.insert(texture_id, key.clone());
-            self.textures.insert(key.clone(), img_texture);
+        if let Some(&id) = self.path_to_id.get(path) {
+            return self.get_texture_by_id(&id).unwrap();
         }
-        self.textures.get(path).unwrap()
-    }
-
-    /// Get or load texture by path and return its UUID
-    /// This is the main API method for scripts - returns the UUID handle
-    /// Returns an error if the texture cannot be loaded
-    pub fn get_or_load_texture_id(
-        &mut self,
-        path: &str,
-        device: &Device,
-        queue: &Queue,
-    ) -> Result<TextureID, String> {
-        // Check if already loaded
-        if let Some(id) = self.path_to_id.get(path) {
-            return Ok(*id);
-        }
-        
-        // Try to load the texture
         let key = path.to_string();
         let start = Instant::now();
 
-        // Runtime mode: check static textures first, then fall back to disk/BRK
-        // Dev mode: static textures will be None, so it loads from disk/BRK
         let img_texture = if let Some(static_textures) = get_static_textures() {
             if let Some(static_data) = static_textures.get(path) {
                 println!(
                     "🖼️ Loading static texture: {} ({}x{})",
                     path, static_data.width, static_data.height
                 );
-                // Use pre-decoded RGBA8 data to create ImageTexture
                 let texture = static_data.to_image_texture(device, queue);
                 let elapsed = start.elapsed();
                 println!(
@@ -215,28 +151,19 @@ impl TextureManager {
                 );
                 texture
             } else {
-                // Not in static textures, load from disk/BRK
                 let load_start = Instant::now();
-                let img_bytes = load_asset(path)
-                    .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+                let img_bytes = load_asset(path).expect("Failed to read image file");
                 let load_elapsed = load_start.elapsed();
-
                 let decode_start = Instant::now();
-                let img = image::load_from_memory(&img_bytes)
-                    .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+                let img = image::load_from_memory(&img_bytes).expect("Failed to decode image");
                 let decode_elapsed = decode_start.elapsed();
-
                 println!(
                     "🖼️ Loading texture: {} ({}x{})",
-                    path,
-                    img.width(),
-                    img.height()
+                    path, img.width(), img.height()
                 );
-
                 let upload_start = Instant::now();
                 let texture = ImageTexture::from_image(&img, device, queue);
                 let upload_elapsed = upload_start.elapsed();
-
                 let total_elapsed = start.elapsed();
                 println!(
                     "⏱️ Runtime texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
@@ -248,30 +175,20 @@ impl TextureManager {
                 texture
             }
         } else {
-            // Dev mode: no static textures, load from disk/BRK with optimized decoder
             let load_start = Instant::now();
-            let img_bytes = load_asset(path)
-                .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+            let img_bytes = load_asset(path).expect("Failed to read image file");
             let load_elapsed = load_start.elapsed();
-
             let decode_start = Instant::now();
-            // Use optimized fast decoder (format-specific decoders for PNG/JPEG)
             let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
-                .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+                .expect("Failed to decode image");
             let decode_elapsed = decode_start.elapsed();
-
             println!(
                 "🖼️ Loading texture: {} ({}x{})",
-                path,
-                width,
-                height
+                path, width, height
             );
-
             let upload_start = Instant::now();
-            // Use direct RGBA8 path (avoids DynamicImage conversion)
             let texture = ImageTexture::from_rgba8(&rgba, device, queue);
             let upload_elapsed = upload_start.elapsed();
-
             let total_elapsed = start.elapsed();
             println!(
                 "⏱️ Dev texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
@@ -282,33 +199,72 @@ impl TextureManager {
             );
             texture
         };
-        
-        let texture_id = self.allocate_texture_id();
-        self.path_to_id.insert(key.clone(), texture_id);
-        self.id_to_path.insert(texture_id, key.clone());
-        self.textures.insert(key.clone(), img_texture);
-        Ok(texture_id)
+
+        self.insert_slot(img_texture, key);
+        self.get_texture_by_id(&self.path_to_id[path]).unwrap()
     }
 
-    /// Get texture by TextureID (for script access)
-    /// Returns a reference if the texture exists
-    /// Looks up path from ID, then gets texture by path
-    pub fn get_texture_by_id(&self, id: &TextureID) -> Option<&ImageTexture> {
-        // Look up path from ID, then get texture by path
-        if let Some(path) = self.id_to_path.get(id) {
-            self.textures.get(path)
-        } else {
-            None
+    /// Get or load texture by path and return its TextureID (used when loading from scene or Texture.load()).
+    pub fn get_or_load_texture_id(
+        &mut self,
+        path: &str,
+        device: &Device,
+        queue: &Queue,
+    ) -> Result<TextureID, String> {
+        if let Some(&id) = self.path_to_id.get(path) {
+            return Ok(id);
         }
+        let key = path.to_string();
+        let start = Instant::now();
+
+        let img_texture = if let Some(static_textures) = get_static_textures() {
+            if let Some(static_data) = static_textures.get(path) {
+                println!(
+                    "🖼️ Loading static texture: {} ({}x{})",
+                    path, static_data.width, static_data.height
+                );
+                let texture = static_data.to_image_texture(device, queue);
+                println!("⏱️ Static texture loaded in {:.2}ms", start.elapsed().as_secs_f64() * 1000.0);
+                texture
+            } else {
+                let img_bytes = load_asset(path)
+                    .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+                let img = image::load_from_memory(&img_bytes)
+                    .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+                println!("🖼️ Loading texture: {} ({}x{})", path, img.width(), img.height());
+                ImageTexture::from_image(&img, device, queue)
+            }
+        } else {
+            let img_bytes = load_asset(path)
+                .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+            let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
+                .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+            println!("🖼️ Loading texture: {} ({}x{})", path, width, height);
+            ImageTexture::from_rgba8(&rgba, device, queue)
+        };
+
+        Ok(self.insert_slot(img_texture, key))
     }
 
-    /// Get texture path from TextureID (for rendering fallback)
+    /// Get texture by TextureID (generational: index + generation must match).
+    pub fn get_texture_by_id(&self, id: &TextureID) -> Option<&ImageTexture> {
+        let idx = Self::slot_index(*id)?;
+        if !self.slot_valid(idx, *id) {
+            return None;
+        }
+        self.slots.get(idx)?.as_ref().map(|s| &s.texture)
+    }
+
+    /// Get texture path from TextureID (for serialization / fallback).
     pub fn get_texture_path_from_id(&self, id: &TextureID) -> Option<&str> {
-        self.id_to_path.get(id).map(|s| s.as_str())
+        let idx = Self::slot_index(*id)?;
+        if !self.slot_valid(idx, *id) {
+            return None;
+        }
+        self.slots.get(idx)?.as_ref().map(|s| s.path.as_str())
     }
 
-    /// Create texture from bytes and return UUID
-    /// Creates a synthetic path for programmatically created textures
+    /// Create texture from bytes; returns TextureID. Uses synthetic path for the slot.
     pub fn create_texture_from_bytes(
         &mut self,
         rgba_bytes: &[u8],
@@ -318,19 +274,30 @@ impl TextureManager {
         queue: &Queue,
     ) -> TextureID {
         let texture = ImageTexture::from_rgba8_bytes(rgba_bytes, width, height, device, queue);
-        let texture_id = self.allocate_texture_id();
-        let synthetic_path = format!("__synthetic__{}", texture_id);
-        self.path_to_id.insert(synthetic_path.clone(), texture_id);
-        self.id_to_path.insert(texture_id, synthetic_path.clone());
-        self.textures.insert(synthetic_path, texture);
-        texture_id
+        let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
+            self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
+            let generation = self.generations[free_idx];
+            (free_idx, TextureID::from_parts((free_idx + 1) as u32, generation))
+        } else {
+            let slot_idx = self.slots.len();
+            self.slots.push(None);
+            self.generations.push(0);
+            (slot_idx, TextureID::from_parts((slot_idx + 1) as u32, 0))
+        };
+        let synthetic_path = format!("__synthetic__{}", id.as_u64());
+        self.path_to_id.insert(synthetic_path.clone(), id);
+        self.slots[slot_idx] = Some(TextureSlot {
+            texture,
+            path: synthetic_path,
+            bind_group: None,
+        });
+        id
     }
 
-    /// Get texture size if texture is already loaded (doesn't load if missing)
+    /// Get texture size if texture is already loaded (doesn't load if missing).
     pub fn get_texture_size_if_loaded(&self, path: &str) -> Option<crate::Vector2> {
-        self.textures.get(path).map(|tex| {
-            crate::Vector2::new(tex.width as f32, tex.height as f32)
-        })
+        self.path_to_id.get(path).and_then(|id| self.get_texture_by_id(id))
+            .map(|tex| crate::Vector2::new(tex.width as f32, tex.height as f32))
     }
 
     /// Get texture size by UUID (for script access)
@@ -340,6 +307,60 @@ impl TextureManager {
         })
     }
 
+    /// Get or create bind group by TextureID (hot path: rendering uses id only).
+    pub fn get_or_create_bind_group_by_id(
+        &mut self,
+        id: TextureID,
+        device: &Device,
+        queue: &Queue,
+        layout: &BindGroupLayout,
+    ) -> Option<&wgpu::BindGroup> {
+        let idx = Self::slot_index(id)?;
+        if !self.slot_valid(idx, id) {
+            return None;
+        }
+        let slot = self.slots.get_mut(idx)?.as_mut()?;
+        if slot.bind_group.is_none() {
+            let bg = device.create_bind_group(&BindGroupDescriptor {
+                layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Sampler(&slot.texture.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&slot.texture.view),
+                    },
+                ],
+                label: Some("Texture Instance BG"),
+            });
+            slot.bind_group = Some(bg);
+        }
+        slot.bind_group.as_ref()
+    }
+
+    /// Get total slot count (including free slots).
+    #[inline]
+    pub fn slot_count(&self) -> usize {
+        self.slots.len()
+    }
+}
+
+impl std::fmt::Debug for TextureManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let live_count = self.slots.iter().filter(|s| s.is_some()).count();
+        f.debug_struct("TextureManager")
+            .field("slots_total", &self.slots.len())
+            .field("slots_live", &live_count)
+            .field("free_slots", &self.free_slots.len())
+            .field("path_to_id", &self.path_to_id.len())
+            .finish()
+    }
+}
+
+impl TextureManager {
+    /// Path-based fallback when only path is known (e.g. legacy call sites).
     pub fn get_or_create_bind_group(
         &mut self,
         path: &str,
@@ -347,63 +368,123 @@ impl TextureManager {
         queue: &Queue,
         layout: &BindGroupLayout,
     ) -> &wgpu::BindGroup {
-        // Optimize: check with &str first, only allocate String if we need to insert
-        if !self.bind_groups.contains_key(path) {
-            let key = path.to_string();
-            let tex = self.get_or_load_texture_sync(path, device, queue);
-            let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Sampler(&tex.sampler),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&tex.view),
-                    },
-                ],
-                label: Some("Texture Instance BG"),
-            });
-            self.bind_groups.insert(key, bind_group);
+        if let Some(&id) = self.path_to_id.get(path) {
+            return self.get_or_create_bind_group_by_id(id, device, queue, layout).unwrap();
         }
-        // Optimize: use path directly for lookup (no String allocation needed)
-        self.bind_groups.get(path).unwrap()
+        self.get_or_load_texture_sync(path, device, queue);
+        let id = *self.path_to_id.get(path).unwrap();
+        self.get_or_create_bind_group_by_id(id, device, queue, layout).unwrap()
+    }
+
+    /// Remove texture by ID and free its slot for reuse. Generation is bumped on next reuse.
+    pub fn remove_texture(&mut self, id: TextureID) -> bool {
+        let idx = match Self::slot_index(id) {
+            Some(i) => i,
+            None => return false,
+        };
+        if !self.slot_valid(idx, id) {
+            return false;
+        }
+        if let Some(slot) = self.slots.get_mut(idx) {
+            if let Some(path) = slot.as_ref().map(|s| s.path.clone()) {
+                self.path_to_id.remove(&path);
+            }
+            *slot = None;
+            self.free_slots.push(idx);
+            return true;
+        }
+        false
+    }
+
+    /// Remove texture by path (looks up ID first, then removes).
+    pub fn remove_texture_by_path(&mut self, path: &str) -> bool {
+        if let Some(&id) = self.path_to_id.get(path) {
+            self.remove_texture(id)
+        } else {
+            false
+        }
     }
 }
 
+struct MeshSlot {
+    mesh: Mesh,
+    path: String,
+}
+
+/// Mesh arena: generational slots like TextureManager. MeshID = index + generation.
 pub struct MeshManager {
-    pub meshes: FxHashMap<String, Mesh>,
+    slots: Vec<Option<MeshSlot>>,
+    generations: Vec<u32>,
+    free_slots: Vec<usize>,
+    path_to_id: FxHashMap<String, MeshID>,
 }
 
 impl MeshManager {
     pub fn new() -> Self {
         Self {
-            meshes: FxHashMap::default(),
+            slots: Vec::new(),
+            generations: Vec::new(),
+            free_slots: Vec::new(),
+            path_to_id: FxHashMap::default(),
         }
     }
 
+    #[inline]
+    fn slot_index(id: MeshID) -> Option<usize> {
+        if id.is_nil() {
+            return None;
+        }
+        let idx = id.index() as usize;
+        if idx == 0 {
+            None
+        } else {
+            Some(idx - 1)
+        }
+    }
+
+    #[inline]
+    fn slot_valid(&self, idx: usize, id: MeshID) -> bool {
+        self.generations.get(idx).copied() == Some(id.generation())
+    }
+
+    fn insert_slot(&mut self, mesh: Mesh, path: String) -> MeshID {
+        let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
+            self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
+            let generation = self.generations[free_idx];
+            (free_idx, MeshID::from_parts((free_idx + 1) as u32, generation))
+        } else {
+            let slot_idx = self.slots.len();
+            self.slots.push(None);
+            self.generations.push(0);
+            (slot_idx, MeshID::from_parts((slot_idx + 1) as u32, 0))
+        };
+        self.path_to_id.insert(path.clone(), id);
+        self.slots[slot_idx] = Some(MeshSlot { mesh, path });
+        id
+    }
+
+    /// Get or load mesh by path; returns MeshID. Call get_mesh_by_id for the mesh reference.
     pub fn get_or_load_mesh(
         &mut self,
         path: &str,
         device: &Device,
         _queue: &Queue,
-    ) -> Option<&Mesh> {
-        // Optimize: check with &str first, only allocate String if we need to insert
-        if !self.meshes.contains_key(path) {
-            let key = path.to_string();
-            // Load mesh from file
-            if let Some(mesh) = Self::load_mesh_from_file(path, device) {
-                println!("🔷 Loading mesh: {}", path);
-                self.meshes.insert(key, mesh);
-            } else {
-                println!("⚠️ Failed to load mesh: {}", path);
-                return None;
-            }
+    ) -> Option<MeshID> {
+        if let Some(&id) = self.path_to_id.get(path) {
+            return Some(id);
         }
+        let mesh = Self::load_mesh_from_file(path, device)?;
+        println!("🔷 Loading mesh: {}", path);
+        Some(self.insert_slot(mesh, path.to_string()))
+    }
 
-        // Optimize: use path directly for lookup (no String allocation needed)
-        self.meshes.get(path)
+    /// Get mesh by MeshID (generational).
+    pub fn get_mesh_by_id(&self, id: MeshID) -> Option<&Mesh> {
+        let idx = Self::slot_index(id)?;
+        if !self.slot_valid(idx, id) {
+            return None;
+        }
+        self.slots.get(idx)?.as_ref().map(|s| &s.mesh)
     }
 
     pub fn load_mesh_from_file(path: &str, device: &Device) -> Option<Mesh> {
@@ -420,45 +501,72 @@ impl MeshManager {
             "__t_pyramid__" => {
                 Some(crate::renderer_3d::Renderer3D::create_triangular_pyramid_mesh(device))
             }
-
-            // Future: load actual .glb or .gltf
-            _ => {
-                // TODO: Implement real GLB/GLTF loading
-                None
-            }
+            _ => None,
         }
     }
 
-    pub fn add_mesh(&mut self, name: String, mesh: Mesh) {
-        self.meshes.insert(name, mesh);
+    /// Add mesh by name (path); returns MeshID.
+    pub fn add_mesh(&mut self, name: String, mesh: Mesh) -> MeshID {
+        self.insert_slot(mesh, name)
+    }
+
+    pub fn remove_mesh(&mut self, id: MeshID) -> bool {
+        let idx = match Self::slot_index(id) {
+            Some(i) => i,
+            None => return false,
+        };
+        if !self.slot_valid(idx, id) {
+            return false;
+        }
+        if let Some(slot) = self.slots.get_mut(idx) {
+            if let Some(MeshSlot { path, .. }) = slot.take() {
+                self.path_to_id.remove(&path);
+                self.free_slots.push(idx);
+                return true;
+            }
+        }
+        false
     }
 }
 
-/// Material manager that handles path → slot mapping
+/// Material arena: generational slots. MaterialID = index + generation.
 pub struct MaterialManager {
-    /// All loaded materials by path
-    materials: FxHashMap<String, MaterialUniform>,
-
-    /// Cache of path → GPU slot ID
-    path_to_slot: FxHashMap<String, u32>,
+    slots: Vec<Option<MaterialUniform>>,
+    generations: Vec<u32>,
+    free_slots: Vec<usize>,
+    path_to_id: FxHashMap<String, MaterialID>,
 }
 
 impl MaterialManager {
     pub fn new() -> Self {
         Self {
-            materials: FxHashMap::default(),
-            path_to_slot: FxHashMap::default(),
+            slots: Vec::new(),
+            generations: Vec::new(),
+            free_slots: Vec::new(),
+            path_to_id: FxHashMap::default(),
         }
     }
 
-    /// Load or get a material by path
-    pub fn load_material(&mut self, path: &str) -> MaterialUniform {
-        if let Some(mat) = self.materials.get(path) {
-            return *mat;
+    #[inline]
+    fn slot_index(id: MaterialID) -> Option<usize> {
+        if id.is_nil() {
+            return None;
         }
+        let idx = id.index() as usize;
+        if idx == 0 {
+            None
+        } else {
+            Some(idx - 1)
+        }
+    }
 
-        // Create different materials based on path for testing
-        let material = match path {
+    #[inline]
+    fn slot_valid(&self, idx: usize, id: MaterialID) -> bool {
+        self.generations.get(idx).copied() == Some(id.generation())
+    }
+
+    fn material_for_path(path: &str) -> MaterialUniform {
+        match path {
             "__default__" => MaterialUniform {
                 base_color: [1.0, 1.0, 1.0, 1.0],
                 metallic: 0.0,
@@ -494,61 +602,51 @@ impl MaterialManager {
                 _pad0: [0.0; 2],
                 emissive: [0.0, 0.0, 0.0, 0.0],
             },
+        }
+    }
+
+    fn insert_slot(&mut self, material: MaterialUniform, path: String) -> MaterialID {
+        let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
+            self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
+            let generation = self.generations[free_idx];
+            (free_idx, MaterialID::from_parts((free_idx + 1) as u32, generation))
+        } else {
+            let slot_idx = self.slots.len();
+            self.slots.push(None);
+            self.generations.push(0);
+            (slot_idx, MaterialID::from_parts((slot_idx + 1) as u32, 0))
         };
-
-        // Optimize: only allocate String when inserting (HashMap key)
-        self.materials.insert(path.to_string(), material);
-        material
+        self.path_to_id.insert(path, id);
+        self.slots[slot_idx] = Some(material);
+        id
     }
 
-    /// Upload material to renderer and get its slot ID (idempotent)
-    pub fn upload_to_renderer(&mut self, path: &str, renderer: &mut Renderer3D) -> Option<u32> {
-        // Check if already uploaded
-        if let Some(&slot) = self.path_to_slot.get(path) {
-            return Some(slot);
+    /// Get or load material by path; returns MaterialID.
+    pub fn get_or_load_material(&mut self, path: &str) -> MaterialID {
+        if let Some(&id) = self.path_to_id.get(path) {
+            return id;
         }
-
-        // Load the material data
-        let material = self.load_material(path);
-
-        // Material ID from path hash (u64)
-        let mat_id = MaterialID::from_u64(string_to_u64(path));
-        let slot = renderer.queue_material(mat_id.as_u64(), material);
-
-        // Cache the slot (only allocate String when inserting)
-        self.path_to_slot.insert(path.to_string(), slot);
-
-        Some(slot)
+        let material = Self::material_for_path(path);
+        self.insert_slot(material, path.to_string())
     }
 
-    /// Get slot ID without uploading (returns None if not uploaded yet)
-    pub fn get_slot(&self, path: &str) -> Option<u32> {
-        // Optimize: use &str for lookup (no String allocation)
-        self.path_to_slot.get(path).copied()
+    /// Get material by MaterialID (generational).
+    pub fn get_material_by_id(&self, id: MaterialID) -> Option<&MaterialUniform> {
+        let idx = Self::slot_index(id)?;
+        if !self.slot_valid(idx, id) {
+            return None;
+        }
+        self.slots.get(idx)?.as_ref()
     }
 
-    /// Register a material directly (useful for embedded GLTF materials)
-    pub fn register_material(&mut self, path: String, material: MaterialUniform) {
-        self.materials.insert(path, material);
-    }
-
-    /// Get or upload material and return slot ID (most common method)
+    /// Get or upload material and return GPU slot index (for Renderer3D).
     pub fn get_or_upload_material(&mut self, path: &str, renderer: &mut Renderer3D) -> u32 {
-        // Check if already uploaded (this will catch the default material)
-        if let Some(&slot) = self.path_to_slot.get(path) {
-            return slot;
-        }
-
-        // Load the material data
-        let material = self.load_material(path);
-
-        let mat_id = MaterialID::from_u64(string_to_u64(path));
-        let slot = renderer.queue_material(mat_id.as_u64(), material);
-        self.path_to_slot.insert(path.to_string(), slot);
-        slot
+        let mat_id = self.get_or_load_material(path);
+        let material = *self.get_material_by_id(mat_id).unwrap();
+        renderer.queue_material(mat_id, material)
     }
 
-    /// Batch resolve multiple material paths at once (more efficient)
+    /// Batch resolve material paths to GPU slot IDs.
     pub fn resolve_material_paths(
         &mut self,
         paths: &[&str],
@@ -558,6 +656,78 @@ impl MaterialManager {
             .iter()
             .map(|path| self.get_or_upload_material(path, renderer))
             .collect()
+    }
+
+    /// Register a material by path; returns MaterialID.
+    pub fn register_material(&mut self, path: String, material: MaterialUniform) -> MaterialID {
+        if let Some(&id) = self.path_to_id.get(&path) {
+            return id;
+        }
+        self.insert_slot(material, path)
+    }
+}
+
+/// Light arena: allocates LightIDs for light nodes. No path; lights are created per node.
+pub struct LightManager {
+    slots: Vec<Option<()>>,
+    generations: Vec<u32>,
+    free_slots: Vec<usize>,
+}
+
+impl LightManager {
+    pub fn new() -> Self {
+        Self {
+            slots: Vec::new(),
+            generations: Vec::new(),
+            free_slots: Vec::new(),
+        }
+    }
+
+    #[inline]
+    fn slot_index(id: LightID) -> Option<usize> {
+        if id.is_nil() {
+            return None;
+        }
+        let idx = id.index() as usize;
+        if idx == 0 {
+            None
+        } else {
+            Some(idx - 1)
+        }
+    }
+
+    /// Allocate a new LightID (e.g. when a light node is created).
+    pub fn allocate(&mut self) -> LightID {
+        let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
+            self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
+            let generation = self.generations[free_idx];
+            (free_idx, LightID::from_parts((free_idx + 1) as u32, generation))
+        } else {
+            let slot_idx = self.slots.len();
+            self.slots.push(None);
+            self.generations.push(0);
+            (slot_idx, LightID::from_parts((slot_idx + 1) as u32, 0))
+        };
+        self.slots[slot_idx] = Some(());
+        id
+    }
+
+    /// Free a LightID (e.g. when a light node is removed).
+    pub fn remove(&mut self, id: LightID) -> bool {
+        let idx = match Self::slot_index(id) {
+            Some(i) => i,
+            None => return false,
+        };
+        if self.generations.get(idx) != Some(&id.generation()) {
+            return false;
+        }
+        if let Some(slot) = self.slots.get_mut(idx) {
+            if slot.take().is_some() {
+                self.free_slots.push(idx);
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -577,6 +747,7 @@ pub struct Graphics {
     pub texture_manager: TextureManager,
     pub mesh_manager: MeshManager,
     pub material_manager: MaterialManager,
+    pub light_manager: LightManager,
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group_layout: BindGroupLayout,
     pub camera_bind_group: wgpu::BindGroup,
@@ -867,6 +1038,10 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // Priority: Immediate (no VSync) > Mailbox (adaptive VSync) > Fifo (standard VSync)
     // Since we're doing frame pacing at the application level, we don't need VSync
     // Using Immediate prevents double-limiting and pixel waving/jitter
+    //
+    // GPU usage note: High FPS (e.g. default fps_cap 500) + Immediate = GPU renders every frame.
+    // For simple 2D scenes, lower GPU use: set fps_cap to 60 in project.toml, or use Fifo
+    // (VSync) so the display caps frame rate and GPU idles between vsyncs.
     let surface_caps = surface.get_capabilities(&adapter);
     let preferred_present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
         wgpu::PresentMode::Immediate
@@ -1160,6 +1335,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         texture_manager: TextureManager::new(),
         mesh_manager: MeshManager::new(),
         material_manager,
+        light_manager: LightManager::new(),
         camera_buffer,
         camera_bind_group_layout,
         camera_bind_group,
@@ -1655,6 +1831,7 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         texture_manager: TextureManager::new(),
         mesh_manager: MeshManager::new(),
         material_manager,
+        light_manager: LightManager::new(),
         camera_buffer,
         camera_bind_group_layout,
         camera_bind_group,

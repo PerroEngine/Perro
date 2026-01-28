@@ -55,10 +55,14 @@ impl RendererUI {
         z_index: i32,
         created_timestamp: u64,
     ) {
+        let texture_id = match texture_manager.get_or_load_texture_id(texture_path, device, queue) {
+            Ok(id) => id,
+            Err(_) => return,
+        };
         primitive_renderer.queue_texture(
             uuid,
             RenderLayer::UI,
-            texture_path,
+            texture_id,
             transform,
             pivot,
             z_index,
