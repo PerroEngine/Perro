@@ -13,10 +13,17 @@ fn is_default_visible(v: &bool) -> bool {
     *v == default_visible()
 }
 
+// Optimized field order: small fields grouped together (ty, visible), then larger fields
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Node3D {
     #[serde(rename = "type")]
     pub ty: NodeType,
+
+    #[serde(
+        default = "default_visible",
+        skip_serializing_if = "is_default_visible"
+    )]
+    pub visible: bool,
 
     #[serde(
         skip_serializing_if = "Transform3D::is_default",
@@ -31,12 +38,6 @@ pub struct Node3D {
     )]
     pub pivot: Vector3,
 
-    #[serde(
-        default = "default_visible",
-        skip_serializing_if = "is_default_visible"
-    )]
-    pub visible: bool,
-
     /// Wrapped base node with name, uuid, parent relationship, etc.
     #[serde(rename = "base")]
     pub base: Node,
@@ -49,9 +50,9 @@ impl Node3D {
         base.name = Cow::Borrowed("Node3D");
         Self {
             ty: NodeType::Node3D,
+            visible: default_visible(),
             transform: Transform3D::default(),
             pivot: Vector3::new(0.5, 0.5, 0.5),
-            visible: default_visible(),
             base,
         }
     }
@@ -81,9 +82,9 @@ impl Node3D {
         base.name = Cow::Borrowed("Node3D");
         Self {
             ty: NodeType::Node3D,
+            visible: default_visible(),
             transform: Transform3D::default(),
             pivot: Vector3::new(0.5, 0.5, 0.5),
-            visible: default_visible(),
             base,
         }
     }

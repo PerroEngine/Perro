@@ -184,8 +184,8 @@ impl PupParser {
                     };
                     self.next_token();
                     
-                    // Check if this is a lifecycle method (init, update, fixed_update, draw)
-                    let is_lifecycle = name == "init" || name == "update" || name == "fixed_update" || name == "draw";
+                    // Check if this is a lifecycle method (init, update, fixed_update)
+                    let is_lifecycle = name == "init" || name == "update" || name == "fixed_update";
                     
                     if is_lifecycle {
                         // Parse as lifecycle method - not callable, but still a trait method
@@ -450,7 +450,7 @@ impl PupParser {
         for param in &params {
             self.type_env.remove(&param.name);
         }
-        let is_trait = name == "init" || name == "update" || name == "fixed_update" || name == "draw";
+        let is_trait = name == "init" || name == "update" || name == "fixed_update";
         let locals = self.collect_locals(&body);
 
         Ok(Function {

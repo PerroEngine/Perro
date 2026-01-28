@@ -6,10 +6,16 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+// Optimized field order: ty (1 byte), filled (1 byte), then larger fields
+// Groups small fields together to minimize padding
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct ShapeInstance2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
+
+    /// Fill or outline only
+    #[serde(skip_serializing_if = "is_false", default = "default_false")]
+    pub filled: bool,
 
     #[serde(rename = "base")]
     pub base: Node2D,
@@ -21,10 +27,6 @@ pub struct ShapeInstance2D {
     /// Color for the shape
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
-
-    /// Fill or outline only
-    #[serde(skip_serializing_if = "is_false", default = "default_false")]
-    pub filled: bool,
 }
 
 fn default_false() -> bool {
@@ -41,10 +43,10 @@ impl ShapeInstance2D {
         base.name = Cow::Borrowed("ShapeInstance2D");
         Self {
             ty: NodeType::ShapeInstance2D,
+            filled: false,
             base,
             shape: None,
             color: None,
-            filled: false,
         }
     }
 

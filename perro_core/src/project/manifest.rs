@@ -32,8 +32,8 @@ struct ProjectSection {
 /// `[performance]` section
 #[derive(Deserialize, Default, Clone)]
 struct PerformanceSection {
-    #[serde(default = "default_target_fps")]
-    target_fps: f32,
+    #[serde(default = "default_fps_cap")]
+    fps_cap: f32,
     #[serde(default = "default_xps")]
     xps: f32,
 }
@@ -64,8 +64,8 @@ struct InputSection {
 }
 
 // Default constants
-fn default_target_fps() -> f32 {
-    60.0
+fn default_fps_cap() -> f32 {
+    500.0
 }
 fn default_xps() -> f32 {
     30.0
@@ -90,7 +90,7 @@ impl Project {
         version: impl Into<String>,
         main_scene: impl Into<String>,
         icon: Option<String>,
-        target_fps: f32,
+        fps_cap: f32,
         xps: f32,
         root_script: Option<String>,
         metadata: &phf::Map<&'static str, &'static str>,
@@ -116,7 +116,7 @@ impl Project {
                 main_scene: main_scene.into(),
                 icon,
             },
-            performance: PerformanceSection { target_fps, xps },
+            performance: PerformanceSection { fps_cap, xps },
             root: RootSection {
                 script: root_script,
             },
@@ -205,8 +205,8 @@ impl Project {
     }
 
     #[inline]
-    pub fn target_fps(&self) -> f32 {
-        self.settings.performance.target_fps
+    pub fn fps_cap(&self) -> f32 {
+        self.settings.performance.fps_cap
     }
 
     #[inline]
@@ -263,8 +263,8 @@ impl Project {
     }
 
     #[inline]
-    pub fn set_target_fps(&mut self, fps: f32) {
-        self.settings.performance.target_fps = fps;
+    pub fn set_fps_cap(&mut self, fps: f32) {
+        self.settings.performance.fps_cap = fps;
     }
 
     #[inline]

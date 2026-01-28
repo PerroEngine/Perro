@@ -7,7 +7,7 @@ use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 pub(crate) const TRANSPILED_IDENT: &str = "__t_";
 
 /// Functions that should NOT be prefixed with __t_
-const RESERVED_FUNCTIONS: &[&str] = &["init", "update", "fixed_update", "draw"];
+const RESERVED_FUNCTIONS: &[&str] = &["init", "update", "fixed_update"];
 
 /// Check if a type name is a node type
 pub fn is_node_type(type_name: &str) -> bool {

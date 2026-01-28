@@ -33,7 +33,6 @@ pub fn implement_script_boilerplate_internal(
     let has_init = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "init");
     let has_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "update");
     let has_fixed_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "fixed_update");
-    let has_draw = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "draw");
     
     // Build the flags value
     let mut flags_value = 0u8;
@@ -45,9 +44,6 @@ pub fn implement_script_boilerplate_internal(
     }
     if has_fixed_update {
         flags_value |= 4; // ScriptFlags::HAS_FIXED_UPDATE
-    }
-    if has_draw {
-        flags_value |= 8; // ScriptFlags::HAS_DRAW
     }
 
     //----------------------------------------------------

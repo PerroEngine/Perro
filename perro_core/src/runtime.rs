@@ -429,7 +429,7 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
-        project_rc.borrow().target_fps(),
+        project_rc.borrow().fps_cap(),
         graphics,
     );
     
@@ -930,12 +930,9 @@ pub fn run_dev_with_path(project_root: PathBuf) {
     // 10. Render first frame before showing window (prevents black/white flash)
     // This mimics what user_event does when graphics are created asynchronously
     {
-        // Do initial update
+        // Do initial update (unified update/render)
         let now = std::time::Instant::now();
         game_scene.update(&mut graphics, now);
-        
-        // Queue rendering
-        game_scene.render(&mut graphics, now);
         
         // Render the frame
         let (frame, view, mut encoder) = graphics.begin_frame();
@@ -980,7 +977,7 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         project_rc.borrow().name().to_string(),
         project_rc.borrow().icon(),
         Some(game_scene),
-        project_rc.borrow().target_fps(),
+        project_rc.borrow().fps_cap(),
         graphics,
     );
     

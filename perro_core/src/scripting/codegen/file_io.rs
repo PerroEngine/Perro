@@ -210,8 +210,8 @@ pub fn derive_rust_perro_script(
             
             let search_region = &code[block_start..next_impl_pos];
             
-            // Find init, update, fixed_update, draw methods
-            let fn_re = Regex::new(r"fn\s+(init|update|fixed_update|draw)\s*\(").unwrap();
+            // Find init, update, fixed_update methods
+            let fn_re = Regex::new(r"fn\s+(init|update|fixed_update)\s*\(").unwrap();
 
             for fn_cap in fn_re.captures_iter(search_region) {
                 let fn_name = fn_cap[1].to_string();

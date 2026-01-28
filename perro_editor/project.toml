@@ -5,7 +5,7 @@ icon = "res://perro-logo.png"
 version="1.0.0"
 
 [performance]
-target_fps = 120
+fps_cap = 500
 xps = 60
 
 [root]

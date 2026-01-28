@@ -3,7 +3,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 #[derive(Debug, Clone)]
 pub enum AppCommand {
     SetWindowTitle(String),
-    SetTargetFPS(f32),
+    SetFpsCap(f32),
     SetCursorIcon(CursorIcon),
     Quit,
 }

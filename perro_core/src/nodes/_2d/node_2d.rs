@@ -13,10 +13,31 @@ fn is_default_visible(v: &bool) -> bool {
     *v == default_visible()
 }
 
+// Optimized field order: small fields grouped together (ty, transform_dirty, visible), then larger fields
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Node2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
+
+    /// Flag indicating if the global transform needs to be recalculated
+    /// When true, the global transform will be recalculated lazily when accessed
+    #[serde(skip, default = "default_transform_dirty")]
+    pub transform_dirty: bool,
+
+    #[serde(
+        default = "default_visible",
+        skip_serializing_if = "is_default_visible"
+    )]
+    pub visible: bool,
+
+    #[serde(skip_serializing_if = "is_zero_i32", default)]
+    pub z_index: i32,
+
+    #[serde(
+        skip_serializing_if = "Vector2::is_half_half",
+        default = "Vector2::default_pivot"
+    )]
+    pub pivot: Vector2,
 
     #[serde(
         skip_serializing_if = "Transform2D::is_default",
@@ -32,31 +53,11 @@ pub struct Node2D {
     )]
     pub global_transform: Transform2D,
 
-    /// Flag indicating if the global transform needs to be recalculated
-    /// When true, the global transform will be recalculated lazily when accessed
-    #[serde(skip, default = "default_transform_dirty")]
-    pub transform_dirty: bool,
-
     /// Cached list of child IDs that are Node2D-based (for performance optimization)
     /// This avoids hashmap lookups when marking transforms dirty recursively
     /// Updated when children are added/removed
     #[serde(skip, default)]
     pub node2d_children_cache: Option<Vec<crate::uid32::NodeID>>,
-
-    #[serde(
-        skip_serializing_if = "Vector2::is_half_half",
-        default = "Vector2::default_pivot"
-    )]
-    pub pivot: Vector2,
-
-    #[serde(skip_serializing_if = "is_zero_i32", default)]
-    pub z_index: i32,
-
-    #[serde(
-        default = "default_visible",
-        skip_serializing_if = "is_default_visible"
-    )]
-    pub visible: bool,
 
     // Base node with name, uuid, parent relationship, etc.
     #[serde(rename = "base")]
@@ -77,16 +78,13 @@ impl Node2D {
         base.name = Cow::Borrowed("Node2D");
         Self {
             ty: NodeType::Node2D,
+            transform_dirty: true, // New nodes start dirty
+            visible: default_visible(),
+            z_index: 0,
+            pivot: Vector2::new(0.5, 0.5),
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
-            transform_dirty: true, // New nodes start dirty
             node2d_children_cache: None, // Cache starts empty, will be populated on demand
-
-            pivot: Vector2::new(0.5, 0.5),
-
-            z_index: 0,
-
-            visible: default_visible(),
             // Base node
             base,
         }
@@ -119,13 +117,13 @@ impl Default for Node2D {
     fn default() -> Self {
         Self {
             ty: NodeType::Node2D,
+            transform_dirty: true, // Default to dirty
+            visible: default_visible(),
+            z_index: 0,
+            pivot: Vector2::new(0.5, 0.5),
             transform: Transform2D::default(),
             global_transform: Transform2D::default(),
-            transform_dirty: true, // Default to dirty
             node2d_children_cache: None, // Cache starts empty
-            pivot: Vector2::new(0.5, 0.5),
-            z_index: 0,
-            visible: default_visible(),
             base: {
                 let mut base = Node::new();
                 base.name = Cow::Borrowed("Node2D");

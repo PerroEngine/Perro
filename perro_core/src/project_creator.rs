@@ -358,7 +358,7 @@ icon = "res://icon.png"
 version = "1.0.0"
 
 [performance]
-target_fps = 60
+fps_cap = 500
 xps = 30
 
 [input]

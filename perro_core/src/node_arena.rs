@@ -8,6 +8,9 @@ use crate::uid32::NodeID;
 pub struct NodeArena {
     slots: Vec<Option<SceneNode>>,
     live: u32,
+    /// Tracks the highest ID ever used in this arena.
+    /// Used to make `next_id()` O(1) instead of scanning all slots.
+    max_id: u32,
 }
 
 impl NodeArena {
@@ -16,6 +19,7 @@ impl NodeArena {
         Self {
             slots: Vec::new(),
             live: 0,
+            max_id: 0,
         }
     }
 
@@ -24,6 +28,7 @@ impl NodeArena {
         Self {
             slots: Vec::with_capacity(capacity),
             live: 0,
+            max_id: 0,
         }
     }
 
@@ -43,6 +48,11 @@ impl NodeArena {
 
         if self.slots[idx].is_some() {
             panic!("NodeArena::insert: slot already occupied (id={})", id);
+        }
+
+        // Update max_id to track the highest ID ever used
+        if id_val > self.max_id {
+            self.max_id = id_val;
         }
 
         self.slots[idx] = Some(node);
@@ -174,25 +184,12 @@ impl NodeArena {
     
     /// Get the next available node ID based on the current highest ID in the arena.
     /// This is used as a fallback when static counter collisions are detected (DLL scenarios).
+    /// 
+    /// O(1) performance - uses cached `max_id` instead of scanning all slots.
     #[inline]
     pub fn next_id(&self) -> NodeID {
-        // Find the highest ID currently in use
-        let max_id = self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, slot)| {
-                if slot.is_some() {
-                    // Add 1 back since we subtracted 1 when storing
-                    Some((idx + 1) as u32)
-                } else {
-                    None
-                }
-            })
-            .max()
-            .unwrap_or(0); // If arena is empty, start at 1 (0 is reserved for nil)
-        
-        // Return the next ID (max_id + 1, but at least 1)
-        NodeID::from_u32((max_id + 1).max(1))
+        // Return the next ID (max_id + 1, but at least 1 since 0 is reserved for nil)
+        NodeID::from_u32((self.max_id + 1).max(1))
     }
     
     /// Check if an ID is already in use (without bounds checking).

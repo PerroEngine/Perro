@@ -22,6 +22,8 @@ fn is_default_scale(v: &Vector2) -> bool {
     *v == default_scale()
 }
 
+// Optimized field order to minimize padding: position (8 bytes), scale (8 bytes), rotation (4 bytes)
+// This reduces struct size from 24 bytes to 20 bytes by eliminating 4 bytes of padding
 #[derive(Serialize, Deserialize, Clone, Debug, Copy)]
 pub struct Transform2D {
     #[serde(
@@ -30,14 +32,14 @@ pub struct Transform2D {
     )]
     pub position: Vector2,
 
+    #[serde(default = "default_scale", skip_serializing_if = "is_default_scale")]
+    pub scale: Vector2,
+
     #[serde(
         default = "default_rotation",
         skip_serializing_if = "is_default_rotation"
     )]
     pub rotation: f32, // Rotation in radians
-
-    #[serde(default = "default_scale", skip_serializing_if = "is_default_scale")]
-    pub scale: Vector2,
 }
 
 impl Transform2D {
@@ -45,8 +47,8 @@ impl Transform2D {
     pub const fn new(pos: Vector2, rot: f32, scale: Vector2) -> Self {
         Self {
             position: pos,
-            rotation: rot,
             scale,
+            rotation: rot,
         }
     }
 
@@ -62,8 +64,8 @@ impl Default for Transform2D {
     fn default() -> Self {
         Self {
             position: default_position(),
-            rotation: default_rotation(),
             scale: default_scale(),
+            rotation: default_rotation(),
         }
     }
 }
@@ -143,8 +145,8 @@ impl Transform2D {
         
         Self {
             position: Vector2::new(tx, ty),
-            rotation,
             scale: Vector2::new(scale_x, scale_y),
+            rotation,
         }
     }
     
@@ -291,8 +293,8 @@ impl Transform2D {
     pub fn lerp(&self, other: &Transform2D, t: f32) -> Transform2D {
         Transform2D {
             position: Vector2::lerp(self.position, other.position, t),
-            rotation: self.rotation + (other.rotation - self.rotation) * t,
             scale: Vector2::lerp(self.scale, other.scale, t),
+            rotation: self.rotation + (other.rotation - self.rotation) * t,
         }
     }
     

@@ -6,18 +6,20 @@ use crate::nodes::_2d::node_2d::Node2D;
 use crate::nodes::node_registry::NodeType;
 
 /// 2D Camera node. Controls world-space rendering position and zoom.
+// Optimized field order: ty (1 byte), active (1 byte), zoom (4 bytes), base (large)
+// Groups small fields together to minimize padding
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Camera2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
 
-    /// Zoom factor (0.0 = normal, positive = zoom in, negative = zoom out)
-    #[serde(default)]
-    pub zoom: f32,
-
     /// Whether this camera is currently active
     #[serde(default)]
     pub active: bool,
+
+    /// Zoom factor (0.0 = normal, positive = zoom in, negative = zoom out)
+    #[serde(default)]
+    pub zoom: f32,
 
     /// The base Node2D containing transform, z-index, etc.
     #[serde(rename = "base")]
@@ -30,8 +32,8 @@ impl Camera2D {
         base.name = Cow::Borrowed("Camera2D");
         Self {
             ty: NodeType::Camera2D,
-            zoom: 0.0,
             active: false,
+            zoom: 0.0,
             base,
         }
     }

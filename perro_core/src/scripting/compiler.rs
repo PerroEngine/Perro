@@ -3384,7 +3384,7 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(manifest_file, "        None,")?;
         }
 
-        writeln!(manifest_file, "        {}f32,", project.target_fps())?;
+        writeln!(manifest_file, "        {}f32,", project.fps_cap())?;
         writeln!(manifest_file, "        {}f32,", project.xps())?;
 
         // Handle optional root script

@@ -334,8 +334,8 @@ impl PrimitiveRenderer {
     
         Transform2D {
             position,
-            rotation,
             scale,
+            rotation,
         }
     }
     
@@ -594,11 +594,11 @@ impl PrimitiveRenderer {
         // Create a *new* version for rendering
         let adjusted_transform = Transform2D {
             position: transform.position,
-            rotation: transform.rotation,
             scale: Vector2::new(
                 transform.scale.x * tex_size.x,
                 transform.scale.y * tex_size.y,
             ),
+            rotation: transform.rotation,
         };
         
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
@@ -649,8 +649,8 @@ impl PrimitiveRenderer {
                     let test_instance = self.create_texture_instance(
                         Transform2D {
                             position: transform.position,
-                            rotation: transform.rotation,
                             scale: Vector2::new(transform.scale.x * tex_size.x, transform.scale.y * tex_size.y),
+                            rotation: transform.rotation,
                         },
                         pivot,
                         z_index,

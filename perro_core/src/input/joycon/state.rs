@@ -26,6 +26,8 @@ pub enum JoyconVersion {
 // Buttons (final: includes SL / SR)
 // ==========================================
 
+// Packed to minimize memory: 21 bools = 21 bytes (no padding)
+#[repr(packed)]
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct JoyconButtons {
     // Right Joy-Con face buttons (ignored on Left)
@@ -65,29 +67,31 @@ pub struct JoyconButtons {
 // Joy-Con State
 // ==========================================
 
+// Optimized field order to minimize padding: String(24), Vector2(8), Vector3(12), Vector3(12), 
+// then smaller fields (buttons, enums, bool) at the end
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JoyconState {
-    pub serial: String,         // Serial number or address identifier
-    pub side: JoyconSide,       // Left or Right
-    pub version: JoyconVersion, // V1 or V2
-    pub connected: bool,        // Controller still active
-    pub buttons: JoyconButtons, // All button states (includes sl/sr)
-    pub stick: Vector2,         // normalized stick (-1.0..1.0)
-    pub gyro: Vector3,          // gyro in radians/second (converted from degrees/second)
-    pub accel: Vector3,         // accel in g-forces
+    pub serial: String,         // Serial number or address identifier (24 bytes)
+    pub stick: Vector2,         // normalized stick (-1.0..1.0) (8 bytes)
+    pub gyro: Vector3,          // gyro in radians/second (converted from degrees/second) (12 bytes)
+    pub accel: Vector3,         // accel in g-forces (12 bytes)
+    pub buttons: JoyconButtons, // All button states (includes sl/sr) (21 bytes packed)
+    pub side: JoyconSide,       // Left or Right (1 byte)
+    pub version: JoyconVersion, // V1 or V2 (1 byte)
+    pub connected: bool,        // Controller still active (1 byte)
 }
 
 impl Default for JoyconState {
     fn default() -> Self {
         Self {
             serial: String::new(),
-            side: JoyconSide::Left,
-            version: JoyconVersion::V1,
-            connected: false,
-            buttons: JoyconButtons::default(),
             stick: Vector2::ZERO,
             gyro: Vector3::ZERO,
             accel: Vector3::ZERO,
+            buttons: JoyconButtons::default(),
+            side: JoyconSide::Left,
+            version: JoyconVersion::V1,
+            connected: false,
         }
     }
 }
@@ -161,13 +165,13 @@ impl JoyconState {
 
         Self {
             serial,
-            side,
-            version,
-            connected,
-            buttons,
             stick,
             gyro,
             accel,
+            buttons,
+            side,
+            version,
+            connected,
         }
     }
 }

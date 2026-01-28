@@ -603,7 +603,6 @@ pub struct Scene<P: ScriptProvider> {
     pub last_fixed_update: Option<Instant>,
     
     // Render timing (for draw() methods - tracks actual frame time, not update time)
-    pub last_scene_render: Option<Instant>,
     // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for fixed updates)
     pub nodes_with_internal_fixed_update: HashSet<NodeID>,
     // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for render updates)
@@ -617,10 +616,9 @@ pub struct Scene<P: ScriptProvider> {
     cached_script_ids: Vec<NodeID>,
     scripts_dirty: bool,
     
-    // OPTIMIZED: Separate vectors for scripts with update/fixed_update/draw to avoid checking all scripts
+    // OPTIMIZED: Separate vectors for scripts with update/fixed_update to avoid checking all scripts
     scripts_with_update: Vec<NodeID>,
     scripts_with_fixed_update: Vec<NodeID>,
-    scripts_with_draw: Vec<NodeID>,
     
     // Track if texture_path → texture_id conversion has been done
     textures_converted: bool,
@@ -675,7 +673,6 @@ impl<P: ScriptProvider> Scene<P> {
             true_updates: 0,
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
-            last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
             nodes_with_internal_render_update: HashSet::new(),
             // OPTIMIZED: Lazy physics initialization - only create when needed
@@ -688,7 +685,6 @@ impl<P: ScriptProvider> Scene<P> {
             // OPTIMIZED: Initialize separate vectors for update/fixed_update/draw scripts
             scripts_with_update: Vec::new(),
             scripts_with_fixed_update: Vec::new(),
-            scripts_with_draw: Vec::new(),
             
             // OPTIMIZED: Initialize nodes needing rerender tracking
             needs_rerender: HashSet::new(),
@@ -730,7 +726,6 @@ impl<P: ScriptProvider> Scene<P> {
             true_updates: 0,
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
-            last_scene_render: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
             nodes_with_internal_render_update: HashSet::new(),
             
@@ -741,7 +736,6 @@ impl<P: ScriptProvider> Scene<P> {
             // OPTIMIZED: Initialize separate vectors for update/fixed_update/draw scripts
             scripts_with_update: Vec::new(),
             scripts_with_fixed_update: Vec::new(),
-            scripts_with_draw: Vec::new(),
             
             // OPTIMIZED: Initialize nodes needing rerender tracking
             needs_rerender: HashSet::new(),
@@ -1430,9 +1424,6 @@ impl<P: ScriptProvider> Scene<P> {
                 if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
                     self.scripts_with_fixed_update.push(id);
                 }
-                if flags.has_draw() && !self.scripts_with_draw.contains(&id) {
-                    self.scripts_with_draw.push(id);
-                }
                 
                 self.scripts.insert(id, handle);
                 self.scripts_dirty = true;
@@ -1699,9 +1690,6 @@ impl<P: ScriptProvider> Scene<P> {
                         if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
                             self.scripts_with_fixed_update.push(id);
                         }
-                        if flags.has_draw() && !self.scripts_with_draw.contains(&id) {
-                            self.scripts_with_draw.push(id);
-                        }
                         
                         self.scripts.insert(id, handle);
                         self.scripts_dirty = true;
@@ -1895,87 +1883,6 @@ impl<P: ScriptProvider> Scene<P> {
         self.provider.load_ctor(short)
     }
 
-    pub fn render(&mut self, gfx: &mut Graphics, now: Instant) {
-        // Convert texture_path → texture_id on first render (when Graphics is available)
-        if !self.textures_converted {
-            self.convert_texture_paths_to_ids(gfx);
-            self.textures_converted = true;
-        }
-        
-        // Calculate render delta (time since last render call - actual frame time)
-        let render_delta = match self.last_scene_render {
-            Some(prev) => now.duration_since(prev).as_secs_f32(),
-            None => 0.0,
-        };
-        // Update render time for next frame
-        self.last_scene_render = Some(now);
-        
-        // Call draw() methods on scripts that implement it (frame-synchronized visuals)
-        {
-            // OPTIMIZED: Accept now as parameter to avoid duplicate Instant::now() call
-            
-            // OPTIMIZED: Use pre-filtered vector of scripts with draw
-            // Collect script IDs to avoid borrow checker issues
-            let script_ids: Vec<NodeID> = self.scripts_with_draw.iter().copied().collect();
-            
-            if !script_ids.is_empty() {
-                // Clone project reference before loop to avoid borrow conflicts
-                let project_ref = self.project.clone();
-                
-                #[cfg(feature = "profiling")]
-                let _span = tracing::span!(tracing::Level::INFO, "script_draws", count = script_ids.len()).entered();
-                
-                for id in script_ids {
-                    #[cfg(feature = "profiling")]
-                    let _span = tracing::span!(tracing::Level::INFO, "script_draw", id = %id).entered();
-                    
-                    // OPTIMIZED: Borrow project once per script
-                    // Note: We can't borrow project once for all scripts because ScriptApi needs &mut self (scene)
-                    let mut project_borrow = project_ref.borrow_mut();
-                    let mut api = ScriptApi::new(render_delta, self, &mut *project_borrow, gfx);
-                    api.call_draw(id);
-                }
-            }
-        }
-        
-        // Run internal render update for nodes that need it (e.g., UI interactions)
-        {
-            #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_updates").entered();
-            
-            // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
-            let node_ids: Vec<NodeID> = self.nodes_with_internal_render_update.iter().copied().collect();
-            
-            if !node_ids.is_empty() {
-                // Clone project reference before loop to avoid borrow conflicts
-                let project_ref = self.project.clone();
-                
-                for node_id in node_ids {
-                    #[cfg(feature = "profiling")]
-                    let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_update", id = %node_id).entered();
-                    
-                    // OPTIMIZED: Borrow project once per node
-                    let mut project_borrow = project_ref.borrow_mut();
-                    let mut api = ScriptApi::new(render_delta, self, &mut *project_borrow, gfx);
-                    api.call_node_internal_render_update(node_id);
-                }
-            }
-        }
-        
-        let nodes_needing_rerender = {
-            #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "get_nodes_needing_rerender").entered();
-            self.get_nodes_needing_rerender()
-        };
-        if nodes_needing_rerender.is_empty() {
-            return;
-        }
-        {
-            #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "traverse_and_render", count = nodes_needing_rerender.len()).entered();
-            self.traverse_and_render(nodes_needing_rerender, gfx);
-        }
-    }
 
     pub fn update(&mut self, gfx: &mut crate::rendering::Graphics, now: Instant) {
         #[cfg(feature = "profiling")]
@@ -2150,6 +2057,48 @@ impl<P: ScriptProvider> Scene<P> {
             let _span = tracing::span!(tracing::Level::INFO, "process_queued_signals").entered();
             self.process_queued_signals();
         }
+
+        // RENDERING - unified with update (no separate draw() calls)
+        // Convert texture_path → texture_id on first render (when Graphics is available)
+        if !self.textures_converted {
+            self.convert_texture_paths_to_ids(gfx);
+            self.textures_converted = true;
+        }
+        
+        // Run internal render update for nodes that need it (e.g., UI interactions)
+        {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_updates").entered();
+            
+            // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
+            let node_ids: Vec<NodeID> = self.nodes_with_internal_render_update.iter().copied().collect();
+            
+            if !node_ids.is_empty() {
+                // Clone project reference before loop to avoid borrow conflicts
+                let project_ref = self.project.clone();
+                
+                for node_id in node_ids {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_update", id = %node_id).entered();
+                    
+                    // OPTIMIZED: Borrow project once per node
+                    let mut project_borrow = project_ref.borrow_mut();
+                    let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow, gfx);
+                    api.call_node_internal_render_update(node_id);
+                }
+            }
+        }
+        
+        let nodes_needing_rerender = {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "get_nodes_needing_rerender").entered();
+            self.get_nodes_needing_rerender()
+        };
+        if !nodes_needing_rerender.is_empty() {
+            #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "traverse_and_render", count = nodes_needing_rerender.len()).entered();
+            self.traverse_and_render(nodes_needing_rerender, gfx);
+        }
     }
 
     fn connect_signal(&mut self, signal: u64, target_id: NodeID, function_id: u64) {
@@ -2311,9 +2260,6 @@ impl<P: ScriptProvider> Scene<P> {
             if flags.has_fixed_update() && !self.scripts_with_fixed_update.contains(&id) {
                 self.scripts_with_fixed_update.push(id);
             }
-            if flags.has_draw() && !self.scripts_with_draw.contains(&id) {
-                self.scripts_with_draw.push(id);
-            }
             
             self.scripts.insert(id, handle);
             self.scripts_dirty = true;
@@ -2350,9 +2296,6 @@ impl<P: ScriptProvider> Scene<P> {
 
     /// Get reference to scripts that have draw() implemented
     /// Used by the rendering loop to call draw on frame-synchronized scripts
-    pub fn get_scripts_with_draw(&self) -> &Vec<NodeID> {
-        &self.scripts_with_draw
-    }
 
     // Remove node and stop rendering
     pub fn remove_node(&mut self, node_id: NodeID, gfx: &mut Graphics) {
@@ -2408,13 +2351,11 @@ impl<P: ScriptProvider> Scene<P> {
         // Check if any cleanup is needed to avoid unnecessary work
         let needs_cleanup = had_script
             || self.scripts_with_update.contains(&node_id)
-            || self.scripts_with_fixed_update.contains(&node_id)
-            || self.scripts_with_draw.contains(&node_id);
+            || self.scripts_with_fixed_update.contains(&node_id);
         
         if needs_cleanup {
             self.scripts_with_update.retain(|&script_id| script_id != node_id);
             self.scripts_with_fixed_update.retain(|&script_id| script_id != node_id);
-            self.scripts_with_draw.retain(|&script_id| script_id != node_id);
             self.scripts_dirty = true;
         }
         

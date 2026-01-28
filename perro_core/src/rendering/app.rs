@@ -57,8 +57,7 @@ const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
 #[allow(dead_code)]
 const MONITOR_SCALE_FACTOR: f32 = 0.75;
 const FPS_MEASUREMENT_INTERVAL: f32 = 3.0;
-const MAX_FRAME_DEBT: f32 = 0.025; // 25ms worth of frames
-const MAX_CATCHUP_FPS: f32 = 10.0; // Maximum FPS above target for catch-up
+const DEFAULT_TARGET_FPS: f32 = 500.0;
 
 // Default Perro icon embedded at compile time
 const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
@@ -151,25 +150,19 @@ pub struct App<P: ScriptProvider> {
     window_icon_path: Option<String>,
     game_scene: Option<Scene<P>>,
 
-    // Render loop timing (capped to target FPS)
+    // Unified update/render loop timing
     start_time: std::time::Instant,
 
-    // FPS tracking
-    fps_frames: u32,
-    fps_measurement_start: std::time::Instant,
+    // Unified FPS tracking (update and render are unified)
+    frames: u32,
+    measurement_start: std::time::Instant,
+    total_update_duration: std::time::Duration, // Accumulated update time for averaging
 
-    // UPS tracking
-    ups_updates: u32,
-    ups_measurement_start: std::time::Instant,
+    // Update pacing (limits updates/renders to FPS cap)
+    fps_cap: f32,
+    last_update_time: Option<std::time::Instant>,
 
-    // Frame pacing (limits rendering to target FPS)
-    target_fps: f32,
-    frame_debt: f32,
-    last_frame_time: Option<std::time::Instant>,
-    total_frames_rendered: u64,
-            first_frame: bool,
-
-            // Cached render state
+    // Cached render state
     cached_operations: wgpu::Operations<wgpu::Color>,
 
     // Command receiver
@@ -185,7 +178,7 @@ impl<P: ScriptProvider> App<P> {
         window_title: String,
         icon_path: Option<String>,
         mut game_scene: Option<Scene<P>>,
-        target_fps: f32,
+        fps_cap: f32,
         graphics: Graphics,
     ) -> Self {
         let now = std::time::Instant::now();
@@ -205,23 +198,17 @@ impl<P: ScriptProvider> App<P> {
             window_icon_path: icon_path,
             game_scene,
 
-            // Render loop timing
+            // Unified update/render loop timing
             start_time: now,
 
-            // FPS tracking
-            fps_frames: 0,
-            fps_measurement_start: now,
+            // Unified FPS tracking
+            frames: 0,
+            measurement_start: now,
+            total_update_duration: std::time::Duration::ZERO,
 
-            // UPS tracking
-            ups_updates: 0,
-            ups_measurement_start: now,
-
-            // Frame pacing (capped)
-            target_fps,
-            frame_debt: 0.0,
-            last_frame_time: None,
-            total_frames_rendered: 0,
-            first_frame: true,
+            // Update pacing (capped)
+            fps_cap,
+            last_update_time: None,
 
             // Cached render state
             cached_operations: wgpu::Operations {
@@ -243,9 +230,9 @@ impl<P: ScriptProvider> App<P> {
                     self.window_title = title;
                     println!("Window title set to: {}", self.window_title);
                 }
-                AppCommand::SetTargetFPS(fps) => {
-                    self.target_fps = fps;
-                    println!("Target FPS changed to: {}", fps);
+                AppCommand::SetFpsCap(fps) => {
+                    self.fps_cap = fps;
+                    println!("FPS cap changed to: {}", fps);
                 }
                 AppCommand::SetCursorIcon(icon) => {
                     use winit::window::CursorIcon as WinitCursorIcon;
@@ -272,77 +259,21 @@ impl<P: ScriptProvider> App<P> {
         }
     }
 
-    fn calculate_frame_debt(&mut self, now: std::time::Instant) {
-        // OPTIMIZED: Use as_secs_f64() then cast to f32 (faster than as_secs_f32() on some platforms)
-        // Also cache MAX_FRAME_DEBT * target_fps to avoid multiplication every frame
-        let elapsed = (now - self.start_time).as_secs_f64() as f32;
-        let target_frames = elapsed * self.target_fps;
-        let mut frame_debt = target_frames - (self.total_frames_rendered as f32);
-        // OPTIMIZED: Cache max_debt calculation (target_fps rarely changes)
-        let max_debt = self.target_fps * MAX_FRAME_DEBT;
-        frame_debt = frame_debt.min(max_debt);
-        self.frame_debt = frame_debt;
-    }
-
-    fn should_render_frame(&self, now: std::time::Instant) -> bool {
-        // Frame pacing: only render when we're behind by at least half a frame
-        if self.first_frame {
-            return true;
-        }
+    fn update_fps_measurement(&mut self, now: std::time::Instant, update_duration: std::time::Duration) {
+        // Accumulate update duration for averaging
+        self.total_update_duration += update_duration;
         
-        // Check if a game process is running - if so, be more lenient with rendering
-        // to reduce GPU contention (game will use GPU, so editor should be more aggressive)
-        let game_running = self.game_scene.as_ref()
-            .map(|scene| {
-                let project = scene.project.borrow();
-                project.get_runtime_param("runtime_process_running")
-                    .map(|s| s == "true")
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
-        
-        // When game is running, use lower threshold and higher catch-up rate to reduce GPU contention
-        // Lower threshold means we render more often (less strict)
-        // Higher catch-up rate means we can catch up faster when behind
-        let frame_debt_threshold = if game_running { 0.1 } else { 0.5 };
-        let catchup_fps_boost = if game_running { 20.0 } else { MAX_CATCHUP_FPS };
-        
-        if self.frame_debt < frame_debt_threshold {
-            return false;
-        }
-        
-        // Cap catch-up rate: even if we have debt, don't render faster than max_catchup_fps
-        if let Some(last_time) = self.last_frame_time {
-            let max_catchup_fps = self.target_fps + catchup_fps_boost;
-            let min_frame_interval = 1.0 / max_catchup_fps;
-            let elapsed = (now - last_time).as_secs_f64() as f32;
-            if elapsed < min_frame_interval {
-                return false; // Don't render yet - would exceed max catch-up rate
-            }
-        }
-        
-        true
-    }
-
-    fn update_fps_measurement(&mut self, now: std::time::Instant) {
-        let measurement_interval = (now - self.fps_measurement_start).as_secs_f32();
+        let measurement_interval = (now - self.measurement_start).as_secs_f32();
         if measurement_interval >= FPS_MEASUREMENT_INTERVAL {
-            let fps = self.fps_frames as f32 / measurement_interval;
-            println!("FPS: {:.1}", fps);
+            let actual_fps = self.frames as f32 / measurement_interval;
+            let avg_update_ms = self.total_update_duration.as_secs_f64() * 1000.0 / self.frames as f64;
+            let current_update_ms = update_duration.as_secs_f64() * 1000.0;
+            
+            println!("FPS: {:.1} | Update: {:.2}ms (avg: {:.2}ms)", actual_fps, current_update_ms, avg_update_ms);
 
-            self.fps_frames = 0;
-            self.fps_measurement_start = now;
-        }
-    }
-
-    fn update_ups_measurement(&mut self, now: std::time::Instant) {
-        let measurement_interval = (now - self.ups_measurement_start).as_secs_f32();
-        if measurement_interval >= FPS_MEASUREMENT_INTERVAL {
-            let ups = self.ups_updates as f32 / measurement_interval;
-            println!("UPS: {:.1}", ups);
-
-            self.ups_updates = 0;
-            self.ups_measurement_start = now;
+            self.frames = 0;
+            self.total_update_duration = std::time::Duration::ZERO;
+            self.measurement_start = now;
         }
     }
 
@@ -356,20 +287,18 @@ impl<P: ScriptProvider> App<P> {
             None => return,
         };
 
-        let now = std::time::Instant::now();
+        let update_start = std::time::Instant::now();
 
         // 1. Process app commands
-        // OPTIMIZED: Only process if there are commands (try_iter is already fast, but early exit helps)
         {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "process_commands").entered();
             self.process_commands(&gfx);
         }
 
-        // 2. UPDATE LOOP
+        // 2. UNIFIED UPDATE/RENDER - scene.update() now handles both updating and rendering
         if let Some(scene) = self.game_scene.as_mut() {
             // OPTIMIZED: Only reset scroll delta if input manager exists (avoids Option check overhead)
-            // Most projects don't use scroll, so this is usually a no-op
             if let Some(input_mgr) = scene.get_input_manager() {
                 // OPTIMIZED: Use try_lock() to avoid blocking (very rare case where it would block)
                 if let Ok(mut input_mgr) = input_mgr.try_lock() {
@@ -380,76 +309,62 @@ impl<P: ScriptProvider> App<P> {
             {
                 #[cfg(feature = "profiling")]
                 let _span = tracing::span!(tracing::Level::INFO, "scene_update").entered();
-                // OPTIMIZED: Pass now to avoid duplicate Instant::now() call
-                scene.update(&mut gfx, now);
-            }
-            
-            // Track UPS (updates happen every frame, uncapped)
-            self.ups_updates += 1;
-            {
-                #[cfg(feature = "profiling")]
-                let _span = tracing::span!(tracing::Level::INFO, "update_ups_measurement").entered();
-                self.update_ups_measurement(now);
+                scene.update(&mut gfx, update_start);
             }
         }
 
-        // 3. CAPPED RENDER LOOP - Frame pacing limits to target FPS
+        // 3. RENDER FRAME (scene.update() queues rendering, we execute it here)
         {
             #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "calculate_frame_debt").entered();
-            self.calculate_frame_debt(now);
+            let _span = tracing::span!(tracing::Level::INFO, "render_frame").entered();
+            self.render_frame(&mut gfx, update_start);
         }
 
-        // Only render when frame pacing allows (capped FPS)
-        let should_render = {
-            #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "should_render_frame").entered();
-            self.should_render_frame(now)
+        // 4. Measure frame time and request next redraw immediately
+        let frame_end = std::time::Instant::now();
+        let frame_duration = frame_end.duration_since(update_start);
+        
+        // Always request redraw immediately (don't wait)
+        gfx.window().request_redraw();
+        
+        // 5. SLEEP-BASED PACING - cap at fps_cap
+        // Only apply compensation if we're running fast enough (update finished early)
+        // If update takes longer than target, don't compensate - just run at that speed
+        const COMPENSATION_FACTOR: f32 = 1.02; // 2% compensation for event loop overhead
+        let base_target_frame_time = std::time::Duration::from_secs_f32(1.0 / self.fps_cap);
+        let target_frame_time = if frame_duration < base_target_frame_time {
+            // We finished early - apply fixed compensation to account for event loop overhead
+            std::time::Duration::from_secs_f32(1.0 / (self.fps_cap * COMPENSATION_FACTOR))
+        } else {
+            // We're running slow - no compensation, just use base target
+            base_target_frame_time
         };
         
-        if should_render {
-            {
-                #[cfg(feature = "profiling")]
-                let _span = tracing::span!(tracing::Level::INFO, "render_frame").entered();
-                // OPTIMIZED: Pass now to render_frame to avoid duplicate Instant::now() call
-                self.render_frame(&mut gfx, now);
-            }
-
-            // Update last frame time for catch-up rate limiting
-            self.last_frame_time = Some(now);
-
-            if self.first_frame {
-                self.first_frame = false;
-            }
-            self.total_frames_rendered += 1;
-            self.fps_frames += 1;
-
-            {
-                #[cfg(feature = "profiling")]
-                let _span = tracing::span!(tracing::Level::INFO, "update_fps_measurement").entered();
-                self.update_fps_measurement(now);
+        if frame_duration < target_frame_time {
+            // Sleep for the remainder if we finished early
+            let sleep_duration = target_frame_time - frame_duration;
+            
+            // Always use spin-wait for frame pacing (more precise, especially on Windows)
+            // Windows thread::sleep has poor precision (~15ms minimum), so spin-wait is necessary
+            // for accurate high FPS. This uses a bit more CPU but ensures precise timing.
+            let sleep_end = frame_end + sleep_duration;
+            while std::time::Instant::now() < sleep_end {
+                std::hint::spin_loop();
             }
         }
+        // If we took longer than target_frame_time, just continue (no catch-up)
 
-        // 4. Request next frame (this drives the uncapped update loop)
-        gfx.window().request_redraw();
+        // 6. Track FPS
+        self.frames += 1;
+        self.update_fps_measurement(frame_end, frame_duration);
+        self.last_update_time = Some(frame_end);
 
         // OPTIMIZED: Use put_graphics() helper
         self.state.put_graphics(gfx);
     }
 
-    /// Render a single frame (only called when frame pacing allows)
-    fn render_frame(&mut self, gfx: &mut Graphics, now: std::time::Instant) {
-        // Update scene render data (queues rendering commands)
-        {
-            #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "scene_render").entered();
-            if let Some(scene) = self.game_scene.as_mut() {
-                // OPTIMIZED: Pass now to avoid duplicate Instant::now() call
-                scene.render(gfx, now);
-            }
-        }
-
+    /// Render a single frame (scene.update() already queued rendering commands)
+    fn render_frame(&mut self, gfx: &mut Graphics, _now: std::time::Instant) {
         // Begin frame
         let (frame, view, mut encoder) = {
             #[cfg(feature = "profiling")]
@@ -669,12 +584,9 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
 
         // Render the actual first game frame before showing window
         if let Some(scene) = self.game_scene.as_mut() {
-            // Do initial update
+            // Do initial update (unified update/render)
             let now = std::time::Instant::now();
             scene.update(&mut graphics, now);
-
-            // Queue rendering
-            scene.render(&mut graphics, now);
 
             // Render the frame
             let (frame, view, mut encoder) = graphics.begin_frame();
@@ -707,10 +619,8 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
             graphics.end_frame(frame, encoder);
 
             // Mark that first frame is done
-            self.first_frame = false;
-            self.total_frames_rendered = 1;
-            self.fps_frames = 1;
-            self.last_frame_time = Some(now);
+            self.frames = 1;
+            self.last_update_time = Some(now);
         }
 
         // Now make window visible with content already rendered
@@ -720,8 +630,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         // Initialize timing systems
         let now = std::time::Instant::now();
         self.start_time = now;
-        self.fps_measurement_start = now;
-        self.ups_measurement_start = now;
+        self.measurement_start = now;
 
         self.state = State { graphics: Some(graphics) };
     }

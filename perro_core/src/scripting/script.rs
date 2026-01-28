@@ -25,7 +25,6 @@ impl ScriptFlags {
     pub const HAS_INIT: u8 = 1 << 0;
     pub const HAS_UPDATE: u8 = 1 << 1;
     pub const HAS_FIXED_UPDATE: u8 = 1 << 2;
-    pub const HAS_DRAW: u8 = 1 << 3;
     
     #[inline(always)]
     pub const fn new(flags: u8) -> Self {
@@ -46,11 +45,6 @@ impl ScriptFlags {
     pub const fn has_fixed_update(self) -> bool {
         self.0 & Self::HAS_FIXED_UPDATE != 0
     }
-    
-    #[inline(always)]
-    pub const fn has_draw(self) -> bool {
-        self.0 & Self::HAS_DRAW != 0
-    }
 }
 
 pub trait ScriptProvider: Sync {
@@ -64,7 +58,6 @@ pub trait Script {
     fn init(&mut self, _api: &mut ScriptApi) {}
     fn update(&mut self, _api: &mut ScriptApi) {}
     fn fixed_update(&mut self, _api: &mut ScriptApi) {}
-    fn draw(&mut self, _api: &mut ScriptApi) {}
 }
 
 pub trait ScriptObject: Script {
@@ -93,9 +86,6 @@ pub trait ScriptObject: Script {
     }
     fn engine_fixed_update(&mut self, api: &mut ScriptApi) {
         self.fixed_update(api)
-    }
-    fn engine_draw(&mut self, api: &mut ScriptApi) {
-        self.draw(api)
     }
 }
 

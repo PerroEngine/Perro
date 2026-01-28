@@ -9,27 +9,28 @@ struct Cabbage {
     var x: int
 }
 
-var cab = new Cabbage { x: 1001 }
+var cab = new Cabbage { x: 100111 }
 
 on init() {
     tex = Texture.load("res://doug.PNG")
     self.texture = tex
+    self.transform.position = new Vector2(-700, -70)
     var c = 0
-    for (i in 0..1000) {
-       var n = new Node2D()
-       n.name = "node" + i
-       n.transform.position = new Vector2(i * 105, 0)
+    // for (i in 0..650) {
+    //    var n = new Node2D()
+    //    n.name = "node" + i
+    //    n.transform.position = new Vector2(i * 105, 0)
 
-       for (j in 0..250) {
-        var n2 = new Node2D()
-        n2.name = "node" + i + "child" + j
-        n2.transform.position = new Vector2(j * 105, 0)
-        n.add_child(n2)
-        c++
-       }
-       self.add_child(n)
+    //    for (j in 0..250) {
+    //     var n2 = new Node2D()
+    //     n2.name = "node" + i + "child" + j
+    //     n2.transform.position = new Vector2(j * 105, 0)
+    //     n.add_child(n2)
+    //     c++
+    //    }
+    //    self.add_child(n)
       
-    }
+    // }
  Console.info("Count", c)
 
 }
@@ -37,6 +38,13 @@ on init() {
 on update() {
     var delta = Time.get_delta()
     self.transform.position.x += 150 * delta
+
+    for (i in 0..100) {
+        var n = new Node2D()
+        n.name = "node" + i
+        n.transform.position = new Vector2(i * 105, 0)
+        self.add_child(n)
+    }
 }
 
 fn test(u: int) {

@@ -6,10 +6,16 @@ use crate::nodes::_3d::node_3d::Node3D;
 use crate::nodes::node_registry::NodeType;
 
 /// 3D Camera node. Controls the view and projection for 3D rendering.
+// Optimized field order: ty (1 byte), active (1 byte), then Option<f32> fields (12 bytes), base (large)
+// Groups small fields together to minimize padding
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct Camera3D {
     #[serde(rename = "type")]
     pub ty: NodeType,
+
+    /// Whether this camera is currently active
+    #[serde(default)]
+    pub active: bool,
 
     /// Field of view, in degrees (typically 70°–90°)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -23,10 +29,6 @@ pub struct Camera3D {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub far: Option<f32>,
 
-    /// Whether this camera is currently active
-    #[serde(default)]
-    pub active: bool,
-
     /// Embedded base Node3D (provides transform, visibility, etc.)
     #[serde(rename = "base")]
     pub base: Node3D,
@@ -37,10 +39,10 @@ impl Camera3D {
     pub fn new() -> Self {
         Self {
             ty: NodeType::Camera3D,
+            active: false,
             fov: Some(70.0),
             near: Some(0.1),
             far: Some(1000.0),
-            active: false,
             base: {
                 // Use nil ID for graphics-only cameras that aren't part of the scene tree
                 let mut base = Node3D::new_with_nil_id();

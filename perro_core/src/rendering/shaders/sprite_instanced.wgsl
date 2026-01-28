@@ -112,5 +112,11 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(texture_diffuse, texture_sampler, in.uv);
+    // OPTIMIZED: Add half-texel offset to ensure consistent sampling at texel centers
+    // This prevents texture "wobbling" artifacts when sprites move at sub-pixel positions
+    // For Nearest filtering, this ensures we always sample the center of each texel
+    let texture_size = textureDimensions(texture_diffuse);
+    let half_texel = vec2<f32>(0.5 / f32(texture_size.x), 0.5 / f32(texture_size.y));
+    let adjusted_uv = in.uv + half_texel;
+    return textureSample(texture_diffuse, texture_sampler, adjusted_uv);
 }

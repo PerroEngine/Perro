@@ -463,6 +463,10 @@ impl JoyConApi {
                         use crate::structs::{Vector2, Vector3};
                         JoyconState {
                             serial: controller.serial.clone(),
+                            stick: Vector2::ZERO,
+                            gyro: Vector3::ZERO,
+                            accel: Vector3::ZERO,
+                            buttons: JoyconButtons::default(),
                             side: if controller.is_left {
                                 JoyconSide::Left
                             } else {
@@ -474,10 +478,6 @@ impl JoyConApi {
                                 JoyconVersion::V1
                             },
                             connected: false,
-                            buttons: JoyconButtons::default(),
-                            stick: Vector2::ZERO,
-                            gyro: Vector3::ZERO,
-                            accel: Vector3::ZERO,
                         }
                     }
                 })
@@ -1865,10 +1865,10 @@ impl<'a> ScriptApi<'a> {
             let _ = tx.send(AppCommand::SetWindowTitle(title));
         }
     }
-    pub fn set_target_fps(&mut self, fps: f32) {
-        self.project.set_target_fps(fps);
+    pub fn set_fps_cap(&mut self, fps: f32) {
+        self.project.set_fps_cap(fps);
         if let Some(tx) = self.scene.get_command_sender() {
-            let _ = tx.send(AppCommand::SetTargetFPS(fps));
+            let _ = tx.send(AppCommand::SetFpsCap(fps));
         }
     }
 
@@ -1952,26 +1952,6 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
-    pub fn call_draw(&mut self, id: NodeID) {
-        self.set_context();
-        // Set current script ID in thread-local context
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
-        // Scripts are now always in memory as Rc<UnsafeCell<>>, so we can access them directly
-        if let Some(script_rc) = self.scene.get_script(id) {
-            // Check if script has draw implemented before calling
-            unsafe {
-                let script_ptr = script_rc.get();
-                let has_draw = (*script_ptr).script_flags().has_draw();
-                if has_draw {
-                    let script_mut = &mut *script_ptr;
-                    let script_mut = Box::as_mut(script_mut);
-                    script_mut.engine_draw(self);
-                }
-            }
-        }
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = None);
-        Self::clear_context();
-    }
 
     pub fn call_node_internal_fixed_update(&mut self, node_id: NodeID) {
         // We need to get the node and call the method, but we can't hold a RefMut
@@ -2083,7 +2063,7 @@ impl<'a> ScriptApi<'a> {
             //    goes through the API methods (call_function_id, get_script_var_id, set_script_var_id).
             //
             // 2. **Synchronous Execution**: All script execution is synchronous and controlled:
-            //    - init(), update(), fixed_update(), draw() are called by the engine in a controlled sequence
+            //    - init(), update(), fixed_update() are called by the engine in a controlled sequence
             //    - Function calls through call_function_id are synchronous (as if inlined)
             //    - Variable access (get/set) is synchronous and controlled
             //
