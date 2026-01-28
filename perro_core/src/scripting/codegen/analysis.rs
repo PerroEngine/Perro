@@ -159,6 +159,10 @@ fn stmt_accesses_node(stmt: &Stmt, script: &Script) -> bool {
                     .map_or(false, |s| stmt_accesses_node(s.as_ref(), script)))
                 || body.iter().any(|s| stmt_accesses_node(s, script))
         }
+        Stmt::Return(expr) => {
+            expr.as_ref()
+                .map_or(false, |e| expr_accesses_node(&e.expr, script))
+        }
     }
 }
 

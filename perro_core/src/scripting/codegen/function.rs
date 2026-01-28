@@ -1,6 +1,6 @@
 // Function code generation
 use crate::ast::*;
-use crate::scripting::ast::{Stmt, Type, Expr};
+use crate::scripting::ast::{Stmt, Type, Variable, Expr};
 use crate::node_registry::NodeType;
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use std::fmt::Write as _;
@@ -452,5 +452,90 @@ impl Function {
         
         // Post-process to batch consecutive mutations on the same node
         batch_consecutive_mutations(&out)
+    }
+
+    // For module free functions (api as last param)
+    pub fn to_rust_free_function(
+        &self,
+        verbose: bool,
+        module_names: &std::collections::HashSet<String>,
+        module_variables: Option<&[Variable]>,
+    ) -> String {
+        let mut out = String::with_capacity(512);
+
+        // Generate function signature with api as last parameter
+        let mut param_list = String::new();
+        if !self.params.is_empty() {
+            let joined = self
+                .params
+                .iter()
+                .map(|p| {
+                    let renamed = rename_variable(&p.name, Some(&p.typ));
+                    format!("{}: {}", renamed, p.typ.to_rust_type())
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            param_list = joined;
+        }
+        
+        // Always add api as the last parameter
+        if !param_list.is_empty() {
+            param_list.push_str(", ");
+        }
+        param_list.push_str("api: &mut ScriptApi<'_>");
+
+        let return_type = if self.return_type == Type::Void {
+            "()".to_string()
+        } else {
+            self.return_type.to_rust_type()
+        };
+
+        let rust_func_name = rename_function(&self.name);
+        write!(out, "pub fn {}({}) -> {} {{\n", rust_func_name, param_list, return_type).unwrap();
+
+        // Generate body - modules have api context (passed as parameter)
+        // Create a minimal script context for statement generation
+        // Module functions can use api calls since api is passed as parameter
+        // Use the verbose flag to control whether API calls are stripped
+        // Pass module_names so modules can reference other modules
+        // Pass module_scope_variables so Ident/Assign use transpiled names for module constants
+        let dummy_script = Script {
+            script_name: None,
+            node_type: "Node".to_string(),
+            variables: Vec::new(),
+            functions: Vec::new(),
+            structs: Vec::new(),
+            verbose, // Use the verbose flag passed to the function
+            attributes: std::collections::HashMap::new(),
+            source_file: None,
+            language: Some("pup".to_string()),
+            module_names: module_names.clone(), // Pass module_names so modules can reference other modules
+            module_name_to_identifier: std::collections::HashMap::new(), // Not needed for module function codegen
+            module_functions: std::collections::HashMap::new(), // Not needed for module function codegen
+            module_variables: std::collections::HashMap::new(), // Not needed for module function codegen
+            module_scope_variables: module_variables.map(|v| v.to_vec()),
+        };
+
+        for stmt in &self.body {
+            let stmt_code = stmt.to_rust(false, &dummy_script, Some(self));
+            // Indent the statement
+            for line in stmt_code.lines() {
+                if !line.trim().is_empty() {
+                    out.push_str("    ");
+                }
+                out.push_str(line);
+                out.push_str("\n");
+            }
+        }
+
+        // If return type is not void, add a default return
+        if self.return_type != Type::Void {
+            out.push_str("    ");
+            out.push_str(&self.return_type.rust_default_value());
+            out.push_str("\n");
+        }
+
+        out.push_str("}\n\n");
+        out
     }
 }

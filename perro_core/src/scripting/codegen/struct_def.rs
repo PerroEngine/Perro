@@ -76,4 +76,67 @@ impl StructDef {
 
         out
     }
+
+    pub fn to_rust_definition_for_module(&self) -> String {
+        // For modules, we can use the same definition but without script context
+        // Since modules don't have methods that need script context, we can simplify
+        let mut out = String::with_capacity(1024);
+
+        // === Struct Definition ===
+        writeln!(
+            out,
+            "#[derive(Default, Debug, Clone, Serialize, Deserialize)]"
+        )
+        .unwrap();
+        let renamed_struct_name = rename_struct(&self.name);
+        writeln!(out, "pub struct {} {{", renamed_struct_name).unwrap();
+
+        for field in &self.fields {
+            writeln!(out, "    pub {}: {},", field.name, field.typ.to_rust_type()).unwrap();
+        }
+
+        writeln!(out, "}}\n").unwrap();
+
+        // === Display Implementation ===
+        writeln!(out, "impl std::fmt::Display for {} {{", renamed_struct_name).unwrap();
+        writeln!(
+            out,
+            "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{"
+        )
+        .unwrap();
+        writeln!(out, "        write!(f, \"{{{{ \")?;").unwrap();
+
+        for (i, field) in self.fields.iter().enumerate() {
+            let sep = if i + 1 < self.fields.len() { ", " } else { " " };
+            writeln!(
+                out,
+                "        write!(f, \"{name}: {{:?}}{sep}\", self.{name})?;",
+                name = field.name,
+                sep = sep
+            )
+            .unwrap();
+        }
+
+        writeln!(out, "        write!(f, \"}}}}\")").unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "}}\n").unwrap();
+
+        // === Constructor Method ===
+        writeln!(out, "impl {} {{", renamed_struct_name).unwrap();
+        write!(out, "    pub fn new(").unwrap();
+        let mut param_list = Vec::new();
+        for field in &self.fields {
+            param_list.push(format!("{}: {}", field.name, field.typ.to_rust_type()));
+        }
+        writeln!(out, "{}) -> Self {{", param_list.join(", ")).unwrap();
+        write!(out, "        Self {{").unwrap();
+        for field in &self.fields {
+            write!(out, " {}: {},", field.name, field.name).unwrap();
+        }
+        writeln!(out, " }}").unwrap();
+        writeln!(out, "    }}").unwrap();
+        writeln!(out, "}}\n").unwrap();
+
+        out
+    }
 }

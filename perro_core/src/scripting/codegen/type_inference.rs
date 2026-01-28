@@ -255,12 +255,38 @@ impl Script {
                 }
             }
             Expr::MemberAccess(base, field) => {
+                // Check if this is a module constant access (e.g., PoopyButt.v)
+                if let Expr::Ident(mod_name) = base.as_ref() {
+                    if let Some(module_vars) = self.module_variables.get(mod_name) {
+                        if let Some(var) = module_vars.iter().find(|v| v.name == *field) {
+                            // Found the module constant, return its type
+                            // If the type is explicitly set, use it; otherwise infer from the value
+                            if let Some(typ) = &var.typ {
+                                return Some(typ.clone());
+                            } else if let Some(value) = &var.value {
+                                // Fallback: infer type from the constant's value
+                                return self.infer_expr_type(&value.expr, current_func);
+                            }
+                        }
+                    }
+                }
+                
+                // Otherwise, treat as normal member access
                 let base_type = self.infer_expr_type(base, current_func)?;
                 self.get_member_type(&base_type, field)
             }
             Expr::Call(target, _args) => match &**target {
                 Expr::Ident(fname) => self.get_function_return_type(fname),
                 Expr::MemberAccess(base, method) => {
+                    // Check if this is a module function call (e.g., PoopyButt.return_true)
+                    if let Expr::Ident(mod_name) = base.as_ref() {
+                        if let Some(module_funcs) = self.module_functions.get(mod_name) {
+                            if let Some(func) = module_funcs.iter().find(|f| f.name == *method) {
+                                return Some(func.return_type.clone());
+                            }
+                        }
+                    }
+                    
                     let base_type = self.infer_expr_type(base, current_func)?;
                     if let Type::Custom(type_name) = base_type {
                         if type_name == self.node_type {
@@ -365,11 +391,16 @@ impl Script {
 
     pub(crate) fn infer_literal_type(&self, lit: &Literal, expected_type: Option<&Type>) -> Option<Type> {
         match lit {
-            Literal::Number(_) => {
+            Literal::Number(n) => {
                 if let Some(expected) = expected_type {
                     Some(expected.clone())
                 } else {
-                    Some(Type::Number(NumberKind::Float(32)))
+                    // If number contains a decimal point, infer as f32, otherwise i32
+                    if n.contains('.') {
+                        Some(Type::Number(NumberKind::Float(32)))
+                    } else {
+                        Some(Type::Number(NumberKind::Signed(32)))
+                    }
                 }
             }
             Literal::Bool(_) => Some(Type::Bool),

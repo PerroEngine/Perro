@@ -207,7 +207,7 @@ impl PupParser {
                     self.parsed_structs.push(def.clone());
                     structs.push(def);
                 }
-                PupToken::Var => {
+                PupToken::Var | PupToken::Const => {
                     let mut var = self.parse_variable_decl()?; // Parse `var name: type = value` part
                     var.is_exposed = false; // Mark this variable as NOT exposed
                     var.is_public = true; // All top-level Pup variables are public
@@ -287,6 +287,105 @@ impl PupParser {
             structs,
             verbose: true,
             attributes,
+            module_names: std::collections::HashSet::new(), // Will be set by transpiler
+            module_name_to_identifier: std::collections::HashMap::new(), // Will be set by transpiler
+            module_functions: std::collections::HashMap::new(), // Will be set by transpiler
+            module_variables: std::collections::HashMap::new(), // Will be set by transpiler
+            module_scope_variables: None,
+        })
+    }
+
+    pub fn parse_module(&mut self) -> Result<Module, String> {
+        // Parse @module Name syntax
+        let module_name = if self.current_token == PupToken::At {
+            self.next_token();
+            if self.current_token == PupToken::Module {
+                self.next_token();
+                if let PupToken::Ident(name) = &self.current_token {
+                    let name = name.clone();
+                    self.next_token();
+                    name
+                } else {
+                    return Err("Expected module name after @module".into());
+                }
+            } else {
+                return Err("Expected 'module' after '@'".into());
+            }
+        } else {
+            return Err("Expected @module declaration at start of file".into());
+        };
+
+        let mut module_vars = Vec::new(); // Constants and variables
+        let mut functions = Vec::new();
+        let mut structs = Vec::new();
+        let mut attributes = HashMap::new();
+
+        while self.current_token != PupToken::Eof {
+            match &self.current_token {
+                PupToken::At => {
+                    // Modules don't support @expose or other attributes
+                    return Err("Modules do not support @ attributes. Only functions and constants are allowed.".into());
+                }
+                PupToken::On => {
+                    // Modules don't support lifecycle methods
+                    return Err("Modules do not support 'on' lifecycle methods. Only free functions are allowed.".into());
+                }
+                PupToken::Struct => {
+                    let def = self.parse_struct_def()?;
+                    self.parsed_structs.push(def.clone());
+                    structs.push(def);
+                }
+                PupToken::Const => {
+                    let mut var = self.parse_variable_decl()?;
+                    var.is_exposed = false; // Modules don't expose
+                    var.is_public = true; // Module top-level is public constants only
+                    module_vars.push(var);
+                }
+                PupToken::Var => {
+                    return Err("Modules only allow top-level constants (const), not variables (var).".into());
+                }
+                PupToken::Fn => {
+                    let mut func = self.parse_function()?;
+                    func.is_trait_method = false; // Modules don't have trait methods
+                    func.is_lifecycle_method = false;
+                    func.uses_self = false; // Module functions don't use self
+                    functions.push(func);
+                }
+                other => {
+                    return Err(format!("Unexpected top-level token in module: {:?}. Modules only support functions, variables (constants), and structs.", other));
+                }
+            }
+        }
+
+        // Build attributes HashMap
+        for var in &module_vars {
+            if !var.attributes.is_empty() {
+                attributes.insert(var.name.clone(), var.attributes.clone());
+            }
+        }
+        for func in &functions {
+            if !func.attributes.is_empty() {
+                attributes.insert(func.name.clone(), func.attributes.clone());
+            }
+        }
+        for struct_def in &structs {
+            for field in &struct_def.fields {
+                if !field.attributes.is_empty() {
+                    let qualified_name = format!("{}.{}", struct_def.name, field.name);
+                    attributes.insert(qualified_name, field.attributes.clone());
+                }
+            }
+        }
+
+        Ok(Module {
+            module_name,
+            variables: module_vars,
+            functions,
+            structs,
+            verbose: true,
+            attributes,
+            source_file: None, // Will be set by transpiler
+            language: Some("pup".to_string()),
         })
     }
 
@@ -437,6 +536,13 @@ impl PupParser {
         }
         self.expect(PupToken::RParen)?;
 
+        // Parse optional return type annotation: -> Type
+        let mut return_type = Type::Void;
+        if self.current_token == PupToken::Arrow {
+            self.next_token(); // consume ->
+            return_type = self.parse_type()?;
+        }
+
         // Add function parameters to type environment so they can be recognized as node types
         // when parsing the function body (e.g., collision.get_parent() where collision is a parameter)
         for param in &params {
@@ -461,7 +567,7 @@ impl PupParser {
             is_trait_method: is_trait,
             uses_self: false,
             cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
-            return_type: Type::Void,
+            return_type,
             span: None,
             attributes, // Use the parsed attributes
             is_on_signal: false,
@@ -573,6 +679,9 @@ impl PupParser {
             self.next_token();
             return Ok(Stmt::Pass);
         }
+        if self.current_token == PupToken::Return {
+            return self.parse_return_statement();
+        }
         if self.current_token == PupToken::If {
             return self.parse_if_statement();
         }
@@ -660,6 +769,24 @@ impl PupParser {
             then_body,
             else_body,
         })
+    }
+
+    fn parse_return_statement(&mut self) -> Result<Stmt, String> {
+        self.expect(PupToken::Return)?;
+        
+        // Check if there's an expression after return
+        if self.current_token == PupToken::Semicolon || self.current_token == PupToken::RBrace || self.current_token == PupToken::Eof {
+            // return; (no expression)
+            Ok(Stmt::Return(None))
+        } else {
+            // return expr;
+            let expr = self.parse_expression(0)?;
+            Ok(Stmt::Return(Some(TypedExpr {
+                expr,
+                inferred_type: None,
+                span: None,
+            })))
+        }
     }
 
     fn parse_for_loop(&mut self) -> Result<Stmt, String> {
@@ -751,10 +878,14 @@ impl PupParser {
         let typed_rhs = self.typed_expr(rhs);
 
         match lhs {
-            Expr::Ident(name) => Ok(match op {
-                None => Stmt::Assign(name, typed_rhs),
-                Some(op) => Stmt::AssignOp(name, op, typed_rhs),
-            }),
+            Expr::Ident(name) => {
+                // Note: Constant reassignment validation will be done in codegen
+                // where we have access to the full script/module context
+                Ok(match op {
+                    None => Stmt::Assign(name, typed_rhs),
+                    Some(op) => Stmt::AssignOp(name, op, typed_rhs),
+                })
+            },
             Expr::MemberAccess(obj, field) => {
                 // Handle both single-level and nested MemberAccess (e.g., s.transform.position.y)
                 let typed_lhs = self.typed_expr(Expr::MemberAccess(obj, field));
@@ -815,7 +946,15 @@ impl PupParser {
         // Parse attributes before variable declaration
         let attributes = self.parse_attributes()?;
 
-        self.expect(PupToken::Var)?;
+        // Check if it's const or var
+        let is_const = if self.current_token == PupToken::Const {
+            self.next_token();
+            true
+        } else {
+            self.expect(PupToken::Var)?;
+            false
+        };
+        
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
@@ -919,6 +1058,7 @@ impl PupParser {
             value,
             is_exposed: false,
             is_public: false,
+            is_const,
             span: None,
             attributes,
         })

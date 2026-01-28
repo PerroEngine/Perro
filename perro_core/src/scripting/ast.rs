@@ -23,6 +23,24 @@ pub struct Script {
     pub attributes: HashMap<String, Vec<String>>, // member name -> list of attribute names
     pub source_file: Option<String>, // Original source file path (e.g., "res://player.pup")
     pub language: Option<String>, // Language identifier (e.g., "pup", "typescript", "csharp")
+    pub module_names: std::collections::HashSet<String>, // Known module names (e.g., "Utils") for module access detection
+    pub module_name_to_identifier: std::collections::HashMap<String, String>, // Map module name -> file identifier (e.g., "Utils" -> "module_pup")
+    pub module_functions: std::collections::HashMap<String, Vec<Function>>, // Map module name -> list of functions for type inference
+    pub module_variables: std::collections::HashMap<String, Vec<Variable>>, // Map module name -> list of variables (constants) for type inference
+    /// When generating module function bodies: module-level constants (for Ident/Assign resolution with transpiled names)
+    pub module_scope_variables: Option<Vec<Variable>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub module_name: String, // The module name from @module Name
+    pub variables: Vec<Variable>,
+    pub functions: Vec<Function>,
+    pub structs: Vec<StructDef>,
+    pub verbose: bool,
+    pub attributes: HashMap<String, Vec<String>>, // member name -> list of attribute names
+    pub source_file: Option<String>, // Original source file path (e.g., "res://utils.pup")
+    pub language: Option<String>, // Language identifier (e.g., "pup")
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +50,7 @@ pub struct Variable {
     pub value: Option<TypedExpr>,
     pub is_public: bool,
     pub is_exposed: bool,
+    pub is_const: bool, // True if declared with 'const', false for 'var' or 'let'
     pub attributes: Vec<String>, // List of attribute names
     pub span: Option<SourceSpan>, // Source location of this variable declaration
 }
@@ -803,6 +822,7 @@ pub enum Stmt {
         increment: Option<Box<Stmt>>, // i++
         body: Vec<Stmt>,
     },
+    Return(Option<TypedExpr>), // return expr; or return;
     Pass,
 }
 
@@ -819,6 +839,7 @@ impl Stmt {
             Stmt::If { condition, .. } => condition.span.as_ref(),
             Stmt::For { iterable, .. } => iterable.span.as_ref(),
             Stmt::ForTraditional { condition, .. } => condition.as_ref().and_then(|c| c.span.as_ref()),
+            Stmt::Return(expr) => expr.as_ref().and_then(|e| e.span.as_ref()),
             Stmt::Pass => None,
         }
     }

@@ -326,6 +326,27 @@ impl Stmt {
                 }
             }
             Stmt::Assign(name, expr) => {
+                // Check if this is a constant that can't be reassigned
+                if let Some(var) = script.variables.iter().find(|v| v.name == *name) {
+                    if var.is_const {
+                        return format!("        // ERROR: Cannot assign to constant '{}'\n", name);
+                    }
+                }
+                // Module scope: cannot assign to module-level constants
+                if let Some(ref scope_vars) = script.module_scope_variables {
+                    if scope_vars.iter().any(|v| v.name == *name) {
+                        return format!("        // ERROR: Cannot assign to module constant '{}'\n", name);
+                    }
+                }
+                // Also check in current function locals
+                if let Some(func) = current_func {
+                    if let Some(var) = func.locals.iter().find(|v| v.name == *name) {
+                        if var.is_const {
+                            return format!("        // ERROR: Cannot assign to constant '{}'\n", name);
+                        }
+                    }
+                }
+                
                 let var_type = script.get_variable_type(name);
                 let expr_type = script.infer_expr_type(&expr.expr, current_func);
                 
@@ -688,6 +709,27 @@ impl Stmt {
             }
 
             Stmt::AssignOp(name, op, expr) => {
+                // Check if this is a constant that can't be reassigned
+                if let Some(var) = script.variables.iter().find(|v| v.name == *name) {
+                    if var.is_const {
+                        return format!("        // ERROR: Cannot assign to constant '{}'\n", name);
+                    }
+                }
+                // Module scope: cannot assign to module-level constants
+                if let Some(ref scope_vars) = script.module_scope_variables {
+                    if scope_vars.iter().any(|v| v.name == *name) {
+                        return format!("        // ERROR: Cannot assign to module constant '{}'\n", name);
+                    }
+                }
+                // Also check in current function locals
+                if let Some(func) = current_func {
+                    if let Some(var) = func.locals.iter().find(|v| v.name == *name) {
+                        if var.is_const {
+                            return format!("        // ERROR: Cannot assign to constant '{}'\n", name);
+                        }
+                    }
+                }
+                
                 let var_type = script.get_variable_type(name);
                 let expr_type = script.infer_expr_type(&expr.expr, current_func);
                 
@@ -1940,6 +1982,14 @@ impl Stmt {
                 }
             }
 
+            Stmt::Return(expr) => {
+                if let Some(expr) = expr {
+                    let expr_code = expr.expr.to_rust(needs_self, script, None, current_func, None);
+                    format!("return {};", expr_code)
+                } else {
+                    "return;".to_string()
+                }
+            }
             Stmt::Pass => String::new(),
 
             Stmt::If {
@@ -2796,6 +2846,9 @@ impl Stmt {
                         .map_or(false, |s| s.as_ref().contains_self()))
                     || body.iter().any(|s| s.contains_self())
             }
+            Stmt::Return(expr) => {
+                expr.as_ref().map_or(false, |e| e.contains_self())
+            }
         }
     }
 
@@ -2851,6 +2904,10 @@ impl Stmt {
                         .as_ref()
                         .map_or(false, |s| s.as_ref().contains_api_call(script)))
                     || body.iter().any(|s| s.contains_api_call(script))
+            }
+            Stmt::Return(expr) => {
+                expr.as_ref()
+                    .map_or(false, |e| e.contains_api_call(script))
             }
         }
     }

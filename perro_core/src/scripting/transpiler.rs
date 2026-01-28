@@ -195,10 +195,10 @@ fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Res
         }
     }
 
-    rebuild_lib_rs(project_root, &active_ids)?;
+    rebuild_lib_rs(project_root, &active_ids, &std::collections::HashSet::new())?;
     Ok(())
 }
-pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Result<(), String> {
+pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>, module_identifiers: &HashSet<String>) -> Result<(), String> {
     let lib_rs_path = project_root.join(".perro/scripts/src/lib.rs");
 
     if let Some(parent) = lib_rs_path.parent() {
@@ -219,11 +219,18 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
         };\n\n",
     );
 
+    // Separate scripts from modules
+    // Modules don't have _create_script functions, so we need to identify them
+    // For now, we'll check if the identifier corresponds to a module by checking if it's in module_names
+    // But we need to map from file identifier to module name... 
+    // Actually, modules are in active_ids but don't have _create_script, so we can detect them that way
+    // Or better: track which identifiers are modules vs scripts
+    
     // Sort IDs for deterministic ordering
     let mut sorted_ids: Vec<_> = active_ids.iter().collect();
     sorted_ids.sort();
 
-    // Modules
+    // Add all modules (they're just pub mod declarations, no imports/registry)
     for id in &sorted_ids {
         content = content.replace(
             "// __PERRO_MODULES__",
@@ -231,23 +238,28 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>) -> Resu
         );
     }
 
-    // Imports
+    // Only add imports and registry entries for scripts (not modules)
+    // Modules don't have _create_script functions
     for id in &sorted_ids {
-        content = content.replace(
-            "// __PERRO_IMPORTS__",
-            &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id),
-        );
-    }
-
-    // Registry entries
-    for id in &sorted_ids {
-        content = content.replace(
-            "// __PERRO_REGISTRY__",
-            &format!(
-                "    \"{}\" => {}_create_script as CreateFn,\n    // __PERRO_REGISTRY__",
-                id, id
-            ),
-        );
+        // Check if this identifier is a module (modules don't have _create_script functions)
+        // id is &&String from iterator, convert to &str for HashSet lookup
+        let is_module = module_identifiers.contains((*id).as_str());
+        
+        if !is_module {
+            // Only add imports and registry for scripts
+            content = content.replace(
+                "// __PERRO_IMPORTS__",
+                &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id),
+            );
+            
+            content = content.replace(
+                "// __PERRO_REGISTRY__",
+                &format!(
+                    "    \"{}\" => {}_create_script as CreateFn,\n    // __PERRO_REGISTRY__",
+                    id, id
+                ),
+            );
+        }
     }
 
     // Add debug-only FFI function for project root
@@ -456,7 +468,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     if script_paths.is_empty() {
         println!("📜 No scripts found. Creating minimal lib.rs...");
         // Still create a minimal lib.rs so the DLL can be built
-        rebuild_lib_rs(project_root, &std::collections::HashSet::new())?;
+        rebuild_lib_rs(project_root, &std::collections::HashSet::new(), &std::collections::HashSet::new())?;
         // Save hash even for empty scripts
         write_script_hash(project_root, &current_hash)?;
         return Ok(());
@@ -475,12 +487,61 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
         total_time: Duration,
     }
 
+    // ============================================================
+    // FIRST PASS: Collect all module names
+    // This ensures we know about all modules before generating any code
+    // This is necessary because:
+    // 1. Scripts might reference modules that are processed later
+    // 2. Modules might reference other modules
+    // ============================================================
+    let mut module_names: HashSet<String> = HashSet::new(); // Track module names (e.g., "Utils")
+    let mut module_identifiers: HashSet<String> = HashSet::new(); // Track which file identifiers are modules
+    let mut identifier_to_module_name: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map identifier -> module name
+    let mut module_name_to_identifier: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map module name -> identifier (reverse map)
+    let mut module_functions: std::collections::HashMap<String, Vec<crate::scripting::ast::Function>> = std::collections::HashMap::new(); // Map module name -> functions
+    let mut module_variables: std::collections::HashMap<String, Vec<crate::scripting::ast::Variable>> = std::collections::HashMap::new(); // Map module name -> variables (constants)
+    
+    for path in &script_paths {
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .ok_or_else(|| "Failed to extract file extension".to_string())?;
+        
+        if extension == "pup" {
+            let code = fs::read_to_string(path)
+                .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+            
+            // Check if it's a module
+            if code.trim_start().starts_with("@module") {
+                let mut parser = PupParser::new(&code);
+                if let Ok(module) = parser.parse_module() {
+                    let identifier = script_path_to_identifier(&path.to_string_lossy())?;
+                    module_names.insert(module.module_name.clone());
+                    module_identifiers.insert(identifier.clone());
+                    identifier_to_module_name.insert(identifier.clone(), module.module_name.clone());
+                    module_name_to_identifier.insert(module.module_name.clone(), identifier.clone());
+                    // Store module functions for type inference
+                    module_functions.insert(module.module_name.clone(), module.functions.clone());
+                    // Store module variables (constants) for type inference
+                    module_variables.insert(module.module_name.clone(), module.variables.clone());
+                }
+            }
+        }
+    }
+    
+    println!("📦 Found {} module(s): {:?}", module_names.len(), module_names.iter().collect::<Vec<_>>());
+
+    // ============================================================
+    // SECOND PASS: Generate code for all files with full module knowledge
+    // ============================================================
     let mut timings: Vec<Timing> = Vec::new();
     let mut source_map = SourceMap::new();
+    let mut active_ids: HashSet<String> = HashSet::new(); // Track all identifiers (scripts + modules)
 
     for path in &script_paths {
         let script_total_start = Instant::now();
         let identifier = script_path_to_identifier(&path.to_string_lossy())?;
+        active_ids.insert(identifier.clone()); // Track this identifier
 
         let extension = path
             .extension()
@@ -526,29 +587,58 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
                 
                 let mut parser = PupParser::new(&code);
                 parser.set_source_file(res_path.clone());
-                let mut script = parser.parse_script()?;
-                parse_time = parse_start.elapsed();
-
-                transpile_start = Instant::now();
-                let generated_code = script.to_rust(&identifier, project_root, None, verbose);
-                transpile_time = transpile_start.elapsed();
                 
-                // Build source map and embed it in the generated code
-                let script_source_map = build_source_map_from_script(
-                    &res_path,
-                    &identifier,
-                    &code,
-                    &generated_code,
-                    &script,
-                );
-                source_map.add_script(identifier.clone(), script_source_map.clone());
+                // Try to parse as module first (check for @module)
+                let is_module = code.trim_start().starts_with("@module");
+                
+                if is_module {
+                    let mut module = parser.parse_module()?;
+                    module.source_file = Some(res_path.clone());
+                    // Module names were already collected in first pass, but ensure identifier is tracked
+                    // (should already be in module_identifiers from first pass, but be safe)
+                    if !module_identifiers.contains(&identifier) {
+                        module_identifiers.insert(identifier.clone());
+                        identifier_to_module_name.insert(identifier.clone(), module.module_name.clone());
+                        module_name_to_identifier.insert(module.module_name.clone(), identifier.clone());
+                    }
+                    parse_time = parse_start.elapsed();
+
+                    transpile_start = Instant::now();
+                    // Use the identifier from the path (same as scripts)
+                    // The module name is used internally but file-based identifier is used for file naming
+                    // Pass module_names so modules can reference other modules
+                    let _generated_code = module.to_rust(&identifier, project_root, verbose, &module_names);
+                    transpile_time = transpile_start.elapsed();
+                    
+                    // Modules don't need source maps for now (they're simple)
+                    // The identifier is already tracked via script_paths -> active_ids
+                } else {
+                    let mut script = parser.parse_script()?;
+                    script.source_file = Some(res_path.clone());
+                    parse_time = parse_start.elapsed();
+
+                    transpile_start = Instant::now();
+                    // Pass module names and mapping to script codegen so it knows which identifiers are modules
+                    let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
+                    transpile_time = transpile_start.elapsed();
+                    
+                    // Build source map and embed it in the generated code
+                    let script_source_map = build_source_map_from_script(
+                        &res_path,
+                        &identifier,
+                        &code,
+                        &generated_code,
+                        &script,
+                    );
+                    source_map.add_script(identifier.clone(), script_source_map.clone());
+                }
             }
             "cs" => {
                 let mut script = CsParser::new(&code).parse_script()?;
                 parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                let generated_code = script.to_rust(&identifier, project_root, None, verbose);
+                let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
                 transpile_time = transpile_start.elapsed();
                 
                 // Convert absolute path to res:// relative path
@@ -590,7 +680,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
                 parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                let generated_code = script.to_rust(&identifier, project_root, None, verbose);
+                let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
                 transpile_time = transpile_start.elapsed();
                 
                 // Convert absolute path to res:// relative path
@@ -688,6 +778,9 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
     } else {
         eprintln!("⚠️  Warning: Failed to serialize source map");
     }
+
+    // Rebuild lib.rs with all active identifiers and module information
+    rebuild_lib_rs(project_root, &active_ids, &module_identifiers)?;
 
     // Note: Hash is written after successful compilation, not here
     // This allows the compile step to check if recompilation is needed

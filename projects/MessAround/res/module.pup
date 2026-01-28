@@ -1,0 +1,13 @@
+@module PoopyButt
+
+const v = 125
+
+
+fn test(u: int) {
+    Console.warn("I was called frppoououp xx1zx12", u, v)
+
+}
+
+fn return_true() -> bool {
+    return true
+}

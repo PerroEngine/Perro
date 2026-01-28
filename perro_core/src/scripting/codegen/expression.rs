@@ -195,6 +195,14 @@ impl Expr {
                     return name.to_string();
                 }
                 
+                // Module scope: when generating module function bodies, module constants use transpiled ident (no self.)
+                if let Some(ref scope_vars) = script.module_scope_variables {
+                    if let Some(module_var) = scope_vars.iter().find(|v| v.name == *name) {
+                        let renamed = rename_variable(name, module_var.typ.as_ref());
+                        return renamed;
+                    }
+                }
+                
                 // Get variable type for renaming
                 // If var.typ is None, infer from the variable's value expression
                 // We need to handle inferred types separately since we can't return a ref to a temp
@@ -1237,6 +1245,70 @@ impl Expr {
                     // Otherwise, it's a node field, use self.base.field
                 }
 
+                // Check if this is module access (e.g., Utils.function())
+                // Module access: base is an Ident that's not a script member, not a node, not an API module
+                if let Expr::Ident(mod_name) = base.as_ref() {
+                    // Check if it's not a script variable/function
+                    let is_not_script_member = script.variables.iter().all(|v| v.name != *mod_name)
+                        && script.functions.iter().all(|f| f.name != *mod_name);
+                    
+                    // Check if it's not a node type (would be in type_env if it's a variable)
+                    let is_not_node = if let Some(f) = current_func {
+                        // Check locals first (Variable has typ: Option<Type>)
+                        if let Some(v) = f.locals.iter().find(|v| v.name == *mod_name) {
+                            v.typ.as_ref().map_or(true, |t| !matches!(t, Type::Node(_) | Type::DynNode))
+                        } else if let Some(p) = f.params.iter().find(|p| p.name == *mod_name) {
+                            // Check params (Param has typ: Type, not Option)
+                            !matches!(p.typ, Type::Node(_) | Type::DynNode)
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    };
+                    
+                    // Check if it's not an API module (Time, Console, etc.)
+                    use crate::lang::pup::api::PupAPI;
+                    let is_not_api_module = PupAPI::resolve(mod_name, field).is_none();
+                    
+                    // Check if it's actually a known module name
+                    let is_known_module = script.module_names.contains(mod_name);
+                    
+                    // Only treat as module access if it's a known module AND passes all other checks
+                    if is_known_module && is_not_script_member && is_not_node && is_not_api_module {
+                        // Look up which file identifier contains this module
+                        if let Some(identifier) = script.module_name_to_identifier.get(mod_name) {
+                            // Use transpiled ident for module constants and functions (same as definition)
+                            let field_rust = if let Some(module_vars) = script.module_variables.get(mod_name) {
+                                if let Some(var) = module_vars.iter().find(|v| v.name == *field) {
+                                    rename_variable(field, var.typ.as_ref())
+                                } else if let Some(module_funcs) = script.module_functions.get(mod_name) {
+                                    if module_funcs.iter().any(|f| f.name == *field) {
+                                        rename_function(field)
+                                    } else {
+                                        field.clone()
+                                    }
+                                } else {
+                                    field.clone()
+                                }
+                            } else if let Some(module_funcs) = script.module_functions.get(mod_name) {
+                                if module_funcs.iter().any(|f| f.name == *field) {
+                                    rename_function(field)
+                                } else {
+                                    field.clone()
+                                }
+                            } else {
+                                field.clone()
+                            };
+                            // Generate crate::identifier::ModuleName::__t_field
+                            return format!("crate::{}::{}::{}", identifier, mod_name, field_rust);
+                        } else {
+                            // Fallback (shouldn't happen if is_known_module is true)
+                            return format!("crate::{}::{}", mod_name, field);
+                        }
+                    }
+                }
+
                 let base_type = script.infer_expr_type(base, current_func);
 
                 match base_type {
@@ -2033,7 +2105,8 @@ impl Expr {
                 let mut target_str = target.to_rust(needs_self, script, None, current_func, None);
 
                 // If this is a local user-defined function, prefix with `self.`
-                if is_local_function && !target_str.starts_with("self.") {
+                // BUT: don't override if it's already a module call (starts with crate::)
+                if is_local_function && !target_str.starts_with("self.") && !target_str.starts_with("crate::") {
                     target_str = format!("self.{}", func_name.unwrap());
                 }
 
@@ -2042,7 +2115,20 @@ impl Expr {
                 // Handles API injection and empty arg lists
                 // ==============================================================
                 // Note: API module calls are already handled above and returned early
-                if is_engine_method {
+                
+                // Check if this is a module call (starts with crate::)
+                // IMPORTANT: Check this BEFORE is_engine_method since module calls
+                // are also MemberAccess expressions and would be misclassified
+                let is_module_call = target_str.starts_with("crate::");
+                
+                if is_module_call {
+                    // Module functions: add api as last parameter
+                    if args_rust.is_empty() {
+                        format!("{}(api)", target_str)
+                    } else {
+                        format!("{}({}, api)", target_str, args_rust.join(", "))
+                    }
+                } else if is_engine_method {
                     // ✅ Engine methods: just pass normal args
                     if args_rust.is_empty() {
                         format!("{}()", target_str)

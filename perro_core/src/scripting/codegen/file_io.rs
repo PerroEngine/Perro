@@ -155,6 +155,7 @@ pub fn derive_rust_perro_script(
             value: None,
             is_exposed: true,
             is_public: is_pub,
+            is_const: false,
             attributes: attributes_map.get(&name).cloned().unwrap_or_default(),
             span: None,
         });
@@ -174,6 +175,7 @@ pub fn derive_rust_perro_script(
             value: None,
             is_exposed: false,
             is_public: true,
+            is_const: false,
             attributes: attributes_map.get(&name).cloned().unwrap_or_default(),
             span: None,
         });

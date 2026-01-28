@@ -203,6 +203,11 @@ impl TypeScriptParser {
             structs,
             verbose: true,
             attributes,
+            module_names: std::collections::HashSet::new(), // Will be set by transpiler
+            module_name_to_identifier: std::collections::HashMap::new(), // Will be set by transpiler
+            module_functions: std::collections::HashMap::new(), // Will be set by transpiler
+            module_variables: std::collections::HashMap::new(), // Will be set by transpiler
+            module_scope_variables: None,
         })
     }
 
@@ -361,6 +366,7 @@ impl TypeScriptParser {
             value,
             is_exposed,
             is_public,
+            is_const: false,
             attributes,
             span: None,
         })
@@ -1034,6 +1040,7 @@ impl TypeScriptParser {
             value,
             is_exposed: false,
             is_public: false,
+            is_const: false,
             attributes: Vec::new(),
             span: None,
         }))

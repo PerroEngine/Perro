@@ -69,6 +69,8 @@ impl PerroLspServer {
             attributes: HashMap::new(),
             source_file: Some(uri.to_string()),
             language: Some("pup".to_string()),
+            module_names: std::collections::HashSet::new(), // LSP doesn't track modules
+            module_name_to_identifier: std::collections::HashMap::new(), // LSP doesn't track modules
         }
     }
 

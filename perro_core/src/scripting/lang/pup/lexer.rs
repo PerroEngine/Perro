@@ -11,7 +11,9 @@ pub enum PupToken {
     New,
     Fn,
     Var,
+    Const,
     Pass,
+    Return,
     If,
     Else,
     For,
@@ -24,6 +26,7 @@ pub enum PupToken {
     Super,
     On,
     Script,
+    Module,
     Ident(String),
     Number(String),
     String(String),
@@ -62,6 +65,7 @@ pub enum PupToken {
     Comma,
     PlusPlus,   // ++
     MinusMinus, // --
+    Arrow,      // ->
     Eof,
 }
 
@@ -203,7 +207,9 @@ impl PupLexer {
             "new" => PupToken::New,
             "fn" => PupToken::Fn,
             "var" | "let" => PupToken::Var,
+            "const" => PupToken::Const,
             "pass" => PupToken::Pass,
+            "return" => PupToken::Return,
             "if" => PupToken::If,
             "else" => PupToken::Else,
             "for" => PupToken::For,
@@ -217,6 +223,7 @@ impl PupLexer {
             "super" => PupToken::Super,
             "on" => PupToken::On,
             "script" => PupToken::Script,
+            "module" => PupToken::Module,
             _ => PupToken::Ident(s),
         }
     }
@@ -323,6 +330,9 @@ impl PupLexer {
                 } else if self.peek() == Some('-') {
                     self.advance();
                     PupToken::MinusMinus
+                } else if self.peek() == Some('>') {
+                    self.advance();
+                    PupToken::Arrow
                 } else {
                     PupToken::Minus
                 }

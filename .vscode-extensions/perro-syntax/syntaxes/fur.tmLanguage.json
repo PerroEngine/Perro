@@ -148,11 +148,11 @@
 				},
 				{
 					"name": "keyword.control.pup",
-					"match": "\\b(if|else|for|in|pass)\\b"
+					"match": "\\b(if|else|for|in|pass|return)\\b"
 				},
 				{
 					"name": "keyword.declaration.variable.pup",
-					"match": "\\bvar\\b"
+					"match": "\\b(var|const)\\b"
 				},
 				{
 					"name": "keyword.other.pup",

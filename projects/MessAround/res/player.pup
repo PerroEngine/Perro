@@ -9,12 +9,18 @@ struct Cabbage {
     var x: int
 }
 
-var cab = new Cabbage { x: 100111 }
+var cab = new Cabbage { x: 11001111 }
 
 on init() {
     tex = Texture.load("res://doug.PNG")
     self.texture = tex
     self.transform.position = new Vector2(-700, -70)
+
+    PoopyButt.test(12312)
+    var b = PoopyButt.return_true()
+
+    var v = PoopyButt.v
+    Console.info("b, v", b, v)
     var c = 0
     // for (i in 0..650) {
     //    var n = new Node2D()
@@ -38,13 +44,6 @@ on init() {
 on update() {
     var delta = Time.get_delta()
     self.transform.position.x += 150 * delta
-
-    for (i in 0..100) {
-        var n = new Node2D()
-        n.name = "node" + i
-        n.transform.position = new Vector2(i * 105, 0)
-        self.add_child(n)
-    }
 }
 
 fn test(u: int) {
