@@ -66,7 +66,7 @@ impl Script {
         out.push_str("use serde::{Deserialize, Serialize};\n");
         out.push_str("use serde_json::{json, Value};\n");
         out.push_str("use smallvec::{smallvec, SmallVec};\n");
-        out.push_str("use perro_core::{Uid32, TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};\n\n");
+        out.push_str("use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};\n\n");
 
         // Internal modules
         out.push_str("use perro_core::prelude::*;\n\n");

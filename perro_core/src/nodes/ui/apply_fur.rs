@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use std::{borrow::Cow, collections::HashMap, time::Instant};
-use crate::uid32::{Uid32, UIElementID};
+use crate::ids::UIElementID;
 
 use crate::{
     asset_io::load_asset,
@@ -592,7 +592,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
             .collect();
     };
 
-    let id = UIElementID::new();
+    let id = UIElementID::from_string(&format!("el-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
     ui.set_id(id);
     ui.set_parent(parent_uuid);
 

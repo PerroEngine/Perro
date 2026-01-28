@@ -162,7 +162,7 @@
         "type": "Node2D",
         "base": {
           "type": "Node",
-          "name": "PlayerCollisionVisual",
+          "name": "PlayerCollision",
           "parent": 5
         },
         "transform": {

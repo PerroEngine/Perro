@@ -6,7 +6,7 @@ use std::{
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use crate::uid32::UIElementID;
+use crate::ids::UIElementID;
 
 
 use crate::{

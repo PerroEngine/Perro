@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
-use crate::uid32::UIElementID;
+use crate::ids::UIElementID;
 
 use crate::{
     fur_ast::FurAnchor,
@@ -19,12 +19,16 @@ fn uielementid_nil() -> UIElementID {
     UIElementID::nil()
 }
 
+fn uielementid_is_nil(id: &UIElementID) -> bool {
+    id.is_nil()
+}
+
 /// Base data shared by all UI elements
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BaseUIElement {
     pub id: UIElementID,
     pub name: String,
-    #[serde(rename = "parent", default = "uielementid_nil", skip_serializing_if = "UIElementID::is_nil")]
+    #[serde(rename = "parent", default = "uielementid_nil", skip_serializing_if = "uielementid_is_nil")]
     pub parent_id: UIElementID,
     pub children: Vec<UIElementID>,
 
@@ -48,7 +52,7 @@ pub struct BaseUIElement {
 
 impl Default for BaseUIElement {
     fn default() -> Self {
-        let id = UIElementID::new();
+        let id = UIElementID::from_string(&format!("el-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         Self {
             id,
             name: id.to_string(),
@@ -124,10 +128,10 @@ pub trait BaseElement {
 macro_rules! impl_ui_element {
     ($ty:ty) => {
         impl crate::ui_element::BaseElement for $ty {
-            fn get_id(&self) -> crate::uid32::UIElementID {
+            fn get_id(&self) -> crate::ids::UIElementID {
                 self.base.id
             }
-            fn set_id(&mut self, id: crate::uid32::UIElementID) {
+            fn set_id(&mut self, id: crate::ids::UIElementID) {
                 self.base.id = id;
             }
 
@@ -145,17 +149,17 @@ macro_rules! impl_ui_element {
                 self.base.visible = visible;
             }
 
-            fn get_parent(&self) -> crate::uid32::UIElementID {
+            fn get_parent(&self) -> crate::ids::UIElementID {
                 self.base.parent_id
             }
-            fn set_parent(&mut self, parent: Option<crate::uid32::UIElementID>) {
-                self.base.parent_id = parent.unwrap_or(crate::uid32::UIElementID::nil());
+            fn set_parent(&mut self, parent: Option<crate::ids::UIElementID>) {
+                self.base.parent_id = parent.unwrap_or(crate::ids::UIElementID::nil());
             }
 
-            fn get_children(&self) -> &[crate::uid32::UIElementID] {
+            fn get_children(&self) -> &[crate::ids::UIElementID] {
                 &self.base.children
             }
-            fn set_children(&mut self, children: Vec<crate::uid32::UIElementID>) {
+            fn set_children(&mut self, children: Vec<crate::ids::UIElementID>) {
                 self.base.children = children;
             }
 

@@ -1,207 +1,200 @@
-use crate::node_registry::SceneNode;
-use crate::uid32::NodeID;
+use crate::ids::NodeID;
+use crate::node_registry::{BaseNode, SceneNode};
 
-/// Arena-based storage for scene nodes.
-/// Uses a Vec<Option<SceneNode>> indexed by NodeID for O(1) lookups.
-/// Since NodeIDs are issued sequentially and 0 is reserved, we can use
-/// the NodeID value directly as an index (with appropriate bounds checking).
+/// Slotmap-style arena for scene nodes.
+/// NodeID = (index in low 32, generation in high 32). Index 0 is nil; real slots use index 1, 2, ...
+/// Slots can be reused; generation is bumped on reuse so stale IDs become invalid.
+/// Lookup is valid only when both the slot (from id.index()) and the generation (id.generation()
+/// vs arena's stored generation for that slot) match.
 pub struct NodeArena {
+    /// Slot i (0-based) stores the node. Slot index 0 = NodeID index 1.
     slots: Vec<Option<SceneNode>>,
+    /// Generation per slot. When we reuse a slot we bump this.
+    generations: Vec<u32>,
     live: u32,
-    /// Tracks the highest ID ever used in this arena.
-    /// Used to make `next_id()` O(1) instead of scanning all slots.
-    max_id: u32,
 }
 
 impl NodeArena {
-    /// Create a new empty arena.
     pub fn new() -> Self {
         Self {
             slots: Vec::new(),
+            generations: Vec::new(),
             live: 0,
-            max_id: 0,
         }
     }
 
-    /// Create a new arena with the specified capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             slots: Vec::with_capacity(capacity),
+            generations: Vec::with_capacity(capacity),
             live: 0,
-            max_id: 0,
         }
     }
 
-    /// Insert a node into the arena.
-    /// The node's ID is used as the index (subtracting 1 since 0 is reserved).
-    pub fn insert(&mut self, id: NodeID, node: SceneNode) {
-        // NodeID 0 is reserved (nil), so we subtract 1 to map NodeID 1 -> index 0
-        let id_val = id.as_uid32().as_u32();
-        if id_val == 0 {
-            panic!("NodeArena::insert: cannot insert node with nil ID (0)");
+    /// Allocate a new slot and return its NodeID. Caller then inserts the node with `insert_with_id`.
+    /// Reuses the first free slot (bumping generation) or appends a new slot.
+    pub fn allocate(&mut self) -> NodeID {
+        if let Some(slot_idx) = self.slots.iter().position(|s| s.is_none()) {
+            self.generations[slot_idx] = self.generations[slot_idx].wrapping_add(1);
+            let generation = self.generations[slot_idx];
+            NodeID::from_parts((slot_idx + 1) as u32, generation)
+        } else {
+            let slot_idx = self.slots.len();
+            self.slots.push(None);
+            self.generations.push(0);
+            NodeID::from_parts((slot_idx + 1) as u32, 0)
         }
-        let idx = (id_val as usize) - 1;
+    }
 
-        if idx >= self.slots.len() {
-            self.slots.resize_with(idx + 1, || None);
+    /// Insert a node and assign it the next allocated ID. Sets the node's ID and stores it.
+    /// Use this when adding a new node at runtime (e.g. add_node).
+    pub fn insert(&mut self, mut node: SceneNode) -> NodeID {
+        let id = self.allocate();
+        node.set_id(id);
+        self.insert_with_id(id, node);
+        id
+    }
+
+    /// Insert a node with a pre-assigned ID (e.g. when loading from scene).
+    /// Extends slots/generations if needed. Panics if slot is already occupied.
+    pub fn insert_with_id(&mut self, id: NodeID, node: SceneNode) {
+        if id.is_nil() {
+            panic!("NodeArena::insert_with_id: cannot insert with nil ID");
         }
-
-        if self.slots[idx].is_some() {
-            panic!("NodeArena::insert: slot already occupied (id={})", id);
+        let slot_idx = (id.index() as usize).saturating_sub(1);
+        if slot_idx >= self.slots.len() {
+            self.slots.resize_with(slot_idx + 1, || None);
+            self.generations.resize(slot_idx + 1, 0);
         }
-
-        // Update max_id to track the highest ID ever used
-        if id_val > self.max_id {
-            self.max_id = id_val;
+        if self.slots[slot_idx].is_some() {
+            panic!("NodeArena::insert_with_id: slot {} already occupied", id);
         }
-
-        self.slots[idx] = Some(node);
+        self.generations[slot_idx] = id.generation();
+        self.slots[slot_idx] = Some(node);
         self.live += 1;
     }
 
-    /// Get a reference to the node (if present).
+    /// Legacy: insert by id only (for call sites that already have an id and node).
+    #[inline]
+    pub fn insert_legacy(&mut self, id: NodeID, node: SceneNode) {
+        self.insert_with_id(id, node);
+    }
+
+    #[inline]
+    fn slot_index(id: NodeID) -> Option<usize> {
+        if id.is_nil() {
+            return None;
+        }
+        let idx = id.index() as usize;
+        if idx == 0 {
+            None
+        } else {
+            Some(idx - 1)
+        }
+    }
+
+    /// Valid only when slot (from id.index()) and generation (arena vs id) both match.
     #[inline]
     pub fn get(&self, id: NodeID) -> Option<&SceneNode> {
-        let id_val = id.as_uid32().as_u32();
-        if id_val == 0 {
-            return None; // NodeID 0 is reserved (nil)
+        let slot_idx = Self::slot_index(id)?;
+        if self.generations.get(slot_idx) != Some(&id.generation()) {
+            return None;
         }
-        let idx = (id_val as usize) - 1;
-        self.slots.get(idx)?.as_ref()
+        self.slots.get(slot_idx)?.as_ref()
     }
 
-    /// Get a mutable reference to the node (if present).
     #[inline]
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
-        let id_val = id.as_uid32().as_u32();
-        if id_val == 0 {
-            return None; // NodeID 0 is reserved (nil)
+        let slot_idx = Self::slot_index(id)?;
+        if self.generations.get(slot_idx) != Some(&id.generation()) {
+            return None;
         }
-        let idx = (id_val as usize) - 1;
-        self.slots.get_mut(idx)?.as_mut()
+        self.slots.get_mut(slot_idx)?.as_mut()
     }
 
-    /// Remove a node, leaving a hole (`None`).
     #[inline]
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
-        let id_val = id.as_uid32().as_u32();
-        if id_val == 0 {
-            return None; // NodeID 0 is reserved (nil)
+        let slot_idx = Self::slot_index(id)?;
+        if self.generations.get(slot_idx) != Some(&id.generation()) {
+            return None;
         }
-        let idx = (id_val as usize) - 1;
-        let slot = self.slots.get_mut(idx)?;
-        let out = slot.take()?;
+        let out = self.slots.get_mut(slot_idx)?.take()?;
         self.live -= 1;
         Some(out)
     }
 
-    /// Get the number of live nodes in the arena.
     #[inline]
     pub fn len(&self) -> usize {
         self.live as usize
     }
 
-    /// Check if the arena is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.live == 0
     }
 
-    /// Iterate over all live nodes (non-None slots).
-    /// Returns `(NodeID, &SceneNode)` - the ID is owned (but Copy, so cheap).
     pub fn iter(&self) -> impl Iterator<Item = (NodeID, &SceneNode)> {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, slot)| {
-                slot.as_ref().map(|node| {
-                    // Add 1 back since we subtracted 1 when storing
-                    let id = NodeID::from_u32((idx + 1) as u32);
-                    (id, node)
-                })
+        self.slots.iter().enumerate().filter_map(|(idx, slot)| {
+            slot.as_ref().map(|node| {
+                let generation = self.generations.get(idx).copied().unwrap_or(0);
+                let id = NodeID::from_parts((idx + 1) as u32, generation);
+                (id, node)
             })
+        })
     }
 
-    /// Iterate mutably over all live nodes (non-None slots).
-    /// Returns `(NodeID, &mut SceneNode)` - the ID is owned (but Copy, so cheap).
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
-        self.slots
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(idx, slot)| {
-                slot.as_mut().map(|node| {
-                    // Add 1 back since we subtracted 1 when storing
-                    let id = NodeID::from_u32((idx + 1) as u32);
-                    (id, node)
-                })
+        let generations = &self.generations[..];
+        self.slots.iter_mut().enumerate().filter_map(move |(idx, slot)| {
+            slot.as_mut().map(|node| {
+                let generation = generations.get(idx).copied().unwrap_or(0);
+                let id = NodeID::from_parts((idx + 1) as u32, generation);
+                (id, node)
             })
+        })
     }
 
-    /// Get all node IDs in the arena.
     pub fn keys(&self) -> impl Iterator<Item = NodeID> + '_ {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, slot)| {
-                if slot.is_some() {
-                    // Add 1 back since we subtracted 1 when storing
-                    Some(NodeID::from_u32((idx + 1) as u32))
-                } else {
-                    None
-                }
-            })
+        self.slots.iter().enumerate().filter_map(|(idx, slot)| {
+            if slot.is_some() {
+                let generation = self.generations.get(idx).copied().unwrap_or(0);
+                Some(NodeID::from_parts((idx + 1) as u32, generation))
+            } else {
+                None
+            }
+        })
     }
 
-    /// Get all nodes in the arena.
     pub fn values(&self) -> impl Iterator<Item = &SceneNode> {
         self.slots.iter().filter_map(|slot| slot.as_ref())
     }
 
-    /// Get mutable references to all nodes in the arena.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut SceneNode> {
         self.slots.iter_mut().filter_map(|slot| slot.as_mut())
     }
 
-    /// Consume the arena and return an iterator over all nodes.
     pub fn into_values(self) -> impl Iterator<Item = SceneNode> {
         self.slots.into_iter().filter_map(|slot| slot)
     }
 
-    /// Check if a node with the given ID exists.
     #[inline]
     pub fn contains_key(&self, id: NodeID) -> bool {
         self.get(id).is_some()
     }
 
-    /// Reserve capacity for at least `additional` more nodes.
-    /// This is a no-op for NodeArena since Vec grows automatically,
-    /// but provided for API compatibility with HashMap.
     #[inline]
-    pub fn reserve(&mut self, _additional: usize) {
-        // Vec grows automatically, so this is a no-op
-        // But we could pre-allocate if needed in the future
-    }
-    
-    /// Get the next available node ID based on the current highest ID in the arena.
-    /// This is used as a fallback when static counter collisions are detected (DLL scenarios).
-    /// 
-    /// O(1) performance - uses cached `max_id` instead of scanning all slots.
+    pub fn reserve(&mut self, _additional: usize) {}
+
+    /// Allocate and return the next NodeID (for callers that will then insert_with_id).
+    /// Same as allocate() — name kept for compatibility with scene.next_node_id().
     #[inline]
-    pub fn next_id(&self) -> NodeID {
-        // Return the next ID (max_id + 1, but at least 1 since 0 is reserved for nil)
-        NodeID::from_u32((self.max_id + 1).max(1))
+    pub fn next_id(&mut self) -> NodeID {
+        self.allocate()
     }
-    
-    /// Check if an ID is already in use (without bounds checking).
-    /// Returns true if the slot exists and is occupied.
+
     #[inline]
     pub fn contains_id(&self, id: NodeID) -> bool {
-        let id_val = id.as_uid32().as_u32();
-        if id_val == 0 {
-            return false; // NodeID 0 is reserved (nil)
-        }
-        let idx = (id_val as usize) - 1;
-        self.slots.get(idx).map_or(false, |slot| slot.is_some())
+        self.get(id).is_some()
     }
 }
 

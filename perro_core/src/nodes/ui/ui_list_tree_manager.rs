@@ -1,6 +1,6 @@
 // ui_list_tree_manager.rs - Manager for list tree operations with UID registry integration
 
-use crate::uid32::Uid32;
+use crate::ids::UIElementID;
 use winit::keyboard::KeyCode;
 
 use crate::{
@@ -56,21 +56,21 @@ impl ListTreeManager {
     /// Delete an item from the tree and file system
     /// NOTE: UIListTree type was removed - this function is a stub
     #[allow(dead_code, unused_variables)]
-    pub fn delete_item(_tree: &mut UIListTree, _item_id: Uid32) -> Result<(), String> {
+    pub fn delete_item(_tree: &mut UIListTree, _item_id: u64) -> Result<(), String> {
         Err("UIListTree type was removed".to_string())
     }
 
     /// Create a new file in the tree
     /// NOTE: UIListTree type was removed - this function is a stub
     #[allow(dead_code, unused_variables)]
-    pub fn create_file(_tree: &mut UIListTree, _parent_id: Option<Uid32>, _name: String) -> Result<Uid32, String> {
+    pub fn create_file(_tree: &mut UIListTree, _parent_id: Option<u64>, _name: String) -> Result<u64, String> {
         Err("UIListTree type was removed".to_string())
     }
 
     /// Create a new directory in the tree
     /// NOTE: UIListTree type was removed - this function is a stub
     #[allow(dead_code, unused_variables)]
-    pub fn create_directory(_tree: &mut UIListTree, _parent_id: Option<Uid32>, _name: String) -> Result<Uid32, String> {
+    pub fn create_directory(_tree: &mut UIListTree, _parent_id: Option<u64>, _name: String) -> Result<u64, String> {
         Err("UIListTree type was removed".to_string())
     }
 

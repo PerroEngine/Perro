@@ -244,7 +244,7 @@ pub fn implement_script_boilerplate_internal(
                             if let Some(v) = val.as_u64().map(|n| n as u32) {{
                                 script.{renamed_name} = perro_core::NodeID::from_u32(v);
                                 return Some(());
-                            }} else if let Some(vNodeType) = val.as_str().and_then(|s| perro_core::Uid32::parse_uuid_str(s).ok()).map(|uid| perro_core::NodeID::from_u32(uid.as_u32())) {{
+                            }} else if let Some(vNodeType) = val.as_str().and_then(|s| perro_core::NodeID::parse_str(s).ok()) {{
                                 script.{renamed_name} = vNodeType;
                                 return Some(());
                             }}
@@ -504,11 +504,10 @@ pub fn implement_script_boilerplate_internal(
                         // For node types, try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u32(n as u32)))
+                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u64(n)))
                             .or_else(|| params.get({actual_param_idx})
                                 .and_then(|v| v.as_str())
-                                .and_then(|s| Uid32::parse_uuid_str(s).ok())
-                                .map(|uid| NodeID::from_u32(uid.as_u32())))
+                                .and_then(|s| NodeID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
                     },
@@ -608,11 +607,10 @@ let {param_name} = match {param_name}_opt {{
                         // Try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u32(n as u32)))
+                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u64(n)))
                             .or_else(|| params.get({actual_param_idx})
                                 .and_then(|v| v.as_str())
-                                .and_then(|s| Uid32::parse_uuid_str(s).ok())
-                                .map(|uid| NodeID::from_u32(uid.as_u32())))
+                                .and_then(|s| NodeID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
                     },
@@ -621,33 +619,31 @@ let {param_name} = match {param_name}_opt {{
                         // Try u32 first (from JSON number), then fall back to string parsing
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_u64().map(|n| TextureID::from_u32(n as u32)))
+                            .and_then(|v| v.as_u64().map(|n| TextureID::from_u64(n)))
                             .or_else(|| params.get({actual_param_idx})
                                 .and_then(|v| v.as_str())
-                                .and_then(|s| Uid32::parse_uuid_str(s).ok())
-                                .map(|uid| TextureID::from_u32(uid.as_u32())))
+                                .and_then(|s| TextureID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
                     },
-                    Type::Uid32 => {
-                        // Handle Uid32 - try u32 first (from JSON number), then fall back to string parsing
+                    Type::DynNode => {
+                        // Internal ID type — parse as NodeID (hex string or u64)
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_u64().map(|n| Uid32::from_u32(n as u32)))
+                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u64(n)))
                             .or_else(|| params.get({actual_param_idx})
                                 .and_then(|v| v.as_str())
-                                .and_then(|s| Uid32::parse_uuid_str(s).ok()))
+                                .and_then(|s| NodeID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
                     },
-                    Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uid32) => {
-                        // Handle Option<Uid32> - try u32 first (from JSON number), then fall back to string parsing
+                    Type::Option(boxed) if matches!(boxed.as_ref(), Type::DynNode) => {
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
-                            .and_then(|v| v.as_u64().map(|n| Uid32::from_u32(n as u32)))
+                            .and_then(|v| v.as_u64().map(|n| NodeID::from_u64(n)))
                             .or_else(|| params.get({actual_param_idx})
                                 .and_then(|v| v.as_str())
-                                .and_then(|s| Uid32::parse_uuid_str(s).ok()));\n"
+                                .and_then(|s| NodeID::parse_str(s).ok()));\n"
                         )
                     },
                     _ => format!("let {param_name} = Default::default();\n"),

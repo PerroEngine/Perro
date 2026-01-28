@@ -262,7 +262,7 @@ impl EngineRegistry {
         reg.register_struct(
             EngineStruct::Texture,
             None,
-            vec![], // No fields - it's a Uid32 handle
+            vec![], // No fields - it's a NodeID (u64) handle
         );
 
         //--------------------------------
@@ -278,7 +278,7 @@ impl EngineRegistry {
             None,
             vec![
                 ("name", Type::CowStr, Some(NodeFieldRef::NodeName)), // Rust type: CowStr (scripts see this directly, no conversion needed)
-                ("id", Type::Uid32, Some(NodeFieldRef::NodeId)),
+                ("id", Type::DynNode, Some(NodeFieldRef::NodeId)),
             ],
         );
         

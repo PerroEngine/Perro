@@ -3,7 +3,7 @@
 use rapier2d::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::uid32::NodeID;
+use crate::ids::NodeID;
 use crate::structs2d::Shape2D;
 
 /// Manages the Rapier2D physics world

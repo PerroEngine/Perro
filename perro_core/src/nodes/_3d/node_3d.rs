@@ -60,7 +60,7 @@ impl Node3D {
     /// Create a new Node3D with a nil ID (for graphics-only nodes not in the scene tree).
     pub fn new_with_nil_id() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
-        use crate::uid32::NodeID;
+        use crate::ids::NodeID;
         
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)

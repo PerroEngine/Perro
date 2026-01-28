@@ -1018,12 +1018,12 @@ impl Expr {
                 }
                 
                 // Special case: accessing .id or .node_type on parent field
-                // self.parent.id -> api.read_node(self.id, |n| n.parent.as_ref().map(|p| p.id).unwrap_or(Uid32::nil()))
+                // self.parent.id -> api.read_node(self.id, |n| n.parent.as_ref().map(|p| p.id).unwrap_or(NodeID::nil()))
                 // self.parent.node_type -> api.read_node(self.id, |n| n.parent.as_ref().map(|p| p.node_type.clone()).unwrap())
                 if let Expr::MemberAccess(parent_base, parent_field) = base.as_ref() {
                     if matches!(parent_base.as_ref(), Expr::SelfAccess) && parent_field == "parent" {
                         if field == "id" {
-                            return format!("api.read_node(self.id, |self_node: &{}| self_node.parent.as_ref().map(|p| p.id).unwrap_or(Uid32::nil()))", script.node_type);
+                            return format!("api.read_node(self.id, |self_node: &{}| self_node.parent.as_ref().map(|p| p.id).unwrap_or(NodeID::nil()))", script.node_type);
                         } else if field == "node_type" {
                             return format!("api.read_node(self.id, |self_node: &{}| self_node.parent.as_ref().map(|p| p.node_type.clone()).unwrap())", script.node_type);
                         }
@@ -1356,9 +1356,9 @@ impl Expr {
                             // Check if base is an Option<Uuid> variable (from get_parent() or get_node())
                             // Check in current function's locals first, then script-level variables
                             let is_option_uuid = if let Some(current_func) = current_func {
-                                current_func.locals.iter().any(|v| v.name == base_code && matches!(v.typ.as_ref(), Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::Uid32)))
+                                current_func.locals.iter().any(|v| v.name == base_code && matches!(v.typ.as_ref(), Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::DynNode)))
                             } else {
-                                script.get_variable_type(&base_code).map_or(false, |t| matches!(t, Type::Option(inner) if matches!(inner.as_ref(), Type::Uid32)))
+                                script.get_variable_type(&base_code).map_or(false, |t| matches!(t, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode)))
                             };
                             
                             if is_node_id_var || is_option_uuid {
@@ -1833,12 +1833,12 @@ impl Expr {
                         // Check if this method's first parameter is Uuid
                         if let Some(param_types) = method_ref.param_types() {
                             if let Some(first_param_type) = param_types.get(0) {
-                                if matches!(first_param_type, Type::Uid32) {
+                                if matches!(first_param_type, Type::DynNode) {
                                     // Check if base is an ApiCall that returns Uuid, or a MemberAccess that should be treated as one
                                     let (inner_call_str, temp_var_name) = if let Expr::ApiCall(api, args) = base.as_ref() {
                                         // Direct ApiCall
                                         if let Some(return_type) = api.return_type() {
-                                            if matches!(return_type, Type::Uid32) {
+                                            if matches!(return_type, Type::DynNode) {
                                                 let mut inner_call_str = api.to_rust(args, script, needs_self, current_func);
                                                 // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
                                                 // The "api" identifier should NEVER be renamed - it's always the API parameter
@@ -1871,7 +1871,7 @@ impl Expr {
                                         
                                         if let Some(inner_method_ref) = inner_method_ref_opt {
                                             if let Some(return_type) = inner_method_ref.return_type() {
-                                                if matches!(return_type, Type::Uid32) {
+                                                if matches!(return_type, Type::DynNode) {
                                                     // Create args for the inner API call - the base becomes the first arg
                                                     let inner_api_args = vec![*inner_base.clone()];
                                                     use crate::api_bindings::generate_rust_args;
@@ -2634,7 +2634,7 @@ impl Expr {
                 
                 if let Some(param_types) = &expected_param_types {
                     if let Some(first_param_type) = param_types.get(0) {
-                        if matches!(first_param_type, Type::Uid32) {
+                        if matches!(first_param_type, Type::DynNode) {
                             if let Some(first_arg) = args.get(0) {
                                 // Check if first_arg is a Cast containing an ApiCall, or a direct ApiCall
                                 let inner_api_call = if let Expr::Cast(inner_expr, _) = first_arg {
@@ -2651,8 +2651,8 @@ impl Expr {
                                 
                                 if let Some((inner_api, inner_args)) = inner_api_call {
                                     if let Some(return_type) = inner_api.return_type() {
-                                        if matches!(return_type, Type::Uid32 | Type::DynNode) || 
-                                           matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uid32)) {
+                                        if matches!(return_type, Type::DynNode | Type::DynNode) || 
+                                           matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::DynNode)) {
                                             // Both APIs require mutable borrows - extract inner call to temp variable
                                             let mut inner_call_str = inner_api.to_rust(inner_args, script, needs_self, current_func);
                                             
@@ -2982,7 +2982,7 @@ impl Expr {
                         format!("{}.as_ref()", inner_code)
                     }
                     // Node types -> Uuid (nodes are Uuid IDs)
-                    (Some(Type::Node(_)), Type::Uid32) => {
+                    (Some(Type::Node(_)), Type::DynNode) => {
                         // Special case: if inner_code is "self" or contains "self", ensure it's self.id
                         if inner_code == "self" || (inner_code.starts_with("self") && !inner_code.contains("self.id")) {
                             "self.id".to_string()
@@ -2994,7 +2994,7 @@ impl Expr {
                         }
                     }
                     // Uuid -> Node type (for type checking, just pass through)
-                    (Some(Type::Uid32), Type::Node(_)) => {
+                    (Some(Type::DynNode), Type::Node(_)) => {
                         inner_code // Already a Uuid, no conversion needed
                     }
                     // T -> Option<T> conversions (wrapping in Some)
@@ -3003,7 +3003,7 @@ impl Expr {
                     }
                     // UuidOption (Option<Uuid>) -> Uuid
                     // This is for get_child_by_name() which returns Option<Uuid>
-                    (Some(Type::Custom(from_name)), Type::Uid32)
+                    (Some(Type::Custom(from_name)), Type::DynNode)
                         if from_name == "UuidOption" =>
                     {
                         // Unwrap the Option<Uuid>
@@ -3322,9 +3322,9 @@ impl Expr {
                         }
                     }
 
-                    // Uid32 to specific node type (e.g., get_parent() as Sprite2D)
-                    (Some(Type::Uid32), Type::Custom(to_name)) if is_node_type(to_name) => {
-                        // Cast from Uid32 (from get_parent() or other methods) to specific node type
+                    // NodeID to specific node type (e.g., get_parent() as Sprite2D)
+                    (Some(Type::DynNode), Type::Custom(to_name)) if is_node_type(to_name) => {
+                        // Cast from NodeID (from get_parent() or other methods) to specific node type
                         // Casting to a node type just returns the UUID - property access will use read_node/mutate_node
                         // The inner_code is already a NodeID (Uuid), so just return it as-is
                         inner_code.clone()

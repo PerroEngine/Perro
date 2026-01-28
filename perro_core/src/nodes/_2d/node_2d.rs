@@ -57,7 +57,7 @@ pub struct Node2D {
     /// This avoids hashmap lookups when marking transforms dirty recursively
     /// Updated when children are added/removed
     #[serde(skip, default)]
-    pub node2d_children_cache: Option<Vec<crate::uid32::NodeID>>,
+    pub node2d_children_cache: Option<Vec<crate::ids::NodeID>>,
 
     // Base node with name, uuid, parent relationship, etc.
     #[serde(rename = "base")]

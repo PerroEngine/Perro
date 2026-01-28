@@ -318,7 +318,7 @@ impl Function {
                     
                     // Check if it's a type that becomes NodeID/TextureID/etc or Option<NodeID>/Option<TextureID>
                     if type_becomes_id(&p.typ) {
-                        if matches!(&p.typ, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uid32)) {
+                        if matches!(&p.typ, Type::Option(boxed) if matches!(boxed.as_ref(), Type::DynNode)) {
                             format!("mut {}: Option<NodeID>", renamed)
                         } else if matches!(&p.typ, Type::Node(_) | Type::DynNode) {
                             format!("mut {}: NodeID", renamed)

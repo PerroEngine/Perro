@@ -4,7 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{OnceLock, RwLock},
 };
-use crate::uid32::{Uid32, UIElementID};
+use crate::ids::UIElementID;
 
 use crate::{
     Graphics,
@@ -1152,7 +1152,7 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
         if let Some(ref mut bc) = border_color {
             // Apply opacity to border color alpha
             bc.a = ((bc.a as f32 * opacity) as u8).min(255);
-            let border_id = UIElementID::from_uid32(Uid32::from_string(&format!("{}-border", bg_id.to_string())));
+            let border_id = UIElementID::from_string(&format!("{}-border", bg_id.to_string()));
             gfx.renderer_ui.queue_panel(
                 &mut gfx.renderer_prim,
                 border_id,
@@ -1333,7 +1333,7 @@ fn render_text_with_alignment(
     
     // Use unique ID per line to avoid conflicts
     // Include content in ID so same content on different lines gets different IDs
-    let line_id = UIElementID::from(Uid32::from_string(&format!("{}-{}", text.id.to_string(), text.props.content)));
+    let line_id = UIElementID::from_string(&format!("{}-{}", text.id.to_string(), text.props.content));
     
     gfx.renderer_ui.queue_text_aligned(
         &mut gfx.renderer_prim,

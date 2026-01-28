@@ -9,11 +9,10 @@ struct Cabbage {
     var x: int
 }
 
-var cab = new Cabbage { x: 11001111 }
+var cab = new Cabbage { x: 11 }
 
 on init() {
-    tex = Texture.load("res://doug.PNG")
-    self.texture = tex
+
     self.transform.position = new Vector2(-700, -70)
 
     PoopyButt.test(12312)
@@ -22,21 +21,10 @@ on init() {
     var v = PoopyButt.v
     Console.info("b, v", b, v)
     var c = 0
-    // for (i in 0..650) {
-    //    var n = new Node2D()
-    //    n.name = "node" + i
-    //    n.transform.position = new Vector2(i * 105, 0)
 
-    //    for (j in 0..250) {
-    //     var n2 = new Node2D()
-    //     n2.name = "node" + i + "child" + j
-    //     n2.transform.position = new Vector2(j * 105, 0)
-    //     n.add_child(n2)
-    //     c++
-    //    }
-    //    self.add_child(n)
-      
-    // }
+    Console.info(self)
+   
+    
  Console.info("Count", c)
 
 }
@@ -53,11 +41,11 @@ fn test(u: int) {
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
 
-    Console.print("before", test_b)
+    Console.print("befor1e", test_b)
     var c_par = collision.get_parent()
     var t = "test"
     c_par::[t](1122)
-    c_par::test(927)
+    c_par::test(9217)
     c_par.name = "cabb12age"
     Console.info(c_par::test_var)
     var b = "test_var"
@@ -88,7 +76,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 on Deadzone_AreaExited(c: CollisionShape2D) {
     if (c.get_parent() == self) {
         Console.info("area exit")
-        self.transform.position.y += 100
+        self.transform.position.y -= 105
         self.texture = Texture.load("res://obama.jpg")
         self.transform.scale = new Vector2(0.25, 0.25)
     }

@@ -1,6 +1,7 @@
 use std::{borrow::Cow, time::Instant};
 use rustc_hash::FxHashMap;
-use crate::uid32::{Uid32, TextureID, NodeID};
+use crate::ids::{MaterialID, TextureID, NodeID};
+use crate::prelude::string_to_u64;
 
 use wgpu::{
     Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
@@ -46,8 +47,9 @@ pub struct TextureManager {
     path_to_id: FxHashMap<String, TextureID>, // path -> id (new)
     id_to_path: FxHashMap<TextureID, String>, // id -> path (for reverse lookup)
     bind_groups: FxHashMap<String, wgpu::BindGroup>,
-    // OPTIMIZED: Cache bind group layout to avoid recreating for each texture
     cached_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    /// Next index for allocating TextureIDs (no global counter — manager owns allocation)
+    next_texture_index: u64,
 }
 
 impl TextureManager {
@@ -58,7 +60,15 @@ impl TextureManager {
             id_to_path: FxHashMap::default(),
             bind_groups: FxHashMap::default(),
             cached_bind_group_layout: None,
+            next_texture_index: 1, // 0 reserved for nil
         }
+    }
+
+    /// Allocate a new TextureID from this manager (used when loading or creating textures).
+    fn allocate_texture_id(&mut self) -> TextureID {
+        let id = TextureID::from_u64(self.next_texture_index);
+        self.next_texture_index = self.next_texture_index.saturating_add(1);
+        id
     }
 
     /// Get or create the cached bind group layout for textures
@@ -162,14 +172,11 @@ impl TextureManager {
                 texture
             };
             
-            // Get or create Uid32 for this path (Texture namespace)
-            let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(|| TextureID::new());
+            let texture_id = self.allocate_texture_id();
+            self.path_to_id.insert(key.clone(), texture_id);
             self.id_to_path.insert(texture_id, key.clone());
-            
-            // Store by path (textures_by_id will look up through path)
             self.textures.insert(key.clone(), img_texture);
         }
-        // Optimize: use path directly for lookup (no String allocation needed)
         self.textures.get(path).unwrap()
     }
 
@@ -276,13 +283,10 @@ impl TextureManager {
             texture
         };
         
-        // Get or create TextureID for this path
-        let texture_id = *self.path_to_id.entry(key.clone()).or_insert_with(|| TextureID::new());
+        let texture_id = self.allocate_texture_id();
+        self.path_to_id.insert(key.clone(), texture_id);
         self.id_to_path.insert(texture_id, key.clone());
-        
-        // Store by path (textures_by_id will look up through path)
         self.textures.insert(key.clone(), img_texture);
-        
         Ok(texture_id)
     }
 
@@ -314,8 +318,7 @@ impl TextureManager {
         queue: &Queue,
     ) -> TextureID {
         let texture = ImageTexture::from_rgba8_bytes(rgba_bytes, width, height, device, queue);
-        let texture_id = TextureID::new();
-        // Create a synthetic path for programmatically created textures
+        let texture_id = self.allocate_texture_id();
         let synthetic_path = format!("__synthetic__{}", texture_id);
         self.path_to_id.insert(synthetic_path.clone(), texture_id);
         self.id_to_path.insert(texture_id, synthetic_path.clone());
@@ -508,11 +511,9 @@ impl MaterialManager {
         // Load the material data
         let material = self.load_material(path);
 
-        // Create deterministic Uid32 from path
-        let mat_uuid = Uid32::from_string(path);
-
-        // Queue to renderer
-        let slot = renderer.queue_material(mat_uuid, material);
+        // Material ID from path hash (u64)
+        let mat_id = MaterialID::from_u64(string_to_u64(path));
+        let slot = renderer.queue_material(mat_id.as_u64(), material);
 
         // Cache the slot (only allocate String when inserting)
         self.path_to_slot.insert(path.to_string(), slot);
@@ -541,15 +542,9 @@ impl MaterialManager {
         // Load the material data
         let material = self.load_material(path);
 
-        // Create deterministic Uid32 from path
-        let mat_uuid = Uid32::from_string(path);
-
-        // Queue to renderer
-        let slot = renderer.queue_material(mat_uuid, material);
-
-        // Cache the slot (only allocate String when inserting)
+        let mat_id = MaterialID::from_u64(string_to_u64(path));
+        let slot = renderer.queue_material(mat_id.as_u64(), material);
         self.path_to_slot.insert(path.to_string(), slot);
-
         slot
     }
 
@@ -1896,8 +1891,8 @@ impl Graphics {
         // This method is kept for compatibility but does nothing
     }
 
-    pub fn stop_rendering(&mut self, uuid: NodeID) {
-        self.renderer_prim.stop_rendering(uuid.as_uid32());
+    pub fn stop_rendering(&mut self, uuid: u64) {
+        self.renderer_prim.stop_rendering(uuid);
     }
 
     /// Queue a 3D mesh with automatic material resolution

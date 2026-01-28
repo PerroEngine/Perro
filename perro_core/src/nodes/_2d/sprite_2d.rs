@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::nodes::_2d::node_2d::Node2D;
 use crate::nodes::node_registry::NodeType;
 use serde::{Deserialize, Serialize};
-use crate::uid32::TextureID;
+use crate::ids::TextureID;
 
 use std::borrow::Cow;
 

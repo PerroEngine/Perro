@@ -141,7 +141,6 @@ impl Variable {
             Type::Number(NumberKind::BigInt) => ("as_str", format!(".parse::<BigInt>().unwrap()")),
             Type::Bool => ("as_bool", "".into()),
             Type::String | Type::StrRef | Type::CowStr => ("as_str", ".to_string()".into()),
-            Type::Uid32 => ("as_str", ".to_string()".into()), // Uid32s are serialized as strings
             Type::Option(_) => ("as_str", ".to_string()".into()), // Options are handled specially
             // Signal is now Type::Signal, handled above
 
@@ -298,7 +297,6 @@ pub enum Type {
     String,
     StrRef,
     CowStr, // Cow<'static, str> - for node name and other borrowed strings
-    Uid32, // crate::uid32::Uid32 (internal use only)
     Option(Box<Type>), // Option<T>
     Signal, // u64 - signal ID type
     Void,
@@ -348,7 +346,6 @@ impl Type {
             Type::String => "String".to_string(),
             Type::StrRef => "&'static str".to_string(),
             Type::CowStr => "Cow<'static, str>".to_string(),
-            Type::Uid32 => "Uid32".to_string(), // Internal use only
             Type::Option(inner) => format!("Option<{}>", inner.to_rust_type()),
 
             // ---- Containers ----
@@ -444,7 +441,6 @@ impl Type {
             
             Type::Bool => "bool".to_string(),
             Type::String | Type::StrRef | Type::CowStr => "string".to_string(),
-            Type::Uid32 => "uuid".to_string(),
             
             // Options don't exist in PUP - treat as nullable with ?
             Type::Option(inner) => {
@@ -528,7 +524,6 @@ impl Type {
             
             Type::Bool => "bool".to_string(),
             Type::String | Type::StrRef | Type::CowStr => "string".to_string(),
-            Type::Uid32 => "Guid".to_string(),
             
             Type::Option(inner) => format!("{}?", inner.to_csharp_type()),
             
@@ -583,7 +578,6 @@ impl Type {
             
             Type::Bool => "boolean".to_string(),
             Type::String | Type::StrRef | Type::CowStr => "string".to_string(),
-            Type::Uid32 => "string".to_string(), // UUIDs as strings in TS
             
             Type::Option(inner) => format!("{} | null", inner.to_typescript_type()),
             
@@ -639,7 +633,6 @@ impl Type {
             Type::String => "String::new()".into(),
             Type::StrRef => "\"\"".into(),
             Type::CowStr => "Cow::Borrowed(\"\")".into(),
-            Type::Uid32 => "Uid32::nil()".into(),
             Type::Option(_) => "None".into(),
 
             Type::Object | Type::Any => "json!({})".into(),
@@ -719,13 +712,7 @@ impl Type {
             (Type::StrRef, Type::CowStr) => true,
             // CowStr -> String (Cow can be converted to owned String)
             (Type::CowStr, Type::String) => true,
-            // Node types all convert to Uuid (they are Uuid IDs)
-            (Type::Node(_), Type::Uid32) => true,
-            // Uuid can be treated as any Node type (for type checking)
-            (Type::Uid32, Type::Node(_)) => true,
-            // DynNode conversions
-            (Type::DynNode, Type::Uid32) => true,
-            (Type::Uid32, Type::DynNode) => true,
+            // Node / DynNode conversions (all are NodeID in Rust)
             (Type::DynNode, Type::Node(_)) => true, // DynNode can be cast to any Node type
             (Type::Node(_), Type::DynNode) => true, // Any Node type can become DynNode
 
@@ -751,8 +738,6 @@ impl Type {
         match self {
             // all numeric primitives are Copy
             Number(Signed(_)) | Number(Unsigned(_)) | Number(Float(_)) | Bool => true,
-            // Uid32 is also Copy
-            Uid32 => true,
             // Node types are Copy (they're NodeID which is Copy)
             Node(_) => true,
             // DynNode is Copy (resolved to NodeID at runtime)
@@ -768,7 +753,7 @@ impl Type {
                 | ES::Quaternion | ES::Shape2D => true,
                 
                 ES::Texture => true,
-                // Texture is a Uid32 handle, which implements Copy
+                // Texture is a TextureID (u64), Copy
             },
             // ScriptApi is a reference type, not Copy
             ScriptApi => false,

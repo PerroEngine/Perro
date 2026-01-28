@@ -560,15 +560,15 @@ impl ModuleCodegen for TextureResource {
                 format!("api.Texture.create_from_bytes({}, {}, {})", bytes, width, height)
             }
             TextureResource::GetWidth => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".into());
                 format!("api.Texture.get_width({})", arg)
             }
             TextureResource::GetHeight => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".into());
                 format!("api.Texture.get_height({})", arg)
             }
             TextureResource::GetSize => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".into());
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".into());
                 format!("api.Texture.get_size({})", arg)
             }
         }
@@ -593,7 +593,7 @@ impl ModuleTypes for TextureResource {
                 Type::Number(NumberKind::Unsigned(32)),
                 Type::Number(NumberKind::Unsigned(32)),
             ]),
-            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec![Type::Uid32]),
+            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec![Type::EngineStruct(EngineStruct::Texture)]),
         }
     }
     

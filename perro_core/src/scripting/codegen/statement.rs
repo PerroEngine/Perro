@@ -57,8 +57,8 @@ impl Stmt {
                             // Check if this API call returns an ID type (Uuid, NodeType, etc.) that should be extracted
                             let should_extract_top_level = is_top_level && {
                                 if let Some(return_type) = return_type {
-                                    matches!(return_type, Type::Uid32 | Type::NodeType | Type::DynNode) ||
-                                    matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::Uid32))
+                                    matches!(return_type, Type::NodeType | Type::DynNode) ||
+                                    matches!(return_type, Type::Option(boxed) if matches!(boxed.as_ref(), Type::DynNode))
                                 } else {
                                     false
                                 }
@@ -363,7 +363,7 @@ impl Stmt {
                     Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::CreateFromBytes)), _)
                 );
                 
-                let is_node_cast = matches!(expr_type, Some(Type::Uid32)) && 
+                let is_node_cast = matches!(expr_type, Some(Type::DynNode)) && 
                     if let Expr::Cast(_, ref target_type) = expr.expr {
                         match target_type {
                             Type::Node(_) => true,
@@ -381,9 +381,9 @@ impl Stmt {
                 
                 // If it's a UUID/Option<Uuid> representing a node/texture, or returns NodeType/DynNode, use _id suffix naming
                 // This follows the same pattern as nodes: check both var_type and expr_type for Uuid/Option<Uuid>
-                let is_id_type = matches!(var_type, Some(Type::Uid32)) 
-                    || matches!(expr_type.as_ref(), Some(Type::Uid32)) 
-                    || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::Uid32));
+                let is_id_type = matches!(var_type, Some(Type::DynNode)) 
+                    || matches!(expr_type.as_ref(), Some(Type::DynNode)) 
+                    || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::DynNode));
                 
                 let type_for_renaming = if is_id_uuid && is_id_type {
                     // For node calls returning Uuid, treat as node type for naming
@@ -438,8 +438,8 @@ impl Stmt {
                             if let Some((inner_api, inner_args)) = inner_api_call {
                                 if let Some(return_type) = inner_api.return_type() {
                                     // Check if it returns Uuid, DynNode, or Option<Uuid> (all need extraction)
-                                    let needs_extraction = matches!(return_type, Type::Uid32 | Type::DynNode) || 
-                                        matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uid32));
+                                    let needs_extraction = matches!(return_type, Type::DynNode) || 
+                                        matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::DynNode));
                                     
                                     if needs_extraction {
                                         has_nested = true;
@@ -458,10 +458,10 @@ impl Stmt {
                                         
                                         // Only add temp declaration if we haven't seen this temp var yet
                                         if !temp_decls.iter().any(|(var, _)| *var == temp_var) {
-                                            let type_annotation = if matches!(return_type, Type::Uid32) {
-                                                ": Uid32"
-                                            } else if matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uid32)) {
-                                                ": Option<Uid32>"
+                                            let type_annotation = if matches!(return_type, Type::DynNode) {
+                                                ": NodeID"
+                                            } else if matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::DynNode)) {
+                                                ": Option<NodeID>"
                                             } else {
                                                 ""
                                             };
@@ -504,8 +504,8 @@ impl Stmt {
                             if let Expr::ApiCall(inner_api, inner_args) = arg {
                                 if let Some(return_type) = inner_api.return_type() {
                                     // Check if it returns Uuid, DynNode, or Option<Uuid> (all need extraction)
-                                    let needs_extraction = matches!(return_type, Type::Uid32 | Type::DynNode) || 
-                                        matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uid32));
+                                    let needs_extraction = matches!(return_type, Type::DynNode) || 
+                                        matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::DynNode));
                                     
                                     if needs_extraction {
                                         has_nested = true;
@@ -524,10 +524,10 @@ impl Stmt {
                                         
                                         // Only add temp declaration if we haven't seen this temp var yet
                                         if !temp_decls.iter().any(|(var, _)| *var == temp_var) {
-                                            let type_annotation = if matches!(return_type, Type::Uid32) {
-                                                ": Uid32"
-                                            } else if matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::Uid32)) {
-                                                ": Option<Uid32>"
+                                            let type_annotation = if matches!(return_type, Type::DynNode) {
+                                                ": NodeID"
+                                            } else if matches!(return_type, Type::Option(ref boxed) if matches!(boxed.as_ref(), Type::DynNode)) {
+                                                ": Option<NodeID>"
                                             } else {
                                                 ""
                                             };
@@ -744,7 +744,7 @@ impl Stmt {
                     Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::CreateFromBytes)), _)
                 );
                 
-                let is_node_cast = matches!(expr_type, Some(Type::Uid32)) && 
+                let is_node_cast = matches!(expr_type, Some(Type::DynNode)) && 
                     if let Expr::Cast(_, ref target_type) = expr.expr {
                         match target_type {
                             Type::Node(_) => true,
@@ -761,9 +761,9 @@ impl Stmt {
                 let is_node_type_return = matches!(expr_type, Some(Type::NodeType | Type::DynNode));
                 
                 // Determine type for renaming (same logic as Assign)
-                let is_id_type = matches!(var_type, Some(Type::Uid32)) 
-                    || matches!(expr_type.as_ref(), Some(Type::Uid32)) 
-                    || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::Uid32));
+                let is_id_type = matches!(var_type, Some(Type::DynNode)) 
+                    || matches!(expr_type.as_ref(), Some(Type::DynNode)) 
+                    || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::DynNode));
                 
                 let type_for_renaming = if is_id_uuid && is_id_type {
                     if is_direct_texture_call {
@@ -2750,13 +2750,13 @@ impl Stmt {
                     format!("Some({})", converted_inner)
                 }
             }
-            // Node types -> Uid32 (nodes are Uid32 IDs)
-            (Node(_), Uid32) => {
-                expr.to_string() // Already a Uid32, no conversion needed
+            // Node types -> DynNode (NodeID at runtime)
+            (Node(_), DynNode) => {
+                expr.to_string() // Already a NodeID, no conversion needed
             }
-            // Uid32 -> Node type (for type checking, just pass through)
-            (Uid32, Node(_)) => {
-                expr.to_string() // Already a Uid32, no conversion needed
+            // DynNode -> Node type (for type checking, just pass through)
+            (DynNode, Node(_)) => {
+                expr.to_string() // Already a NodeID, no conversion needed
             }
 
             _ => {

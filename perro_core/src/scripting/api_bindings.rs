@@ -707,6 +707,35 @@ impl ModuleCodegen for ConsoleApi {
             false
         }
 
+        // True if this expression fetches a value from a script/module (e.g. c_par::test_var, c_par::arr[b]).
+        // In those cases we use the script's id only to get the value; we must never treat it as a node for get_type.
+        fn expr_uses_script_value_access(expr: &Expr, script: &Script) -> bool {
+            match expr {
+                Expr::MemberAccess(base, _field) => {
+                    if let Expr::Ident(mod_name) = base.as_ref() {
+                        script.module_variables.contains_key(mod_name) || script.module_names.contains(mod_name)
+                    } else {
+                        expr_uses_script_value_access(base, script)
+                    }
+                }
+                Expr::Index(base, key) => {
+                    expr_uses_script_value_access(base, script) || expr_uses_script_value_access(key, script)
+                }
+                Expr::Call(callee, call_args) => {
+                    expr_uses_script_value_access(callee, script)
+                        || call_args.iter().any(|a| expr_uses_script_value_access(a, script))
+                }
+                Expr::BinaryOp(l, _, r) => {
+                    expr_uses_script_value_access(l, script) || expr_uses_script_value_access(r, script)
+                }
+                Expr::Range(l, r) => {
+                    expr_uses_script_value_access(l, script) || expr_uses_script_value_access(r, script)
+                }
+                Expr::Cast(inner, _) => expr_uses_script_value_access(inner, script),
+                _ => false,
+            }
+        }
+
         // Check if the argument is a node (Uuid) - if so, convert to print node type instead
         // Build the format string - handle both single and multiple arguments
         let format_str = if args.len() == 1 {
@@ -726,7 +755,7 @@ impl ModuleCodegen for ConsoleApi {
                     // (Uuid variables from get_parent(), get_node(), etc. represent nodes)
                     let is_node = match arg_type {
                         Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                        None | Some(Type::Uid32) => {
+                        None => {
                             if let Expr::Ident(var_name) = arg_expr {
                                 // First check the variable's declared type directly (before it gets converted to Uuid)
                                 let var_declared_type = if let Some(func) = current_func {
@@ -761,11 +790,16 @@ impl ModuleCodegen for ConsoleApi {
                         },
                         _ => false,
                     };
+
+                    // Never treat "value from a script" (e.g. c_par::test_var, c_par::arr[b]) as a node.
+                    // We only use the script's id to fetch the value; we must print that value, not get_type(id).
+                    let is_script_value_access = expr_uses_script_value_access(arg_expr, script);
+                    let is_node = is_node && !is_script_value_access;
                 
                     if is_node {
                         // This is a node - convert to print its type instead of UUID
                         // Use the already-processed arg string, which should be the node ID
-                        let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "Uid32::nil()".to_string());
+                        let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".to_string());
                         // api.get_type() requires &mut self, so we must extract it to a temp variable
                         // to avoid borrow checker errors when used as argument to api.print() (which takes &self)
                         // Return a special marker that codegen will detect and extract
@@ -852,7 +886,7 @@ impl ModuleCodegen for ConsoleApi {
                     let arg_type = script.infer_expr_type(arg_expr, current_func);
                     let is_node = match arg_type {
                         Some(Type::Node(_)) | Some(Type::DynNode) => true,
-                        None | Some(Type::Uid32) => {
+                        None => {
                             if let Expr::Ident(var_name) = arg_expr {
                                 // First check the variable's declared type directly (before it gets converted to Uuid)
                                 let var_declared_type = if let Some(func) = current_func {
@@ -887,6 +921,10 @@ impl ModuleCodegen for ConsoleApi {
                         },
                         _ => false,
                     };
+
+                    // Never treat "value from a script" (e.g. c_par::test_var, c_par::arr[b]) as a node.
+                    let is_script_value_access = expr_uses_script_value_access(arg_expr, script);
+                    let is_node = is_node && !is_script_value_access;
                     
                     if is_node {
                         format!("__EXTRACT_NODE_TYPE__({})", optimized_arg)
@@ -953,8 +991,8 @@ impl ModuleCodegen for ConsoleApi {
             // Single argument case - direct marker
             let node_id = arg.strip_prefix("__EXTRACT_NODE_TYPE__(")
                 .and_then(|s: &str| s.strip_suffix(")"))
-                .unwrap_or("Uid32::nil()");
-            let temp_var = "__node_type";
+                .unwrap_or("NodeID::nil()");
+            let temp_var = "node_type";
             let decl = format!("let {} = api.get_type({});", temp_var, node_id);
             (format!("format!(\"{{:?}}\", {})", temp_var), Some(decl))
         } else if arg.contains("__EXTRACT_NODE_TYPE__(") {
@@ -992,7 +1030,7 @@ impl ModuleCodegen for ConsoleApi {
                         
                         // Extract node_id
                         let node_id: String = arg_chars[i + "__EXTRACT_NODE_TYPE__(".len()..node_id_end].iter().collect();
-                        let temp_var = format!("__node_type_{}", counter);
+                        let temp_var = format!("node_type_{}", counter);
                         counter += 1;
                         
                         // Create the temp declaration

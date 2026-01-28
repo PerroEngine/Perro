@@ -2,7 +2,7 @@
 //! Maps UIElement types to egui widgets while preserving .fur file compatibility
 
 use std::collections::HashMap;
-use crate::uid32::Uid32;
+// IDs used via UIElementID from ids
 use egui::{Context, Ui, Rect, Color32, Rounding, Stroke, FontId, TextEdit, Button, Frame, Align};
 use crate::{
     ui_element::UIElement,
@@ -66,7 +66,7 @@ pub fn render_element_to_egui(
     element: &UIElement,
     ctx: &Context,
     ui: &mut Ui,
-    element_states: &mut HashMap<Uid32, ElementState>,
+    element_states: &mut HashMap<u64, ElementState>,
 ) -> Vec<ElementEvent> {
     match element {
         UIElement::Panel(panel) => {
@@ -115,8 +115,8 @@ pub fn render_element_to_egui(
 /// Events emitted by egui widgets
 #[derive(Debug, Clone)]
 pub enum ElementEvent {
-    ButtonClicked(Uid32, String), // element_id, element_name
-    TextChanged(Uid32, String),   // element_id, new_text
+    ButtonClicked(u64, String), // element_id, element_name
+    TextChanged(u64, String),   // element_id, new_text
 }
 
 /// State tracked per element for egui rendering
@@ -132,7 +132,7 @@ fn render_panel_egui(
     panel: &UIPanel,
     _ctx: &Context,
     ui: &mut Ui,
-    _element_states: &mut HashMap<Uid32, ElementState>,
+    _element_states: &mut HashMap<u64, ElementState>,
 ) {
     let rect = transform_to_rect(&panel.base.global_transform, &panel.base.size);
     
@@ -179,7 +179,7 @@ fn render_button_egui(
     _button: &dyn std::any::Any,
     _ctx: &Context,
     _ui: &mut Ui,
-    _element_states: &mut HashMap<Uid32, ElementState>,
+    _element_states: &mut HashMap<u64, ElementState>,
 ) -> bool {
     false
 }
@@ -192,7 +192,7 @@ fn render_text_input_egui(
     _text_input: &dyn std::any::Any,
     _ctx: &Context,
     _ui: &mut Ui,
-    _element_states: &mut HashMap<Uid32, ElementState>,
+    _element_states: &mut HashMap<u64, ElementState>,
 ) -> bool {
     false
 }
@@ -205,7 +205,7 @@ fn render_text_edit_egui(
     _text_edit: &dyn std::any::Any,
     _ctx: &Context,
     _ui: &mut Ui,
-    _element_states: &mut HashMap<Uid32, ElementState>,
+    _element_states: &mut HashMap<u64, ElementState>,
 ) -> bool {
     false
 }

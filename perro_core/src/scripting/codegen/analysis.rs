@@ -466,7 +466,7 @@ pub(crate) fn extract_node_member_info(
                         // Use the original variable name as the closure parameter (like mutate_node does)
                         let closure_var = lookup_name.to_string();
                         Some((renamed, node_type_name, path.join("."), closure_var))
-                    } else if matches!(typ, Type::Uid32) && !field_path.is_empty() {
+                    } else if matches!(typ, Type::DynNode) && !field_path.is_empty() {
                         // Uuid variable accessing member fields - check if these fields exist in engine registry
                         // If they do, treat it as a __DYN_NODE__ (unknown node type)
                         let field_path_only: Vec<String> = field_path.iter().rev().cloned().collect();

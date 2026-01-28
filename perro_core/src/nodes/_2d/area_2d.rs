@@ -7,10 +7,10 @@ use crate::{
     prelude::string_to_u64,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Number, Value};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use crate::uid32::NodeID;
+use crate::ids::NodeID;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Area2D {
@@ -132,7 +132,7 @@ impl Area2D {
             api.scene.get_scene_node_ref(node_id).is_some()
         });
         
-        // Get the signal base name (e.g., "Deadzone")
+        // Get the signal base name (e.g., "Deadzone") — matches node name; numbers only added on collision.
         let signal_base = self.name.as_ref();
         
         // Determine which colliders entered (new collisions)
@@ -154,12 +154,11 @@ impl Area2D {
         if !entered.is_empty() {
             let entered_signal = format!("{}_AreaEntered", signal_base);
             let entered_signal_id = string_to_u64(&entered_signal);
-            
             for node_id in &entered {
                 // Double-check node still exists before emitting signal
                 // (it might have been deleted by a previous signal handler in this same loop)
                 if api.scene.get_scene_node_ref(*node_id).is_some() {
-                    let params = [Value::String(node_id.to_string())];
+                    let params = [Value::Number(Number::from(node_id.as_u64()))];
                     api.emit_signal_id(entered_signal_id, &params);
                 }
             }
@@ -170,11 +169,10 @@ impl Area2D {
         if !exited.is_empty() {
             let exited_signal = format!("{}_AreaExited", signal_base);
             let exited_signal_id = string_to_u64(&exited_signal);
-            
             for node_id in &exited {
                 // Double-check node still exists before emitting signal
                 if api.scene.get_scene_node_ref(*node_id).is_some() {
-                    let params = [Value::String(node_id.to_string())];
+                    let params = [Value::Number(Number::from(node_id.as_u64()))];
                     api.emit_signal_id(exited_signal_id, &params);
                 }
             }
@@ -190,7 +188,7 @@ impl Area2D {
             for node_id in &current_colliding_node_ids {
                 // Double-check node still exists before emitting signal
                 if api.scene.get_scene_node_ref(*node_id).is_some() {
-                    let params = [Value::String(node_id.to_string())];
+                    let params = [Value::Number(Number::from(node_id.as_u64()))];
                     api.emit_signal_id(occupied_signal_id, &params);
                 }
             }

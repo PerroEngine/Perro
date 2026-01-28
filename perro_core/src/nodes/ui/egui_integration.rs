@@ -2,7 +2,7 @@
 //! Maps FUR elements to egui widgets and handles rendering
 
 use std::collections::HashMap;
-use crate::uid32::UIElementID;
+use crate::ids::UIElementID;
 use egui::{Context, Ui, Rect, Vec2, Color32, Rounding, Stroke, FontId, TextEdit, Button, Frame, Layout, Align, Direction, RichText};
 use crate::{
     ui_element::{UIElement, BaseElement},

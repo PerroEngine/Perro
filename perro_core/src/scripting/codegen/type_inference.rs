@@ -53,13 +53,13 @@ impl Script {
             return expr.to_string();
         }
         
-        // Special case: if expr is "self.id" or already ends with ".id", and target is Uuid, no cast needed
-        if expr == "self.id" || (expr.ends_with(".id") && matches!(to, Type::Uid32)) {
+        // Special case: if expr is "self.id" or already ends with ".id", and target is node id (DynNode), no cast needed
+        if expr == "self.id" || (expr.ends_with(".id") && matches!(to, Type::DynNode)) {
             return expr.to_string();
         }
         
-        // Special case: if expr is "self" and target type is Uuid, just return "self.id"
-        if expr == "self" && matches!(to, Type::Uid32) {
+        // Special case: if expr is "self" and target type is node id (DynNode), just return "self.id"
+        if expr == "self" && matches!(to, Type::DynNode) {
             return "self.id".to_string();
         }
         
@@ -109,18 +109,17 @@ impl Script {
             _ => {}
         }
         
-        // Special case: if expr is already the target type (e.g., c_par_id is already Uuid), no cast needed
-        // Check if expr ends with _id and target is Uuid (node variables are already Uuid)
-        if expr.ends_with("_id") && matches!(to, Type::Uid32) {
+        // Special case: if expr is already the target type (e.g., c_par_id is already NodeID), no cast needed
+        // Check if expr ends with _id and target is DynNode (node variables are already NodeID)
+        if expr.ends_with("_id") && matches!(to, Type::DynNode) {
             return expr.to_string();
         }
         
         // Special case: if expr is a variable name that's already the target type, no cast needed
-        // This prevents unnecessary casts like (c_par_id as Uuid) when c_par_id is already Uuid
+        // This prevents unnecessary casts when the variable is already a node id
         if !expr.contains(' ') && !expr.contains('(') && !expr.contains('.') {
             // It's a simple variable name - check if we can skip the cast
-            // For Uuid types, variables ending in _id are already Uuid
-            if matches!(to, Type::Uid32) && (expr.ends_with("_id") || expr == "self.id") {
+            if matches!(to, Type::DynNode) && (expr.ends_with("_id") || expr == "self.id") {
                 return expr.to_string();
             }
         }
@@ -431,11 +430,11 @@ impl Script {
         }
 
         match (left, right) {
-            (Type::Uid32, Type::Node(_)) | (Type::Node(_), Type::Uid32) => {
-                Some(Type::Uid32)
+            (Type::DynNode, Type::Node(_)) | (Type::Node(_), Type::DynNode) => {
+                Some(Type::DynNode)
             }
-            (Type::Uid32, Type::Custom(tn)) | (Type::Custom(tn), Type::Uid32) if is_node_type(tn) => {
-                Some(Type::Uid32)
+            (Type::DynNode, Type::Custom(tn)) | (Type::Custom(tn), Type::DynNode) if is_node_type(tn) => {
+                Some(Type::DynNode)
             }
             (Type::Number(NumberKind::BigInt), Type::Number(_))
             | (Type::Number(_), Type::Number(NumberKind::BigInt)) => {
@@ -500,7 +499,7 @@ impl Script {
                     ENGINE_REGISTRY.get_field_type_node(node_type, &rust_field)
                 }
             }
-            Type::Uid32 => {
+            Type::DynNode => {
                 let nodes_with_field = ENGINE_REGISTRY.find_nodes_with_field(member);
                 if nodes_with_field.is_empty() {
                     return None;
@@ -517,7 +516,7 @@ impl Script {
             Type::Custom(type_name) => {
                 if type_name == "ParentType" {
                     match member {
-                        "id" => return Some(Type::Uid32),
+                        "id" => return Some(Type::DynNode),
                         "node_type" => return Some(Type::NodeType),
                         _ => return None,
                     }

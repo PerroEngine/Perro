@@ -2,7 +2,7 @@ use crate::{
     rendering::{PrimitiveRenderer, RenderLayer, TextureManager},
     structs2d::{Transform2D, Vector2},
     ui_elements::{ui_container::CornerRadius, ui_text::TextAlignment},
-    uid32::UIElementID,
+    ids::UIElementID,
 };
 use wgpu::{Device, Queue, RenderPass};
 
@@ -28,7 +28,7 @@ impl RendererUI {
         created_timestamp: u64,
     ) {
         primitive_renderer.queue_rect(
-            uuid.as_uid32(),
+            uuid.as_u64(),
             RenderLayer::UI,
             transform,
             size,
@@ -48,7 +48,7 @@ impl RendererUI {
         texture_manager: &mut TextureManager,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        uuid: crate::uid32::Uid32,
+        uuid: u64,
         texture_path: &str,
         transform: Transform2D,
         pivot: Vector2,
@@ -72,7 +72,7 @@ impl RendererUI {
     pub fn queue_text(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: crate::uid32::Uid32,
+        uuid: u64,
         text: &str,
         font_size: f32,
         transform: Transform2D,
@@ -120,7 +120,7 @@ impl RendererUI {
         queue: &Queue,
     ) {
         primitive_renderer.queue_text_aligned_with_font(
-            uuid.as_uid32(),
+            uuid.as_u64(),
             RenderLayer::UI,
             text,
             font_size,
@@ -140,13 +140,13 @@ impl RendererUI {
     /// Remove a panel from the render cache
     /// Call this when an element becomes invisible
     pub fn remove_panel(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: UIElementID) {
-        primitive_renderer.remove_rect(uuid.as_uid32());
+        primitive_renderer.remove_rect(uuid.as_u64());
     }
 
     /// Remove text from the render cache
     /// Call this when an element becomes invisible
     pub fn remove_text(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: UIElementID) {
-        primitive_renderer.remove_text(uuid.as_uid32());
+        primitive_renderer.remove_text(uuid.as_u64());
     }
 
     pub fn render(

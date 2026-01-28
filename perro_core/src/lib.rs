@@ -13,7 +13,7 @@ pub mod scripting;
 pub mod structs;
 pub mod thread_utils;
 pub mod types;
-pub mod uid32;
+pub mod ids;
 
 pub use nodes::*;
 pub use project::*;
@@ -21,7 +21,7 @@ pub use rendering::*;
 pub use scene::*;
 pub use scripting::*;
 pub use structs::*;
-pub use uid32::{Uid32, NodeID, TextureID, MaterialID, MeshID, LightID, UIElementID};
+pub use ids::{NodeID, TextureID, MaterialID, MeshID, LightID, UIElementID};
 
 pub type RuntimeApp = crate::rendering::app::App<crate::scripting::DllScriptProvider>;
 
@@ -52,6 +52,6 @@ pub mod prelude {
     // Core primitive/shared types (Vec2, Color, etc.)
     pub use crate::types::*;
     
-    // Uid32 type and type-safe ID wrappers for unique identifiers
-    pub use crate::{Uid32, NodeID, TextureID, MaterialID, MeshID, LightID, UIElementID};
+    // IDs (u64) and type-safe wrappers from ids.rs
+    pub use crate::{NodeID, TextureID, MaterialID, MeshID, LightID, UIElementID};
 }

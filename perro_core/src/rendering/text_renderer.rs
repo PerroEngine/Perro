@@ -12,7 +12,7 @@ pub struct TextRenderer {
     pub(crate) font_system: Arc<Mutex<FontSystem>>,
     
     // Per-text buffers (cached for layout)
-    text_buffers: FxHashMap<crate::uid32::Uid32, Buffer>,
+    text_buffers: FxHashMap<u64, Buffer>,
     
     // Font cache: font_spec -> font_id
     font_cache: FxHashMap<String, cosmic_text::fontdb::ID>,
@@ -118,7 +118,7 @@ impl TextRenderer {
     }
     
     /// Get or create a text buffer for rendering
-    pub fn get_or_create_buffer(&mut self, text_id: crate::uid32::Uid32, content: &str, font_spec: Option<&str>, font_size: f32) -> &mut Buffer {
+    pub fn get_or_create_buffer(&mut self, text_id: u64, content: &str, font_spec: Option<&str>, font_size: f32) -> &mut Buffer {
         use std::collections::hash_map::Entry;
         
         // Load font first (before borrowing self.text_buffers)
@@ -219,7 +219,7 @@ impl TextRenderer {
     }
     
     /// Get glyph positions for rendering
-    pub fn get_glyph_positions(&mut self, text_id: crate::uid32::Uid32, content: &str, font_spec: Option<&str>, font_size: f32) -> Vec<GlyphPosition> {
+    pub fn get_glyph_positions(&mut self, text_id: u64, content: &str, font_spec: Option<&str>, font_size: f32) -> Vec<GlyphPosition> {
         // If font_spec is None or empty, use system default
         let effective_font_spec = font_spec.filter(|s| !s.is_empty());
         // get_or_create_buffer already handles layout (shape_until_scroll)
@@ -269,7 +269,7 @@ impl TextRenderer {
     }
     
     /// Remove a text buffer from cache
-    pub fn remove_buffer(&mut self, text_id: crate::uid32::Uid32) {
+    pub fn remove_buffer(&mut self, text_id: u64) {
         self.text_buffers.remove(&text_id);
     }
 }

@@ -6,7 +6,7 @@ use std::cell::{RefCell, UnsafeCell};
 use std::rc::Rc;
 
 use serde_json::Value;
-use crate::uid32::{Uid32, NodeID};
+use crate::ids::NodeID;
 
 use crate::SceneData;
 use crate::api::ScriptApi;
@@ -116,7 +116,9 @@ pub trait SceneAccess {
         self.get_scene_node_mut(id)
     }
     
-    fn add_node_to_scene(&mut self, node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<()>;
+    /// Add a node to the scene. The arena always assigns the next available slot+generation.
+    /// Returns the NodeID of the inserted node.
+    fn add_node_to_scene(&mut self, node: SceneNode, gfx: &mut crate::rendering::Graphics) -> anyhow::Result<NodeID>;
     fn get_script(&mut self, id: NodeID) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>>;
     
     /// Get mutable reference to a script (for direct update calls)

@@ -105,13 +105,13 @@ pub struct PrimitiveRenderer {
 
     // Optimized rect storage
     rect_instance_slots: Vec<Option<(RenderLayer, RectInstance, u64)>>, // Added timestamp for sorting
-    rect_uuid_to_slot: FxHashMap<crate::uid32::Uid32, usize>,
+    rect_uuid_to_slot: FxHashMap<u64, usize>,
     free_rect_slots: SmallVec<[usize; 16]>,
     rect_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Optimized texture storage
     texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, String, Vector2, u64)>>, // Added texture size and timestamp for sorting
-    texture_uuid_to_slot: FxHashMap<crate::uid32::Uid32, usize>,
+    texture_uuid_to_slot: FxHashMap<u64, usize>,
     free_texture_slots: SmallVec<[usize; 16]>,
     texture_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
@@ -403,7 +403,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_rect(
         &mut self,
-        uuid: crate::uid32::Uid32,
+        uuid: u64,
         layer: RenderLayer,
         transform: Transform2D,
         size: Vector2,
@@ -536,7 +536,7 @@ impl PrimitiveRenderer {
 
     /// Remove a rect instance from the render cache
     /// Call this when an element becomes invisible to clear it from GPU buffers
-    pub fn remove_rect(&mut self, uuid: crate::uid32::Uid32) {
+    pub fn remove_rect(&mut self, uuid: u64) {
         if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
             if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                 self.rect_instance_slots[slot] = None;
@@ -551,13 +551,13 @@ impl PrimitiveRenderer {
 
     /// Remove a text instance from the render cache
     /// Call this when an element becomes invisible to clear it from GPU buffers
-    pub fn remove_text(&mut self, _uuid: crate::uid32::Uid32) {
+    pub fn remove_text(&mut self, _uuid: u64) {
         // Text rendering now handled by egui
     }
 
     pub fn queue_texture(
         &mut self,
-        uuid: crate::uid32::Uid32,
+        uuid: u64,
         layer: RenderLayer,
         texture_path: &str,
         transform: Transform2D,
@@ -716,7 +716,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_text(
         &mut self,
-        _uuid: crate::uid32::Uid32,
+        _uuid: u64,
         _layer: RenderLayer,
         _text: &str,
         _font_size: f32,
@@ -733,7 +733,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_text_aligned(
         &mut self,
-        _uuid: crate::uid32::Uid32,
+        _uuid: u64,
         _layer: RenderLayer,
         _text: &str,
         _font_size: f32,
@@ -752,7 +752,7 @@ impl PrimitiveRenderer {
     
     pub fn queue_text_aligned_with_font(
         &mut self,
-        _uuid: crate::uid32::Uid32,
+        _uuid: u64,
         _layer: RenderLayer,
         _text: &str,
         _font_size: f32,
@@ -1066,7 +1066,7 @@ impl PrimitiveRenderer {
         queue.submit(Some(encoder.finish()));
     }
 
-    pub fn stop_rendering(&mut self, uuid: crate::uid32::Uid32) {
+    pub fn stop_rendering(&mut self, uuid: u64) {
         // Remove from rect slots
         if let Some(slot) = self.rect_uuid_to_slot.remove(&uuid) {
             self.rect_instance_slots[slot] = None;
