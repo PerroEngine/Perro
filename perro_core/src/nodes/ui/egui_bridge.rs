@@ -3,26 +3,25 @@
 
 use std::collections::HashMap;
 // IDs used via UIElementID from ids
-use egui::{Context, Ui, Rect, Color32, Rounding, Stroke, FontId, TextEdit, Button, Frame, Align};
 use crate::{
-    ui_element::UIElement,
     structs::Color,
-    structs2d::{Vector2, Transform2D},
-    fur_ast::FurAnchor,
+    structs2d::{Transform2D, Vector2},
+    ui_element::UIElement,
     ui_elements::{
-        ui_container::{UIPanel, CornerRadius},
+        ui_container::{CornerRadius, UIPanel},
         ui_text::UIText,
     },
 };
+use egui::{Color32, Context, FontId, Frame, Rect, Stroke, Ui};
 
 /// Converts Perro Color to egui Color32
 fn color_to_egui(color: Color) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a)
 }
 
-/// Converts Perro CornerRadius to egui Rounding
-fn corner_radius_to_egui(corner: &CornerRadius) -> Rounding {
-    Rounding {
+/// Converts Perro CornerRadius (top_left, etc.) to egui CornerRadius (nw, ne, sw, se)
+fn corner_radius_to_egui(corner: &CornerRadius) -> egui::CornerRadius {
+    egui::CornerRadius {
         nw: corner.top_left as u8,
         ne: corner.top_right as u8,
         sw: corner.bottom_left as u8,
@@ -30,33 +29,15 @@ fn corner_radius_to_egui(corner: &CornerRadius) -> Rounding {
     }
 }
 
-/// Converts FurAnchor to egui Align
-fn anchor_to_egui_align(anchor: FurAnchor) -> Align {
-    match anchor {
-        FurAnchor::TopLeft | FurAnchor::Left | FurAnchor::BottomLeft => Align::LEFT,
-        FurAnchor::TopRight | FurAnchor::Right | FurAnchor::BottomRight => Align::RIGHT,
-        _ => Align::Min, // Center equivalent
-    }
-}
-
 /// Converts Transform2D + size to egui Rect
 fn transform_to_rect(transform: &Transform2D, size: &Vector2) -> Rect {
     let pos = transform.position;
-    let scaled_size = Vector2::new(
-        size.x * transform.scale.x,
-        size.y * transform.scale.y,
-    );
-    
+    let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
+
     // egui uses top-left origin, Perro uses center origin
-    let min = egui::pos2(
-        pos.x - scaled_size.x * 0.5,
-        pos.y - scaled_size.y * 0.5,
-    );
-    let max = egui::pos2(
-        pos.x + scaled_size.x * 0.5,
-        pos.y + scaled_size.y * 0.5,
-    );
-    
+    let min = egui::pos2(pos.x - scaled_size.x * 0.5, pos.y - scaled_size.y * 0.5);
+    let max = egui::pos2(pos.x + scaled_size.x * 0.5, pos.y + scaled_size.y * 0.5);
+
     Rect::from_min_max(min, max)
 }
 
@@ -76,39 +57,34 @@ pub fn render_element_to_egui(
         UIElement::Text(text) => {
             render_text_egui(text, ctx, ui);
             vec![]
-        }
-        // Button, TextInput, and TextEdit are not currently UIElement variants
-        // These match arms are commented out until these types are added to UIElement enum
-        // UIElement::Button(button) => {
-        //     let clicked = render_button_egui(button, ctx, ui, element_states);
-        //     if clicked {
-        //         vec![ElementEvent::ButtonClicked(button.base.id, button.base.name.clone())]
-        //     } else {
-        //         vec![]
-        //     }
-        // }
-        // UIElement::TextInput(text_input) => {
-        //     let text_changed = render_text_input_egui(text_input, ctx, ui, element_states);
-        //     if text_changed {
-        //         let state = element_states.get(&text_input.base.id).unwrap();
-        //         vec![ElementEvent::TextChanged(text_input.base.id, state.text_buffer.clone())]
-        //     } else {
-        //         vec![]
-        //     }
-        // }
-        // UIElement::TextEdit(text_edit) => {
-        //     let text_changed = render_text_edit_egui(text_edit, ctx, ui, element_states);
-        //     if text_changed {
-        //         let state = element_states.get(&text_edit.base.id).unwrap();
-        //         vec![ElementEvent::TextChanged(text_edit.base.id, state.text_buffer.clone())]
-        //     } else {
-        //         vec![]
-        //     }
-        // }
-        _ => {
-            // BoxContainer, Layout, GridLayout are layout containers - handled separately
-            vec![]
-        }
+        } // Button, TextInput, and TextEdit are not currently UIElement variants
+          // These match arms are commented out until these types are added to UIElement enum
+          // UIElement::Button(button) => {
+          //     let clicked = render_button_egui(button, ctx, ui, element_states);
+          //     if clicked {
+          //         vec![ElementEvent::ButtonClicked(button.base.id, button.base.name.clone())]
+          //     } else {
+          //         vec![]
+          //     }
+          // }
+          // UIElement::TextInput(text_input) => {
+          //     let text_changed = render_text_input_egui(text_input, ctx, ui, element_states);
+          //     if text_changed {
+          //         let state = element_states.get(&text_input.base.id).unwrap();
+          //         vec![ElementEvent::TextChanged(text_input.base.id, state.text_buffer.clone())]
+          //     } else {
+          //         vec![]
+          //     }
+          // }
+          // UIElement::TextEdit(text_edit) => {
+          //     let text_changed = render_text_edit_egui(text_edit, ctx, ui, element_states);
+          //     if text_changed {
+          //         let state = element_states.get(&text_edit.base.id).unwrap();
+          //         vec![ElementEvent::TextChanged(text_edit.base.id, state.text_buffer.clone())]
+          //     } else {
+          //         vec![]
+          //     }
+          // }
     }
 }
 
@@ -135,20 +111,24 @@ fn render_panel_egui(
     _element_states: &mut HashMap<u64, ElementState>,
 ) {
     let rect = transform_to_rect(&panel.base.global_transform, &panel.base.size);
-    
-    let bg_color = panel.props.background_color
+
+    let bg_color = panel
+        .props
+        .background_color
         .map(color_to_egui)
         .unwrap_or(Color32::TRANSPARENT);
-    let border_color = panel.props.border_color
+    let border_color = panel
+        .props
+        .border_color
         .map(color_to_egui)
         .unwrap_or(Color32::TRANSPARENT);
     let rounding = corner_radius_to_egui(&panel.props.corner_radius);
-    
+
     let frame = Frame::default()
         .fill(bg_color)
         .stroke(Stroke::new(panel.props.border_thickness, border_color))
         .corner_radius(rounding);
-    
+
     frame.show(ui, |ui| {
         ui.set_clip_rect(rect);
         // Panel content will be rendered by children
@@ -156,18 +136,14 @@ fn render_panel_egui(
 }
 
 /// Render Text using egui
-fn render_text_egui(
-    text: &UIText,
-    _ctx: &Context,
-    ui: &mut Ui,
-) {
+fn render_text_egui(text: &UIText, _ctx: &Context, ui: &mut Ui) {
     let font_id = FontId::proportional(text.props.font_size);
     let color = color_to_egui(text.props.color);
-    
+
     ui.label(
         egui::RichText::new(&text.props.content)
             .color(color)
-            .font(font_id)
+            .font(font_id),
     );
 }
 

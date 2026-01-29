@@ -6,14 +6,14 @@ pub mod vertex;
 // pub mod text_renderer;
 // pub mod native_glyph_cache;
 
+pub mod app;
 pub mod renderer_2d;
 pub mod renderer_3d;
 pub mod renderer_prim;
 pub mod renderer_ui;
-pub mod app;
 
+pub use app::App;
 pub use graphics::*;
 pub use renderer_2d::Renderer2D;
 pub use renderer_prim::{PrimitiveRenderer, RenderLayer};
 pub use renderer_ui::RendererUI;
-pub use app::App;

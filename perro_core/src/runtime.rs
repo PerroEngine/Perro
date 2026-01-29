@@ -158,13 +158,13 @@ pub fn get_static_textures()
 #[cfg(feature = "profiling")]
 pub fn convert_flamegraph(folded_path: &Path, svg_path: &Path) {
     println!("📊 Converting flamegraph to SVG...");
-    
+
     // Try to convert using inferno (Rust library) first
     use inferno::flamegraph;
     use std::fs::File;
     use std::io::{BufReader, BufWriter};
     use std::process::Command;
-    
+
     match File::open(folded_path) {
         Ok(folded_file) => {
             let reader = BufReader::new(folded_file);
@@ -193,14 +193,14 @@ pub fn convert_flamegraph(folded_path: &Path, svg_path: &Path) {
             eprintln!("⚠️  Failed to open folded file: {}", e);
         }
     }
-    
+
     // Fallback: Try external flamegraph command
     let output = Command::new("flamegraph")
         .arg(folded_path)
         .arg("--output")
         .arg(svg_path)
         .output();
-    
+
     match output {
         Ok(result) if result.status.success() => {
             println!("✅ Flamegraph saved to {:?}", svg_path);
@@ -209,11 +209,17 @@ pub fn convert_flamegraph(folded_path: &Path, svg_path: &Path) {
         }
         Ok(_) => {
             eprintln!("⚠️  flamegraph command failed. Install with: cargo install flamegraph");
-            eprintln!("   Or manually convert: flamegraph {:?} > {:?}", folded_path, svg_path);
+            eprintln!(
+                "   Or manually convert: flamegraph {:?} > {:?}",
+                folded_path, svg_path
+            );
         }
         Err(_) => {
             eprintln!("⚠️  flamegraph command not found. Install with: cargo install flamegraph");
-            eprintln!("   Or manually convert: flamegraph {:?} > {:?}", folded_path, svg_path);
+            eprintln!(
+                "   Or manually convert: flamegraph {:?} > {:?}",
+                folded_path, svg_path
+            );
         }
     }
 }
@@ -227,31 +233,31 @@ fn log_error(msg: &str) {
     } else {
         "N/A".to_string()
     };
-    
+
     let full_msg = format!("[{}] {}\n", timestamp, msg);
-    
+
     // Try to print to stderr (won't show in release mode with windows_subsystem, but doesn't hurt)
     eprintln!("{}", full_msg.trim());
-    
+
     // Try multiple locations to ensure we can write somewhere
     let mut log_paths = Vec::new();
-    
+
     // 1. Exe directory (most likely location for standalone builds)
     if let Ok(exe_path) = env::current_exe() {
         if let Some(folder) = exe_path.parent() {
             log_paths.push(folder.join("errors.log"));
         }
     }
-    
+
     // 2. Current working directory
     if let Ok(cwd) = env::current_dir() {
         log_paths.push(cwd.join("errors.log"));
     }
-    
+
     // 3. Temp directory (fallback - always accessible)
     let temp_dir = env::temp_dir();
     log_paths.push(temp_dir.join("perro_errors.log"));
-    
+
     // 4. User's home directory (another fallback)
     if let Ok(home) = env::var("HOME") {
         log_paths.push(PathBuf::from(&home).join("perro_errors.log"));
@@ -259,11 +265,11 @@ fn log_error(msg: &str) {
     if let Ok(home) = env::var("USERPROFILE") {
         log_paths.push(PathBuf::from(&home).join("perro_errors.log"));
     }
-    
+
     // Try to write to each location until one succeeds
     let mut written = false;
     let mut successful_path = None;
-    
+
     for log_path in log_paths {
         match std::fs::OpenOptions::new()
             .create(true)
@@ -285,7 +291,7 @@ fn log_error(msg: &str) {
             }
         }
     }
-    
+
     // If we wrote successfully, also try to create a marker file in exe dir with the path
     if written {
         if let (Some(path), Ok(exe_path)) = (successful_path.as_ref(), env::current_exe()) {
@@ -293,7 +299,10 @@ fn log_error(msg: &str) {
                 let marker_path = exe_dir.join("ERROR_LOG_LOCATION.txt");
                 let _ = std::fs::write(
                     &marker_path,
-                    format!("Error log written to:\n{}\n\nCheck this file for error details.", path.display())
+                    format!(
+                        "Error log written to:\n{}\n\nCheck this file for error details.",
+                        path.display()
+                    ),
                 );
             }
         }
@@ -305,17 +314,24 @@ fn log_error(msg: &str) {
 pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // Name the main thread
     crate::thread_utils::set_current_thread_name("Main");
-    
+
     // Set up a comprehensive panic hook to capture all crashes
     std::panic::set_hook(Box::new(|panic_info| {
         let mut error_msg = String::new();
-        error_msg.push_str("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        error_msg.push_str(
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+        );
         error_msg.push_str("❌ PANIC occurred!\n");
-        
+
         if let Some(location) = panic_info.location() {
-            error_msg.push_str(&format!("   Location: {}:{}:{}\n", location.file(), location.line(), location.column()));
+            error_msg.push_str(&format!(
+                "   Location: {}:{}:{}\n",
+                location.file(),
+                location.line(),
+                location.column()
+            ));
         }
-        
+
         if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
             error_msg.push_str(&format!("   Message: {}\n", s));
         } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
@@ -323,7 +339,7 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
         } else {
             error_msg.push_str("   Message: (no message available)\n");
         }
-        
+
         // Try to get backtrace if available
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -338,12 +354,14 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
                 }
             }
         }
-        
-        error_msg.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-        
+
+        error_msg.push_str(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+        );
+
         // Print to stderr (visible in debug mode)
         eprintln!("{}", error_msg);
-        
+
         // Also log to file (critical for release mode with windows_subsystem)
         log_error(&error_msg);
     }));
@@ -366,7 +384,7 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
 
     // 4. Initialize static textures (runtime mode only)
     set_static_textures(data.static_assets.textures);
-    
+
     // 5. Initialize static FUR map (for Include tag resolution in release mode)
     crate::apply_fur::set_static_fur_map(data.static_assets.fur);
 
@@ -412,14 +430,22 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     #[cfg(target_arch = "wasm32")]
     let window = {
         #[allow(deprecated)]
-        let w = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+        let w = std::rc::Rc::new(
+            event_loop
+                .create_window(window_attrs)
+                .expect("create window"),
+        );
         w.set_ime_allowed(true); // Enable IME for text input
         w
     };
     #[cfg(not(target_arch = "wasm32"))]
     let window = {
         #[allow(deprecated)]
-        let w = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+        let w = std::sync::Arc::new(
+            event_loop
+                .create_window(window_attrs)
+                .expect("create window"),
+        );
         w.set_ime_allowed(true); // Enable IME for text input
         w
     };
@@ -438,13 +464,14 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // Wrap project in Rc<RefCell>
     let project_rc = Rc::new(RefCell::new(project));
 
-    let game_scene = match Scene::from_project_with_provider(project_rc.clone(), provider, &mut graphics) {
-        Ok(scene) => scene,
-        Err(e) => {
-            log_error(&format!("Failed to build game scene: {e}"));
-            return;
-        }
-    };
+    let game_scene =
+        match Scene::from_project_with_provider(project_rc.clone(), provider, &mut graphics) {
+            Ok(scene) => scene,
+            Err(e) => {
+                log_error(&format!("Failed to build game scene: {e}"));
+                return;
+            }
+        };
     window.set_visible(true);
 
     // Build App with pre-created Graphics
@@ -456,7 +483,7 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
         project_rc.borrow().fps_cap(),
         graphics,
     );
-    
+
     // Note: ups_divisor runtime parameter will be checked by the root script in init()
     // and applied via api.set_ups_divisor()
 
@@ -469,7 +496,7 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
 #[cfg(not(target_arch = "wasm32"))]
 fn resolve_dev_project_path() -> Result<PathBuf, String> {
     let args: Vec<String> = env::args().collect();
-    
+
     // 1. Determine project root path (disk or exe dir) - need this IMMEDIATELY
     if let Some(i) = args.iter().position(|a| a == "--path") {
         let path_arg = &args[i + 1];
@@ -501,7 +528,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
             } else {
                 "test"
             };
-            
+
             // Helper to find a project folder by name
             let find_project_by_name = |dir: &Path, name: &str| -> Option<PathBuf> {
                 let candidate = dir.join(name);
@@ -522,13 +549,13 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
                 }
                 None
             };
-            
+
             // Search in workspace root and parent directories
             let mut search_dirs = vec![workspace_root.clone()];
             if let Some(parent) = workspace_root.parent() {
                 search_dirs.push(parent.to_path_buf());
             }
-            
+
             // Try to find the project folder
             let mut found_path = None;
             for search_dir in search_dirs {
@@ -537,7 +564,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
                     break;
                 }
             }
-            
+
             if let Some(found) = found_path {
                 use dunce;
                 return Ok(dunce::canonicalize(&found).unwrap_or(found));
@@ -642,7 +669,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
             }
             None
         };
-        
+
         // Search in exe directory, parent, and workspace root
         let mut search_dirs = vec![exe_dir.clone()];
         if let Some(parent) = exe_dir.parent() {
@@ -651,7 +678,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
         if let Some(ws_root) = exe_dir.ancestors().find(|p| p.join("Cargo.toml").exists()) {
             search_dirs.push(ws_root.to_path_buf());
         }
-        
+
         // Try to find the project folder
         let mut found_path = None;
         for search_dir in search_dirs {
@@ -660,7 +687,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
                 break;
             }
         }
-        
+
         if let Some(found) = found_path {
             return Ok(dunce::canonicalize(&found).unwrap_or(found));
         } else {
@@ -698,7 +725,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
         // Search order:
         // 1. Exe directory itself (if it contains project.toml)
         // 2. Sibling folders in exe directory (where exe is located)
-        
+
         // First check if exe directory itself is a project
         if exe_dir.join("project.toml").exists() {
             println!("Found project.toml in exe directory: {:?}", exe_dir);
@@ -715,8 +742,7 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
                 - Sibling folders in exe directory: {:?}\n\
                 \n\
                 Please specify --path <path> or place project.toml in a sibling folder in the same directory as the executable.",
-                exe_dir,
-                exe_dir
+                exe_dir, exe_dir
             );
             return Err(error_msg);
         }
@@ -743,14 +769,16 @@ pub fn run_dev_with_path(project_root: PathBuf) {
 
     // Name the main thread
     crate::thread_utils::set_current_thread_name("Main");
-    
+
     // Try to initialize logger, but don't panic if it's already initialized (e.g., when called from editor)
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).try_init();
-    
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error"))
+        .try_init();
+
     let args: Vec<String> = env::args().collect();
-    
+
     // Check for profiling flag
-    let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
+    let enable_profiling =
+        args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
 
     // Parse runtime arguments (excluding --path which is already handled)
     let mut runtime_params = HashMap::new();
@@ -781,35 +809,37 @@ pub fn run_dev_with_path(project_root: PathBuf) {
     // Initialize profiling if requested (after project_root is determined)
     #[cfg(feature = "profiling")]
     let _profiler_guard = if enable_profiling {
+        use std::process::Command;
         use tracing_flame::FlameLayer;
         use tracing_subscriber::{prelude::*, registry::Registry};
-        use std::process::Command;
-        
+
         // Create paths at project root
         let folded_path = project_root.join("flamegraph.folded");
         let svg_path = project_root.join("flamegraph.svg");
-        
+
         let (flame_layer, guard) = FlameLayer::with_file(&folded_path).unwrap();
-        let subscriber = Registry::default()
-            .with(flame_layer);
+        let subscriber = Registry::default().with(flame_layer);
         tracing::subscriber::set_global_default(subscriber).unwrap();
-        
-        println!("🔥 Profiling enabled! Flamegraph will be written to {:?}", folded_path);
-        
+
+        println!(
+            "🔥 Profiling enabled! Flamegraph will be written to {:?}",
+            folded_path
+        );
+
         // Create a guard that converts to SVG on exit
         struct ProfilerGuard {
             guard: tracing_flame::FlushGuard<std::io::BufWriter<std::fs::File>>,
             folded_path: PathBuf,
             svg_path: PathBuf,
         }
-        
+
         impl ProfilerGuard {
             fn convert(&self) {
                 // Use the module-level conversion function
                 convert_flamegraph(&self.folded_path, &self.svg_path);
             }
         }
-        
+
         impl Drop for ProfilerGuard {
             fn drop(&mut self) {
                 // Also try to convert on drop as a fallback
@@ -818,8 +848,8 @@ pub fn run_dev_with_path(project_root: PathBuf) {
                 self.convert();
             }
         }
-        
-        Some(ProfilerGuard { 
+
+        Some(ProfilerGuard {
             guard,
             folded_path,
             svg_path,
@@ -827,11 +857,13 @@ pub fn run_dev_with_path(project_root: PathBuf) {
     } else {
         None
     };
-    
+
     #[cfg(not(feature = "profiling"))]
     if enable_profiling {
         eprintln!("⚠️  Profiling requested but not enabled!");
-        eprintln!("   Build with: cargo run -p perro_core --features profiling -- --path <path> --profile");
+        eprintln!(
+            "   Build with: cargo run -p perro_core --features profiling -- --path <path> --profile"
+        );
         eprintln!("   Or add to Cargo.toml: [features] default = [\"profiling\"]");
     }
 
@@ -846,8 +878,7 @@ pub fn run_dev_with_path(project_root: PathBuf) {
                 Error: {}\n\
                 \n\
                 Please ensure project.toml exists and is valid.",
-                project_root,
-                e
+                project_root, e
             );
             log_error(&error_msg);
             std::process::exit(1);
@@ -922,14 +953,22 @@ pub fn run_dev_with_path(project_root: PathBuf) {
     #[cfg(target_arch = "wasm32")]
     let window = {
         #[allow(deprecated)]
-        let w = std::rc::Rc::new(event_loop.create_window(window_attrs).expect("create window"));
+        let w = std::rc::Rc::new(
+            event_loop
+                .create_window(window_attrs)
+                .expect("create window"),
+        );
         w.set_ime_allowed(true); // Enable IME for text input
         w
     };
     #[cfg(not(target_arch = "wasm32"))]
     let window = {
         #[allow(deprecated)]
-        let w = std::sync::Arc::new(event_loop.create_window(window_attrs).expect("create window"));
+        let w = std::sync::Arc::new(
+            event_loop
+                .create_window(window_attrs)
+                .expect("create window"),
+        );
         w.set_ime_allowed(true); // Enable IME for text input
         w
     };
@@ -943,21 +982,24 @@ pub fn run_dev_with_path(project_root: PathBuf) {
     );
 
     // 9. Build runtime scene with DllScriptProvider (now with Graphics)
-    let mut game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {
-        Ok(scene) => scene,
-        Err(e) => {
-            let error_msg = format!("Failed to build game scene: {}", e);
-            log_error(&error_msg);
-            eprintln!("❌ Failed to build game scene: {}", e);
-            eprintln!("   This usually means:");
-            eprintln!("   1. The script DLL is missing or corrupted");
-            eprintln!("   2. The DLL was built against a different version of perro_core");
-            eprintln!("   3. There's a function signature mismatch");
-            eprintln!("   4. The main scene is malformed");
-            eprintln!("   Try rebuilding scripts: cargo run -p perro_core -- --path <path> --scripts");
-            std::process::exit(1);
-        }
-    };
+    let mut game_scene =
+        match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {
+            Ok(scene) => scene,
+            Err(e) => {
+                let error_msg = format!("Failed to build game scene: {}", e);
+                log_error(&error_msg);
+                eprintln!("❌ Failed to build game scene: {}", e);
+                eprintln!("   This usually means:");
+                eprintln!("   1. The script DLL is missing or corrupted");
+                eprintln!("   2. The DLL was built against a different version of perro_core");
+                eprintln!("   3. There's a function signature mismatch");
+                eprintln!("   4. The main scene is malformed");
+                eprintln!(
+                    "   Try rebuilding scripts: cargo run -p perro_core -- --path <path> --scripts"
+                );
+                std::process::exit(1);
+            }
+        };
 
     // 10. Render first frame before showing window (prevents black/white flash)
     // This mimics what user_event does when graphics are created asynchronously
@@ -965,7 +1007,7 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         // Do initial update (unified update/render)
         let now = std::time::Instant::now();
         game_scene.update(&mut graphics, now);
-        
+
         // Render the frame (MSAA on: render to msaa_color_view then resolve; off: render to swap chain)
         let (frame, view, mut encoder) = graphics.begin_frame();
         let color_attachment = match &graphics.msaa_color_view {
@@ -988,7 +1030,7 @@ pub fn run_dev_with_path(project_root: PathBuf) {
                 depth_slice: None,
             },
         };
-        
+
         let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
             view: &graphics.depth_view,
             depth_ops: Some(wgpu::Operations {
@@ -997,7 +1039,7 @@ pub fn run_dev_with_path(project_root: PathBuf) {
             }),
             stencil_ops: None,
         };
-        
+
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Initial Frame (Pre-Visible)"),
@@ -1010,7 +1052,7 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         }
         graphics.end_frame(frame, encoder);
     }
-    
+
     // Now make window visible with content already rendered (no flash!)
     window.set_visible(true);
 
@@ -1023,18 +1065,21 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         project_rc.borrow().fps_cap(),
         graphics,
     );
-    
+
     // Check for ups_divisor runtime parameter - the root script will apply it in init()
     // This is cleaner than trying to access the command sender here
     if let Some(ups_divisor_str) = project_rc.borrow().get_runtime_param("ups_divisor") {
         if let Ok(divisor) = ups_divisor_str.parse::<u32>() {
-            eprintln!("[runtime] UPS divisor runtime param set to {} - root script will apply it", divisor);
+            eprintln!(
+                "[runtime] UPS divisor runtime param set to {} - root script will apply it",
+                divisor
+            );
         }
     }
 
     let _ = event_loop.run_app(&mut app);
     println!("Event loop exited.");
-    
+
     // Explicitly convert flamegraph after event loop exits
     // Drop the guard first to flush the file, then convert
     #[cfg(feature = "profiling")]

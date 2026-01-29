@@ -86,11 +86,7 @@ impl NodeArena {
             return None;
         }
         let idx = id.index() as usize;
-        if idx == 0 {
-            None
-        } else {
-            Some(idx - 1)
-        }
+        if idx == 0 { None } else { Some(idx - 1) }
     }
 
     /// Valid only when slot (from id.index()) and generation (arena vs id) both match.
@@ -145,13 +141,16 @@ impl NodeArena {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
         let generations = &self.generations[..];
-        self.slots.iter_mut().enumerate().filter_map(move |(idx, slot)| {
-            slot.as_mut().map(|node| {
-                let generation = generations.get(idx).copied().unwrap_or(0);
-                let id = NodeID::from_parts((idx + 1) as u32, generation);
-                (id, node)
+        self.slots
+            .iter_mut()
+            .enumerate()
+            .filter_map(move |(idx, slot)| {
+                slot.as_mut().map(|node| {
+                    let generation = generations.get(idx).copied().unwrap_or(0);
+                    let id = NodeID::from_parts((idx + 1) as u32, generation);
+                    (id, node)
+                })
             })
-        })
     }
 
     pub fn keys(&self) -> impl Iterator<Item = NodeID> + '_ {

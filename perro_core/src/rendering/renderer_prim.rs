@@ -1,10 +1,10 @@
+use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::{
     ops::Range,
     time::{Duration, Instant},
 };
-use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
 use wgpu::{
     BindGroupLayout, BlendState, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites,
     Device, FragmentState, PipelineLayoutDescriptor, Queue, RenderPass, RenderPipeline,
@@ -236,7 +236,7 @@ impl PrimitiveRenderer {
             last_rebuild_time: Instant::now(),
             dirty_count: 0,
             max_rebuild_interval: Duration::from_millis(16), // ~60 FPS max
-            dirty_threshold: 100,                            // Rebuild when 100+ elements are dirty (reduced rebuild frequency)
+            dirty_threshold: 100, // Rebuild when 100+ elements are dirty (reduced rebuild frequency)
 
             instances_need_rebuild: false,
             structure_changed: false,
@@ -252,7 +252,7 @@ impl PrimitiveRenderer {
             virtual_height,
         }
     }
-    
+
     /// OPTIMIZED: Update camera info for viewport culling (only for World2D layer)
     pub fn update_camera_2d(&mut self, position: Vector2, rotation: f32, zoom: f32) {
         self.camera_position = position;
@@ -260,26 +260,26 @@ impl PrimitiveRenderer {
         self.camera_zoom = zoom;
         self.viewport_enabled = true;
     }
-    
+
     /// OPTIMIZED: Check if a sprite AABB is fully outside the viewport
     fn is_sprite_offscreen(&self, transform: &Transform2D, size: &Vector2) -> bool {
         if !self.viewport_enabled {
             return false; // No culling if camera not set
         }
-        
+
         // Calculate viewport bounds in world space (axis-aligned, ignoring camera rotation for simplicity)
         let viewport_half_width = (self.virtual_width / self.camera_zoom) * 0.5;
         let viewport_half_height = (self.virtual_height / self.camera_zoom) * 0.5;
-        
+
         let viewport_min_x = self.camera_position.x - viewport_half_width;
         let viewport_max_x = self.camera_position.x + viewport_half_width;
         let viewport_min_y = self.camera_position.y - viewport_half_height;
         let viewport_max_y = self.camera_position.y + viewport_half_height;
-        
+
         // Calculate sprite AABB in world space
         // For rotated sprites, compute the axis-aligned bounding box of the rotated rectangle
         let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
-        
+
         // Calculate the four corners of the sprite in local space (centered at origin)
         let half_w = scaled_size.x * 0.5;
         let half_h = scaled_size.y * 0.5;
@@ -289,7 +289,7 @@ impl PrimitiveRenderer {
             Vector2::new(half_w, half_h),
             Vector2::new(-half_w, half_h),
         ];
-        
+
         // Rotate and translate corners to world space (Transform2D.rotation is in degrees)
         let r = transform.rotation.to_radians();
         let cos_r = r.cos();
@@ -298,7 +298,7 @@ impl PrimitiveRenderer {
         let mut max_x = f32::NEG_INFINITY;
         let mut min_y = f32::INFINITY;
         let mut max_y = f32::NEG_INFINITY;
-        
+
         for corner in &corners_local {
             // Rotate
             let rotated = Vector2::new(
@@ -307,20 +307,20 @@ impl PrimitiveRenderer {
             );
             // Translate
             let world = rotated + transform.position;
-            
+
             min_x = min_x.min(world.x);
             max_x = max_x.max(world.x);
             min_y = min_y.min(world.y);
             max_y = max_y.max(world.y);
         }
-        
+
         // Check if sprite AABB is fully outside viewport
-        max_x < viewport_min_x 
+        max_x < viewport_min_x
             || min_x > viewport_max_x
             || max_y < viewport_min_y
             || min_y > viewport_max_y
     }
-    
+
     /// Extract Transform2D from TextureInstance matrix
     #[allow(dead_code)]
     fn texture_instance_to_transform(instance: &TextureInstance) -> Transform2D {
@@ -330,25 +330,25 @@ impl PrimitiveRenderer {
             glam::Vec3::from(instance.transform_1),
             glam::Vec3::from(instance.transform_2),
         );
-    
+
         // Translation
         let position = Vector2::new(m.z_axis.x, m.z_axis.y);
-    
+
         // Scale (length of basis vectors)
         let scale_x = m.x_axis.truncate().length();
         let scale_y = m.y_axis.truncate().length();
         let scale = Vector2::new(scale_x, scale_y);
-    
+
         // Rotation (from normalized x axis, atan2 returns radians; Transform2D stores degrees)
         let rotation_rad = (m.x_axis.y / scale_x).atan2(m.x_axis.x / scale_x);
-    
+
         Transform2D {
             position,
             scale,
             rotation: rotation_rad.to_degrees(),
         }
     }
-    
+
     /// Calculate axis-aligned bounding box (AABB) for an object with given transform and size
     #[allow(dead_code)]
     fn calculate_aabb(transform: &Transform2D, size: &Vector2) -> (f32, f32, f32, f32) {
@@ -356,24 +356,24 @@ impl PrimitiveRenderer {
         let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
         let half_w = scaled_size.x * 0.5;
         let half_h = scaled_size.y * 0.5;
-        
+
         // For simplicity, use axis-aligned bounding box (ignoring rotation for now)
         // This is a conservative approximation - if rotation is significant, the AABB will be larger
         let min_x = transform.position.x - half_w;
         let max_x = transform.position.x + half_w;
         let min_y = transform.position.y - half_h;
         let max_y = transform.position.y + half_h;
-        
+
         (min_x, min_y, max_x, max_y)
     }
-    
+
     /// Check if AABB a completely contains AABB b
     #[allow(dead_code)]
     fn aabb_contains(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
         // a contains b if a's bounds completely enclose b's bounds
         a.0 <= b.0 && a.1 <= b.1 && a.2 >= b.2 && a.3 >= b.3
     }
-    
+
     /// Check if a visual object is occluded by any texture instances with higher z_index
     /// Returns (is_occluded, occluder_info) where occluder_info is for debug printing
     #[allow(dead_code)]
@@ -385,7 +385,7 @@ impl PrimitiveRenderer {
         visual_type: &str,
     ) -> (bool, Option<String>) {
         let visual_aabb = Self::calculate_aabb(visual_transform, visual_size);
-        
+
         // Check against all texture instances with higher z_index
         for slot in &self.texture_instance_slots {
             if let Some((layer, texture_instance, texture_id, _texture_size, _timestamp)) = slot {
@@ -403,7 +403,7 @@ impl PrimitiveRenderer {
                 }
             }
         }
-        
+
         (false, None)
     }
 
@@ -437,11 +437,14 @@ impl PrimitiveRenderer {
             }
             return; // Don't queue invalid sizes
         }
-        
+
         // VALIDATION: Check for invalid transform values
-        if !transform.position.x.is_finite() || !transform.position.y.is_finite() ||
-           !transform.scale.x.is_finite() || !transform.scale.y.is_finite() ||
-           !transform.rotation.is_finite() {
+        if !transform.position.x.is_finite()
+            || !transform.position.y.is_finite()
+            || !transform.scale.x.is_finite()
+            || !transform.scale.y.is_finite()
+            || !transform.rotation.is_finite()
+        {
             // Remove from slots if it exists (element has invalid transform)
             if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
                 if let Some(_existing) = &mut self.rect_instance_slots[slot] {
@@ -456,7 +459,7 @@ impl PrimitiveRenderer {
             }
             return; // Don't queue invalid transforms
         }
-        
+
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&transform, &size) {
             // Remove from slots if it exists (sprite moved offscreen)
@@ -474,7 +477,7 @@ impl PrimitiveRenderer {
             }
             return; // Don't queue offscreen sprites
         }
-        
+
         // DISABLED: Occlusion culling - O(n²) performance bottleneck
         // The GPU can handle overdraw efficiently, and modern GPUs are fast at fragment shading
         // if layer == RenderLayer::World2D {
@@ -494,7 +497,7 @@ impl PrimitiveRenderer {
         //         return; // Don't queue occluded shapes
         //     }
         // }
-        
+
         let new_instance = self.create_rect_instance(
             transform,
             size,
@@ -512,7 +515,8 @@ impl PrimitiveRenderer {
             // Update existing slot if changed
             if let Some(ref mut existing) = self.rect_instance_slots[slot] {
                 if existing.0 != layer || existing.1 != new_instance {
-                    let order_changed = existing.0 != layer || existing.1.z_index != new_instance.z_index;
+                    let order_changed =
+                        existing.0 != layer || existing.1.z_index != new_instance.z_index;
                     if order_changed {
                         self.structure_changed = true;
                     }
@@ -532,7 +536,10 @@ impl PrimitiveRenderer {
             } else {
                 // Check if we're about to exceed MAX_INSTANCES
                 if self.rect_instance_slots.len() >= MAX_INSTANCES {
-                    eprintln!("⚠️ WARNING: Rect instance buffer full ({} instances). Skipping panel with UUID {}", MAX_INSTANCES, uuid);
+                    eprintln!(
+                        "⚠️ WARNING: Rect instance buffer full ({} instances). Skipping panel with UUID {}",
+                        MAX_INSTANCES, uuid
+                    );
                     return; // Don't queue if buffer is full
                 }
                 let new_slot = self.rect_instance_slots.len();
@@ -595,11 +602,12 @@ impl PrimitiveRenderer {
             ),
             rotation: transform.rotation,
         };
-        
+
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D).
         // We clear the draw slot so we don't render this frame, but we do NOT unregister the
         // texture user: the node still "owns" the texture and may come back on screen.
-        if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size) {
+        if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size)
+        {
             if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
                 if self.texture_instance_slots[slot].is_some() {
                     self.texture_instance_slots[slot] = None;
@@ -613,7 +621,7 @@ impl PrimitiveRenderer {
             }
             return;
         }
-        
+
         // DISABLED: Occlusion culling - O(n²) performance bottleneck (9M comparisons for 3000 sprites)
         // The GPU can handle overdraw efficiently, and modern GPUs are fast at fragment shading
         // If occlusion culling is needed in the future, implement spatial indexing (quadtree/spatial hash)
@@ -642,14 +650,17 @@ impl PrimitiveRenderer {
                     let test_instance = self.create_texture_instance(
                         Transform2D {
                             position: transform.position,
-                            scale: Vector2::new(transform.scale.x * tex_size.x, transform.scale.y * tex_size.y),
+                            scale: Vector2::new(
+                                transform.scale.x * tex_size.x,
+                                transform.scale.y * tex_size.y,
+                            ),
                             rotation: transform.rotation,
                         },
                         pivot,
                         z_index,
                         created_timestamp,
                     );
-                    
+
                     // Compare instance data directly (much faster than matrix reconstruction)
                     if existing.1.transform_0 == test_instance.transform_0
                         && existing.1.transform_1 == test_instance.transform_1
@@ -664,12 +675,12 @@ impl PrimitiveRenderer {
             }
         }
 
-        let new_instance = self.create_texture_instance(adjusted_transform, pivot, z_index, created_timestamp);
+        let new_instance =
+            self.create_texture_instance(adjusted_transform, pivot, z_index, created_timestamp);
 
         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
             if let Some(ref mut existing) = self.texture_instance_slots[slot] {
-                let instance_changed =
-                    existing.1.transform_0 != new_instance.transform_0
+                let instance_changed = existing.1.transform_0 != new_instance.transform_0
                     || existing.1.transform_1 != new_instance.transform_1
                     || existing.1.transform_2 != new_instance.transform_2
                     || existing.1.pivot != new_instance.pivot
@@ -704,7 +715,8 @@ impl PrimitiveRenderer {
                 self.texture_instance_slots.push(None);
                 new_slot
             };
-            self.texture_instance_slots[slot] = Some((layer, new_instance, texture_id, tex_size, created_timestamp));
+            self.texture_instance_slots[slot] =
+                Some((layer, new_instance, texture_id, tex_size, created_timestamp));
             self.texture_uuid_to_slot.insert(uuid, slot);
             self.mark_texture_slot_dirty(slot);
             self.dirty_count += 1;
@@ -747,7 +759,7 @@ impl PrimitiveRenderer {
     ) {
         // Text rendering now handled by egui
     }
-    
+
     pub fn queue_text_aligned_with_font(
         &mut self,
         _uuid: u64,
@@ -828,7 +840,7 @@ impl PrimitiveRenderer {
         // Collect ranges first to avoid borrow conflicts, then write back
         let ranges: SmallVec<[Range<usize>; 8]> = self.rect_dirty_ranges.iter().cloned().collect();
         let mut consolidated = SmallVec::<[Range<usize>; 8]>::new();
-        
+
         if let Some(mut current) = ranges.first().cloned() {
             for range in ranges.iter().skip(1) {
                 if range.start <= current.end {
@@ -840,7 +852,7 @@ impl PrimitiveRenderer {
             }
             consolidated.push(current);
         }
-        
+
         // Write back consolidated ranges
         self.rect_dirty_ranges.clear();
         self.rect_dirty_ranges.extend(consolidated);
@@ -854,9 +866,10 @@ impl PrimitiveRenderer {
         self.texture_dirty_ranges.sort_by_key(|r| r.start);
         // Consolidate in-place to avoid allocations
         // Collect ranges first to avoid borrow conflicts, then write back
-        let ranges: SmallVec<[Range<usize>; 8]> = self.texture_dirty_ranges.iter().cloned().collect();
+        let ranges: SmallVec<[Range<usize>; 8]> =
+            self.texture_dirty_ranges.iter().cloned().collect();
         let mut consolidated = SmallVec::<[Range<usize>; 8]>::new();
-        
+
         if let Some(mut current) = ranges.first().cloned() {
             for range in ranges.iter().skip(1) {
                 if range.start <= current.end {
@@ -868,14 +881,19 @@ impl PrimitiveRenderer {
             }
             consolidated.push(current);
         }
-        
+
         // Write back consolidated ranges
         self.texture_dirty_ranges.clear();
         self.texture_dirty_ranges.extend(consolidated);
     }
 
     #[allow(dead_code)]
-    pub fn initialize_font_atlas(&mut self, _device: &Device, _queue: &Queue, _font_atlas: crate::font::FontAtlas) {
+    pub fn initialize_font_atlas(
+        &mut self,
+        _device: &Device,
+        _queue: &Queue,
+        _font_atlas: crate::font::FontAtlas,
+    ) {
         // DEPRECATED: This method is kept for compatibility but does nothing
         // Native text rendering uses glyph_atlas instead, initialized on-demand
     }
@@ -936,11 +954,19 @@ impl PrimitiveRenderer {
             if can_partial {
                 let mut updated_count = 0usize;
                 if rect_dirty && rect_mapping_ok {
-                    updated_count += self.rect_dirty_ranges.iter().map(|r| r.len()).sum::<usize>();
+                    updated_count += self
+                        .rect_dirty_ranges
+                        .iter()
+                        .map(|r| r.len())
+                        .sum::<usize>();
                     self.partial_update_rects_to_gpu(queue);
                 }
                 if texture_dirty && texture_mapping_ok {
-                    updated_count += self.texture_dirty_ranges.iter().map(|r| r.len()).sum::<usize>();
+                    updated_count += self
+                        .texture_dirty_ranges
+                        .iter()
+                        .map(|r| r.len())
+                        .sum::<usize>();
                     self.partial_update_textures_to_gpu(queue);
                 }
                 self.instances_need_rebuild = false;
@@ -1059,7 +1085,7 @@ impl PrimitiveRenderer {
             transform_0: [mat[0], mat[1], mat[2]],
             transform_1: [mat[3], mat[4], mat[5]],
             transform_2: [mat[6], mat[7], mat[8]],
-        
+
             color: color_lin,
             size: [scaled_size_x, scaled_size_y],
             pivot: [pivot.x, pivot.y],
@@ -1084,7 +1110,7 @@ impl PrimitiveRenderer {
             transform_0: [mat[0], mat[1], mat[2]],
             transform_1: [mat[3], mat[4], mat[5]],
             transform_2: [mat[6], mat[7], mat[8]],
-        
+
             pivot: [pivot.x, pivot.y],
             z_index,
             _pad: 0.0,
@@ -1116,7 +1142,8 @@ impl PrimitiveRenderer {
             ui_with_ts.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index).then_with(|| a.2.cmp(&b.2)));
         }
 
-        self.rect_slot_to_buffer.resize(self.rect_instance_slots.len(), None);
+        self.rect_slot_to_buffer
+            .resize(self.rect_instance_slots.len(), None);
         for (slot_idx, inst, _) in &world_with_ts {
             let idx = self.world_rect_instances.len();
             self.world_rect_instances.push(*inst);
@@ -1176,7 +1203,8 @@ impl PrimitiveRenderer {
             }
         }
 
-        self.texture_slot_to_flat_index.resize(self.texture_instance_slots.len(), None);
+        self.texture_slot_to_flat_index
+            .resize(self.texture_instance_slots.len(), None);
 
         if world_single_texture && ui_single_texture {
             if !world_with_slot.is_empty() {
@@ -1190,10 +1218,12 @@ impl PrimitiveRenderer {
                         self.texture_slot_to_flat_index[*slot_idx] = Some(flat_i);
                     }
                     self.world_texture_groups.push((tid, world_instances));
-                    self.world_texture_group_offsets.push((0, self.world_texture_groups[0].1.len()));
+                    self.world_texture_group_offsets
+                        .push((0, self.world_texture_groups[0].1.len()));
                     const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
                     let size_bytes = self.world_texture_groups[0].1.len() * INSTANCE_SIZE;
-                    self.world_texture_buffer_ranges.push(0..(size_bytes as u64));
+                    self.world_texture_buffer_ranges
+                        .push(0..(size_bytes as u64));
                 }
             }
 
@@ -1213,11 +1243,13 @@ impl PrimitiveRenderer {
                         self.texture_slot_to_flat_index[*slot_idx] = Some(world_offset + flat_i);
                     }
                     self.ui_texture_groups.push((tid, ui_instances));
-                    self.ui_texture_group_offsets.push((world_offset, self.ui_texture_groups[0].1.len()));
+                    self.ui_texture_group_offsets
+                        .push((world_offset, self.ui_texture_groups[0].1.len()));
                     const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
                     let start_byte = world_offset * INSTANCE_SIZE;
                     let size_bytes = self.ui_texture_groups[0].1.len() * INSTANCE_SIZE;
-                    self.ui_texture_buffer_ranges.push((start_byte as u64)..((start_byte + size_bytes) as u64));
+                    self.ui_texture_buffer_ranges
+                        .push((start_byte as u64)..((start_byte + size_bytes) as u64));
                 }
             }
         } else {
@@ -1375,7 +1407,8 @@ impl PrimitiveRenderer {
         }
         // Write UI instances after world instances
         if !self.ui_rect_instances.is_empty() {
-            let ui_byte_offset = (self.world_rect_instances.len() * std::mem::size_of::<RectInstance>()) as u64;
+            let ui_byte_offset =
+                (self.world_rect_instances.len() * std::mem::size_of::<RectInstance>()) as u64;
             queue.write_buffer(
                 &self.rect_instance_buffer,
                 ui_byte_offset,
@@ -1396,8 +1429,11 @@ impl PrimitiveRenderer {
             // Clamp to MAX_INSTANCES to prevent buffer overflow
             let instances_to_write = self.temp_all_texture_instances.len().min(MAX_INSTANCES);
             if instances_to_write < self.temp_all_texture_instances.len() {
-                eprintln!("Warning: {} texture instances queued, but buffer only supports {}. Truncating.", 
-                    self.temp_all_texture_instances.len(), MAX_INSTANCES);
+                eprintln!(
+                    "Warning: {} texture instances queued, but buffer only supports {}. Truncating.",
+                    self.temp_all_texture_instances.len(),
+                    MAX_INSTANCES
+                );
             }
             queue.write_buffer(
                 &self.texture_instance_buffer,
@@ -1462,7 +1498,10 @@ impl PrimitiveRenderer {
             rpass.set_bind_group(0, camera_bind_group, &[]);
             rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
             rpass.set_vertex_buffer(1, self.rect_instance_buffer.slice(..));
-            rpass.draw(0..6, instance_offset..(instance_offset + instances.len() as u32));
+            rpass.draw(
+                0..6,
+                instance_offset..(instance_offset + instances.len() as u32),
+            );
         }
     }
 
@@ -1549,26 +1588,66 @@ impl PrimitiveRenderer {
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
                             // Mat3
-                            VertexAttribute { offset: 0,  shader_location: 2, format: VertexFormat::Float32x3 },
-                            VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32x3 },
-                            VertexAttribute { offset: 24, shader_location: 4, format: VertexFormat::Float32x3 },
-                    
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: 12,
+                                shader_location: 3,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: 24,
+                                shader_location: 4,
+                                format: VertexFormat::Float32x3,
+                            },
                             // color
-                            VertexAttribute { offset: 36, shader_location: 5, format: VertexFormat::Float32x4 },
-                    
+                            VertexAttribute {
+                                offset: 36,
+                                shader_location: 5,
+                                format: VertexFormat::Float32x4,
+                            },
                             // size, pivot
-                            VertexAttribute { offset: 52, shader_location: 6, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 60, shader_location: 7, format: VertexFormat::Float32x2 },
-                    
+                            VertexAttribute {
+                                offset: 52,
+                                shader_location: 6,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 60,
+                                shader_location: 7,
+                                format: VertexFormat::Float32x2,
+                            },
                             // corner radii
-                            VertexAttribute { offset: 68, shader_location: 8, format: VertexFormat::Float32x4 },
-                            VertexAttribute { offset: 84, shader_location: 9, format: VertexFormat::Float32x4 },
-                    
-                            VertexAttribute { offset: 100, shader_location: 10, format: VertexFormat::Float32 },
-                            VertexAttribute { offset: 104, shader_location: 11, format: VertexFormat::Uint32 },
-                            VertexAttribute { offset: 108, shader_location: 12, format: VertexFormat::Sint32 },
+                            VertexAttribute {
+                                offset: 68,
+                                shader_location: 8,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 84,
+                                shader_location: 9,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                offset: 100,
+                                shader_location: 10,
+                                format: VertexFormat::Float32,
+                            },
+                            VertexAttribute {
+                                offset: 104,
+                                shader_location: 11,
+                                format: VertexFormat::Uint32,
+                            },
+                            VertexAttribute {
+                                offset: 108,
+                                shader_location: 12,
+                                format: VertexFormat::Sint32,
+                            },
                         ],
-                    }
+                    },
                 ],
                 compilation_options: Default::default(),
             },
@@ -1647,14 +1726,33 @@ impl PrimitiveRenderer {
                         array_stride: std::mem::size_of::<TextureInstance>() as _,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
-                            VertexAttribute { offset: 0,  shader_location: 2, format: VertexFormat::Float32x3 },
-                            VertexAttribute { offset: 12, shader_location: 3, format: VertexFormat::Float32x3 },
-                            VertexAttribute { offset: 24, shader_location: 4, format: VertexFormat::Float32x3 },
-                    
-                            VertexAttribute { offset: 36, shader_location: 5, format: VertexFormat::Float32x2 },
-                            VertexAttribute { offset: 44, shader_location: 6, format: VertexFormat::Sint32 },
+                            VertexAttribute {
+                                offset: 0,
+                                shader_location: 2,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: 12,
+                                shader_location: 3,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: 24,
+                                shader_location: 4,
+                                format: VertexFormat::Float32x3,
+                            },
+                            VertexAttribute {
+                                offset: 36,
+                                shader_location: 5,
+                                format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                offset: 44,
+                                shader_location: 6,
+                                format: VertexFormat::Sint32,
+                            },
                         ],
-                    }
+                    },
                 ],
                 compilation_options: Default::default(),
             },

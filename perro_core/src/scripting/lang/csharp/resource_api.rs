@@ -60,7 +60,15 @@ impl CSharpTexture {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Load", "Preload", "Remove", "CreateFromBytes", "GetWidth", "GetHeight", "GetSize"]
+        vec![
+            "Load",
+            "Preload",
+            "Remove",
+            "CreateFromBytes",
+            "GetWidth",
+            "GetHeight",
+            "GetSize",
+        ]
     }
 }
 
@@ -68,7 +76,7 @@ impl CSharpTexture {
 pub struct CSharpArray;
 impl CSharpArray {
     pub const NAME: &'static str = "Array";
-    
+
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "Push" | "Add" => Some(ResourceModule::ArrayOp(ArrayResource::Push)),
@@ -82,7 +90,10 @@ impl CSharpArray {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Push", "Add", "Insert", "Remove", "RemoveAt", "Pop", "Length", "Count", "New", "Create"]
+        vec![
+            "Push", "Add", "Insert", "Remove", "RemoveAt", "Pop", "Length", "Count", "New",
+            "Create",
+        ]
     }
 }
 
@@ -105,7 +116,21 @@ impl CSharpMap {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Add", "Insert", "Set", "Remove", "Delete", "Get", "TryGetValue", "ContainsKey", "Contains", "Count", "Clear", "New", "Create"]
+        vec![
+            "Add",
+            "Insert",
+            "Set",
+            "Remove",
+            "Delete",
+            "Get",
+            "TryGetValue",
+            "ContainsKey",
+            "Contains",
+            "Count",
+            "Clear",
+            "New",
+            "Create",
+        ]
     }
 }
 

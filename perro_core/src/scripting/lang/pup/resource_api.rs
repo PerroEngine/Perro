@@ -19,7 +19,7 @@ impl PupResourceAPI {
             _ => None,
         }
     }
-    
+
     /// Get all available resource API names
     pub fn get_all_resource_names() -> Vec<&'static str> {
         vec![
@@ -30,12 +30,12 @@ impl PupResourceAPI {
             PupShape2D::NAME,
         ]
     }
-    
+
     /// Check if a name is a valid resource API name
     pub fn is_resource_name(name: &str) -> bool {
         Self::get_all_resource_names().contains(&name)
     }
-    
+
     /// Get all method names for a given resource name
     pub fn get_method_names_for_resource(resource_name: &str) -> Vec<&'static str> {
         match resource_name {
@@ -88,7 +88,15 @@ impl PupTexture {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["load", "preload", "remove", "create_from_bytes", "get_width", "get_height", "get_size"]
+        vec![
+            "load",
+            "preload",
+            "remove",
+            "create_from_bytes",
+            "get_width",
+            "get_height",
+            "get_size",
+        ]
     }
 }
 
@@ -96,7 +104,7 @@ impl PupTexture {
 pub struct PupArray;
 impl PupArray {
     pub const NAME: &'static str = "Array";
-    
+
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "push" | "append" => Some(ResourceModule::ArrayOp(ArrayResource::Push)),
@@ -110,7 +118,9 @@ impl PupArray {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["push", "append", "insert", "remove", "pop", "len", "size", "new"]
+        vec![
+            "push", "append", "insert", "remove", "pop", "len", "size", "new",
+        ]
     }
 }
 
@@ -133,7 +143,17 @@ impl PupMap {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["insert", "remove", "get", "contains", "contains_key", "len", "size", "clear", "new"]
+        vec![
+            "insert",
+            "remove",
+            "get",
+            "contains",
+            "contains_key",
+            "len",
+            "size",
+            "clear",
+            "new",
+        ]
     }
 }
 

@@ -151,6 +151,12 @@ impl TypeScriptMath {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["random", "randomRange", "random_range", "randomInt", "random_int"]
+        vec![
+            "random",
+            "randomRange",
+            "random_range",
+            "randomInt",
+            "random_int",
+        ]
     }
 }

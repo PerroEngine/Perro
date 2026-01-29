@@ -1,10 +1,10 @@
+use crate::ids::NodeID;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{any::Any, collections::HashMap};
-use crate::ids::NodeID;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Enum for specifying whether a node needs internal fixed updates
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +44,6 @@ impl Renderable {
         matches!(self, Renderable::True)
     }
 }
-
 
 /// Trait for inner node types that need internal fixed updates (e.g., Area2D for physics)
 /// Nodes implement this trait to opt into internal fixed updates.
@@ -113,7 +112,7 @@ pub trait BaseNode: Any + Debug + Send {
 
     fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>>;
     fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>);
-    
+
     /// Check if this node is renderable (actually rendered to screen)
     /// Only renderable nodes should be added to needs_rerender
     fn is_renderable(&self) -> bool;
@@ -190,7 +189,7 @@ pub trait NodeTypeDispatch: 'static {
     /// Extract a reference to this type from a SceneNode if it matches
     /// Returns None if the SceneNode is not of this type
     fn extract_ref(node: &SceneNode) -> Option<&Self>;
-    
+
     /// Extract a mutable reference to this type from a SceneNode if it matches
     /// Returns None if the SceneNode is not of this type
     fn extract_mut(node: &mut SceneNode) -> Option<&mut Self>;
@@ -308,7 +307,7 @@ macro_rules! impl_scene_node {
                 // Same pattern as get_id() and get_name() - they access directly, not through base
                 self.created_timestamp
             }
-            
+
             fn is_renderable(&self) -> bool {
                 $is_renderable.as_bool()
             }
@@ -320,7 +319,7 @@ macro_rules! impl_scene_node {
                 crate::nodes::node_registry::SceneNode::$variant(self)
             }
         }
-        
+
         impl crate::nodes::node_registry::ToSceneNode for $ty {
             fn to_scene_node(self) -> crate::nodes::node_registry::SceneNode {
                 crate::nodes::node_registry::SceneNode::$variant(self)
@@ -378,13 +377,13 @@ macro_rules! define_nodes {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(rename_all = "PascalCase")]
         pub enum NodeType { $( $variant, )+ }
-        
+
         impl Default for NodeType {
             fn default() -> Self {
                 NodeType::Node
             }
         }
-        
+
         impl std::fmt::Display for NodeType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match self {
@@ -392,10 +391,10 @@ macro_rules! define_nodes {
                 }
             }
         }
-        
+
         impl std::str::FromStr for NodeType {
             type Err = String;
-            
+
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
                     $( stringify!($variant) => Ok(NodeType::$variant), )+
@@ -403,7 +402,7 @@ macro_rules! define_nodes {
                 }
             }
         }
-        
+
         impl NodeType {
             /// Get the string representation as a static slice
             pub fn type_name(&self) -> &'static str {
@@ -411,7 +410,7 @@ macro_rules! define_nodes {
                     $( NodeType::$variant => stringify!($variant), )+
                 }
             }
-            
+
             /// Check if this node type is renderable (actually rendered to screen)
             pub fn is_renderable(&self) -> bool {
                 match self {
@@ -572,7 +571,7 @@ macro_rules! define_nodes {
                     $( SceneNode::$variant(n) => n.get_created_timestamp(), )+
                 }
             }
-            
+
             fn is_renderable(&self) -> bool {
                 match self {
                     $( SceneNode::$variant(_) => $is_renderable.as_bool(), )+
@@ -617,7 +616,7 @@ macro_rules! define_nodes {
             /// Optimized typed access using compile-time match dispatch instead of Any downcast
             /// This uses a match statement on the enum variant, which the compiler can optimize to a jump table
             /// Returns Some(result) if the node matches type T, None otherwise
-            /// 
+            ///
             /// This is faster than `Any::downcast_ref` because:
             /// 1. The match on enum variant can be optimized to a jump table
             /// 2. We only check the specific variant that matches, not all possible types
@@ -633,7 +632,7 @@ macro_rules! define_nodes {
             /// Optimized typed mutable access using compile-time match dispatch instead of Any downcast
             /// This uses a match statement on the enum variant, which the compiler can optimize to a jump table
             /// Returns Some(result) if the node matches type T, None otherwise
-            /// 
+            ///
             /// This is faster than `Any::downcast_mut` because:
             /// 1. The match on enum variant can be optimized to a jump table
             /// 2. We only check the specific variant that matches, not all possible types
@@ -679,4 +678,3 @@ define_nodes!(
     OmniLight3D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_3d::light_omni_3d::OmniLight3D,
     SpotLight3D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_3d::light_spot_3d::SpotLight3D,
 );
-

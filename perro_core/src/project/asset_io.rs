@@ -109,11 +109,15 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
             if path.starts_with("res://") {
                 // res:// paths require project root - can't resolve without it
                 // Return a path that will fail gracefully when accessed
-                eprintln!("⚠️ Warning: resolve_path called with res:// path '{}' before project root is set. This will likely fail.", path);
+                eprintln!(
+                    "⚠️ Warning: resolve_path called with res:// path '{}' before project root is set. This will likely fail.",
+                    path
+                );
                 // Try to find project root by looking for project.toml in current dir or parents
                 let mut search_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                 let mut found_root = None;
-                for _ in 0..10 {  // Search up to 10 levels up
+                for _ in 0..10 {
+                    // Search up to 10 levels up
                     if search_dir.join("project.toml").exists() {
                         found_root = Some(search_dir);
                         break;
@@ -124,7 +128,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
                         break;
                     }
                 }
-                
+
                 if let Some(root) = found_root {
                     let stripped = path.strip_prefix("res://").unwrap();
                     let mut pb = root;

@@ -1,6 +1,6 @@
+use crate::structs2d::Vector2;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::structs2d::Vector2;
 
 fn default_position() -> Vector2 {
     Vector2::ZERO
@@ -45,7 +45,11 @@ pub struct Transform2D {
 
 impl fmt::Display for Transform2D {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Transform2D(position:{}, rotation:{}, scale:{})", self.position, self.rotation, self.scale)
+        write!(
+            f,
+            "Transform2D(position:{}, rotation:{}, scale:{})",
+            self.position, self.rotation, self.scale
+        )
     }
 }
 
@@ -92,7 +96,7 @@ impl Transform2D {
             glam::Vec3::new(self.position.x, self.position.y, 0.0),
         )
     }
-    
+
     /// Returns a `glam::Mat3` for 2D operations (more efficient than Mat4)
     /// Format: translation in 3rd column, rotation/scale in 2x2 top-left
     /// This is what we use for 2D transform calculations
@@ -103,18 +107,18 @@ impl Transform2D {
         // [scale.x * cos(rot), scale.x * sin(rot), 0]
         // [-scale.y * sin(rot), scale.y * cos(rot), 0]
         // [position.x, position.y, 1]
-        
+
         let r = self.rotation.to_radians();
         let cos = r.cos();
         let sin = r.sin();
-        
+
         glam::Mat3::from_cols(
             glam::Vec3::new(self.scale.x * cos, self.scale.x * sin, 0.0),
             glam::Vec3::new(-self.scale.y * sin, self.scale.y * cos, 0.0),
             glam::Vec3::new(self.position.x, self.position.y, 1.0),
         )
     }
-    
+
     /// Create Transform2D from a Mat3 (inverse of to_mat3)
     /// OPTIMIZED: Uses SIMD-optimized length() and avoids redundant calculations
     #[inline]
@@ -123,20 +127,20 @@ impl Transform2D {
         // Matrix format: [sx*cos, sx*sin, 0]
         //                [-sy*sin, sy*cos, 0]
         //                [tx, ty, 1]
-        
+
         let m00 = mat.x_axis.x;
         let m01 = mat.x_axis.y;
         let m10 = mat.y_axis.x;
         let m11 = mat.y_axis.y;
         let tx = mat.z_axis.x;
         let ty = mat.z_axis.y;
-        
+
         // OPTIMIZED: Extract scale using faster method
         // For scale, we need sqrt(m00^2 + m01^2) and sqrt(m10^2 + m11^2)
         // Use glam's built-in length() which is SIMD-optimized
         let scale_x = glam::Vec2::new(m00, m01).length();
         let scale_y = glam::Vec2::new(m10, m11).length();
-        
+
         // OPTIMIZED: Extract rotation - use atan2 only when scale is significant
         // For very small scales, rotation is undefined, so use 0
         let rotation = if scale_x > 0.0001 {
@@ -150,14 +154,14 @@ impl Transform2D {
         } else {
             0.0
         };
-        
+
         Self {
             position: Vector2::new(tx, ty),
             scale: Vector2::new(scale_x, scale_y),
             rotation: rotation.to_degrees(),
         }
     }
-    
+
     /// Multiply (combine) transforms using efficient matrix math
     /// Returns parent * child (child is relative to parent)
     /// This is the core operation for transform hierarchy
@@ -167,24 +171,24 @@ impl Transform2D {
         if self.is_default() {
             return *child;
         }
-        
+
         // OPTIMIZED: Fast path for identity child
         if child.is_default() {
             return *self;
         }
-        
+
         // Convert both to matrices
         let parent_mat = self.to_mat3();
         let child_mat = child.to_mat3();
-        
+
         // Multiply matrices (order matters: parent * child)
         // glam uses SIMD when available (SSE2/NEON)
         let result_mat = parent_mat * child_mat;
-        
+
         // Convert back to transform
         Self::from_mat3(result_mat)
     }
-    
+
     /// Apply this transform to a point (useful for collision detection)
     #[inline]
     pub fn transform_point(&self, point: Vector2) -> Vector2 {
@@ -193,7 +197,7 @@ impl Transform2D {
         let result = mat * p;
         Vector2::new(result.x, result.y)
     }
-    
+
     /// Apply only rotation and scale (no translation)
     /// Useful for transforming directions/velocities
     #[inline]
@@ -206,7 +210,7 @@ impl Transform2D {
             vec.x * self.scale.x * sin + vec.y * self.scale.y * cos,
         )
     }
-    
+
     /// Get the inverse transform (for world-to-local conversions)
     #[inline]
     pub fn inverse(&self) -> Transform2D {
@@ -223,7 +227,7 @@ impl Transform2D {
 impl Transform2D {
     /// Calculate global transform from parent and local (OPTIMIZED)
     /// This is what should be used in Scene::get_global_transform()
-    /// 
+    ///
     /// PERFORMANCE: Single SIMD matrix multiply vs 5+ scalar operations
     /// Expected speedup: 3-5x for deep hierarchies
     #[inline]
@@ -232,7 +236,7 @@ impl Transform2D {
         if parent_global.is_default() {
             return *local;
         }
-        
+
         // Single matrix multiply - MUCH faster than component-wise
         // glam uses SIMD when available (SSE2/NEON)
         // Correctly handles:
@@ -241,10 +245,10 @@ impl Transform2D {
         // - Rotation composition
         parent_global.multiply(local)
     }
-    
+
     /// Batch calculate global transforms for multiple children (SIMD-friendly)
     /// This is useful in precalculate_transforms_in_dependency_order
-    /// 
+    ///
     /// PERFORMANCE: Reuses parent matrix conversion, ~20% faster than
     /// calling calculate_global() in a loop
     pub fn batch_calculate_global(
@@ -255,29 +259,29 @@ impl Transform2D {
         if parent_global.is_default() {
             return local_transforms.to_vec();
         }
-        
+
         // Convert parent once (amortize cost across all children)
         let parent_mat = parent_global.to_mat3();
-        
+
         // OPTIMIZED: Pre-allocate with exact capacity to avoid reallocations
         let mut results = Vec::with_capacity(local_transforms.len());
-        
+
         // OPTIMIZED: Process in chunks for better cache locality
         // Convert all local transforms to matrices first (batch the conversions)
         let local_mats: Vec<_> = local_transforms
             .iter()
             .map(|local| local.to_mat3())
             .collect();
-        
+
         // Then multiply all at once (better SIMD utilization)
         for local_mat in local_mats {
             let result_mat = parent_mat * local_mat;
             results.push(Self::from_mat3(result_mat));
         }
-        
+
         results
     }
-    
+
     /// Calculate global transform with early-out for identity parent
     /// Micro-optimization for root-level nodes
     #[inline]
@@ -286,7 +290,7 @@ impl Transform2D {
         if parent_global.is_default() {
             return *local;
         }
-        
+
         // Otherwise do full matrix multiply
         parent_global.multiply(local)
     }
@@ -306,14 +310,14 @@ impl Transform2D {
             rotation: self.rotation + (other.rotation - self.rotation) * t,
         }
     }
-    
+
     /// Get the forward direction vector (after rotation)
     #[inline]
     pub fn forward(&self) -> Vector2 {
         let r = self.rotation.to_radians();
         Vector2::new(r.cos(), r.sin())
     }
-    
+
     /// Get the right direction vector (after rotation)
     #[inline]
     pub fn right(&self) -> Vector2 {

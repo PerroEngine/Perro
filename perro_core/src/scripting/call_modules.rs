@@ -4,8 +4,7 @@
 // ----------------------------------------------------------------
 
 use crate::{
-    api_modules::ApiModule,
-    resource_modules::ResourceModule,
+    api_modules::ApiModule, resource_modules::ResourceModule,
     structs::engine_registry::NodeMethodRef,
 };
 
@@ -33,7 +32,9 @@ impl CallModule {
     ) -> String {
         match self {
             CallModule::Module(api) => api.to_rust(args, script, needs_self, current_func),
-            CallModule::Resource(resource) => resource.to_rust(args, script, needs_self, current_func),
+            CallModule::Resource(resource) => {
+                resource.to_rust(args, script, needs_self, current_func)
+            }
             CallModule::NodeMethod(method_ref) => {
                 use crate::api_bindings::generate_rust_args;
                 use crate::structs::engine_bindings::EngineMethodCodegen;
@@ -45,7 +46,13 @@ impl CallModule {
                     current_func,
                     expected_arg_types.as_ref(),
                 );
-                method_ref.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+                method_ref.to_rust_prepared(
+                    args,
+                    &rust_args_strings,
+                    script,
+                    needs_self,
+                    current_func,
+                )
             }
         }
     }
@@ -65,7 +72,7 @@ impl CallModule {
             CallModule::NodeMethod(method_ref) => method_ref.param_types(),
         }
     }
-    
+
     /// Get script-side parameter names (what PUP users see)
     pub fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {

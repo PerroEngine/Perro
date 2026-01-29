@@ -77,12 +77,12 @@ impl StaticTextureData {
         // OPTIMIZED: Use aligned bytes per row for better GPU performance
         let bytes_per_row = calculate_bytes_per_row(self.width);
         let actual_bytes_per_row = 4 * self.width;
-        
+
         // If alignment is needed, copy data to aligned buffer
         if bytes_per_row != actual_bytes_per_row {
             let total_size = (bytes_per_row * self.height) as usize;
             let mut aligned_data = vec![0u8; total_size];
-            
+
             // Copy rows with proper alignment
             for row in 0..self.height {
                 let src_offset = (row * actual_bytes_per_row) as usize;
@@ -91,7 +91,7 @@ impl StaticTextureData {
                 aligned_data[dst_offset..dst_offset + actual_bytes_per_row as usize]
                     .copy_from_slice(&self.rgba8_bytes[src_offset..src_end]);
             }
-            
+
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,
@@ -211,12 +211,12 @@ impl ImageTexture {
         // OPTIMIZED: Use aligned bytes per row for better GPU performance
         let bytes_per_row = calculate_bytes_per_row(width);
         let actual_bytes_per_row = 4 * width;
-        
+
         // If alignment is needed, copy data to aligned buffer
         if bytes_per_row != actual_bytes_per_row {
             let total_size = (bytes_per_row * height) as usize;
             let mut aligned_data = vec![0u8; total_size];
-            
+
             // Copy rows with proper alignment
             for row in 0..height {
                 let src_offset = (row * actual_bytes_per_row) as usize;
@@ -227,7 +227,7 @@ impl ImageTexture {
                         .copy_from_slice(&rgba_bytes[src_offset..src_end]);
                 }
             }
-            
+
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,

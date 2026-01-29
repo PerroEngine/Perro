@@ -1,18 +1,18 @@
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::*;
+use tower_lsp::{Client, LanguageServer};
 
-use crate::types::{DocumentCache, ParsedDocument};
-use crate::diagnostics::{diagnose_pup, diagnose_fur};
 use crate::completion::get_completions;
+use crate::diagnostics::{diagnose_fur, diagnose_pup};
 use crate::hover::get_hover;
+use crate::types::{DocumentCache, ParsedDocument};
 
-use perro_core::scripting::lang::pup::parser::PupParser;
 use perro_core::nodes::ui::parser::FurParser;
 use perro_core::scripting::ast::Script;
+use perro_core::scripting::lang::pup::parser::PupParser;
 use std::collections::HashMap;
 
 pub struct PerroLspServer {
@@ -249,7 +249,7 @@ impl LanguageServer for PerroLspServer {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri.to_string();
-        
+
         // Get the full text from changes
         let documents = &mut *self.documents.write().await;
         let previous_doc = documents.get(&uri).cloned();
@@ -269,7 +269,7 @@ impl LanguageServer for PerroLspServer {
                     // Convert LSP range to byte offsets
                     let start_offset = lsp_range_to_offset(&text, &range.start);
                     let end_offset = lsp_range_to_offset(&text, &range.end);
-                    
+
                     if start_offset <= text.len() && end_offset <= text.len() {
                         text.replace_range(start_offset..end_offset, &change_text);
                     }
@@ -311,14 +311,16 @@ impl LanguageServer for PerroLspServer {
             // Wrap completion in catch_unwind to prevent panics from crashing the server
             let doc_clone = doc.clone();
             let items = tokio::task::spawn_blocking(move || {
-                std::panic::catch_unwind(|| {
-                    get_completions(&doc_clone, position)
-                }).unwrap_or_else(|_| {
-                    // If completion panics, return empty list instead of crashing
-                    Vec::new()
-                })
-            }).await.unwrap_or_else(|_| Vec::new());
-            
+                std::panic::catch_unwind(|| get_completions(&doc_clone, position)).unwrap_or_else(
+                    |_| {
+                        // If completion panics, return empty list instead of crashing
+                        Vec::new()
+                    },
+                )
+            })
+            .await
+            .unwrap_or_else(|_| Vec::new());
+
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -326,7 +328,11 @@ impl LanguageServer for PerroLspServer {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let uri = params.text_document_position_params.text_document.uri.to_string();
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_string();
         let position = params.text_document_position_params.position;
 
         let documents = self.documents.read().await;
@@ -341,7 +347,7 @@ impl LanguageServer for PerroLspServer {
 fn lsp_range_to_offset(text: &str, position: &Position) -> usize {
     let mut offset = 0;
     let lines: Vec<&str> = text.lines().collect();
-    
+
     for (line_num, line) in lines.iter().enumerate() {
         if line_num == position.line as usize {
             // Add the character offset on this line
@@ -349,7 +355,7 @@ fn lsp_range_to_offset(text: &str, position: &Position) -> usize {
             let line_bytes = line.as_bytes();
             let mut byte_offset = 0;
             let mut chars = 0;
-            
+
             for (i, _) in line.char_indices() {
                 if chars >= char_offset {
                     byte_offset = i;
@@ -357,15 +363,15 @@ fn lsp_range_to_offset(text: &str, position: &Position) -> usize {
                 }
                 chars += 1;
             }
-            
+
             if chars < char_offset {
                 byte_offset = line_bytes.len();
             }
-            
+
             return offset + byte_offset;
         }
         offset += line.len() + 1; // +1 for newline
     }
-    
+
     offset
 }

@@ -1,29 +1,12 @@
 use std::collections::HashMap;
 
-use crate::api_modules::*;
-use crate::call_modules::CallModule;
 use crate::ast::*;
+use crate::call_modules::CallModule;
 use crate::lang::pup::api::{PupAPI, normalize_type_name};
-use crate::lang::pup::resource_api::PupResourceAPI;
-use crate::lang::pup::node_api::{PupNodeApiRegistry, PUP_NODE_API};
 use crate::lang::pup::enums::resolve_enum_access;
 use crate::lang::pup::lexer::{PupLexer, PupToken};
-
-/// Convert PascalCase to snake_case (e.g., "Sprite2D" -> "sprite2d", "NodeType" -> "node_type")
-fn pascal_to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    
-    while let Some(ch) = chars.next() {
-        if ch.is_uppercase() && !result.is_empty() {
-            // Add underscore before uppercase (except at start)
-            result.push('_');
-        }
-        result.push(ch.to_ascii_lowercase());
-    }
-    
-    result
-}
+use crate::lang::pup::node_api::PUP_NODE_API;
+use crate::lang::pup::resource_api::PupResourceAPI;
 
 pub struct PupParser {
     lexer: PupLexer,
@@ -62,7 +45,7 @@ impl PupParser {
             error_tolerant: false,
         }
     }
-    
+
     pub fn set_source_file(&mut self, file: String) {
         self.source_file = Some(file);
     }
@@ -71,19 +54,19 @@ impl PupParser {
     pub fn set_error_tolerant(&mut self, tolerant: bool) {
         self.error_tolerant = tolerant;
     }
-    
+
     fn current_source_span(&self) -> Option<crate::scripting::source_span::SourceSpan> {
-        self.source_file.as_ref().map(|file| {
-            crate::scripting::source_span::SourceSpan {
+        self.source_file
+            .as_ref()
+            .map(|file| crate::scripting::source_span::SourceSpan {
                 file: file.clone(),
                 line: self.lexer.current_line(),
                 column: self.lexer.current_column(),
                 length: 1,
                 language: "pup".to_string(),
-            }
-        })
+            })
     }
-    
+
     fn typed_expr(&self, expr: Expr) -> TypedExpr {
         TypedExpr {
             expr,
@@ -183,10 +166,10 @@ impl PupParser {
                         return Err("Expected identifier after 'on'".into());
                     };
                     self.next_token();
-                    
+
                     // Check if this is a lifecycle method (init, update, fixed_update)
                     let is_lifecycle = name == "init" || name == "update" || name == "fixed_update";
-                    
+
                     if is_lifecycle {
                         // Parse as lifecycle method - not callable, but still a trait method
                         let mut func = self.parse_function_with_name(name.clone())?;
@@ -237,21 +220,24 @@ impl PupParser {
                     let connect_stmt = self.create_signal_connect_stmt(signal_name.clone());
                     init_body.push(connect_stmt);
                 }
-                functions.insert(0, Function {
-                    name: "init".to_string(),
-                    params: Vec::new(),
-                    locals: Vec::new(),
-                    body: init_body,
-                    is_trait_method: true,
-                    uses_self: false,
-                    cloned_child_nodes: Vec::new(),
-                    return_type: Type::Void,
-                    span: None,
-                    attributes: Vec::new(),
-                    is_on_signal: false,
-                    signal_name: None,
-                    is_lifecycle_method: false, // Auto-generated init is not from "on init()" syntax
-                });
+                functions.insert(
+                    0,
+                    Function {
+                        name: "init".to_string(),
+                        params: Vec::new(),
+                        locals: Vec::new(),
+                        body: init_body,
+                        is_trait_method: true,
+                        uses_self: false,
+                        cloned_child_nodes: Vec::new(),
+                        return_type: Type::Void,
+                        span: None,
+                        attributes: Vec::new(),
+                        is_on_signal: false,
+                        signal_name: None,
+                        is_lifecycle_method: false, // Auto-generated init is not from "on init()" syntax
+                    },
+                );
             }
         }
 
@@ -402,21 +388,24 @@ impl PupParser {
                     let connect_stmt = self.create_signal_connect_stmt(signal_name.clone());
                     init_body.push(connect_stmt);
                 }
-                functions.insert(0, Function {
-                    name: "init".to_string(),
-                    params: Vec::new(),
-                    locals: Vec::new(),
-                    body: init_body,
-                    is_trait_method: true,
-                    uses_self: false,
-                    cloned_child_nodes: Vec::new(),
-                    return_type: Type::Void,
-                    span: None,
-                    attributes: Vec::new(),
-                    is_on_signal: false,
-                    signal_name: None,
-                    is_lifecycle_method: false,
-                });
+                functions.insert(
+                    0,
+                    Function {
+                        name: "init".to_string(),
+                        params: Vec::new(),
+                        locals: Vec::new(),
+                        body: init_body,
+                        is_trait_method: true,
+                        uses_self: false,
+                        cloned_child_nodes: Vec::new(),
+                        return_type: Type::Void,
+                        span: None,
+                        attributes: Vec::new(),
+                        is_on_signal: false,
+                        signal_name: None,
+                        is_lifecycle_method: false,
+                    },
+                );
             }
         }
 
@@ -508,7 +497,10 @@ impl PupParser {
                     module_vars.push(var);
                 }
                 PupToken::Var => {
-                    return Err("Modules only allow top-level constants (const), not variables (var).".into());
+                    return Err(
+                        "Modules only allow top-level constants (const), not variables (var)."
+                            .into(),
+                    );
                 }
                 PupToken::Fn => {
                     let mut func = self.parse_function()?;
@@ -518,7 +510,10 @@ impl PupParser {
                     functions.push(func);
                 }
                 other => {
-                    return Err(format!("Unexpected top-level token in module: {:?}. Modules only support functions, variables (constants), and structs.", other));
+                    return Err(format!(
+                        "Unexpected top-level token in module: {:?}. Modules only support functions, variables (constants), and structs.",
+                        other
+                    ));
                 }
             }
         }
@@ -690,7 +685,11 @@ impl PupParser {
         self.parse_function_with_name_and_attributes(name, Vec::new())
     }
 
-    fn parse_function_with_name_and_attributes(&mut self, name: String, attributes: Vec<String>) -> Result<Function, String> {
+    fn parse_function_with_name_and_attributes(
+        &mut self,
+        name: String,
+        attributes: Vec<String>,
+    ) -> Result<Function, String> {
         self.expect(PupToken::LParen)?;
         let mut params = Vec::new();
         if self.current_token != PupToken::RParen {
@@ -716,7 +715,7 @@ impl PupParser {
         }
 
         let body = self.parse_block()?;
-        
+
         // Remove function parameters from type environment after parsing body
         // (they're scoped to this function only)
         for param in &params {
@@ -746,7 +745,7 @@ impl PupParser {
         use crate::scripting::ast::{Expr, Literal};
         // Create: Signal.connect("SIGNALNAME", function_name)
         // The function name is the same as the signal name, and it's on self
-        use crate::resource_modules::{SignalResource, ResourceModule};
+        use crate::resource_modules::{ResourceModule, SignalResource};
         Stmt::Expr(self.typed_expr(Expr::ApiCall(
             CallModule::Resource(ResourceModule::Signal(SignalResource::Connect)),
             vec![
@@ -892,15 +891,16 @@ impl PupParser {
         Ok(Stmt::Expr(TypedExpr {
             expr: lhs,
             inferred_type: None,
-            span: self.source_file.as_ref().map(|file| {
-                crate::scripting::source_span::SourceSpan {
+            span: self
+                .source_file
+                .as_ref()
+                .map(|file| crate::scripting::source_span::SourceSpan {
                     file: file.clone(),
                     line: expr_start_line,
                     column: expr_start_column,
                     length: 1,
                     language: "pup".to_string(),
-                }
-            }),
+                }),
         }))
     }
 
@@ -939,9 +939,12 @@ impl PupParser {
 
     fn parse_return_statement(&mut self) -> Result<Stmt, String> {
         self.expect(PupToken::Return)?;
-        
+
         // Check if there's an expression after return
-        if self.current_token == PupToken::Semicolon || self.current_token == PupToken::RBrace || self.current_token == PupToken::Eof {
+        if self.current_token == PupToken::Semicolon
+            || self.current_token == PupToken::RBrace
+            || self.current_token == PupToken::Eof
+        {
             // return; (no expression)
             Ok(Stmt::Return(None))
         } else {
@@ -1051,7 +1054,7 @@ impl PupParser {
                     None => Stmt::Assign(name, typed_rhs),
                     Some(op) => Stmt::AssignOp(name, op, typed_rhs),
                 })
-            },
+            }
             Expr::MemberAccess(obj, field) => {
                 // Handle both single-level and nested MemberAccess (e.g., s.transform.position.y)
                 let typed_lhs = self.typed_expr(Expr::MemberAccess(obj, field));
@@ -1060,16 +1063,28 @@ impl PupParser {
                     Some(op) => Stmt::MemberAssignOp(typed_lhs, op, typed_rhs),
                 })
             }
-            Expr::ApiCall(CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetVar), args) => {
+            Expr::ApiCall(
+                CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetVar),
+                args,
+            ) => {
                 if args.len() == 2 {
                     let node = args[0].clone();
                     let field = args[1].clone();
                     // Extract node variable name and field name for ScriptAssign/ScriptAssignOp
-                    if let (Expr::Ident(node_var), Expr::Literal(Literal::String(field_name))) = (&args[0], &args[1]) {
+                    if let (Expr::Ident(node_var), Expr::Literal(Literal::String(field_name))) =
+                        (&args[0], &args[1])
+                    {
                         // Use ScriptAssign/ScriptAssignOp for proper codegen
                         Ok(match op {
-                            None => Stmt::ScriptAssign(node_var.clone(), field_name.clone(), typed_rhs),
-                            Some(op) => Stmt::ScriptAssignOp(node_var.clone(), field_name.clone(), op, typed_rhs),
+                            None => {
+                                Stmt::ScriptAssign(node_var.clone(), field_name.clone(), typed_rhs)
+                            }
+                            Some(op) => Stmt::ScriptAssignOp(
+                                node_var.clone(),
+                                field_name.clone(),
+                                op,
+                                typed_rhs,
+                            ),
                         })
                     } else {
                         // Fallback to SetVar API call for complex expressions
@@ -1120,7 +1135,7 @@ impl PupParser {
             self.expect(PupToken::Var)?;
             false
         };
-        
+
         let name = if let PupToken::Ident(n) = &self.current_token {
             n.clone()
         } else {
@@ -1167,16 +1182,22 @@ impl PupParser {
                         if crate::scripting::codegen::is_node_type(type_name) {
                             // Convert node type name to Type::Node
                             use crate::structs::engine_registry::ENGINE_REGISTRY;
-                            if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
-                                format!("{:?}", nt) == *type_name
-                            }) {
+                            if let Some(node_type) = ENGINE_REGISTRY
+                                .node_defs
+                                .keys()
+                                .find(|nt| format!("{:?}", nt) == *type_name)
+                            {
                                 Some(Type::Node(node_type.clone()))
                             } else {
                                 None
                             }
-                        } else if crate::structs::engine_structs::EngineStruct::is_engine_struct(type_name) {
+                        } else if crate::structs::engine_structs::EngineStruct::is_engine_struct(
+                            type_name,
+                        ) {
                             // Engine struct
-                            if let Some(engine_struct) = crate::structs::engine_structs::EngineStruct::from_string(type_name) {
+                            if let Some(engine_struct) =
+                                crate::structs::engine_structs::EngineStruct::from_string(type_name)
+                            {
                                 Some(Type::EngineStruct(engine_struct))
                             } else {
                                 None
@@ -1404,7 +1425,9 @@ impl PupParser {
 
                         // Check if it's an engine struct - if so, use StructNew
                         // Engine structs like Vector2, Color, etc. have constructors
-                        if crate::structs::engine_structs::EngineStruct::is_engine_struct(&type_name) {
+                        if crate::structs::engine_structs::EngineStruct::is_engine_struct(
+                            &type_name,
+                        ) {
                             // Convert positional args to field pairs (we'll handle this in codegen)
                             // For now, just store them as empty field names - codegen will handle ::new()
                             let pairs: Vec<(String, Expr)> = args
@@ -1561,7 +1584,7 @@ impl PupParser {
                     // This means the Dot handler converted it too early - treat as function call
                     return Ok(Expr::Call(Box::new(left), args));
                 }
-                
+
                 if let Expr::MemberAccess(obj, method) = &left {
                     // Handle nested member access like Input.Keyboard.is_key_pressed
                     // Check if obj is itself a MemberAccess (e.g., Input.Keyboard)
@@ -1570,13 +1593,13 @@ impl PupParser {
                         if let Expr::Ident(mod_name) = &**inner_obj {
                             // Check if this is an API module - try to resolve it
                             if let Some(api) = PupAPI::resolve(mod_name, method) {
-                                // For Input.Keyboard.method or Input.Mouse.method, 
+                                // For Input.Keyboard.method or Input.Mouse.method,
                                 // resolve it as Input.method (the API binding handles Keyboard/Mouse prefix)
                                 return Ok(Expr::ApiCall(CallModule::Module(api), args));
                             }
                         }
                     }
-                    
+
                     // Check if obj is a node instance (self or node variable)
                     let is_node_instance = match &**obj {
                         Expr::SelfAccess => true,
@@ -1590,7 +1613,7 @@ impl PupParser {
                         }
                         _ => false,
                     };
-                    
+
                     // Resolve by receiver type first: if variable has a resource type (Texture, Signal, etc.),
                     // try that resource API so tex.remove() -> Texture.remove(tex), not remove_node.
                     if let Expr::Ident(var_name) = &**obj {
@@ -1602,21 +1625,27 @@ impl PupParser {
                                     call_args.extend(args);
                                     return Ok(Expr::ApiCall(CallModule::Module(api), call_args));
                                 }
-                                if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method) {
+                                if let Some(resource) =
+                                    PupResourceAPI::resolve(&norm_type_name, method)
+                                {
                                     let mut call_args = vec![*obj.clone()];
                                     call_args.extend(args);
-                                    return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
+                                    return Ok(Expr::ApiCall(
+                                        CallModule::Resource(resource),
+                                        call_args,
+                                    ));
                                 }
                             }
                         }
                     }
-                    
+
                     // GetVar/SetVar are special node methods — always resolve to ApiCall(GetVar/SetVar)
                     // when the receiver is a node (including DynNode), so codegen uses get_script_var/set_script_var
                     // instead of read_node(..., |n| n.get_var)(...).
                     if is_node_instance && (method == "get_var" || method == "set_var") {
                         if method == "get_var" && args.len() == 1 {
-                            if let Some(method_def) = PUP_NODE_API.get_methods(&crate::node_registry::NodeType::Node)
+                            if let Some(method_def) = PUP_NODE_API
+                                .get_methods(&crate::node_registry::NodeType::Node)
                                 .iter()
                                 .find(|m| m.script_name == "get_var")
                             {
@@ -1629,7 +1658,8 @@ impl PupParser {
                             }
                         }
                         if method == "set_var" && args.len() == 2 {
-                            if let Some(method_def) = PUP_NODE_API.get_methods(&crate::node_registry::NodeType::Node)
+                            if let Some(method_def) = PUP_NODE_API
+                                .get_methods(&crate::node_registry::NodeType::Node)
                                 .iter()
                                 .find(|m| m.script_name == "set_var")
                             {
@@ -1656,24 +1686,24 @@ impl PupParser {
                         }
                         _ => None,
                     };
-                    
+
                     if is_node_instance {
                         if let Some(nt) = node_type_to_check {
                             // Check if method exists in node API registry (including inherited methods)
-                            if let Some(method_def) = PUP_NODE_API.get_methods(&nt)
+                            if let Some(method_def) = PUP_NODE_API
+                                .get_methods(&nt)
                                 .iter()
                                 .find(|m| m.script_name == method)
                             {
-                                // It's a node method - use NodeMethodRef from the method definition
-                                use crate::structs::engine_registry::NodeMethodRef;
-                                
+                                // It's a node method - use rust_method from the method definition
                                 // Handle self.get_node("name") - special case
-                                if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node" {
+                                if matches!(obj.as_ref(), Expr::SelfAccess) && method == "get_node"
+                                {
                                     let mut args_full = vec![Expr::SelfAccess];
                                     args_full.extend(args);
                                     return Ok(Expr::ApiCall(
                                         CallModule::NodeMethod(method_def.rust_method),
-                                        args_full
+                                        args_full,
                                     ));
                                 }
                                 // For other node methods, add obj as first arg
@@ -1681,12 +1711,12 @@ impl PupParser {
                                 args_full.extend(args);
                                 return Ok(Expr::ApiCall(
                                     CallModule::NodeMethod(method_def.rust_method),
-                                    args_full
+                                    args_full,
                                 ));
                             }
                         }
                     }
-                    
+
                     // Check PupAPI::resolve for module APIs (Time, JSON, etc.)
                     if let Expr::Ident(mod_name) = &**obj {
                         if let Some(api) = PupAPI::resolve(mod_name, method) {
@@ -1697,7 +1727,7 @@ impl PupParser {
                             return Ok(Expr::ApiCall(CallModule::Resource(resource), args));
                         }
                     }
-                    
+
                     // Check if obj is a variable that might be a resource type
                     if let Expr::Ident(var_name) = &**obj {
                         if let Some(var_type) = self.type_env.get(var_name) {
@@ -1710,10 +1740,15 @@ impl PupParser {
                                     return Ok(Expr::ApiCall(CallModule::Module(api), call_args));
                                 }
                                 // Try resource APIs
-                                if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method) {
+                                if let Some(resource) =
+                                    PupResourceAPI::resolve(&norm_type_name, method)
+                                {
                                     let mut call_args = vec![*obj.clone()];
                                     call_args.extend(args);
-                                    return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
+                                    return Ok(Expr::ApiCall(
+                                        CallModule::Resource(resource),
+                                        call_args,
+                                    ));
                                 }
                             }
                         }
@@ -1743,7 +1778,7 @@ impl PupParser {
                 if should_advance {
                     self.next_token();
                 }
-                
+
                 // Check if this is enum access (e.g., NODE_TYPE.Sprite2D)
                 // Enum names must be SCREAMING_SNAKE_CASE (all caps with underscores)
                 if let Expr::Ident(enum_type_name) = &left {
@@ -1751,17 +1786,17 @@ impl PupParser {
                         return Ok(Expr::EnumAccess(enum_variant));
                     }
                 }
-                
+
                 // Check if this is API module field access (e.g., Shape2D.rectangle -> Shape2D.rectangle())
                 // NOTE: We should NOT eagerly convert to ApiCall here, because if there's a following '(',
                 // the LParen handler needs to see the MemberAccess to properly convert it with arguments.
                 // Only convert if we're sure there's no following call (but we can't peek ahead easily).
                 // Instead, let the LParen handler do the conversion - it will check for API modules.
                 // This fixes the issue where Console.info(125) was being parsed as api.print_info("")(125f32)
-                // 
+                //
                 // If we really need field-like access without parentheses, we could add a check here,
                 // but for now, let's keep it as MemberAccess and let the call handler convert it.
-                // 
+                //
                 // if let Expr::Ident(mod_name) = &left {
                 //     let method_name = pascal_to_snake_case(&field_name);
                 //     if let Some(api) = PupAPI::resolve(mod_name, &method_name) {
@@ -1770,12 +1805,12 @@ impl PupParser {
                 //         // So we'll let the LParen handler do it
                 //     }
                 // }
-                
+
                 Ok(Expr::MemberAccess(Box::new(left), field_name))
             }
             PupToken::DoubleColon => {
                 self.next_token();
-                
+
                 // Check for dynamic access syntax: ::[expr] or ::(expr)
                 let var_name_expr = if self.current_token == PupToken::LBracket {
                     // Dynamic access with brackets: VARNAME::[expr]
@@ -1797,7 +1832,7 @@ impl PupParser {
                 } else {
                     return Err("Expected identifier, '[', or '(' after '::'".into());
                 };
-                
+
                 // Check if this is a method call (followed by '(') or variable access
                 if self.current_token == PupToken::LParen {
                     // Method call: VARNAME::method_name(params) or VARNAME::[expr](params)
@@ -1983,9 +2018,11 @@ impl PupParser {
                 } else {
                     // Check engine registry for node types
                     use crate::structs::engine_registry::ENGINE_REGISTRY;
-                    if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
-                        format!("{:?}", nt) == t
-                    }) {
+                    if let Some(node_type) = ENGINE_REGISTRY
+                        .node_defs
+                        .keys()
+                        .find(|nt| format!("{:?}", nt) == t)
+                    {
                         Type::Node(node_type.clone())
                     } else {
                         Type::Custom(t)

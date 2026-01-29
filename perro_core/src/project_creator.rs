@@ -133,7 +133,9 @@ pub fn create_new_project(
             "\x1b[33m       cargo run -p perro_core -- --path {} --dev\x1b[0m",
             project_path.display()
         );
-        println!("\x1b[90m       (This is equivalent to: --scripts + cargo run -p perro_dev)\x1b[0m");
+        println!(
+            "\x1b[90m       (This is equivalent to: --scripts + cargo run -p perro_dev)\x1b[0m"
+        );
         println!("\x1b[36m     • Just run project (no compilation, scripts must be built):\x1b[0m");
         println!(
             "\x1b[33m       cargo run -p perro_core -- --path {} --run\x1b[0m",
@@ -166,7 +168,7 @@ fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
 
     // The Cargo.toml is in .perro/project/, so we need to calculate relative to that
     let project_cargo_dir = project_path.join(".perro/project");
-    
+
     // Ensure the directory exists before canonicalizing
     if !project_cargo_dir.exists() {
         return Err(format!(
@@ -174,9 +176,14 @@ fn calculate_perro_core_path(project_path: &Path) -> Result<String, String> {
             project_cargo_dir.display()
         ));
     }
-    
-    let project_cargo_abs = dunce::canonicalize(&project_cargo_dir)
-        .map_err(|e| format!("Failed to canonicalize .perro/project path: {} (path: {})", e, project_cargo_dir.display()))?;
+
+    let project_cargo_abs = dunce::canonicalize(&project_cargo_dir).map_err(|e| {
+        format!(
+            "Failed to canonicalize .perro/project path: {} (path: {})",
+            e,
+            project_cargo_dir.display()
+        )
+    })?;
 
     let mut current = project_path.to_path_buf();
     if let Ok(canon) = dunce::canonicalize(&current) {

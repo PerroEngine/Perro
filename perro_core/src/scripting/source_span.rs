@@ -52,7 +52,7 @@ impl SourceSpan {
 
         let start_line = self.line.min(other.line);
         let end_line = self.line.max(other.line);
-        
+
         let start_col = if self.line < other.line {
             self.column
         } else if other.line < self.line {
@@ -120,7 +120,7 @@ pub fn range_to_span(
 ) -> SourceSpan {
     let start_span = position_to_span(source, start_byte, file.clone(), language.clone());
     let end_span = position_to_span(source, end_byte, file, language.clone());
-    
+
     // Calculate length
     let length = if start_span.line == end_span.line {
         end_span.column - start_span.column
@@ -137,4 +137,3 @@ pub fn range_to_span(
         language,
     }
 }
-

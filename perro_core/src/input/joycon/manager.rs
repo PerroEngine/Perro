@@ -532,7 +532,7 @@ impl ControllerManager {
             println!("[Joy-Con 2] Waiting 500ms before starting scan...");
             tokio::time::sleep(Duration::from_millis(500)).await;
             println!("[Joy-Con 2] Wait complete, starting scan now...");
-            
+
             println!("[Joy-Con 2] Starting BLE scan (this will take ~5 seconds)...");
             println!("[Joy-Con 2] Make sure your Joy-Con 2 is in pairing mode (hold sync button)!");
             match joycon::scan_joycon2_devices().await {
@@ -556,7 +556,7 @@ impl ControllerManager {
                             let devices_clone = Arc::clone(&joycon2_devices_clone);
                             let data_clone = Arc::clone(&controller_data_clone);
                             let _runtime_for_connect = runtime_handle_clone.clone();
-                            
+
                             println!("[Joy-Con 2] Connecting to: ID={}", address_clone);
                             // We're already in an async context, so just await directly
                             println!("[Joy-Con 2] ========================================");
@@ -564,33 +564,33 @@ impl ControllerManager {
                             println!("[Joy-Con 2] Found device with ID: {}", address_clone);
                             println!("[Joy-Con 2] IMPORTANT: Keep holding sync button on Joy-Con 2!");
                             println!("[Joy-Con 2] ========================================");
-                            
+
                             // Try connecting immediately - JoyCon2::connect() will do its own scan
                             // but we want to connect as fast as possible while device is still in pairing mode
                             match JoyCon2::connect(&address_clone).await {
                                     Ok(mut joycon2) => {
                                         println!("[Joy-Con 2] ✓ BLE connection established!");
                                         println!("[Joy-Con 2] Subscribing to input notifications...");
-                                        
+
                                         match joycon2.subscribe_to_inputs().await {
                                             Ok(_) => {
                                                 println!("[Joy-Con 2] ✓ Subscribed to inputs");
                                                 println!("[Joy-Con 2] Enabling sensors...");
-                                                
+
                                                 match joycon2.enable_sensors().await {
                                                     Ok(_) => {
                                                         let is_left = joycon2.is_left();
                                                         let serial = joycon2.serial_number();
                                                         let side_str = if is_left { "Left" } else { "Right" };
-                                                        
+
                                                         println!("[Joy-Con 2] ✓ Sensors enabled");
                                                         println!("[Joy-Con 2] Storing device...");
-                                                        
+
                                                         // Store the device
                                                         let mut devices = devices_clone.lock().await;
                                                         devices.insert(serial.clone(), joycon2);
                                                         drop(devices);
-                                                        
+
                                                         // Add to controller data
                                                         let mut data = data_clone.lock().unwrap();
                                                         data.insert(serial.clone(), ConnectedJoyCon {
@@ -602,7 +602,7 @@ impl ControllerManager {
                                                             state: None,
                                                         });
                                                         drop(data);
-                                                        
+
                                                         println!("[Joy-Con 2] ========================================");
                                                         println!("[Joy-Con 2] ✓✓✓ FULLY CONNECTED AND READY! ✓✓✓");
                                                         println!("[Joy-Con 2] ========================================");
@@ -681,10 +681,10 @@ impl ControllerManager {
                 // Use block_on to run the polling loop - this ensures it actually executes
                 runtime_for_polling.block_on(async move {
                     let mut interval = interval(Duration::from_millis(1)); // ~1000Hz polling for lowest latency
-                    
+
                     loop {
                         interval.tick().await;
-                        
+
                         // Check if polling is still enabled
                         {
                             let enabled = polling_enabled.lock().unwrap();
@@ -693,14 +693,14 @@ impl ControllerManager {
                                 break;
                             }
                         }
-                        
+
                         // Poll Joy-Con 2 devices (BLE) - use read_notifications like the original crate
                         // Collect serials first, then lock per device to avoid borrowing issues
                         let serials: Vec<String> = {
                             let devices = joycon2_devices.lock().await;
                             devices.keys().cloned().collect()
                         };
-                        
+
                         for serial in serials {
                             // Lock, get device info, unlock, then read notification
                             let (is_left, has_device) = {
@@ -711,11 +711,11 @@ impl ControllerManager {
                                     (false, false)
                                 }
                             };
-                            
+
                             if !has_device {
                                 continue;
                             }
-                            
+
                             // Read notification - the original crate just calls read_notifications() directly
                             // It blocks until data arrives (has 5s internal timeout)
                             // We'll call it directly like the original crate does - no timeout wrapper
@@ -731,7 +731,7 @@ impl ControllerManager {
                                     }
                                 }.await
                             };
-                            
+
                             match read_result {
                                 Ok(data) => {
                                     if let Ok(report) = InputReport::decode_joycon2(&data, is_left) {
@@ -744,7 +744,7 @@ impl ControllerManager {
                                             controller.latest_report = Some(calibrated_report.clone());
                                             // Compute unified state (connected: true since we got a report)
                                             controller.state = Some(Self::compute_state(&calibrated_report, serial.clone(), controller.is_left, controller.is_joycon2));
-                                            
+
                                             // Send to channel if receiver exists
                                             if let Err(_) = tx_clone.send((serial.clone(), calibrated_report)) {
                                                 break;
@@ -762,7 +762,7 @@ impl ControllerManager {
                                         static DECODE_FAIL_COUNT: AtomicU32 = AtomicU32::new(0);
                                         let fail_count = DECODE_FAIL_COUNT.fetch_add(1, Ordering::Relaxed);
                                         if fail_count < 5 {
-                                            println!("[Joy-Con 2] Decode failed for report (length: {}): {:?}", 
+                                            println!("[Joy-Con 2] Decode failed for report (length: {}): {:?}",
                                                 data.len(),
                                                 InputReport::decode_joycon2(&data, is_left).err());
                                             if data.len() >= 10 {

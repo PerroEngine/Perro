@@ -34,7 +34,7 @@ impl State {
     fn take_graphics(&mut self) -> Option<Graphics> {
         self.graphics.take()
     }
-    
+
     #[inline(always)]
     fn put_graphics(&mut self, gfx: Graphics) {
         self.graphics = Some(gfx);
@@ -57,7 +57,6 @@ const WINDOW_CANDIDATES: [PhysicalSize<u32>; 5] = [
 #[allow(dead_code)]
 const MONITOR_SCALE_FACTOR: f32 = 0.75;
 const FPS_MEASUREMENT_INTERVAL: f32 = 3.0;
-const DEFAULT_TARGET_FPS: f32 = 500.0;
 
 // Default Perro icon embedded at compile time
 const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
@@ -67,7 +66,11 @@ const MONITOR_USABLE_FRACTION: f64 = 0.85;
 
 /// Clamp a size to fit within max bounds, preserving aspect ratio. Returns the same size if it already fits.
 #[cfg(not(target_arch = "wasm32"))]
-fn clamp_size_to_fit(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
+fn clamp_size_to_fit(
+    desired: PhysicalSize<u32>,
+    max_width: u32,
+    max_height: u32,
+) -> PhysicalSize<u32> {
     let (dw, dh) = (desired.width.max(1), desired.height.max(1));
     if dw <= max_width && dh <= max_height {
         return desired;
@@ -81,7 +84,10 @@ fn clamp_size_to_fit(desired: PhysicalSize<u32>, max_width: u32, max_height: u32
 /// Default initial window size from virtual size: scaled down so it fits on typical monitors (e.g. 1080x1920 → 720x1280).
 /// Used when creating the window; resumed() may clamp further to the actual primary monitor.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn initial_window_size_from_virtual(virtual_width: f32, virtual_height: f32) -> PhysicalSize<u32> {
+pub fn initial_window_size_from_virtual(
+    virtual_width: f32,
+    virtual_height: f32,
+) -> PhysicalSize<u32> {
     const SCALE: f32 = 1.5;
     let w = (virtual_width.max(1.0) / SCALE).max(1.0) as u32;
     let h = (virtual_height.max(1.0) / SCALE).max(1.0) as u32;
@@ -122,7 +128,6 @@ pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
     use image::imageops::FilterType;
     use winit::window::Icon;
 
-
     // Check static textures first (runtime mode)
     let img = if let Some(static_textures) = get_static_textures() {
         if let Some(static_data) = static_textures.get(path) {
@@ -153,7 +158,6 @@ pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
 
     match img {
         Ok(img) => {
-
             let target_size = 32;
             let resized = img.resize_exact(target_size, target_size, FilterType::Lanczos3);
 
@@ -219,7 +223,9 @@ impl<P: ScriptProvider + 'static> App<P> {
         }
 
         Self {
-            state: State { graphics: Some(graphics) },
+            state: State {
+                graphics: Some(graphics),
+            },
             window_title,
             window_icon_path: icon_path,
             game_scene,
@@ -285,17 +291,25 @@ impl<P: ScriptProvider + 'static> App<P> {
         }
     }
 
-    fn update_fps_measurement(&mut self, now: std::time::Instant, update_duration: std::time::Duration) {
+    fn update_fps_measurement(
+        &mut self,
+        now: std::time::Instant,
+        update_duration: std::time::Duration,
+    ) {
         // Accumulate update duration for averaging
         self.total_update_duration += update_duration;
-        
+
         let measurement_interval = (now - self.measurement_start).as_secs_f32();
         if measurement_interval >= FPS_MEASUREMENT_INTERVAL {
             let actual_fps = self.frames as f32 / measurement_interval;
-            let avg_update_ms = self.total_update_duration.as_secs_f64() * 1000.0 / self.frames as f64;
+            let avg_update_ms =
+                self.total_update_duration.as_secs_f64() * 1000.0 / self.frames as f64;
             let current_update_ms = update_duration.as_secs_f64() * 1000.0;
-            
-            println!("FPS: {:.1} | Update: {:.2}ms (avg: {:.2}ms)", actual_fps, current_update_ms, avg_update_ms);
+
+            println!(
+                "FPS: {:.1} | Update: {:.2}ms (avg: {:.2}ms)",
+                actual_fps, current_update_ms, avg_update_ms
+            );
 
             self.frames = 0;
             self.total_update_duration = std::time::Duration::ZERO;
@@ -306,7 +320,7 @@ impl<P: ScriptProvider + 'static> App<P> {
     fn process_game(&mut self) {
         #[cfg(feature = "profiling")]
         let _span = tracing::span!(tracing::Level::INFO, "process_game").entered();
-        
+
         // OPTIMIZED: Use take_graphics() helper which is faster than manual mem::replace
         let mut gfx = match self.state.take_graphics() {
             Some(g) => g,
@@ -349,10 +363,10 @@ impl<P: ScriptProvider + 'static> App<P> {
         // 4. Measure frame time and request next redraw immediately
         let frame_end = std::time::Instant::now();
         let frame_duration = frame_end.duration_since(update_start);
-        
+
         // Always request redraw immediately (don't wait)
         gfx.window().request_redraw();
-        
+
         // 5. SLEEP-BASED PACING - cap at fps_cap
         // Only apply compensation if we're running fast enough (update finished early)
         // If update takes longer than target, don't compensate - just run at that speed
@@ -365,11 +379,11 @@ impl<P: ScriptProvider + 'static> App<P> {
             // We're running slow - no compensation, just use base target
             base_target_frame_time
         };
-        
+
         if frame_duration < target_frame_time {
             // Sleep for the remainder if we finished early
             let sleep_duration = target_frame_time - frame_duration;
-            
+
             // Always use spin-wait for frame pacing (more precise, especially on Windows)
             // Windows thread::sleep has poor precision (~15ms minimum), so spin-wait is necessary
             // for accurate high FPS. This uses a bit more CPU but ensures precise timing.
@@ -439,7 +453,7 @@ impl<P: ScriptProvider + 'static> App<P> {
                 gfx.render(&mut rpass);
             }
         }
-        
+
         // Render egui UI (after main render pass, before end_frame)
         {
             #[cfg(feature = "profiling")]
@@ -457,7 +471,9 @@ impl<P: ScriptProvider + 'static> App<P> {
 
     fn resized(&mut self, size: PhysicalSize<u32>) {
         match &mut self.state {
-            State { graphics: Some(gfx) } => {
+            State {
+                graphics: Some(gfx),
+            } => {
                 gfx.resize(size);
             }
             _ => {}
@@ -507,7 +523,7 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
             use crate::input::manager::MouseButton;
             use crate::structs2d::vector2::Vector2;
             use winit::event::{ElementState, MouseButton as WinitMouseButton};
-            
+
             // Check if a text input element is focused (for text capture)
             let has_focused_text_input = scene.has_focused_text_input();
 
@@ -527,16 +543,20 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
                                 }
                             }
                         }
-                        
+
                         // Handle text input from logical key ONLY if a text field is focused
                         if has_focused_text_input && event.state == ElementState::Pressed {
                             // Debug: print the actual key to see what space generates
                             println!("[DEBUG] Logical key: {:?}", event.logical_key);
-                            
+
                             match &event.logical_key {
                                 winit::keyboard::Key::Character(text) => {
                                     // Handle all printable characters
-                                    println!("[DEBUG] Character input: {:?} (len: {})", text, text.len());
+                                    println!(
+                                        "[DEBUG] Character input: {:?} (len: {})",
+                                        text,
+                                        text.len()
+                                    );
                                     input_mgr.handle_text_input(text.to_string());
                                 }
                                 winit::keyboard::Key::Named(winit::keyboard::NamedKey::Space) => {
@@ -581,20 +601,18 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
                         };
                         input_mgr.handle_scroll(scroll_delta);
                     }
-                    WindowEvent::Ime(ime) => {
-                        match ime {
-                            winit::event::Ime::Commit(text) => {
-                                println!("[DEBUG] IME Commit: {:?}", text);
+                    WindowEvent::Ime(ime) => match ime {
+                        winit::event::Ime::Commit(text) => {
+                            println!("[DEBUG] IME Commit: {:?}", text);
+                            input_mgr.handle_text_input(text.to_string());
+                        }
+                        winit::event::Ime::Preedit(text, _) => {
+                            if !text.is_empty() {
                                 input_mgr.handle_text_input(text.to_string());
                             }
-                            winit::event::Ime::Preedit(text, _) => {
-                                if !text.is_empty() {
-                                    input_mgr.handle_text_input(text.to_string());
-                                }
-                            }
-                            _ => {}
                         }
-                    }
+                        _ => {}
+                    },
                     _ => {}
                 }
             }
@@ -706,6 +724,8 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
         self.start_time = now;
         self.measurement_start = now;
 
-        self.state = State { graphics: Some(graphics) };
+        self.state = State {
+            graphics: Some(graphics),
+        };
     }
 }

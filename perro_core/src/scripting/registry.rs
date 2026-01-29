@@ -43,10 +43,11 @@ impl DllScriptProvider {
             None => return GlobalSlicePtr(std::ptr::null(), 0),
         };
         type Fn = extern "C" fn(*mut *const u8, *mut usize);
-        let sym: libloading::Symbol<Fn> = match unsafe { lib.get(b"perro_get_global_registry_slice\0") } {
-            Ok(s) => s,
-            Err(_) => return GlobalSlicePtr(std::ptr::null(), 0),
-        };
+        let sym: libloading::Symbol<Fn> =
+            match unsafe { lib.get(b"perro_get_global_registry_slice\0") } {
+                Ok(s) => s,
+                Err(_) => return GlobalSlicePtr(std::ptr::null(), 0),
+            };
         let mut ptr: *const u8 = std::ptr::null();
         let mut len: usize = 0;
         sym(&mut ptr, &mut len);
@@ -60,10 +61,11 @@ impl DllScriptProvider {
             None => return GlobalSlicePtr(std::ptr::null(), 0),
         };
         type Fn = extern "C" fn(*mut *const u8, *mut usize);
-        let sym: libloading::Symbol<Fn> = match unsafe { lib.get(b"perro_get_global_registry_names_slice\0") } {
-            Ok(s) => s,
-            Err(_) => return GlobalSlicePtr(std::ptr::null(), 0),
-        };
+        let sym: libloading::Symbol<Fn> =
+            match unsafe { lib.get(b"perro_get_global_registry_names_slice\0") } {
+                Ok(s) => s,
+                Err(_) => return GlobalSlicePtr(std::ptr::null(), 0),
+            };
         let mut ptr: *const u8 = std::ptr::null();
         let mut len: usize = 0;
         sym(&mut ptr, &mut len);
@@ -78,10 +80,11 @@ impl DllScriptProvider {
 
         unsafe {
             // Try to get the symbol - if it doesn't exist, that's okay (older DLLs might not have it)
-            let set_root_fn_result: Result<libloading::Symbol<
-                unsafe extern "C" fn(*const c_char, *const c_char),
-            >, _> = lib.get(b"perro_set_project_root\0");
-            
+            let set_root_fn_result: Result<
+                libloading::Symbol<unsafe extern "C" fn(*const c_char, *const c_char)>,
+                _,
+            > = lib.get(b"perro_set_project_root\0");
+
             match set_root_fn_result {
                 Ok(set_root_fn) => {
                     // Match to extract disk path and name
@@ -90,16 +93,19 @@ impl DllScriptProvider {
                         name,
                     } = root
                     {
-                        let path_c = CString::new(path_buf.to_string_lossy().as_ref())
-                            .map_err(|e| anyhow::anyhow!("Failed to create CString for path: {}", e))?;
-                        let name_c = CString::new(name.as_str())
-                            .map_err(|e| anyhow::anyhow!("Failed to create CString for name: {}", e))?;
+                        let path_c =
+                            CString::new(path_buf.to_string_lossy().as_ref()).map_err(|e| {
+                                anyhow::anyhow!("Failed to create CString for path: {}", e)
+                            })?;
+                        let name_c = CString::new(name.as_str()).map_err(|e| {
+                            anyhow::anyhow!("Failed to create CString for name: {}", e)
+                        })?;
 
                         // Ensure the CStrings stay alive during the function call
                         // by keeping them in scope
                         let path_ptr = path_c.as_ptr();
                         let name_ptr = name_c.as_ptr();
-                        
+
                         // Call the function
                         // NOTE: On Windows, this can cause STATUS_ACCESS_VIOLATION if the DLL
                         // was built against a different version of perro_core, because DLLs
@@ -107,12 +113,17 @@ impl DllScriptProvider {
                         // on Windows if experiencing issues.
                         set_root_fn(path_ptr, name_ptr);
                     } else {
-                        anyhow::bail!("inject_project_root only supports ProjectRoot::Disk for now");
+                        anyhow::bail!(
+                            "inject_project_root only supports ProjectRoot::Disk for now"
+                        );
                     }
                 }
                 Err(e) => {
                     // Symbol doesn't exist - this is okay for older DLLs
-                    eprintln!("⚠ Warning: perro_set_project_root symbol not found in DLL (this is okay for older builds): {}", e);
+                    eprintln!(
+                        "⚠ Warning: perro_set_project_root symbol not found in DLL (this is okay for older builds): {}",
+                        e
+                    );
                 }
             }
         }
@@ -187,7 +198,8 @@ impl ScriptProvider for DllScriptProvider {
 
     fn get_global_registry_names(&self) -> &[&str] {
         if self.cached_global_names_slice.read().unwrap().is_none() {
-            *self.cached_global_names_slice.write().unwrap() = Some(self.fetch_global_registry_names_slice());
+            *self.cached_global_names_slice.write().unwrap() =
+                Some(self.fetch_global_registry_names_slice());
         }
         let GlobalSlicePtr(ptr, len) = self
             .cached_global_names_slice

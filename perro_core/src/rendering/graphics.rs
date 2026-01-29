@@ -1,13 +1,12 @@
-use std::{borrow::Cow, time::Instant};
+use crate::ids::{LightID, MaterialID, MeshID, NodeID, TextureID};
 use rustc_hash::{FxHashMap, FxHashSet};
-use crate::ids::{LightID, MaterialID, MeshID, TextureID, NodeID};
+use std::{borrow::Cow, time::Instant};
 
 use wgpu::{
-    Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
-    BufferBindingType, BufferDescriptor, BufferSize, BufferUsages,
-    Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, MemoryHints, PowerPreference, Queue,
-    RenderPass, RequestAdapterOptions, SurfaceConfiguration, TextureFormat,
-    util::DeviceExt,
+    Adapter, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource,
+    BufferBinding, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device,
+    DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits, MemoryHints, PowerPreference,
+    Queue, RenderPass, RequestAdapterOptions, SurfaceConfiguration, TextureFormat, util::DeviceExt,
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
@@ -15,6 +14,7 @@ use crate::{
     Camera2D, Camera3D, Transform3D,
     asset_io::load_asset,
     font::FontAtlas,
+    nodes::ui::egui_integration::EguiIntegration,
     renderer_2d::Renderer2D,
     renderer_3d::{MaterialUniform, Mesh, Renderer3D},
     renderer_prim::PrimitiveRenderer,
@@ -22,7 +22,6 @@ use crate::{
     runtime::get_static_textures,
     structs2d::ImageTexture,
     vertex::Vertex,
-    nodes::ui::egui_integration::EguiIntegration,
 };
 
 use crate::rendering::image_loader;
@@ -131,7 +130,10 @@ impl TextureManager {
             .enumerate()
             .filter_map(|(idx, slot)| {
                 if slot.is_some() && idx < self.generations.len() {
-                    Some(TextureID::from_parts((idx + 1) as u32, self.generations[idx]))
+                    Some(TextureID::from_parts(
+                        (idx + 1) as u32,
+                        self.generations[idx],
+                    ))
                 } else {
                     None
                 }
@@ -165,11 +167,7 @@ impl TextureManager {
             return None;
         }
         let idx = id.index() as usize;
-        if idx == 0 {
-            None
-        } else {
-            Some(idx - 1)
-        }
+        if idx == 0 { None } else { Some(idx - 1) }
     }
 
     /// Returns true if slot at idx exists and generation matches id.
@@ -181,7 +179,8 @@ impl TextureManager {
     /// Get or create the cached bind group layout for textures
     pub fn get_bind_group_layout(&mut self, device: &Device) -> &wgpu::BindGroupLayout {
         if self.cached_bind_group_layout.is_none() {
-            self.cached_bind_group_layout = Some(crate::structs2d::create_texture_bind_group_layout(device));
+            self.cached_bind_group_layout =
+                Some(crate::structs2d::create_texture_bind_group_layout(device));
         }
         self.cached_bind_group_layout.as_ref().unwrap()
     }
@@ -245,7 +244,9 @@ impl TextureManager {
                 let decode_elapsed = decode_start.elapsed();
                 println!(
                     "🖼️ Loading texture: {} ({}x{})",
-                    path, img.width(), img.height()
+                    path,
+                    img.width(),
+                    img.height()
                 );
                 let upload_start = Instant::now();
                 let texture = ImageTexture::from_image(&img, device, queue);
@@ -268,10 +269,7 @@ impl TextureManager {
             let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
                 .expect("Failed to decode image");
             let decode_elapsed = decode_start.elapsed();
-            println!(
-                "🖼️ Loading texture: {} ({}x{})",
-                path, width, height
-            );
+            println!("🖼️ Loading texture: {} ({}x{})", path, width, height);
             let upload_start = Instant::now();
             let texture = ImageTexture::from_rgba8(&rgba, device, queue);
             let upload_elapsed = upload_start.elapsed();
@@ -310,14 +308,22 @@ impl TextureManager {
                     path, static_data.width, static_data.height
                 );
                 let texture = static_data.to_image_texture(device, queue);
-                println!("⏱️ Static texture loaded in {:.2}ms", start.elapsed().as_secs_f64() * 1000.0);
+                println!(
+                    "⏱️ Static texture loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
                 texture
             } else {
                 let img_bytes = load_asset(path)
                     .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
                 let img = image::load_from_memory(&img_bytes)
                     .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
-                println!("🖼️ Loading texture: {} ({}x{})", path, img.width(), img.height());
+                println!(
+                    "🖼️ Loading texture: {} ({}x{})",
+                    path,
+                    img.width(),
+                    img.height()
+                );
                 ImageTexture::from_image(&img, device, queue)
             }
         } else {
@@ -379,7 +385,10 @@ impl TextureManager {
         let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
             self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
             let generation = self.generations[free_idx];
-            (free_idx, TextureID::from_parts((free_idx + 1) as u32, generation))
+            (
+                free_idx,
+                TextureID::from_parts((free_idx + 1) as u32, generation),
+            )
         } else {
             let slot_idx = self.slots.len();
             self.slots.push(None);
@@ -398,15 +407,16 @@ impl TextureManager {
 
     /// Get texture size if texture is already loaded (doesn't load if missing).
     pub fn get_texture_size_if_loaded(&self, path: &str) -> Option<crate::Vector2> {
-        self.path_to_id.get(path).and_then(|id| self.get_texture_by_id(id))
+        self.path_to_id
+            .get(path)
+            .and_then(|id| self.get_texture_by_id(id))
             .map(|tex| crate::Vector2::new(tex.width as f32, tex.height as f32))
     }
 
     /// Get texture size by UUID (for script access)
     pub fn get_texture_size_by_id(&self, id: &TextureID) -> Option<crate::Vector2> {
-        self.get_texture_by_id(id).map(|tex| {
-            crate::Vector2::new(tex.width as f32, tex.height as f32)
-        })
+        self.get_texture_by_id(id)
+            .map(|tex| crate::Vector2::new(tex.width as f32, tex.height as f32))
     }
 
     /// Get or create bind group by TextureID (hot path: rendering uses id only).
@@ -414,7 +424,7 @@ impl TextureManager {
         &mut self,
         id: TextureID,
         device: &Device,
-        queue: &Queue,
+        _queue: &Queue,
         layout: &BindGroupLayout,
     ) -> Option<&wgpu::BindGroup> {
         let idx = Self::slot_index(id)?;
@@ -471,11 +481,14 @@ impl TextureManager {
         layout: &BindGroupLayout,
     ) -> &wgpu::BindGroup {
         if let Some(&id) = self.path_to_id.get(path) {
-            return self.get_or_create_bind_group_by_id(id, device, queue, layout).unwrap();
+            return self
+                .get_or_create_bind_group_by_id(id, device, queue, layout)
+                .unwrap();
         }
         self.get_or_load_texture_sync(path, device, queue);
         let id = *self.path_to_id.get(path).unwrap();
-        self.get_or_create_bind_group_by_id(id, device, queue, layout).unwrap()
+        self.get_or_create_bind_group_by_id(id, device, queue, layout)
+            .unwrap()
     }
 
     /// Remove texture by ID and free its slot for reuse. Generation is bumped on next reuse.
@@ -496,7 +509,11 @@ impl TextureManager {
                     self.evicted_id_to_path.insert(id, p.clone());
                 }
             }
-            println!("[Texture] removed id={:?} path={:?}", id, path.as_deref().unwrap_or("(unknown)"));
+            println!(
+                "[Texture] removed id={:?} path={:?}",
+                id,
+                path.as_deref().unwrap_or("(unknown)")
+            );
             *slot = None;
             self.free_slots.push(idx);
             self.texture_users.remove(&id);
@@ -602,11 +619,7 @@ impl MeshManager {
             return None;
         }
         let idx = id.index() as usize;
-        if idx == 0 {
-            None
-        } else {
-            Some(idx - 1)
-        }
+        if idx == 0 { None } else { Some(idx - 1) }
     }
 
     #[inline]
@@ -618,7 +631,10 @@ impl MeshManager {
         let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
             self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
             let generation = self.generations[free_idx];
-            (free_idx, MeshID::from_parts((free_idx + 1) as u32, generation))
+            (
+                free_idx,
+                MeshID::from_parts((free_idx + 1) as u32, generation),
+            )
         } else {
             let slot_idx = self.slots.len();
             self.slots.push(None);
@@ -722,11 +738,7 @@ impl MaterialManager {
             return None;
         }
         let idx = id.index() as usize;
-        if idx == 0 {
-            None
-        } else {
-            Some(idx - 1)
-        }
+        if idx == 0 { None } else { Some(idx - 1) }
     }
 
     #[inline]
@@ -778,7 +790,10 @@ impl MaterialManager {
         let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
             self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
             let generation = self.generations[free_idx];
-            (free_idx, MaterialID::from_parts((free_idx + 1) as u32, generation))
+            (
+                free_idx,
+                MaterialID::from_parts((free_idx + 1) as u32, generation),
+            )
         } else {
             let slot_idx = self.slots.len();
             self.slots.push(None);
@@ -858,11 +873,7 @@ impl LightManager {
             return None;
         }
         let idx = id.index() as usize;
-        if idx == 0 {
-            None
-        } else {
-            Some(idx - 1)
-        }
+        if idx == 0 { None } else { Some(idx - 1) }
     }
 
     /// Allocate a new LightID (e.g. when a light node is created).
@@ -870,7 +881,10 @@ impl LightManager {
         let (slot_idx, id) = if let Some(free_idx) = self.free_slots.pop() {
             self.generations[free_idx] = self.generations[free_idx].wrapping_add(1);
             let generation = self.generations[free_idx];
-            (free_idx, LightID::from_parts((free_idx + 1) as u32, generation))
+            (
+                free_idx,
+                LightID::from_parts((free_idx + 1) as u32, generation),
+            )
         } else {
             let slot_idx = self.slots.len();
             self.slots.push(None);
@@ -939,7 +953,7 @@ pub struct Graphics {
     pub renderer_2d: Renderer2D,
     pub renderer_ui: RendererUI,
     pub renderer_3d: Renderer3D,
-    
+
     // egui integration for native text rendering
     pub egui_integration: EguiIntegration,
     pub egui_renderer: Option<egui_wgpu::Renderer>,
@@ -972,9 +986,8 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     renderer_3d.upload_materials_to_gpu(queue);
 
     material_manager
-}pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphics>) {
-    
-    
+}
+pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphics>) {
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
     // Different GPUs work better with different backends:
     // - Intel integrated: DX12 (best on Windows), Vulkan (fallback)
@@ -982,54 +995,47 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // - AMD: Vulkan (excellent support), DX12 (good support)
     // - Apple Silicon: Metal only
     // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
-    
+
     // Get list of available backends for this platform
     // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
     #[cfg(windows)]
-    let available_backends = vec![
-        ("DX12", Backends::DX12),
-        ("Vulkan", Backends::VULKAN),
-    ];
+    let available_backends = vec![("DX12", Backends::DX12), ("Vulkan", Backends::VULKAN)];
     #[cfg(target_os = "macos")]
-    let available_backends = vec![
-        ("Metal", Backends::METAL),
-        ("Vulkan", Backends::VULKAN),
-    ];
+    let available_backends = vec![("Metal", Backends::METAL), ("Vulkan", Backends::VULKAN)];
     #[cfg(target_os = "linux")]
-    let available_backends = vec![
-        ("Vulkan", Backends::VULKAN),
-    ];
+    let available_backends = vec![("Vulkan", Backends::VULKAN)];
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    let available_backends = vec![
-        ("Vulkan", Backends::VULKAN),
-    ];
-    
+    let available_backends = vec![("Vulkan", Backends::VULKAN)];
+
     // Collect all available adapters from all backends
     struct AdapterCandidate {
         backend_name: &'static str,
         backend: Backends,
         info: wgpu::AdapterInfo,
     }
-    
+
     let mut candidates: Vec<AdapterCandidate> = Vec::new();
-    
+
     for (backend_name, backends) in available_backends.iter() {
         let test_instance = Instance::new(&InstanceDescriptor {
             backends: *backends,
             ..Default::default()
         });
-        
+
         let test_surface = match test_instance.create_surface(Rc::clone(&window)) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("⚠️  Failed to create surface for {} backend: {:?}", backend_name, e);
+                eprintln!(
+                    "⚠️  Failed to create surface for {} backend: {:?}",
+                    backend_name, e
+                );
                 continue;
             }
         };
-        
+
         // Try to get adapters (prefer discrete, then integrated)
         let mut seen_names = std::collections::HashSet::new();
-        
+
         // Try high performance (discrete GPU)
         if let Ok(adap) = test_instance
             .request_adapter(&RequestAdapterOptions {
@@ -1048,7 +1054,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
                 });
             }
         }
-        
+
         // Try default (might get integrated)
         if let Ok(adap) = test_instance
             .request_adapter(&RequestAdapterOptions {
@@ -1068,79 +1074,85 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
             }
         }
     }
-    
+
     if candidates.is_empty() {
         panic!("No GPU adapter found (hardware or software)");
     }
-    
+
     // Score each candidate based on GPU vendor and backend compatibility
-    let scored: Vec<_> = candidates.into_iter().map(|cand| {
-        let mut score = 0i32;
-        let name_lower = cand.info.name.to_lowercase();
-        
-        // Prefer discrete GPUs over integrated
-        match cand.info.device_type {
-            wgpu::DeviceType::DiscreteGpu => score += 1000,
-            wgpu::DeviceType::IntegratedGpu => score += 100,
-            wgpu::DeviceType::Cpu => score += 1, // Software renderer
-            _ => {}
-        }
-        
-        // GPU vendor-specific backend preferences
-        // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
-        if name_lower.contains("intel") {
-            // Intel: DX12 (best on Windows), Vulkan (fallback)
-            match cand.backend_name {
-                "DX12" => score += 300,
-                "Vulkan" => score += 200,
+    let scored: Vec<_> = candidates
+        .into_iter()
+        .map(|cand| {
+            let mut score = 0i32;
+            let name_lower = cand.info.name.to_lowercase();
+
+            // Prefer discrete GPUs over integrated
+            match cand.info.device_type {
+                wgpu::DeviceType::DiscreteGpu => score += 1000,
+                wgpu::DeviceType::IntegratedGpu => score += 100,
+                wgpu::DeviceType::Cpu => score += 1, // Software renderer
                 _ => {}
             }
-        } else if name_lower.contains("nvidia") {
-            // NVIDIA: Vulkan excellent support, DX12 good support
-            match cand.backend_name {
-                "Vulkan" => score += 300,
-                "DX12" => score += 250,
-                _ => {}
+
+            // GPU vendor-specific backend preferences
+            // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
+            if name_lower.contains("intel") {
+                // Intel: DX12 (best on Windows), Vulkan (fallback)
+                match cand.backend_name {
+                    "DX12" => score += 300,
+                    "Vulkan" => score += 200,
+                    _ => {}
+                }
+            } else if name_lower.contains("nvidia") {
+                // NVIDIA: Vulkan excellent support, DX12 good support
+                match cand.backend_name {
+                    "Vulkan" => score += 300,
+                    "DX12" => score += 250,
+                    _ => {}
+                }
+            } else if name_lower.contains("amd") || name_lower.contains("radeon") {
+                // AMD: Vulkan excellent support, DX12 good support
+                match cand.backend_name {
+                    "Vulkan" => score += 400,
+                    "DX12" => score += 250,
+                    _ => {}
+                }
+            } else if name_lower.contains("apple")
+                || name_lower.contains("m1")
+                || name_lower.contains("m2")
+                || name_lower.contains("m3")
+            {
+                // Apple Silicon: Metal only
+                match cand.backend_name {
+                    "Metal" => score += 1000,
+                    _ => score -= 500, // Don't use other backends on Apple
+                }
+            } else {
+                // Unknown GPU: prefer Vulkan, then Metal
+                match cand.backend_name {
+                    "Vulkan" => score += 250,
+                    "Metal" => score += 200,
+                    _ => {}
+                }
             }
-        } else if name_lower.contains("amd") || name_lower.contains("radeon") {
-            // AMD: Vulkan excellent support, DX12 good support
-            match cand.backend_name {
-                "Vulkan" => score += 400,
-                "DX12" => score += 250,
-                _ => {}
-            }
-        } else if name_lower.contains("apple") || name_lower.contains("m1") || 
-                  name_lower.contains("m2") || name_lower.contains("m3") {
-            // Apple Silicon: Metal only
-            match cand.backend_name {
-                "Metal" => score += 1000,
-                _ => score -= 500, // Don't use other backends on Apple
-            }
-        } else {
-            // Unknown GPU: prefer Vulkan, then Metal
-            match cand.backend_name {
-                "Vulkan" => score += 250,
-                "Metal" => score += 200,
-                _ => {}
-            }
-        }
-        
-        (score, cand)
-    }).collect();
-    
+
+            (score, cand)
+        })
+        .collect();
+
     // Sort by score (highest first) and take the best one
     let mut scored_sorted = scored;
     scored_sorted.sort_by(|a, b| b.0.cmp(&a.0));
-    
+
     let (_, best_candidate) = scored_sorted.into_iter().next().unwrap();
-    
+
     // Create fresh instance and surface for the selected backend
     // IMPORTANT: Must be done immediately before requesting adapter to avoid invalidation
     let instance = Instance::new(&InstanceDescriptor {
         backends: best_candidate.backend,
         ..Default::default()
     });
-    
+
     let surface = instance.create_surface(Rc::clone(&window))
         .unwrap_or_else(|e| {
             panic!(
@@ -1150,7 +1162,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
                 best_candidate.backend_name, e
             );
         });
-    
+
     // Request the adapter again with the fresh instance/surface
     // This prevents the adapter from becoming invalid
     let adapter = instance
@@ -1165,38 +1177,37 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         })
         .await
         .expect("Failed to request adapter for selected backend");
-    
+
     let backend_used = best_candidate.backend_name;
     let adapter_name = adapter.get_info().name.clone();
-    
+
     // Check if it's integrated graphics (often less stable)
-    let is_integrated = matches!(adapter.get_info().device_type, wgpu::DeviceType::IntegratedGpu);
-    
+    let is_integrated = matches!(
+        adapter.get_info().device_type,
+        wgpu::DeviceType::IntegratedGpu
+    );
+
     // Use more conservative limits for integrated GPUs to avoid driver crashes
     let device_limits = if is_integrated {
         // More conservative limits for integrated GPUs
-        wgpu::Limits::downlevel_webgl2_defaults()
-            .using_resolution(adapter.limits())
+        wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
     } else {
-        wgpu::Limits::downlevel_webgl2_defaults()
-            .using_resolution(adapter.limits())
+        wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
     };
-    
+
     let (device, queue) = adapter
-        .request_device(
-            &DeviceDescriptor {
-                label: None,
-                required_features: wgpu::Features::empty(),
-                required_limits: device_limits,
-                memory_hints: if is_integrated {
-                    wgpu::MemoryHints::Performance // Use performance hints for integrated
-                } else {
-                    wgpu::MemoryHints::Performance
-                },
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                trace: wgpu::Trace::Off,
+        .request_device(&DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits: device_limits,
+            memory_hints: if is_integrated {
+                wgpu::MemoryHints::Performance // Use performance hints for integrated
+            } else {
+                wgpu::MemoryHints::Performance
             },
-        )
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            trace: wgpu::Trace::Off,
+        })
         .await
         .expect("Failed to get device");
 
@@ -1204,16 +1215,19 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let backend_emoji = match backend_used {
         "Vulkan" => "⚡",
         "DX12" => "🎮",
-        "Metal" => "🍎",  
+        "Metal" => "🍎",
         _ => "💻",
     };
-    println!("{} {} on {} backend", backend_emoji, adapter_name, backend_used);
+    println!(
+        "{} {} on {} backend",
+        backend_emoji, adapter_name, backend_used
+    );
 
     // 2) Surface config
     let size = window.inner_size();
     let (w, h) = (size.width.max(1), size.height.max(1));
     let mut surface_config = surface.get_default_config(&adapter, w, h).unwrap();
-    
+
     // OPTIMIZED: Select best available present mode with proper fallback
     // Priority: Immediate (no VSync) > Mailbox (adaptive VSync) > Fifo (standard VSync)
     // Since we're doing frame pacing at the application level, we don't need VSync
@@ -1224,19 +1238,28 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // so the display caps frame rate. Instance data uses partial buffer updates when only
     // transforms change (no full re-upload per frame).
     let surface_caps = surface.get_capabilities(&adapter);
-    let preferred_present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+    let preferred_present_mode = if surface_caps
+        .present_modes
+        .contains(&wgpu::PresentMode::Immediate)
+    {
         wgpu::PresentMode::Immediate
-    } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+    } else if surface_caps
+        .present_modes
+        .contains(&wgpu::PresentMode::Mailbox)
+    {
         wgpu::PresentMode::Mailbox
-    } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Fifo) {
+    } else if surface_caps
+        .present_modes
+        .contains(&wgpu::PresentMode::Fifo)
+    {
         wgpu::PresentMode::Fifo
     } else {
         // Fallback to default (should always be Fifo, which is guaranteed to be supported)
         surface_config.present_mode
     };
-    
+
     surface_config.present_mode = preferred_present_mode;
-    
+
     let present_mode_name = match preferred_present_mode {
         wgpu::PresentMode::Mailbox => "Mailbox (adaptive VSync)",
         wgpu::PresentMode::Fifo => "Fifo (standard VSync)",
@@ -1245,7 +1268,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         _ => "Unknown",
     };
     println!("📺 Present mode: {}", present_mode_name);
-    
+
     #[cfg(not(target_arch = "wasm32"))]
     surface.configure(&device, &surface_config);
 
@@ -1313,7 +1336,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let ui_virtual_height = DEFAULT_VIRTUAL_HEIGHT;
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
-    
+
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct CameraUniform {
@@ -1324,22 +1347,22 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         _pad1: [f32; 2],
         view: [[f32; 4]; 4],
     }
-    
+
     unsafe impl bytemuck::Pod for CameraUniform {}
     unsafe impl bytemuck::Zeroable for CameraUniform {}
-    
+
     // UI camera: stretch to fill window (no black bars)
     // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
-        // Use f64 for precision to avoid rounding errors that cause gaps
-        let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
-        let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
-        let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+    // Use f64 for precision to avoid rounding errors that cause gaps
+    let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
+    let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
+    let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
     // Use f64 for precision to avoid rounding errors
     let ui_ndc_scale = glam::vec2(
         (2.0_f64 / window_width as f64) as f32,
-        (2.0_f64 / window_height as f64) as f32
+        (2.0_f64 / window_height as f64) as f32,
     );
-    
+
     let ui_cam_uniform = CameraUniform {
         virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
         ndc_scale: ui_ndc_scale.into(),
@@ -1348,7 +1371,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         _pad1: [0.0, 0.0],
         view: ui_view.to_cols_array_2d(),
     };
-    
+
     queue.write_buffer(&ui_camera_buffer, 0, bytemuck::bytes_of(&ui_cam_uniform));
 
     // 4) 3D Camera uniform buffer (128 bytes: 2x mat4)
@@ -1469,8 +1492,12 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 
     // 7) Create renderers (async path uses default MSAA)
     let msaa_samples = DEFAULT_MSAA_SAMPLES;
-    let mut renderer_3d =
-        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format, msaa_samples);
+    let mut renderer_3d = Renderer3D::new(
+        &device,
+        &camera3d_bind_group_layout,
+        surface_config.format,
+        msaa_samples,
+    );
     let renderer_prim = PrimitiveRenderer::new(
         &device,
         &camera_bind_group_layout,
@@ -1524,16 +1551,16 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     } else {
         (None, None)
     };
-    
+
     // Initialize egui integration
     let egui_integration = EguiIntegration::new();
-    
+
     // Initialize egui-wgpu renderer
     // egui-wgpu 0.33.3 uses its own wgpu re-exports (egui_wgpu::wgpu)
     // We need to use those types, but wgpu types are compatible
     // Create renderer lazily in render() to avoid type issues
     let egui_renderer = None; // Will be initialized lazily in render() 
-    
+
     let gfx = Graphics {
         virtual_width: DEFAULT_VIRTUAL_WIDTH,
         virtual_height: DEFAULT_VIRTUAL_HEIGHT,
@@ -1570,7 +1597,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
         msaa_samples,
         msaa_color_texture,
         msaa_color_view,
-        
+
         egui_integration,
         egui_renderer,
 
@@ -1596,8 +1623,6 @@ pub fn create_graphics_sync(
     virtual_height: f32,
     msaa_samples: u32,
 ) -> Graphics {
-    
-    
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
     // Different GPUs work better with different backends:
     // - Intel integrated: DX12 (best on Windows), Vulkan (fallback)
@@ -1605,57 +1630,50 @@ pub fn create_graphics_sync(
     // - AMD: Vulkan (excellent support), DX12 (good support)
     // - Apple Silicon: Metal only
     // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
-    
+
     // Get list of available backends for this platform
     #[cfg(windows)]
-    let available_backends = vec![
-        ("DX12", Backends::DX12),
-        ("Vulkan", Backends::VULKAN),
-    ];
+    let available_backends = vec![("DX12", Backends::DX12), ("Vulkan", Backends::VULKAN)];
     #[cfg(target_os = "macos")]
-    let available_backends = vec![
-        ("Metal", Backends::METAL),
-        ("Vulkan", Backends::VULKAN),
-    ];
+    let available_backends = vec![("Metal", Backends::METAL), ("Vulkan", Backends::VULKAN)];
     #[cfg(target_os = "linux")]
-    let available_backends = vec![
-        ("Vulkan", Backends::VULKAN),
-    ];
+    let available_backends = vec![("Vulkan", Backends::VULKAN)];
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    let available_backends = vec![
-        ("Vulkan", Backends::VULKAN),
-    ];
-    
+    let available_backends = vec![("Vulkan", Backends::VULKAN)];
+
     // Collect all available adapters from all backends
     struct AdapterCandidate {
         backend_name: &'static str,
         backend: Backends,
         info: wgpu::AdapterInfo,
     }
-    
+
     let mut candidates: Vec<AdapterCandidate> = Vec::new();
-    
+
     for (backend_name, backends) in available_backends.iter() {
         let instance = Instance::new(&InstanceDescriptor {
             backends: *backends,
             ..Default::default()
         });
-        
+
         // Try to create surface - if it fails, skip this backend
         let surface = match instance.create_surface(window.clone()) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("⚠️  Failed to create surface for {} backend: {:?}", backend_name, e);
+                eprintln!(
+                    "⚠️  Failed to create surface for {} backend: {:?}",
+                    backend_name, e
+                );
                 continue;
             }
         };
-        
+
         let adapter_options = RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         };
-        
+
         if let Ok(adapter) = pollster::block_on(instance.request_adapter(&adapter_options)) {
             let info = adapter.get_info();
             candidates.push(AdapterCandidate {
@@ -1665,82 +1683,87 @@ pub fn create_graphics_sync(
             });
         }
     }
-    
+
     // Score each candidate based on GPU vendor and backend compatibility
     if candidates.is_empty() {
         panic!("No GPU adapter found (hardware or software)");
     }
-    
-    let scored: Vec<_> = candidates.into_iter().map(|cand| {
-        let mut score = 0i32;
-        let name_lower = cand.info.name.to_lowercase();
-        
-        // Prefer discrete GPUs over integrated
-        match cand.info.device_type {
-            wgpu::DeviceType::DiscreteGpu => score += 1000,
-            wgpu::DeviceType::IntegratedGpu => score += 100,
-            wgpu::DeviceType::Cpu => score += 1, // Software renderer
-            _ => {}
-        }
-        
-        // GPU vendor-specific backend preferences
-        // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
-        if name_lower.contains("intel") {
-            // Intel: DX12 (best on Windows), Vulkan (fallback)
-            match cand.backend_name {
-                "DX12" => score += 300,
-                "Vulkan" => score += 200,
+
+    let scored: Vec<_> = candidates
+        .into_iter()
+        .map(|cand| {
+            let mut score = 0i32;
+            let name_lower = cand.info.name.to_lowercase();
+
+            // Prefer discrete GPUs over integrated
+            match cand.info.device_type {
+                wgpu::DeviceType::DiscreteGpu => score += 1000,
+                wgpu::DeviceType::IntegratedGpu => score += 100,
+                wgpu::DeviceType::Cpu => score += 1, // Software renderer
                 _ => {}
             }
-        } else if name_lower.contains("nvidia") {
-            // NVIDIA: Vulkan excellent support, DX12 good support
-            match cand.backend_name {
-                "Vulkan" => score += 300,
-                "DX12" => score += 250,
-                _ => {}
+
+            // GPU vendor-specific backend preferences
+            // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
+            if name_lower.contains("intel") {
+                // Intel: DX12 (best on Windows), Vulkan (fallback)
+                match cand.backend_name {
+                    "DX12" => score += 300,
+                    "Vulkan" => score += 200,
+                    _ => {}
+                }
+            } else if name_lower.contains("nvidia") {
+                // NVIDIA: Vulkan excellent support, DX12 good support
+                match cand.backend_name {
+                    "Vulkan" => score += 300,
+                    "DX12" => score += 250,
+                    _ => {}
+                }
+            } else if name_lower.contains("amd") || name_lower.contains("radeon") {
+                // AMD: Vulkan excellent support, DX12 good support
+                match cand.backend_name {
+                    "Vulkan" => score += 400,
+                    "DX12" => score += 250,
+                    _ => {}
+                }
+            } else if name_lower.contains("apple")
+                || name_lower.contains("m1")
+                || name_lower.contains("m2")
+                || name_lower.contains("m3")
+            {
+                // Apple Silicon: Metal only
+                match cand.backend_name {
+                    "Metal" => score += 1000,
+                    _ => score -= 500, // Don't use other backends on Apple
+                }
+            } else {
+                // Unknown GPU: prefer Vulkan, then Metal
+                match cand.backend_name {
+                    "Vulkan" => score += 250,
+                    "Metal" => score += 200,
+                    _ => {}
+                }
             }
-        } else if name_lower.contains("amd") || name_lower.contains("radeon") {
-            // AMD: Vulkan excellent support, DX12 good support
-            match cand.backend_name {
-                "Vulkan" => score += 400,
-                "DX12" => score += 250,
-                _ => {}
-            }
-        } else if name_lower.contains("apple") || name_lower.contains("m1") || 
-                  name_lower.contains("m2") || name_lower.contains("m3") {
-            // Apple Silicon: Metal only
-            match cand.backend_name {
-                "Metal" => score += 1000,
-                _ => score -= 500, // Don't use other backends on Apple
-            }
-        } else {
-            // Unknown GPU: prefer Vulkan, then Metal
-            match cand.backend_name {
-                "Vulkan" => score += 250,
-                "Metal" => score += 200,
-                _ => {}
-            }
-        }
-        
-        (score, cand)
-    }).collect();
-    
+
+            (score, cand)
+        })
+        .collect();
+
     // Sort by score (highest first) and take the best one
     let mut scored_sorted = scored;
     scored_sorted.sort_by(|a, b| b.0.cmp(&a.0));
-    
-    let (best_score, best_candidate) = scored_sorted.into_iter().next().unwrap();
-    
-    
+
+    let (_best_score, best_candidate) = scored_sorted.into_iter().next().unwrap();
+
     let chosen_backend = best_candidate.backend;
     let _chosen_backend_name = best_candidate.backend_name;
-    
+
     // Create instance with chosen backend
     let instance = Instance::new(&InstanceDescriptor {
         backends: chosen_backend,
         ..Default::default()
     });
-    
+
     // Create surface
     let surface = instance.create_surface(window.clone())
         .unwrap_or_else(|e| {
@@ -1751,7 +1774,7 @@ pub fn create_graphics_sync(
                 best_candidate.backend_name, e
             );
         });
-    
+
     // Request adapter
     let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions {
         power_preference: PowerPreference::HighPerformance,
@@ -1759,29 +1782,32 @@ pub fn create_graphics_sync(
         force_fallback_adapter: false,
     }))
     .expect("Failed to find an appropriate adapter");
-    
+
     // Get device and queue
-    let (device, queue) = pollster::block_on(adapter.request_device(
-        &DeviceDescriptor {
-            label: None,
-            required_features: Features::empty(),
-            required_limits: Limits::default(),
-            memory_hints: MemoryHints::default(),
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            trace: wgpu::Trace::Off,
-        },
-    ))
+    let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor {
+        label: None,
+        required_features: Features::empty(),
+        required_limits: Limits::default(),
+        memory_hints: MemoryHints::default(),
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        trace: wgpu::Trace::Off,
+    }))
     .expect("Failed to create device");
-    
+
     // Configure surface
     let surface_caps = surface.get_capabilities(&adapter);
     let surface_format = surface_caps
         .formats
         .iter()
         .copied()
-        .find(|f| matches!(f, TextureFormat::Bgra8UnormSrgb | TextureFormat::Rgba8UnormSrgb))
+        .find(|f| {
+            matches!(
+                f,
+                TextureFormat::Bgra8UnormSrgb | TextureFormat::Rgba8UnormSrgb
+            )
+        })
         .unwrap_or(surface_caps.formats[0]);
-    
+
     let size = window.inner_size();
     let surface_config = SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -1794,7 +1820,7 @@ pub fn create_graphics_sync(
         desired_maximum_frame_latency: 2,
     };
     surface.configure(&device, &surface_config);
-    
+
     // Create camera buffers and bind groups (same as async version)
     let camera_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("Camera Buffer"),
@@ -1802,21 +1828,22 @@ pub fn create_graphics_sync(
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    
-    let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Camera Bind Group Layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: BufferSize::new(96),
-            },
-            count: None,
-        }],
-    });
-    
+
+    let camera_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(96),
+                },
+                count: None,
+            }],
+        });
+
     let camera_bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("Camera Bind Group"),
         layout: &camera_bind_group_layout,
@@ -1829,32 +1856,35 @@ pub fn create_graphics_sync(
             }),
         }],
     });
-    
+
     // 3D camera setup
     let mut initial_camera_3d = Camera3D::new();
     initial_camera_3d.name = Cow::Borrowed("MainCamera3D");
-    
+
     let camera3d_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("Camera3D Buffer"),
         size: std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    
-    let camera3d_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Camera3D Bind Group Layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: BufferSize::new(std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64),
-            },
-            count: None,
-        }],
-    });
-    
+
+    let camera3d_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera3D Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(std::mem::size_of::<
+                        crate::renderer_3d::Camera3DUniform,
+                    >() as u64),
+                },
+                count: None,
+            }],
+        });
+
     let camera3d_bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("Camera3D Bind Group"),
         layout: &camera3d_bind_group_layout,
@@ -1863,30 +1893,32 @@ pub fn create_graphics_sync(
             resource: BindingResource::Buffer(BufferBinding {
                 buffer: &camera3d_buffer,
                 offset: 0,
-                size: BufferSize::new(std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64),
+                size: BufferSize::new(
+                    std::mem::size_of::<crate::renderer_3d::Camera3DUniform>() as u64
+                ),
             }),
         }],
     });
-    
+
     // Initialize 3D camera matrices
     let view = glam::Mat4::look_at_rh(
         glam::vec3(3.0, 3.0, 3.0),
         glam::vec3(0.0, 0.0, 0.0),
         glam::vec3(0.0, 1.0, 0.0),
     );
-    
+
     let aspect_ratio = surface_config.width as f32 / surface_config.height as f32;
     let projection = glam::Mat4::perspective_rh(45.0_f32.to_radians(), aspect_ratio, 0.1, 100.0);
-    
+
     let camera3d_uniform = crate::renderer_3d::Camera3DUniform {
         view: view.to_cols_array_2d(),
         projection: projection.to_cols_array_2d(),
     };
     queue.write_buffer(&camera3d_buffer, 0, bytemuck::bytes_of(&camera3d_uniform));
-    
+
     let cached_camera3d_view = Some(view);
     let cached_camera3d_proj = Some(projection);
-    
+
     // Quad vertex buffer
     let vertices: &[Vertex] = &[
         Vertex {
@@ -1919,7 +1951,7 @@ pub fn create_graphics_sync(
         contents: bytemuck::cast_slice(vertices),
         usage: BufferUsages::VERTEX,
     });
-    
+
     // Initialize 2D camera data (use params: virtual_width, virtual_height)
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
@@ -1932,7 +1964,7 @@ pub fn create_graphics_sync(
     } else {
         (1.0, window_aspect / virtual_aspect)
     };
-    
+
     #[repr(C)]
     #[derive(Clone, Copy)]
     struct CameraUniform {
@@ -1943,13 +1975,16 @@ pub fn create_graphics_sync(
         _pad1: [f32; 2],
         view: [[f32; 4]; 4],
     }
-    
+
     unsafe impl bytemuck::Pod for CameraUniform {}
     unsafe impl bytemuck::Zeroable for CameraUniform {}
-    
-    let ndc_scale = glam::vec2(scale_x * 2.0 / virtual_width, scale_y * 2.0 / virtual_height);
+
+    let ndc_scale = glam::vec2(
+        scale_x * 2.0 / virtual_width,
+        scale_y * 2.0 / virtual_height,
+    );
     let view = glam::Mat4::IDENTITY; // Initial identity view matrix
-    
+
     let cam_uniform = CameraUniform {
         virtual_size: [virtual_width, virtual_height],
         ndc_scale: ndc_scale.into(),
@@ -1958,9 +1993,9 @@ pub fn create_graphics_sync(
         _pad1: [0.0, 0.0],
         view: view.to_cols_array_2d(),
     };
-    
+
     queue.write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
-    
+
     // Initialize UI camera (uses window size directly, no virtual resolution)
     let ui_camera_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("UI Camera UBO"),
@@ -1986,19 +2021,19 @@ pub fn create_graphics_sync(
     // Virtual size from params
     let ui_virtual_width = virtual_width;
     let ui_virtual_height = virtual_height;
-    
+
     // UI camera: stretch to fill window (no black bars)
     // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
-        // Use f64 for precision to avoid rounding errors that cause gaps
-        let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
-        let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
-        let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
+    // Use f64 for precision to avoid rounding errors that cause gaps
+    let ui_scale_x = (window_width as f64 / ui_virtual_width as f64) as f32;
+    let ui_scale_y = (window_height as f64 / ui_virtual_height as f64) as f32;
+    let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
     // Use f64 for precision to avoid rounding errors
     let ui_ndc_scale = glam::vec2(
         (2.0_f64 / window_width as f64) as f32,
-        (2.0_f64 / window_height as f64) as f32
+        (2.0_f64 / window_height as f64) as f32,
     );
-    
+
     let ui_cam_uniform = CameraUniform {
         virtual_size: [ui_virtual_width, ui_virtual_height], // Keep virtual size for coordinate system
         ndc_scale: ui_ndc_scale.into(),
@@ -2007,12 +2042,16 @@ pub fn create_graphics_sync(
         _pad1: [0.0, 0.0],
         view: ui_view.to_cols_array_2d(),
     };
-    
+
     queue.write_buffer(&ui_camera_buffer, 0, bytemuck::bytes_of(&ui_cam_uniform));
-    
+
     // Create renderers
-    let mut renderer_3d =
-        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format, msaa_samples);
+    let mut renderer_3d = Renderer3D::new(
+        &device,
+        &camera3d_bind_group_layout,
+        surface_config.format,
+        msaa_samples,
+    );
     let renderer_prim = PrimitiveRenderer::new(
         &device,
         &camera_bind_group_layout,
@@ -2023,10 +2062,10 @@ pub fn create_graphics_sync(
     );
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
-    
+
     // Initialize material system with default material
     let material_manager = initialize_material_system(&mut renderer_3d, &queue);
-    
+
     // Create depth texture (multisampled when MSAA on)
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Depth Texture"),
@@ -2042,7 +2081,7 @@ pub fn create_graphics_sync(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    
+
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // Create MSAA color texture only when MSAA on (sample_count > 1)
@@ -2066,7 +2105,7 @@ pub fn create_graphics_sync(
     } else {
         (None, None)
     };
-    
+
     Graphics {
         virtual_width,
         virtual_height,
@@ -2100,7 +2139,7 @@ pub fn create_graphics_sync(
         msaa_samples,
         msaa_color_texture,
         msaa_color_view,
-        
+
         egui_integration: EguiIntegration::new(),
         egui_renderer: None,
 
@@ -2153,25 +2192,24 @@ impl Graphics {
 
         // Recreate MSAA color texture only when MSAA on
         if self.msaa_samples > 1 {
-            self.msaa_color_texture = Some(
-                self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("MSAA Color Texture"),
-                    size: wgpu::Extent3d {
-                        width: self.surface_config.width,
-                        height: self.surface_config.height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: self.msaa_samples,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: self.surface_config.format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                }),
-            );
-            self.msaa_color_view = self.msaa_color_texture.as_ref().map(|t| {
-                t.create_view(&wgpu::TextureViewDescriptor::default())
-            });
+            self.msaa_color_texture = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("MSAA Color Texture"),
+                size: wgpu::Extent3d {
+                    width: self.surface_config.width,
+                    height: self.surface_config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: self.msaa_samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.surface_config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            }));
+            self.msaa_color_view = self
+                .msaa_color_texture
+                .as_ref()
+                .map(|t| t.create_view(&wgpu::TextureViewDescriptor::default()));
         } else {
             self.msaa_color_texture = None;
             self.msaa_color_view = None;
@@ -2236,7 +2274,7 @@ impl Graphics {
         let ui_view = glam::Mat4::from_scale(glam::vec3(ui_scale_x, ui_scale_y, 1.0));
         let ui_ndc_scale = glam::vec2(
             (2.0_f64 / window_width as f64) as f32,
-            (2.0_f64 / window_height as f64) as f32
+            (2.0_f64 / window_height as f64) as f32,
         );
 
         let ui_cam_uniform = CameraUniform {
@@ -2248,8 +2286,11 @@ impl Graphics {
             view: ui_view.to_cols_array_2d(),
         };
 
-        self.queue
-            .write_buffer(&self.ui_camera_buffer, 0, bytemuck::bytes_of(&ui_cam_uniform));
+        self.queue.write_buffer(
+            &self.ui_camera_buffer,
+            0,
+            bytemuck::bytes_of(&ui_cam_uniform),
+        );
     }
 
     pub fn update_camera_2d(&mut self, cam: &Camera2D) {
@@ -2306,9 +2347,10 @@ impl Graphics {
 
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&cam_uniform));
-        
+
         // OPTIMIZED: Update viewport culling info in primitive renderer
-        self.renderer_prim.update_camera_2d(t.position, t.rotation, zoom);
+        self.renderer_prim
+            .update_camera_2d(t.position, t.rotation, zoom);
     }
 
     pub fn update_camera_3d(&mut self, cam: &Camera3D) {
@@ -2359,7 +2401,8 @@ impl Graphics {
     /// Stops rendering this node: 2D/UI (rect + texture) and 3D mesh. Unregisters texture/mesh
     /// users so eviction can reclaim resources after EVICTION_FRAMES at zero users.
     pub fn stop_rendering(&mut self, uuid: u64) {
-        self.renderer_prim.stop_rendering(uuid, &mut self.texture_manager);
+        self.renderer_prim
+            .stop_rendering(uuid, &mut self.texture_manager);
         self.renderer_3d
             .stop_rendering_mesh(NodeID::from_u64(uuid), &mut self.mesh_manager);
     }
@@ -2428,7 +2471,9 @@ impl Graphics {
 
         // OPTIMIZED: Use cached camera matrices instead of recalculating
         // Fallback to calculation if cache is invalid (shouldn't happen in normal flow)
-        let (view, proj) = if let (Some(v), Some(p)) = (self.cached_camera3d_view, self.cached_camera3d_proj) {
+        let (view, proj) = if let (Some(v), Some(p)) =
+            (self.cached_camera3d_view, self.cached_camera3d_proj)
+        {
             (v, p)
         } else {
             // Fallback: recalculate if cache is missing (shouldn't happen normally)
@@ -2489,7 +2534,7 @@ impl Graphics {
                 &self.vertex_buffer,
             );
         }
-        
+
         // TODO: Render egui UI elements here
         // egui rendering is prepared in render_ui() and will be rendered here
         // For now, egui context is updated but not yet rendered to screen
@@ -2509,11 +2554,11 @@ impl Graphics {
                     let view = frame
                         .texture
                         .create_view(&wgpu::TextureViewDescriptor::default());
-                    let encoder = self
-                        .device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Main Encoder"),
-                        });
+                    let encoder =
+                        self.device
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("Main Encoder"),
+                            });
                     return (frame, view, encoder);
                 }
                 Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -2564,11 +2609,7 @@ impl Graphics {
 
     /// Render egui UI output to the screen
     /// Must be called after the main render pass, before end_frame
-    pub fn render_egui(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) {
+    pub fn render_egui(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         // Ensure renderer is initialized first
         self.ensure_egui_renderer();
 
@@ -2581,12 +2622,7 @@ impl Graphics {
         // Update textures if needed
         if let Some(renderer) = &mut self.egui_renderer {
             for (id, image_delta) in &full_output.textures_delta.set {
-                renderer.update_texture(
-                    &self.device,
-                    &self.queue,
-                    *id,
-                    image_delta,
-                );
+                renderer.update_texture(&self.device, &self.queue, *id, image_delta);
             }
 
             // Remove old textures
@@ -2641,20 +2677,18 @@ impl Graphics {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             };
-            
+
             // SAFETY: egui-wgpu re-exports wgpu, so types should be compatible
             // We need to convert the render pass to egui_wgpu's wgpu type
             let mut rpass = encoder.begin_render_pass(&rpass_descriptor);
             // Use egui_wgpu's wgpu types explicitly
             use egui_wgpu::wgpu as egui_wgpu_types;
             let rpass_egui: &mut egui_wgpu_types::RenderPass<'_> = unsafe {
-                std::mem::transmute::<&mut wgpu::RenderPass<'_>, &mut egui_wgpu_types::RenderPass<'_>>(&mut rpass)
+                std::mem::transmute::<&mut wgpu::RenderPass<'_>, &mut egui_wgpu_types::RenderPass<'_>>(
+                    &mut rpass,
+                )
             };
-            renderer.render(
-                rpass_egui,
-                &paint_jobs,
-                &screen_descriptor,
-            );
+            renderer.render(rpass_egui, &paint_jobs, &screen_descriptor);
         }
     }
 }

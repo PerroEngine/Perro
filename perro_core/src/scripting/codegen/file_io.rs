@@ -1,23 +1,25 @@
 // File I/O operations for code generation
-use std::fs;
-use std::path::Path;
-use regex::Regex;
+use super::boilerplate::implement_script_boilerplate_internal;
+use super::utils::to_pascal_case;
 use crate::ast::*;
 use crate::scripting::ast::Type;
-use super::utils::to_pascal_case;
-use super::boilerplate::implement_script_boilerplate_internal;
+use regex::Regex;
+use std::fs;
+use std::path::Path;
 
 /// Strip println! and eprintln! statements from Rust code when not in verbose mode
 fn strip_rust_prints(code: &str) -> String {
     // Match println! and eprintln! macro calls on a single line
     // Pattern matches: println!(...); or eprintln!(...);
     let print_re = Regex::new(r"(?m)^(\s*)((?:println|eprintln)!\([^;]*\);?)\s*$").unwrap();
-    
-    print_re.replace_all(code, |caps: &regex::Captures| {
-        let indent = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-        let print_call = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-        format!("{}// [stripped for release] {}\n", indent, print_call)
-    }).to_string()
+
+    print_re
+        .replace_all(code, |caps: &regex::Captures| {
+            let indent = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let print_call = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+            format!("{}// [stripped for release] {}\n", indent, print_call)
+        })
+        .to_string()
 }
 
 pub fn write_to_crate(
@@ -204,14 +206,15 @@ pub fn derive_rust_perro_script(
         // Find the opening brace
         if let Some(brace_pos) = code[start_pos..].find('{') {
             let block_start = start_pos + brace_pos;
-            
+
             // Search for trait methods after this point (they must be before the next impl block or EOF)
-            let next_impl_pos = code[block_start..].find("impl ")
+            let next_impl_pos = code[block_start..]
+                .find("impl ")
                 .map(|p| block_start + p)
                 .unwrap_or(code.len());
-            
+
             let search_region = &code[block_start..next_impl_pos];
-            
+
             // Find init, update, fixed_update methods
             let fn_re = Regex::new(r"fn\s+(init|update|fixed_update)\s*\(").unwrap();
 
@@ -220,7 +223,7 @@ pub fn derive_rust_perro_script(
 
                 functions.push(Function {
                     name: fn_name.clone(),
-                    is_trait_method: true,  // Mark as trait method for flag detection
+                    is_trait_method: true, // Mark as trait method for flag detection
                     params: vec![],
                     return_type: Type::Void,
                     uses_self: false,
@@ -243,15 +246,16 @@ pub fn derive_rust_perro_script(
     // Find the impl block start position
     let impl_pattern1 = format!("impl {}", format!("{}Script", actual_struct_name));
     let impl_pattern2 = format!("impl {}", actual_struct_name);
-    
-    let impl_start = code.find(&impl_pattern1)
+
+    let impl_start = code
+        .find(&impl_pattern1)
         .or_else(|| code.find(&impl_pattern2));
-    
+
     if let Some(start_pos) = impl_start {
         // Find the opening brace
         if let Some(brace_start) = code[start_pos..].find('{') {
             let brace_pos = start_pos + brace_start;
-            
+
             // Find matching closing brace by counting braces
             let mut brace_count = 0;
             let mut impl_end = None;
@@ -268,112 +272,125 @@ pub fn derive_rust_perro_script(
                     _ => {}
                 }
             }
-            
+
             if let Some(end_pos) = impl_end {
                 let impl_body = &code[brace_pos + 1..end_pos - 1]; // Exclude the braces
 
-        // Parse attributes for functions: ///@AttributeName before pub fn or fn function_name
-        let fn_attr_re = Regex::new(r"///\s*@(\w+)[^\n]*\n\s*(?:pub\s+)?fn\s+(\w+)").unwrap();
-        for attr_cap in fn_attr_re.captures_iter(impl_body) {
-            let attr_name = attr_cap[1].to_string();
-            let fn_name = attr_cap[2].to_string();
-            attributes_map
-                .entry(fn_name.clone())
-                .or_insert_with(Vec::new)
-                .push(attr_name);
-        }
-
-        // Find all function definitions with their full signatures
-        // Matches: pub fn or fn function_name(&mut self, param: Type, ...) -> ReturnType {
-        let fn_re = Regex::new(r"(?:pub\s+)?fn\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*([^{]+))?").unwrap();
-
-        for fn_cap in fn_re.captures_iter(impl_body) {
-            let fn_name = fn_cap[1].to_string();
-            let params_str = fn_cap.get(2).map_or("", |m| m.as_str());
-            let return_str = fn_cap.get(3).map_or("", |m| m.as_str().trim());
-
-            // Skip local functions (functions without self parameter) - these are not methods
-            // Methods on the struct will have &mut self or &self as the first parameter
-            let params_trimmed = params_str.trim();
-            if !params_trimmed.starts_with("&mut self") 
-                && !params_trimmed.starts_with("&self")
-                && params_trimmed != "&mut self"
-                && params_trimmed != "&self" {
-                // This is likely a local function, not a method - skip it
-                continue;
-            }
-
-            // Parse parameters
-            let mut params = Vec::new();
-
-            // Split by comma and parse each parameter
-            for param in params_str.split(',') {
-                let param = param.trim();
-                if param.is_empty() || param == "&mut self" || param == "&self" {
-                    continue;
+                // Parse attributes for functions: ///@AttributeName before pub fn or fn function_name
+                let fn_attr_re =
+                    Regex::new(r"///\s*@(\w+)[^\n]*\n\s*(?:pub\s+)?fn\s+(\w+)").unwrap();
+                for attr_cap in fn_attr_re.captures_iter(impl_body) {
+                    let attr_name = attr_cap[1].to_string();
+                    let fn_name = attr_cap[2].to_string();
+                    attributes_map
+                        .entry(fn_name.clone())
+                        .or_insert_with(Vec::new)
+                        .push(attr_name);
                 }
 
-                // Remove 'mut ' prefix if present
-                let param = param.strip_prefix("mut ").unwrap_or(param).trim();
+                // Find all function definitions with their full signatures
+                // Matches: pub fn or fn function_name(&mut self, param: Type, ...) -> ReturnType {
+                let fn_re =
+                    Regex::new(r"(?:pub\s+)?fn\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*([^{]+))?").unwrap();
 
-                // Split by ':' to get name and type
-                if let Some((name, typ_str)) = param.split_once(':') {
-                    let name = name.trim().to_string();
-                    let typ_str_trimmed = typ_str.trim();
-                    
-                    // Keep ScriptApi parameters in the list (we'll handle them specially in boilerplate)
-                    // Mark them as ScriptApi type so we can detect them
-                    let typ = if typ_str_trimmed.contains("ScriptApi") {
-                        Type::ScriptApi
-                    } else {
-                        // For Rust scripts, preserve reference information in Custom types
-                        // If it's a reference type like &Path or &Manifest, store it as "&Path" or "&Manifest"
-                        // so we can add & prefix when calling the function
-                        let parsed = Variable::parse_type(typ_str_trimmed);
-                        match &parsed {
-                            Type::Custom(tn) if typ_str_trimmed.starts_with('&') && !tn.starts_with('&') => {
-                                // Preserve the & prefix for reference types
-                                Type::Custom(format!("&{}", tn))
-                            },
-                            _ => parsed,
+                for fn_cap in fn_re.captures_iter(impl_body) {
+                    let fn_name = fn_cap[1].to_string();
+                    let params_str = fn_cap.get(2).map_or("", |m| m.as_str());
+                    let return_str = fn_cap.get(3).map_or("", |m| m.as_str().trim());
+
+                    // Skip local functions (functions without self parameter) - these are not methods
+                    // Methods on the struct will have &mut self or &self as the first parameter
+                    let params_trimmed = params_str.trim();
+                    if !params_trimmed.starts_with("&mut self")
+                        && !params_trimmed.starts_with("&self")
+                        && params_trimmed != "&mut self"
+                        && params_trimmed != "&self"
+                    {
+                        // This is likely a local function, not a method - skip it
+                        continue;
+                    }
+
+                    // Parse parameters
+                    let mut params = Vec::new();
+
+                    // Split by comma and parse each parameter
+                    for param in params_str.split(',') {
+                        let param = param.trim();
+                        if param.is_empty() || param == "&mut self" || param == "&self" {
+                            continue;
                         }
+
+                        // Remove 'mut ' prefix if present
+                        let param = param.strip_prefix("mut ").unwrap_or(param).trim();
+
+                        // Split by ':' to get name and type
+                        if let Some((name, typ_str)) = param.split_once(':') {
+                            let name = name.trim().to_string();
+                            let typ_str_trimmed = typ_str.trim();
+
+                            // Keep ScriptApi parameters in the list (we'll handle them specially in boilerplate)
+                            // Mark them as ScriptApi type so we can detect them
+                            let typ = if typ_str_trimmed.contains("ScriptApi") {
+                                Type::ScriptApi
+                            } else {
+                                // For Rust scripts, preserve reference information in Custom types
+                                // If it's a reference type like &Path or &Manifest, store it as "&Path" or "&Manifest"
+                                // so we can add & prefix when calling the function
+                                let parsed = Variable::parse_type(typ_str_trimmed);
+                                match &parsed {
+                                    Type::Custom(tn)
+                                        if typ_str_trimmed.starts_with('&')
+                                            && !tn.starts_with('&') =>
+                                    {
+                                        // Preserve the & prefix for reference types
+                                        Type::Custom(format!("&{}", tn))
+                                    }
+                                    _ => parsed,
+                                }
+                            };
+
+                            params.push(Param {
+                                name,
+                                typ,
+                                span: None,
+                            });
+                        }
+                    }
+
+                    // Parse return type
+                    let return_type = if return_str.is_empty() {
+                        Type::Void
+                    } else {
+                        Variable::parse_type(return_str)
                     };
 
-                    params.push(Param { name, typ, span: None });
+                    // Get attributes for this function
+                    let func_attributes = attributes_map.get(&fn_name).cloned().unwrap_or_default();
+
+                    // Skip functions marked with @skip attribute - these are internal helpers
+                    if func_attributes
+                        .iter()
+                        .any(|attr| attr.to_lowercase() == "skip")
+                    {
+                        continue;
+                    }
+
+                    functions.push(Function {
+                        name: fn_name.clone(),
+                        is_trait_method: false,
+                        params,
+                        return_type,
+                        uses_self: false,
+                        span: None,
+                        cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
+                        body: vec![],
+                        locals: vec![],
+                        attributes: func_attributes,
+                        is_on_signal: false,
+                        is_lifecycle_method: false,
+                        signal_name: None,
+                    });
                 }
-            }
-
-            // Parse return type
-            let return_type = if return_str.is_empty() {
-                Type::Void
-            } else {
-                Variable::parse_type(return_str)
-            };
-
-            // Get attributes for this function
-            let func_attributes = attributes_map.get(&fn_name).cloned().unwrap_or_default();
-            
-            // Skip functions marked with @skip attribute - these are internal helpers
-            if func_attributes.iter().any(|attr| attr.to_lowercase() == "skip") {
-                continue;
-            }
-
-            functions.push(Function {
-                name: fn_name.clone(),
-                is_trait_method: false,
-                params,
-                return_type,
-                uses_self: false,
-                span: None,
-                cloned_child_nodes: Vec::new(), // Will be populated during analyze_self_usage
-                body: vec![],
-                locals: vec![],
-                attributes: func_attributes,
-                is_on_signal: false,
-                is_lifecycle_method: false,
-                signal_name: None,
-            });
-        }
             } else {
                 // Couldn't find matching brace, skip this impl block
             }
@@ -506,8 +523,13 @@ pub fn derive_rust_perro_script(
         final_code.insert_str(struct_pos, &attributes_map_code);
     }
 
-    let boilerplate =
-        implement_script_boilerplate_internal(&actual_struct_name, &variables, &functions, &attributes_map, true);
+    let boilerplate = implement_script_boilerplate_internal(
+        &actual_struct_name,
+        &variables,
+        &functions,
+        &attributes_map,
+        true,
+    );
     let mut combined = format!("{}\n\n{}", final_code, boilerplate);
 
     // Strip println! and eprintln! statements when not in verbose mode
@@ -517,4 +539,3 @@ pub fn derive_rust_perro_script(
 
     write_to_crate(project_path, &combined, struct_name)
 }
-

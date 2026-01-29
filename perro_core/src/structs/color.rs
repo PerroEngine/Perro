@@ -23,7 +23,11 @@ impl Default for Color {
 
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Color(r:{}, g:{}, b:{}, a:{})", self.r, self.g, self.b, self.a)
+        write!(
+            f,
+            "Color(r:{}, g:{}, b:{}, a:{})",
+            self.r, self.g, self.b, self.a
+        )
     }
 }
 
@@ -152,15 +156,15 @@ impl Color {
             ("cinder-8", Color::new(21, 35, 43, 255)),
             ("cinder-9", Color::new(18, 31, 39, 255)),
             ("cinder-10", Color::new(15, 28, 36, 255)),
-            ("steel-1", Color::new(185, 188, 193, 255)),  
-            ("steel-2", Color::new(165, 168, 173, 255)), 
-            ("steel-3", Color::new(145, 148, 153, 255)),  
-            ("steel-4", Color::new(125, 128, 133, 255)),  
-            ("steel-5", Color::new(105, 108, 113, 255)),   
-            ("steel-6", Color::new(85, 88, 93, 255)),  
-            ("steel-7", Color::new(65, 70, 80, 255)),   
-            ("steel-8", Color::new(55, 60, 70, 255)),     
-            ("steel-9", Color::new(45, 50, 60, 255)),   
+            ("steel-1", Color::new(185, 188, 193, 255)),
+            ("steel-2", Color::new(165, 168, 173, 255)),
+            ("steel-3", Color::new(145, 148, 153, 255)),
+            ("steel-4", Color::new(125, 128, 133, 255)),
+            ("steel-5", Color::new(105, 108, 113, 255)),
+            ("steel-6", Color::new(85, 88, 93, 255)),
+            ("steel-7", Color::new(65, 70, 80, 255)),
+            ("steel-8", Color::new(55, 60, 70, 255)),
+            ("steel-9", Color::new(45, 50, 60, 255)),
             ("steel-10", Color::new(35, 40, 50, 255)),
             ("red-1", Color::new(217, 187, 187, 255)),
             ("red-2", Color::new(217, 167, 167, 255)),

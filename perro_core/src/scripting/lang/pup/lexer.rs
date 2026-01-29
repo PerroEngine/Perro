@@ -1,4 +1,3 @@
-
 // =========================================================
 // TOKENS & LEXER
 // =========================================================
@@ -89,11 +88,11 @@ impl PupLexer {
             column: 1,
         }
     }
-    
+
     pub fn current_line(&self) -> u32 {
         self.line
     }
-    
+
     pub fn current_column(&self) -> u32 {
         self.column
     }

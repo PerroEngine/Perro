@@ -122,7 +122,7 @@ fn resolve_project_root(path_arg: &str) -> PathBuf {
 fn main() {
     // Name the main thread
     perro_core::thread_utils::set_current_thread_name("Main");
-    
+
     let args: Vec<String> = env::args().collect();
 
     // Handle "new" command to create a new project
@@ -151,31 +151,42 @@ fn main() {
             projects_dir.join(project_name)
         };
 
-        match perro_core::project_creator::create_new_project(project_name, &project_path, true, false) {
+        match perro_core::project_creator::create_new_project(
+            project_name,
+            &project_path,
+            true,
+            false,
+        ) {
             Ok(_) => {
                 println!("✅ Project created successfully!");
-                
+
                 // Set project root for script building
                 set_project_root(ProjectRoot::Disk {
                     root: project_path.clone(),
                     name: project_name.clone(),
                 });
-                
+
                 // Build scripts automatically so the project is ready to run
                 println!("📜 Building scripts...");
                 if let Err(e) = transpile(&project_path, true, false, true) {
                     eprintln!("⚠️  Warning: Failed to transpile scripts: {}", e);
-                    eprintln!("   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts", project_path.display());
+                    eprintln!(
+                        "   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts",
+                        project_path.display()
+                    );
                 } else {
                     let compiler = Compiler::new(&project_path, CompileTarget::Scripts, true);
                     if let Err(e) = compiler.compile(BuildProfile::Dev) {
                         eprintln!("⚠️  Warning: Failed to compile scripts: {}", e);
-                        eprintln!("   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts", project_path.display());
+                        eprintln!(
+                            "   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts",
+                            project_path.display()
+                        );
                     } else {
                         println!("✅ Scripts built successfully!");
                     }
                 }
-                
+
                 std::process::exit(0);
             }
             Err(e) => {
@@ -200,24 +211,26 @@ fn main() {
         let project_root = resolve_project_root(path_arg);
         let folded_path = project_root.join("flamegraph.folded");
         let svg_path = project_root.join("flamegraph.svg");
-        
+
         if !folded_path.exists() {
             eprintln!("❌ Flamegraph folded file not found at: {:?}", folded_path);
             eprintln!("   Run with --profile first to generate the folded file");
             std::process::exit(1);
         }
-        
+
         println!("📊 Converting {:?} to {:?}...", folded_path, svg_path);
-        
+
         #[cfg(feature = "profiling")]
         {
             perro_core::runtime::convert_flamegraph(&folded_path, &svg_path);
         }
-        
+
         #[cfg(not(feature = "profiling"))]
         {
             eprintln!("❌ Profiling feature not enabled!");
-            eprintln!("   Build with: cargo run -p perro_core --features profiling -- --path <path> --convert-flamegraph");
+            eprintln!(
+                "   Build with: cargo run -p perro_core --features profiling -- --path <path> --convert-flamegraph"
+            );
             std::process::exit(1);
         }
     }
@@ -267,31 +280,29 @@ fn main() {
                 // Only add if it's not another flag (like --run)
                 if !project_path.starts_with("--") {
                     println!("📂 Editor mode: Project path: {}", project_path);
-                    cmd.arg("--editor")
-                        .arg(project_path);
+                    cmd.arg("--editor").arg(project_path);
                 }
             }
         }
 
-        let mut child = cmd
-            .spawn()
-            .expect("Failed to spawn perro_dev");
+        let mut child = cmd.spawn().expect("Failed to spawn perro_dev");
 
         // Wait for it to finish
         let status = child.wait().expect("Failed to wait on child process");
-        
+
         if !status.success() {
             eprintln!("❌ perro_dev exited with error");
             std::process::exit(1);
         }
-        
+
         std::process::exit(0);
     }
 
     // Handle --profile command (build scripts + run with headless profiling)
     // --flamegraph is kept as an alias for backwards compatibility
-    let enable_profiling = args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
-    
+    let enable_profiling =
+        args.contains(&"--profile".to_string()) || args.contains(&"--flamegraph".to_string());
+
     if enable_profiling {
         let path_flag_i = args.iter().position(|a| a == "--path");
         let path_arg = path_flag_i
@@ -337,7 +348,10 @@ fn main() {
         }
 
         println!("✅ Scripts built! Starting dev runner with profiling…");
-        println!("🔥 Profiling enabled! Flamegraph will be written to {:?}", project_root.join("flamegraph.folded"));
+        println!(
+            "🔥 Profiling enabled! Flamegraph will be written to {:?}",
+            project_root.join("flamegraph.folded")
+        );
 
         // Run the project in dev mode with profiling using run_dev_with_path
         // The profiling feature is already enabled in this build
@@ -409,24 +423,21 @@ fn main() {
                 // Only add if it's not another flag (like --dev)
                 if !project_path.starts_with("--") {
                     println!("📂 Editor mode: Project path: {}", project_path);
-                    cmd.arg("--editor")
-                        .arg(project_path);
+                    cmd.arg("--editor").arg(project_path);
                 }
             }
         }
 
-        let mut child = cmd
-            .spawn()
-            .expect("Failed to spawn perro_dev");
+        let mut child = cmd.spawn().expect("Failed to spawn perro_dev");
 
         // Wait for it to finish
         let status = child.wait().expect("Failed to wait on child process");
-        
+
         if !status.success() {
             eprintln!("❌ perro_dev exited with error");
             std::process::exit(1);
         }
-        
+
         std::process::exit(0);
     }
 

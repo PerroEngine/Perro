@@ -1,17 +1,14 @@
 use std::collections::HashMap;
 
+use crate::ids::UIElementID;
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
-use crate::ids::UIElementID;
 
 use crate::{
     fur_ast::FurAnchor,
     structs::Color,
     structs2d::{Transform2D, Vector2},
-    ui_elements::{
-        ui_container::UIPanel,
-        ui_text::UIText,
-    },
+    ui_elements::{ui_container::UIPanel, ui_text::UIText},
 };
 
 // Helper function for serde default
@@ -28,7 +25,11 @@ fn uielementid_is_nil(id: &UIElementID) -> bool {
 pub struct BaseUIElement {
     pub id: UIElementID,
     pub name: String,
-    #[serde(rename = "parent", default = "uielementid_nil", skip_serializing_if = "uielementid_is_nil")]
+    #[serde(
+        rename = "parent",
+        default = "uielementid_nil",
+        skip_serializing_if = "uielementid_is_nil"
+    )]
     pub parent_id: UIElementID,
     pub children: Vec<UIElementID>,
 
@@ -52,7 +53,13 @@ pub struct BaseUIElement {
 
 impl Default for BaseUIElement {
     fn default() -> Self {
-        let id = UIElementID::from_string(&format!("el-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let id = UIElementID::from_string(&format!(
+            "el-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         Self {
             id,
             name: id.to_string(),
@@ -282,7 +289,7 @@ impl<'a> UIUpdateContext<'a> {
             false
         }
     }
-    
+
     /// Check if a key was just triggered this frame
     pub fn is_key_triggered(&mut self, key: winit::keyboard::KeyCode) -> bool {
         if let Some(input_mgr) = self.api.scene.get_input_manager() {
@@ -292,7 +299,7 @@ impl<'a> UIUpdateContext<'a> {
             false
         }
     }
-    
+
     /// Get text input from IME and clear the buffer
     pub fn get_text_input(&mut self) -> String {
         if let Some(input_mgr) = self.api.scene.get_input_manager() {
@@ -304,7 +311,7 @@ impl<'a> UIUpdateContext<'a> {
             String::new()
         }
     }
-    
+
     /// Check if right mouse button is pressed
     pub fn is_right_mouse_pressed(&self) -> bool {
         if let Some(input_mgr) = self.api.scene.get_input_manager() {
@@ -334,11 +341,11 @@ pub fn is_point_in_rounded_rect(
 ) -> bool {
     let half_w = size.x * 0.5;
     let half_h = size.y * 0.5;
-    
+
     // Rounding values are normalized (0.0 to 1.0), where 1.0 = fully rounded
     // The maximum possible radius is the minimum of half width and half height
     let max_radius = half_w.min(half_h);
-    
+
     // Convert normalized rounding values to actual pixel radii
     // Values >= 0.99 are treated as "full" (100% of max radius)
     // Other values are treated as percentages of max radius
@@ -362,50 +369,51 @@ pub fn is_point_in_rounded_rect(
     } else {
         corner_radius.bottom_left * max_radius
     };
-    
+
     // Quick AABB rejection test
     if local_pos.x.abs() > half_w || local_pos.y.abs() > half_h {
         return false;
     }
-    
+
     let abs_x = local_pos.x.abs();
     let abs_y = local_pos.y.abs();
-    
+
     // Determine which corner region we're in (if any)
-    let (corner_radius, corner_center_x, corner_center_y) = if local_pos.x >= 0.0 && local_pos.y >= 0.0 {
-        // Top-right corner
-        (tr_radius, half_w - tr_radius, half_h - tr_radius)
-    } else if local_pos.x >= 0.0 && local_pos.y < 0.0 {
-        // Bottom-right corner
-        (br_radius, half_w - br_radius, -(half_h - br_radius))
-    } else if local_pos.x < 0.0 && local_pos.y >= 0.0 {
-        // Top-left corner
-        (tl_radius, -(half_w - tl_radius), half_h - tl_radius)
-    } else {
-        // Bottom-left corner
-        (bl_radius, -(half_w - bl_radius), -(half_h - bl_radius))
-    };
-    
+    let (corner_radius, corner_center_x, corner_center_y) =
+        if local_pos.x >= 0.0 && local_pos.y >= 0.0 {
+            // Top-right corner
+            (tr_radius, half_w - tr_radius, half_h - tr_radius)
+        } else if local_pos.x >= 0.0 && local_pos.y < 0.0 {
+            // Bottom-right corner
+            (br_radius, half_w - br_radius, -(half_h - br_radius))
+        } else if local_pos.x < 0.0 && local_pos.y >= 0.0 {
+            // Top-left corner
+            (tl_radius, -(half_w - tl_radius), half_h - tl_radius)
+        } else {
+            // Bottom-left corner
+            (bl_radius, -(half_w - bl_radius), -(half_h - bl_radius))
+        };
+
     // Check if point is in the central rectangular area (not in corner region)
     // A point is in the central area if it's not in any corner's rounded region
     let in_corner_region = abs_x > (half_w - corner_radius) && abs_y > (half_h - corner_radius);
-    
+
     if !in_corner_region {
         // Point is in the central rectangular area
         return true;
     }
-    
+
     // Point is in a corner region - check if it's inside the corner's circular arc
     // If no rounding on this corner, it's inside (shouldn't happen if in_corner_region is true, but be safe)
     if corner_radius <= 0.0 {
         return true;
     }
-    
+
     // Check if point is inside the corner's circular arc
     let dx = local_pos.x - corner_center_x;
     let dy = local_pos.y - corner_center_y;
     let dist_sq = dx * dx + dy * dy;
-    
+
     dist_sq <= corner_radius * corner_radius
 }
 

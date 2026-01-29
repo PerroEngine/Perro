@@ -3,7 +3,7 @@ use tree_sitter::Parser;
 
 // Assuming these are defined in your crate
 
-use crate::{ast::*, lang::csharp::api::CSharpAPI, call_modules::CallModule};
+use crate::{ast::*, call_modules::CallModule, lang::csharp::api::CSharpAPI};
 
 pub struct CsParser {
     source: String,
@@ -661,7 +661,11 @@ impl CsParser {
             }
         }
 
-        Ok(Param { name, typ, span: None })
+        Ok(Param {
+            name,
+            typ,
+            span: None,
+        })
     }
 
     fn parse_block(&mut self, node: tree_sitter::Node) -> Result<Vec<Stmt>, String> {

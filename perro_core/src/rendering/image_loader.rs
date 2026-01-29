@@ -6,13 +6,17 @@ use image::{GenericImageView, RgbaImage};
 /// Decode image bytes directly to RGBA8, using fast format-specific decoders when possible
 pub fn decode_image_fast(bytes: &[u8], path: &str) -> Result<(RgbaImage, u32, u32), String> {
     // Detect format from file extension first (fastest)
-    let format = detect_format_from_path(path)
-        .or_else(|| detect_format_from_magic_bytes(bytes));
+    let format = detect_format_from_path(path).or_else(|| detect_format_from_magic_bytes(bytes));
 
     match format {
         Some(ImageFormat::Png) => decode_png_fast(bytes),
         Some(ImageFormat::Jpeg) => decode_jpeg_fast(bytes),
-        Some(ImageFormat::WebP) | Some(ImageFormat::Bmp) | Some(ImageFormat::Gif) | Some(ImageFormat::Tga) | Some(ImageFormat::Ico) | None => {
+        Some(ImageFormat::WebP)
+        | Some(ImageFormat::Bmp)
+        | Some(ImageFormat::Gif)
+        | Some(ImageFormat::Tga)
+        | Some(ImageFormat::Ico)
+        | None => {
             // Fall back to image crate for formats without fast decoders or unknown formats
             decode_with_image_crate(bytes)
         }
@@ -102,7 +106,7 @@ fn decode_png_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
         .checked_mul(height as usize)
         .and_then(|x| x.checked_mul(4))
         .ok_or_else(|| "Image dimensions too large".to_string())?;
-    
+
     let mut rgba_data = Vec::with_capacity(pixel_count);
     rgba_data.resize(pixel_count, 0u8);
 
@@ -122,16 +126,17 @@ fn decode_jpeg_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
     use jpeg_decoder::Decoder;
 
     let mut decoder = Decoder::new(bytes);
-    
+
     // Decode the image
     let pixels = decoder
         .decode()
         .map_err(|e| format!("Failed to decode JPEG: {}", e))?;
-    
+
     // Get dimensions and pixel format from decoder info
-    let info = decoder.info()
+    let info = decoder
+        .info()
         .ok_or_else(|| "Failed to get JPEG decoder info".to_string())?;
-    
+
     let width = info.width as u32;
     let height = info.height as u32;
     let pixel_format = info.pixel_format;
@@ -141,7 +146,7 @@ fn decode_jpeg_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
         .checked_mul(height as usize)
         .and_then(|x| x.checked_mul(4))
         .ok_or_else(|| "Image dimensions too large".to_string())?;
-    
+
     let mut rgba_data = Vec::with_capacity(pixel_count);
 
     // Convert to RGBA8 with optimized conversions
@@ -194,8 +199,8 @@ fn decode_jpeg_fast(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
 }
 
 fn decode_with_image_crate(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String> {
-    let img = image::load_from_memory(bytes)
-        .map_err(|e| format!("Failed to decode image: {}", e))?;
+    let img =
+        image::load_from_memory(bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
     let (width, height) = img.dimensions();
     let rgba = img.to_rgba8();
     Ok((rgba, width, height))
@@ -203,6 +208,9 @@ fn decode_with_image_crate(bytes: &[u8]) -> Result<(RgbaImage, u32, u32), String
 
 /// Load and decode image from bytes, optimized for dev mode
 /// Returns RGBA8 image directly (avoids DynamicImage conversion overhead)
-pub fn load_and_decode_image_fast(bytes: &[u8], path: &str) -> Result<(image::RgbaImage, u32, u32), String> {
+pub fn load_and_decode_image_fast(
+    bytes: &[u8],
+    path: &str,
+) -> Result<(image::RgbaImage, u32, u32), String> {
     decode_image_fast(bytes, path)
 }

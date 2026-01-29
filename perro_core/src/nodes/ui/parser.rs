@@ -1,5 +1,5 @@
-use std::{borrow::Cow, collections::HashMap};
 use crate::ids::UIElementID;
+use std::{borrow::Cow, collections::HashMap};
 
 use crate::fur_ast::{FurElement, FurNode};
 
@@ -318,7 +318,14 @@ impl<'a> FurParser<'a> {
                 id: attributes
                     .get("id")
                     .cloned()
-                    .unwrap_or_else(|| format!("{}_{}", tag_name, UIElementID::from_string(&format!("gen-{}", line!()))).into())
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{}_{}",
+                            tag_name,
+                            UIElementID::from_string(&format!("gen-{}", line!()))
+                        )
+                        .into()
+                    })
                     .into(),
                 attributes,
                 children: vec![FurNode::Text(content.into())],
@@ -359,10 +366,14 @@ impl<'a> FurParser<'a> {
 
         self.element_stack.pop();
 
-        let id = attributes
-            .get("id")
-            .cloned()
-            .unwrap_or_else(|| format!("{}_{}", tag_name, UIElementID::from_string(&format!("gen-{}", line!()))).into());
+        let id = attributes.get("id").cloned().unwrap_or_else(|| {
+            format!(
+                "{}_{}",
+                tag_name,
+                UIElementID::from_string(&format!("gen-{}", line!()))
+            )
+            .into()
+        });
 
         Ok(FurNode::Element(FurElement {
             tag_name: Cow::Owned(tag_name.to_string()),
@@ -506,7 +517,6 @@ static GENERAL_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
         ("2xl", "48"),
         ("3xl", "64"),
         ("4xl", "96"),
-
     ]
     .iter()
     .cloned()

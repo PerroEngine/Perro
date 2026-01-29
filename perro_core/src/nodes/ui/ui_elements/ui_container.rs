@@ -1,6 +1,6 @@
 use crate::structs::Color;
 use crate::structs2d::Vector2;
-use crate::{ids::UIElementID, impl_ui_element, ui_element::BaseUIElement};
+use crate::{impl_ui_element, ui_element::BaseUIElement};
 use serde::{Deserialize, Serialize};
 /// =========================
 /// 1. Placeholder container
@@ -36,12 +36,12 @@ impl Padding {
             left: padding,
         }
     }
-    
+
     /// Returns the total horizontal padding (left + right)
     pub fn horizontal(&self) -> f32 {
         self.left + self.right
     }
-    
+
     /// Returns the total vertical padding (top + bottom)
     pub fn vertical(&self) -> f32 {
         self.top + self.bottom
@@ -51,11 +51,11 @@ impl Padding {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Container {
     pub mode: ContainerMode,            // Horizontal, Vertical, Grid
-    pub gap: Vector2,                   // extra spacing between children (added on top of default gap)
+    pub gap: Vector2, // extra spacing between children (added on top of default gap)
     pub distribution: DistributionMode, // pack or even spacing
-    pub padding: Padding,               // padding that reduces effective parent size for children
+    pub padding: Padding, // padding that reduces effective parent size for children
     #[serde(default)]
-    pub align: LayoutAlignment,        // alignment of children (start/center/end)
+    pub align: LayoutAlignment, // alignment of children (start/center/end)
 }
 
 impl Default for Container {
@@ -122,7 +122,7 @@ pub struct VLayout {
     pub distribution: DistributionMode, // pack or even spacing
     pub padding: Padding,               // padding that reduces effective parent size for children
     #[serde(default)]
-    pub align: LayoutAlignment,        // alignment of children (start/center/end)
+    pub align: LayoutAlignment, // alignment of children (start/center/end)
 }
 
 impl Default for VLayout {
@@ -147,7 +147,7 @@ pub struct HLayout {
     pub distribution: DistributionMode, // pack or even spacing
     pub padding: Padding,               // padding that reduces effective parent size for children
     #[serde(default)]
-    pub align: LayoutAlignment,        // alignment of children (start/center/end)
+    pub align: LayoutAlignment, // alignment of children (start/center/end)
 }
 
 impl Default for HLayout {
@@ -169,10 +169,10 @@ impl_ui_element!(HLayout);
 pub struct GridLayout {
     pub base: BaseUIElement,
     pub cols: usize,
-    pub gap: Vector2,                   // spacing between grid cells
-    pub padding: Padding,               // padding that reduces effective parent size for children
+    pub gap: Vector2,     // spacing between grid cells
+    pub padding: Padding, // padding that reduces effective parent size for children
     #[serde(default)]
-    pub align: LayoutAlignment,        // alignment of children within cells
+    pub align: LayoutAlignment, // alignment of children within cells
 }
 
 impl Default for GridLayout {

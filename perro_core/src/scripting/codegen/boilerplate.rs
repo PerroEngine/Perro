@@ -1,11 +1,11 @@
 // ScriptObject boilerplate generation
+use super::utils::{is_node_type, rename_function, rename_variable};
 use crate::ast::*;
+use crate::prelude::string_to_u64;
 use crate::scripting::ast::{ContainerKind, NumberKind, Type};
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use crate::prelude::string_to_u64;
-use super::utils::{rename_variable, rename_function, is_node_type};
 
 pub fn implement_script_boilerplate(
     struct_name: &str,
@@ -13,7 +13,13 @@ pub fn implement_script_boilerplate(
     functions: &[Function],
     _attributes_map: &HashMap<String, Vec<String>>,
 ) -> String {
-    implement_script_boilerplate_internal(struct_name, script_vars, functions, _attributes_map, false)
+    implement_script_boilerplate_internal(
+        struct_name,
+        script_vars,
+        functions,
+        _attributes_map,
+        false,
+    )
 }
 
 pub fn implement_script_boilerplate_internal(
@@ -28,12 +34,18 @@ pub fn implement_script_boilerplate_internal(
     let mut set_entries = String::with_capacity(512);
     let mut apply_entries = String::with_capacity(512);
     let mut dispatch_entries = String::with_capacity(4096);
-    
+
     // Detect which lifecycle methods are implemented
-    let has_init = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "init");
-    let has_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "update");
-    let has_fixed_update = functions.iter().any(|f| f.is_trait_method && f.name.to_lowercase() == "fixed_update");
-    
+    let has_init = functions
+        .iter()
+        .any(|f| f.is_trait_method && f.name.to_lowercase() == "init");
+    let has_update = functions
+        .iter()
+        .any(|f| f.is_trait_method && f.name.to_lowercase() == "update");
+    let has_fixed_update = functions
+        .iter()
+        .any(|f| f.is_trait_method && f.name.to_lowercase() == "fixed_update");
+
     // Build the flags value
     let mut flags_value = 0u8;
     if has_init {
@@ -57,7 +69,6 @@ pub fn implement_script_boilerplate_internal(
 
         // If public, generate GET and SET entries
         if var.is_public {
-
             // ------------------------------
             // Special casing for Containers (GET)
             // ------------------------------
@@ -268,7 +279,6 @@ pub fn implement_script_boilerplate_internal(
 
         // If exposed, generate APPLY entries
         if var.is_exposed {
-
             // ------------------------------
             // Special casing for Containers (APPLY)
             // ------------------------------
@@ -424,14 +434,18 @@ pub fn implement_script_boilerplate_internal(
     //----------------------------------------------------
     // FUNCTION DISPATCH TABLE GENERATION
     //----------------------------------------------------
-    
+
     for func in functions {
         if func.is_trait_method {
             continue;
         }
-        
+
         // Skip functions marked with @skip attribute - these are internal helpers
-        if func.attributes.iter().any(|attr| attr.to_lowercase() == "skip") {
+        if func
+            .attributes
+            .iter()
+            .any(|attr| attr.to_lowercase() == "skip")
+        {
             continue;
         }
 
@@ -455,7 +469,7 @@ pub fn implement_script_boilerplate_internal(
                 if matches!(param.typ, Type::ScriptApi) {
                     continue;
                 }
-                
+
                 // Rename parameter: node types get _id suffix, others keep original name
                 let param_name = if is_rust_script {
                     // For Rust scripts, use original parameter name
@@ -510,8 +524,12 @@ pub fn implement_script_boilerplate_internal(
                                 .and_then(|s| NodeID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
-                    },
-                    Type::Custom(tn) if tn == "&Path" || tn == "Path" || (tn.contains("Path") && !tn.starts_with('&')) => {
+                    }
+                    Type::Custom(tn)
+                        if tn == "&Path"
+                            || tn == "Path"
+                            || (tn.contains("Path") && !tn.starts_with('&')) =>
+                    {
                         // Handle Path types - parse as string and convert to PathBuf
                         // For &Path parameters, we'll create a PathBuf and use a reference
                         format!(
@@ -521,7 +539,7 @@ pub fn implement_script_boilerplate_internal(
                             .unwrap_or_default();
 let {param_name} = __path_buf_{param_name}.as_path();\n"
                         )
-                    },
+                    }
                     Type::Custom(tn) if tn == "&str" || tn == "str" => {
                         // Handle &str - parse as String (we'll borrow it when calling)
                         format!(
@@ -530,10 +548,13 @@ let {param_name} = __path_buf_{param_name}.as_path();\n"
                             .map(|s| s.to_string())
                             .unwrap_or_default();\n"
                         )
-                    },
+                    }
                     Type::Custom(tn) if tn.starts_with("&[") && tn.ends_with(']') => {
                         // Handle slice types like &[String] - deserialize as Vec<T>, then take slice reference
-                        let element_type = tn.strip_prefix("&[").and_then(|s| s.strip_suffix(']')).unwrap_or("");
+                        let element_type = tn
+                            .strip_prefix("&[")
+                            .and_then(|s| s.strip_suffix(']'))
+                            .unwrap_or("");
                         // For types that might not have Default, we need to handle None case
                         // If deserialization fails, we can't proceed, so we'll return early
                         format!(
@@ -545,15 +566,18 @@ let __vec_{param_name} = match __vec_{param_name}_opt {{
 }};
 let {param_name} = __vec_{param_name}.as_slice();\n"
                         )
-                    },
+                    }
                     Type::Custom(tn) if tn.starts_with('&') && tn != "&str" && tn != "&Path" => {
                         // Handle reference types like &Manifest - deserialize owned type, then take reference
                         let mut owned_type = tn.strip_prefix('&').unwrap_or(tn).to_string();
                         // Strip 'mut' if present (e.g., "mut FurElement" -> "FurElement")
                         if owned_type.starts_with("mut ") {
-                            owned_type = owned_type.strip_prefix("mut ").unwrap_or(&owned_type).to_string();
+                            owned_type = owned_type
+                                .strip_prefix("mut ")
+                                .unwrap_or(&owned_type)
+                                .to_string();
                         }
-                        
+
                         // Check for internal types that don't implement Deserialize
                         // Handle both short names (FurElement) and full paths (perro_core::nodes::ui::fur_ast::FurElement)
                         if owned_type.contains("FurElement") || owned_type.contains("FurNode") {
@@ -573,7 +597,7 @@ let {param_name} = match __owned_{param_name}_opt {{
 }};\n"
                             )
                         }
-                    },
+                    }
                     Type::Custom(tn) => {
                         // Strip 'mut' if present in type name (e.g., "mut FurElement" -> "FurElement")
                         let clean_type = if tn.starts_with("mut ") {
@@ -581,7 +605,7 @@ let {param_name} = match __owned_{param_name}_opt {{
                         } else {
                             tn
                         };
-                        
+
                         // Check for internal types that don't implement Deserialize
                         // Handle both short names (FurElement) and full paths (perro_core::nodes::ui::fur_ast::FurElement)
                         if clean_type.contains("FurElement") || clean_type.contains("FurNode") {
@@ -601,7 +625,7 @@ let {param_name} = match {param_name}_opt {{
 }};\n"
                             )
                         }
-                    },
+                    }
                     Type::Node(_) => {
                         // Handle Type::Node variant - nodes are NodeID
                         // Try u32 first (from JSON number), then fall back to string parsing
@@ -613,7 +637,7 @@ let {param_name} = match {param_name}_opt {{
                                 .and_then(|s| NodeID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
-                    },
+                    }
                     Type::EngineStruct(EngineStructKind::Texture) => {
                         // Handle Texture - textures use TextureID
                         // Try u32 first (from JSON number), then fall back to string parsing
@@ -625,7 +649,7 @@ let {param_name} = match {param_name}_opt {{
                                 .and_then(|s| TextureID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
-                    },
+                    }
                     Type::DynNode => {
                         // Internal ID type — parse as NodeID (hex string or u64)
                         format!(
@@ -636,7 +660,7 @@ let {param_name} = match {param_name}_opt {{
                                 .and_then(|s| NodeID::parse_str(s).ok()))
                             .unwrap_or_default();\n"
                         )
-                    },
+                    }
                     Type::Option(boxed) if matches!(boxed.as_ref(), Type::DynNode) => {
                         format!(
                             "let {param_name} = params.get({actual_param_idx})
@@ -645,7 +669,7 @@ let {param_name} = match {param_name}_opt {{
                                 .and_then(|v| v.as_str())
                                 .and_then(|s| NodeID::parse_str(s).ok()));\n"
                         )
-                    },
+                    }
                     _ => format!("let {param_name} = Default::default();\n"),
                 };
                 param_parsing.push_str(&parse_code);
@@ -668,7 +692,7 @@ let {param_name} = match {param_name}_opt {{
                     } else {
                         rename_variable(&param.name, Some(&param.typ))
                     };
-                    
+
                     // For Rust scripts, if the parameter type is a reference (&str, &Path, etc.),
                     // we need to add & prefix when calling the function
                     let param_expr = if is_rust_script {
@@ -676,12 +700,16 @@ let {param_name} = match {param_name}_opt {{
                             Type::StrRef => {
                                 // &str - we parsed as String, need to borrow it
                                 format!("&{}", param_name)
-                            },
-                            Type::Custom(tn) if tn == "&Path" || tn == "Path" || (tn.contains("Path") && !tn.starts_with('&')) => {
+                            }
+                            Type::Custom(tn)
+                                if tn == "&Path"
+                                    || tn == "Path"
+                                    || (tn.contains("Path") && !tn.starts_with('&')) =>
+                            {
                                 // Path types - we created __path_buf_ variable and used .as_path()
                                 // {param_name} is already a &Path reference, so use it directly
                                 param_name.clone()
-                            },
+                            }
                             Type::Custom(tn) if tn.starts_with('&') => {
                                 // Reference type like &Manifest - we created __owned_ variable
                                 if tn == "&str" || tn == "str" {
@@ -691,19 +719,19 @@ let {param_name} = match {param_name}_opt {{
                                     // So use it directly (it's already a reference)
                                     param_name.clone()
                                 }
-                            },
+                            }
                             _ => param_name,
                         }
                     } else {
                         param_name
                     };
-                    
+
                     param_names.push(param_expr);
                 }
             }
             param_list = param_names.join(", ");
         }
-        
+
         // For transpiled scripts (non-Rust), the api parameter is always added to the function signature
         // in function.rs, so we must always pass it in the call, even if it's not in func.params
         if !is_rust_script {

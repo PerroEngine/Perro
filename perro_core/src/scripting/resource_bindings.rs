@@ -5,10 +5,10 @@
 
 use crate::{
     api_bindings::{ModuleCodegen, ModuleTypes}, // Import traits from api_bindings
-    resource_modules::*, // Import resource API enums
     ast::*,
     engine_structs::EngineStruct,
     prelude::string_to_u64,
+    resource_modules::*, // Import resource API enums
     scripting::ast::{ContainerKind, NumberKind},
 };
 
@@ -88,7 +88,8 @@ impl ModuleCodegen for SignalResource {
                             }
                             Expr::MemberAccess(base, field) => {
                                 // MemberAccess like bob.function -> node_code is already bob_id
-                                let node_code = base.to_rust(false, script, None, current_func, None);
+                                let node_code =
+                                    base.to_rust(false, script, None, current_func, None);
                                 (node_code, field.clone())
                             }
                             Expr::Ident(func_name) => {
@@ -118,10 +119,7 @@ impl ModuleCodegen for SignalResource {
                                 .map(|a| format!("json!({a})"))
                                 .collect();
                             // Use array literal - converted to slice automatically (zero-cost)
-                            format!(
-                                "api.emit_signal_id({signal}, &[{}])",
-                                params.join(", ")
-                            )
+                            format!("api.emit_signal_id({signal}, &[{}])", params.join(", "))
                         } else {
                             // Empty array literal - zero allocation
                             format!("api.emit_signal_id({signal}, &[])")
@@ -161,11 +159,13 @@ impl ModuleTypes for SignalResource {
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
             SignalResource::New => Some(vec![Type::String]),
-            SignalResource::Emit | SignalResource::EmitDeferred => Some(vec![Type::Signal, Type::Object]),
+            SignalResource::Emit | SignalResource::EmitDeferred => {
+                Some(vec![Type::Signal, Type::Object])
+            }
             SignalResource::Connect => Some(vec![Type::Signal]),
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -221,7 +221,9 @@ impl ModuleCodegen for ArrayResource {
                         inner_type.to_rust_type(),
                         raw_json_content
                     );
-                } else if value_code.starts_with("json!(") && matches!(inner_type, Type::Object | Type::Any) {
+                } else if value_code.starts_with("json!(")
+                    && matches!(inner_type, Type::Object | Type::Any)
+                {
                     // If target is Type::Object, json! is fine, just use the string directly
                     // No change needed.
                 } else if matches!(inner_type, Type::Object | Type::Any) {
@@ -368,7 +370,7 @@ impl ModuleTypes for ArrayResource {
             ArrayResource::Len | ArrayResource::Pop | ArrayResource::New => None,
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -398,7 +400,8 @@ impl ModuleCodegen for MapResource {
             MapResource::Insert => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let val_type = script.infer_map_value_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                let key_code =
+                    args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
                 let mut val_code =
                     args[2].to_rust(needs_self, script, val_type.as_ref(), current_func, None);
 
@@ -415,7 +418,8 @@ impl ModuleCodegen for MapResource {
             // args: [map, key]
             MapResource::Remove => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                let key_code =
+                    args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
                 if let Some(Type::String) = key_type.as_ref() {
                     format!("{}.remove({}.as_str())", args_strs[0], key_code)
                 } else {
@@ -428,7 +432,8 @@ impl ModuleCodegen for MapResource {
                 // 1. Infer key type from map
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 // 2. Render the key argument with the right type hint
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                let key_code =
+                    args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
 
                 if let Some(Type::String) = key_type.as_ref() {
                     // for String keys, .as_str() may be appropriate
@@ -448,7 +453,8 @@ impl ModuleCodegen for MapResource {
             // args: [map, key]
             MapResource::Contains => {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
-                let key_code = args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
+                let key_code =
+                    args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
                 if let Some(Type::String) = key_type.as_ref() {
                     format!("{}.contains_key({}.as_str())", args_strs[0], key_code)
                 } else {
@@ -504,7 +510,7 @@ impl ModuleTypes for MapResource {
             _ => None,
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -550,7 +556,7 @@ impl ModuleCodegen for TextureResource {
                     // Variable or complex expression - borrow it
                     format!("&{}", arg)
                 };
-                
+
                 format!("api.Texture.load({})", arg_str)
             }
             TextureResource::Preload => {
@@ -570,25 +576,40 @@ impl ModuleCodegen for TextureResource {
                 format!("api.Texture.preload({})", arg_str)
             }
             TextureResource::Remove => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "TextureID::nil()".into());
+                let arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "TextureID::nil()".into());
                 format!("api.Texture.remove({})", arg)
             }
             TextureResource::CreateFromBytes => {
                 let bytes = args_strs.get(0).cloned().unwrap_or_else(|| "vec![]".into());
                 let width = args_strs.get(1).cloned().unwrap_or_else(|| "0".into());
                 let height = args_strs.get(2).cloned().unwrap_or_else(|| "0".into());
-                format!("api.Texture.create_from_bytes({}, {}, {})", bytes, width, height)
+                format!(
+                    "api.Texture.create_from_bytes({}, {}, {})",
+                    bytes, width, height
+                )
             }
             TextureResource::GetWidth => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".into());
+                let arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "NodeID::nil()".into());
                 format!("api.Texture.get_width({})", arg)
             }
             TextureResource::GetHeight => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".into());
+                let arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "NodeID::nil()".into());
                 format!("api.Texture.get_height({})", arg)
             }
             TextureResource::GetSize => {
-                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".into());
+                let arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "NodeID::nil()".into());
                 format!("api.Texture.get_size({})", arg)
             }
         }
@@ -598,10 +619,14 @@ impl ModuleCodegen for TextureResource {
 impl ModuleTypes for TextureResource {
     fn return_type(&self) -> Option<Type> {
         match self {
-            TextureResource::Load | TextureResource::Preload => Some(Type::EngineStruct(EngineStruct::Texture)),
+            TextureResource::Load | TextureResource::Preload => {
+                Some(Type::EngineStruct(EngineStruct::Texture))
+            }
             TextureResource::CreateFromBytes => Some(Type::EngineStruct(EngineStruct::Texture)),
             TextureResource::Remove => None, // void
-            TextureResource::GetWidth | TextureResource::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
+            TextureResource::GetWidth | TextureResource::GetHeight => {
+                Some(Type::Number(NumberKind::Unsigned(32)))
+            }
             TextureResource::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
         }
     }
@@ -611,21 +636,28 @@ impl ModuleTypes for TextureResource {
             TextureResource::Load | TextureResource::Preload => Some(vec![Type::String]),
             TextureResource::Remove => Some(vec![Type::EngineStruct(EngineStruct::Texture)]),
             TextureResource::CreateFromBytes => Some(vec![
-                Type::Container(ContainerKind::Array, vec![Type::Number(NumberKind::Unsigned(8))]),
+                Type::Container(
+                    ContainerKind::Array,
+                    vec![Type::Number(NumberKind::Unsigned(8))],
+                ),
                 Type::Number(NumberKind::Unsigned(32)),
                 Type::Number(NumberKind::Unsigned(32)),
             ]),
-            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec![Type::EngineStruct(EngineStruct::Texture)]),
+            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => {
+                Some(vec![Type::EngineStruct(EngineStruct::Texture)])
+            }
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
             TextureResource::Load | TextureResource::Preload => Some(vec!["path"]),
             TextureResource::Remove => Some(vec!["texture"]),
             TextureResource::CreateFromBytes => Some(vec!["bytes", "width", "height"]),
-            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec!["texture"]),
+            TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => {
+                Some(vec!["texture"])
+            }
         }
     }
 }
@@ -658,7 +690,10 @@ impl ModuleCodegen for ShapeResource {
                 } else {
                     height
                 };
-                format!("Shape2D::Rectangle {{ width: {}, height: {} }}", width, height)
+                format!(
+                    "Shape2D::Rectangle {{ width: {}, height: {} }}",
+                    width, height
+                )
             }
             ShapeResource::Circle => {
                 let radius = args_strs.get(0).cloned().unwrap_or_else(|| "0.0f32".into());
@@ -706,23 +741,15 @@ impl ModuleTypes for ShapeResource {
     fn param_types(&self) -> Option<Vec<Type>> {
         use NumberKind::*;
         match self {
-            ShapeResource::Rectangle => Some(vec![
-                Type::Number(Float(32)),
-                Type::Number(Float(32)),
-            ]),
-            ShapeResource::Circle => Some(vec![
-                Type::Number(Float(32)),
-            ]),
-            ShapeResource::Square => Some(vec![
-                Type::Number(Float(32)),
-            ]),
-            ShapeResource::Triangle => Some(vec![
-                Type::Number(Float(32)),
-                Type::Number(Float(32)),
-            ]),
+            ShapeResource::Rectangle => {
+                Some(vec![Type::Number(Float(32)), Type::Number(Float(32))])
+            }
+            ShapeResource::Circle => Some(vec![Type::Number(Float(32))]),
+            ShapeResource::Square => Some(vec![Type::Number(Float(32))]),
+            ShapeResource::Triangle => Some(vec![Type::Number(Float(32)), Type::Number(Float(32))]),
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -796,7 +823,7 @@ impl ResourceModule {
             ResourceModule::MapOp(api) => api.param_types(),
         }
     }
-    
+
     /// Get script-side parameter names (what PUP users see)
     pub fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {

@@ -142,7 +142,10 @@ impl Project {
         // Copy input actions from PHF map into HashMap
         let mut input_map = HashMap::new();
         for (action_name, sources) in input_actions.entries() {
-            input_map.insert(action_name.to_string(), sources.iter().map(|s| s.to_string()).collect());
+            input_map.insert(
+                action_name.to_string(),
+                sources.iter().map(|s| s.to_string()).collect(),
+            );
         }
 
         let settings = ProjectSettings {
@@ -181,14 +184,18 @@ impl Project {
             std::fs::read(&project_toml_path).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::NotFound,
-                    format!("Failed to read project.toml at {}: {}", project_toml_path.display(), e),
+                    format!(
+                        "Failed to read project.toml at {}: {}",
+                        project_toml_path.display(),
+                        e
+                    ),
                 )
             })?
         } else {
             // No root provided, use asset system (requires project root to be set)
             load_asset("project.toml")?
         };
-        
+
         let contents = std::str::from_utf8(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         let settings: ProjectSettings =

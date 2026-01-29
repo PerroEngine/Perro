@@ -1,6 +1,4 @@
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 /// Font family/style helpers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,7 +45,7 @@ impl Font {
     pub fn from_name(_family: &str, _weight: Weight, _style: Style) -> Option<Self> {
         None
     }
-    
+
     /// Load font from file path (supports res:// paths)
     pub fn from_file(path: &str, weight: Weight, style: Style) -> Result<Self, String> {
         // Handle res:// paths
@@ -56,10 +54,10 @@ impl Font {
         } else {
             path
         };
-        
+
         let font_data = std::fs::read(file_path)
             .map_err(|e| format!("Failed to read font file {}: {}", path, e))?;
-        
+
         Ok(Font {
             data: FontData::Owned(font_data),
             family_name: None, // Will be extracted from font if needed
@@ -67,14 +65,14 @@ impl Font {
             style,
         })
     }
-    
+
     /// Load font from system by family name
     /// Note: Font loading now handled by egui - this is a stub for compatibility
     pub fn from_system(_family: &str, _weight: Weight, _style: Style) -> Option<Self> {
         // Font loading now handled by egui
         None
     }
-    
+
     /// Get font data as bytes
     pub fn data(&self) -> &[u8] {
         match &self.data {
@@ -82,7 +80,7 @@ impl Font {
             FontData::Owned(data) => data,
         }
     }
-    
+
     /// Try to load font from various sources (file or system)
     /// Note: This is deprecated in favor of the native TextRenderer system
     pub fn load(font_spec: &str, weight: Weight, style: Style) -> Option<Self> {
@@ -90,7 +88,7 @@ impl Font {
         if font_spec.starts_with("res://") || font_spec.contains('.') {
             return Self::from_file(font_spec, weight, style).ok();
         }
-        
+
         // Try system font
         Self::from_system(font_spec, weight, style)
     }

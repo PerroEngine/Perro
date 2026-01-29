@@ -67,7 +67,7 @@ pub struct JoyconButtons {
 // Joy-Con State
 // ==========================================
 
-// Optimized field order to minimize padding: String(24), Vector2(8), Vector3(12), Vector3(12), 
+// Optimized field order to minimize padding: String(24), Vector2(8), Vector3(12), Vector3(12),
 // then smaller fields (buttons, enums, bool) at the end
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JoyconState {

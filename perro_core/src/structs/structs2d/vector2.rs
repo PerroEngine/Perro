@@ -36,7 +36,7 @@ impl fmt::Display for Vector2 {
 impl Vector2 {
     /// Zero vector constant (0, 0)
     pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
-    
+
     /// One vector constant (1, 1)
     pub const ONE: Self = Self { x: 1.0, y: 1.0 };
 

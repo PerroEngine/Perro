@@ -54,7 +54,6 @@ macro_rules! define_generational_id {
                 self.0 == 0
             }
 
-
             /// Legacy: index in low 32, generation 0 (e.g. deserialization).
             #[inline]
             pub const fn from_u32(index: u32) -> Self {
@@ -70,7 +69,12 @@ macro_rules! define_generational_id {
 
         impl fmt::Debug for $type_name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, concat!(stringify!($type_name), "({}:{})"), self.index(), self.generation())
+                write!(
+                    f,
+                    concat!(stringify!($type_name), "({}:{})"),
+                    self.index(),
+                    self.generation()
+                )
             }
         }
 
@@ -122,12 +126,30 @@ macro_rules! define_generational_id {
     };
 }
 
-define_generational_id!(NodeID, "Node ID — allocated by NodeArena. Index + generation.");
-define_generational_id!(TextureID, "Texture ID — allocated by TextureManager. Index + generation.");
-define_generational_id!(MaterialID, "Material ID — allocated by material system. Index + generation.");
-define_generational_id!(MeshID, "Mesh ID — allocated by mesh system. Index + generation.");
-define_generational_id!(LightID, "Light ID — allocated by light system. Index + generation.");
-define_generational_id!(UIElementID, "UI Element ID — allocated by UI or synthetic. Index + generation.");
+define_generational_id!(
+    NodeID,
+    "Node ID — allocated by NodeArena. Index + generation."
+);
+define_generational_id!(
+    TextureID,
+    "Texture ID — allocated by TextureManager. Index + generation."
+);
+define_generational_id!(
+    MaterialID,
+    "Material ID — allocated by material system. Index + generation."
+);
+define_generational_id!(
+    MeshID,
+    "Mesh ID — allocated by mesh system. Index + generation."
+);
+define_generational_id!(
+    LightID,
+    "Light ID — allocated by light system. Index + generation."
+);
+define_generational_id!(
+    UIElementID,
+    "UI Element ID — allocated by UI or synthetic. Index + generation."
+);
 
 impl NodeID {
     /// Parse hex string (8 or 16 chars, optional 0x prefix) into NodeID.

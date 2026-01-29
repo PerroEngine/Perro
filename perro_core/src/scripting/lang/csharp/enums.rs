@@ -8,7 +8,7 @@ use crate::structs::engine_registry::ENGINE_REGISTRY;
 
 /// Resolves enum access syntax to the actual enum variant
 /// Returns None if the enum or variant doesn't exist
-/// 
+///
 /// Enum names should be PascalCase (C# convention)
 /// e.g., NodeType.Sprite2D
 pub fn resolve_enum_access(enum_name: &str, variant_name: &str) -> Option<BuiltInEnumVariant> {

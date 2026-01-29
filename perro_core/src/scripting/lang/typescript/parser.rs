@@ -865,7 +865,11 @@ impl TypeScriptParser {
             }
         }
 
-        Ok(Param { name, typ, span: None })
+        Ok(Param {
+            name,
+            typ,
+            span: None,
+        })
     }
 
     fn parse_block(&mut self, node: tree_sitter::Node) -> Result<Vec<Stmt>, String> {

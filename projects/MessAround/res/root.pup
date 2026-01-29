@@ -1,6 +1,12 @@
 @script Root extends Node
 
+var gas = "hello gas"
+
 on init() {
 
+}
+
+fn cabbage(c: int) {
+    Console.info("cabbage", c)
 }
 

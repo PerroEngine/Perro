@@ -5,11 +5,7 @@
 // methods (like get_parent) need special handling here
 // ===========================================================
 
-use crate::{
-    structs::engine_registry::NodeMethodRef,
-    ast::*,
-    prelude::string_to_u64,
-};
+use crate::{ast::*, prelude::string_to_u64, structs::engine_registry::NodeMethodRef};
 
 /// Trait for generating Rust code from NodeMethodRef
 /// Similar to ModuleCodegen but specifically for engine methods
@@ -36,8 +32,11 @@ impl EngineMethodCodegen for NodeMethodRef {
     ) -> String {
         match self {
             NodeMethodRef::GetVar => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
+
                 // Check if the variable name is a static literal string or a dynamic expression
                 if let Some(Expr::Literal(crate::ast::Literal::String(var_name))) = args.get(1) {
                     // Static variable name - use _id method with precomputed hash
@@ -46,26 +45,44 @@ impl EngineMethodCodegen for NodeMethodRef {
                     format!("api.get_script_var_id({}, {}u64)", node_id_clean, var_id)
                 } else {
                     // Dynamic variable name - use string method
-                    let mut name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
-                    if !name_str.starts_with('"') && !name_str.starts_with('&') && !name_str.contains(".as_str()") {
+                    let mut name_str = args_strs
+                        .get(1)
+                        .cloned()
+                        .unwrap_or_else(|| "\"\"".to_string());
+                    if !name_str.starts_with('"')
+                        && !name_str.starts_with('&')
+                        && !name_str.contains(".as_str()")
+                    {
                         name_str = format!("{}.as_str()", name_str);
                     }
                     let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                     format!("api.get_script_var({}, {})", node_id_clean, name_str)
                 }
             }
-            
+
             NodeMethodRef::SetVar => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                let value = args_strs.get(2).cloned().unwrap_or_else(|| "json!({})".to_string());
-                
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
+                let value = args_strs
+                    .get(2)
+                    .cloned()
+                    .unwrap_or_else(|| "json!({})".to_string());
+
                 if let Some(Expr::Literal(crate::ast::Literal::String(var_name))) = args.get(1) {
                     let var_id = string_to_u64(var_name);
                     let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                    format!("api.set_script_var_id({}, {}u64, json!({}))", node_id_clean, var_id, value)
+                    format!(
+                        "api.set_script_var_id({}, {}u64, json!({}))",
+                        node_id_clean, var_id, value
+                    )
                 } else {
                     // Dynamic variable name - treat like dynamic variable, use .as_str()
-                    let mut name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                    let mut name_str = args_strs
+                        .get(1)
+                        .cloned()
+                        .unwrap_or_else(|| "\"\"".to_string());
                     // Remove json!() wrapper if present (from expression codegen when expected type is Object/Any)
                     // Handle both "json!(expr)" and "(json!(expr) as Value)" patterns
                     if name_str.contains("json!(") {
@@ -90,26 +107,44 @@ impl EngineMethodCodegen for NodeMethodRef {
                             name_str = name_str[inner_start..json_end].to_string();
                             // If there's a trailing " as Value)" or ".as_str()", remove it
                             if name_str.ends_with(" as Value") {
-                                name_str = name_str.strip_suffix(" as Value").unwrap_or(&name_str).to_string();
+                                name_str = name_str
+                                    .strip_suffix(" as Value")
+                                    .unwrap_or(&name_str)
+                                    .to_string();
                             }
                         }
                     }
                     // Remove any trailing ".as_str()" that might have been added incorrectly
                     if name_str.ends_with(".as_str()") {
-                        name_str = name_str.strip_suffix(".as_str()").unwrap_or(&name_str).to_string();
+                        name_str = name_str
+                            .strip_suffix(".as_str()")
+                            .unwrap_or(&name_str)
+                            .to_string();
                     }
                     // Add .as_str() if not already present and not a string literal
-                    if !name_str.starts_with('"') && !name_str.starts_with('&') && !name_str.contains(".as_str()") {
+                    if !name_str.starts_with('"')
+                        && !name_str.starts_with('&')
+                        && !name_str.contains(".as_str()")
+                    {
                         name_str = format!("{}.as_str()", name_str);
                     }
                     let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                    format!("api.set_script_var({}, {}, json!({}))", node_id_clean, name_str, value)
+                    format!(
+                        "api.set_script_var({}, {}, json!({}))",
+                        node_id_clean, name_str, value
+                    )
                 }
             }
-            
+
             NodeMethodRef::GetChildByName => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                let child_name = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
+                let child_name = args_strs
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "\"\"".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                 let child_name_clean = if child_name.starts_with('"') {
                     child_name
@@ -118,54 +153,82 @@ impl EngineMethodCodegen for NodeMethodRef {
                 } else {
                     format!("{}.as_str()", child_name)
                 };
-                format!("api.get_child_by_name({}, {})", node_id_clean, child_name_clean)
+                format!(
+                    "api.get_child_by_name({}, {})",
+                    node_id_clean, child_name_clean
+                )
             }
-            
+
             NodeMethodRef::GetParent => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                 format!("api.get_parent({})", node_id_clean)
             }
-            
+
             NodeMethodRef::AddChild => {
-                let parent_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
-                let child_id = args_strs.get(1).cloned().unwrap_or_else(|| "NodeID::nil()".to_string());
+                let parent_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
+                let child_id = args_strs
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "NodeID::nil()".to_string());
                 let parent_id_clean = parent_id.strip_prefix("&").unwrap_or(&parent_id);
                 let child_id_clean = child_id.strip_prefix("&").unwrap_or(&child_id);
                 format!("api.reparent({}, {})", parent_id_clean, child_id_clean)
             }
-            
+
             NodeMethodRef::ClearChildren => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                 format!("api.clear_children({})", node_id_clean)
             }
-            
+
             NodeMethodRef::GetType => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                 format!("api.get_type({})", node_id_clean)
             }
-            
+
             NodeMethodRef::GetParentType => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                 format!("api.get_parent_type({})", node_id_clean)
             }
-            
+
             NodeMethodRef::Remove => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                 format!("api.remove_node({})", node_id_clean)
             }
-            
+
             NodeMethodRef::CallFunction => {
-                let node_id = args_strs.get(0).cloned().unwrap_or_else(|| "self.id".to_string());
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
                 let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
-                
+
                 if let Some(Expr::Literal(crate::ast::Literal::String(func_name))) = args.get(1) {
                     let func_id = string_to_u64(func_name);
-                    let params: Vec<String> = args_strs.iter()
+                    let params: Vec<String> = args_strs
+                        .iter()
                         .skip(2)
                         .map(|param_str| {
                             if param_str.starts_with("json!(") || param_str.contains("Value") {
@@ -175,15 +238,26 @@ impl EngineMethodCodegen for NodeMethodRef {
                             }
                         })
                         .collect();
-                    
+
                     if params.is_empty() {
-                        format!("api.call_function_id({}, {}u64, &[])", node_id_clean, func_id)
+                        format!(
+                            "api.call_function_id({}, {}u64, &[])",
+                            node_id_clean, func_id
+                        )
                     } else {
-                        format!("api.call_function_id({}, {}u64, &[{}])", node_id_clean, func_id, params.join(", "))
+                        format!(
+                            "api.call_function_id({}, {}u64, &[{}])",
+                            node_id_clean,
+                            func_id,
+                            params.join(", ")
+                        )
                     }
                 } else {
                     // Dynamic function name - treat like dynamic variable, use .as_str()
-                    let mut func_name_str = args_strs.get(1).cloned().unwrap_or_else(|| "\"\"".to_string());
+                    let mut func_name_str = args_strs
+                        .get(1)
+                        .cloned()
+                        .unwrap_or_else(|| "\"\"".to_string());
                     // Remove json!() wrapper if present (from expression codegen when expected type is Object/Any)
                     // Handle both "json!(expr)" and "(json!(expr) as Value)" patterns
                     if func_name_str.contains("json!(") {
@@ -208,19 +282,29 @@ impl EngineMethodCodegen for NodeMethodRef {
                             func_name_str = func_name_str[inner_start..json_end].to_string();
                             // If there's a trailing " as Value)" or ".as_str()", remove it
                             if func_name_str.ends_with(" as Value") {
-                                func_name_str = func_name_str.strip_suffix(" as Value").unwrap_or(&func_name_str).to_string();
+                                func_name_str = func_name_str
+                                    .strip_suffix(" as Value")
+                                    .unwrap_or(&func_name_str)
+                                    .to_string();
                             }
                         }
                     }
                     // Remove any trailing ".as_str()" that might have been added incorrectly
                     if func_name_str.ends_with(".as_str()") {
-                        func_name_str = func_name_str.strip_suffix(".as_str()").unwrap_or(&func_name_str).to_string();
+                        func_name_str = func_name_str
+                            .strip_suffix(".as_str()")
+                            .unwrap_or(&func_name_str)
+                            .to_string();
                     }
                     // Add .as_str() if not already present and not a string literal
-                    if !func_name_str.starts_with('"') && !func_name_str.starts_with('&') && !func_name_str.contains(".as_str()") {
+                    if !func_name_str.starts_with('"')
+                        && !func_name_str.starts_with('&')
+                        && !func_name_str.contains(".as_str()")
+                    {
                         func_name_str = format!("{}.as_str()", func_name_str);
                     }
-                    let params: Vec<String> = args_strs.iter()
+                    let params: Vec<String> = args_strs
+                        .iter()
                         .skip(2)
                         .map(|param_str| {
                             if param_str.starts_with("json!(") || param_str.contains("Value") {
@@ -230,11 +314,19 @@ impl EngineMethodCodegen for NodeMethodRef {
                             }
                         })
                         .collect();
-                    
+
                     if params.is_empty() {
-                        format!("api.call_function({}, {}, &[])", node_id_clean, func_name_str)
+                        format!(
+                            "api.call_function({}, {}, &[])",
+                            node_id_clean, func_name_str
+                        )
                     } else {
-                        format!("api.call_function({}, {}, &[{}])", node_id_clean, func_name_str, params.join(", "))
+                        format!(
+                            "api.call_function({}, {}, &[{}])",
+                            node_id_clean,
+                            func_name_str,
+                            params.join(", ")
+                        )
                     }
                 }
             }

@@ -31,13 +31,22 @@ impl TypeScriptSignal {
             "new" | "create" => Some(ResourceModule::Signal(SignalResource::New)),
             "connect" => Some(ResourceModule::Signal(SignalResource::Connect)),
             "emit" => Some(ResourceModule::Signal(SignalResource::Emit)),
-            "emitDeferred" | "emit_deferred" => Some(ResourceModule::Signal(SignalResource::EmitDeferred)),
+            "emitDeferred" | "emit_deferred" => {
+                Some(ResourceModule::Signal(SignalResource::EmitDeferred))
+            }
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["new", "create", "connect", "emit", "emitDeferred", "emit_deferred"]
+        vec![
+            "new",
+            "create",
+            "connect",
+            "emit",
+            "emitDeferred",
+            "emit_deferred",
+        ]
     }
 }
 
@@ -51,7 +60,9 @@ impl TypeScriptTexture {
             "load" => Some(ResourceModule::Texture(TextureResource::Load)),
             "preload" => Some(ResourceModule::Texture(TextureResource::Preload)),
             "remove" => Some(ResourceModule::Texture(TextureResource::Remove)),
-            "createFromBytes" | "create_from_bytes" => Some(ResourceModule::Texture(TextureResource::CreateFromBytes)),
+            "createFromBytes" | "create_from_bytes" => {
+                Some(ResourceModule::Texture(TextureResource::CreateFromBytes))
+            }
             "getWidth" | "get_width" => Some(ResourceModule::Texture(TextureResource::GetWidth)),
             "getHeight" | "get_height" => Some(ResourceModule::Texture(TextureResource::GetHeight)),
             "getSize" | "get_size" => Some(ResourceModule::Texture(TextureResource::GetSize)),
@@ -60,7 +71,19 @@ impl TypeScriptTexture {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["load", "preload", "remove", "createFromBytes", "create_from_bytes", "getWidth", "get_width", "getHeight", "get_height", "getSize", "get_size"]
+        vec![
+            "load",
+            "preload",
+            "remove",
+            "createFromBytes",
+            "create_from_bytes",
+            "getWidth",
+            "get_width",
+            "getHeight",
+            "get_height",
+            "getSize",
+            "get_size",
+        ]
     }
 }
 
@@ -68,7 +91,7 @@ impl TypeScriptTexture {
 pub struct TypeScriptArray;
 impl TypeScriptArray {
     pub const NAME: &'static str = "Array";
-    
+
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "push" => Some(ResourceModule::ArrayOp(ArrayResource::Push)),
@@ -82,7 +105,9 @@ impl TypeScriptArray {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["push", "insert", "remove", "pop", "length", "len", "size", "new", "create"]
+        vec![
+            "push", "insert", "remove", "pop", "length", "len", "size", "new", "create",
+        ]
     }
 }
 
@@ -96,7 +121,9 @@ impl TypeScriptMap {
             "set" | "insert" => Some(ResourceModule::MapOp(MapResource::Insert)),
             "delete" | "remove" => Some(ResourceModule::MapOp(MapResource::Remove)),
             "get" => Some(ResourceModule::MapOp(MapResource::Get)),
-            "has" | "contains" | "containsKey" => Some(ResourceModule::MapOp(MapResource::Contains)),
+            "has" | "contains" | "containsKey" => {
+                Some(ResourceModule::MapOp(MapResource::Contains))
+            }
             "size" | "len" => Some(ResourceModule::MapOp(MapResource::Len)),
             "clear" => Some(ResourceModule::MapOp(MapResource::Clear)),
             "new" | "create" => Some(ResourceModule::MapOp(MapResource::New)),
@@ -105,7 +132,21 @@ impl TypeScriptMap {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["set", "insert", "delete", "remove", "get", "has", "contains", "containsKey", "size", "len", "clear", "new", "create"]
+        vec![
+            "set",
+            "insert",
+            "delete",
+            "remove",
+            "get",
+            "has",
+            "contains",
+            "containsKey",
+            "size",
+            "len",
+            "clear",
+            "new",
+            "create",
+        ]
     }
 }
 

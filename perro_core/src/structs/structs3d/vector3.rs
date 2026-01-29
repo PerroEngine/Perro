@@ -36,10 +36,18 @@ impl fmt::Display for Vector3 {
 
 impl Vector3 {
     /// Zero vector constant (0, 0, 0)
-    pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0 };
-    
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+
     /// One vector constant (1, 1, 1)
-    pub const ONE: Self = Self { x: 1.0, y: 1.0, z: 1.0 };
+    pub const ONE: Self = Self {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
 
     /// Creates a new `Vector3`.
     pub fn new(x: f32, y: f32, z: f32) -> Self {
@@ -55,7 +63,11 @@ impl Vector3 {
     // Helper to create from glam
     #[inline(always)]
     fn from_glam(v: glam::Vec3) -> Self {
-        Self { x: v.x, y: v.y, z: v.z }
+        Self {
+            x: v.x,
+            y: v.y,
+            z: v.z,
+        }
     }
 
     /// Converts this vector into a `glam::Vec3` (for operations that need glam types).
@@ -97,7 +109,11 @@ impl Vector3 {
 
     /// Creates a `Vector3` from a `glam::Vec3`.
     pub fn from_glam_public(v: glam::Vec3) -> Self {
-        Self { x: v.x, y: v.y, z: v.z }
+        Self {
+            x: v.x,
+            y: v.y,
+            z: v.z,
+        }
     }
 }
 

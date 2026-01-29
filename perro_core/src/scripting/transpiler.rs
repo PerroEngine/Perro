@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs,
@@ -5,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 use walkdir::WalkDir;
-use sha2::{Sha256, Digest};
 
 use crate::{
     codegen::derive_rust_perro_script,
@@ -109,26 +109,24 @@ fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
 /// Files are sorted alphabetically for deterministic hashing
 pub fn compute_script_hash(project_root: &Path) -> Result<String, String> {
     let script_paths = discover_scripts(project_root)?;
-    
+
     // Sort paths alphabetically for deterministic ordering
     let mut sorted_paths: Vec<_> = script_paths.iter().collect();
-    sorted_paths.sort_by(|a, b| {
-        a.to_string_lossy().cmp(&b.to_string_lossy())
-    });
-    
+    sorted_paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+
     let mut hasher = Sha256::new();
 
     for path in sorted_paths {
         let content = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-        
+
         // Hash the file path and content
         hasher.update(path.to_string_lossy().as_bytes());
         hasher.update(b"\0"); // Separator
         hasher.update(content.as_bytes());
         hasher.update(b"\0"); // Separator
     }
-    
+
     let hash = hasher.finalize();
     Ok(format!("{:x}", hash))
 }
@@ -136,11 +134,11 @@ pub fn compute_script_hash(project_root: &Path) -> Result<String, String> {
 /// Read the stored script hash from builds directory
 pub fn read_stored_hash(project_root: &Path) -> Result<Option<String>, String> {
     let hash_file = project_root.join(".perro/scripts/builds/scripts_hash");
-    
+
     if !hash_file.exists() {
         return Ok(None);
     }
-    
+
     match fs::read_to_string(&hash_file) {
         Ok(content) => Ok(Some(content.trim().to_string())),
         Err(e) => Err(format!("Failed to read script hash file: {}", e)),
@@ -152,11 +150,10 @@ pub fn write_script_hash(project_root: &Path, hash: &str) -> Result<(), String> 
     let builds_dir = project_root.join(".perro/scripts/builds");
     fs::create_dir_all(&builds_dir)
         .map_err(|e| format!("Failed to create builds directory: {}", e))?;
-    
+
     let hash_file = builds_dir.join("scripts_hash");
-    fs::write(&hash_file, hash)
-        .map_err(|e| format!("Failed to write script hash file: {}", e))?;
-    
+    fs::write(&hash_file, hash).map_err(|e| format!("Failed to write script hash file: {}", e))?;
+
     Ok(())
 }
 
@@ -185,7 +182,13 @@ fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Res
         }
     }
 
-    rebuild_lib_rs(project_root, &active_ids, &std::collections::HashSet::new(), &[], &[])?;
+    rebuild_lib_rs(
+        project_root,
+        &active_ids,
+        &std::collections::HashSet::new(),
+        &[],
+        &[],
+    )?;
     Ok(())
 }
 pub fn rebuild_lib_rs(
@@ -204,7 +207,8 @@ pub fn rebuild_lib_rs(
     }
 
     let mut content = String::from(
-        "#[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n\
+        "#![allow(nonstandard_style)]\n\
+        #[cfg(debug_assertions)]\nuse std::ffi::CStr;\n#[cfg(debug_assertions)]\nuse std::os::raw::c_char;\n\
         use perro_core::script::CreateFn;\nuse phf::{phf_map, Map};\n\n\
         // __PERRO_MODULES__\n// __PERRO_IMPORTS__\n\n\
         pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {\n\
@@ -219,10 +223,10 @@ pub fn rebuild_lib_rs(
     // Separate scripts from modules
     // Modules don't have _create_script functions, so we need to identify them
     // For now, we'll check if the identifier corresponds to a module by checking if it's in module_names
-    // But we need to map from file identifier to module name... 
+    // But we need to map from file identifier to module name...
     // Actually, modules are in active_ids but don't have _create_script, so we can detect them that way
     // Or better: track which identifiers are modules vs scripts
-    
+
     // Sort IDs for deterministic ordering
     let mut sorted_ids: Vec<_> = active_ids.iter().collect();
     sorted_ids.sort();
@@ -241,14 +245,14 @@ pub fn rebuild_lib_rs(
         // Check if this identifier is a module (modules don't have _create_script functions)
         // id is &&String from iterator, convert to &str for HashSet lookup
         let is_module = module_identifiers.contains((*id).as_str());
-        
+
         if !is_module {
             // Only add imports and registry for scripts
             content = content.replace(
                 "// __PERRO_IMPORTS__",
                 &format!("use {}::{}_create_script;\n// __PERRO_IMPORTS__", id, id),
             );
-            
+
             content = content.replace(
                 "// __PERRO_REGISTRY__",
                 &format!(
@@ -263,8 +267,16 @@ pub fn rebuild_lib_rs(
     let global_order_fn = if global_order.is_empty() {
         "/// Global script identifiers in deterministic order. Root = NodeID(1); first global = 2, etc.\npub fn get_global_registry_order() -> &'static [&'static str] { &[] }\n\n/// Global display names from @global Name (same order as get_global_registry_order).\npub fn get_global_registry_names() -> &'static [&'static str] { &[] }\n".to_string()
     } else {
-        let order_str = global_order.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ");
-        let names_str = global_names.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ");
+        let order_str = global_order
+            .iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let names_str = global_names
+            .iter()
+            .map(|s| format!("\"{}\"", s))
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(
             "/// Global script identifiers in deterministic order. Root = NodeID(1); first global = 2, etc.\npub fn get_global_registry_order() -> &'static [&'static str] {{\n    static GLOBAL_ORDER: &[&str] = &[{}];\n    GLOBAL_ORDER\n}}\n\n/// Global display names from @global Name (same order as get_global_registry_order).\npub fn get_global_registry_names() -> &'static [&'static str] {{\n    static GLOBAL_ORDER_NAMES: &[&str] = &[{}];\n    GLOBAL_ORDER_NAMES\n}}\n",
             order_str, names_str
@@ -487,7 +499,12 @@ fn setup_dll_panic_handler() {
 /// gets `#[inline]` on functions and constants (for release/project builds).
 /// When `from_source` is true (e.g. `cargo run -p perro_core`), script hash is ignored:
 /// we always transpile and do not read/write scripts_hash.
-pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_source: bool) -> Result<(), String> {
+pub fn transpile(
+    project_root: &Path,
+    verbose: bool,
+    project_mode: bool,
+    from_source: bool,
+) -> Result<(), String> {
     let total_start = Instant::now();
 
     // In project mode or source mode, skip hash compare so we always transpile
@@ -515,7 +532,13 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
     if script_paths.is_empty() {
         println!("📜 No scripts found. Creating minimal lib.rs...");
         // Still create a minimal lib.rs so the DLL can be built
-        rebuild_lib_rs(project_root, &std::collections::HashSet::new(), &std::collections::HashSet::new(), &[], &[])?;
+        rebuild_lib_rs(
+            project_root,
+            &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
+            &[],
+            &[],
+        )?;
         if !project_mode && !from_source {
             let current_hash = compute_script_hash(project_root)?;
             write_script_hash(project_root, &current_hash)?;
@@ -545,23 +568,32 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
     // ============================================================
     let mut module_names: HashSet<String> = HashSet::new(); // Track module names (e.g., "Utils")
     let mut module_identifiers: HashSet<String> = HashSet::new(); // Track which file identifiers are modules
-    let mut identifier_to_module_name: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map identifier -> module name
-    let mut module_name_to_identifier: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map module name -> identifier (reverse map)
-    let mut module_functions: std::collections::HashMap<String, Vec<crate::scripting::ast::Function>> = std::collections::HashMap::new(); // Map module name -> functions
-    let mut module_variables: std::collections::HashMap<String, Vec<crate::scripting::ast::Variable>> = std::collections::HashMap::new(); // Map module name -> variables (constants)
+    let mut identifier_to_module_name: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new(); // Map identifier -> module name
+    let mut module_name_to_identifier: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new(); // Map module name -> identifier (reverse map)
+    let mut module_functions: std::collections::HashMap<
+        String,
+        Vec<crate::scripting::ast::Function>,
+    > = std::collections::HashMap::new(); // Map module name -> functions
+    let mut module_variables: std::collections::HashMap<
+        String,
+        Vec<crate::scripting::ast::Variable>,
+    > = std::collections::HashMap::new(); // Map module name -> variables (constants)
     let mut global_identifiers: HashSet<String> = HashSet::new(); // Track which file identifiers are @global scripts
-    let mut identifier_to_global_name: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map identifier -> global script name (e.g. "utils_pup" -> "Utils")
-    
+    let mut identifier_to_global_name: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new(); // Map identifier -> global script name (e.g. "utils_pup" -> "Utils")
+
     for path in &script_paths {
         let extension = path
             .extension()
             .and_then(|ext| ext.to_str())
             .ok_or_else(|| "Failed to extract file extension".to_string())?;
-        
+
         if extension == "pup" {
             let code = fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-            
+
             // Check if it's a module or global
             if code.trim_start().starts_with("@module") {
                 let mut parser = PupParser::new(&code);
@@ -569,8 +601,10 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                     let identifier = script_path_to_identifier(&path.to_string_lossy())?;
                     module_names.insert(module.module_name.clone());
                     module_identifiers.insert(identifier.clone());
-                    identifier_to_module_name.insert(identifier.clone(), module.module_name.clone());
-                    module_name_to_identifier.insert(module.module_name.clone(), identifier.clone());
+                    identifier_to_module_name
+                        .insert(identifier.clone(), module.module_name.clone());
+                    module_name_to_identifier
+                        .insert(module.module_name.clone(), identifier.clone());
                     module_functions.insert(module.module_name.clone(), module.functions.clone());
                     module_variables.insert(module.module_name.clone(), module.variables.clone());
                 }
@@ -589,10 +623,11 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
     }
 
     // Deterministic order for globals: sort by global *name* alphabetically. Same order used in lib.rs and scene creation.
-    let global_name_to_identifier: std::collections::HashMap<String, String> = identifier_to_global_name
-        .iter()
-        .map(|(id, name)| (name.clone(), id.clone()))
-        .collect();
+    let global_name_to_identifier: std::collections::HashMap<String, String> =
+        identifier_to_global_name
+            .iter()
+            .map(|(id, name)| (name.clone(), id.clone()))
+            .collect();
     let mut sorted_global_names: Vec<String> = global_name_to_identifier.keys().cloned().collect();
     sorted_global_names.sort();
     // global_order = list of identifiers in same order as sorted names (for lib.rs and scene.rs).
@@ -601,14 +636,23 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
         .filter_map(|name| global_name_to_identifier.get(name).cloned())
         .collect();
     // Single source of truth: Root = 1; @global names = 2, 3, 4... by alphabetical order (globals are siblings of Root, same parent None).
-    let mut global_name_to_node_id: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut global_name_to_node_id: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
     global_name_to_node_id.insert("Root".to_string(), 1);
     for (i, name) in sorted_global_names.iter().enumerate() {
         global_name_to_node_id.insert(name.clone(), 2 + i as u32);
     }
 
-    println!("📦 Found {} module(s): {:?}", module_names.len(), module_names.iter().collect::<Vec<_>>());
-    println!("🌐 Found {} global(s) (order): {:?}", global_order.len(), sorted_global_names);
+    println!(
+        "📦 Found {} module(s): {:?}",
+        module_names.len(),
+        module_names.iter().collect::<Vec<_>>()
+    );
+    println!(
+        "🌐 Found {} global(s) (order): {:?}",
+        global_order.len(),
+        sorted_global_names
+    );
 
     // ============================================================
     // SECOND PASS: Generate code for all files with full module knowledge
@@ -646,7 +690,8 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                     if let Ok(relative) = path.strip_prefix(&res_dir) {
                         // Remove leading slash if present
                         let relative_str = relative.to_string_lossy().replace('\\', "/");
-                        let clean_relative = relative_str.strip_prefix('/').unwrap_or(&relative_str);
+                        let clean_relative =
+                            relative_str.strip_prefix('/').unwrap_or(&relative_str);
                         format!("res://{}", clean_relative)
                     } else {
                         // Fallback: try to extract from path string
@@ -663,14 +708,14 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                         }
                     }
                 };
-                
+
                 let mut parser = PupParser::new(&code);
                 parser.set_source_file(res_path.clone());
-                
+
                 // Try to parse as module, then global, then script
                 let is_module = code.trim_start().starts_with("@module");
                 let is_global = code.trim_start().starts_with("@global");
-                
+
                 if is_global {
                     let mut script = parser.parse_global()?;
                     script.source_file = Some(res_path.clone());
@@ -686,7 +731,16 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                     parse_time = parse_start.elapsed();
 
                     transpile_start = Instant::now();
-                    let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
+                    let generated_code = script.to_rust(
+                        &identifier,
+                        project_root,
+                        None,
+                        verbose,
+                        &module_names,
+                        &module_name_to_identifier,
+                        &module_functions,
+                        &module_variables,
+                    );
                     transpile_time = transpile_start.elapsed();
 
                     let script_source_map = build_source_map_from_script(
@@ -704,8 +758,10 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                     // (should already be in module_identifiers from first pass, but be safe)
                     if !module_identifiers.contains(&identifier) {
                         module_identifiers.insert(identifier.clone());
-                        identifier_to_module_name.insert(identifier.clone(), module.module_name.clone());
-                        module_name_to_identifier.insert(module.module_name.clone(), identifier.clone());
+                        identifier_to_module_name
+                            .insert(identifier.clone(), module.module_name.clone());
+                        module_name_to_identifier
+                            .insert(module.module_name.clone(), identifier.clone());
                     }
                     parse_time = parse_start.elapsed();
 
@@ -713,9 +769,15 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                     // Use the identifier from the path (same as scripts)
                     // The module name is used internally but file-based identifier is used for file naming
                     // Pass module_names so modules can reference other modules
-                    let _generated_code = module.to_rust(&identifier, project_root, verbose, &module_names, project_mode);
+                    let _generated_code = module.to_rust(
+                        &identifier,
+                        project_root,
+                        verbose,
+                        &module_names,
+                        project_mode,
+                    );
                     transpile_time = transpile_start.elapsed();
-                    
+
                     // Modules don't need source maps for now (they're simple)
                     // The identifier is already tracked via script_paths -> active_ids
                 } else {
@@ -733,9 +795,18 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                     parse_time = parse_start.elapsed();
 
                     transpile_start = Instant::now();
-                    let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
+                    let generated_code = script.to_rust(
+                        &identifier,
+                        project_root,
+                        None,
+                        verbose,
+                        &module_names,
+                        &module_name_to_identifier,
+                        &module_functions,
+                        &module_variables,
+                    );
                     transpile_time = transpile_start.elapsed();
-                    
+
                     let script_source_map = build_source_map_from_script(
                         &res_path,
                         &identifier,
@@ -748,24 +819,34 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
             }
             "cs" => {
                 let mut script = CsParser::new(&code).parse_script()?;
-                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
-                    for name in global_name_to_node_id.keys() {
-                        script.global_names.insert(name.clone());
-                    }
-                    script.global_name_to_node_id = global_name_to_node_id.clone();
-                    parse_time = parse_start.elapsed();
+                script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                for name in global_name_to_node_id.keys() {
+                    script.global_names.insert(name.clone());
+                }
+                script.global_name_to_node_id = global_name_to_node_id.clone();
+                parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
+                let generated_code = script.to_rust(
+                    &identifier,
+                    project_root,
+                    None,
+                    verbose,
+                    &module_names,
+                    &module_name_to_identifier,
+                    &module_functions,
+                    &module_variables,
+                );
                 transpile_time = transpile_start.elapsed();
-                
+
                 // Convert absolute path to res:// relative path
                 let res_path = {
                     let res_dir = project_root.join("res");
                     if let Ok(relative) = path.strip_prefix(&res_dir) {
                         // Remove leading slash if present
                         let relative_str = relative.to_string_lossy().replace('\\', "/");
-                        let clean_relative = relative_str.strip_prefix('/').unwrap_or(&relative_str);
+                        let clean_relative =
+                            relative_str.strip_prefix('/').unwrap_or(&relative_str);
                         format!("res://{}", clean_relative)
                     } else {
                         // Fallback: try to extract from path string
@@ -782,7 +863,7 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                         }
                     }
                 };
-                
+
                 // Build source map and embed it in the generated code
                 let script_source_map = build_source_map_from_script(
                     &res_path,
@@ -795,24 +876,34 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
             }
             "ts" => {
                 let mut script = TypeScriptParser::new(&code).parse_script()?;
-                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
-                    for name in global_name_to_node_id.keys() {
-                        script.global_names.insert(name.clone());
-                    }
-                    script.global_name_to_node_id = global_name_to_node_id.clone();
-                    parse_time = parse_start.elapsed();
+                script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                for name in global_name_to_node_id.keys() {
+                    script.global_names.insert(name.clone());
+                }
+                script.global_name_to_node_id = global_name_to_node_id.clone();
+                parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
-                let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
+                let generated_code = script.to_rust(
+                    &identifier,
+                    project_root,
+                    None,
+                    verbose,
+                    &module_names,
+                    &module_name_to_identifier,
+                    &module_functions,
+                    &module_variables,
+                );
                 transpile_time = transpile_start.elapsed();
-                
+
                 // Convert absolute path to res:// relative path
                 let res_path = {
                     let res_dir = project_root.join("res");
                     if let Ok(relative) = path.strip_prefix(&res_dir) {
                         // Remove leading slash if present
                         let relative_str = relative.to_string_lossy().replace('\\', "/");
-                        let clean_relative = relative_str.strip_prefix('/').unwrap_or(&relative_str);
+                        let clean_relative =
+                            relative_str.strip_prefix('/').unwrap_or(&relative_str);
                         format!("res://{}", clean_relative)
                     } else {
                         // Fallback: try to extract from path string
@@ -829,7 +920,7 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
                         }
                     }
                 };
-                
+
                 // Build source map and embed it in the generated code
                 let script_source_map = build_source_map_from_script(
                     &res_path,
@@ -903,7 +994,13 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_so
     }
 
     // Rebuild lib.rs with all active identifiers, module information, global order (identifiers) and global names (for node display)
-    rebuild_lib_rs(project_root, &active_ids, &module_identifiers, &global_order, &sorted_global_names)?;
+    rebuild_lib_rs(
+        project_root,
+        &active_ids,
+        &module_identifiers,
+        &global_order,
+        &sorted_global_names,
+    )?;
 
     // Note: Hash is written after successful compilation, not here
     // This allows the compile step to check if recompilation is needed

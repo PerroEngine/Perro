@@ -11,6 +11,10 @@ pub struct Rect {
 
 impl fmt::Display for Rect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Rect(x:{}, y:{}, w:{}, h:{})", self.x, self.y, self.w, self.h)
+        write!(
+            f,
+            "Rect(x:{}, y:{}, w:{}, h:{})",
+            self.x, self.y, self.w, self.h
+        )
     }
 }

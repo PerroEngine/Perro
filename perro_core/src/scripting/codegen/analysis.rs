@@ -1,9 +1,10 @@
 // Analysis functions for self usage, node access, etc.
-use std::collections::HashMap;
-use crate::api_modules::*;
+use super::utils::{
+    is_node_type, rename_variable, string_to_node_type, type_becomes_id, type_is_node,
+};
 use crate::ast::*;
 use crate::scripting::ast::{Expr, Stmt, Type};
-use super::utils::{is_node_type, string_to_node_type, rename_variable, type_is_node, type_becomes_id};
+use std::collections::HashMap;
 
 pub(crate) fn analyze_self_usage(script: &mut Script) {
     // Step 1: mark direct `self.node` usage
@@ -120,8 +121,7 @@ fn stmt_accesses_node(stmt: &Stmt, script: &Script) -> bool {
         Stmt::ScriptAssign(_, _, expr) | Stmt::ScriptAssignOp(_, _, _, expr) => {
             expr_accesses_node(&expr.expr, script)
         }
-        Stmt::IndexAssign(array, index, value)
-        | Stmt::IndexAssignOp(array, index, _, value) => {
+        Stmt::IndexAssign(array, index, value) | Stmt::IndexAssignOp(array, index, _, value) => {
             expr_accesses_node(array, script)
                 || expr_accesses_node(index, script)
                 || expr_accesses_node(&value.expr, script)
@@ -159,10 +159,9 @@ fn stmt_accesses_node(stmt: &Stmt, script: &Script) -> bool {
                     .map_or(false, |s| stmt_accesses_node(s.as_ref(), script)))
                 || body.iter().any(|s| stmt_accesses_node(s, script))
         }
-        Stmt::Return(expr) => {
-            expr.as_ref()
-                .map_or(false, |e| expr_accesses_node(&e.expr, script))
-        }
+        Stmt::Return(expr) => expr
+            .as_ref()
+            .map_or(false, |e| expr_accesses_node(&e.expr, script)),
     }
 }
 
@@ -174,8 +173,18 @@ pub(crate) fn collect_cloned_node_vars(
 ) {
     fn expr_contains_get_node(expr: &Expr, _verbose: bool) -> bool {
         match expr {
-            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetChildByName), _) => true,
-            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), _) => true,
+            Expr::ApiCall(
+                crate::call_modules::CallModule::NodeMethod(
+                    crate::structs::engine_registry::NodeMethodRef::GetChildByName,
+                ),
+                _,
+            ) => true,
+            Expr::ApiCall(
+                crate::call_modules::CallModule::NodeMethod(
+                    crate::structs::engine_registry::NodeMethodRef::GetParent,
+                ),
+                _,
+            ) => true,
             Expr::Cast(inner, target_type) => {
                 let is_node_type_cast = match target_type {
                     Type::Custom(tn) => is_node_type(tn),
@@ -197,7 +206,11 @@ pub(crate) fn collect_cloned_node_vars(
                     }
                 }
             }
-            Stmt::If { then_body, else_body, .. } => {
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
                 collect_cloned_node_vars(then_body, cloned_nodes, cloned_ui_elements, script);
                 if let Some(else_body) = else_body {
                     collect_cloned_node_vars(else_body, cloned_nodes, cloned_ui_elements, script);
@@ -222,7 +235,11 @@ fn extract_called_functions(stmts: &[Stmt]) -> Vec<String> {
                     }
                 }
             }
-            Stmt::If { then_body, else_body, .. } => {
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
                 called.extend(extract_called_functions(then_body));
                 if let Some(else_body) = else_body {
                     called.extend(extract_called_functions(else_body));
@@ -244,7 +261,7 @@ pub(crate) fn extract_mutable_api_call(node_id: &str) -> (String, String) {
     if node_id.starts_with("__") && !node_id.contains("(") {
         return (String::new(), node_id.to_string());
     }
-    
+
     // Check if node_id is an API call that requires mutable borrow (like api.get_parent)
     if node_id.starts_with("api.get_parent(") || node_id.starts_with("api.get_child_by_name(") {
         // Generate deterministic temp variable name using hash of the API call string
@@ -255,7 +272,7 @@ pub(crate) fn extract_mutable_api_call(node_id: &str) -> (String, String) {
         node_id.hash(&mut hasher);
         let hash = hasher.finish();
         let temp_var = format!("__temp_api_{}", hash);
-        
+
         let decl = format!("let {}: NodeID = {};", temp_var, node_id);
         (decl, temp_var)
     } else {
@@ -285,7 +302,12 @@ pub(crate) fn extract_node_member_info(
             Expr::SelfAccess => {
                 // self.transform.position.x
                 let path: Vec<String> = field_path.iter().rev().cloned().collect();
-                Some(("self.id".to_string(), script.node_type.clone(), path.join("."), "self_node".to_string()))
+                Some((
+                    "self.id".to_string(),
+                    script.node_type.clone(),
+                    path.join("."),
+                    "self_node".to_string(),
+                ))
             }
             Expr::Ident(var_name) => {
                 // Global (Root, @global TestGlobal): always NodeType::Node (base node), never DynNode. Use global registry NodeID.
@@ -299,14 +321,21 @@ pub(crate) fn extract_node_member_info(
                     ));
                 }
                 // Helper to find variable in nested blocks (for loops, if statements, etc.)
-                fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
+                fn find_variable_in_body<'a>(
+                    name: &str,
+                    body: &'a [crate::scripting::ast::Stmt],
+                ) -> Option<&'a crate::scripting::ast::Variable> {
                     use crate::scripting::ast::Stmt;
                     for stmt in body {
                         match stmt {
                             Stmt::VariableDecl(var) if var.name == name => {
                                 return Some(var);
                             }
-                            Stmt::If { then_body, else_body, .. } => {
+                            Stmt::If {
+                                then_body,
+                                else_body,
+                                ..
+                            } => {
                                 if let Some(v) = find_variable_in_body(name, then_body) {
                                     return Some(v);
                                 }
@@ -316,7 +345,8 @@ pub(crate) fn extract_node_member_info(
                                     }
                                 }
                             }
-                            Stmt::For { body: for_body, .. } | Stmt::ForTraditional { body: for_body, .. } => {
+                            Stmt::For { body: for_body, .. }
+                            | Stmt::ForTraditional { body: for_body, .. } => {
                                 if let Some(v) = find_variable_in_body(name, for_body) {
                                     return Some(v);
                                 }
@@ -326,7 +356,7 @@ pub(crate) fn extract_node_member_info(
                     }
                     None
                 }
-                
+
                 // Check if it's a node variable
                 // First, check if the variable name ends with _id (renamed node variable)
                 // If so, look up the original variable name
@@ -335,32 +365,35 @@ pub(crate) fn extract_node_member_info(
                 } else {
                     var_name
                 };
-                
+
                 let (var_type_ref, inferred_type_owned) = if let Some(func) = current_func {
                     // Strategy 1: Check in function locals first
-                    let var_type_ref = func.locals.iter()
+                    let var_type_ref = func
+                        .locals
+                        .iter()
                         .find(|v| v.name == *lookup_name)
                         .and_then(|v| v.typ.as_ref())
                         .or_else(|| {
-                            func.params.iter()
+                            func.params
+                                .iter()
                                 .find(|p| p.name == *lookup_name)
                                 .map(|p| &p.typ)
                         });
-                    
+
                     // Strategy 2: Check in nested blocks (for loops, if statements, etc.)
                     let var_type_ref = var_type_ref.or_else(|| {
-                        find_variable_in_body(lookup_name, &func.body)
-                            .and_then(|v| v.typ.as_ref())
+                        find_variable_in_body(lookup_name, &func.body).and_then(|v| v.typ.as_ref())
                     });
-                    
+
                     // Strategy 3: Fall back to script-level variables if not found in function
-                    let var_type_ref = var_type_ref.or_else(|| {
-                        script.get_variable_type(lookup_name)
-                    });
-                    
+                    let var_type_ref =
+                        var_type_ref.or_else(|| script.get_variable_type(lookup_name));
+
                     // Always try to infer from value expression, even if we have a type
                     // This handles cases where var b = new Sprite2D() creates a node but type might not be set
-                    let inferred = func.locals.iter()
+                    let inferred = func
+                        .locals
+                        .iter()
                         .find(|v| v.name == *lookup_name)
                         .and_then(|v| v.value.as_ref())
                         .and_then(|val| {
@@ -398,7 +431,8 @@ pub(crate) fn extract_node_member_info(
                         .or_else(|| {
                             // Also check if the value expression is a StructNew that creates a node
                             // (duplicate check for robustness)
-                            func.locals.iter()
+                            func.locals
+                                .iter()
                                 .find(|v| v.name == *lookup_name)
                                 .and_then(|v| v.value.as_ref())
                                 .and_then(|val| {
@@ -430,15 +464,13 @@ pub(crate) fn extract_node_member_info(
                                 })
                         })
                         // Fall back to script-level variable type if not found in function
-                        .or_else(|| {
-                            script.get_variable_type(lookup_name).cloned()
-                        });
-                    
+                        .or_else(|| script.get_variable_type(lookup_name).cloned());
+
                     (var_type_ref, inferred)
                 } else {
                     (script.get_variable_type(lookup_name), None)
                 };
-                
+
                 // Check if it's a node type
                 let var_type = var_type_ref.or_else(|| inferred_type_owned.as_ref());
                 if let Some(typ) = var_type {
@@ -446,12 +478,14 @@ pub(crate) fn extract_node_member_info(
                         // Special case: Type::Node(NodeType::Node) accessing fields that don't exist on Node
                         // should be treated as __DYN_NODE__ since it could be any node type
                         let should_treat_as_dyn = if let Type::Node(nt) = typ {
-                            use crate::structs::engine_registry::ENGINE_REGISTRY;
                             use crate::node_registry::NodeType;
+                            use crate::structs::engine_registry::ENGINE_REGISTRY;
                             if *nt == NodeType::Node && !field_path.is_empty() {
                                 // Check if the first field exists on Node
                                 let first_field = field_path.first().unwrap();
-                                let field_exists_on_node = ENGINE_REGISTRY.get_field_type_node(&NodeType::Node, first_field).is_some();
+                                let field_exists_on_node = ENGINE_REGISTRY
+                                    .get_field_type_node(&NodeType::Node, first_field)
+                                    .is_some();
                                 // If the field doesn't exist on Node, treat as dynamic
                                 !field_exists_on_node
                             } else {
@@ -460,7 +494,7 @@ pub(crate) fn extract_node_member_info(
                         } else {
                             false
                         };
-                        
+
                         // Use the original variable name for renaming (not the _id version)
                         let renamed = rename_variable(lookup_name, Some(typ));
                         let node_type_name = if should_treat_as_dyn {
@@ -479,15 +513,22 @@ pub(crate) fn extract_node_member_info(
                     } else if matches!(typ, Type::DynNode) && !field_path.is_empty() {
                         // Uuid variable accessing member fields - check if these fields exist in engine registry
                         // If they do, treat it as a __DYN_NODE__ (unknown node type)
-                        let field_path_only: Vec<String> = field_path.iter().rev().cloned().collect();
+                        let field_path_only: Vec<String> =
+                            field_path.iter().rev().cloned().collect();
                         use crate::structs::engine_registry::ENGINE_REGISTRY;
-                        let compatible_node_types = ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
+                        let compatible_node_types =
+                            ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
                         if !compatible_node_types.is_empty() {
                             // This looks like a node field access - treat as __DYN_NODE__
                             let renamed = rename_variable(lookup_name, Some(typ));
                             let path: Vec<String> = field_path.iter().rev().cloned().collect();
                             let closure_var = lookup_name.to_string();
-                            Some((renamed, "__DYN_NODE__".to_string(), path.join("."), closure_var))
+                            Some((
+                                renamed,
+                                "__DYN_NODE__".to_string(),
+                                path.join("."),
+                                closure_var,
+                            ))
                         } else {
                             None
                         }
@@ -497,15 +538,22 @@ pub(crate) fn extract_node_member_info(
                 } else {
                     // No type information - if it's a Uuid variable accessing member fields, check engine registry
                     if var_name.ends_with("_id") && !field_path.is_empty() {
-                        let field_path_only: Vec<String> = field_path.iter().rev().cloned().collect();
+                        let field_path_only: Vec<String> =
+                            field_path.iter().rev().cloned().collect();
                         use crate::structs::engine_registry::ENGINE_REGISTRY;
-                        let compatible_node_types = ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
+                        let compatible_node_types =
+                            ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
                         if !compatible_node_types.is_empty() {
                             // This looks like a node field access - treat as __DYN_NODE__
                             let renamed = rename_variable(lookup_name, None);
                             let path: Vec<String> = field_path.iter().rev().cloned().collect();
                             let closure_var = lookup_name.to_string();
-                            Some((renamed, "__DYN_NODE__".to_string(), path.join("."), closure_var))
+                            Some((
+                                renamed,
+                                "__DYN_NODE__".to_string(),
+                                path.join("."),
+                                closure_var,
+                            ))
                         } else {
                             None
                         }
@@ -521,28 +569,36 @@ pub(crate) fn extract_node_member_info(
                         // Cast to a specific node type - extract node_id from inner expression
                         // The inner might be GetParent which returns None, so we need to handle it specially
                         let (node_id, closure_var) = match inner.as_ref() {
-                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), args) => {
+                            Expr::ApiCall(
+                                crate::call_modules::CallModule::NodeMethod(
+                                    crate::structs::engine_registry::NodeMethodRef::GetParent,
+                                ),
+                                args,
+                            ) => {
                                 // Extract the node ID argument
                                 let arg_expr = if let Some(Expr::SelfAccess) = args.get(0) {
                                     "self.id".to_string()
                                 } else if let Some(Expr::Ident(name)) = args.get(0) {
                                     let is_node_var = if let Some(func) = current_func {
-                                        func.locals.iter()
+                                        func.locals
+                                            .iter()
                                             .find(|v| v.name == *name)
                                             .and_then(|v| v.typ.as_ref())
                                             .map(|t| type_becomes_id(t))
                                             .or_else(|| {
-                                                func.params.iter()
+                                                func.params
+                                                    .iter()
                                                     .find(|p| p.name == *name)
                                                     .map(|p| type_becomes_id(&p.typ))
                                             })
                                             .unwrap_or(false)
                                     } else {
-                                        script.get_variable_type(name)
+                                        script
+                                            .get_variable_type(name)
                                             .map(|t| type_becomes_id(&t))
                                             .unwrap_or(false)
                                     };
-                                    
+
                                     if is_node_var {
                                         format!("{}_id", name)
                                     } else {
@@ -551,11 +607,16 @@ pub(crate) fn extract_node_member_info(
                                 } else {
                                     "self.id".to_string()
                                 };
-                                (format!("api.get_parent({})", arg_expr), "parent_node".to_string())
+                                (
+                                    format!("api.get_parent({})", arg_expr),
+                                    "parent_node".to_string(),
+                                )
                             }
                             _ => {
                                 // Try to extract from inner recursively
-                                if let Some((node_id, _, _, closure_var)) = extract_recursive(inner, script, current_func, field_path) {
+                                if let Some((node_id, _, _, closure_var)) =
+                                    extract_recursive(inner, script, current_func, field_path)
+                                {
                                     (node_id, closure_var)
                                 } else {
                                     return None;
@@ -569,28 +630,36 @@ pub(crate) fn extract_node_member_info(
                     Type::Custom(type_name) if is_node_type(&type_name) => {
                         // Cast to a node type by name - extract node_id from inner expression
                         let (node_id, closure_var) = match inner.as_ref() {
-                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), args) => {
+                            Expr::ApiCall(
+                                crate::call_modules::CallModule::NodeMethod(
+                                    crate::structs::engine_registry::NodeMethodRef::GetParent,
+                                ),
+                                args,
+                            ) => {
                                 // Extract the node ID argument
                                 let arg_expr = if let Some(Expr::SelfAccess) = args.get(0) {
                                     "self.id".to_string()
                                 } else if let Some(Expr::Ident(name)) = args.get(0) {
                                     let is_node_var = if let Some(func) = current_func {
-                                        func.locals.iter()
+                                        func.locals
+                                            .iter()
                                             .find(|v| v.name == *name)
                                             .and_then(|v| v.typ.as_ref())
                                             .map(|t| type_becomes_id(t))
                                             .or_else(|| {
-                                                func.params.iter()
+                                                func.params
+                                                    .iter()
                                                     .find(|p| p.name == *name)
                                                     .map(|p| type_becomes_id(&p.typ))
                                             })
                                             .unwrap_or(false)
                                     } else {
-                                        script.get_variable_type(name)
+                                        script
+                                            .get_variable_type(name)
                                             .map(|t| type_becomes_id(&t))
                                             .unwrap_or(false)
                                     };
-                                    
+
                                     if is_node_var {
                                         format!("{}_id", name)
                                     } else {
@@ -599,11 +668,16 @@ pub(crate) fn extract_node_member_info(
                                 } else {
                                     "self.id".to_string()
                                 };
-                                (format!("api.get_parent({})", arg_expr), "parent_node".to_string())
+                                (
+                                    format!("api.get_parent({})", arg_expr),
+                                    "parent_node".to_string(),
+                                )
                             }
                             _ => {
                                 // Try to extract from inner recursively
-                                if let Some((node_id, _, _, closure_var)) = extract_recursive(inner, script, current_func, field_path) {
+                                if let Some((node_id, _, _, closure_var)) =
+                                    extract_recursive(inner, script, current_func, field_path)
+                                {
                                     (node_id, closure_var)
                                 } else {
                                     return None;
@@ -619,7 +693,12 @@ pub(crate) fn extract_node_member_info(
                     }
                 }
             }
-            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), args) => {
+            Expr::ApiCall(
+                crate::call_modules::CallModule::NodeMethod(
+                    crate::structs::engine_registry::NodeMethodRef::GetParent,
+                ),
+                args,
+            ) => {
                 // api.get_parent(node_id) returns Uuid - treat as node ID
                 // Generate the full api.get_parent(...) expression as the node_id_expr
                 // Extract the node ID argument similar to api_bindings.rs
@@ -628,22 +707,25 @@ pub(crate) fn extract_node_member_info(
                 } else if let Some(Expr::Ident(name)) = args.get(0) {
                     // Check if it's a type that becomes Uuid/Option<Uuid> (should have _id suffix)
                     let is_node_var = if let Some(func) = current_func {
-                        func.locals.iter()
+                        func.locals
+                            .iter()
                             .find(|v| v.name == *name)
                             .and_then(|v| v.typ.as_ref())
                             .map(|t| type_becomes_id(t))
                             .or_else(|| {
-                                func.params.iter()
+                                func.params
+                                    .iter()
                                     .find(|p| p.name == *name)
                                     .map(|p| type_becomes_id(&p.typ))
                             })
                             .unwrap_or(false)
                     } else {
-                        script.get_variable_type(name)
+                        script
+                            .get_variable_type(name)
                             .map(|t| type_becomes_id(&t))
                             .unwrap_or(false)
                     };
-                    
+
                     if is_node_var {
                         // Node variables are stored as {name}_id
                         format!("{}_id", name)
@@ -656,10 +738,10 @@ pub(crate) fn extract_node_member_info(
                     // In practice, get_parent() is usually called with simple identifiers
                     "self.id".to_string()
                 };
-                
+
                 // Generate the full api.get_parent(...) expression
                 let _node_id_expr = format!("api.get_parent({})", arg_expr);
-                
+
                 // Cannot determine node type from get_parent() alone - return None to fail transpilation
                 // The type must be specified via casting (e.g., get_parent(x) as Sprite2D) or variable type annotation
                 None
@@ -667,9 +749,11 @@ pub(crate) fn extract_node_member_info(
             _ => None,
         }
     }
-    
+
     let mut field_path = Vec::new();
-    if let Some((node_id, node_type, path, closure_var)) = extract_recursive(expr, script, current_func, &mut field_path) {
+    if let Some((node_id, node_type, path, closure_var)) =
+        extract_recursive(expr, script, current_func, &mut field_path)
+    {
         // Check if the first field is a script member (for self access)
         if let Expr::MemberAccess(base, field) = expr {
             if matches!(base.as_ref(), Expr::SelfAccess) {
@@ -680,10 +764,9 @@ pub(crate) fn extract_node_member_info(
                 }
             }
         }
-        
+
         Some((node_id, node_type, path, closure_var))
     } else {
         None
     }
 }
-

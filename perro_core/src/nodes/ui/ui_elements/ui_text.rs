@@ -152,4 +152,3 @@ impl UIText {
         self.props.align_v = align;
     }
 }
-

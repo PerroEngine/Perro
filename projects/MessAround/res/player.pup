@@ -43,6 +43,8 @@ on update() {
 fn test(u: int) {
     test_b = true
     Console.info("I was called externally through double colon", test_b, u)
+
+    Root::cabbage(123)
 }
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {

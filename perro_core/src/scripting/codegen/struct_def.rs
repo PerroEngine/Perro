@@ -1,7 +1,7 @@
 // StructDef code generation
+use super::utils::rename_struct;
 use crate::ast::*;
 use std::fmt::Write as _;
-use super::utils::rename_struct;
 
 impl StructDef {
     pub fn to_rust_definition(&self, script: &Script) -> String {

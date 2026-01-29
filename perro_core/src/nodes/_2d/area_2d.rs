@@ -1,5 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
+use crate::ids::NodeID;
 use crate::{
     api::ScriptApi,
     nodes::_2d::node_2d::Node2D,
@@ -10,13 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use crate::ids::NodeID;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Area2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
-
 
     pub base: Node2D,
 
@@ -83,7 +82,7 @@ impl Area2D {
                 Some(physics) => {
                     let physics = physics.borrow();
                     let intersections = physics.get_intersecting_colliders(&collider_handles);
-                    
+
                     // Collect all colliding node IDs while we have the physics borrow
                     // Filter out any node IDs that no longer exist in the scene (were deleted)
                     // IMPORTANT: Also filter out any node IDs that don't have a valid mapping in physics
@@ -97,10 +96,10 @@ impl Area2D {
                         if physics.colliders.get(*other_handle).is_none() {
                             continue; // Collider was removed, skip it
                         }
-                        
+
                         // Check if physics has a valid node_id mapping for this handle
                         if let Some(id) = physics.get_node_id(*other_handle) {
-                            // Triple-check: 
+                            // Triple-check:
                             // 1. Node must exist in scene
                             // 2. Node must still be a CollisionShape2D (not removed and replaced)
                             // 3. Collider handle must still match (node wasn't recreated)
@@ -128,13 +127,12 @@ impl Area2D {
 
         // Clean up previous_collisions - remove any nodes that no longer exist
         // This prevents trying to access deleted nodes
-        self.previous_collisions.retain(|&node_id| {
-            api.scene.get_scene_node_ref(node_id).is_some()
-        });
-        
+        self.previous_collisions
+            .retain(|&node_id| api.scene.get_scene_node_ref(node_id).is_some());
+
         // Get the signal base name (e.g., "Deadzone") — matches node name; numbers only added on collision.
         let signal_base = self.name.as_ref();
-        
+
         // Determine which colliders entered (new collisions)
         let entered: Vec<NodeID> = current_colliding_node_ids
             .difference(&self.previous_collisions)

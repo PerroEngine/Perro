@@ -13,7 +13,7 @@ use std::env;
 fn main() {
     // Name the main thread early
     perro_core::thread_utils::set_current_thread_name("Main");
-    
+
     // Check if --path argument is present - if so, run with that path directly
     // Otherwise, use run_dev() which will resolve the path from args or environment
     let args: Vec<String> = env::args().collect();
@@ -25,20 +25,18 @@ fn main() {
             } else {
                 match std::fs::canonicalize(path_arg) {
                     Ok(abs_path) => abs_path,
-                    Err(_) => {
-                        env::current_dir()
-                            .expect("Failed to get current directory")
-                            .join(path_arg)
-                    }
+                    Err(_) => env::current_dir()
+                        .expect("Failed to get current directory")
+                        .join(path_arg),
                 }
             };
-            
+
             // Run in dev mode with the specified project path
             run_dev_with_path(project_path);
             return;
         }
     }
-    
+
     // Default: use run_dev() which handles path resolution
     run_dev();
 }

@@ -1,7 +1,6 @@
 // Type inference for Script AST
-use crate::api_modules::*;
-use crate::resource_modules::{ArrayResource, MapResource};
 use crate::ast::{BuiltInEnumVariant, *};
+use crate::resource_modules::{ArrayResource, MapResource};
 use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Type};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
@@ -47,22 +46,22 @@ impl Script {
     }
 
     pub fn generate_implicit_cast_for_expr(&self, expr: &str, from: &Type, to: &Type) -> String {
-        use Type::*;
         use NumberKind::*;
+        use Type::*;
         if from == to {
             return expr.to_string();
         }
-        
+
         // Special case: if expr is "self.id" or already ends with ".id", and target is node id (DynNode), no cast needed
         if expr == "self.id" || (expr.ends_with(".id") && matches!(to, Type::DynNode)) {
             return expr.to_string();
         }
-        
+
         // Special case: if expr is "self" and target type is node id (DynNode), just return "self.id"
         if expr == "self" && matches!(to, Type::DynNode) {
             return "self.id".to_string();
         }
-        
+
         // Direct handling for common conversions
         match (from, to) {
             (from_ty, Type::Option(inner)) if from_ty == inner.as_ref() => {
@@ -124,13 +123,13 @@ impl Script {
             }
             _ => {}
         }
-        
+
         // Special case: if expr is already the target type (e.g., c_par_id is already NodeID), no cast needed
         // Check if expr ends with _id and target is DynNode (node variables are already NodeID)
         if expr.ends_with("_id") && matches!(to, Type::DynNode) {
             return expr.to_string();
         }
-        
+
         // Special case: if expr is a variable name that's already the target type, no cast needed
         // This prevents unnecessary casts when the variable is already a node id
         if !expr.contains(' ') && !expr.contains('(') && !expr.contains('.') {
@@ -139,7 +138,7 @@ impl Script {
                 return expr.to_string();
             }
         }
-        
+
         // For now, use simple cast syntax
         // Complex casts will be handled by the Expr::Cast implementation in legacy
         format!("({} as {})", expr, to.to_rust_type())
@@ -167,16 +166,23 @@ impl Script {
             .find(|v| v.name == name)
             .and_then(|v| v.typ.as_ref())
     }
-    
+
     /// Check if an identifier is a loop variable by searching for for loops that use it
     fn is_loop_variable(&self, name: &str, body: &[crate::scripting::ast::Stmt]) -> bool {
         use crate::scripting::ast::Stmt;
         for stmt in body {
             match stmt {
-                Stmt::For { var_name: loop_var, .. } if loop_var == name => {
+                Stmt::For {
+                    var_name: loop_var, ..
+                } if loop_var == name => {
                     return true;
                 }
-                Stmt::For { body: loop_body, .. } | Stmt::ForTraditional { body: loop_body, .. } => {
+                Stmt::For {
+                    body: loop_body, ..
+                }
+                | Stmt::ForTraditional {
+                    body: loop_body, ..
+                } => {
                     if self.is_loop_variable(name, loop_body) {
                         return true;
                     }
@@ -203,7 +209,7 @@ impl Script {
                 let inferred = self.infer_literal_type(lit, None);
                 // eprintln!("[INFER_TYPE] Literal {:?} -> {:?}", lit, inferred);
                 inferred
-            },
+            }
             Expr::Ident(name) => {
                 // Strip __t_ prefix if present to get original variable name for lookup
                 let original_name = if name.starts_with("__t_") {
@@ -211,10 +217,14 @@ impl Script {
                 } else {
                     name
                 };
-                
+
                 if let Some(func) = current_func {
                     // 1. Local variable (check both original and renamed name)
-                    if let Some(local) = func.locals.iter().find(|v| v.name == *name || v.name == original_name) {
+                    if let Some(local) = func
+                        .locals
+                        .iter()
+                        .find(|v| v.name == *name || v.name == original_name)
+                    {
                         if let Some(t) = &local.typ {
                             Some(t.clone())
                         } else if let Some(val) = &local.value {
@@ -224,7 +234,11 @@ impl Script {
                         }
                     }
                     // 2. Function parameter (check both original and renamed name)
-                    else if let Some(param) = func.params.iter().find(|p| p.name == *name || p.name == original_name) {
+                    else if let Some(param) = func
+                        .params
+                        .iter()
+                        .find(|p| p.name == *name || p.name == original_name)
+                    {
                         Some(param.typ.clone())
                     }
                     // 3. Check if it's a loop variable (use original name for lookup)
@@ -237,24 +251,38 @@ impl Script {
                         self.get_variable_type(name)
                             .cloned()
                             .or_else(|| self.get_variable_type(original_name).cloned())
-                            .or_else(|| self.global_name_to_node_id.get(name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
-                            .or_else(|| self.global_name_to_node_id.get(original_name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
+                            .or_else(|| {
+                                self.global_name_to_node_id
+                                    .get(name)
+                                    .map(|_| Type::Node(crate::node_registry::NodeType::Node))
+                            })
+                            .or_else(|| {
+                                self.global_name_to_node_id
+                                    .get(original_name)
+                                    .map(|_| Type::Node(crate::node_registry::NodeType::Node))
+                            })
                     }
                 } else {
                     // Try both original and renamed name, then global nodes (e.g. Root). Chain Option<Type>.
                     self.get_variable_type(name)
                         .cloned()
                         .or_else(|| self.get_variable_type(original_name).cloned())
-                        .or_else(|| self.global_name_to_node_id.get(name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
-                        .or_else(|| self.global_name_to_node_id.get(original_name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
+                        .or_else(|| {
+                            self.global_name_to_node_id
+                                .get(name)
+                                .map(|_| Type::Node(crate::node_registry::NodeType::Node))
+                        })
+                        .or_else(|| {
+                            self.global_name_to_node_id
+                                .get(original_name)
+                                .map(|_| Type::Node(crate::node_registry::NodeType::Node))
+                        })
                 }
             }
-            Expr::Range(_, _) => {
-                Some(Type::Container(
-                    ContainerKind::Array,
-                    vec![Type::Number(NumberKind::Signed(32))],
-                ))
-            }
+            Expr::Range(_, _) => Some(Type::Container(
+                ContainerKind::Array,
+                vec![Type::Number(NumberKind::Signed(32))],
+            )),
             Expr::BinaryOp(left, _op, right) => {
                 let left_type = self.infer_expr_type(left, current_func);
                 let right_type = self.infer_expr_type(right, current_func);
@@ -289,7 +317,7 @@ impl Script {
                         }
                     }
                 }
-                
+
                 // Otherwise, treat as normal member access
                 let base_type = self.infer_expr_type(base, current_func)?;
                 self.get_member_type(&base_type, field)
@@ -305,7 +333,7 @@ impl Script {
                             }
                         }
                     }
-                    
+
                     let base_type = self.infer_expr_type(base, current_func)?;
                     if let Type::Custom(type_name) = base_type {
                         if type_name == self.node_type {
@@ -321,7 +349,9 @@ impl Script {
             },
             Expr::Cast(_, target_type) => Some(target_type.clone()),
             Expr::ApiCall(api, args) => match api {
-                crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::MapOp(MapResource::Get)) => {
+                crate::call_modules::CallModule::Resource(
+                    crate::resource_modules::ResourceModule::MapOp(MapResource::Get),
+                ) => {
                     if let Some(Type::Container(ContainerKind::Map, ref params)) =
                         self.infer_expr_type(&args[0], current_func)
                     {
@@ -329,7 +359,9 @@ impl Script {
                     }
                     Some(Type::Object)
                 }
-                crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::ArrayOp(ArrayResource::Pop)) => {
+                crate::call_modules::CallModule::Resource(
+                    crate::resource_modules::ResourceModule::ArrayOp(ArrayResource::Pop),
+                ) => {
                     if let Some(Type::Container(ContainerKind::Array, ref params)) =
                         self.infer_expr_type(&args[0], current_func)
                     {
@@ -372,33 +404,28 @@ impl Script {
                 let base_type = self.infer_expr_type(base, current_func)?;
 
                 match base_type {
-                    Type::Container(container_kind, inner_types) => {
-                        match container_kind {
-                            ContainerKind::Array => {
-                                if matches!(inner_types.first(), Some(Type::Object | Type::Any)) {
-                                    Some(Type::Any)
-                                } else {
-                                    inner_types.first().cloned()
-                                }
-                            }
-                            ContainerKind::Map => {
-                                if matches!(inner_types.last(), Some(Type::Object | Type::Any)) {
-                                    Some(Type::Any)
-                                } else {
-                                    inner_types.last().cloned()
-                                }
-                            }
-                            ContainerKind::FixedArray(_) => {
+                    Type::Container(container_kind, inner_types) => match container_kind {
+                        ContainerKind::Array => {
+                            if matches!(inner_types.first(), Some(Type::Object | Type::Any)) {
+                                Some(Type::Any)
+                            } else {
                                 inner_types.first().cloned()
                             }
                         }
-                    }
+                        ContainerKind::Map => {
+                            if matches!(inner_types.last(), Some(Type::Object | Type::Any)) {
+                                Some(Type::Any)
+                            } else {
+                                inner_types.last().cloned()
+                            }
+                        }
+                        ContainerKind::FixedArray(_) => inner_types.first().cloned(),
+                    },
                     Type::Object | Type::Any => Some(Type::Any),
                     _ => None,
                 }
             }
             Expr::BaseAccess => Some(Custom(self.node_type.clone())),
-            _ => None,
         };
 
         // Cache the result
@@ -408,7 +435,11 @@ impl Script {
         result
     }
 
-    pub(crate) fn infer_literal_type(&self, lit: &Literal, expected_type: Option<&Type>) -> Option<Type> {
+    pub(crate) fn infer_literal_type(
+        &self,
+        lit: &Literal,
+        expected_type: Option<&Type>,
+    ) -> Option<Type> {
         match lit {
             Literal::Number(n) => {
                 if let Some(expected) = expected_type {
@@ -423,13 +454,11 @@ impl Script {
                 }
             }
             Literal::Bool(_) => Some(Type::Bool),
-            Literal::String(_) | Literal::Interpolated(_) => {
-                match expected_type {
-                    Some(Type::CowStr) => Some(Type::CowStr),
-                    Some(Type::StrRef) => Some(Type::StrRef),
-                    _ => Some(Type::String),
-                }
-            }
+            Literal::String(_) | Literal::Interpolated(_) => match expected_type {
+                Some(Type::CowStr) => Some(Type::CowStr),
+                Some(Type::StrRef) => Some(Type::StrRef),
+                _ => Some(Type::String),
+            },
             Literal::Null => {
                 // null can be assigned to any Option<T>
                 // If we have an expected type that's Option<T>, use it; otherwise return None (will be inferred from context)
@@ -450,10 +479,10 @@ impl Script {
         }
 
         match (left, right) {
-            (Type::DynNode, Type::Node(_)) | (Type::Node(_), Type::DynNode) => {
-                Some(Type::DynNode)
-            }
-            (Type::DynNode, Type::Custom(tn)) | (Type::Custom(tn), Type::DynNode) if is_node_type(tn) => {
+            (Type::DynNode, Type::Node(_)) | (Type::Node(_), Type::DynNode) => Some(Type::DynNode),
+            (Type::DynNode, Type::Custom(tn)) | (Type::Custom(tn), Type::DynNode)
+                if is_node_type(tn) =>
+            {
                 Some(Type::DynNode)
             }
             (Type::Number(NumberKind::BigInt), Type::Number(_))
@@ -482,26 +511,36 @@ impl Script {
                 Some(Type::Number(NumberKind::Unsigned(*w1.max(w2))))
             }
             // DynNode field unification: use widest type so assignees get correct inference
-            (Type::EngineStruct(EngineStructKind::Vector2), Type::EngineStruct(EngineStructKind::Vector3))
-            | (Type::EngineStruct(EngineStructKind::Vector3), Type::EngineStruct(EngineStructKind::Vector2)) => {
-                Some(Type::EngineStruct(EngineStructKind::Vector3))
-            }
-            (Type::EngineStruct(EngineStructKind::Transform2D), Type::EngineStruct(EngineStructKind::Transform3D))
-            | (Type::EngineStruct(EngineStructKind::Transform3D), Type::EngineStruct(EngineStructKind::Transform2D)) => {
-                Some(Type::EngineStruct(EngineStructKind::Transform3D))
-            }
-            (Type::EngineStruct(EngineStructKind::Quaternion), Type::Number(NumberKind::Float(32)))
-            | (Type::Number(NumberKind::Float(32)), Type::EngineStruct(EngineStructKind::Quaternion)) => {
-                Some(Type::EngineStruct(EngineStructKind::Quaternion))
-            }
+            (
+                Type::EngineStruct(EngineStructKind::Vector2),
+                Type::EngineStruct(EngineStructKind::Vector3),
+            )
+            | (
+                Type::EngineStruct(EngineStructKind::Vector3),
+                Type::EngineStruct(EngineStructKind::Vector2),
+            ) => Some(Type::EngineStruct(EngineStructKind::Vector3)),
+            (
+                Type::EngineStruct(EngineStructKind::Transform2D),
+                Type::EngineStruct(EngineStructKind::Transform3D),
+            )
+            | (
+                Type::EngineStruct(EngineStructKind::Transform3D),
+                Type::EngineStruct(EngineStructKind::Transform2D),
+            ) => Some(Type::EngineStruct(EngineStructKind::Transform3D)),
+            (
+                Type::EngineStruct(EngineStructKind::Quaternion),
+                Type::Number(NumberKind::Float(32)),
+            )
+            | (
+                Type::Number(NumberKind::Float(32)),
+                Type::EngineStruct(EngineStructKind::Quaternion),
+            ) => Some(Type::EngineStruct(EngineStructKind::Quaternion)),
             _ => Some(left.clone()),
         }
     }
 
     /// Unify types that can appear from a DynNode field (e.g. position: Vector2|Vector3 -> Vector3).
     fn unify_dynnode_field_types(types: &[Type]) -> Option<Type> {
-        use Type::*;
-        use NumberKind::*;
         if types.is_empty() {
             return None;
         }
@@ -518,8 +557,8 @@ impl Script {
     }
 
     fn unify_two_field_types(a: &Type, b: &Type) -> Option<Type> {
-        use Type::*;
         use NumberKind::*;
+        use Type::*;
         if a == b {
             return Some(a.clone());
         }
@@ -528,10 +567,14 @@ impl Script {
             | (EngineStruct(EngineStructKind::Vector3), EngineStruct(EngineStructKind::Vector2)) => {
                 Some(Type::EngineStruct(EngineStructKind::Vector3))
             }
-            (EngineStruct(EngineStructKind::Transform2D), EngineStruct(EngineStructKind::Transform3D))
-            | (EngineStruct(EngineStructKind::Transform3D), EngineStruct(EngineStructKind::Transform2D)) => {
-                Some(Type::EngineStruct(EngineStructKind::Transform3D))
-            }
+            (
+                EngineStruct(EngineStructKind::Transform2D),
+                EngineStruct(EngineStructKind::Transform3D),
+            )
+            | (
+                EngineStruct(EngineStructKind::Transform3D),
+                EngineStruct(EngineStructKind::Transform2D),
+            ) => Some(Type::EngineStruct(EngineStructKind::Transform3D)),
             (EngineStruct(EngineStructKind::Quaternion), Number(Float(32)))
             | (Number(Float(32)), EngineStruct(EngineStructKind::Quaternion)) => {
                 Some(Type::EngineStruct(EngineStructKind::Quaternion))
@@ -598,7 +641,7 @@ impl Script {
                         _ => return None,
                     }
                 }
-                
+
                 if type_name == &self.node_type {
                     if let Some(var) = self.variables.iter().find(|v| v.name == member) {
                         return var.typ.clone();
@@ -618,4 +661,3 @@ impl Script {
             .map(|f| f.return_type.clone())
     }
 }
-

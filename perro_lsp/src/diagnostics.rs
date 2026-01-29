@@ -1,18 +1,18 @@
-use tower_lsp::lsp_types::*;
+use crate::types::ParsedDocument;
+use perro_core::fur_ast::FurNode;
+use perro_core::nodes::ui::parser::FurParser;
 use perro_core::scripting::ast::Script;
 use perro_core::scripting::lang::pup::parser::PupParser;
-use perro_core::nodes::ui::parser::FurParser;
-use perro_core::fur_ast::FurNode;
-use crate::types::ParsedDocument;
+use tower_lsp::lsp_types::*;
 
 /// Generate diagnostics for a PUP file
 pub fn diagnose_pup(source: &str, uri: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    
+
     // Parse the script
     let mut parser = PupParser::new(source);
     parser.set_source_file(uri.to_string());
-    
+
     match parser.parse_script() {
         Ok(script) => {
             // Run validation checks that would normally happen during codegen
@@ -22,29 +22,29 @@ pub fn diagnose_pup(source: &str, uri: &str) -> Vec<Diagnostic> {
             // Parse error - try to extract position from error message
             // For incomplete scripts, be more lenient - only show error if it's not just incomplete syntax
             let error_lower = err.to_lowercase();
-            
+
             // Don't show errors for obviously incomplete code (user is still typing)
             // These are common when the user is in the middle of typing
-            if error_lower.contains("expected") && (
-                error_lower.contains("lparen") || 
-                error_lower.contains("rparen") ||
-                error_lower.contains("extends") ||
-                error_lower.contains("identifier")
-            ) {
+            if error_lower.contains("expected")
+                && (error_lower.contains("lparen")
+                    || error_lower.contains("rparen")
+                    || error_lower.contains("extends")
+                    || error_lower.contains("identifier"))
+            {
                 // Likely incomplete code - only show if it's a clear syntax error
                 // For now, we'll still show it but with a less severe message
             }
-            
+
             let (line, col) = extract_error_position(&err, source);
             diagnostics.push(Diagnostic {
                 range: Range {
-                    start: Position { 
-                        line: line as u32, 
-                        character: col as u32 
+                    start: Position {
+                        line: line as u32,
+                        character: col as u32,
                     },
-                    end: Position { 
-                        line: line as u32, 
-                        character: (col + 1).max(1) as u32 
+                    end: Position {
+                        line: line as u32,
+                        character: (col + 1).max(1) as u32,
                     },
                 },
                 severity: Some(DiagnosticSeverity::ERROR),
@@ -58,7 +58,7 @@ pub fn diagnose_pup(source: &str, uri: &str) -> Vec<Diagnostic> {
             });
         }
     }
-    
+
     diagnostics
 }
 
@@ -73,7 +73,7 @@ fn extract_error_position(err: &str, source: &str) -> (usize, usize) {
 /// Generate diagnostics for a FUR file
 pub fn diagnose_fur(source: &str, uri: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    
+
     match FurParser::new(source) {
         Ok(mut parser) => {
             match parser.parse() {
@@ -84,8 +84,14 @@ pub fn diagnose_fur(source: &str, uri: &str) -> Vec<Diagnostic> {
                 Err(err) => {
                     diagnostics.push(Diagnostic {
                         range: Range {
-                            start: Position { line: 0, character: 0 },
-                            end: Position { line: 0, character: 0 },
+                            start: Position {
+                                line: 0,
+                                character: 0,
+                            },
+                            end: Position {
+                                line: 0,
+                                character: 0,
+                            },
                         },
                         severity: Some(DiagnosticSeverity::ERROR),
                         code: Some(NumberOrString::String("parse_error".to_string())),
@@ -102,8 +108,14 @@ pub fn diagnose_fur(source: &str, uri: &str) -> Vec<Diagnostic> {
         Err(err) => {
             diagnostics.push(Diagnostic {
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: Some(NumberOrString::String("parse_error".to_string())),
@@ -116,14 +128,14 @@ pub fn diagnose_fur(source: &str, uri: &str) -> Vec<Diagnostic> {
             });
         }
     }
-    
+
     diagnostics
 }
 
 /// Validate a parsed script using codegen validation logic
 fn validate_script(script: &Script, source: &str, uri: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    
+
     // Check for lifecycle method calls (these are not allowed)
     for func in &script.functions {
         if func.is_lifecycle_method {
@@ -131,13 +143,13 @@ fn validate_script(script: &Script, source: &str, uri: &str) -> Vec<Diagnostic> 
             // This would require traversing all function bodies
             // For now, we'll add a note that lifecycle methods exist
         }
-        
+
         // Validate function bodies
         for stmt in &func.body {
             validate_statement(stmt, script, &mut diagnostics, source, uri);
         }
     }
-    
+
     // Validate variable types
     for var in &script.variables {
         if let Some(ref value) = var.value {
@@ -148,7 +160,7 @@ fn validate_script(script: &Script, source: &str, uri: &str) -> Vec<Diagnostic> 
             }
         }
     }
-    
+
     diagnostics
 }
 
@@ -159,8 +171,8 @@ fn validate_statement(
     source: &str,
     uri: &str,
 ) {
-    use perro_core::scripting::ast::{Stmt, Expr};
-    
+    use perro_core::scripting::ast::{Expr, Stmt};
+
     match stmt {
         Stmt::Expr(typed_expr) => {
             validate_expression(&typed_expr.expr, script, diagnostics, source, uri);
@@ -173,7 +185,12 @@ fn validate_statement(
         Stmt::Assign(_, expr) | Stmt::AssignOp(_, _, expr) => {
             validate_expression(&expr.expr, script, diagnostics, source, uri);
         }
-        Stmt::If { condition, then_body, else_body, .. } => {
+        Stmt::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => {
             validate_expression(&condition.expr, script, diagnostics, source, uri);
             for stmt in then_body {
                 validate_statement(stmt, script, diagnostics, source, uri);
@@ -190,7 +207,13 @@ fn validate_statement(
                 validate_statement(stmt, script, diagnostics, source, uri);
             }
         }
-        Stmt::ForTraditional { init, condition, increment, body, .. } => {
+        Stmt::ForTraditional {
+            init,
+            condition,
+            increment,
+            body,
+            ..
+        } => {
             if let Some(init) = init {
                 validate_statement(init, script, diagnostics, source, uri);
             }
@@ -216,18 +239,23 @@ fn validate_expression(
     uri: &str,
 ) {
     use perro_core::scripting::ast::{Expr, TypedExpr};
-    
+
     // Helper to get position from a TypedExpr's span
     let get_position = |span: &Option<perro_core::scripting::source_span::SourceSpan>| -> Position {
-        span.as_ref().map(|s| {
-            // LSP uses 0-indexed lines, SourceSpan uses 1-indexed
-            Position {
-                line: (s.line.saturating_sub(1)) as u32,
-                character: (s.column.saturating_sub(1)) as u32,
-            }
-        }).unwrap_or_else(|| Position { line: 0, character: 0 })
+        span.as_ref()
+            .map(|s| {
+                // LSP uses 0-indexed lines, SourceSpan uses 1-indexed
+                Position {
+                    line: (s.line.saturating_sub(1)) as u32,
+                    character: (s.column.saturating_sub(1)) as u32,
+                }
+            })
+            .unwrap_or_else(|| Position {
+                line: 0,
+                character: 0,
+            })
     };
-    
+
     match expr {
         Expr::Call(target, args) => {
             // Check if calling a lifecycle method
@@ -257,7 +285,7 @@ fn validate_expression(
                     }
                 }
             }
-            
+
             validate_expression(target, script, diagnostics, source, uri);
             for arg in args {
                 validate_expression(arg, script, diagnostics, source, uri);

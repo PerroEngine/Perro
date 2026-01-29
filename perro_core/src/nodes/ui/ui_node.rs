@@ -4,21 +4,17 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use crate::ids::UIElementID;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use crate::ids::UIElementID;
-
 
 use crate::{
     Node,
     nodes::node_registry::NodeType,
-
     rendering::graphics::{DEFAULT_VIRTUAL_HEIGHT, DEFAULT_VIRTUAL_WIDTH},
-
     scripting::api::ScriptApi,
     structs2d::Vector2,
-    ui_element::{BaseElement, IntoUIInner, UIElement, UIElementUpdate, UIUpdateContext},
-
+    ui_element::{BaseElement, IntoUIInner, UIElement},
 };
 
 fn default_visible() -> bool {
@@ -52,19 +48,19 @@ pub struct UINode {
 
     #[serde(skip)]
     pub needs_rerender: HashSet<UIElementID>,
-    
+
     #[serde(skip)]
     pub needs_layout_recalc: HashSet<UIElementID>,
-    
+
     /// Elements marked for deletion - will be removed from primitive renderer and then from elements map
     /// This set tracks element IDs (including all descendants) that should be deleted
     #[serde(skip)]
     pub pending_deletion: HashSet<UIElementID>,
-    
+
     /// Store initial z-indices from FUR file to prevent accumulation across frames
     #[serde(skip)]
     pub initial_z_indices: HashMap<UIElementID, i32>,
-    
+
     /// Currently focused UI element (for text input, etc.)
     #[serde(skip)]
     pub focused_element: Option<UIElementID>,
@@ -97,18 +93,18 @@ impl UINode {
             last_cursor_icon: None,
         }
     }
-    
+
     /// Mark an element as needing rerender (visual only, no layout recalculation)
     pub fn mark_element_needs_rerender(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
     }
-    
+
     /// Mark an element as needing layout recalculation (triggers full layout update)
     pub fn mark_element_needs_layout(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
         self.needs_layout_recalc.insert(element_id);
     }
-    
+
     /// Mark all elements as needing rerender (for initial render or full refresh)
     pub fn mark_all_needs_rerender(&mut self) {
         if let Some(elements) = &self.elements {
@@ -116,7 +112,7 @@ impl UINode {
             self.needs_layout_recalc.extend(elements.keys().copied());
         }
     }
-    
+
     /// Clear all rerender flags
     pub fn clear_rerender_flags(&mut self) {
         self.needs_rerender.clear();
@@ -247,10 +243,10 @@ impl UINode {
     /// This is useful for marking all children as needing rerender when parent visibility changes
     fn collect_all_descendants(&self, element_id: UIElementID) -> Vec<UIElementID> {
         let mut descendants = Vec::new();
-        
+
         if let Some(elements) = &self.elements {
             let mut to_process = vec![element_id];
-            
+
             while let Some(current_id) = to_process.pop() {
                 if let Some(element) = elements.get(&current_id) {
                     for &child_id in element.get_children() {
@@ -260,7 +256,7 @@ impl UINode {
                 }
             }
         }
-        
+
         descendants
     }
 
@@ -268,7 +264,7 @@ impl UINode {
     /// Use this when changing visibility to ensure all descendants are properly updated
     pub fn mark_element_with_descendants_needs_rerender(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
-        
+
         let descendants = self.collect_all_descendants(element_id);
         for descendant_id in descendants {
             self.needs_rerender.insert(descendant_id);
@@ -280,20 +276,20 @@ impl UINode {
     pub fn mark_element_with_descendants_needs_layout(&mut self, element_id: UIElementID) {
         self.needs_rerender.insert(element_id);
         self.needs_layout_recalc.insert(element_id);
-        
+
         let descendants = self.collect_all_descendants(element_id);
         for descendant_id in descendants {
             self.needs_rerender.insert(descendant_id);
             self.needs_layout_recalc.insert(descendant_id);
         }
     }
-    
+
     /// Mark an element and all its descendants for deletion
     /// Elements marked for deletion will be removed from the primitive renderer cache
     /// and then removed from the elements map by the renderer
     pub fn mark_for_deletion(&mut self, element_id: UIElementID) {
         self.pending_deletion.insert(element_id);
-        
+
         // Recursively mark all descendants for deletion
         let descendants = self.collect_all_descendants(element_id);
         for descendant_id in descendants {
@@ -323,12 +319,12 @@ impl UINode {
         if !self.visible {
             return;
         }
-    
-        let elements = match &mut self.elements {
+
+        let _elements = match &mut self.elements {
             Some(e) => e,
             None => return,
         };
-    
+
         // -----------------------------------------
         // Mouse → VIRTUAL UI SPACE
         // -----------------------------------------
@@ -339,12 +335,12 @@ impl UINode {
             }
             None => return,
         };
-    
+
         if screen_mouse.x == 0.0 && screen_mouse.y == 0.0 {
             // No interactive elements to reset hover state for
             return;
         }
-    
+
         let (window_w, window_h) = api
             .gfx
             .as_ref()
@@ -355,22 +351,22 @@ impl UINode {
                 )
             })
             .unwrap_or((1920.0, 1080.0));
-    
+
         // Use virtual size from Graphics when available, else defaults
         let (virt_w, virt_h) = api
             .gfx
             .as_ref()
             .map(|g| (g.virtual_width, g.virtual_height))
             .unwrap_or((DEFAULT_VIRTUAL_WIDTH, DEFAULT_VIRTUAL_HEIGHT));
-        let mouse_pos = Vector2::new(
+        let _mouse_pos = Vector2::new(
             (screen_mouse.x / window_w - 0.5) * virt_w,
             (0.5 - screen_mouse.y / window_h) * virt_h,
         );
-    
+
         // -----------------------------------------
         // Mouse button
         // -----------------------------------------
-        let mouse_pressed = api
+        let _mouse_pressed = api
             .scene
             .get_input_manager()
             .map(|mgr| {
@@ -379,13 +375,13 @@ impl UINode {
                 mgr.is_mouse_button_pressed(MouseButton::Left)
             })
             .unwrap_or(false);
-    
+
         // -----------------------------------------
         // Hit testing (FINAL)
         // -----------------------------------------
-        use std::rc::Rc;
         use std::cell::RefCell;
-        
+        use std::rc::Rc;
+
         let dirty_element_ids = Rc::new(RefCell::new(Vec::new()));
         let layout_dirty_element_ids = Rc::new(RefCell::new(Vec::new()));
         let any_button_hovered = Rc::new(RefCell::new(false));
@@ -393,12 +389,12 @@ impl UINode {
         let clicked_text_input_id = Rc::new(RefCell::new(None));
         let new_focused_element = Rc::new(RefCell::new(None));
         let needs_ui_rerender = Rc::new(RefCell::new(false));
-        
+
         // Store focused_element in local variable to avoid borrow issues
-        let current_focused_element = self.focused_element;
-        
+        let _current_focused_element = self.focused_element;
+
         // Check for mouse click outside to unfocus
-        let mouse_just_pressed = api
+        let _mouse_just_pressed = api
             .scene
             .get_input_manager()
             .map(|mgr| {
@@ -407,31 +403,33 @@ impl UINode {
                 mgr.is_mouse_button_pressed(MouseButton::Left)
             })
             .unwrap_or(false);
-        
+
         // Check if mouse button is currently held down
-        let mouse_is_held = api
+        let _mouse_is_held = api
             .scene
             .get_input_manager()
             .map(|mgr| {
                 let mgr = mgr.lock().unwrap();
                 use crate::input::manager::MouseButton;
-                mgr.state().mouse_buttons_pressed.contains(&MouseButton::Left)
+                mgr.state()
+                    .mouse_buttons_pressed
+                    .contains(&MouseButton::Left)
             })
             .unwrap_or(false);
-        
+
         // Update all elements using the trait system - UINode is now just a window into the scene
         // Process all elements in a single loop to avoid multiple mutable borrows of api
-        // 
+        //
         // SAFETY: We use unsafe to create multiple mutable borrows of `api` in the loop.
         // This is safe because:
         // 1. Only one match arm executes per iteration (match is exclusive)
         // 2. Each UIUpdateContext is dropped at the end of its match arm, before the next iteration
         // 3. The closures in UIUpdateContext are 'static (they only capture owned Rc<RefCell<>> values, not api)
-        // 
+        //
         // Rust's borrow checker can't prove this is safe because it analyzes all match arms
         // together, but we know at runtime only one executes and contexts don't overlap.
         // No interactive elements to update
-        
+
         // Extract values from Rc<RefCell<>>
         let mut dirty_element_ids_vec = dirty_element_ids.borrow_mut();
         let mut layout_dirty_element_ids_vec = layout_dirty_element_ids.borrow_mut();
@@ -440,16 +438,16 @@ impl UINode {
         let clicked_text_input_id_val = *clicked_text_input_id.borrow();
         let new_focused_element_val = *new_focused_element.borrow();
         let needs_ui_rerender_val = *needs_ui_rerender.borrow();
-        
+
         // Move values out
-        let mut dirty_element_ids = std::mem::take(&mut *dirty_element_ids_vec);
+        let dirty_element_ids = std::mem::take(&mut *dirty_element_ids_vec);
         let layout_dirty_element_ids = std::mem::take(&mut *layout_dirty_element_ids_vec);
         let any_button_hovered = any_button_hovered_val;
         let any_text_input_hovered = any_text_input_hovered_val;
         let clicked_text_input_id = clicked_text_input_id_val;
         let new_focused_element = new_focused_element_val;
         let needs_ui_rerender = needs_ui_rerender_val;
-        
+
         // Apply focus changes
         if let Some(new_focused) = new_focused_element.or(clicked_text_input_id) {
             if self.focused_element != Some(new_focused) {
@@ -458,20 +456,20 @@ impl UINode {
                 self.focused_element = Some(new_focused);
             }
         }
-        
+
         // Mark layout dirty elements
         for element_id in layout_dirty_element_ids {
             self.mark_element_needs_layout(element_id);
         }
-        
+
         // Mark UI as needing rerender if any element requested it
         if needs_ui_rerender {
             api.scene.mark_needs_rerender(self.base.id);
         }
-        
+
         // Get command sender after marking rerender to avoid borrow conflicts
         let command_sender = api.scene.get_command_sender();
-        
+
         // Update cursor icon based on hover state (only if changed)
         if let Some(tx) = command_sender {
             use crate::scripting::app_command::{AppCommand, CursorIcon};
@@ -482,7 +480,7 @@ impl UINode {
             } else {
                 CursorIcon::Default
             };
-            
+
             // Convert to u8 for comparison (avoid importing CursorIcon type in struct)
             let icon_value = match cursor_icon {
                 CursorIcon::Default => 0,
@@ -497,17 +495,17 @@ impl UINode {
                 CursorIcon::ResizeDiagonal1 => 9,
                 CursorIcon::ResizeDiagonal2 => 10,
             };
-            
+
             // Only send command if cursor icon changed
             if self.last_cursor_icon != Some(icon_value) {
                 self.last_cursor_icon = Some(icon_value);
                 let _ = tx.send(AppCommand::SetCursorIcon(cursor_icon));
             }
         }
-        
+
         // Keyboard input is now handled by each element's internal_render_update method
         // No need for separate keyboard handling here
-        
+
         // Mark all dirty elements after the loop (avoid borrow conflict)
         for element_id in dirty_element_ids {
             self.mark_element_needs_rerender(element_id);

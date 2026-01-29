@@ -1,30 +1,33 @@
 //! Complete egui integration for Perro UI system
 //! Maps FUR elements to egui widgets and handles rendering
 
-use std::collections::HashMap;
+#![allow(deprecated)] // egui 0.33: rounding -> corner_radius, allocate_ui_at_rect -> scope_builder; keep current API for now
+
 use crate::ids::UIElementID;
-use egui::{Context, Ui, Rect, Vec2, Color32, Rounding, Stroke, FontId, TextEdit, Button, Frame, Layout, Align, Direction, RichText};
 use crate::{
-    ui_element::{UIElement, BaseElement},
     structs::Color,
-    structs2d::{Vector2, Transform2D},
-    fur_ast::FurAnchor,
+    structs2d::{Transform2D, Vector2},
+    ui_element::{BaseElement, UIElement},
     ui_elements::{
-        ui_container::{UIPanel, CornerRadius, Layout as UILayout, GridLayout, VLayout, HLayout, LayoutAlignment},
+        ui_container::{
+            CornerRadius, GridLayout, HLayout, Layout as UILayout, LayoutAlignment, UIPanel,
+            VLayout,
+        },
         ui_text::UIText,
     },
-    prelude::string_to_u64,
 };
+use egui::{Align, Color32, Context, Direction, FontId, Frame, Layout, Rect, RichText, Stroke, Ui};
+use std::collections::HashMap;
 
 /// Converts Perro Color to egui Color32
 fn color_to_egui(color: Color) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a)
 }
 
-/// Converts Perro CornerRadius to egui Rounding
+/// Converts Perro CornerRadius to egui CornerRadius
 /// egui 0.33 uses u8 for rounding values
-fn corner_radius_to_egui(corner: &CornerRadius) -> Rounding {
-    Rounding {
+fn corner_radius_to_egui(corner: &CornerRadius) -> egui::CornerRadius {
+    egui::CornerRadius {
         nw: corner.top_left as u8,
         ne: corner.top_right as u8,
         sw: corner.bottom_left as u8,
@@ -35,18 +38,15 @@ fn corner_radius_to_egui(corner: &CornerRadius) -> Rounding {
 /// Converts Transform2D + size + pivot to egui Rect
 /// Perro: center-origin (0,0 at center), Y-up (+y is up), pivot at (0.5, 0.5) by default
 /// egui: top-left origin (0,0 at top-left), Y-down
-/// 
+///
 /// Coordinate system:
 /// - 0,0 is center of screen
 /// - +x +y is up-right
 /// - -x -y is down-left
 fn transform_to_rect(transform: &Transform2D, size: &Vector2, pivot: &Vector2) -> Rect {
     let pos = transform.position;
-    let scaled_size = Vector2::new(
-        size.x * transform.scale.x,
-        size.y * transform.scale.y,
-    );
-    
+    let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
+
     // Calculate bounds from pivot point
     // In Perro's Y-up system: top has highest Y, bottom has lowest Y
     // Pivot (0.5, 0.5) means center, (0, 0) means bottom-left, (1, 1) means top-right
@@ -54,43 +54,33 @@ fn transform_to_rect(transform: &Transform2D, size: &Vector2, pivot: &Vector2) -
     let max_x = pos.x + scaled_size.x * (1.0 - pivot.x);
     let max_y = pos.y + scaled_size.y * (1.0 - pivot.y); // Top (highest Y in Y-up)
     let min_y = pos.y - scaled_size.y * pivot.y; // Bottom (lowest Y in Y-up)
-    
+
     // Convert to egui coordinates (top-left origin, Y-down)
     // For now, we'll convert in the renderer with screen dimensions
     // This function returns virtual coordinates
     let min = egui::pos2(min_x, min_y);
     let max = egui::pos2(max_x, max_y);
-    
-    Rect::from_min_max(min, max)
-}
 
-/// Converts FurAnchor to egui Align
-fn anchor_to_egui_align(anchor: FurAnchor) -> Align {
-    match anchor {
-        FurAnchor::TopLeft | FurAnchor::Left | FurAnchor::BottomLeft => Align::LEFT,
-        FurAnchor::TopRight | FurAnchor::Right | FurAnchor::BottomRight => Align::RIGHT,
-        FurAnchor::Top | FurAnchor::Bottom | FurAnchor::Center => Align::Center,
-    }
+    Rect::from_min_max(min, max)
 }
 
 /// Converts LayoutAlignment to egui Align (for vertical layouts)
 fn layout_align_to_egui_align_vertical(align: LayoutAlignment) -> Align {
     match align {
-        LayoutAlignment::Start => Align::TOP,    // Top in vertical layout
+        LayoutAlignment::Start => Align::TOP, // Top in vertical layout
         LayoutAlignment::Center => Align::Center,
-        LayoutAlignment::End => Align::BOTTOM,   // Bottom in vertical layout
+        LayoutAlignment::End => Align::BOTTOM, // Bottom in vertical layout
     }
 }
 
 /// Converts LayoutAlignment to egui Align (for horizontal layouts)
 fn layout_align_to_egui_align_horizontal(align: LayoutAlignment) -> Align {
     match align {
-        LayoutAlignment::Start => Align::LEFT,   // Left in horizontal layout
+        LayoutAlignment::Start => Align::LEFT, // Left in horizontal layout
         LayoutAlignment::Center => Align::Center,
-        LayoutAlignment::End => Align::RIGHT,    // Right in horizontal layout
+        LayoutAlignment::End => Align::RIGHT, // Right in horizontal layout
     }
 }
-
 
 /// State tracked per element for egui rendering
 #[derive(Default)]
@@ -106,7 +96,7 @@ pub struct ElementState {
 pub enum ElementEvent {
     ButtonClicked(UIElementID, String), // element_id, element_name
     TextChanged(UIElementID, String),   // element_id, new_text
-    ButtonHovered(UIElementID, bool),    // element_id, is_hovered
+    ButtonHovered(UIElementID, bool),   // element_id, is_hovered
     ButtonPressed(UIElementID, bool),   // element_id, is_pressed
 }
 
@@ -165,10 +155,6 @@ impl EguiIntegration {
             UIElement::Text(text) => {
                 self.render_text(text, ui);
             }
-            _ => {
-                // Other elements - just render children
-                self.render_children(element, elements, ui, api);
-            }
         }
     }
 
@@ -195,22 +181,33 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        log::debug!("🎨 [EGUI] render_panel_with_children: '{}' -> egui Frame", panel.base.name);
-        let rect = transform_to_rect(&panel.base.global_transform, &panel.base.size, &panel.base.pivot);
-        
-        let bg_color = panel.props.background_color
+        log::debug!(
+            "🎨 [EGUI] render_panel_with_children: '{}' -> egui Frame",
+            panel.base.name
+        );
+        let rect = transform_to_rect(
+            &panel.base.global_transform,
+            &panel.base.size,
+            &panel.base.pivot,
+        );
+
+        let bg_color = panel
+            .props
+            .background_color
             .map(color_to_egui)
             .unwrap_or(Color32::TRANSPARENT);
-        let border_color = panel.props.border_color
+        let border_color = panel
+            .props
+            .border_color
             .map(color_to_egui)
             .unwrap_or(Color32::TRANSPARENT);
         let rounding = corner_radius_to_egui(&panel.props.corner_radius);
-        
+
         let frame = Frame::default()
             .fill(bg_color)
             .stroke(Stroke::new(panel.props.border_thickness, border_color))
             .rounding(rounding);
-        
+
         ui.allocate_ui_at_rect(rect, |ui| {
             frame.show(ui, |ui| {
                 ui.set_clip_rect(rect);
@@ -229,11 +226,11 @@ impl EguiIntegration {
         log::debug!("🎨 [EGUI] render_text: '{}' -> egui Label", text.base.name);
         let font_id = FontId::proportional(text.props.font_size);
         let color = color_to_egui(text.props.color);
-        
+
         ui.label(
             RichText::new(&text.props.content)
                 .color(color)
-                .font(font_id)
+                .font(font_id),
         );
     }
 
@@ -271,14 +268,18 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        let rect = transform_to_rect(&layout.base.global_transform, &layout.base.size, &layout.base.pivot);
+        let rect = transform_to_rect(
+            &layout.base.global_transform,
+            &layout.base.size,
+            &layout.base.pivot,
+        );
         let direction = match layout.container.mode {
             crate::ui_elements::ui_container::ContainerMode::Horizontal => Direction::LeftToRight,
             crate::ui_elements::ui_container::ContainerMode::Vertical => Direction::TopDown,
             crate::ui_elements::ui_container::ContainerMode::Grid => Direction::LeftToRight, // Grid handled separately
         };
         let align = layout_align_to_egui_align_horizontal(layout.container.align);
-        
+
         // Create egui layout
         let egui_layout = match direction {
             Direction::LeftToRight => Layout::left_to_right(align),
@@ -286,12 +287,12 @@ impl EguiIntegration {
             Direction::RightToLeft => Layout::right_to_left(align),
             Direction::BottomUp => Layout::bottom_up(align),
         };
-        
+
         ui.allocate_ui_at_rect(rect, |ui| {
             ui.with_layout(egui_layout, |ui| {
                 // Apply padding
                 ui.add_space(layout.container.padding.left);
-                
+
                 // Render children directly from layout
                 for &child_id in &layout.base.children {
                     if let Some(child) = elements.get(&child_id) {
@@ -310,17 +311,21 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        let rect = transform_to_rect(&vlayout.base.global_transform, &vlayout.base.size, &vlayout.base.pivot);
+        let rect = transform_to_rect(
+            &vlayout.base.global_transform,
+            &vlayout.base.size,
+            &vlayout.base.pivot,
+        );
         let align = layout_align_to_egui_align_vertical(vlayout.align);
-        
+
         // Create vertical egui layout
         let egui_layout = Layout::top_down(align);
-        
+
         ui.allocate_ui_at_rect(rect, |ui| {
             ui.with_layout(egui_layout, |ui| {
                 // Apply padding
                 ui.add_space(vlayout.padding.top);
-                
+
                 // Render children with gap
                 for (idx, &child_id) in vlayout.base.children.iter().enumerate() {
                     if idx > 0 {
@@ -342,17 +347,21 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        let rect = transform_to_rect(&hlayout.base.global_transform, &hlayout.base.size, &hlayout.base.pivot);
+        let rect = transform_to_rect(
+            &hlayout.base.global_transform,
+            &hlayout.base.size,
+            &hlayout.base.pivot,
+        );
         let align = layout_align_to_egui_align_horizontal(hlayout.align);
-        
+
         // Create horizontal egui layout
         let egui_layout = Layout::left_to_right(align);
-        
+
         ui.allocate_ui_at_rect(rect, |ui| {
             ui.with_layout(egui_layout, |ui| {
                 // Apply padding
                 ui.add_space(hlayout.padding.left);
-                
+
                 // Render children with gap
                 for (idx, &child_id) in hlayout.base.children.iter().enumerate() {
                     if idx > 0 {
@@ -374,13 +383,17 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        let rect = transform_to_rect(&grid.base.global_transform, &grid.base.size, &grid.base.pivot);
-        
+        let rect = transform_to_rect(
+            &grid.base.global_transform,
+            &grid.base.size,
+            &grid.base.pivot,
+        );
+
         ui.allocate_ui_at_rect(rect, |ui| {
             // Apply padding
             ui.add_space(grid.padding.left);
             ui.add_space(grid.padding.top);
-            
+
             // Use egui Grid for proper grid layout
             use egui::Grid;
             Grid::new("grid_layout")

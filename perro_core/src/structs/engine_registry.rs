@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
-use once_cell::sync::Lazy;
 use crate::{ast::*, engine_structs::EngineStruct, node_registry::NodeType};
+use once_cell::sync::Lazy;
+use std::collections::{HashMap, HashSet};
 
 /// Strongly-typed reference to a field in engine_registry
 /// This is generated when fields are registered in engine_registry
@@ -9,7 +9,7 @@ pub enum NodeFieldRef {
     // Node fields
     NodeName,
     NodeId,
-    
+
     // Node2D fields
     Node2DTransform,
     Node2DPivot,
@@ -20,20 +20,19 @@ pub enum NodeFieldRef {
     Node3DTransform,
     Node3DPivot,
     Node3DVisible,
-    
+
     // Sprite2D fields
     Sprite2DTextureId,
     Sprite2DRegion,
-    
+
     // Camera2D fields
     Camera2DZoom,
     Camera2DActive,
-    
+
     // Shape2D fields
     Shape2DShapeType,
     Shape2DColor,
     Shape2DFilled,
-    
     // Add more as needed when registering nodes...
 }
 
@@ -52,21 +51,26 @@ pub enum NodeMethodRef {
     GetType,
     GetParentType,
     Remove,
-    
     // Add more as needed when registering node methods...
 }
 
 impl NodeMethodRef {
     /// Get the node type this method belongs to
     pub fn node_type(&self) -> Option<NodeType> {
-        ENGINE_REGISTRY.method_ref_reverse_map.get(self).map(|(node_type, _)| *node_type)
+        ENGINE_REGISTRY
+            .method_ref_reverse_map
+            .get(self)
+            .map(|(node_type, _)| *node_type)
     }
-    
+
     /// Get the Rust method name from engine_registry
     pub fn rust_method_name(&self) -> Option<String> {
-        ENGINE_REGISTRY.method_ref_reverse_map.get(self).map(|(_, method_name)| method_name.clone())
+        ENGINE_REGISTRY
+            .method_ref_reverse_map
+            .get(self)
+            .map(|(_, method_name)| method_name.clone())
     }
-    
+
     /// Get the return type from engine_registry
     pub fn return_type(&self) -> Option<Type> {
         if let Some((node_type, method_name)) = ENGINE_REGISTRY.method_ref_reverse_map.get(self) {
@@ -75,7 +79,7 @@ impl NodeMethodRef {
             None
         }
     }
-    
+
     /// Get the parameter types from engine_registry
     pub fn param_types(&self) -> Option<Vec<Type>> {
         if let Some((node_type, method_name)) = ENGINE_REGISTRY.method_ref_reverse_map.get(self) {
@@ -84,7 +88,7 @@ impl NodeMethodRef {
             None
         }
     }
-    
+
     /// Get the parameter names from engine_registry
     /// Returns script-side parameter names (what PUP users see), not internal Rust names
     pub fn param_names(&self) -> Option<Vec<&'static str>> {
@@ -100,15 +104,21 @@ impl NodeFieldRef {
     /// Get the node type this field belongs to
     /// Queries the engine registry for the actual mapping
     pub fn node_type(&self) -> Option<NodeType> {
-        ENGINE_REGISTRY.field_ref_reverse_map.get(self).map(|(node_type, _)| *node_type)
+        ENGINE_REGISTRY
+            .field_ref_reverse_map
+            .get(self)
+            .map(|(node_type, _)| *node_type)
     }
-    
+
     /// Get the Rust field name from engine_registry
     /// Queries the engine registry for the actual mapping
     pub fn rust_field_name(&self) -> Option<String> {
-        ENGINE_REGISTRY.field_ref_reverse_map.get(self).map(|(_, field_name)| field_name.clone())
+        ENGINE_REGISTRY
+            .field_ref_reverse_map
+            .get(self)
+            .map(|(_, field_name)| field_name.clone())
     }
-    
+
     /// Get the Rust type from engine_registry
     /// This looks up the actual field type from the registry
     pub fn rust_type(&self) -> Option<Type> {
@@ -128,31 +138,31 @@ pub struct EngineRegistry {
     // small maps to store inheritance chains
     pub node_bases: HashMap<NodeType, NodeType>,
     pub struct_bases: HashMap<EngineStruct, EngineStruct>,
-    
+
     // Field name mapping: (NodeType, script_field_name) -> rust_field_name
     // Allows scripts to use "texture" while Rust uses "texture_id"
     pub field_name_map: HashMap<(NodeType, String), String>,
-    
+
     // Field reference mapping: (NodeType, rust_field_name) -> NodeFieldRef
     // Maps engine registry fields to their strongly-typed references
     pub field_ref_map: HashMap<(NodeType, String), NodeFieldRef>,
-    
+
     // Reverse mapping: NodeFieldRef -> (NodeType, rust_field_name)
     // Allows looking up the node type and field name from a NodeFieldRef
     pub field_ref_reverse_map: HashMap<NodeFieldRef, (NodeType, String)>,
-    
+
     // Method name mapping: (NodeType, script_method_name) -> rust_method_name
     // Allows scripts to use "get_node" while Rust might use different names
     pub method_name_map: HashMap<(NodeType, String), String>,
-    
+
     // Method reference mapping: (NodeType, rust_method_name) -> NodeMethodRef
     // Maps engine registry methods to their strongly-typed references
     pub method_ref_map: HashMap<(NodeType, String), NodeMethodRef>,
-    
+
     // Reverse mapping: NodeMethodRef -> (NodeType, rust_method_name)
     // Allows looking up the node type and method name from a NodeMethodRef
     pub method_ref_reverse_map: HashMap<NodeMethodRef, (NodeType, String)>,
-    
+
     // Method definitions: (NodeType, rust_method_name) -> (params, return_type, param_names)
     // Stores the actual method signature with script-side parameter names
     pub method_defs: HashMap<(NodeType, String), (Vec<Type>, Type, Vec<&'static str>)>,
@@ -281,22 +291,76 @@ impl EngineRegistry {
                 ("id", Type::DynNode, Some(NodeFieldRef::NodeId)),
             ],
         );
-        
+
         // Register NodeSugar methods (available on all nodes)
         // These are "built-in" methods that don't exist as real Rust methods but are exposed to scripts
         // Parameter names are script-side (what PUP users see), not internal Rust names
         reg.register_node_methods(
             NodeType::Node,
             vec![
-                ("get_var", vec![Type::String], Type::Any, Some(NodeMethodRef::GetVar), vec!["name"]),
-                ("set_var", vec![Type::String, Type::Object], Type::Void, Some(NodeMethodRef::SetVar), vec!["name", "value"]),
-                ("get_node", vec![Type::String], Type::DynNode, Some(NodeMethodRef::GetChildByName), vec!["name"]),
-                ("get_parent", vec![], Type::DynNode, Some(NodeMethodRef::GetParent), vec![]),
-                ("add_child", vec![Type::Node(NodeType::Node)], Type::Void, Some(NodeMethodRef::AddChild), vec!["node"]),
-                ("clear_children", vec![], Type::Void, Some(NodeMethodRef::ClearChildren), vec![]),
-                ("get_type", vec![], Type::NodeType, Some(NodeMethodRef::GetType), vec![]),
-                ("get_parent_type", vec![], Type::NodeType, Some(NodeMethodRef::GetParentType), vec![]),
-                ("remove", vec![], Type::Void, Some(NodeMethodRef::Remove), vec![]),
+                (
+                    "get_var",
+                    vec![Type::String],
+                    Type::Any,
+                    Some(NodeMethodRef::GetVar),
+                    vec!["name"],
+                ),
+                (
+                    "set_var",
+                    vec![Type::String, Type::Object],
+                    Type::Void,
+                    Some(NodeMethodRef::SetVar),
+                    vec!["name", "value"],
+                ),
+                (
+                    "get_node",
+                    vec![Type::String],
+                    Type::DynNode,
+                    Some(NodeMethodRef::GetChildByName),
+                    vec!["name"],
+                ),
+                (
+                    "get_parent",
+                    vec![],
+                    Type::DynNode,
+                    Some(NodeMethodRef::GetParent),
+                    vec![],
+                ),
+                (
+                    "add_child",
+                    vec![Type::Node(NodeType::Node)],
+                    Type::Void,
+                    Some(NodeMethodRef::AddChild),
+                    vec!["node"],
+                ),
+                (
+                    "clear_children",
+                    vec![],
+                    Type::Void,
+                    Some(NodeMethodRef::ClearChildren),
+                    vec![],
+                ),
+                (
+                    "get_type",
+                    vec![],
+                    Type::NodeType,
+                    Some(NodeMethodRef::GetType),
+                    vec![],
+                ),
+                (
+                    "get_parent_type",
+                    vec![],
+                    Type::NodeType,
+                    Some(NodeMethodRef::GetParentType),
+                    vec![],
+                ),
+                (
+                    "remove",
+                    vec![],
+                    Type::Void,
+                    Some(NodeMethodRef::Remove),
+                    vec![],
+                ),
             ],
         );
 
@@ -306,10 +370,22 @@ impl EngineRegistry {
             NodeType::Node2D,
             Some(NodeType::Node),
             vec![
-                ("transform", Type::EngineStruct(EngineStruct::Transform2D), Some(NodeFieldRef::Node2DTransform)),
-                ("pivot", Type::EngineStruct(EngineStruct::Vector2), Some(NodeFieldRef::Node2DPivot)),
+                (
+                    "transform",
+                    Type::EngineStruct(EngineStruct::Transform2D),
+                    Some(NodeFieldRef::Node2DTransform),
+                ),
+                (
+                    "pivot",
+                    Type::EngineStruct(EngineStruct::Vector2),
+                    Some(NodeFieldRef::Node2DPivot),
+                ),
                 ("visible", Type::Bool, Some(NodeFieldRef::Node2DVisible)),
-                ("z_index", Type::Number(NumberKind::Signed(32)), Some(NodeFieldRef::Node2DZIndex)),
+                (
+                    "z_index",
+                    Type::Number(NumberKind::Signed(32)),
+                    Some(NodeFieldRef::Node2DZIndex),
+                ),
             ],
         );
 
@@ -320,25 +396,34 @@ impl EngineRegistry {
             NodeType::Sprite2D,
             Some(NodeType::Node2D),
             vec![
-                ("texture_id", Type::EngineStruct(EngineStruct::Texture), Some(NodeFieldRef::Sprite2DTextureId)), // Semantic type: Texture (Rust conversion: becomes Option<TextureID>)
-                ("region", Type::Option(Box::new(Type::Container(ContainerKind::FixedArray(4), vec![Type::Number(NumberKind::Float(32))]))), Some(NodeFieldRef::Sprite2DRegion)),
+                (
+                    "texture_id",
+                    Type::EngineStruct(EngineStruct::Texture),
+                    Some(NodeFieldRef::Sprite2DTextureId),
+                ), // Semantic type: Texture (Rust conversion: becomes Option<TextureID>)
+                (
+                    "region",
+                    Type::Option(Box::new(Type::Container(
+                        ContainerKind::FixedArray(4),
+                        vec![Type::Number(NumberKind::Float(32))],
+                    ))),
+                    Some(NodeFieldRef::Sprite2DRegion),
+                ),
             ],
         );
 
         // Area2D - inherits from Node2D
-        reg.register_node(
-            NodeType::Area2D,
-            Some(NodeType::Node2D),
-            vec![],
-        );
+        reg.register_node(NodeType::Area2D, Some(NodeType::Node2D), vec![]);
 
         // CollisionShape2D - inherits from Node2D
         reg.register_node(
             NodeType::CollisionShape2D,
             Some(NodeType::Node2D),
-            vec![
-                ("shape", Type::Option(Box::new(Type::EngineStruct(EngineStruct::Shape2D))), None),
-            ],
+            vec![(
+                "shape",
+                Type::Option(Box::new(Type::EngineStruct(EngineStruct::Shape2D))),
+                None,
+            )],
         );
 
         // ShapeInstance2D - inherits from Node2D
@@ -346,8 +431,16 @@ impl EngineRegistry {
             NodeType::ShapeInstance2D,
             Some(NodeType::Node2D),
             vec![
-                ("shape", Type::Option(Box::new(Type::EngineStruct(EngineStruct::Shape2D))), Some(NodeFieldRef::Shape2DShapeType)),
-                ("color", Type::Option(Box::new(Type::EngineStruct(EngineStruct::Color))), Some(NodeFieldRef::Shape2DColor)),
+                (
+                    "shape",
+                    Type::Option(Box::new(Type::EngineStruct(EngineStruct::Shape2D))),
+                    Some(NodeFieldRef::Shape2DShapeType),
+                ),
+                (
+                    "color",
+                    Type::Option(Box::new(Type::EngineStruct(EngineStruct::Color))),
+                    Some(NodeFieldRef::Shape2DColor),
+                ),
                 ("filled", Type::Bool, Some(NodeFieldRef::Shape2DFilled)),
             ],
         );
@@ -357,7 +450,11 @@ impl EngineRegistry {
             NodeType::Camera2D,
             Some(NodeType::Node2D),
             vec![
-                ("zoom", Type::Number(NumberKind::Float(32)), Some(NodeFieldRef::Camera2DZoom)),
+                (
+                    "zoom",
+                    Type::Number(NumberKind::Float(32)),
+                    Some(NodeFieldRef::Camera2DZoom),
+                ),
                 ("active", Type::Bool, Some(NodeFieldRef::Camera2DActive)),
             ],
         );
@@ -377,7 +474,11 @@ impl EngineRegistry {
             NodeType::Node3D,
             Some(NodeType::Node),
             vec![
-                ("transform", Type::EngineStruct(EngineStruct::Transform3D), None),
+                (
+                    "transform",
+                    Type::EngineStruct(EngineStruct::Transform3D),
+                    None,
+                ),
                 ("pivot", Type::EngineStruct(EngineStruct::Vector3), None),
                 ("visible", Type::Bool, None),
             ],
@@ -390,7 +491,11 @@ impl EngineRegistry {
             vec![
                 ("mesh_path", Type::Option(Box::new(Type::CowStr)), None),
                 ("material_path", Type::Option(Box::new(Type::CowStr)), None),
-                ("material_id", Type::Option(Box::new(Type::Number(NumberKind::Unsigned(32)))), None),
+                (
+                    "material_id",
+                    Type::Option(Box::new(Type::Number(NumberKind::Unsigned(32)))),
+                    None,
+                ),
             ],
         );
 
@@ -399,9 +504,21 @@ impl EngineRegistry {
             NodeType::Camera3D,
             Some(NodeType::Node3D),
             vec![
-                ("fov", Type::Option(Box::new(Type::Number(NumberKind::Float(32)))), None),
-                ("near", Type::Option(Box::new(Type::Number(NumberKind::Float(32)))), None),
-                ("far", Type::Option(Box::new(Type::Number(NumberKind::Float(32)))), None),
+                (
+                    "fov",
+                    Type::Option(Box::new(Type::Number(NumberKind::Float(32)))),
+                    None,
+                ),
+                (
+                    "near",
+                    Type::Option(Box::new(Type::Number(NumberKind::Float(32)))),
+                    None,
+                ),
+                (
+                    "far",
+                    Type::Option(Box::new(Type::Number(NumberKind::Float(32)))),
+                    None,
+                ),
                 ("active", Type::Bool, None),
             ],
         );
@@ -497,15 +614,17 @@ impl EngineRegistry {
             methods: vec![],
         };
         self.node_defs.insert(kind, def);
-        
+
         // Create field reference mappings (both directions) - only for fields with NodeFieldRef
         for (field_name, _, field_ref_opt) in fields {
             if let Some(field_ref) = field_ref_opt {
                 let field_name_str = field_name.to_string();
                 // Forward: (NodeType, rust_field_name) -> NodeFieldRef
-                self.field_ref_map.insert((kind, field_name_str.clone()), field_ref);
+                self.field_ref_map
+                    .insert((kind, field_name_str.clone()), field_ref);
                 // Reverse: NodeFieldRef -> (NodeType, rust_field_name)
-                self.field_ref_reverse_map.insert(field_ref, (kind, field_name_str));
+                self.field_ref_reverse_map
+                    .insert(field_ref, (kind, field_name_str));
             }
         }
     }
@@ -513,24 +632,36 @@ impl EngineRegistry {
     pub fn register_node_methods(
         &mut self,
         kind: NodeType,
-        methods: Vec<(&str, Vec<Type>, Type, Option<NodeMethodRef>, Vec<&'static str>)>, // (script_name, params, return_type, optional_method_ref, param_names)
+        methods: Vec<(
+            &str,
+            Vec<Type>,
+            Type,
+            Option<NodeMethodRef>,
+            Vec<&'static str>,
+        )>, // (script_name, params, return_type, optional_method_ref, param_names)
     ) {
         for (script_name, params, return_type, method_ref_opt, param_names) in methods {
             // Store method definition: (NodeType, rust_method_name) -> (params, return_type, param_names)
             // For built-in methods, rust_method_name is the same as script_name
             // param_names are script-side names (what PUP users see), not internal Rust names
             let rust_method_name = script_name.to_string();
-            self.method_defs.insert((kind, rust_method_name.clone()), (params.clone(), return_type, param_names));
-            
+            self.method_defs.insert(
+                (kind, rust_method_name.clone()),
+                (params.clone(), return_type, param_names),
+            );
+
             // Create method name mapping: (NodeType, script_name) -> rust_method_name
-            self.method_name_map.insert((kind, script_name.to_string()), rust_method_name.clone());
-            
+            self.method_name_map
+                .insert((kind, script_name.to_string()), rust_method_name.clone());
+
             // Create method reference mappings (both directions) - only for methods with NodeMethodRef
             if let Some(method_ref) = method_ref_opt {
                 // Forward: (NodeType, rust_method_name) -> NodeMethodRef
-                self.method_ref_map.insert((kind, rust_method_name.clone()), method_ref);
+                self.method_ref_map
+                    .insert((kind, rust_method_name.clone()), method_ref);
                 // Reverse: NodeMethodRef -> (NodeType, rust_method_name)
-                self.method_ref_reverse_map.insert(method_ref, (kind, rust_method_name));
+                self.method_ref_reverse_map
+                    .insert(method_ref, (kind, rust_method_name));
             }
         }
     }
@@ -556,7 +687,7 @@ impl EngineRegistry {
         // First, resolve the script field name to the Rust field name
         // This handles mappings like "texture" -> "texture_id"
         let rust_field = self.resolve_field_name(node_kind, field);
-        
+
         // Now look up the type using the resolved Rust field name
         let mut current = Some(node_kind.clone());
         while let Some(kind) = current {
@@ -651,7 +782,6 @@ impl EngineRegistry {
 
     /// Sort node types so 3D nodes come first, then 2D, then others; within each group sort by debug name for stability.
     pub fn sort_node_types_3d_first(&self, types: &mut [NodeType]) {
-        use std::cmp::Ordering;
         types.sort_by(|a, b| {
             let key = |nt: &NodeType| {
                 let is_3d = self.has_base(nt, NodeType::Node3D);
@@ -676,7 +806,7 @@ impl EngineRegistry {
         }
 
         // Get compatible types for each field path
-        let mut type_sets: Vec<HashSet<NodeType>> = field_paths
+        let type_sets: Vec<HashSet<NodeType>> = field_paths
             .iter()
             .map(|fields| {
                 let types = self.narrow_nodes_by_fields(fields);
@@ -707,17 +837,20 @@ impl EngineRegistry {
     /// Example: "texture" -> "texture_id" for Sprite2D
     pub fn resolve_field_name(&self, node_type: &NodeType, script_field: &str) -> String {
         // First check if we have a cached mapping
-        if let Some(mapped) = self.field_name_map.get(&(*node_type, script_field.to_string())) {
+        if let Some(mapped) = self
+            .field_name_map
+            .get(&(*node_type, script_field.to_string()))
+        {
             return mapped.clone();
         }
-        
+
         // If not found in cache, check PUP_NODE_API directly
         // This is the source of truth for script field name -> Rust field name mappings
         use crate::scripting::lang::pup::node_api::PUP_NODE_API;
-        
+
         // Get all fields for this node type (including inherited)
         let fields = PUP_NODE_API.get_fields(node_type);
-        
+
         // Find the field with matching script_name
         if let Some(api_field) = fields.iter().find(|f| f.script_name == script_field) {
             // Get the Rust field name from the NodeFieldRef
@@ -728,34 +861,37 @@ impl EngineRegistry {
                 }
             }
         }
-        
+
         // If no mapping found, return the original field name
         // This handles cases where the script field name matches the Rust field name
         script_field.to_string()
     }
-    
+
     /// Resolve script method name to Rust method name
     /// Similar to resolve_field_name but for methods
     pub fn resolve_method_name(&self, node_type: &NodeType, script_method: &str) -> String {
         // First check if we have a cached mapping
-        if let Some(mapped) = self.method_name_map.get(&(*node_type, script_method.to_string())) {
+        if let Some(mapped) = self
+            .method_name_map
+            .get(&(*node_type, script_method.to_string()))
+        {
             return mapped.clone();
         }
-        
+
         // If not found, return the original method name
         script_method.to_string()
     }
-    
+
     /// Get method return type from engine_registry
     pub fn get_method_return_type(&self, node_kind: &NodeType, method: &str) -> Option<Type> {
         // Resolve script method name to Rust method name
         let rust_method = self.resolve_method_name(node_kind, method);
-        
+
         // Look up in method_defs
         if let Some((_, return_type, _)) = self.method_defs.get(&(*node_kind, rust_method)) {
             return Some(return_type.clone());
         }
-        
+
         // Walk up inheritance chain
         let mut current = Some(node_kind.clone());
         while let Some(kind) = current {
@@ -767,17 +903,17 @@ impl EngineRegistry {
         }
         None
     }
-    
+
     /// Get method parameter types from engine_registry
     pub fn get_method_param_types(&self, node_kind: &NodeType, method: &str) -> Option<Vec<Type>> {
         // Resolve script method name to Rust method name
         let rust_method = self.resolve_method_name(node_kind, method);
-        
+
         // Look up in method_defs
         if let Some((params, _, _)) = self.method_defs.get(&(*node_kind, rust_method)) {
             return Some(params.clone());
         }
-        
+
         // Walk up inheritance chain
         let mut current = Some(node_kind.clone());
         while let Some(kind) = current {
@@ -789,18 +925,22 @@ impl EngineRegistry {
         }
         None
     }
-    
+
     /// Get method parameter names from engine_registry
     /// Returns script-side parameter names (what PUP users see), not internal Rust names
-    pub fn get_method_param_names(&self, node_kind: &NodeType, method: &str) -> Option<Vec<&'static str>> {
+    pub fn get_method_param_names(
+        &self,
+        node_kind: &NodeType,
+        method: &str,
+    ) -> Option<Vec<&'static str>> {
         // Resolve script method name to Rust method name
         let rust_method = self.resolve_method_name(node_kind, method);
-        
+
         // Look up in method_defs
         if let Some((_, _, param_names)) = self.method_defs.get(&(*node_kind, rust_method)) {
             return Some(param_names.clone());
         }
-        
+
         // Walk up inheritance chain
         let mut current = Some(node_kind.clone());
         while let Some(kind) = current {

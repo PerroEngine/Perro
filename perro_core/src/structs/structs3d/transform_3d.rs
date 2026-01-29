@@ -45,7 +45,11 @@ pub struct Transform3D {
 
 impl fmt::Display for Transform3D {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Transform3D(position:{}, rotation:{}, scale:{})", self.position, self.rotation, self.scale)
+        write!(
+            f,
+            "Transform3D(position:{}, rotation:{}, scale:{})",
+            self.position, self.rotation, self.scale
+        )
     }
 }
 

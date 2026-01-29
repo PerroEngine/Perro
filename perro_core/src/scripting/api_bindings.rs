@@ -1,12 +1,9 @@
+use super::codegen::is_node_type;
 use crate::{
     api_modules::*, // Import module API enums and ApiModule
     ast::*,
-    engine_structs::EngineStruct,
-    node_registry::NodeType,
-    prelude::string_to_u64,
-    scripting::ast::{ContainerKind, NumberKind},
+    scripting::ast::NumberKind,
 };
-use super::codegen::is_node_type;
 
 // ===========================================================
 // Shared API Traits — Codegen + Types
@@ -22,7 +19,7 @@ pub trait ModuleTypes {
     fn param_types(&self) -> Option<Vec<Type>> {
         None // Default implementation, no specific param types
     }
-    
+
     /// Returns friendly parameter names for the API call, in order.
     /// Should match the length of param_types() if both are Some.
     /// Default is `None` (no specific parameter names).
@@ -54,7 +51,7 @@ pub trait ModuleCodegen {
 impl ApiModule {
     /// Primary entry point for code generation of an API call from its AST representation.
     /// This orchestrates the argument processing (including `self.` prefixing and type-aware casting)
-        /// before delegating to the specific `ModuleCodegen` implementation for final Rust string assembly.
+    /// before delegating to the specific `ModuleCodegen` implementation for final Rust string assembly.
     pub fn to_rust(
         &self,
         args: &[Expr], // Raw AST expressions for arguments
@@ -78,23 +75,42 @@ impl ApiModule {
             current_func,
             expected_arg_types.as_ref(),
         );
-        
+
         // DEBUG: Check if rust_args_strings is wrong
-        if !args.is_empty() && (rust_args_strings.is_empty() || rust_args_strings.iter().any(|s| s.trim().is_empty())) {
-            eprintln!("[DEBUG ApiModule::to_rust] args.len()={}, rust_args_strings.len()={}, rust_args_strings={:?}, args={:?}", 
-                args.len(), rust_args_strings.len(), rust_args_strings, args);
+        if !args.is_empty()
+            && (rust_args_strings.is_empty()
+                || rust_args_strings.iter().any(|s| s.trim().is_empty()))
+        {
+            eprintln!(
+                "[DEBUG ApiModule::to_rust] args.len()={}, rust_args_strings.len()={}, rust_args_strings={:?}, args={:?}",
+                args.len(),
+                rust_args_strings.len(),
+                rust_args_strings,
+                args
+            );
         }
-        
+
         // If generate_rust_args returned empty strings, regenerate directly from args
         // This handles cases where temp variables aren't properly converted
         if rust_args_strings.iter().any(|s| s.trim().is_empty()) && !args.is_empty() {
-            rust_args_strings = args.iter()
+            rust_args_strings = args
+                .iter()
                 .enumerate()
                 .map(|(i, a)| {
-                    let expected_ty_hint = expected_arg_types.as_ref().and_then(|v| v.get(i).cloned());
-                    let code = a.to_rust(needs_self, script, expected_ty_hint.as_ref(), current_func, None);
+                    let expected_ty_hint =
+                        expected_arg_types.as_ref().and_then(|v| v.get(i).cloned());
+                    let code = a.to_rust(
+                        needs_self,
+                        script,
+                        expected_ty_hint.as_ref(),
+                        current_func,
+                        None,
+                    );
                     if code.trim().is_empty() {
-                        eprintln!("[DEBUG ApiModule::to_rust] to_rust returned empty for arg[{}]: {:?}", i, a);
+                        eprintln!(
+                            "[DEBUG ApiModule::to_rust] to_rust returned empty for arg[{}]: {:?}",
+                            i, a
+                        );
                     }
                     code
                 })
@@ -150,7 +166,7 @@ impl ApiModule {
         // Add this line:
         result
     }
-    
+
     /// Dispatches the `param_names` call to the appropriate `ModuleTypes` implementation for this module variant.
     /// Returns script-side parameter names (what PUP users see), not internal Rust parameter names.
     pub fn param_names(&self) -> Option<Vec<&'static str>> {
@@ -202,7 +218,7 @@ pub(crate) fn generate_rust_args(
             // 3. Now, take the (potentially casted) `code_raw` and apply `self.` prefixing.
             //    This is the *last* step to construct the final argument string.
             let mut final_code = code_raw;
-            
+
             // If code_raw is empty, try to generate it directly from the expression
             // This handles cases where temp variables aren't found in the script's variable list
             if final_code.trim().is_empty() {
@@ -215,7 +231,7 @@ pub(crate) fn generate_rust_args(
                 // Last resort: try to_rust again without expected type hint
                 final_code = a.to_rust(needs_self, script, None, current_func, None);
             }
-            
+
             if let Expr::Ident(name) = a {
                 // Special case: temp variables (temp_api_var_*) should NEVER get .clone() or be renamed
                 // They're already in the correct format from to_rust
@@ -275,7 +291,7 @@ impl ModuleTypes for JSONApi {
             JSONApi::Stringify => Some(vec![Type::Object]),
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -324,7 +340,7 @@ impl ModuleTypes for TimeApi {
             _ => None,
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -371,7 +387,7 @@ impl ModuleTypes for OSApi {
             _ => None,
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -395,11 +411,18 @@ impl ModuleCodegen for ConsoleApi {
         current_func: Option<&Function>,
     ) -> String {
         // DEBUG: Log what we're receiving
-        if !args.is_empty() && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty())) {
-            eprintln!("[DEBUG ConsoleApi::to_rust_prepared] args.len()={}, args_strs.len()={}, args_strs={:?}, args={:?}", 
-                args.len(), args_strs.len(), args_strs, args);
+        if !args.is_empty()
+            && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty()))
+        {
+            eprintln!(
+                "[DEBUG ConsoleApi::to_rust_prepared] args.len()={}, args_strs.len()={}, args_strs={:?}, args={:?}",
+                args.len(),
+                args_strs.len(),
+                args_strs,
+                args
+            );
         }
-        
+
         // Ensure we have arguments - if args_strs is empty but args is not, regenerate from args
         // This is critical when nested API calls are extracted to temp variables
         // Use the same needs_self that was passed to to_rust_prepared
@@ -409,13 +432,13 @@ impl ModuleCodegen for ConsoleApi {
         } else {
             args_strs.to_vec()
         };
-        
+
         // Check if args_strs has wrong length or contains empty strings - regenerate if so
         // This handles cases where args_strs was generated before temp variable extraction
         if args_strs.len() != args.len() || args_strs.iter().any(|s| s.trim().is_empty()) {
             args_strs = generate_rust_args(args, script, _needs_self, current_func, None);
         }
-        
+
         // Double-check: if args_strs is still empty but args is not, something is very wrong
         // In this case, generate args_strs from args directly using generate_rust_args again
         // This handles cases where generate_rust_args might have failed the first time
@@ -424,7 +447,8 @@ impl ModuleCodegen for ConsoleApi {
             let regenerated = generate_rust_args(args, script, _needs_self, current_func, None);
             if regenerated.is_empty() {
                 // If still empty, convert Expr to strings directly as last resort
-                args_strs = args.iter()
+                args_strs = args
+                    .iter()
                     .map(|a| {
                         // Use the Expr's to_rust method directly
                         a.to_rust(_needs_self, script, None, current_func, None)
@@ -434,32 +458,53 @@ impl ModuleCodegen for ConsoleApi {
                 args_strs = regenerated;
             }
         }
-        
+
         // Ensure args_strs is not empty - if it is, we have a serious problem
         if args_strs.is_empty() && !args.is_empty() {
             // This should never happen if the fallbacks above worked, but just in case
             // Generate a format string with the arguments directly
-            let direct_args: Vec<String> = args.iter()
+            let direct_args: Vec<String> = args
+                .iter()
                 .map(|a| a.to_rust(_needs_self, script, None, current_func, None))
                 .collect();
             if !direct_args.is_empty() {
                 return match self {
-                    ConsoleApi::Log => format!("api.print(format!(\"{}\", {}))", 
-                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
-                        direct_args.join(", ")),
-                    ConsoleApi::Warn => format!("api.print_warn(format!(\"{}\", {}))", 
-                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
-                        direct_args.join(", ")),
-                    ConsoleApi::Error => format!("api.print_error(format!(\"{}\", {}))", 
-                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
-                        direct_args.join(", ")),
-                    ConsoleApi::Info => format!("api.print_info(format!(\"{}\", {}))", 
-                        (0..direct_args.len()).map(|_| "{}").collect::<Vec<_>>().join(" "),
-                        direct_args.join(", ")),
+                    ConsoleApi::Log => format!(
+                        "api.print(format!(\"{}\", {}))",
+                        (0..direct_args.len())
+                            .map(|_| "{}")
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        direct_args.join(", ")
+                    ),
+                    ConsoleApi::Warn => format!(
+                        "api.print_warn(format!(\"{}\", {}))",
+                        (0..direct_args.len())
+                            .map(|_| "{}")
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        direct_args.join(", ")
+                    ),
+                    ConsoleApi::Error => format!(
+                        "api.print_error(format!(\"{}\", {}))",
+                        (0..direct_args.len())
+                            .map(|_| "{}")
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        direct_args.join(", ")
+                    ),
+                    ConsoleApi::Info => format!(
+                        "api.print_info(format!(\"{}\", {}))",
+                        (0..direct_args.len())
+                            .map(|_| "{}")
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        direct_args.join(", ")
+                    ),
                 };
             }
         }
-        
+
         // Final check: if args_strs is still empty or all empty strings, regenerate from args
         let args_strs = if args_strs.is_empty() || args_strs.iter().all(|s| s.trim().is_empty()) {
             if !args.is_empty() {
@@ -481,10 +526,12 @@ impl ModuleCodegen for ConsoleApi {
         } else {
             args_strs
         };
-        
+
         // CRITICAL: If args_strs still contains empty strings but args is not empty, force regenerate
         // This handles cases where generate_rust_args returned empty strings incorrectly
-        let args_strs = if (!args.is_empty() && args_strs.iter().any(|s| s.trim().is_empty())) || args_strs.len() != args.len() {
+        let args_strs = if (!args.is_empty() && args_strs.iter().any(|s| s.trim().is_empty()))
+            || args_strs.len() != args.len()
+        {
             // Force regenerate from args using to_rust directly
             args.iter()
                 .map(|a| {
@@ -500,10 +547,13 @@ impl ModuleCodegen for ConsoleApi {
         } else {
             args_strs
         };
-        
+
         // ONE MORE CHECK: Right before using args_strs, verify it's not empty or contains empty strings
         // This is the last chance to fix it before it causes api.print_info("") to be generated
-        let args_strs = if (!args.is_empty() && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty()))) || args_strs.len() != args.len() {
+        let args_strs = if (!args.is_empty()
+            && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty())))
+            || args_strs.len() != args.len()
+        {
             // Force regenerate from args - this should NEVER fail
             args.iter()
                 .map(|a| {
@@ -511,7 +561,13 @@ impl ModuleCodegen for ConsoleApi {
                     if code.trim().is_empty() {
                         // If to_rust returned empty, try with expected type hint
                         let expected_ty = self.param_types().and_then(|v| v.get(0).cloned());
-                        a.to_rust(_needs_self, script, expected_ty.as_ref(), current_func, None)
+                        a.to_rust(
+                            _needs_self,
+                            script,
+                            expected_ty.as_ref(),
+                            current_func,
+                            None,
+                        )
                     } else {
                         // Remove .clone() from temp_api_var_* if it was added
                         if code.starts_with("temp_api_var_") && code.ends_with(".clone()") {
@@ -525,11 +581,19 @@ impl ModuleCodegen for ConsoleApi {
         } else {
             args_strs
         };
-        
+
         // ABSOLUTE LAST CHECK: If args_strs is still wrong, force regenerate from args
         // This should NEVER happen, but if it does, we need to fix it
-        let args_strs = if (!args.is_empty() && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty()))) || args_strs.len() != args.len() {
-            eprintln!("[WARNING] args_strs is wrong in ConsoleApi::to_rust_prepared! args.len()={}, args_strs.len()={}, args_strs={:?}", args.len(), args_strs.len(), args_strs);
+        let args_strs = if (!args.is_empty()
+            && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty())))
+            || args_strs.len() != args.len()
+        {
+            eprintln!(
+                "[WARNING] args_strs is wrong in ConsoleApi::to_rust_prepared! args.len()={}, args_strs.len()={}, args_strs={:?}",
+                args.len(),
+                args_strs.len(),
+                args_strs
+            );
             // Force regenerate - this should work
             args.iter()
                 .map(|a| {
@@ -538,7 +602,13 @@ impl ModuleCodegen for ConsoleApi {
                         eprintln!("[WARNING] to_rust returned empty string for arg: {:?}", a);
                         // Try with expected type
                         let expected_ty = self.param_types().and_then(|v| v.get(0).cloned());
-                        a.to_rust(_needs_self, script, expected_ty.as_ref(), current_func, None)
+                        a.to_rust(
+                            _needs_self,
+                            script,
+                            expected_ty.as_ref(),
+                            current_func,
+                            None,
+                        )
                     } else {
                         code
                     }
@@ -547,16 +617,25 @@ impl ModuleCodegen for ConsoleApi {
         } else {
             args_strs
         };
-        
+
         let joined = if args_strs.len() <= 1 {
             // If args_strs is still empty or contains empty string, but args is not empty, use the first arg directly
             if (args_strs.is_empty() || args_strs[0].trim().is_empty()) && !args.is_empty() {
                 let code = args[0].to_rust(_needs_self, script, None, current_func, None);
                 if code.trim().is_empty() {
-                    eprintln!("[ERROR] to_rust returned empty string for first arg: {:?}", args[0]);
+                    eprintln!(
+                        "[ERROR] to_rust returned empty string for first arg: {:?}",
+                        args[0]
+                    );
                     // Try with expected type hint
                     let expected_ty = self.param_types().and_then(|v| v.get(0).cloned());
-                    let code_with_hint = args[0].to_rust(_needs_self, script, expected_ty.as_ref(), current_func, None);
+                    let code_with_hint = args[0].to_rust(
+                        _needs_self,
+                        script,
+                        expected_ty.as_ref(),
+                        current_func,
+                        None,
+                    );
                     if code_with_hint.trim().is_empty() {
                         format!("{:?}", args[0]) // Fallback to debug format
                     } else {
@@ -580,14 +659,21 @@ impl ModuleCodegen for ConsoleApi {
         };
 
         // Helper function to find a variable in nested blocks (if, for, etc.)
-        fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
+        fn find_variable_in_body<'a>(
+            name: &str,
+            body: &'a [crate::scripting::ast::Stmt],
+        ) -> Option<&'a crate::scripting::ast::Variable> {
             use crate::scripting::ast::Stmt;
             for stmt in body {
                 match stmt {
                     Stmt::VariableDecl(var) if var.name == name => {
                         return Some(var);
                     }
-                    Stmt::If { then_body, else_body, .. } => {
+                    Stmt::If {
+                        then_body,
+                        else_body,
+                        ..
+                    } => {
                         if let Some(v) = find_variable_in_body(name, then_body) {
                             return Some(v);
                         }
@@ -597,7 +683,8 @@ impl ModuleCodegen for ConsoleApi {
                             }
                         }
                     }
-                    Stmt::For { body: for_body, .. } | Stmt::ForTraditional { body: for_body, .. } => {
+                    Stmt::For { body: for_body, .. }
+                    | Stmt::ForTraditional { body: for_body, .. } => {
                         if let Some(v) = find_variable_in_body(name, for_body) {
                             return Some(v);
                         }
@@ -609,63 +696,86 @@ impl ModuleCodegen for ConsoleApi {
         }
 
         // Helper function to check if a variable represents a node
-        fn check_if_node_var(var_name: &str, script: &Script, current_func: Option<&Function>) -> bool {
+        fn check_if_node_var(
+            var_name: &str,
+            script: &Script,
+            current_func: Option<&Function>,
+        ) -> bool {
             if let Some(func) = current_func {
                 // Check function local (including nested blocks)
-                let local_opt = func.locals.iter().find(|v| v.name == *var_name)
+                let local_opt = func
+                    .locals
+                    .iter()
+                    .find(|v| v.name == *var_name)
                     .or_else(|| find_variable_in_body(var_name, &func.body));
-                
+
                 if let Some(local) = local_opt {
-                    let declared_is_node = local.typ.as_ref()
+                    let declared_is_node = local
+                        .typ
+                        .as_ref()
                         .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
                         .unwrap_or(false);
-                    
+
                     if declared_is_node {
                         return true;
                     }
-                    
+
                     if let Some(val) = &local.value {
                         let inferred_type = script.infer_expr_type(&val.expr, current_func);
-                        let inferred_is_node = inferred_type.as_ref()
+                        let inferred_is_node = inferred_type
+                            .as_ref()
                             .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
                             .unwrap_or(false);
-                        
+
                         if inferred_is_node {
                             return true;
                         }
-                        
+
                         // Check if assigned from node expression
                         match &val.expr {
                             Expr::StructNew(ty, _) => return is_node_type(ty),
-                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetParent), _) |
-                            Expr::ApiCall(crate::call_modules::CallModule::NodeMethod(crate::structs::engine_registry::NodeMethodRef::GetChildByName), _) |
-                            Expr::Cast(_, Type::Node(_)) => return true,
+                            Expr::ApiCall(
+                                crate::call_modules::CallModule::NodeMethod(
+                                    crate::structs::engine_registry::NodeMethodRef::GetParent,
+                                ),
+                                _,
+                            )
+                            | Expr::ApiCall(
+                                crate::call_modules::CallModule::NodeMethod(
+                                    crate::structs::engine_registry::NodeMethodRef::GetChildByName,
+                                ),
+                                _,
+                            )
+                            | Expr::Cast(_, Type::Node(_)) => return true,
                             Expr::Cast(_, Type::Custom(name)) => return is_node_type(name),
                             _ => {}
                         }
                     }
                 }
-                
+
                 // Check script-level variable
                 if let Some(script_var) = script.variables.iter().find(|v| v.name == *var_name) {
-                    let declared_is_node = script_var.typ.as_ref()
+                    let declared_is_node = script_var
+                        .typ
+                        .as_ref()
                         .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
                         .unwrap_or(false);
-                    
+
                     if declared_is_node {
                         return true;
                     }
-                    
+
                     if let Some(val) = &script_var.value {
                         let inferred_type = script.infer_expr_type(&val.expr, current_func);
-                        let inferred_is_node = inferred_type.as_ref()
+                        let inferred_is_node = inferred_type
+                            .as_ref()
                             .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
                             .unwrap_or(false);
-                        
+
                         if inferred_is_node {
                             return true;
                         }
-                        
+
                         match &val.expr {
                             Expr::StructNew(ty, _) => return is_node_type(ty),
                             Expr::Cast(_, Type::Node(_)) => return true,
@@ -677,24 +787,27 @@ impl ModuleCodegen for ConsoleApi {
             } else {
                 // Check script-level variable
                 if let Some(script_var) = script.variables.iter().find(|v| v.name == *var_name) {
-                    let declared_is_node = script_var.typ.as_ref()
+                    let declared_is_node = script_var
+                        .typ
+                        .as_ref()
                         .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
                         .unwrap_or(false);
-                    
+
                     if declared_is_node {
                         return true;
                     }
-                    
+
                     if let Some(val) = &script_var.value {
                         let inferred_type = script.infer_expr_type(&val.expr, current_func);
-                        let inferred_is_node = inferred_type.as_ref()
+                        let inferred_is_node = inferred_type
+                            .as_ref()
                             .map(|t| matches!(t, Type::Node(_) | Type::DynNode))
                             .unwrap_or(false);
-                        
+
                         if inferred_is_node {
                             return true;
                         }
-                        
+
                         match &val.expr {
                             Expr::StructNew(ty, _) => return is_node_type(ty),
                             Expr::Cast(_, Type::Node(_)) => return true,
@@ -713,8 +826,7 @@ impl ModuleCodegen for ConsoleApi {
         // we only use the node's id to fetch that value, so we print the result (temp_api_var), never get_type.
         let format_str = if args.len() == 1 {
             let arg_expr = args.get(0);
-            let arg_str = args_strs.get(0).cloned().unwrap_or_default();
-            
+
             if let Some(arg_expr) = arg_expr {
                 if matches!(arg_expr, Expr::Literal(_)) {
                     joined
@@ -725,10 +837,20 @@ impl ModuleCodegen for ConsoleApi {
                         Expr::SelfAccess => true,
                         Expr::Ident(var_name) => {
                             let var_typ = if let Some(func) = current_func {
-                                func.locals.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
-                                    .or_else(|| find_variable_in_body(var_name, &func.body).and_then(|v| v.typ.as_ref()))
+                                func.locals
+                                    .iter()
+                                    .find(|v| v.name == *var_name)
+                                    .and_then(|v| v.typ.as_ref())
+                                    .or_else(|| {
+                                        find_variable_in_body(var_name, &func.body)
+                                            .and_then(|v| v.typ.as_ref())
+                                    })
                             } else {
-                                script.variables.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
+                                script
+                                    .variables
+                                    .iter()
+                                    .find(|v| v.name == *var_name)
+                                    .and_then(|v| v.typ.as_ref())
                             };
                             match var_typ {
                                 Some(t) if matches!(t, Type::Node(_) | Type::DynNode) => true,
@@ -737,8 +859,11 @@ impl ModuleCodegen for ConsoleApi {
                         }
                         _ => false, // MemberAccess, Index, Call, etc. → expression is not a node, print value
                     };
-                    let node_id_expr = args_strs.get(0).cloned().unwrap_or_else(|| "NodeID::nil()".to_string());
-                
+                    let node_id_expr = args_strs
+                        .get(0)
+                        .cloned()
+                        .unwrap_or_else(|| "NodeID::nil()".to_string());
+
                     if is_bare_node_ref {
                         // This is a node - convert to print its type instead of UUID
                         // api.get_type() requires &mut self, so we must extract it to a temp variable
@@ -755,17 +880,22 @@ impl ModuleCodegen for ConsoleApi {
                             } else {
                                 trimmed
                             };
-                            
+
                             // Remove String::from() wrapper for string literals
-                            if without_clone.starts_with("String::from(") && without_clone.ends_with(')') {
-                                let inner = &without_clone["String::from(".len()..without_clone.len() - 1].trim();
+                            if without_clone.starts_with("String::from(")
+                                && without_clone.ends_with(')')
+                            {
+                                let inner = &without_clone
+                                    ["String::from(".len()..without_clone.len() - 1]
+                                    .trim();
                                 if inner.starts_with('"') && inner.ends_with('"') {
                                     // Use the string literal directly (optimization: avoid String::from allocation)
                                     inner.to_string()
                                 } else {
                                     without_clone.to_string()
                                 }
-                            } else if without_clone.starts_with('"') && without_clone.ends_with('"') {
+                            } else if without_clone.starts_with('"') && without_clone.ends_with('"')
+                            {
                                 // It's already a string literal, use it directly
                                 without_clone.to_string()
                             } else {
@@ -790,8 +920,9 @@ impl ModuleCodegen for ConsoleApi {
             } else {
                 args_strs
             };
-            
-            let processed_args: Vec<String> = args.iter()
+
+            let processed_args: Vec<String> = args
+                .iter()
                 .zip(args_strs.iter())
                 .map(|(arg_expr, arg_str)| {
                     // Optimize the argument string to remove unnecessary clones
@@ -804,10 +935,13 @@ impl ModuleCodegen for ConsoleApi {
                             trimmed
                         }
                     };
-                    
+
                     // Remove String::from() wrapper for string literals
-                    let optimized_arg = if optimized_arg.starts_with("String::from(") && optimized_arg.ends_with(')') {
-                        let inner = &optimized_arg["String::from(".len()..optimized_arg.len() - 1].trim();
+                    let optimized_arg = if optimized_arg.starts_with("String::from(")
+                        && optimized_arg.ends_with(')')
+                    {
+                        let inner =
+                            &optimized_arg["String::from(".len()..optimized_arg.len() - 1].trim();
                         if inner.starts_with('"') && inner.ends_with('"') {
                             // It's a string literal, use it directly
                             inner.to_string()
@@ -817,44 +951,55 @@ impl ModuleCodegen for ConsoleApi {
                     } else {
                         optimized_arg.to_string()
                     };
-                    
+
                     if matches!(arg_expr, Expr::Literal(_)) {
                         optimized_arg
                     } else {
-                    // Only get_type for bare node refs: SelfAccess or Ident we KNOW is Node/DynNode.
-                    let is_bare_node_ref = match arg_expr {
-                        Expr::SelfAccess => true,
-                        Expr::Ident(var_name) => {
-                            let var_typ = if let Some(func) = current_func {
-                                func.locals.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
-                                    .or_else(|| find_variable_in_body(var_name, &func.body).and_then(|v| v.typ.as_ref()))
-                            } else {
-                                script.variables.iter().find(|v| v.name == *var_name).and_then(|v| v.typ.as_ref())
-                            };
-                            match var_typ {
-                                Some(t) if matches!(t, Type::Node(_) | Type::DynNode) => true,
-                                _ => check_if_node_var(var_name, script, current_func),
+                        // Only get_type for bare node refs: SelfAccess or Ident we KNOW is Node/DynNode.
+                        let is_bare_node_ref = match arg_expr {
+                            Expr::SelfAccess => true,
+                            Expr::Ident(var_name) => {
+                                let var_typ = if let Some(func) = current_func {
+                                    func.locals
+                                        .iter()
+                                        .find(|v| v.name == *var_name)
+                                        .and_then(|v| v.typ.as_ref())
+                                        .or_else(|| {
+                                            find_variable_in_body(var_name, &func.body)
+                                                .and_then(|v| v.typ.as_ref())
+                                        })
+                                } else {
+                                    script
+                                        .variables
+                                        .iter()
+                                        .find(|v| v.name == *var_name)
+                                        .and_then(|v| v.typ.as_ref())
+                                };
+                                match var_typ {
+                                    Some(t) if matches!(t, Type::Node(_) | Type::DynNode) => true,
+                                    _ => check_if_node_var(var_name, script, current_func),
+                                }
                             }
+                            _ => false,
+                        };
+
+                        if is_bare_node_ref {
+                            format!("__EXTRACT_NODE_TYPE__({})", optimized_arg)
+                        } else {
+                            optimized_arg
                         }
-                        _ => false,
-                    };
-                    
-                    if is_bare_node_ref {
-                        format!("__EXTRACT_NODE_TYPE__({})", optimized_arg)
-                    } else {
-                        optimized_arg
-                    }
                     }
                 })
                 .collect();
-            
+
             // Build format string with processed arguments
             // Ensure we have arguments - if processed_args is empty, something went wrong
             if processed_args.is_empty() {
                 // Fallback: use original args_strs if processed_args is empty
                 if args_strs.is_empty() && !args.is_empty() {
                     // Last resort: generate from args directly
-                    let direct_args: Vec<String> = args.iter()
+                    let direct_args: Vec<String> = args
+                        .iter()
                         .map(|a| a.to_rust(false, script, None, current_func, None))
                         .collect();
                     if !direct_args.is_empty() {
@@ -894,7 +1039,7 @@ impl ModuleCodegen for ConsoleApi {
                 )
             }
         };
-        
+
         // Assign format_str to arg for further processing
         let arg = format_str;
 
@@ -902,7 +1047,8 @@ impl ModuleCodegen for ConsoleApi {
         // This can be either a direct marker or inside a format!() string
         let (final_arg, temp_decl) = if arg.starts_with("__EXTRACT_NODE_TYPE__(") {
             // Single argument case - direct marker
-            let node_id = arg.strip_prefix("__EXTRACT_NODE_TYPE__(")
+            let node_id = arg
+                .strip_prefix("__EXTRACT_NODE_TYPE__(")
                 .and_then(|s: &str| s.strip_suffix(")"))
                 .unwrap_or("NodeID::nil()");
             let temp_var = "node_type";
@@ -916,19 +1062,21 @@ impl ModuleCodegen for ConsoleApi {
             let mut result = String::new();
             let mut last_pos = 0;
             let arg_chars: Vec<char> = arg.chars().collect();
-            
+
             // Find and replace all markers
             let mut i = 0;
             while i < arg_chars.len() {
                 // Check if we found the start of a marker
                 if i + "__EXTRACT_NODE_TYPE__(".len() <= arg_chars.len() {
-                    let marker_start: String = arg_chars[i..i + "__EXTRACT_NODE_TYPE__(".len()].iter().collect();
+                    let marker_start: String = arg_chars[i..i + "__EXTRACT_NODE_TYPE__(".len()]
+                        .iter()
+                        .collect();
                     if marker_start == "__EXTRACT_NODE_TYPE__(" {
                         // Found a marker - find the matching closing paren
                         let mut paren_count = 1;
                         let mut j = i + "__EXTRACT_NODE_TYPE__(".len();
                         let mut node_id_end = j;
-                        
+
                         while j < arg_chars.len() && paren_count > 0 {
                             if arg_chars[j] == '(' {
                                 paren_count += 1;
@@ -940,19 +1088,22 @@ impl ModuleCodegen for ConsoleApi {
                             }
                             j += 1;
                         }
-                        
+
                         // Extract node_id
-                        let node_id: String = arg_chars[i + "__EXTRACT_NODE_TYPE__(".len()..node_id_end].iter().collect();
+                        let node_id: String = arg_chars
+                            [i + "__EXTRACT_NODE_TYPE__(".len()..node_id_end]
+                            .iter()
+                            .collect();
                         let temp_var = format!("node_type_{}", counter);
                         counter += 1;
-                        
+
                         // Create the temp declaration
                         temp_decls.push(format!("let {} = api.get_type({});", temp_var, node_id));
-                        
+
                         // Add replacement
                         result.push_str(&arg[last_pos..i]);
                         result.push_str(&format!("format!(\"{{:?}}\", {})", temp_var));
-                        
+
                         // Skip past the marker
                         i = node_id_end + 1;
                         last_pos = i;
@@ -961,10 +1112,10 @@ impl ModuleCodegen for ConsoleApi {
                 }
                 i += 1;
             }
-            
+
             // Add remaining string
             result.push_str(&arg[last_pos..]);
-            
+
             if !temp_decls.is_empty() {
                 let decl = temp_decls.join(" ");
                 (result, Some(decl))
@@ -974,14 +1125,14 @@ impl ModuleCodegen for ConsoleApi {
         } else {
             (arg, None)
         };
-        
+
         let line = match self {
             ConsoleApi::Log => format!("api.print({})", final_arg),
             ConsoleApi::Warn => format!("api.print_warn({})", final_arg),
             ConsoleApi::Error => format!("api.print_error({})", final_arg),
             ConsoleApi::Info => format!("api.print_info({})", final_arg),
         };
-        
+
         // If we have a temp declaration, prepend it
         let final_line = if let Some(decl) = temp_decl {
             format!("{} {}", decl, line)
@@ -1001,12 +1152,12 @@ impl ModuleTypes for ConsoleApi {
     fn return_type(&self) -> Option<Type> {
         Some(Type::Void)
     }
-    
+
     // Console methods take variadic arguments, so we don't specify param types
     fn param_types(&self) -> Option<Vec<Type>> {
         None // Console methods accept any number of arguments
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     /// Console methods take variadic arguments, so we don't specify names
     fn param_names(&self) -> Option<Vec<&'static str>> {
@@ -1032,9 +1183,7 @@ impl ModuleCodegen for InputApi {
                 let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.Input.get_action({})", arg)
             }
-            InputApi::ControllerEnable => {
-                "api.Input.Controller.enable()".into()
-            }
+            InputApi::ControllerEnable => "api.Input.Controller.enable()".into(),
             InputApi::IsKeyPressed => {
                 let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
                 format!("api.Input.Keyboard.is_key_pressed({})", arg)
@@ -1089,7 +1238,9 @@ impl ModuleTypes for InputApi {
             InputApi::GetTextInput => Some(Type::String),
             InputApi::GetMousePosition
             | InputApi::GetMousePositionWorld
-            | InputApi::ScreenToWorld => Some(Type::EngineStruct(crate::engine_structs::EngineStruct::Vector2)),
+            | InputApi::ScreenToWorld => Some(Type::EngineStruct(
+                crate::engine_structs::EngineStruct::Vector2,
+            )),
             InputApi::GetScrollDelta => Some(Type::Number(Float(32))),
             InputApi::ClearTextInput => Some(Type::Void),
         }
@@ -1113,7 +1264,7 @@ impl ModuleTypes for InputApi {
             _ => None,
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -1133,7 +1284,6 @@ impl ModuleTypes for InputApi {
         }
     }
 }
-
 
 // ===========================================================
 // Math API Implementations
@@ -1177,17 +1327,11 @@ impl ModuleTypes for MathApi {
         use NumberKind::*;
         match self {
             MathApi::Random => None,
-            MathApi::RandomRange => Some(vec![
-                Type::Number(Float(32)),
-                Type::Number(Float(32)),
-            ]),
-            MathApi::RandomInt => Some(vec![
-                Type::Number(Signed(32)),
-                Type::Number(Signed(32)),
-            ]),
+            MathApi::RandomRange => Some(vec![Type::Number(Float(32)), Type::Number(Float(32))]),
+            MathApi::RandomInt => Some(vec![Type::Number(Signed(32)), Type::Number(Signed(32))]),
         }
     }
-    
+
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
@@ -1197,4 +1341,3 @@ impl ModuleTypes for MathApi {
         }
     }
 }
-

@@ -47,8 +47,11 @@ impl fmt::Display for Material {
         write!(
             f,
             "Material(base_color:[{},{},{}], metallic:{}, roughness:{})",
-            self.base_color[0], self.base_color[1], self.base_color[2],
-            self.metallic, self.roughness
+            self.base_color[0],
+            self.base_color[1],
+            self.base_color[2],
+            self.metallic,
+            self.roughness
         )
     }
 }

@@ -1,6 +1,6 @@
+use crate::ids::UIElementID;
 use indexmap::IndexMap;
 use std::{borrow::Cow, collections::HashMap, time::Instant};
-use crate::ids::UIElementID;
 
 use crate::{
     asset_io::load_asset,
@@ -44,7 +44,10 @@ fn parse_opacity(v: &str) -> Option<f32> {
     let trimmed = v.trim();
     if trimmed.ends_with('%') {
         let num_str = &trimmed[..trimmed.len() - 1];
-        num_str.parse::<f32>().ok().map(|n| (n / 100.0).clamp(0.0, 1.0))
+        num_str
+            .parse::<f32>()
+            .ok()
+            .map(|n| (n / 100.0).clamp(0.0, 1.0))
     } else {
         trimmed.parse::<f32>().ok().map(|n| n.clamp(0.0, 1.0))
     }
@@ -52,11 +55,11 @@ fn parse_opacity(v: &str) -> Option<f32> {
 
 // =================== FILE PARSING ===================
 
-use std::sync::RwLock;
 use once_cell::sync::Lazy;
+use std::sync::RwLock;
 
 // Global registry for statically compiled FUR (used in release mode)
-static STATIC_FUR_MAP: Lazy<RwLock<Option<&'static HashMap<&'static str, &'static [FurElement]>>>> = 
+static STATIC_FUR_MAP: Lazy<RwLock<Option<&'static HashMap<&'static str, &'static [FurElement]>>>> =
     Lazy::new(|| RwLock::new(None));
 
 /// Set the static FUR map (called by runtime at startup in release mode)
@@ -74,7 +77,7 @@ fn try_load_fur_elements(path: &str) -> Result<Vec<FurElement>, String> {
             }
         }
     }
-    
+
     // Fallback: Parse from disk/BRK (dev mode)
     let ast = parse_fur_file(path)?;
     let elements: Vec<FurElement> = ast
@@ -87,7 +90,7 @@ fn try_load_fur_elements(path: &str) -> Result<Vec<FurElement>, String> {
             }
         })
         .collect();
-    
+
     Ok(elements)
 }
 
@@ -228,7 +231,7 @@ fn apply_base_attributes(
                 } else {
                     (x, y) // Two values or none
                 };
-                
+
                 if let Some(xv) = x_val {
                     let (f, pct) = parse_f32_percent(xv, base.size.x);
                     if pct {
@@ -440,7 +443,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                     text_content.push_str(s.as_ref());
                 }
             }
-            
+
             // Trim the text content to remove any leading/trailing whitespace
             text.props.content = text_content.trim().to_string();
 
@@ -475,7 +478,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
                     _ => TextFlow::Center,
                 };
             }
-            
+
             // Backward compatibility: support old align-h and align-v
             // These are deprecated but still work for migration
             if let Some(align_str) = fur.attributes.get("align-h") {
@@ -505,7 +508,11 @@ fn convert_fur_element_to_ui_elements(
     fur: &FurElement,
     parent_uuid: Option<UIElementID>,
 ) -> Vec<(UIElementID, UIElement)> {
-    convert_fur_element_to_ui_elements_with_includes(fur, parent_uuid, &mut std::collections::HashSet::new())
+    convert_fur_element_to_ui_elements_with_includes(
+        fur,
+        parent_uuid,
+        &mut std::collections::HashSet::new(),
+    )
 }
 
 fn convert_fur_element_to_ui_elements_with_includes(
@@ -519,25 +526,28 @@ fn convert_fur_element_to_ui_elements_with_includes(
             let path_str = path.as_ref();
             // Prevent circular includes
             if included_paths.contains(path_str) {
-                eprintln!("⚠️ Circular include detected for path: {}. Skipping.", path_str);
+                eprintln!(
+                    "⚠️ Circular include detected for path: {}. Skipping.",
+                    path_str
+                );
                 return Vec::new();
             }
-            
+
             // Store path string for later removal
             let path_string = path.to_string();
             included_paths.insert(path_string.clone());
-            
+
             // Check if Include has a visible attribute
-            let include_visible = fur.attributes.get("visible")
-                .map(|v| {
-                    match v.to_lowercase().as_str() {
-                        "true" | "1" | "yes" => true,
-                        "false" | "0" | "no" => false,
-                        _ => v.parse().unwrap_or(true),
-                    }
+            let include_visible = fur
+                .attributes
+                .get("visible")
+                .map(|v| match v.to_lowercase().as_str() {
+                    "true" | "1" | "yes" => true,
+                    "false" | "0" | "no" => false,
+                    _ => v.parse().unwrap_or(true),
                 })
                 .unwrap_or(true); // Default to visible if not specified
-            
+
             // Load the included FUR file
             // Try to get pre-parsed elements from static assets first (release mode),
             // then fall back to parsing from disk/BRK (dev mode)
@@ -549,7 +559,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
                     return Vec::new();
                 }
             };
-            
+
             let mut results = Vec::new();
             // Process all root elements from the included file
             for elem in &elements {
@@ -558,7 +568,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
                     parent_uuid,
                     included_paths,
                 );
-                
+
                 // Apply visibility from Include tag ONLY to the root element
                 // Children will inherit visibility through the parent chain check in is_effectively_visible
                 if !include_visible {
@@ -566,7 +576,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
                         root_element.set_visible(false);
                     }
                 }
-                
+
                 results.extend(included_results);
             }
             included_paths.remove(&path_string);
@@ -583,7 +593,11 @@ fn convert_fur_element_to_ui_elements_with_includes(
             .iter()
             .filter_map(|n| {
                 if let FurNode::Element(e) = n {
-                    Some(convert_fur_element_to_ui_elements_with_includes(e, parent_uuid, included_paths))
+                    Some(convert_fur_element_to_ui_elements_with_includes(
+                        e,
+                        parent_uuid,
+                        included_paths,
+                    ))
                 } else {
                     None
                 }
@@ -592,7 +606,13 @@ fn convert_fur_element_to_ui_elements_with_includes(
             .collect();
     };
 
-    let id = UIElementID::from_string(&format!("el-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let id = UIElementID::from_string(&format!(
+        "el-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     ui.set_id(id);
     ui.set_parent(parent_uuid);
 
@@ -603,7 +623,8 @@ fn convert_fur_element_to_ui_elements_with_includes(
     // Text nodes are IGNORED - you must use [Text] elements explicitly
     for child in &fur.children {
         if let FurNode::Element(e) = child {
-            let child_nodes = convert_fur_element_to_ui_elements_with_includes(e, Some(id), included_paths);
+            let child_nodes =
+                convert_fur_element_to_ui_elements_with_includes(e, Some(id), included_paths);
             if let Some((cid, _)) = child_nodes.first() {
                 children.push(*cid);
             }
@@ -642,7 +663,7 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
 
     // Store element count before dropping the borrow
     let _element_count = elements.len();
-    
+
     // Store initial z-indices for all elements to prevent accumulation
     ui.initial_z_indices.clear();
     for (uuid, element) in elements.iter() {
@@ -656,29 +677,29 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
 /// Append FUR elements to an existing UINode without clearing existing elements
 /// This allows dynamically adding UI elements at runtime
 /// parent_id: If Some, the new elements will be children of that parent element. If None, they'll be root elements.
-pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_id: Option<UIElementID>) {
+pub fn append_fur_elements_to_ui(
+    ui: &mut UINode,
+    elems: &[FurElement],
+    parent_id: Option<UIElementID>,
+) {
     // Collect all UUIDs that will be added, so we can mark them for rerender after the borrow is released
     let mut added_uuids = Vec::new();
 
     // Use a scope block to limit the lifetime of the mutable borrows
     {
-        let elements = ui
-            .elements
-            .get_or_insert_with(|| IndexMap::new());
+        let elements = ui.elements.get_or_insert_with(|| IndexMap::new());
 
-        let root_ids = ui
-            .root_ids
-            .get_or_insert_with(|| Vec::new());
+        let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());
 
         for el in elems {
             let flat = convert_fur_element_to_ui_elements(el, parent_id);
             for (uuid, e) in flat {
                 // Store initial z-index for new element
                 ui.initial_z_indices.insert(uuid, e.get_z_index());
-                
+
                 // Get the actual parent ID from the element (might be set during conversion)
                 let actual_parent_id = e.get_parent();
-                
+
                 // If parent is nil, add to root_ids
                 if actual_parent_id.is_nil() {
                     root_ids.push(uuid);
@@ -692,7 +713,7 @@ pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_i
                     } else {
                         continue; // No parent to add to
                     };
-                    
+
                     if let Some(parent_element) = elements.get_mut(&parent_to_use) {
                         let mut children = parent_element.get_children().to_vec();
                         if !children.contains(&uuid) {
@@ -706,11 +727,11 @@ pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_i
             }
         }
     } // Borrows are released here
-    
+
     // Now mark all added elements for rerender (after the borrow is released)
     for uuid in added_uuids {
         ui.mark_element_needs_layout(uuid);
-        
+
         // Also mark the element's actual parent for layout (in case it's different from parent_id parameter)
         if let Some(elements) = &ui.elements {
             if let Some(element) = elements.get(&uuid) {
@@ -721,7 +742,7 @@ pub fn append_fur_elements_to_ui(ui: &mut UINode, elems: &[FurElement], parent_i
             }
         }
     }
-    
+
     // Also mark parent as needing layout if provided
     if let Some(parent_uuid) = parent_id {
         ui.mark_element_needs_layout(parent_uuid);

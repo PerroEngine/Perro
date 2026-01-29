@@ -1,10 +1,10 @@
+use crate::ids::UIElementID;
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     sync::{OnceLock, RwLock},
 };
-use crate::ids::UIElementID;
 
 use crate::{
     Graphics,
@@ -13,10 +13,7 @@ use crate::{
     structs::Color,
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
-    ui_elements::{
-        ui_container::UIPanel,
-        ui_text::UIText,
-    },
+    ui_elements::{ui_container::UIPanel, ui_text::UIText},
     ui_node::UINode,
 };
 
@@ -78,13 +75,16 @@ impl LayoutCache {
         self.entries.clear();
     }
 
-    fn get_cached_content_size(&self, id: &UIElementID, signature: &LayoutSignature) -> Option<Vector2> {
+    fn get_cached_content_size(
+        &self,
+        id: &UIElementID,
+        signature: &LayoutSignature,
+    ) -> Option<Vector2> {
         self.entries
             .get(id)
             .filter(|entry| entry.signature == *signature)
             .map(|entry| entry.content_size)
     }
-
 
     fn cache_results(
         &mut self,
@@ -103,7 +103,10 @@ impl LayoutCache {
 }
 
 /// Default viewport size when not provided (e.g. when layout is run without Graphics).
-const DEFAULT_VIEWPORT: Vector2 = Vector2 { x: 1920.0, y: 1080.0 };
+const DEFAULT_VIEWPORT: Vector2 = Vector2 {
+    x: 1920.0,
+    y: 1080.0,
+};
 
 /// Helper function to find the parent element for percentage calculations
 /// Uses layout containers with explicit sizes, but skips auto-sizing layout containers.
@@ -123,37 +126,45 @@ fn find_percentage_reference_ancestor(
 
 /// Helper function to check if an element is effectively visible (considering parent visibility)
 /// Walks up the parent chain to ensure all ancestors are visible
-fn is_effectively_visible(elements: &IndexMap<UIElementID, UIElement>, element_id: UIElementID) -> bool {
+fn is_effectively_visible(
+    elements: &IndexMap<UIElementID, UIElement>,
+    element_id: UIElementID,
+) -> bool {
     let mut current_id = element_id;
     let mut visited = std::collections::HashSet::new();
     const MAX_DEPTH: usize = 100; // Prevent infinite loops
     let mut depth = 0;
-    
-    
+
     loop {
         if depth > MAX_DEPTH {
             // Safety: prevent infinite loops if parent chain is broken
-            eprintln!("⚠️ is_effectively_visible: Max depth reached for element {}", element_id);
+            eprintln!(
+                "⚠️ is_effectively_visible: Max depth reached for element {}",
+                element_id
+            );
             return false;
         }
         depth += 1;
-        
+
         // Prevent infinite loops
         if visited.contains(&current_id) {
-            eprintln!("⚠️ is_effectively_visible: Circular parent chain detected for element {}", element_id);
+            eprintln!(
+                "⚠️ is_effectively_visible: Circular parent chain detected for element {}",
+                element_id
+            );
             return false;
         }
         visited.insert(current_id);
-        
+
         if let Some(element) = elements.get(&current_id) {
             // If this element is not visible, return false
-                if !element.get_visible() {
-                    // if is_file_tree {
-                    //     eprintln!("🌳 [visibility] FileTree parent chain broken: {} ({}) is not visible",
-                    //         element.get_name(), current_id);
-                    // }
-                    return false;
-                }
+            if !element.get_visible() {
+                // if is_file_tree {
+                //     eprintln!("🌳 [visibility] FileTree parent chain broken: {} ({}) is not visible",
+                //         element.get_name(), current_id);
+                // }
+                return false;
+            }
             // Check parent
             let parent_id = element.get_parent();
             if parent_id.is_nil() {
@@ -201,7 +212,7 @@ fn calculate_content_size_with_visibility_cache(
             if !visibility_cache.contains(&child_id) {
                 return None; // Child is invisible
             }
-            
+
             elements.get(&child_id).map(|child| {
                 let mut child_size = *child.get_size();
 
@@ -215,12 +226,14 @@ fn calculate_content_size_with_visibility_cache(
                 let style_map = child.get_style_map();
                 if let Some(&pct) = style_map.get("size.x") {
                     if pct >= 0.0 {
-                        child_size.x = (percentage_reference_size.x as f64 * (pct as f64 / 100.0)) as f32;
+                        child_size.x =
+                            (percentage_reference_size.x as f64 * (pct as f64 / 100.0)) as f32;
                     }
                 }
                 if let Some(&pct) = style_map.get("size.y") {
                     if pct >= 0.0 {
-                        child_size.y = (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
+                        child_size.y =
+                            (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
                     }
                 }
 
@@ -235,13 +248,22 @@ fn calculate_content_size_with_visibility_cache(
     }
 
     // Calculate max width and height for all children
-    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
-    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+    let max_width = resolved_child_sizes
+        .par_iter()
+        .map(|size| size.x)
+        .reduce(|| 0.0, f32::max);
+    let max_height = resolved_child_sizes
+        .par_iter()
+        .map(|size| size.y)
+        .reduce(|| 0.0, f32::max);
     Vector2::new(max_width, max_height)
 }
 
 /// FIXED: Remove cache parameter to match working version
-pub fn calculate_content_size(elements: &IndexMap<UIElementID, UIElement>, parent_id: &UIElementID) -> Vector2 {
+pub fn calculate_content_size(
+    elements: &IndexMap<UIElementID, UIElement>,
+    parent_id: &UIElementID,
+) -> Vector2 {
     let parent = match elements.get(parent_id) {
         Some(p) => p,
         None => return Vector2::new(0.0, 0.0),
@@ -262,7 +284,7 @@ pub fn calculate_content_size(elements: &IndexMap<UIElementID, UIElement>, paren
                 if !is_effectively_visible(elements, child_id) {
                     return Vector2::new(0.0, 0.0);
                 }
-                
+
                 let mut child_size = *child.get_size();
 
                 // Find the percentage reference for this child
@@ -276,14 +298,16 @@ pub fn calculate_content_size(elements: &IndexMap<UIElementID, UIElement>, paren
                 if let Some(&pct) = style_map.get("size.x") {
                     if pct >= 0.0 {
                         // Not auto-sizing, resolve percentage
-                        child_size.x = (percentage_reference_size.x as f64 * (pct as f64 / 100.0)) as f32;
+                        child_size.x =
+                            (percentage_reference_size.x as f64 * (pct as f64 / 100.0)) as f32;
                     }
                     // If pct < 0.0, it's auto-sizing - keep default size for now
                 }
                 if let Some(&pct) = style_map.get("size.y") {
                     if pct >= 0.0 {
                         // Not auto-sizing, resolve percentage
-                        child_size.y = (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
+                        child_size.y =
+                            (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
                     }
                     // If pct < 0.0, it's auto-sizing - keep default size for now
                 }
@@ -294,13 +318,23 @@ pub fn calculate_content_size(elements: &IndexMap<UIElementID, UIElement>, paren
         .collect();
 
     // If all children are invisible, return 0 size (layout should collapse)
-    if resolved_child_sizes.is_empty() || resolved_child_sizes.iter().all(|s| s.x == 0.0 && s.y == 0.0) {
+    if resolved_child_sizes.is_empty()
+        || resolved_child_sizes
+            .iter()
+            .all(|s| s.x == 0.0 && s.y == 0.0)
+    {
         return Vector2::new(0.0, 0.0);
     }
 
     // Calculate max width and height for all children
-    let max_width = resolved_child_sizes.par_iter().map(|size| size.x).reduce(|| 0.0, f32::max);
-    let max_height = resolved_child_sizes.par_iter().map(|size| size.y).reduce(|| 0.0, f32::max);
+    let max_width = resolved_child_sizes
+        .par_iter()
+        .map(|size| size.x)
+        .reduce(|| 0.0, f32::max);
+    let max_height = resolved_child_sizes
+        .par_iter()
+        .map(|size| size.y)
+        .reduce(|| 0.0, f32::max);
     Vector2::new(max_width, max_height)
 }
 
@@ -329,25 +363,24 @@ pub fn calculate_content_size_smart_cached(
 
     // Cache the result with write lock
     if let Ok(mut cache_ref) = cache.write() {
-        cache_ref.cache_results(
-            *parent_id,
-            signature,
-            result,
-        );
+        cache_ref.cache_results(*parent_id, signature, result);
     }
     result
 }
 
 pub fn calculate_layout_positions(
-    elements: &mut IndexMap<UIElementID, UIElement>,
-    parent_id: &UIElementID,
+    _elements: &mut IndexMap<UIElementID, UIElement>,
+    _parent_id: &UIElementID,
 ) -> Vec<(UIElementID, Vector2)> {
     // No layout containers - return empty vec
     Vec::new()
 }
 
 /// Recursively calculate content sizes for all containers, starting from leaves
-fn calculate_all_content_sizes(elements: &mut IndexMap<UIElementID, UIElement>, current_id: &UIElementID) {
+fn calculate_all_content_sizes(
+    elements: &mut IndexMap<UIElementID, UIElement>,
+    current_id: &UIElementID,
+) {
     // First, process all children recursively
     let children_ids = if let Some(element) = elements.get(current_id) {
         element.get_children().to_vec()
@@ -372,59 +405,11 @@ fn calculate_all_content_sizes(elements: &mut IndexMap<UIElementID, UIElement>, 
     }
 }
 
-fn calculate_all_content_sizes_cached(
-    elements: &mut IndexMap<UIElementID, UIElement>,
-    current_id: &UIElementID,
-    cache: &RwLock<LayoutCache>,
-) {
-    let children_ids = if let Some(element) = elements.get(current_id) {
-        element.get_children().to_vec()
-    } else {
-        return;
-    };
-
-    for child_id in children_ids {
-        calculate_all_content_sizes_cached(elements, &child_id, cache);
-    }
-
-    if let Some(element) = elements.get(current_id) {
-        let is_container = matches!(element, UIElement::Panel(_));
-
-        if is_container {
-            let content_size = calculate_content_size_smart_cached(elements, current_id, cache);
-            if let Some(element) = elements.get_mut(current_id) {
-                element.set_size(content_size);
-            }
-        }
-    }
-}
-
 /// Updated layout function that uses the new layout system
 pub fn update_ui_layout(ui_node: &mut UINode) {
     if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
         for root_id in root_ids {
             calculate_all_content_sizes(elements, root_id);
-        }
-
-        let empty_layout_map = HashMap::new();
-        let initial_z_indices = &ui_node.initial_z_indices;
-        for root_id in root_ids {
-            update_global_transforms_with_layout(
-                elements,
-                root_id,
-                &Transform2D::default(),
-                &empty_layout_map,
-                0,
-                initial_z_indices,
-            );
-        }
-    }
-}
-
-fn update_ui_layout_cached(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
-    if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
-        for root_id in root_ids {
-            calculate_all_content_sizes_cached(elements, root_id, cache);
         }
 
         let empty_layout_map = HashMap::new();
@@ -460,11 +445,11 @@ fn collect_dirty_with_ancestors(
     dirty_ids: &HashSet<UIElementID>,
 ) -> HashSet<UIElementID> {
     let mut to_process = HashSet::new();
-    
+
     for &dirty_id in dirty_ids {
         // Add the dirty element itself
         to_process.insert(dirty_id);
-        
+
         // Walk up the parent chain and add all ancestors
         let mut current_id = dirty_id;
         while let Some(element) = elements.get(&current_id) {
@@ -476,7 +461,7 @@ fn collect_dirty_with_ancestors(
             current_id = parent_id;
         }
     }
-    
+
     to_process
 }
 
@@ -494,7 +479,7 @@ pub fn update_global_transforms_with_layout_filtered(
     if !affected_elements.contains(current_id) {
         return;
     }
-    
+
     // Rest is identical to the unfiltered version
     update_global_transforms_with_layout_impl(
         elements,
@@ -552,15 +537,15 @@ fn update_global_transforms_with_layout_impl(
     };
 
     // Find the reference size for percentages
-    let percentage_reference_size = find_percentage_reference_ancestor(elements, current_id, None)
-        .unwrap_or(DEFAULT_VIEWPORT);
+    let percentage_reference_size =
+        find_percentage_reference_ancestor(elements, current_id, None).unwrap_or(DEFAULT_VIEWPORT);
 
     // Get element and calculate its global transform
     if let Some(element) = elements.get_mut(current_id) {
         // Clone local transform before mutable borrow
         let local = element.get_transform().clone();
         let mut size = *element.get_size();
-        
+
         // Resolve percentage sizes
         let style_map = element.get_style_map();
         if let Some(&pct) = style_map.get("size.x") {
@@ -573,10 +558,10 @@ fn update_global_transforms_with_layout_impl(
                 size.y = (percentage_reference_size.y as f64 * (pct as f64 / 100.0)) as f32;
             }
         }
-        
+
         // Apply size
         element.set_size(size);
-        
+
         // Calculate global transform
         let mut global = Transform2D::default();
         global.scale.x = parent_global.scale.x * local.scale.x;
@@ -584,24 +569,24 @@ fn update_global_transforms_with_layout_impl(
         global.position.x = parent_global.position.x + (local.position.x * parent_global.scale.x);
         global.position.y = parent_global.position.y + (local.position.y * parent_global.scale.y);
         global.rotation = parent_global.rotation + local.rotation;
-        
+
         // Calculate anchor offset
         let anchor = *element.get_anchor();
         let pivot = *element.get_pivot();
         let anchor_offset = calculate_anchor_offset(size, pivot, anchor, parent_size);
-        
+
         // Apply anchor offset
         global.position.x += anchor_offset.x * parent_global.scale.x;
         global.position.y += anchor_offset.y * parent_global.scale.y;
-        
+
         // Calculate z-index
         let base_z = initial_z_indices.get(current_id).copied().unwrap_or(0);
         let global_z = (base_z + parent_z).min(1000000);
-        
+
         // Apply global transform
         element.set_global_transform(global);
         element.set_z_index(global_z);
-        
+
         // Get children list before dropping the mutable borrow
         let children_ids = element.get_children().to_vec();
 
@@ -614,7 +599,7 @@ fn update_global_transforms_with_layout_impl(
                     continue; // Skip this entire branch!
                 }
             }
-            
+
             update_global_transforms_with_layout_impl(
                 elements,
                 &child_id,
@@ -628,7 +613,12 @@ fn update_global_transforms_with_layout_impl(
     }
 }
 
-fn calculate_anchor_offset(child_size: Vector2, child_pivot: Vector2, anchor: FurAnchor, parent_size: Vector2) -> Vector2 {
+fn calculate_anchor_offset(
+    child_size: Vector2,
+    child_pivot: Vector2,
+    anchor: FurAnchor,
+    parent_size: Vector2,
+) -> Vector2 {
     match anchor {
         FurAnchor::TopLeft => {
             let parent_left = -parent_size.x * 0.5;
@@ -678,29 +668,30 @@ fn calculate_anchor_offset(child_size: Vector2, child_pivot: Vector2, anchor: Fu
             let offset_x = parent_right - child_size.x * child_pivot.x;
             Vector2::new(offset_x, 0.0) // Center vertically
         }
-        FurAnchor::Center => {
-            Vector2::new(0.0, 0.0)
-        }
+        FurAnchor::Center => Vector2::new(0.0, 0.0),
     }
 }
 
 pub fn update_ui_layout_cached_optimized(ui_node: &mut UINode, cache: &RwLock<LayoutCache>) {
     if let (Some(root_ids), Some(elements)) = (&ui_node.root_ids, &mut ui_node.elements) {
         // Build visibility cache once at the start (no parent chain walks!)
-        let visibility_cache: HashSet<UIElementID> = elements.keys().copied()
+        let visibility_cache: HashSet<UIElementID> = elements
+            .keys()
+            .copied()
             .filter(|&id| is_effectively_visible(elements, id))
             .collect();
-        
+
         // Collect dirty elements + ancestors (parents up to root)
-        let dirty_with_ancestors = collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
-        
+        let dirty_with_ancestors =
+            collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
+
         // Clear cache only for elements we're recalculating
         if let Ok(mut cache_ref) = cache.write() {
             for dirty_id in &dirty_with_ancestors {
                 cache_ref.entries.remove(dirty_id);
             }
         }
-        
+
         // Recalculate content sizes only for dirty elements (bottom-up)
         // We need to process them in order: children before parents
         let mut sorted_dirty: Vec<UIElementID> = dirty_with_ancestors.iter().copied().collect();
@@ -710,26 +701,30 @@ pub fn update_ui_layout_cached_optimized(ui_node: &mut UINode, cache: &RwLock<La
             let mut current = *id;
             while let Some(el) = elements.get(&current) {
                 let parent = el.get_parent();
-                if parent.is_nil() { break; }
+                if parent.is_nil() {
+                    break;
+                }
                 depth += 1;
                 current = parent;
-                if depth > 100 { break; } // Safety
+                if depth > 100 {
+                    break;
+                } // Safety
             }
             -(depth as i32) // Negative so deeper elements come first
         });
-        
+
         // Recalculate content sizes for dirty elements only
         for element_id in sorted_dirty {
             if let Some(element) = elements.get(&element_id) {
                 let is_container = matches!(element, UIElement::Panel(_));
-                
+
                 if is_container {
                     // Use cached visibility AND percentage refs (no parent chain walks!)
                     let content_size = calculate_content_size_with_visibility_cache(
-                        elements, 
+                        elements,
                         &element_id,
                         &visibility_cache,
-                        &HashMap::new()
+                        &HashMap::new(),
                     );
                     if let Some(element) = elements.get_mut(&element_id) {
                         element.set_size(content_size);
@@ -754,9 +749,13 @@ pub fn update_ui_layout_cached_optimized(ui_node: &mut UINode, cache: &RwLock<La
 }
 
 // Updated render function with caching and dirty element optimization
-pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn crate::script::ScriptProvider>) {
+pub fn render_ui(
+    ui_node: &mut UINode,
+    gfx: &mut Graphics,
+    provider: Option<&dyn crate::script::ScriptProvider>,
+) {
     let cache = get_layout_cache();
-    
+
     // Get timestamp from UINode's base node
     let timestamp = ui_node.base.created_timestamp;
 
@@ -764,12 +763,21 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
     // Extract fur_path string first to avoid borrow conflicts
     {
         let current_fur_path_str = ui_node.fur_path.as_ref().map(|fp| fp.as_ref().to_string());
-        let loaded_fur_path_str = ui_node.loaded_fur_path.as_ref().map(|fp| fp.as_ref().to_string());
-        
-        let needs_load = current_fur_path_str.as_ref().map(|current| {
-            loaded_fur_path_str.as_ref().map(|loaded| loaded != current).unwrap_or(true)
-        }).unwrap_or(false);
-        
+        let loaded_fur_path_str = ui_node
+            .loaded_fur_path
+            .as_ref()
+            .map(|fp| fp.as_ref().to_string());
+
+        let needs_load = current_fur_path_str
+            .as_ref()
+            .map(|current| {
+                loaded_fur_path_str
+                    .as_ref()
+                    .map(|loaded| loaded != current)
+                    .unwrap_or(true)
+            })
+            .unwrap_or(false);
+
         if needs_load {
             if let Some(ref fur_path_str) = current_fur_path_str {
                 // Try to load the fur file using the provider if available, otherwise fall back to parse_fur_file
@@ -791,13 +799,14 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         })
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
                 };
-                
+
                 match fur_elements_result {
                     Ok(fur_elements) => {
                         // Always rebuild UI elements, even if empty (this clears existing elements)
                         // build_ui_elements_from_fur calls elements.clear() which removes all old elements
                         build_ui_elements_from_fur(ui_node, &fur_elements);
-                        ui_node.loaded_fur_path = Some(std::borrow::Cow::Owned(fur_path_str.clone()));
+                        ui_node.loaded_fur_path =
+                            Some(std::borrow::Cow::Owned(fur_path_str.clone()));
                     }
                     Err(e) => {
                         eprintln!("⚠️ Failed to load FUR file {}: {}", fur_path_str, e);
@@ -812,13 +821,13 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
 
     // Check if elements exist - if not, we can't render yet
     let elements_exist = ui_node.elements.is_some();
-    
+
     // If elements don't exist yet, return early - elements will be marked when FUR loads
     // The UINode will be re-added to scene's needs_rerender after FUR loads
     if !elements_exist {
         return;
     }
-    
+
     // Check if we have any dirty elements
     // Only mark all on FIRST render (when elements just loaded but nothing marked yet)
     // Don't do this every frame when HashSet is empty after clearing!
@@ -826,17 +835,19 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
         // If both are empty, nothing needs updating - return early
         return;
     }
-    
+
     // If needs_rerender is empty but layout needs recalc, mark affected elements
     if ui_node.needs_rerender.is_empty() && !ui_node.needs_layout_recalc.is_empty() {
         // Layout changed but no elements marked - mark elements that need layout
-        ui_node.needs_rerender.extend(ui_node.needs_layout_recalc.iter().copied());
+        ui_node
+            .needs_rerender
+            .extend(ui_node.needs_layout_recalc.iter().copied());
     }
-    
+
     // Collect dirty element IDs before borrowing elements
     let dirty_elements: Vec<UIElementID> = ui_node.needs_rerender.iter().copied().collect();
     let needs_layout = !ui_node.needs_layout_recalc.is_empty();
-    
+
     // Build visibility cache ONCE for the frame (used by both visibility check and layout)
     let visibility_cache: HashSet<UIElementID> = if let Some(elements) = &ui_node.elements {
         let elements_ref: &IndexMap<UIElementID, UIElement> = elements;
@@ -853,38 +864,41 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
     } else {
         HashSet::new()
     };
-    
+
     // Build percentage reference cache ONCE (use virtual size from Graphics for viewport)
     let viewport_size = Vector2::new(gfx.virtual_width, gfx.virtual_height);
-    let percentage_ref_cache: HashMap<UIElementID, Vector2> = if let Some(elements) = &ui_node.elements {
-        let elements_ref: &IndexMap<UIElementID, UIElement> = elements;
-        elements_ref
-            .par_iter()
-            .map(|(id, _)| {
-                let ref_size = find_percentage_reference_ancestor(elements_ref, id, Some(viewport_size))
-                    .unwrap_or(viewport_size);
-                (*id, ref_size)
-            })
-            .collect()
-    } else {
-        HashMap::new()
-    };
-    
+    let percentage_ref_cache: HashMap<UIElementID, Vector2> =
+        if let Some(elements) = &ui_node.elements {
+            let elements_ref: &IndexMap<UIElementID, UIElement> = elements;
+            elements_ref
+                .par_iter()
+                .map(|(id, _)| {
+                    let ref_size =
+                        find_percentage_reference_ancestor(elements_ref, id, Some(viewport_size))
+                            .unwrap_or(viewport_size);
+                    (*id, ref_size)
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
     // Only recalculate layout if layout actually changed (not just visual state like button hover)
     if needs_layout {
         // OPTIMIZATION: Only recalculate dirty elements and their ancestors
         // Don't recalculate the entire tree!
         if let Some(elements) = &mut ui_node.elements {
             // Collect dirty elements + ancestors (parents up to root)
-            let dirty_with_ancestors = collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
-            
+            let dirty_with_ancestors =
+                collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
+
             // Clear cache only for elements we're recalculating
             if let Ok(mut cache_ref) = cache.write() {
                 for dirty_id in &dirty_with_ancestors {
                     cache_ref.entries.remove(dirty_id);
                 }
             }
-            
+
             // Recalculate content sizes only for dirty elements (bottom-up)
             // We need to process them in order: children before parents
             let mut sorted_dirty: Vec<UIElementID> = dirty_with_ancestors.iter().copied().collect();
@@ -894,44 +908,48 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                 let mut current = *id;
                 while let Some(el) = elements.get(&current) {
                     let parent = el.get_parent();
-                    if parent.is_nil() { break; }
+                    if parent.is_nil() {
+                        break;
+                    }
                     depth += 1;
                     current = parent;
-                    if depth > 100 { break; } // Safety
+                    if depth > 100 {
+                        break;
+                    } // Safety
                 }
                 -(depth as i32) // Negative so deeper elements come first
             });
-            
+
             // Recalculate content sizes for dirty elements only
             // (visibility_cache was already built at the start of the function)
             for element_id in sorted_dirty {
                 if let Some(element) = elements.get(&element_id) {
                     let is_container = matches!(element, UIElement::Panel(_));
-                    
+
                     if is_container {
                         // Use cached visibility AND percentage refs (no parent chain walks!)
                         let content_size = calculate_content_size_with_visibility_cache(
-                            elements, 
-                            &element_id, 
+                            elements,
+                            &element_id,
                             &visibility_cache,
-                            &percentage_ref_cache
+                            &percentage_ref_cache,
                         );
-                        
+
                         if let Some(element) = elements.get_mut(&element_id) {
                             element.set_size(content_size);
                         }
                     }
                 }
             }
-            
+
             // Build "affected elements" set: dirty elements + all their descendants + immediate siblings
             // This is the minimum set needed for correct positioning without updating the entire tree
             let mut affected_elements = HashSet::new();
-            
+
             for dirty_id in dirty_elements.iter() {
                 // Mark the dirty element itself
                 affected_elements.insert(*dirty_id);
-                
+
                 // Mark all descendants (they inherit from this element)
                 let mut stack = vec![*dirty_id];
                 while let Some(current_id) = stack.pop() {
@@ -943,7 +961,7 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                         }
                     }
                 }
-                
+
                 // Mark parent + ancestors up the chain (they all need layout recalc)
                 if let Some(element) = elements.get(dirty_id) {
                     let mut current_parent = element.get_parent();
@@ -959,11 +977,11 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                     }
                 }
             }
-            
+
             // Update transforms from root, SKIPPING unaffected branches
             let empty_layout_map = HashMap::new();
             let initial_z_indices = &ui_node.initial_z_indices;
-            
+
             if let Some(root_ids) = &ui_node.root_ids {
                 for root_id in root_ids {
                     update_global_transforms_with_layout_filtered(
@@ -985,7 +1003,7 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
         // OPTIMIZATION: Only check dirty elements for visibility changes
         // instead of checking ALL elements every frame
         let dirty_set: HashSet<UIElementID> = dirty_elements.iter().copied().collect();
-        
+
         // Collect elements that need visibility checking (dirty elements + their descendants)
         let elements_to_check: HashSet<UIElementID> = if dirty_set.is_empty() {
             // First frame: check all elements
@@ -1014,48 +1032,52 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
         let (visible_element_ids, newly_invisible_ids): (Vec<UIElementID>, Vec<UIElementID>) = {
             let visible: Vec<UIElementID> = visibility_cache.iter().copied().collect();
             let mut invisible = Vec::new();
-            
+
             // Find elements that JUST became invisible (were in dirty set but not visible)
             for id in &elements_to_check {
                 if !visibility_cache.contains(id) {
                     invisible.push(*id);
                 }
             }
-            
+
             (visible, invisible)
         };
-        
+
         // Process elements marked for deletion first
         // These are explicitly marked for deletion and should be removed from primitive renderer and map
         if !ui_node.pending_deletion.is_empty() {
             let pending_deletion_set = ui_node.pending_deletion.clone();
-            
+
             // Collect elements to remove by iterating over the map (avoids indexmap version mismatch)
             let mut to_remove: Vec<(UIElementID, UIElement)> = Vec::new();
             for (id, element) in elements.iter() {
                 // Check if this ID is in pending_deletion_set by comparing directly
-                if pending_deletion_set.iter().any(|&pending_id| pending_id == *id) {
+                if pending_deletion_set
+                    .iter()
+                    .any(|&pending_id| pending_id == *id)
+                {
                     to_remove.push((*id, element.clone()));
                 }
             }
-            
+
             // Remove from primitive renderer cache
             for (element_id, element) in &to_remove {
                 match element {
                     UIElement::Panel(_) => {
-                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, *element_id);
+                        gfx.renderer_ui
+                            .remove_panel(&mut gfx.renderer_prim, *element_id);
                     }
                     UIElement::Text(_) => {
-                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, *element_id);
+                        gfx.renderer_ui
+                            .remove_text(&mut gfx.renderer_prim, *element_id);
                     }
-                    _ => {}
                 }
             }
-            
+
             // Remove from elements map using retain (avoids indexmap version mismatch)
             let ids_to_remove: HashSet<UIElementID> = to_remove.iter().map(|(id, _)| *id).collect();
             elements.retain(|id, _| !ids_to_remove.contains(id));
-            
+
             // Clean up other data structures
             for (element_id, _) in to_remove {
                 ui_node.needs_rerender.remove(&element_id);
@@ -1065,42 +1087,43 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
                     root_ids.retain(|id| id != &element_id);
                 }
             }
-            
+
             // Clear the pending_deletion set
             ui_node.pending_deletion.clear();
         }
-        
+
         // OPTIMIZATION: Only remove newly invisible elements from primitive renderer cache
         // (not from the elements map - invisible elements should stay in the map so they can become visible again)
         // This avoids iterating through everything every frame
         // Work around indexmap version mismatch by iterating over elements map
-        let newly_invisible_set: HashSet<UIElementID> = newly_invisible_ids.iter().copied().collect();
+        let newly_invisible_set: HashSet<UIElementID> =
+            newly_invisible_ids.iter().copied().collect();
         for (element_id, element) in elements.iter() {
             if newly_invisible_set.contains(element_id) {
                 match element {
                     UIElement::Panel(_) => {
-                        gfx.renderer_ui.remove_panel(&mut gfx.renderer_prim, *element_id);
+                        gfx.renderer_ui
+                            .remove_panel(&mut gfx.renderer_prim, *element_id);
                     }
                     UIElement::Text(_) => {
-                        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, *element_id);
+                        gfx.renderer_ui
+                            .remove_text(&mut gfx.renderer_prim, *element_id);
                     }
-                    _ => {}
                 }
             }
         }
-        
+
         // Now render only the visible elements (mutable borrow)
         for element_id in visible_element_ids {
             if let Some(element) = elements.get_mut(&element_id) {
                 match element {
                     UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
                     UIElement::Text(text) => render_text(text, gfx, timestamp),
-                    _ => {}
                 }
             }
         }
     }
-    
+
     // Clear dirty flags after rendering (outside the elements borrow)
     ui_node.clear_rerender_flags();
 }
@@ -1113,16 +1136,19 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
         // Skip rendering zero-size or invalid panels
         return;
     }
-    
+
     // VALIDATION: Check for invalid transform values
     let transform = panel.base.global_transform;
-    if !transform.position.x.is_finite() || !transform.position.y.is_finite() ||
-       !transform.scale.x.is_finite() || !transform.scale.y.is_finite() ||
-       !transform.rotation.is_finite() {
+    if !transform.position.x.is_finite()
+        || !transform.position.y.is_finite()
+        || !transform.scale.x.is_finite()
+        || !transform.scale.y.is_finite()
+        || !transform.rotation.is_finite()
+    {
         // Skip rendering panels with invalid transforms
         return;
     }
-    
+
     let mut background_color = panel
         .props
         .background_color
@@ -1175,33 +1201,33 @@ fn render_panel(panel: &UIPanel, gfx: &mut Graphics, timestamp: u64) {
     }
 }
 
-
 /// Calculate text size from font metrics
 /// Returns (width, height) where height = (ascent + descent) * scale
 /// Calculate cumulative character positions (width at each character boundary)
+#[allow(deprecated)] // Font::from_name deprecated in favor of TextRenderer; UI still uses FontAtlas path
 pub fn calculate_character_positions(text: &str, font_size: f32) -> Vec<f32> {
     use fontdue::Font as Fontdue;
     use fontdue::FontSettings;
 
     const DESIGN_SIZE: f32 = 192.0; // Must match the font atlas design size!
-    
+
     if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
-        let fd_font = Fontdue::from_bytes(font.data(), FontSettings::default())
-            .expect("Invalid font data");
-        
+        let fd_font =
+            Fontdue::from_bytes(font.data(), FontSettings::default()).expect("Invalid font data");
+
         let scale = font_size / DESIGN_SIZE;
         let mut cumulative_width = 0.0;
         let mut positions = Vec::with_capacity(text.len());
-        
+
         for ch in text.chars() {
             let (metrics, _) = fd_font.rasterize(ch, DESIGN_SIZE);
             cumulative_width += metrics.advance_width as f32 * scale;
             positions.push(cumulative_width);
         }
-        
+
         return positions;
     }
-    
+
     // Fallback: approximate positions
     let char_width = font_size * 0.6;
     (0..text.len())
@@ -1209,44 +1235,15 @@ pub fn calculate_character_positions(text: &str, font_size: f32) -> Vec<f32> {
         .collect()
 }
 
-fn calculate_text_size(text: &str, font_size: f32) -> Vector2 {
-    use fontdue::Font as Fontdue;
-    use fontdue::FontSettings;
-    
-    const DESIGN_SIZE: f32 = 192.0; // High resolution for sharp text (3x supersampling)
-    
-    if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal) {
-        let fd_font = Fontdue::from_bytes(font.data(), FontSettings::default())
-            .expect("Invalid font data");
-        
-        // Get line metrics for height calculation
-        if let Some(line_metrics) = fd_font.horizontal_line_metrics(DESIGN_SIZE) {
-            let scale = font_size / DESIGN_SIZE;
-            let text_height = (line_metrics.ascent + line_metrics.descent) * scale;
-            
-            // Calculate text width by measuring each character
-            let mut text_width = 0.0;
-            for ch in text.chars() {
-                let (metrics, _) = fd_font.rasterize(ch, DESIGN_SIZE);
-                text_width += metrics.advance_width as f32 * scale;
-            }
-            
-            return Vector2::new(text_width, text_height);
-        }
-    }
-    
-    // Fallback: use font_size as height if we can't get metrics
-    Vector2::new(font_size * text.len() as f32 * 0.6, font_size)
-}
-
 // Optimized text rendering - only regenerate atlas when font properties change
+#[allow(deprecated)] // Font::from_name deprecated in favor of TextRenderer; UI still uses FontAtlas path
 fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
     // Skip rendering if text content is empty - but remove from cache to clear old text
     if text.props.content.is_empty() {
         gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text.id);
         return;
     }
-    
+
     let font_key = ("NotoSans".to_string(), 192);
     let font_cache = get_font_cache();
 
@@ -1275,74 +1272,22 @@ fn render_text(text: &UIText, gfx: &mut Graphics, timestamp: u64) {
     // align=start means left alignment (text starts at anchor, flows right)
     // align=end means right alignment (text ends at anchor, flows left)
     let align_h = match text.props.align {
-        crate::ui_elements::ui_text::TextFlow::Start => crate::ui_elements::ui_text::TextAlignment::Left,   // Start = Left (text starts at anchor, flows right)
-        crate::ui_elements::ui_text::TextFlow::Center => crate::ui_elements::ui_text::TextAlignment::Center,
-        crate::ui_elements::ui_text::TextFlow::End => crate::ui_elements::ui_text::TextAlignment::Right,   // End = Right (text ends at anchor, flows left)
+        crate::ui_elements::ui_text::TextFlow::Start => {
+            crate::ui_elements::ui_text::TextAlignment::Left
+        } // Start = Left (text starts at anchor, flows right)
+        crate::ui_elements::ui_text::TextFlow::Center => {
+            crate::ui_elements::ui_text::TextAlignment::Center
+        }
+        crate::ui_elements::ui_text::TextFlow::End => {
+            crate::ui_elements::ui_text::TextAlignment::Right
+        } // End = Right (text ends at anchor, flows left)
     };
     // Vertical alignment is always Center - align parameter doesn't affect vertical positioning
     let align_v = crate::ui_elements::ui_text::TextAlignment::Center;
-    
+
     gfx.renderer_ui.queue_text_aligned(
         &mut gfx.renderer_prim,
         text.id,
-        &text.props.content,
-        text.props.font_size,
-        text.global_transform,
-        text.pivot,
-        text.props.color,
-        text.z_index,
-        timestamp,
-        align_h,
-        align_v,
-        None, // font_spec
-        &gfx.device,
-        &gfx.queue,
-    );
-}
-
-/// Render text with specific alignment (helper for multiline text editing)
-fn render_text_with_alignment(
-    text: &UIText,
-    gfx: &mut Graphics,
-    timestamp: u64,
-    align_h: crate::ui_elements::ui_text::TextAlignment,
-    align_v: crate::ui_elements::ui_text::TextAlignment,
-) {
-    // Skip rendering if text content is empty - but remove from cache to clear old text
-    if text.props.content.is_empty() {
-        gfx.renderer_ui.remove_text(&mut gfx.renderer_prim, text.id);
-        return;
-    }
-    
-    let font_key = ("NotoSans".to_string(), 192);
-    let font_cache = get_font_cache();
-
-    // Check if font atlas is already initialized
-    if let Ok(cache) = font_cache.read() {
-        if !cache.contains_key(&font_key) {
-            drop(cache);
-
-            // Initialize font atlas
-            if let Ok(mut cache) = font_cache.write() {
-                if !cache.contains_key(&font_key) {
-                    if let Some(font) = Font::from_name("NotoSans", Weight::Regular, Style::Normal)
-                    {
-                        let font_atlas = FontAtlas::new(font, 192.0);
-                        gfx.initialize_font_atlas(font_atlas);
-                        cache.insert(font_key, true);
-                    }
-                }
-            }
-        }
-    }
-    
-    // Use unique ID per line to avoid conflicts
-    // Include content in ID so same content on different lines gets different IDs
-    let line_id = UIElementID::from_string(&format!("{}-{}", text.id.to_string(), text.props.content));
-    
-    gfx.renderer_ui.queue_text_aligned(
-        &mut gfx.renderer_prim,
-        line_id,
         &text.props.content,
         text.props.font_size,
         text.global_transform,

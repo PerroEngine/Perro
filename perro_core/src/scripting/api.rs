@@ -6,20 +6,19 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
 
+use crate::ids::{NodeID, TextureID};
 use chrono::{Datelike, Local, Timelike};
 use serde::Serialize;
 use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
-    cell::{RefCell, UnsafeCell},
+    cell::RefCell,
     env, io,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
-    process,
-    thread,
+    process, thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use crate::ids::{NodeID, TextureID};
 
 use crate::{
     app_command::AppCommand,
@@ -29,7 +28,7 @@ use crate::{
     node_registry::BaseNode,
     prelude::string_to_u64,
     rendering::Graphics,
-    script::{SceneAccess, ScriptObject},
+    script::SceneAccess,
     transpiler::{script_path_to_identifier, transpile},
     types::ScriptType,
     ui_element::BaseElement,
@@ -1120,7 +1119,10 @@ impl TextureApi {
     /// Panics if Graphics is not available or texture cannot be loaded
     pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> crate::ids::TextureID {
         if let Some(gfx) = api.gfx.as_mut() {
-            match gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue) {
+            match gfx
+                .texture_manager
+                .get_or_load_texture_id(path, &gfx.device, &gfx.queue)
+            {
                 Ok(id) => id,
                 Err(e) => {
                     panic!("{}", e);
@@ -1153,7 +1155,10 @@ impl TextureApi {
 
     pub(crate) fn preload_impl(api: &mut ScriptApi, path: &str) -> TextureID {
         if let Some(gfx) = api.gfx.as_mut() {
-            let id = match gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue) {
+            let id = match gfx
+                .texture_manager
+                .get_or_load_texture_id(path, &gfx.device, &gfx.queue)
+            {
                 Ok(id) => id,
                 Err(e) => panic!("{}", e),
             };
@@ -1193,7 +1198,12 @@ impl TextureApi {
     }
 
     /// Create a texture from raw RGBA8 bytes and return its UUID
-    pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<TextureID> {
+    pub fn create_from_bytes(
+        &mut self,
+        bytes: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Option<TextureID> {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1217,11 +1227,24 @@ impl TextureApi {
     }
 
     /// Internal implementation that actually creates the texture
-    pub(crate) fn create_from_bytes_impl(api: &mut ScriptApi, bytes: &[u8], width: u32, height: u32) -> Option<TextureID> {
+    pub(crate) fn create_from_bytes_impl(
+        api: &mut ScriptApi,
+        bytes: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Option<TextureID> {
         if let Some(gfx) = api.gfx.as_mut() {
-            Some(gfx.texture_manager.create_texture_from_bytes(bytes, width, height, &gfx.device, &gfx.queue))
+            Some(gfx.texture_manager.create_texture_from_bytes(
+                bytes,
+                width,
+                height,
+                &gfx.device,
+                &gfx.queue,
+            ))
         } else {
-            api.print_error("Graphics not available - Texture.create_from_bytes() requires Graphics access");
+            api.print_error(
+                "Graphics not available - Texture.create_from_bytes() requires Graphics access",
+            );
             None
         }
     }
@@ -1349,41 +1372,50 @@ impl DirectoryApi {
     /// Paths are returned relative to the base directory
     /// Example: `let files = api.Directory.scan("res://");`
     pub fn scan(&self, path: &str) -> Vec<String> {
-        use walkdir::WalkDir;
         use crate::asset_io::resolve_path;
-        
+        use walkdir::WalkDir;
+
         let mut files = Vec::new();
-        
+
         eprintln!("🔍 [DirectoryApi] Scanning directory: {}", path);
-        
+
         // Resolve the path
         let resolved = match resolve_path(path) {
             crate::asset_io::ResolvedPath::Disk(pb) => {
                 eprintln!("📂 [DirectoryApi] Resolved to disk path: {}", pb.display());
                 pb
-            },
+            }
             crate::asset_io::ResolvedPath::Brk(_) => {
                 eprintln!("⚠️ [DirectoryApi] Cannot scan BRK archives recursively");
                 return files;
             }
         };
-        
+
         if !resolved.exists() {
-            eprintln!("❌ [DirectoryApi] Path does not exist: {}", resolved.display());
+            eprintln!(
+                "❌ [DirectoryApi] Path does not exist: {}",
+                resolved.display()
+            );
             return files;
         }
-        
+
         if !resolved.is_dir() {
-            eprintln!("❌ [DirectoryApi] Path is not a directory: {}", resolved.display());
+            eprintln!(
+                "❌ [DirectoryApi] Path is not a directory: {}",
+                resolved.display()
+            );
             return files;
         }
-        
-        eprintln!("✅ [DirectoryApi] Starting recursive walk of: {}", resolved.display());
-        
+
+        eprintln!(
+            "✅ [DirectoryApi] Starting recursive walk of: {}",
+            resolved.display()
+        );
+
         // Walk the directory recursively
         for entry in WalkDir::new(&resolved).into_iter().filter_map(|e| e.ok()) {
             let entry_path = entry.path();
-            
+
             if entry_path.is_file() {
                 // Get relative path from base directory
                 if let Ok(relative) = entry_path.strip_prefix(&resolved) {
@@ -1399,13 +1431,16 @@ impl DirectoryApi {
                 }
             }
         }
-        
+
         // Sort for consistent ordering
         files.sort();
-        eprintln!("✅ [DirectoryApi] Scan complete. Found {} files", files.len());
+        eprintln!(
+            "✅ [DirectoryApi] Scan complete. Found {} files",
+            files.len()
+        );
         files
     }
-    
+
     /// Scan a directory and return files with their full res:// paths
     /// The base_path should be something like "res://" and files will be returned as "res://path/to/file.ext"
     pub fn scan_with_prefix(&self, base_path: &str) -> Vec<String> {
@@ -1416,16 +1451,19 @@ impl DirectoryApi {
         } else {
             format!("{}/", base_path)
         };
-        
-        let prefixed_files: Vec<String> = files.iter()
-            .map(|f| format!("{}{}", prefix, f))
-            .collect();
-        
-        eprintln!("📋 [DirectoryApi] Returning {} files with prefix '{}'", prefixed_files.len(), prefix);
+
+        let prefixed_files: Vec<String> =
+            files.iter().map(|f| format!("{}{}", prefix, f)).collect();
+
+        eprintln!(
+            "📋 [DirectoryApi] Returning {} files with prefix '{}'",
+            prefixed_files.len(),
+            prefix
+        );
         for (i, file) in prefixed_files.iter().enumerate() {
             eprintln!("  [{}] {}", i + 1, file);
         }
-        
+
         prefixed_files
     }
 }
@@ -1441,15 +1479,16 @@ impl MathApi {
         // Use fully qualified path to avoid reserved keyword issue
         <rand::rngs::ThreadRng as rand::RngCore>::next_u32(&mut rng) as f32 / u32::MAX as f32
     }
-    
+
     /// Generate a random f32 between min (inclusive) and max (exclusive)
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn random_range(&self, min: f32, max: f32) -> f32 {
         let mut rng = rand::thread_rng();
-        let random_val = <rand::rngs::ThreadRng as rand::RngCore>::next_u32(&mut rng) as f32 / u32::MAX as f32;
+        let random_val =
+            <rand::rngs::ThreadRng as rand::RngCore>::next_u32(&mut rng) as f32 / u32::MAX as f32;
         min + random_val * (max - min)
     }
-    
+
     /// Generate a random i32 between min (inclusive) and max (exclusive)
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn random_int(&self, min: i32, max: i32) -> i32 {
@@ -1525,12 +1564,16 @@ impl EditorApi {
             true,  // quiet = true, suppress verbose output when called from API
         ) {
             Ok(_) => {
-                api.print(&format!("✅ Project '{}' created successfully at {}", project_name, resolved_path.display()));
-                
+                api.print(&format!(
+                    "✅ Project '{}' created successfully at {}",
+                    project_name,
+                    resolved_path.display()
+                ));
+
                 // Set the project_path runtime param so compile_scripts can use it
                 let path_str = resolved_path.to_string_lossy().to_string();
                 api.project().set_runtime_param("project_path", &path_str);
-                
+
                 true
             }
             Err(e) => {
@@ -1539,7 +1582,6 @@ impl EditorApi {
             }
         }
     }
-
 }
 
 #[derive(Default)]
@@ -1641,7 +1683,7 @@ impl<'a> Deref for ScriptApi<'a> {
         unsafe {
             let input_api = &(*api_ptr).engine.Input;
             input_api.set_parent_ptr_immut(api_ptr);
-            
+
             let texture_api = &(*api_ptr).engine.Texture;
             texture_api.set_api_ptr_immut(api_ptr);
         }
@@ -1659,11 +1701,11 @@ impl<'a> DerefMut for ScriptApi<'a> {
             // Set the pointer in InputApi
             let input_api = &mut (*api_ptr).engine.Input;
             input_api.set_parent_ptr(api_ptr);
-            
+
             // Set the pointer in TextureApi
             let texture_api = &mut (*api_ptr).engine.Texture;
             texture_api.set_api_ptr(api_ptr);
-            
+
             // Set the pointer in EditorApi
             let editor_api = &mut (*api_ptr).engine.Editor;
             editor_api.set_api_ptr(api_ptr);
@@ -1718,7 +1760,6 @@ impl<'a> ScriptApi<'a> {
             *ctx.borrow_mut() = None;
         });
     }
-
 
     //-------------------------------------------------
     // Core access
@@ -1777,13 +1818,13 @@ impl<'a> ScriptApi<'a> {
     pub fn compile_and_run(&mut self) -> Result<(), String> {
         // First compile the scripts
         self.compile_scripts()?;
-        
+
         // Get the project path
         let project_path_str = self
             .project
             .get_runtime_param("project_path")
             .ok_or("Missing runtime param: project_path")?;
-        
+
         // Ensure the path is absolute - resolve it if needed
         let absolute_path = if Path::new(project_path_str).is_absolute() {
             PathBuf::from(project_path_str)
@@ -1799,12 +1840,15 @@ impl<'a> ScriptApi<'a> {
                 }
             }
         };
-        
+
         // Validate that the path exists and contains project.toml
         if !absolute_path.exists() {
-            return Err(format!("Project path does not exist: {}", absolute_path.display()));
+            return Err(format!(
+                "Project path does not exist: {}",
+                absolute_path.display()
+            ));
         }
-        
+
         let project_toml = absolute_path.join("project.toml");
         if !project_toml.exists() {
             return Err(format!(
@@ -1813,34 +1857,61 @@ impl<'a> ScriptApi<'a> {
                 absolute_path.display()
             ));
         }
-        
-        eprintln!("[compile_and_run] Project path from runtime param: {}", project_path_str);
-        eprintln!("[compile_and_run] Absolute path to use: {}", absolute_path.display());
-        eprintln!("[compile_and_run] Verified project.toml exists at: {}", project_toml.display());
-        
+
+        eprintln!(
+            "[compile_and_run] Project path from runtime param: {}",
+            project_path_str
+        );
+        eprintln!(
+            "[compile_and_run] Absolute path to use: {}",
+            absolute_path.display()
+        );
+        eprintln!(
+            "[compile_and_run] Verified project.toml exists at: {}",
+            project_toml.display()
+        );
+
         // Spawn a separate process - event loops can't be recreated in the same process
         // In dev mode, use cargo run -p perro_core
         // In release mode, use the current executable
         let absolute_path_str = absolute_path.to_string_lossy().to_string();
-        
+
         let mut cmd = if cfg!(debug_assertions) {
             // Dev mode: use cargo run -p perro_core -- --path PATH --run
-            eprintln!("[compile_and_run] Dev mode: Using cargo run -p perro_core -- --path {} --run", absolute_path_str);
+            eprintln!(
+                "[compile_and_run] Dev mode: Using cargo run -p perro_core -- --path {} --run",
+                absolute_path_str
+            );
             let mut cargo_cmd = process::Command::new("cargo");
-            cargo_cmd.args(&["run", "-p", "perro_core", "--", "--path", &absolute_path_str, "--run"]);
-            cargo_cmd.current_dir(env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?);
+            cargo_cmd.args(&[
+                "run",
+                "-p",
+                "perro_core",
+                "--",
+                "--path",
+                &absolute_path_str,
+                "--run",
+            ]);
+            cargo_cmd.current_dir(
+                env::current_dir()
+                    .map_err(|e| format!("Failed to get current directory: {}", e))?,
+            );
             cargo_cmd
         } else {
             // Release mode: use current executable
             let exe_path = env::current_exe()
                 .map_err(|e| format!("Failed to get current executable path: {}", e))?;
-            eprintln!("[compile_and_run] Release mode: Spawning separate process: {} --path {} --run", exe_path.display(), absolute_path_str);
+            eprintln!(
+                "[compile_and_run] Release mode: Spawning separate process: {} --path {} --run",
+                exe_path.display(),
+                absolute_path_str
+            );
             let mut exe_cmd = process::Command::new(exe_path);
             exe_cmd.args(&["--path", &absolute_path_str, "--run"]);
             exe_cmd.current_dir(&absolute_path);
             exe_cmd
         };
-        
+
         // Platform-specific: Make the process run completely independently
         #[cfg(target_os = "windows")]
         {
@@ -1865,7 +1936,7 @@ impl<'a> ScriptApi<'a> {
                 cmd.stderr(process::Stdio::null());
             }
         }
-        
+
         #[cfg(not(target_os = "windows"))]
         {
             // On Unix-like systems, redirect to /dev/null to hide output
@@ -1878,30 +1949,39 @@ impl<'a> ScriptApi<'a> {
                 cmd.stderr(process::Stdio::null());
             }
         }
-        
+
         // Spawn the process (it will run completely independently)
-        let child = cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| format!("Failed to spawn dev runtime process: {}", e))?;
-        
+
         // Get the process ID and store it as a runtime parameter
         let process_id = child.id();
-        self.project.set_runtime_param("runtime_process_id", &process_id.to_string());
-        self.project.set_runtime_param("runtime_process_running", "true");
-        
+        self.project
+            .set_runtime_param("runtime_process_id", &process_id.to_string());
+        self.project
+            .set_runtime_param("runtime_process_running", "true");
+
         // Don't keep the child handle - fully detach the process
         // The OS will handle cleanup when the process exits
         // We don't need to wait for it or track it - the manager script will check process status periodically
         // This ensures the process is completely independent and the OS scheduler can balance them
         drop(child);
-        
+
         // The manager script will check process status periodically using the process ID
-        
+
         #[cfg(target_os = "windows")]
-        eprintln!("[compile_and_run] Spawned runtime process (PID: {}) as detached process", process_id);
-        
+        eprintln!(
+            "[compile_and_run] Spawned runtime process (PID: {}) as detached process",
+            process_id
+        );
+
         #[cfg(not(target_os = "windows"))]
-        eprintln!("[compile_and_run] Spawned runtime process (PID: {}) as independent process", process_id);
-        
+        eprintln!(
+            "[compile_and_run] Spawned runtime process (PID: {}) as independent process",
+            process_id
+        );
+
         Ok(())
     }
     fn run_compile(&mut self, profile: BuildProfile, target: CompileTarget) -> Result<(), String> {
@@ -1910,7 +1990,8 @@ impl<'a> ScriptApi<'a> {
             .get_runtime_param("project_path")
             .ok_or("Missing runtime param: project_path")?;
         let project_path = Path::new(project_path_str);
-        transpile(project_path, false, false, false).map_err(|e| format!("Transpile failed: {}", e))?;
+        transpile(project_path, false, false, false)
+            .map_err(|e| format!("Transpile failed: {}", e))?;
         let compiler = Compiler::new(project_path, target, false);
         compiler
             .compile(profile)
@@ -1937,7 +2018,7 @@ impl<'a> ScriptApi<'a> {
     // Lifecycle / Updates
     //-------------------------------------------------
     /// Call the init() method on a script
-    /// 
+    ///
     /// SAFETY: This is safe because:
     /// - Called synchronously by the engine during scene initialization
     /// - Only one script's init() is called at a time
@@ -1965,7 +2046,7 @@ impl<'a> ScriptApi<'a> {
     }
 
     /// Call the update() method on a script
-    /// 
+    ///
     /// SAFETY: This is safe because:
     /// - Called synchronously by the engine during the update loop
     /// - Scripts are called one at a time in a controlled sequence
@@ -2013,7 +2094,6 @@ impl<'a> ScriptApi<'a> {
         Self::clear_context();
     }
 
-
     pub fn call_node_internal_fixed_update(&mut self, node_id: NodeID) {
         // We need to get the node and call the method, but we can't hold a RefMut
         // while also borrowing self mutably. So we check if update is needed first,
@@ -2022,13 +2102,12 @@ impl<'a> ScriptApi<'a> {
             if self.scene.get_scene_node_ref(node_id).is_none() {
                 return;
             }
-            self.scene.get_scene_node_ref(node_id)
-                .map(|node_ref| {
-                    node_ref.needs_internal_fixed_update()
-                })
+            self.scene
+                .get_scene_node_ref(node_id)
+                .map(|node_ref| node_ref.needs_internal_fixed_update())
                 .unwrap_or(false)
         };
-        
+
         if needs_update {
             // We need to split the borrows: get a RefMut from the scene while also
             // having &mut self. Since RefMut borrows from the RefCell inside the scene's
@@ -2053,13 +2132,12 @@ impl<'a> ScriptApi<'a> {
         // while also borrowing self mutably. So we check if update is needed first,
         // then drop that borrow before calling the method.
         let needs_update = {
-            self.scene.get_scene_node_ref(node_id)
-                .map(|node_ref| {
-                    node_ref.needs_internal_render_update()
-                })
+            self.scene
+                .get_scene_node_ref(node_id)
+                .map(|node_ref| node_ref.needs_internal_render_update())
                 .unwrap_or(false)
         };
-        
+
         if needs_update {
             // We need to split the borrows: get a RefMut from the scene while also
             // having &mut self. Since RefMut borrows from the RefCell inside the scene's
@@ -2085,15 +2163,15 @@ impl<'a> ScriptApi<'a> {
     }
 
     /// Call a function on a script by ID
-    /// 
+    ///
     /// Scripts are stored as Rc<UnsafeCell<Box<dyn ScriptObject>>> in the HashMap, so they're
     /// always accessible. We use UnsafeCell::get() to get a mutable reference when calling functions.
-    /// 
+    ///
     /// This works for:
     /// - Calling functions on the same script (nested calls)
     /// - Calling functions on different scripts (e.g., child nodes, parent nodes, any script)
     /// - All calls are synchronous and safe (same execution context)
-    /// 
+    ///
     /// SAFETY: Calling functions on different scripts is just as safe as calling on the same script
     /// because all access goes through the API, execution is synchronous, and the API controls
     /// all state mutations. There's no memory safety concern - each script is independently
@@ -2102,23 +2180,22 @@ impl<'a> ScriptApi<'a> {
         // Set ScriptApi context (for JoyCon API thread-local access)
         // This is idempotent - safe to call multiple times
         self.set_context();
-        
+
         // Check if this is a nested call to the same script
         let current_id_opt = CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow());
-        
+
         // Store previous script ID before setting new one
         let previous_script_id = current_id_opt;
-        
+
         // Set current script ID for nested call detection
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
-        
+
         // Scripts are now always in memory as Rc<UnsafeCell<Box<dyn ScriptObject>>>, so we can access them directly
         if let Some(script_rc) = self.scene.get_script(id) {
-            
             // With UnsafeCell, we can always get a mutable reference, even for nested calls
-            // 
+            //
             // SAFETY: This is safe because of our design invariants:
-            // 
+            //
             // 1. **Controlled Access**: All script access is controlled by the API. Scripts are
             //    never accessed directly by user code - the transpiler ensures all script code
             //    goes through the API methods (call_function_id, get_script_var_id, set_script_var_id).
@@ -2168,12 +2245,12 @@ impl<'a> ScriptApi<'a> {
                 script_mut.call_function(func, self, params);
             }
         }
-        
+
         // Restore previous script ID (if any)
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = previous_script_id);
         Self::clear_context();
     }
-    
+
     /// Alias for call_function_id (for backwards compatibility)
     /// The "fast" version was meant to skip context setup, but we always do it now
     #[cfg_attr(not(debug_assertions), inline)]
@@ -2187,7 +2264,7 @@ impl<'a> ScriptApi<'a> {
     }
 
     // ========== INSTANT SIGNALS (zero-allocation, immediate) ==========
-    
+
     /// Emit signal instantly - handlers called immediately
     /// Params passed as compile-time slice, zero allocation
     #[cfg_attr(not(debug_assertions), inline)]
@@ -2219,7 +2296,7 @@ impl<'a> ScriptApi<'a> {
 
         // OPTIMIZED: Set context once for all calls instead of per-call
         self.set_context();
-        
+
         // OPTIMIZED: Use fast-path calls that skip redundant context operations
         // IMPORTANT: Check if node still exists before EACH handler call
         // (previous handler might have deleted the node)
@@ -2228,7 +2305,7 @@ impl<'a> ScriptApi<'a> {
             if self.scene.get_scene_node_ref(*target_id).is_none() {
                 continue; // Target node was deleted, skip this handler
             }
-            
+
             // If params contain a node ID (first param is usually the collision node), check if it still exists
             // NOTE: We only skip if the UUID exists as a scene node AND was deleted. If it doesn't exist
             // as a scene node at all, it might be a different type of UUID (like file tree item_id), so proceed.
@@ -2253,18 +2330,18 @@ impl<'a> ScriptApi<'a> {
             } else {
                 true // No params, proceed
             };
-            
+
             if should_call {
                 self.call_function_id_fast(*target_id, *fn_id, params);
             }
         }
-        
+
         // Clear context once after all calls
         Self::clear_context();
     }
 
     // ========== DEFERRED SIGNALS (queued, processed at frame end) ==========
-    
+
     /// Emit signal deferred - queued and processed at end of frame
     /// Use when emitting during iteration or need frame-end processing
     #[cfg_attr(not(debug_assertions), inline)]
@@ -2319,7 +2396,10 @@ impl<'a> ScriptApi<'a> {
         {
             let project_ref = self.project as *mut _;
             let project_mut = unsafe { &mut *project_ref };
-            let gfx_ref = self.gfx.as_mut().expect("Graphics required for instantiate_script");
+            let gfx_ref = self
+                .gfx
+                .as_mut()
+                .expect("Graphics required for instantiate_script");
             let mut sub_api = ScriptApi::new(0.0, self.scene, project_mut, gfx_ref);
             boxed.init(&mut sub_api);
         }
@@ -2349,7 +2429,7 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     // Scene / Node Access
     //-------------------------------------------------
-    
+
     /// Read a value from a node using a closure
     /// The closure receives &T where T is the node type and returns any Clone value (including Copy types)
     /// For Copy types like primitives, no actual cloning happens at runtime
@@ -2357,67 +2437,80 @@ impl<'a> ScriptApi<'a> {
     /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let parent = api.read_node::<CollisionShape2D, _>(c_id, |c| c.parent);`
     /// Example: `let name = api.read_node::<Sprite2D, _>(self.id, |s| s.name.clone());`
-    /// 
+    ///
     /// Uses optimized compile-time match dispatch instead of Any downcast for better performance
     #[cfg_attr(not(debug_assertions), inline(always))]
-    pub fn read_node<T: crate::nodes::node_registry::NodeTypeDispatch, R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&T) -> R) -> R {
+    pub fn read_node<T: crate::nodes::node_registry::NodeTypeDispatch, R: Clone + Default>(
+        &self,
+        node_id: NodeID,
+        f: impl FnOnce(&T) -> R,
+    ) -> R {
         // Check if node_id is nil (from get_parent() when node was removed)
         if node_id.is_nil() {
             return R::default();
         }
-        
+
         // Check if node exists (might have been removed during signal handling)
         if let Some(node) = self.scene.get_scene_node_ref(node_id) {
             if let Some(result) = node.with_typed_ref(f) {
                 return result;
             }
         }
-        
+
         // Node doesn't exist or wrong type - return default value
         // This prevents panics when nodes are removed during signal handling
         R::default()
     }
-    
+
     /// Read transform-related properties from any Node2D-based node
     /// This works with Node2D, Sprite2D, Area2D, CollisionShape2D, etc.
     /// Safer than read_node::<Node2D> when you don't know the exact type
     /// Returns a default value if the node doesn't exist (prevents panics when nodes are removed)
     /// Example: `let pos = api.read_node2d_transform(parent_id, |n2d| n2d.transform.position);`
     #[cfg_attr(not(debug_assertions), inline(always))]
-    pub fn read_node2d_transform<R: Clone + Default>(&self, node_id: NodeID, f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R) -> R {
+    pub fn read_node2d_transform<R: Clone + Default>(
+        &self,
+        node_id: NodeID,
+        f: impl FnOnce(&crate::nodes::_2d::node_2d::Node2D) -> R,
+    ) -> R {
         // Check if node_id is nil (from get_parent() when node was removed)
         if node_id.is_nil() {
             return R::default();
         }
-        
+
         // Check if node exists (might have been removed during signal handling)
         if let Some(node) = self.scene.get_scene_node_ref(node_id) {
             if let Some(node2d) = node.as_node2d() {
                 return f(node2d);
             }
         }
-        
+
         // Node doesn't exist or is not Node2D-based - return default value
         // This prevents panics when nodes are removed during signal handling
         R::default()
     }
-    
+
     /// Mutate a node directly with a closure - no clones needed!
     /// The closure receives &mut T where T is the node type
     /// Returns true if the node was found and successfully mutated, false otherwise
     /// Example: `api.mutate_node::<Node2D>(node_id, |n| n.transform.position.x = 5.0);`
-    /// 
+    ///
     /// Uses optimized compile-time match dispatch instead of Any downcast for better performance
     #[cfg_attr(not(debug_assertions), inline(always))]
-    pub fn mutate_node<T: crate::nodes::node_registry::NodeTypeDispatch, F>(&mut self, id: NodeID, f: F)
-    where
+    pub fn mutate_node<T: crate::nodes::node_registry::NodeTypeDispatch, F>(
+        &mut self,
+        id: NodeID,
+        f: F,
+    ) where
         F: FnOnce(&mut T),
     {
         // Get mutable access to the node
         let is_node2d = {
-            let node = self.scene.get_scene_node_mut(id)
+            let node = self
+                .scene
+                .get_scene_node_mut(id)
                 .unwrap_or_else(|| panic!("Node {} not found", id));
-            
+
             // Use optimized match dispatch instead of Any downcast
             // The closure is called directly within with_typed_mut, which handles the type extraction
             let result = node.with_typed_mut(f);
@@ -2426,24 +2519,29 @@ impl<'a> ScriptApi<'a> {
                 let actual_type = node.get_type();
                 let node_name = node.get_name();
                 let expected_type_name = std::any::type_name::<T>();
-                eprintln!("[ERROR] mutate_node: Node {} ({}, {:?}) is not of type {} (expected: {})", 
-                    id, node_name, actual_type, expected_type_name, expected_type_name);
-                panic!("Node {} is not of type {} (actual type: {:?})", id, expected_type_name, actual_type);
+                eprintln!(
+                    "[ERROR] mutate_node: Node {} ({}, {:?}) is not of type {} (expected: {})",
+                    id, node_name, actual_type, expected_type_name, expected_type_name
+                );
+                panic!(
+                    "Node {} is not of type {} (actual type: {:?})",
+                    id, expected_type_name, actual_type
+                );
             }
-            
+
             // Check if Node2D before releasing borrow (avoid redundant lookup)
             let is_node2d = node.as_node2d().is_some();
-            
+
             // Mark transform dirty if Node2D
             node.mark_transform_dirty_if_node2d();
-            
+
             is_node2d
         }; // node borrow released here
-        
-        // Always call mark_needs_rerender - it will check HashSet.contains() (O(1)) 
+
+        // Always call mark_needs_rerender - it will check HashSet.contains() (O(1))
         // and only add if not already in the set
         self.scene.mark_needs_rerender(id);
-        
+
         // If this is a Node2D, mark transform dirty recursively (including children)
         // This ensures children's global transforms are recalculated when parent moves
         // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
@@ -2451,7 +2549,7 @@ impl<'a> ScriptApi<'a> {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
-    
+
     /// Mutate a SceneNode directly using BaseNode trait methods
     /// This works with any node type without needing to know the specific type
     /// Only allows access to base Node fields (name, id, parent, children, etc.)
@@ -2463,43 +2561,51 @@ impl<'a> ScriptApi<'a> {
     {
         // Get mutable access to the node
         let is_node2d = {
-            let node = self.scene.get_scene_node_mut(id)
+            let node = self
+                .scene
+                .get_scene_node_mut(id)
                 .unwrap_or_else(|| panic!("Node {} not found", id));
-            
+
             f(node); // mutate in place using BaseNode methods
-            
+
             // Check if Node2D before releasing borrow (avoid redundant lookup)
             let is_node2d = node.as_node2d().is_some();
-            
+
             // Mark transform dirty if Node2D
             node.mark_transform_dirty_if_node2d();
-            
+
             is_node2d
         }; // node borrow released here
-        
+
         // Always call mark_needs_rerender - it will check HashSet.contains() (O(1))
         // and only add if not already in the set
         self.scene.mark_needs_rerender(id);
-        
+
         // If this is a Node2D, mark transform dirty recursively (including children)
         // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
         if is_node2d {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
-    
+
     /// Read a value from a SceneNode using BaseNode trait methods
     /// This works with any node type without needing to know the specific type
     /// Only allows access to base Node fields (name, id, parent, children, etc.)
     /// Example: `let name = api.read_scene_node(node_id, |n| n.get_name().to_string());`
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn read_scene_node<R: Clone>(&self, node_id: NodeID, f: impl FnOnce(&crate::nodes::node_registry::SceneNode) -> R) -> R {
-        let node = self.scene.get_scene_node_ref(node_id)
+    pub fn read_scene_node<R: Clone>(
+        &self,
+        node_id: NodeID,
+        f: impl FnOnce(&crate::nodes::node_registry::SceneNode) -> R,
+    ) -> R {
+        let node = self
+            .scene
+            .get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
-        
+
         f(node)
     }
-    
+
     /// Create a new node of the specified type and add it to the scene.
     /// The arena assigns the next open slot+generation as the node ID (no monotonic counter).
     /// Returns the ID of the newly created node.
@@ -2511,33 +2617,40 @@ impl<'a> ScriptApi<'a> {
     {
         let node: T = Default::default();
         let scene_node = node.to_scene_node();
-        let gfx_ref = self.gfx.as_mut().expect("Graphics required for add_node_to_scene");
-        self.scene.add_node_to_scene(scene_node, gfx_ref)
+        let gfx_ref = self
+            .gfx
+            .as_mut()
+            .expect("Graphics required for add_node_to_scene");
+        self.scene
+            .add_node_to_scene(scene_node, gfx_ref)
             .unwrap_or_else(|e| panic!("Failed to add node to scene: {}", e))
     }
-    
+
     /// Get a UINode by node ID and execute a closure with mutable access
     /// This allows you to modify UI elements dynamically
     /// Example: `api.with_ui_node(ui_node_id, |ui| { ui.add_element(...); });`
-    /// 
+    ///
     /// Uses optimized compile-time match dispatch instead of Any downcast for better performance
     #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn with_ui_node<F, R>(&mut self, node_id: NodeID, f: F) -> R
     where
         F: FnOnce(&mut crate::nodes::ui::ui_node::UINode) -> R,
     {
-        let node = self.scene.get_scene_node_mut(node_id)
+        let node = self
+            .scene
+            .get_scene_node_mut(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
-        
-        let result = node.with_typed_mut(f)
+
+        let result = node
+            .with_typed_mut(f)
             .unwrap_or_else(|| panic!("Node {} is not a UINode", node_id));
-        
+
         // Mark the UI node as needing rerender after modification
         self.scene.mark_needs_rerender(node_id);
-        
+
         result
     }
-    
+
     /// Add a UI element to a UINode
     /// The element will be added to the elements map and marked for rerender
     /// If parent_element_id is provided and not nil, the element will be set as a child of that parent element
@@ -2552,31 +2665,31 @@ impl<'a> ScriptApi<'a> {
     ) -> Option<crate::ids::UIElementID> {
         self.with_ui_node(ui_node_id, |ui| {
             use indexmap::IndexMap;
-            
+
             // Get or create elements map
             let elements = ui.elements.get_or_insert_with(|| IndexMap::new());
-            
+
             // Get or create root_ids
             let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());
-            
+
             let element_id = element.get_id();
-            
+
             // Set the element's name
             element.set_name(element_name);
-            
+
             // Set parent if provided
             if let Some(parent_id) = parent_element_id {
                 if !parent_id.is_nil() {
                     // Set the element's parent
                     element.set_parent(Some(parent_id));
-                    
+
                     // Add to parent's children list
                     if let Some(parent_element) = elements.get_mut(&parent_id) {
                         let mut children = parent_element.get_children().to_vec();
                         children.push(element_id);
                         parent_element.set_children(children);
                     }
-                    
+
                     elements.insert(element_id, element);
                 } else {
                     // No parent, add as root
@@ -2588,16 +2701,22 @@ impl<'a> ScriptApi<'a> {
                 root_ids.push(element_id);
                 elements.insert(element_id, element);
             }
-            
+
             // Mark element as needing rerender and layout
             ui.mark_element_needs_layout(element_id);
-            eprintln!("🔧 [add_ui_element] Marked element {} ({}) for layout/rerender", element_name, element_id);
-            eprintln!("🔧 [add_ui_element] needs_rerender now has {} elements", ui.needs_rerender.len());
-            
+            eprintln!(
+                "🔧 [add_ui_element] Marked element {} ({}) for layout/rerender",
+                element_name, element_id
+            );
+            eprintln!(
+                "🔧 [add_ui_element] needs_rerender now has {} elements",
+                ui.needs_rerender.len()
+            );
+
             Some(element_id)
         })
     }
-    
+
     /// Append FUR elements to a UINode dynamically
     /// Parses the FUR string and adds the elements as children of the specified parent
     /// Returns true if successful, false otherwise
@@ -2608,9 +2727,9 @@ impl<'a> ScriptApi<'a> {
         fur_string: &str,
         parent_element_id: Option<crate::ids::UIElementID>,
     ) -> bool {
-        use crate::nodes::ui::parser::FurParser;
         use crate::nodes::ui::apply_fur::append_fur_elements_to_ui;
-        
+        use crate::nodes::ui::parser::FurParser;
+
         // Parse the FUR string
         let mut parser = match FurParser::new(fur_string) {
             Ok(p) => p,
@@ -2619,7 +2738,7 @@ impl<'a> ScriptApi<'a> {
                 return false;
             }
         };
-        
+
         let fur_ast = match parser.parse() {
             Ok(ast) => ast,
             Err(e) => {
@@ -2627,7 +2746,7 @@ impl<'a> ScriptApi<'a> {
                 return false;
             }
         };
-        
+
         // Extract elements from AST
         let fur_elements: Vec<crate::fur_ast::FurElement> = fur_ast
             .into_iter()
@@ -2636,66 +2755,75 @@ impl<'a> ScriptApi<'a> {
                 _ => None,
             })
             .collect();
-        
+
         if fur_elements.is_empty() {
             eprintln!("⚠️ No FUR elements found in string");
             return false;
         }
-        
+
         // Append to UI node using mutate_node for proper rerender marking
         self.mutate_node::<crate::nodes::ui::ui_node::UINode, _>(ui_node_id, |ui| {
             append_fur_elements_to_ui(ui, &fur_elements, parent_element_id);
         });
-        
+
         true
     }
-    
+
     /// Reparent a child node to a new parent
     /// Handles removing from old parent if it exists
     /// Example: `api.reparent(parent_id, child_id);`
     pub fn reparent(&mut self, new_parent_id: NodeID, child_id: NodeID) {
-
         if self.scene.get_scene_node_ref(child_id).is_none() {
-            eprintln!("⚠️ reparent: Child node {} does not exist, cannot reparent to {}", child_id, new_parent_id);
+            eprintln!(
+                "⚠️ reparent: Child node {} does not exist, cannot reparent to {}",
+                child_id, new_parent_id
+            );
             return;
         }
-        
+
         // Check if new parent exists
         if self.scene.get_scene_node_ref(new_parent_id).is_none() {
-            eprintln!("⚠️ reparent: Parent node {} does not exist, cannot reparent child {}", new_parent_id, child_id);
+            eprintln!(
+                "⚠️ reparent: Parent node {} does not exist, cannot reparent child {}",
+                new_parent_id, child_id
+            );
             return;
         }
-        
+
         let old_parent_id_opt = {
-            let child_node = self.scene.get_scene_node_ref(child_id)
+            let child_node = self
+                .scene
+                .get_scene_node_ref(child_id)
                 .expect("Child node should exist (checked above)");
             child_node.get_parent().map(|p| p.id)
         };
-        
+
         // Remove from old parent if it has one (this also sets child's parent to None)
         if let Some(old_parent_id) = old_parent_id_opt {
             self.remove_child(old_parent_id, child_id);
             // Update Node2D children cache for the old parent
-            self.scene.update_node2d_children_cache_on_remove(old_parent_id, child_id);
+            self.scene
+                .update_node2d_children_cache_on_remove(old_parent_id, child_id);
         }
-        
+
         // Create ParentType for new parent (need to do this before mutable borrow)
         let parent_type_opt = self.create_parent_type(new_parent_id);
-        
+
         // Set the child's parent to the new parent (with type info)
         if let Some(child_node) = self.scene.get_scene_node_mut(child_id) {
             if let Some(parent_type) = parent_type_opt {
                 child_node.set_parent(Some(parent_type));
             }
         }
-        
+
         // Add child to the new parent's children list
         if let Some(parent_node) = self.scene.get_scene_node_mut(new_parent_id) {
             parent_node.add_child(child_id);
         }
-        
+
         // Update Node2D children cache for the parent (if it's Node2D-based)
-        self.scene.update_node2d_children_cache_on_add(new_parent_id, child_id);
+        self.scene
+            .update_node2d_children_cache_on_add(new_parent_id, child_id);
     }
 
     /// Get a child node by name, searching through the parent's children
@@ -2726,28 +2854,33 @@ impl<'a> ScriptApi<'a> {
     /// NOTE: Callers should check if the node exists before calling this
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_parent(&mut self, node_id: NodeID) -> NodeID {
-        let node = self.scene.get_scene_node_ref(node_id)
+        let node = self
+            .scene
+            .get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
-        
-        let parent_id = node.get_parent()
+
+        let parent_id = node
+            .get_parent()
             .map(|p| p.id)
             .unwrap_or_else(|| panic!("Node {} has no parent", node_id));
-        
+
         parent_id
     }
-    
+
     /// Returns the parent's NodeType if the node has a parent
     /// Panics if the node is not found or has no parent
     /// NOTE: Callers should check if the node exists before calling this
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_parent_type(&mut self, node_id: NodeID) -> crate::node_registry::NodeType {
-        let node = self.scene.get_scene_node_ref(node_id)
+        let node = self
+            .scene
+            .get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         node.get_parent()
             .map(|p| p.node_type)
             .unwrap_or_else(|| panic!("Node {} has no parent", node_id))
     }
-    
+
     /// Returns the NodeType of the given node
     /// Panics if the node is not found
     /// NOTE: Callers should check if the node exists before calling this
@@ -2755,31 +2888,61 @@ impl<'a> ScriptApi<'a> {
     /// Example: `match api.get_type(node_id) { NodeType::Sprite2D => ..., _ => ... }`
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn get_type(&mut self, node_id: NodeID) -> crate::node_registry::NodeType {
-        let node = self.scene.get_scene_node_ref(node_id)
+        let node = self
+            .scene
+            .get_scene_node_ref(node_id)
             .unwrap_or_else(|| panic!("Node {} not found", node_id));
         // Use the node's get_type() method which now returns NodeType directly
         node.get_type()
     }
-    
+
     /// Helper to create a ParentType from a node ID by looking up its type in the scene
     fn create_parent_type(&self, parent_id: NodeID) -> Option<crate::nodes::node::ParentType> {
         if let Some(parent_node) = self.scene.get_scene_node_ref(parent_id) {
             // Get the node type - we need to match on the SceneNode enum to get the actual type
             let node_type = match parent_node {
-                crate::nodes::node_registry::SceneNode::Node(_) => crate::node_registry::NodeType::Node,
-                crate::nodes::node_registry::SceneNode::Node2D(_) => crate::node_registry::NodeType::Node2D,
-                crate::nodes::node_registry::SceneNode::Sprite2D(_) => crate::node_registry::NodeType::Sprite2D,
-                crate::nodes::node_registry::SceneNode::Area2D(_) => crate::node_registry::NodeType::Area2D,
-                crate::nodes::node_registry::SceneNode::CollisionShape2D(_) => crate::node_registry::NodeType::CollisionShape2D,
-                crate::nodes::node_registry::SceneNode::ShapeInstance2D(_) => crate::node_registry::NodeType::ShapeInstance2D,
-                crate::nodes::node_registry::SceneNode::Camera2D(_) => crate::node_registry::NodeType::Camera2D,
-                crate::nodes::node_registry::SceneNode::UINode(_) => crate::node_registry::NodeType::UINode,
-                crate::nodes::node_registry::SceneNode::Node3D(_) => crate::node_registry::NodeType::Node3D,
-                crate::nodes::node_registry::SceneNode::MeshInstance3D(_) => crate::node_registry::NodeType::MeshInstance3D,
-                crate::nodes::node_registry::SceneNode::Camera3D(_) => crate::node_registry::NodeType::Camera3D,
-                crate::nodes::node_registry::SceneNode::DirectionalLight3D(_) => crate::node_registry::NodeType::DirectionalLight3D,
-                crate::nodes::node_registry::SceneNode::OmniLight3D(_) => crate::node_registry::NodeType::OmniLight3D,
-                crate::nodes::node_registry::SceneNode::SpotLight3D(_) => crate::node_registry::NodeType::SpotLight3D,
+                crate::nodes::node_registry::SceneNode::Node(_) => {
+                    crate::node_registry::NodeType::Node
+                }
+                crate::nodes::node_registry::SceneNode::Node2D(_) => {
+                    crate::node_registry::NodeType::Node2D
+                }
+                crate::nodes::node_registry::SceneNode::Sprite2D(_) => {
+                    crate::node_registry::NodeType::Sprite2D
+                }
+                crate::nodes::node_registry::SceneNode::Area2D(_) => {
+                    crate::node_registry::NodeType::Area2D
+                }
+                crate::nodes::node_registry::SceneNode::CollisionShape2D(_) => {
+                    crate::node_registry::NodeType::CollisionShape2D
+                }
+                crate::nodes::node_registry::SceneNode::ShapeInstance2D(_) => {
+                    crate::node_registry::NodeType::ShapeInstance2D
+                }
+                crate::nodes::node_registry::SceneNode::Camera2D(_) => {
+                    crate::node_registry::NodeType::Camera2D
+                }
+                crate::nodes::node_registry::SceneNode::UINode(_) => {
+                    crate::node_registry::NodeType::UINode
+                }
+                crate::nodes::node_registry::SceneNode::Node3D(_) => {
+                    crate::node_registry::NodeType::Node3D
+                }
+                crate::nodes::node_registry::SceneNode::MeshInstance3D(_) => {
+                    crate::node_registry::NodeType::MeshInstance3D
+                }
+                crate::nodes::node_registry::SceneNode::Camera3D(_) => {
+                    crate::node_registry::NodeType::Camera3D
+                }
+                crate::nodes::node_registry::SceneNode::DirectionalLight3D(_) => {
+                    crate::node_registry::NodeType::DirectionalLight3D
+                }
+                crate::nodes::node_registry::SceneNode::OmniLight3D(_) => {
+                    crate::node_registry::NodeType::OmniLight3D
+                }
+                crate::nodes::node_registry::SceneNode::SpotLight3D(_) => {
+                    crate::node_registry::NodeType::SpotLight3D
+                }
             };
             Some(crate::nodes::node::ParentType::new(parent_id, node_type))
         } else {
@@ -2796,13 +2959,13 @@ impl<'a> ScriptApi<'a> {
         if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
             parent.remove_child(&child_id);
         }
-        
+
         // Set child's parent to None
         if let Some(child) = self.scene.get_scene_node_mut(child_id) {
             child.set_parent(None);
         }
     }
-    
+
     /// Clear all children of a node, recursively deleting them and all their descendants
     /// This removes nodes from the hashmap, removes scripts, clears child lists, and updates caches
     pub fn clear_children(&mut self, parent_id: NodeID) {
@@ -2810,44 +2973,45 @@ impl<'a> ScriptApi<'a> {
         if self.scene.get_scene_node_ref(parent_id).is_none() {
             return;
         }
-        
+
         // Recursively collect all descendant IDs first (before any mutations)
         // We need to collect them in a bottom-up order (all descendants before their parents)
         // to ensure safe deletion order - this prevents stop_rendering_recursive from
         // trying to access children that have already been deleted
-        
+
         // Use a post-order traversal to collect nodes: children first, then parents
         // This naturally gives us the correct deletion order
         let mut all_descendant_ids = Vec::new();
         let mut visited = std::collections::HashSet::new();
-        
+
         // Stack-based post-order traversal
         // Each element is (node_id, children_processed)
         // Only collect children that actually exist in the scene
         let mut stack: Vec<(NodeID, bool)> = {
-            let children = self.scene.get_scene_node_ref(parent_id)
-                .map(|node| {
-                    node.get_children().iter().copied().collect::<Vec<NodeID>>()
-                })
+            let children = self
+                .scene
+                .get_scene_node_ref(parent_id)
+                .map(|node| node.get_children().iter().copied().collect::<Vec<NodeID>>())
                 .unwrap_or_default();
-            
-            children.iter()
+
+            children
+                .iter()
                 .copied()
                 .filter(|&id| self.scene.get_scene_node_ref(id).is_some())
                 .map(|id| (id, false))
                 .collect()
         };
-        
+
         while let Some((node_id, children_processed)) = stack.pop() {
             if visited.contains(&node_id) {
                 continue;
             }
-            
+
             // Check if node still exists (might have been deleted)
             if self.scene.get_scene_node_ref(node_id).is_none() {
                 continue;
             }
-            
+
             if children_processed {
                 // All children have been processed, add this node
                 all_descendant_ids.push(node_id);
@@ -2855,7 +3019,7 @@ impl<'a> ScriptApi<'a> {
             } else {
                 // Mark that we're processing this node's children
                 stack.push((node_id, true));
-                
+
                 // Add children to stack (they'll be processed first)
                 // Only process children if node still exists
                 if let Some(node) = self.scene.get_scene_node_ref(node_id) {
@@ -2863,7 +3027,7 @@ impl<'a> ScriptApi<'a> {
                         // Only add if child exists and hasn't been visited
                         let child_exists = self.scene.get_scene_node_ref(*child_id).is_some();
                         let not_visited = !visited.contains(child_id);
-                        
+
                         if not_visited && child_exists {
                             stack.push((*child_id, false));
                         }
@@ -2871,11 +3035,14 @@ impl<'a> ScriptApi<'a> {
                 }
             }
         }
-        
+
         // Delete all descendants - they're already in bottom-up order (children before parents)
         // remove_node already checks if node exists, so this is safe
-        let gfx_ref = self.gfx.as_mut().expect("Graphics required for clear_children");
-        
+        let gfx_ref = self
+            .gfx
+            .as_mut()
+            .expect("Graphics required for clear_children");
+
         for descendant_id in all_descendant_ids.iter() {
             // Double-check node still exists (might have been deleted as a child of another node)
             // This can happen if a node appears in multiple branches of the tree
@@ -2883,12 +3050,12 @@ impl<'a> ScriptApi<'a> {
                 self.scene.remove_node(*descendant_id, gfx_ref);
             }
         }
-        
+
         // Clear the parent's children list (should already be empty, but ensure it's clean)
         if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
             parent.clear_children();
         }
-        
+
         // Update Node2D children cache for the parent (now empty)
         self.scene.update_node2d_children_cache_on_clear(parent_id);
     }
@@ -2901,44 +3068,55 @@ impl<'a> ScriptApi<'a> {
         if self.scene.get_scene_node_ref(node_id).is_none() {
             return; // Node doesn't exist, nothing to do
         }
-        
+
         // First, recursively remove all children (this deletes all descendants)
         self.clear_children(node_id);
-        
+
         // Get the parent ID before we delete the node
         let parent_id_opt = {
             let node = self.scene.get_scene_node_ref(node_id);
             node.and_then(|n| n.get_parent().map(|p| p.id))
         };
-        
+
         // Remove from parent's children list if it has a parent
         if let Some(parent_id) = parent_id_opt {
             // Remove from parent's children list
             if let Some(parent) = self.scene.get_scene_node_mut(parent_id) {
                 parent.remove_child(&node_id);
             }
-            
+
             // Update Node2D children cache for the parent
-            self.scene.update_node2d_children_cache_on_remove(parent_id, node_id);
+            self.scene
+                .update_node2d_children_cache_on_remove(parent_id, node_id);
         }
-        
+
         // Now actually remove the node from the scene
-        let gfx_ref = self.gfx.as_mut().expect("Graphics required for remove_node");
+        let gfx_ref = self
+            .gfx
+            .as_mut()
+            .expect("Graphics required for remove_node");
         self.scene.remove_node(node_id, gfx_ref);
     }
 
     /// Get the global transform for a node (calculates lazily if dirty)
-    pub fn get_global_transform(&mut self, node_id: NodeID) -> Option<crate::structs2d::Transform2D> {
+    pub fn get_global_transform(
+        &mut self,
+        node_id: NodeID,
+    ) -> Option<crate::structs2d::Transform2D> {
         self.scene.get_global_transform(node_id)
     }
 
     /// Set the global transform for a node (marks it as dirty)
-    pub fn set_global_transform(&mut self, node_id: NodeID, transform: crate::structs2d::Transform2D) -> Option<()> {
+    pub fn set_global_transform(
+        &mut self,
+        node_id: NodeID,
+        transform: crate::structs2d::Transform2D,
+    ) -> Option<()> {
         self.scene.set_global_transform(node_id, transform)
     }
 
     /// Set a script variable by name
-    /// 
+    ///
     /// Self-calls are now supported - you can call this with `self.id` from within the same script.
     /// The script will use the stored script pointer to access variables directly.
     pub fn set_script_var(&mut self, node_id: NodeID, name: &str, val: Value) -> Option<()> {
@@ -2971,7 +3149,7 @@ impl<'a> ScriptApi<'a> {
     }
 
     /// Get a script variable by name
-    /// 
+    ///
     /// Self-calls are now supported - you can call this with `self.id` from within the same script.
     /// The script will use the stored script pointer to access variables directly.
     pub fn get_script_var(&mut self, id: NodeID, name: &str) -> Value {

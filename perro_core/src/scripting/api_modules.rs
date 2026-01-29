@@ -14,8 +14,6 @@ pub enum ApiModule {
     Math(MathApi),
 }
 
-
-
 #[derive(Debug, Clone)]
 pub enum JSONApi {
     Parse,
@@ -68,8 +66,7 @@ pub enum InputApi {
 
 #[derive(Debug, Clone)]
 pub enum MathApi {
-    Random, // api.Math.random() -> f32
+    Random,      // api.Math.random() -> f32
     RandomRange, // api.Math.random_range(min: f32, max: f32) -> f32
-    RandomInt, // api.Math.random_int(min: i32, max: i32) -> i32
+    RandomInt,   // api.Math.random_int(min: i32, max: i32) -> i32
 }
-

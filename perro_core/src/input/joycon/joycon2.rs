@@ -17,7 +17,7 @@ use btleplug::platform::{Adapter, Manager, Peripheral as PlatformPeripheral};
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::time::{Duration, timeout};
-use uuid::Uuid;  // Required for btleplug GATT characteristics
+use uuid::Uuid; // Required for btleplug GATT characteristics
 
 // Joy-Con 2 GATT characteristic UUIDs for input reports
 // Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md

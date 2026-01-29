@@ -37,12 +37,10 @@ impl TypeScriptNodeApiRegistry {
         self.register_node(
             NodeType::Node,
             None,
-            vec![
-                NodeApiField {
-                    script_name: "name",
-                    rust_field: NodeFieldRef::NodeName,
-                },
-            ],
+            vec![NodeApiField {
+                script_name: "name",
+                rust_field: NodeFieldRef::NodeName,
+            }],
             vec![
                 NodeApiMethod {
                     script_name: "getVar",
@@ -126,12 +124,7 @@ impl TypeScriptNodeApiRegistry {
         );
 
         // Area2D
-        self.register_node(
-            NodeType::Area2D,
-            Some(NodeType::Node2D),
-            vec![],
-            vec![],
-        );
+        self.register_node(NodeType::Area2D, Some(NodeType::Node2D), vec![], vec![]);
 
         // CollisionShape2D
         self.register_node(
@@ -180,12 +173,7 @@ impl TypeScriptNodeApiRegistry {
         );
 
         // UINode
-        self.register_node(
-            NodeType::UINode,
-            Some(NodeType::Node),
-            vec![],
-            vec![],
-        );
+        self.register_node(NodeType::UINode, Some(NodeType::Node), vec![], vec![]);
 
         // Node3D
         self.register_node(
@@ -217,12 +205,7 @@ impl TypeScriptNodeApiRegistry {
         );
 
         // Camera3D
-        self.register_node(
-            NodeType::Camera3D,
-            Some(NodeType::Node3D),
-            vec![],
-            vec![],
-        );
+        self.register_node(NodeType::Camera3D, Some(NodeType::Node3D), vec![], vec![]);
 
         // DirectionalLight3D
         self.register_node(
@@ -248,7 +231,6 @@ impl TypeScriptNodeApiRegistry {
             vec![],
         );
     }
-
 }
 
 /// Global node API registry for TypeScript

@@ -1,18 +1,10 @@
 // ui_list_tree_manager.rs - Manager for list tree operations with UID registry integration
 
-use crate::ids::UIElementID;
-use winit::keyboard::KeyCode;
-
-use crate::{
-    project::asset_io::{resolve_path, ResolvedPath, get_project_root, ProjectRoot},
-    structs2d::Vector2,
-    input::manager::InputManager,
-};
+use crate::{input::manager::InputManager, structs2d::Vector2};
 
 // NOTE: UIListTree and UIContextMenu types were removed
 // This file may need to be refactored or removed if these types are no longer used
 type UIListTree = (); // Placeholder
-type ListTreeItem = (); // Placeholder
 type UIContextMenu = (); // Placeholder
 
 /// List tree manager - handles high-level operations for list trees
@@ -63,14 +55,22 @@ impl ListTreeManager {
     /// Create a new file in the tree
     /// NOTE: UIListTree type was removed - this function is a stub
     #[allow(dead_code, unused_variables)]
-    pub fn create_file(_tree: &mut UIListTree, _parent_id: Option<u64>, _name: String) -> Result<u64, String> {
+    pub fn create_file(
+        _tree: &mut UIListTree,
+        _parent_id: Option<u64>,
+        _name: String,
+    ) -> Result<u64, String> {
         Err("UIListTree type was removed".to_string())
     }
 
     /// Create a new directory in the tree
     /// NOTE: UIListTree type was removed - this function is a stub
     #[allow(dead_code, unused_variables)]
-    pub fn create_directory(_tree: &mut UIListTree, _parent_id: Option<u64>, _name: String) -> Result<u64, String> {
+    pub fn create_directory(
+        _tree: &mut UIListTree,
+        _parent_id: Option<u64>,
+        _name: String,
+    ) -> Result<u64, String> {
         Err("UIListTree type was removed".to_string())
     }
 
@@ -83,50 +83,6 @@ impl ListTreeManager {
         _action: &str,
     ) -> Result<(), String> {
         Err("UIListTree and UIContextMenu types were removed".to_string())
-    }
-
-    /// Show a file/folder in the system file explorer
-    fn show_in_explorer(path: &str) -> Result<(), String> {
-        let fs_path = match resolve_path(path) {
-            ResolvedPath::Disk(p) => p,
-            ResolvedPath::Brk(_) => {
-                return Err("Cannot open BRK archive files in explorer".to_string());
-            }
-        };
-
-        #[cfg(target_os = "windows")]
-        {
-            use std::process::Command;
-            Command::new("explorer")
-                .arg("/select,")
-                .arg(&fs_path)
-                .spawn()
-                .map_err(|e| format!("Failed to open explorer: {}", e))?;
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            use std::process::Command;
-            Command::new("open")
-                .arg("-R")
-                .arg(&fs_path)
-                .spawn()
-                .map_err(|e| format!("Failed to open finder: {}", e))?;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            use std::process::Command;
-            // Try xdg-open with the parent directory
-            if let Some(parent) = fs_path.parent() {
-                Command::new("xdg-open")
-                    .arg(parent)
-                    .spawn()
-                    .map_err(|e| format!("Failed to open file manager: {}", e))?;
-            }
-        }
-
-        Ok(())
     }
 
     /// Refresh the tree from the file system, preserving UIDs

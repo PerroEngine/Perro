@@ -1,6 +1,6 @@
 // Source map for tracking line mappings from source scripts to generated Rust code
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Build a source map from a script and its generated code
 /// This version uses source spans from the AST when available, falling back to approximations
@@ -13,20 +13,21 @@ pub fn build_source_map_from_script(
 ) -> ScriptSourceMap {
     let mut builder = SourceMapBuilder::new(source_path.to_string(), identifier.to_string());
     let language = script.language.clone();
-    
+
     // Count lines in generated code
     let generated_lines: Vec<&str> = generated_code.lines().collect();
-    
+
     // Track identifier name mappings by recording all renamed variables and functions
     // Variables
     for var in &script.variables {
         let original_name = &var.name;
-        let generated_name = crate::scripting::codegen::rename_variable(original_name, var.typ.as_ref());
+        let generated_name =
+            crate::scripting::codegen::rename_variable(original_name, var.typ.as_ref());
         if generated_name != *original_name {
             builder.record_variable(original_name, &generated_name);
         }
     }
-    
+
     // Functions
     for func in &script.functions {
         let original_name = &func.name;
@@ -35,7 +36,7 @@ pub fn build_source_map_from_script(
             builder.record_function(original_name, &generated_name);
         }
     }
-    
+
     // Structs
     for struct_def in &script.structs {
         let original_name = &struct_def.name;
@@ -44,24 +45,27 @@ pub fn build_source_map_from_script(
             builder.record_variable(original_name, &generated_name);
         }
     }
-    
+
     // Map functions to approximate line ranges
     // Use function order as a proxy for source line numbers
     let mut current_source_line = 1u32;
     let mut current_generated_line = 1u32;
-    
+
     // Find where functions start in generated code (look for "fn function_name")
     for (func_idx, func) in script.functions.iter().enumerate() {
         // Approximate source line: assume functions are roughly evenly spaced
         // This is a simplification - in a real implementation, we'd track line numbers during parsing
         let approx_source_line = current_source_line + (func_idx as u32 * 10); // Rough estimate
-        
+
         // Find function in generated code using renamed function name
         let renamed_func_name = crate::scripting::codegen::rename_function(&func.name);
         let func_pattern = format!("fn {}", renamed_func_name);
-        if let Some(gen_line) = generated_lines.iter().position(|line| line.contains(&func_pattern)) {
+        if let Some(gen_line) = generated_lines
+            .iter()
+            .position(|line| line.contains(&func_pattern))
+        {
             let gen_start = gen_line as u32 + 1;
-            
+
             // Estimate function end (look for closing brace)
             let mut gen_end = gen_start;
             let mut brace_count = 0;
@@ -73,7 +77,7 @@ pub fn build_source_map_from_script(
                     break;
                 }
             }
-            
+
             // Create a range mapping
             builder.start_range(approx_source_line);
             // Set generated line to where function starts
@@ -81,22 +85,22 @@ pub fn build_source_map_from_script(
                 builder.increment_generated_line();
             }
             current_generated_line = gen_start;
-            
+
             // End range at function end
             for _ in 0..(gen_end - current_generated_line) {
                 builder.increment_generated_line();
             }
             current_generated_line = gen_end;
             builder.end_range();
-            
+
             current_source_line = approx_source_line + 20; // Estimate
         }
     }
-    
+
     // Use source spans from AST when available for more accurate mapping
     // This is a future enhancement - for now we use the approximate method above
     // TODO: When parsers track spans, use them here for accurate line/column mapping
-    
+
     builder.build_with_language(language)
 }
 
@@ -149,7 +153,7 @@ pub struct ScriptSourceMap {
     #[serde(rename = "lines")]
     pub line_ranges: Vec<LineRange>,
     /// Identifier name mappings: generated_name -> original_name
-    /// Maps transpiled identifier names (variables and functions, e.g., "__t_myVar", "__t_myFunction") 
+    /// Maps transpiled identifier names (variables and functions, e.g., "__t_myVar", "__t_myFunction")
     /// back to original names (e.g., "myVar", "myFunction")
     #[serde(rename = "names")]
     pub identifier_names: HashMap<String, String>,
@@ -191,15 +195,16 @@ impl SourceMap {
         generated_column: Option<u32>,
     ) -> Option<crate::scripting::source_span::SourceSpan> {
         let script_map = self.scripts.get(identifier)?;
-        
+
         // Find the range that contains this generated line
-        let range = script_map.line_ranges.iter()
-            .find(|range| generated_line >= range.generated_start && generated_line <= range.generated_end)?;
-        
+        let range = script_map.line_ranges.iter().find(|range| {
+            generated_line >= range.generated_start && generated_line <= range.generated_end
+        })?;
+
         // Linear interpolation within the range
         let source_span_lines = range.source_end.saturating_sub(range.source_start);
         let generated_span_lines = range.generated_end.saturating_sub(range.generated_start);
-        
+
         let source_line = if generated_span_lines == 0 {
             range.source_start
         } else if source_span_lines == 0 {
@@ -211,17 +216,26 @@ impl SourceMap {
             // Use floating point for better precision, then round
             let ratio = offset as f64 / generated_span_lines as f64;
             let source_offset = (ratio * source_span_lines as f64).round() as u32;
-            range.source_start.saturating_add(source_offset).max(range.source_start).min(range.source_end)
+            range
+                .source_start
+                .saturating_add(source_offset)
+                .max(range.source_start)
+                .min(range.source_end)
         };
-        
+
         // Calculate column if both source and generated columns are available
-        let source_column = if let (Some(src_col), Some(gen_col), Some(gen_col_end)) = 
-            (range.source_column, range.generated_column, range.generated_column_end) {
+        let source_column = if let (Some(src_col), Some(gen_col), Some(gen_col_end)) = (
+            range.source_column,
+            range.generated_column,
+            range.generated_column_end,
+        ) {
             if let Some(given_col) = generated_column {
                 let gen_span = gen_col_end - gen_col;
                 if gen_span > 0 {
                     let offset = given_col.saturating_sub(gen_col);
-                    src_col + (offset * (range.source_column_end.unwrap_or(src_col + 1) - src_col) / gen_span)
+                    src_col
+                        + (offset * (range.source_column_end.unwrap_or(src_col + 1) - src_col)
+                            / gen_span)
                 } else {
                     src_col
                 }
@@ -231,13 +245,16 @@ impl SourceMap {
         } else {
             range.source_column.unwrap_or(1)
         };
-        
+
         Some(crate::scripting::source_span::SourceSpan {
             file: script_map.source_path.clone(),
             line: source_line,
             column: source_column,
             length: 1, // Default length
-            language: script_map.language.clone().unwrap_or_else(|| "unknown".to_string()),
+            language: script_map
+                .language
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
         })
     }
 
@@ -245,16 +262,24 @@ impl SourceMap {
     pub fn restore_variable_name(&self, identifier: &str, generated_name: &str) -> String {
         if let Some(script_map) = self.scripts.get(identifier) {
             // Try identifier_names first, then fall back to variable_names for backwards compatibility
-            script_map.identifier_names.get(generated_name)
+            script_map
+                .identifier_names
+                .get(generated_name)
                 .or_else(|| script_map.variable_names.get(generated_name))
                 .cloned()
                 .unwrap_or_else(|| {
                     // Try to strip __t_ prefix
                     if generated_name.starts_with("__t_") {
-                        generated_name.strip_prefix("__t_").unwrap_or(generated_name).to_string()
+                        generated_name
+                            .strip_prefix("__t_")
+                            .unwrap_or(generated_name)
+                            .to_string()
                     } else if generated_name.ends_with("_id") {
                         // Try to restore _id suffix
-                        generated_name.strip_suffix("_id").unwrap_or(generated_name).to_string()
+                        generated_name
+                            .strip_suffix("_id")
+                            .unwrap_or(generated_name)
+                            .to_string()
                     } else {
                         generated_name.to_string()
                     }
@@ -262,9 +287,15 @@ impl SourceMap {
         } else {
             // Fallback: try to strip prefix/suffix
             if generated_name.starts_with("__t_") {
-                generated_name.strip_prefix("__t_").unwrap_or(generated_name).to_string()
+                generated_name
+                    .strip_prefix("__t_")
+                    .unwrap_or(generated_name)
+                    .to_string()
             } else if generated_name.ends_with("_id") {
-                generated_name.strip_suffix("_id").unwrap_or(generated_name).to_string()
+                generated_name
+                    .strip_suffix("_id")
+                    .unwrap_or(generated_name)
+                    .to_string()
             } else {
                 generated_name.to_string()
             }
@@ -274,7 +305,7 @@ impl SourceMap {
     /// Convert an error message by replacing generated identifier names with original ones
     pub fn convert_error_message(&self, identifier: &str, error_msg: &str) -> String {
         let mut result = error_msg.to_string();
-        
+
         if let Some(script_map) = self.scripts.get(identifier) {
             // Use identifier_names, with fallback to variable_names for backwards compatibility
             let name_map = if !script_map.identifier_names.is_empty() {
@@ -282,7 +313,7 @@ impl SourceMap {
             } else {
                 &script_map.variable_names
             };
-            
+
             // Replace all occurrences of __t_ prefixed identifiers
             for (gen_name, orig_name) in name_map.iter() {
                 // Replace whole word matches
@@ -292,7 +323,7 @@ impl SourceMap {
                 }
             }
         }
-        
+
         result
     }
 }
@@ -338,9 +369,10 @@ impl SourceMapBuilder {
 
     /// Record that we're ending the current range
     pub fn end_range(&mut self) {
-        if let (Some(source_start), Some(generated_start)) = 
-            (self.current_range_start_source, self.current_range_start_generated) 
-        {
+        if let (Some(source_start), Some(generated_start)) = (
+            self.current_range_start_source,
+            self.current_range_start_generated,
+        ) {
             let range = LineRange {
                 source_start,
                 source_column: None, // Can be set explicitly if needed
@@ -389,12 +421,14 @@ impl SourceMapBuilder {
 
     /// Record an identifier name mapping (variable or function)
     pub fn record_variable(&mut self, original_name: &str, generated_name: &str) {
-        self.identifier_names.insert(generated_name.to_string(), original_name.to_string());
+        self.identifier_names
+            .insert(generated_name.to_string(), original_name.to_string());
     }
-    
+
     /// Record a function name mapping
     pub fn record_function(&mut self, original_name: &str, generated_name: &str) {
-        self.identifier_names.insert(generated_name.to_string(), original_name.to_string());
+        self.identifier_names
+            .insert(generated_name.to_string(), original_name.to_string());
     }
 
     /// Set the language identifier for this source map
@@ -432,4 +466,3 @@ impl SourceMapBuilder {
         self.current_generated_line
     }
 }
-

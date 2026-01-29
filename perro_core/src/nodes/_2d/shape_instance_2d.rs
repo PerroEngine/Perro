@@ -36,7 +36,6 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
-
 impl ShapeInstance2D {
     pub fn new() -> Self {
         let mut base = Node2D::new();

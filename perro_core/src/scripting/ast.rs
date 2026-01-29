@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{engine_structs::EngineStruct, node_registry::NodeType};
 use crate::scripting::source_span::SourceSpan;
+use crate::{engine_structs::EngineStruct, node_registry::NodeType};
 
 /// Built-in enum variants available in the scripting language
 /// This represents enum access like NODE_TYPE.Sprite2D (SCREAMING_SNAKE_CASE for enum names)
@@ -22,7 +22,7 @@ pub struct Script {
     pub verbose: bool,
     pub attributes: HashMap<String, Vec<String>>, // member name -> list of attribute names
     pub source_file: Option<String>, // Original source file path (e.g., "res://player.pup")
-    pub language: Option<String>, // Language identifier (e.g., "pup", "typescript", "csharp")
+    pub language: Option<String>,    // Language identifier (e.g., "pup", "typescript", "csharp")
     pub module_names: std::collections::HashSet<String>, // Known module names (e.g., "Utils") for module access detection
     pub module_name_to_identifier: std::collections::HashMap<String, String>, // Map module name -> file identifier (e.g., "Utils" -> "module_pup")
     pub module_functions: std::collections::HashMap<String, Vec<Function>>, // Map module name -> list of functions for type inference
@@ -46,7 +46,7 @@ pub struct Module {
     pub verbose: bool,
     pub attributes: HashMap<String, Vec<String>>, // member name -> list of attribute names
     pub source_file: Option<String>, // Original source file path (e.g., "res://utils.pup")
-    pub language: Option<String>, // Language identifier (e.g., "pup")
+    pub language: Option<String>,    // Language identifier (e.g., "pup")
 }
 
 #[derive(Debug, Clone)]
@@ -93,7 +93,7 @@ impl Variable {
 
             // Containers
             "object" | "Object" | "Value" => Type::Object, // Legacy support
-            "Any" | "any" => Type::Any, // Preferred dynamic type
+            "Any" | "any" => Type::Any,                    // Preferred dynamic type
 
             // Containers — always with type arguments!
             "HashMap" | "Map" | "map" => Type::Container(
@@ -106,9 +106,11 @@ impl Variable {
             name => {
                 use crate::structs::engine_registry::ENGINE_REGISTRY;
                 // Check if it's a node type in the engine registry
-                if let Some(node_type) = ENGINE_REGISTRY.node_defs.keys().find(|nt| {
-                    format!("{:?}", nt) == name
-                }) {
+                if let Some(node_type) = ENGINE_REGISTRY
+                    .node_defs
+                    .keys()
+                    .find(|nt| format!("{:?}", nt) == name)
+                {
                     Type::Node(node_type.clone())
                 } else {
                     Type::Custom(name.to_string())
@@ -229,7 +231,9 @@ impl Variable {
 
             Type::Signal => ("as_u64", "".into()),
             Type::NodeType => ("as_str", ".parse::<NodeType>().unwrap()".into()), // NodeType is serialized as string
-            Type::ScriptApi => panic!("ScriptApi cannot be deserialized from JSON - it's injected by the runtime"),
+            Type::ScriptApi => {
+                panic!("ScriptApi cannot be deserialized from JSON - it's injected by the runtime")
+            }
             Type::Custom(type_name) => {
                 use crate::scripting::codegen::{is_node_type, rename_struct};
                 if is_node_type(type_name) {
@@ -237,7 +241,7 @@ impl Variable {
                 } else {
                     ("__CUSTOM__", rename_struct(type_name))
                 }
-            },
+            }
             Type::Void => panic!("Void invalid"),
             Type::Node(_node_type) => ("__NODE__", "NodeType".to_owned()),
             Type::DynNode => ("__NODE__", "NodeType".to_owned()), // DynNode is NodeID at runtime, same as Node types
@@ -247,7 +251,7 @@ impl Variable {
                     EngineStruct::Texture => ("__CUSTOM__", "Option<TextureID>".to_string()), // Texture is Option<TextureID>, use custom deserialization
                     _ => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()), // Other engine structs use the generic method
                 }
-            },
+            }
         }
     }
 
@@ -257,8 +261,13 @@ impl Variable {
             // This ensures literals get the correct suffix (e.g., 42f64 instead of 42f32)
             let expected_type = self.typ.as_ref();
             // Call expr.expr.to_rust directly with the variable's type as expected_type
-            expr.expr
-                .to_rust(false, script, expected_type, current_func, expr.span.as_ref())
+            expr.expr.to_rust(
+                false,
+                script,
+                expected_type,
+                current_func,
+                expr.span.as_ref(),
+            )
         } else {
             self.default_value()
         }
@@ -282,11 +291,11 @@ pub struct Function {
     pub uses_self: bool,
     pub cloned_child_nodes: Vec<String>, // Variable names that hold cloned child nodes (from self.get_node("name") as Type)
     pub return_type: Type,
-    pub attributes: Vec<String>, // List of attribute names
+    pub attributes: Vec<String>,     // List of attribute names
     pub is_on_signal: bool, // True if this function was defined with "on SIGNALNAME()" syntax
     pub signal_name: Option<String>, // The signal name if this is an on-signal function
     pub is_lifecycle_method: bool, // True if this function was defined with "on init()" syntax (lifecycle method, not callable)
-    pub span: Option<SourceSpan>, // Source location of this function definition
+    pub span: Option<SourceSpan>,  // Source location of this function definition
 }
 
 #[derive(Debug, Clone)]
@@ -302,14 +311,14 @@ pub enum Type {
     Bool,
     String,
     StrRef,
-    CowStr, // Cow<'static, str> - for node name and other borrowed strings
+    CowStr,            // Cow<'static, str> - for node name and other borrowed strings
     Option(Box<Type>), // Option<T>
-    Signal, // u64 - signal ID type
+    Signal,            // u64 - signal ID type
     Void,
 
     Container(ContainerKind, Vec<Type>),
     Object, // serde_json::Value - dynamic any type (legacy name, use Any)
-    Any, // serde_json::Value - dynamic any type (preferred name)
+    Any,    // serde_json::Value - dynamic any type (preferred name)
 
     Node(NodeType), // Node instance type - maps to NodeID in Rust
     DynNode, // Dynamic node type - no type resolution at compile time, resolved to UUID at runtime
@@ -402,7 +411,7 @@ impl Type {
                 } else {
                     rename_struct(name)
                 }
-            },
+            }
             Type::Node(_) => "NodeID".to_string(), // Nodes map to NodeID
             Type::DynNode => "NodeID".to_string(), // DynNode also maps to NodeID
             Type::NodeType => "NodeType".to_string(), // NodeType enum
@@ -415,7 +424,7 @@ impl Type {
                     // When they do, map them: Material => "MaterialID", Mesh => "MeshID", Light => "LightID"
                     _ => format!("{:?}", es), // Other engine structs are real types (Vector2, Color, etc.)
                 }
-            },
+            }
             Type::Void => "()".to_string(),
         }
     }
@@ -423,9 +432,9 @@ impl Type {
     /// Convert a Type to a PUP-friendly string representation
     /// PUP doesn't have Option types, so Option<T> becomes T? (nullable)
     pub fn to_pup_type(&self) -> String {
-        use NumberKind::*;
         use ContainerKind::*;
-        
+        use NumberKind::*;
+
         match self {
             Type::Number(Signed(32)) => "int".to_string(),
             Type::Number(Signed(64)) => "int64".to_string(),
@@ -444,10 +453,10 @@ impl Type {
             Type::Number(Float(w)) => format!("f{}", w),
             Type::Number(Decimal) => "decimal".to_string(),
             Type::Number(BigInt) => "bigint".to_string(),
-            
+
             Type::Bool => "bool".to_string(),
             Type::String | Type::StrRef | Type::CowStr => "string".to_string(),
-            
+
             // Options don't exist in PUP - treat as nullable with ?
             Type::Option(inner) => {
                 // Special case: Option<[f32; 4]> is Rect? (check before recursing)
@@ -459,7 +468,7 @@ impl Type {
                 // For other types, add ? suffix
                 format!("{}?", inner.to_pup_type())
             }
-            
+
             // Containers
             Type::Container(Array, types) => {
                 if let Some(inner) = types.first() {
@@ -470,7 +479,11 @@ impl Type {
             }
             Type::Container(Map, types) => {
                 if types.len() >= 2 {
-                    format!("Map<[{}: {}]>", types[0].to_pup_type(), types[1].to_pup_type())
+                    format!(
+                        "Map<[{}: {}]>",
+                        types[0].to_pup_type(),
+                        types[1].to_pup_type()
+                    )
                 } else {
                     "Map".to_string()
                 }
@@ -488,7 +501,7 @@ impl Type {
                     format!("[unknown; {}]", size)
                 }
             }
-            
+
             Type::Any | Type::Object => "any".to_string(),
             Type::Signal => "signal".to_string(),
             Type::Node(node_type) => format!("{:?}", node_type),
@@ -503,12 +516,12 @@ impl Type {
             Type::ScriptApi => "ScriptApi".to_string(),
         }
     }
-    
+
     /// Convert a Type to a C#-friendly string representation
     pub fn to_csharp_type(&self) -> String {
-        use NumberKind::*;
         use ContainerKind::*;
-        
+        use NumberKind::*;
+
         match self {
             Type::Number(Signed(32)) => "int".to_string(),
             Type::Number(Signed(64)) => "long".to_string(),
@@ -527,12 +540,12 @@ impl Type {
             Type::Number(Float(w)) => format!("Float{}", w),
             Type::Number(Decimal) => "decimal".to_string(),
             Type::Number(BigInt) => "BigInteger".to_string(),
-            
+
             Type::Bool => "bool".to_string(),
             Type::String | Type::StrRef | Type::CowStr => "string".to_string(),
-            
+
             Type::Option(inner) => format!("{}?", inner.to_csharp_type()),
-            
+
             Type::Container(Array, types) => {
                 if let Some(inner) = types.first() {
                     format!("{}[]", inner.to_csharp_type())
@@ -542,7 +555,11 @@ impl Type {
             }
             Type::Container(Map, types) => {
                 if types.len() >= 2 {
-                    format!("Dictionary<{}, {}>", types[0].to_csharp_type(), types[1].to_csharp_type())
+                    format!(
+                        "Dictionary<{}, {}>",
+                        types[0].to_csharp_type(),
+                        types[1].to_csharp_type()
+                    )
                 } else {
                     "Dictionary<string, object>".to_string()
                 }
@@ -554,7 +571,7 @@ impl Type {
                     format!("object[{}]", size)
                 }
             }
-            
+
             Type::Any | Type::Object => "object".to_string(),
             Type::Signal => "ulong".to_string(),
             Type::Node(node_type) => format!("{:?}", node_type),
@@ -566,27 +583,35 @@ impl Type {
             Type::ScriptApi => "ScriptApi".to_string(),
         }
     }
-    
+
     /// Convert a Type to a TypeScript-friendly string representation
     pub fn to_typescript_type(&self) -> String {
-        use NumberKind::*;
         use ContainerKind::*;
-        
+        use NumberKind::*;
+
         match self {
-            Type::Number(Signed(32)) | Type::Number(Signed(64)) | Type::Number(Signed(16)) | Type::Number(Signed(8)) | Type::Number(Signed(128)) => "number".to_string(),
+            Type::Number(Signed(32))
+            | Type::Number(Signed(64))
+            | Type::Number(Signed(16))
+            | Type::Number(Signed(8))
+            | Type::Number(Signed(128)) => "number".to_string(),
             Type::Number(Signed(w)) => format!("number /* i{} */", w),
-            Type::Number(Unsigned(32)) | Type::Number(Unsigned(64)) | Type::Number(Unsigned(16)) | Type::Number(Unsigned(8)) | Type::Number(Unsigned(128)) => "number".to_string(),
+            Type::Number(Unsigned(32))
+            | Type::Number(Unsigned(64))
+            | Type::Number(Unsigned(16))
+            | Type::Number(Unsigned(8))
+            | Type::Number(Unsigned(128)) => "number".to_string(),
             Type::Number(Unsigned(w)) => format!("number /* u{} */", w),
             Type::Number(Float(32)) | Type::Number(Float(64)) => "number".to_string(),
             Type::Number(Float(w)) => format!("number /* f{} */", w),
             Type::Number(Decimal) => "number".to_string(),
             Type::Number(BigInt) => "bigint".to_string(),
-            
+
             Type::Bool => "boolean".to_string(),
             Type::String | Type::StrRef | Type::CowStr => "string".to_string(),
-            
+
             Type::Option(inner) => format!("{} | null", inner.to_typescript_type()),
-            
+
             Type::Container(Array, types) => {
                 if let Some(inner) = types.first() {
                     format!("{}[]", inner.to_typescript_type())
@@ -596,7 +621,11 @@ impl Type {
             }
             Type::Container(Map, types) => {
                 if types.len() >= 2 {
-                    format!("Map<{}, {}>", types[0].to_typescript_type(), types[1].to_typescript_type())
+                    format!(
+                        "Map<{}, {}>",
+                        types[0].to_typescript_type(),
+                        types[1].to_typescript_type()
+                    )
                 } else {
                     "Map<string, any>".to_string()
                 }
@@ -608,7 +637,7 @@ impl Type {
                     format!("[any; {}]", size)
                 }
             }
-            
+
             Type::Any | Type::Object => "any".to_string(),
             Type::Signal => "number".to_string(),
             Type::Node(node_type) => format!("{:?}", node_type),
@@ -653,9 +682,7 @@ impl Type {
                 format!("[{}; {}]", elem_val, size)
             }
 
-            Type::Custom(_) => {
-                "Default::default()".to_string()
-            }
+            Type::Custom(_) => "Default::default()".to_string(),
             Type::EngineStruct(es) => {
                 use crate::engine_structs::EngineStruct;
                 match es {
@@ -675,7 +702,9 @@ impl Type {
                 // NodeType enum default is NodeType::Node
                 "NodeType::Node".to_string()
             }
-            Type::ScriptApi => panic!("ScriptApi cannot have a default value - it's injected by the runtime"),
+            Type::ScriptApi => {
+                panic!("ScriptApi cannot have a default value - it's injected by the runtime")
+            }
             Type::Void => panic!("Cannot make default for void"),
         }
     }
@@ -726,8 +755,14 @@ impl Type {
             (from, Type::Option(inner)) if *from == *inner.as_ref() => true,
 
             // Vector3 ↔ Vector2 (drop/pad z); Quaternion ↔ f32 (2D rotation)
-            (Type::EngineStruct(EngineStruct::Vector3), Type::EngineStruct(EngineStruct::Vector2)) => true,
-            (Type::EngineStruct(EngineStruct::Vector2), Type::EngineStruct(EngineStruct::Vector3)) => true,
+            (
+                Type::EngineStruct(EngineStruct::Vector3),
+                Type::EngineStruct(EngineStruct::Vector2),
+            ) => true,
+            (
+                Type::EngineStruct(EngineStruct::Vector2),
+                Type::EngineStruct(EngineStruct::Vector3),
+            ) => true,
             (Type::EngineStruct(EngineStruct::Quaternion), Type::Number(Float(32))) => true,
             (Type::Number(Float(32)), Type::EngineStruct(EngineStruct::Quaternion)) => true,
 
@@ -759,11 +794,15 @@ impl Type {
             // EngineStructs implement Copy
             EngineStruct(es) => match es {
                 // These implement Copy
-                ES::Vector2 | ES::Vector3 
-                | ES::Transform2D | ES::Transform3D
-                | ES::Color | ES::Rect 
-                | ES::Quaternion | ES::Shape2D => true,
-                
+                ES::Vector2
+                | ES::Vector3
+                | ES::Transform2D
+                | ES::Transform3D
+                | ES::Color
+                | ES::Rect
+                | ES::Quaternion
+                | ES::Shape2D => true,
+
                 ES::Texture => true,
                 // Texture is a TextureID (u64), Copy
             },
@@ -831,11 +870,17 @@ impl Stmt {
             Stmt::VariableDecl(var) => var.span.as_ref(),
             Stmt::Assign(_, expr) | Stmt::AssignOp(_, _, expr) => expr.span.as_ref(),
             Stmt::MemberAssign(lhs, _) | Stmt::MemberAssignOp(lhs, _, _) => lhs.span.as_ref(),
-            Stmt::ScriptAssign(_, _, expr) | Stmt::ScriptAssignOp(_, _, _, expr) => expr.span.as_ref(),
-            Stmt::IndexAssign(_, _, expr) | Stmt::IndexAssignOp(_, _, _, expr) => expr.span.as_ref(),
+            Stmt::ScriptAssign(_, _, expr) | Stmt::ScriptAssignOp(_, _, _, expr) => {
+                expr.span.as_ref()
+            }
+            Stmt::IndexAssign(_, _, expr) | Stmt::IndexAssignOp(_, _, _, expr) => {
+                expr.span.as_ref()
+            }
             Stmt::If { condition, .. } => condition.span.as_ref(),
             Stmt::For { iterable, .. } => iterable.span.as_ref(),
-            Stmt::ForTraditional { condition, .. } => condition.as_ref().and_then(|c| c.span.as_ref()),
+            Stmt::ForTraditional { condition, .. } => {
+                condition.as_ref().and_then(|c| c.span.as_ref())
+            }
             Stmt::Return(expr) => expr.as_ref().and_then(|e| e.span.as_ref()),
             Stmt::Pass => None,
         }
@@ -875,7 +920,7 @@ pub enum ContainerLiteralData {
 pub struct TypedExpr {
     pub expr: Expr,
     pub inferred_type: Option<Type>, // Gets filled during type inference
-    pub span: Option<SourceSpan>, // Source location of this expression
+    pub span: Option<SourceSpan>,    // Source location of this expression
 }
 
 #[derive(Debug, Clone)]

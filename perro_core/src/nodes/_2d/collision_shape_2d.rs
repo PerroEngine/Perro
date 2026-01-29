@@ -8,7 +8,6 @@ pub struct CollisionShape2D {
     #[serde(rename = "type")]
     pub ty: NodeType,
 
-
     pub base: Node2D,
 
     /// The shape type and dimensions

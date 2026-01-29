@@ -2,10 +2,10 @@
 //! Common types and registry implementation for all languages.
 //! Each language module provides its own naming convention and registry instance.
 
-use std::collections::HashMap;
 use crate::ast::Type;
 use crate::node_registry::NodeType;
 use crate::structs::engine_registry::{NodeFieldRef, NodeMethodRef};
+use std::collections::HashMap;
 
 /// Represents a field exposed to scripts
 /// This is purely a name mapping - types come from engine_registry via NodeFieldRef
@@ -46,8 +46,7 @@ pub struct NodeApiRegistry {
 impl NodeApiField {
     /// Get the script type from engine_registry via NodeFieldRef
     pub fn get_script_type(&self) -> Type {
-        self.rust_field.rust_type()
-            .unwrap_or(Type::Object)
+        self.rust_field.rust_type().unwrap_or(Type::Object)
     }
 }
 
@@ -56,12 +55,12 @@ impl NodeApiMethod {
     pub fn get_return_type(&self) -> Option<Type> {
         self.rust_method.return_type()
     }
-    
+
     /// Get the parameter types from engine_registry via NodeMethodRef
     pub fn get_param_types(&self) -> Option<Vec<Type>> {
         self.rust_method.param_types()
     }
-    
+
     /// Get the parameter names from engine_registry via NodeMethodRef
     /// Returns script-side parameter names (what PUP users see), not internal Rust names
     pub fn get_param_names(&self) -> Option<Vec<&'static str>> {
@@ -96,7 +95,10 @@ impl NodeApiRegistry {
                 }
             }
             // Walk up inheritance chain
-            current_type = crate::structs::engine_registry::ENGINE_REGISTRY.node_bases.get(&nt).cloned();
+            current_type = crate::structs::engine_registry::ENGINE_REGISTRY
+                .node_bases
+                .get(&nt)
+                .cloned();
         }
 
         fields
@@ -117,7 +119,10 @@ impl NodeApiRegistry {
                 }
             }
             // Walk up inheritance chain
-            current_type = crate::structs::engine_registry::ENGINE_REGISTRY.node_bases.get(&nt).cloned();
+            current_type = crate::structs::engine_registry::ENGINE_REGISTRY
+                .node_bases
+                .get(&nt)
+                .cloned();
         }
 
         methods

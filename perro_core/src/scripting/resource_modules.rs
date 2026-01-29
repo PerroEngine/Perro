@@ -35,10 +35,10 @@ pub enum TextureResource {
 
 #[derive(Debug, Clone)]
 pub enum ShapeResource {
-    Rectangle, 
-    Circle,    
-    Square,    
-    Triangle,  
+    Rectangle,
+    Circle,
+    Square,
+    Triangle,
 }
 
 #[derive(Debug, Clone)]

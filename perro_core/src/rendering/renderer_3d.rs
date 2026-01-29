@@ -1,10 +1,11 @@
 use glam::Mat4;
-use std::cmp::Ordering;
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, BufferBinding,
     BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, Device, Queue, RenderPass,
-    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat, util::DeviceExt,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModuleDescriptor, ShaderSource, TextureFormat,
+    util::DeviceExt,
 };
 
 use crate::ids::{LightID, MaterialID, MeshID};
@@ -390,7 +391,7 @@ impl Renderer3D {
             // OPTIMIZED: Pre-allocate array and fill directly without intermediate Vec
             let mut gpu_lights_array = [LightUniform::default(); MAX_LIGHTS];
             let mut active_count = 0;
-            
+
             // OPTIMIZED: Fill array directly, stopping at MAX_LIGHTS
             for light_opt in &self.light_slots {
                 if active_count >= MAX_LIGHTS {
@@ -455,7 +456,7 @@ impl Renderer3D {
             // OPTIMIZED: Pre-allocate array and fill directly without intermediate Vec
             let mut gpu_materials_array = [MaterialUniform::default(); MAX_MATERIALS];
             let mut active_count = 0;
-            
+
             // OPTIMIZED: Fill array directly, stopping at MAX_MATERIALS
             for material_opt in &self.material_slots {
                 if active_count >= MAX_MATERIALS {
@@ -553,7 +554,11 @@ impl Renderer3D {
     }
 
     /// Stops rendering the mesh for this node and unregisters mesh user for eviction.
-    pub fn stop_rendering_mesh(&mut self, node_id: crate::ids::NodeID, mesh_manager: &mut MeshManager) {
+    pub fn stop_rendering_mesh(
+        &mut self,
+        node_id: crate::ids::NodeID,
+        mesh_manager: &mut MeshManager,
+    ) {
         if let Some(slot_idx) = self.mesh_node_to_slot.remove(&node_id) {
             if let Some(ref slot_data) = self.mesh_instance_slots[slot_idx] {
                 mesh_manager.remove_mesh_user(slot_data.mesh_id, node_id);
@@ -592,7 +597,8 @@ impl Renderer3D {
                     let slot_data = slot.as_mut()?;
 
                     // Re-cull because objects moved
-                    let visible = if let Some(mesh) = mesh_manager.get_mesh_by_id(slot_data.mesh_id) {
+                    let visible = if let Some(mesh) = mesh_manager.get_mesh_by_id(slot_data.mesh_id)
+                    {
                         let model =
                             glam::Mat4::from_cols_array_2d(&slot_data.instance.model_matrix);
                         let center_ws = model.transform_point3(mesh.bounds_center);
@@ -743,7 +749,7 @@ impl Renderer3D {
             .iter()
             .map(|(_, _, instances)| instances.len())
             .sum();
-        
+
         let mut all_instances = Vec::with_capacity(total_instances);
         for (_, _, instances) in &self.mesh_material_groups {
             all_instances.extend_from_slice(instances);

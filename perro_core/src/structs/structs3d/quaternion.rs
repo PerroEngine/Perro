@@ -30,7 +30,11 @@ impl<'de> Deserialize<'de> for Quaternion {
 
 impl fmt::Display for Quaternion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Quaternion({}, {}, {}, {})", self.x, self.y, self.z, self.w)
+        write!(
+            f,
+            "Quaternion({}, {}, {}, {})",
+            self.x, self.y, self.z, self.w
+        )
     }
 }
 
@@ -40,7 +44,12 @@ impl Quaternion {
     }
 
     pub fn identity() -> Self {
-        Self { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+        Self {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
+        }
     }
 
     // Helper to convert to glam for operations
@@ -52,7 +61,12 @@ impl Quaternion {
     // Helper to create from glam
     #[inline(always)]
     fn from_glam(q: glam::Quat) -> Self {
-        Self { x: q.x, y: q.y, z: q.z, w: q.w }
+        Self {
+            x: q.x,
+            y: q.y,
+            z: q.z,
+            w: q.w,
+        }
     }
 
     /// Converts this quaternion into a `glam::Quat` (for operations that need glam types).
@@ -61,7 +75,12 @@ impl Quaternion {
     }
 
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Self {
-        Self::from_glam(glam::Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll))
+        Self::from_glam(glam::Quat::from_euler(
+            glam::EulerRot::YXZ,
+            yaw,
+            pitch,
+            roll,
+        ))
     }
 
     /// Creates a quaternion from a 2D rotation angle (degrees, around Z axis).
@@ -102,7 +121,12 @@ impl Quaternion {
 
     /// Creates a `Quaternion` from a `glam::Quat`.
     pub fn from_glam_public(q: glam::Quat) -> Self {
-        Self { x: q.x, y: q.y, z: q.z, w: q.w }
+        Self {
+            x: q.x,
+            y: q.y,
+            z: q.z,
+            w: q.w,
+        }
     }
 }
 

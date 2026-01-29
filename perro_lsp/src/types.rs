@@ -1,7 +1,7 @@
+use perro_core::fur_ast::{FurElement, FurNode};
+use perro_core::scripting::ast::{Function, Script, Type, Variable};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use perro_core::scripting::ast::{Script, Type, Function, Variable};
-use perro_core::fur_ast::{FurNode, FurElement};
 
 /// Represents a parsed document with its AST and metadata
 #[derive(Debug, Clone)]
@@ -72,7 +72,5 @@ pub fn uri_to_path(uri: &str) -> Option<PathBuf> {
 
 /// Helper to convert path to file URI
 pub fn path_to_uri(path: &PathBuf) -> String {
-    url::Url::from_file_path(path)
-        .unwrap()
-        .to_string()
+    url::Url::from_file_path(path).unwrap().to_string()
 }

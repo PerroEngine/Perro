@@ -3,9 +3,7 @@
 // These are different from Resource APIs (types/resources that can be instantiated)
 // ----------------------------------------------------------------
 
-use crate::{
-    api_modules::*,
-};
+use crate::api_modules::*;
 
 pub struct PupAPI;
 
@@ -21,7 +19,7 @@ impl PupAPI {
             _ => None,
         }
     }
-    
+
     /// Get all available module API names
     pub fn get_all_module_names() -> Vec<&'static str> {
         vec![
@@ -33,12 +31,12 @@ impl PupAPI {
             PupMath::NAME,
         ]
     }
-    
+
     /// Check if a name is a valid module API name
     pub fn is_module_name(name: &str) -> bool {
         Self::get_all_module_names().contains(&name)
     }
-    
+
     /// Get all method names for a given module name
     pub fn get_method_names_for_module(module_name: &str) -> Vec<&'static str> {
         match module_name {
@@ -52,8 +50,6 @@ impl PupAPI {
         }
     }
 }
-
-
 
 pub struct PupJSON;
 impl PupJSON {
@@ -128,8 +124,6 @@ impl PupConsole {
     }
 }
 
-
-
 pub struct PupInput;
 impl PupInput {
     pub const NAME: &'static str = "Input";
@@ -168,14 +162,28 @@ impl PupInput {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["get_action", "controller_enable", "enable_controller", "is_key_pressed", 
-             "get_key_pressed", "get_text_input", "clear_text_input", "is_button_pressed",
-             "is_mouse_button_pressed", "get_mouse_position", "get_mouse_pos",
-             "get_mouse_position_world", "get_mouse_pos_world", "get_scroll_delta",
-             "get_scroll", "is_wheel_up", "is_wheel_down", "screen_to_world"]
+        vec![
+            "get_action",
+            "controller_enable",
+            "enable_controller",
+            "is_key_pressed",
+            "get_key_pressed",
+            "get_text_input",
+            "clear_text_input",
+            "is_button_pressed",
+            "is_mouse_button_pressed",
+            "get_mouse_position",
+            "get_mouse_pos",
+            "get_mouse_position_world",
+            "get_mouse_pos_world",
+            "get_scroll_delta",
+            "get_scroll",
+            "is_wheel_up",
+            "is_wheel_down",
+            "screen_to_world",
+        ]
     }
 }
-
 
 pub struct PupMath;
 impl PupMath {
@@ -224,5 +232,3 @@ pub fn normalize_type_name(typ: &crate::ast::Type) -> String {
         _ => String::new(),
     }
 }
-
-

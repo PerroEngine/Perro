@@ -29,7 +29,7 @@ impl EngineStruct {
             _ => None,
         }
     }
-    
+
     /// Check if a type name is an engine struct
     pub fn is_engine_struct(type_name: &str) -> bool {
         Self::from_string(type_name).is_some()

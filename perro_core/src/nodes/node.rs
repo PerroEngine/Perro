@@ -1,8 +1,12 @@
 // node.rs
+use crate::ids::NodeID;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
-use std::{borrow::Cow, collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
-use crate::ids::NodeID;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::node_registry::NodeType;
 
@@ -27,7 +31,7 @@ impl ParentType {
 /// - A u32 index (for new format with SceneData)
 /// - A NodeID hex string (8 or 16 chars) - legacy format
 /// - A full ParentType object with id and type fields
-/// 
+///
 /// Note: When deserializing from SceneData, u32 indices become NodeID (u64).
 /// during SceneData deserialization, so this should not be called directly for SceneData.
 fn deserialize_parent<'de, D>(deserializer: D) -> Result<Option<ParentType>, D::Error>
@@ -35,9 +39,9 @@ where
     D: Deserializer<'de>,
 {
     use serde::de::Error;
-    
+
     let value = Value::deserialize(deserializer)?;
-    
+
     match value {
         Value::Number(n) => {
             // u32 index — becomes NodeID (index, gen 0)
@@ -67,12 +71,13 @@ where
         }
         Value::Object(_) => {
             // Deserialize as full ParentType object
-            let parent = ParentType::deserialize(value)
-                .map_err(D::Error::custom)?;
+            let parent = ParentType::deserialize(value).map_err(D::Error::custom)?;
             Ok(Some(parent))
         }
         Value::Null => Ok(None),
-        _ => Err(D::Error::custom("parent must be a u32 index, NodeID hex string, ParentType object, or null")),
+        _ => Err(D::Error::custom(
+            "parent must be a u32 index, NodeID hex string, ParentType object, or null",
+        )),
     }
 }
 
@@ -92,7 +97,12 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_exp_vars: Option<HashMap<String, Value>>,
 
-    #[serde(rename = "parent", default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_parent")]
+    #[serde(
+        rename = "parent",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parent"
+    )]
     pub parent: Option<ParentType>,
 
     #[serde(skip)]
@@ -117,7 +127,7 @@ impl Node {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         Self {
             id: NodeID::nil(),
             ty: NodeType::Node,
@@ -133,7 +143,7 @@ impl Node {
             created_timestamp: timestamp,
         }
     }
-    
+
     /// Create a new Node with a nil ID (for use when ID will be set later)
     pub fn new_with_nil_id() -> Self {
         // Get current Unix timestamp in seconds
@@ -141,7 +151,7 @@ impl Node {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         Self {
             id: NodeID::nil(),
             ty: NodeType::Node,

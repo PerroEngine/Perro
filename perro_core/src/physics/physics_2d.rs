@@ -1,10 +1,9 @@
 //! 2D Physics system using Rapier2D
 
-use rapier2d::prelude::*;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::ids::NodeID;
 use crate::structs2d::Shape2D;
+use rapier2d::prelude::*;
+use std::collections::HashMap;
 
 /// Manages the Rapier2D physics world
 pub struct PhysicsWorld2D {
@@ -63,7 +62,7 @@ impl PhysicsWorld2D {
         // Empty hooks and events for now
         struct EmptyHooks;
         impl PhysicsHooks for EmptyHooks {}
-        
+
         struct EmptyEvents;
         impl EventHandler for EmptyEvents {
             fn handle_collision_event(
@@ -94,9 +93,10 @@ impl PhysicsWorld2D {
             &hooks,
             &events,
         );
-        
+
         // Update query pipeline after physics step so spatial queries work correctly
-        self.query_pipeline.update(&self.islands, &self.bodies, &self.colliders);
+        self.query_pipeline
+            .update(&self.islands, &self.bodies, &self.colliders);
     }
 
     /// Create a sensor collider (for Area2D collision detection)
@@ -125,12 +125,9 @@ impl PhysicsWorld2D {
     pub fn remove_collider(&mut self, node_id: NodeID) {
         if let Some(handle) = self.node_to_collider.remove(&node_id) {
             self.collider_to_node.remove(&handle);
-            let _ = self.colliders.remove(
-                handle,
-                &mut self.islands,
-                &mut self.bodies,
-                false,
-            );
+            let _ = self
+                .colliders
+                .remove(handle, &mut self.islands, &mut self.bodies, false);
         }
     }
 
@@ -151,25 +148,25 @@ impl PhysicsWorld2D {
         collider_handles: &[ColliderHandle],
     ) -> Vec<(ColliderHandle, ColliderHandle)> {
         let mut intersections = Vec::new();
-        
+
         // For each of our collider handles, check what it intersects with
         for &our_handle in collider_handles {
             if let Some(our_collider) = self.colliders.get(our_handle) {
                 // Get the isometry (position + rotation) of our collider
                 let our_isometry = our_collider.position();
                 let our_shape = our_collider.shape();
-                
+
                 // Check against all other colliders
                 for (other_handle, other_collider) in self.colliders.iter() {
                     // Skip if it's one of our own colliders
                     if collider_handles.contains(&other_handle) {
                         continue;
                     }
-                    
+
                     // Get the isometry of the other collider
                     let other_isometry = other_collider.position();
                     let other_shape = other_collider.shape();
-                    
+
                     // Use Rapier's intersection test
                     // contact() returns Result<Option<Contact>, Unsupported>
                     if let Ok(Some(_contact)) = rapier2d::parry::query::contact(
@@ -184,7 +181,7 @@ impl PhysicsWorld2D {
                 }
             }
         }
-        
+
         intersections
     }
 
@@ -219,9 +216,7 @@ impl Default for PhysicsWorld2D {
 /// Only Rectangle and Circle are supported for physics (Square and Triangle are converted to Rectangle)
 pub fn shape_to_rapier_shape(shape: Shape2D) -> SharedShape {
     match shape {
-        Shape2D::Rectangle { width, height } => {
-            SharedShape::cuboid(width / 2.0, height / 2.0)
-        }
+        Shape2D::Rectangle { width, height } => SharedShape::cuboid(width / 2.0, height / 2.0),
         Shape2D::Circle { radius } => SharedShape::ball(radius),
         Shape2D::Square { size } => {
             // Convert square to rectangle

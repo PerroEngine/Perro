@@ -56,17 +56,17 @@ impl Node3D {
             base,
         }
     }
-    
+
     /// Create a new Node3D with a nil ID (for graphics-only nodes not in the scene tree).
     pub fn new_with_nil_id() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
         use crate::ids::NodeID;
-        
+        use std::time::{SystemTime, UNIX_EPOCH};
+
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         let mut base = Node {
             id: NodeID::nil(),
             ty: NodeType::Node,

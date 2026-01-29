@@ -1,15 +1,15 @@
 // Script code generation - main to_rust method
-use crate::ast::*;
-use crate::scripting::ast::{Expr, Literal};
-use crate::structs::engine_structs::EngineStruct as EngineStructKind;
-use std::fmt::Write as _;
-use std::path::Path;
-use regex::Regex;
-use super::cache::{clear_type_cache, clear_script_members_cache};
-use super::utils::{to_pascal_case, rename_variable};
 use super::analysis::analyze_self_usage;
 use super::boilerplate::implement_script_boilerplate;
+use super::cache::{clear_script_members_cache, clear_type_cache};
 use super::file_io::write_to_crate;
+use super::utils::{rename_variable, to_pascal_case};
+use crate::ast::*;
+use crate::scripting::ast::Expr;
+use crate::structs::engine_structs::EngineStruct as EngineStructKind;
+use regex::Regex;
+use std::fmt::Write as _;
+use std::path::Path;
 
 impl Script {
     pub fn to_rust(
@@ -66,7 +66,9 @@ impl Script {
         out.push_str("use serde::{Deserialize, Serialize};\n");
         out.push_str("use serde_json::{json, Value};\n");
         out.push_str("use smallvec::{smallvec, SmallVec};\n");
-        out.push_str("use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};\n\n");
+        out.push_str(
+            "use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};\n\n",
+        );
 
         // Internal modules
         out.push_str("use perro_core::prelude::*;\n\n");
@@ -76,23 +78,32 @@ impl Script {
         out.push_str("//=======================================;\n\n");
 
         // Generate constant for source location tracking
-        let script_file = script.source_file.as_ref()
-            .map(|f| {
-                f.split('/').last().unwrap_or(f).to_string()
-            })
+        let script_file = script
+            .source_file
+            .as_ref()
+            .map(|f| f.split('/').last().unwrap_or(f).to_string())
             .unwrap_or_else(|| {
                 let base_name = struct_name.strip_suffix("_pup").unwrap_or(struct_name);
                 format!("{}.pup", base_name)
             });
-        
-        write!(out, "const __PERRO_SOURCE_FILE: &str = \"{}\";\n\n", script_file).unwrap();
+
+        write!(
+            out,
+            "const __PERRO_SOURCE_FILE: &str = \"{}\";\n\n",
+            script_file
+        )
+        .unwrap();
 
         let all_script_vars = &script.variables;
 
         // Main Script Structure
-        out.push_str("// ========================================================================\n");
+        out.push_str(
+            "// ========================================================================\n",
+        );
         write!(out, "// {} - Main Script Structure\n", pascal_struct_name).unwrap();
-        out.push_str("// ========================================================================\n\n");
+        out.push_str(
+            "// ========================================================================\n\n",
+        );
 
         // Build reverse index: attribute -> members
         let mut attribute_to_members: std::collections::HashMap<String, Vec<String>> =
@@ -199,9 +210,18 @@ impl Script {
 
         out.push_str("}\n\n");
 
-        out.push_str("// ========================================================================\n");
-        write!(out, "// {} - Creator Function (FFI Entry Point)\n", pascal_struct_name).unwrap();
-        out.push_str("// ========================================================================\n\n");
+        out.push_str(
+            "// ========================================================================\n",
+        );
+        write!(
+            out,
+            "// {} - Creator Function (FFI Entry Point)\n",
+            pascal_struct_name
+        )
+        .unwrap();
+        out.push_str(
+            "// ========================================================================\n\n",
+        );
 
         out.push_str("#[unsafe(no_mangle)]\n");
         write!(
@@ -233,7 +253,7 @@ impl Script {
                 let ref_name = cap[1].to_string();
 
                 if ref_name == *name
-                   || !all_script_vars.iter().any(|v| v.name == ref_name)
+                    || !all_script_vars.iter().any(|v| v.name == ref_name)
                     || !ref_name.chars().next().map_or(false, |c| c.is_lowercase())
                     || ["let", "mut", "new", "HashMap", "vec", "json"].contains(&ref_name.as_str())
                 {
@@ -280,9 +300,13 @@ impl Script {
         out.push_str("}\n\n");
 
         if !script.structs.is_empty() {
-            out.push_str("// ========================================================================\n");
+            out.push_str(
+                "// ========================================================================\n",
+            );
             out.push_str("// Supporting Struct Definitions\n");
-            out.push_str("// ========================================================================\n\n");
+            out.push_str(
+                "// ========================================================================\n\n",
+            );
 
             for s in &script.structs {
                 out.push_str(&s.to_rust_definition(&script));
@@ -290,14 +314,18 @@ impl Script {
             }
         }
 
-        out.push_str("// ========================================================================\n");
+        out.push_str(
+            "// ========================================================================\n",
+        );
         write!(
             out,
             "// {} - Script Init & Update Implementation\n",
             pascal_struct_name
         )
         .unwrap();
-        out.push_str("// ========================================================================\n\n");
+        out.push_str(
+            "// ========================================================================\n\n",
+        );
 
         write!(out, "impl Script for {}Script {{\n", pascal_struct_name).unwrap();
 
@@ -314,9 +342,13 @@ impl Script {
             .filter(|f| !f.is_trait_method)
             .collect();
         if !helpers.is_empty() {
-            out.push_str("// ========================================================================\n");
+            out.push_str(
+                "// ========================================================================\n",
+            );
             write!(out, "// {} - Script-Defined Methods\n", pascal_struct_name).unwrap();
-            out.push_str("// ========================================================================\n\n");
+            out.push_str(
+                "// ========================================================================\n\n",
+            );
 
             write!(out, "impl {}Script {{\n", pascal_struct_name).unwrap();
             for func in helpers {
@@ -367,15 +399,18 @@ impl Module {
         out.push_str("//=======================================;\n\n");
 
         // Generate constant for source location tracking
-        let module_file = self.source_file.as_ref()
-            .map(|f| {
-                f.split('/').last().unwrap_or(f).to_string()
-            })
-            .unwrap_or_else(|| {
-                format!("{}.pup", self.module_name)
-            });
-        
-        write!(out, "const __PERRO_SOURCE_FILE: &str = \"{}\";\n\n", module_file).unwrap();
+        let module_file = self
+            .source_file
+            .as_ref()
+            .map(|f| f.split('/').last().unwrap_or(f).to_string())
+            .unwrap_or_else(|| format!("{}.pup", self.module_name));
+
+        write!(
+            out,
+            "const __PERRO_SOURCE_FILE: &str = \"{}\";\n\n",
+            module_file
+        )
+        .unwrap();
 
         // Wrap everything in a pub mod block with the module name
         // The module name from @module declaration
@@ -384,7 +419,9 @@ impl Module {
 
         // Generate structs first (if any)
         if !self.structs.is_empty() {
-            out.push_str("    // ========================================================================\n");
+            out.push_str(
+                "    // ========================================================================\n",
+            );
             out.push_str("    // Supporting Struct Definitions\n");
             out.push_str("    // ========================================================================\n\n");
 
@@ -402,7 +439,9 @@ impl Module {
 
         // Generate constants/variables
         if !self.variables.is_empty() {
-            out.push_str("    // ========================================================================\n");
+            out.push_str(
+                "    // ========================================================================\n",
+            );
             out.push_str("    // Module Constants\n");
             out.push_str("    // ========================================================================\n\n");
 
@@ -425,7 +464,12 @@ impl Module {
                     // All module variables are const in Rust; use transpiled ident on definition
                     // (Rust doesn't allow #[inline] on constants, only on functions)
                     let renamed_name = rename_variable(&var.name, var.typ.as_ref());
-                    write!(out, "    pub const {}: {} = {};\n", renamed_name, rust_type, value).unwrap();
+                    write!(
+                        out,
+                        "    pub const {}: {} = {};\n",
+                        renamed_name, rust_type, value
+                    )
+                    .unwrap();
                 }
             }
             out.push_str("\n");
@@ -433,7 +477,9 @@ impl Module {
 
         // Generate free functions
         if !self.functions.is_empty() {
-            out.push_str("    // ========================================================================\n");
+            out.push_str(
+                "    // ========================================================================\n",
+            );
             out.push_str("    // Module Functions\n");
             out.push_str("    // ========================================================================\n\n");
 
@@ -442,7 +488,8 @@ impl Module {
                 if project_mode {
                     out.push_str("    #[inline]\n");
                 }
-                let func_code = func.to_rust_free_function(verbose, module_names, Some(&self.variables));
+                let func_code =
+                    func.to_rust_free_function(verbose, module_names, Some(&self.variables));
                 for line in func_code.lines() {
                     out.push_str("    ");
                     out.push_str(line);

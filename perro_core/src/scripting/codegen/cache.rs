@@ -1,7 +1,7 @@
 // Type inference cache for performance optimization
+use crate::scripting::ast::{Expr, Type};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use crate::scripting::ast::{Expr, Type};
 
 thread_local! {
     static TYPE_CACHE: RefCell<HashMap<usize, Option<Type>>> = RefCell::new(HashMap::new());
@@ -50,4 +50,3 @@ pub(crate) fn set_cached_script_members(key: usize, members: std::collections::H
         *cache.borrow_mut() = Some((key, members));
     });
 }
-
