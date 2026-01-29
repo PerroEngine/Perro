@@ -29,6 +29,12 @@ pub struct Script {
     pub module_variables: std::collections::HashMap<String, Vec<Variable>>, // Map module name -> list of variables (constants) for type inference
     /// When generating module function bodies: module-level constants (for Ident/Assign resolution with transpiled names)
     pub module_scope_variables: Option<Vec<Variable>>,
+    /// True if this script is a @global (always extends Node internally, no explicit extend).
+    pub is_global: bool,
+    /// Known global names (e.g., "Utils", "Root") for global access detection.
+    pub global_names: std::collections::HashSet<String>,
+    /// Map global name -> NodeID. Set by transpiler: "Root" -> 1; @global names -> 2, 3, 4... in alphabetical order. Single source of truth for codegen.
+    pub global_name_to_node_id: std::collections::HashMap<String, u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -718,6 +724,12 @@ impl Type {
 
             // T -> Option<T> conversions (wrapping in Some)
             (from, Type::Option(inner)) if *from == *inner.as_ref() => true,
+
+            // Vector3 ↔ Vector2 (drop/pad z); Quaternion ↔ f32 (2D rotation)
+            (Type::EngineStruct(EngineStruct::Vector3), Type::EngineStruct(EngineStruct::Vector2)) => true,
+            (Type::EngineStruct(EngineStruct::Vector2), Type::EngineStruct(EngineStruct::Vector3)) => true,
+            (Type::EngineStruct(EngineStruct::Quaternion), Type::Number(Float(32))) => true,
+            (Type::Number(Float(32)), Type::EngineStruct(EngineStruct::Quaternion)) => true,
 
             // Any and Object are equivalent (both are serde_json::Value)
             (Type::Any, Type::Object) | (Type::Object, Type::Any) => true,

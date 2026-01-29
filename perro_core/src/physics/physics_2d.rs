@@ -112,7 +112,7 @@ impl PhysicsWorld2D {
         let collider = ColliderBuilder::new(rapier_shape)
             .sensor(true) // This makes it a sensor - detects collisions but doesn't have physics
             .translation(vector![position[0], position[1]])
-            .rotation(rotation)
+            .rotation(rotation.to_radians()) // Transform2D.rotation is in degrees; Rapier expects radians
             .build();
 
         let handle = self.colliders.insert(collider);

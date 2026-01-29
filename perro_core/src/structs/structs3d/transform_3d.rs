@@ -1,5 +1,6 @@
 use glam::Mat4;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::{Quaternion, Vector3};
 
@@ -40,6 +41,12 @@ pub struct Transform3D {
 
     #[serde(default = "default_scale", skip_serializing_if = "is_default_scale")]
     pub scale: Vector3,
+}
+
+impl fmt::Display for Transform3D {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Transform3D(position:{}, rotation:{}, scale:{})", self.position, self.rotation, self.scale)
+    }
 }
 
 impl Transform3D {

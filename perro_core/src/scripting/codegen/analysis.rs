@@ -288,6 +288,16 @@ pub(crate) fn extract_node_member_info(
                 Some(("self.id".to_string(), script.node_type.clone(), path.join("."), "self_node".to_string()))
             }
             Expr::Ident(var_name) => {
+                // Global (Root, @global TestGlobal): always NodeType::Node (base node), never DynNode. Use global registry NodeID.
+                if let Some(&node_id) = script.global_name_to_node_id.get(var_name) {
+                    let path: Vec<String> = field_path.iter().rev().cloned().collect();
+                    return Some((
+                        format!("NodeID::from_u32({})", node_id),
+                        "Node".to_string(), // Globals are the base node; compile-time guarantee, always use scene node path
+                        path.join("."),
+                        var_name.to_string(),
+                    ));
+                }
                 // Helper to find variable in nested blocks (for loops, if statements, etc.)
                 fn find_variable_in_body<'a>(name: &str, body: &'a [crate::scripting::ast::Stmt]) -> Option<&'a crate::scripting::ast::Variable> {
                     use crate::scripting::ast::Stmt;

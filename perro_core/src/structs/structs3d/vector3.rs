@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -24,6 +25,12 @@ impl<'de> Deserialize<'de> for Vector3 {
     {
         let arr = <[f32; 3]>::deserialize(deserializer)?;
         Ok(Vector3::new(arr[0], arr[1], arr[2]))
+    }
+}
+
+impl fmt::Display for Vector3 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Vector3({}, {}, {})", self.x, self.y, self.z)
     }
 }
 

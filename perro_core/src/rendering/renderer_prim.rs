@@ -290,9 +290,10 @@ impl PrimitiveRenderer {
             Vector2::new(-half_w, half_h),
         ];
         
-        // Rotate and translate corners to world space
-        let cos_r = transform.rotation.cos();
-        let sin_r = transform.rotation.sin();
+        // Rotate and translate corners to world space (Transform2D.rotation is in degrees)
+        let r = transform.rotation.to_radians();
+        let cos_r = r.cos();
+        let sin_r = r.sin();
         let mut min_x = f32::INFINITY;
         let mut max_x = f32::NEG_INFINITY;
         let mut min_y = f32::INFINITY;
@@ -338,13 +339,13 @@ impl PrimitiveRenderer {
         let scale_y = m.y_axis.truncate().length();
         let scale = Vector2::new(scale_x, scale_y);
     
-        // Rotation (from normalized x axis)
-        let rotation = (m.x_axis.y / scale_x).atan2(m.x_axis.x / scale_x);
+        // Rotation (from normalized x axis, atan2 returns radians; Transform2D stores degrees)
+        let rotation_rad = (m.x_axis.y / scale_x).atan2(m.x_axis.x / scale_x);
     
         Transform2D {
             position,
             scale,
-            rotation,
+            rotation: rotation_rad.to_degrees(),
         }
     }
     

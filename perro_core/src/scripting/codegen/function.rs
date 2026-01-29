@@ -514,6 +514,9 @@ impl Function {
             module_functions: std::collections::HashMap::new(), // Not needed for module function codegen
             module_variables: std::collections::HashMap::new(), // Not needed for module function codegen
             module_scope_variables: module_variables.map(|v| v.to_vec()),
+            is_global: false,
+            global_names: std::collections::HashSet::new(),
+            global_name_to_node_id: std::collections::HashMap::new(),
         };
 
         for stmt in &self.body {

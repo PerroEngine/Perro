@@ -242,7 +242,7 @@ pub fn implement_script_boilerplate_internal(
                         set_entries,
                         "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
                             if let Some(v) = val.as_u64().map(|n| n as u32) {{
-                                script.{renamed_name} = perro_core::NodeID::from_u32(v);
+                                script.{renamed_name} = NodeID::from_u32(v);
                                 return Some(());
                             }} else if let Some(vNodeType) = val.as_str().and_then(|s| perro_core::NodeID::parse_str(s).ok()) {{
                                 script.{renamed_name} = vNodeType;

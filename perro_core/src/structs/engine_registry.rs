@@ -290,8 +290,8 @@ impl EngineRegistry {
             vec![
                 ("get_var", vec![Type::String], Type::Any, Some(NodeMethodRef::GetVar), vec!["name"]),
                 ("set_var", vec![Type::String, Type::Object], Type::Void, Some(NodeMethodRef::SetVar), vec!["name", "value"]),
-                ("get_node", vec![Type::String], Type::Node(NodeType::Node), Some(NodeMethodRef::GetChildByName), vec!["name"]),
-                ("get_parent", vec![], Type::Node(NodeType::Node), Some(NodeMethodRef::GetParent), vec![]),
+                ("get_node", vec![Type::String], Type::DynNode, Some(NodeMethodRef::GetChildByName), vec!["name"]),
+                ("get_parent", vec![], Type::DynNode, Some(NodeMethodRef::GetParent), vec![]),
                 ("add_child", vec![Type::Node(NodeType::Node)], Type::Void, Some(NodeMethodRef::AddChild), vec!["node"]),
                 ("clear_children", vec![], Type::Void, Some(NodeMethodRef::ClearChildren), vec![]),
                 ("get_type", vec![], Type::NodeType, Some(NodeMethodRef::GetType), vec![]),
@@ -631,8 +631,40 @@ impl EngineRegistry {
                 result_set.insert(descendant);
             }
         }
-        // Convert HashSet to Vec (order is not important)
-        result_set.into_iter().collect()
+        // Convert to Vec and sort so 3D nodes come first (wider types), then 2D, then by name for stability
+        let mut result: Vec<NodeType> = result_set.into_iter().collect();
+        self.sort_node_types_3d_first(&mut result);
+        result
+    }
+
+    /// Returns true if node_type has the given base in its ancestry (or is the base).
+    pub fn has_base(&self, node_type: &NodeType, base: NodeType) -> bool {
+        let mut current = Some(*node_type);
+        while let Some(nt) = current {
+            if nt == base {
+                return true;
+            }
+            current = self.node_bases.get(&nt).copied();
+        }
+        false
+    }
+
+    /// Sort node types so 3D nodes come first, then 2D, then others; within each group sort by debug name for stability.
+    pub fn sort_node_types_3d_first(&self, types: &mut [NodeType]) {
+        use std::cmp::Ordering;
+        types.sort_by(|a, b| {
+            let key = |nt: &NodeType| {
+                let is_3d = self.has_base(nt, NodeType::Node3D);
+                let is_2d = self.has_base(nt, NodeType::Node2D);
+                let order = match (is_3d, is_2d) {
+                    (true, _) => 0u8,
+                    (_, true) => 1,
+                    _ => 2,
+                };
+                (order, format!("{:?}", nt))
+            };
+            key(a).cmp(&key(b))
+        });
     }
 
     /// Find the intersection of node types that have multiple field paths

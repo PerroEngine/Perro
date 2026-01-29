@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quaternion {
@@ -24,6 +25,12 @@ impl<'de> Deserialize<'de> for Quaternion {
     {
         let arr = <[f32; 4]>::deserialize(deserializer)?;
         Ok(Quaternion::new(arr[0], arr[1], arr[2], arr[3]))
+    }
+}
+
+impl fmt::Display for Quaternion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Quaternion({}, {}, {}, {})", self.x, self.y, self.z, self.w)
     }
 }
 
@@ -55,6 +62,20 @@ impl Quaternion {
 
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Self {
         Self::from_glam(glam::Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll))
+    }
+
+    /// Creates a quaternion from a 2D rotation angle (degrees, around Z axis).
+    /// Used when unifying DynNode transform.rotation (2D nodes use f32 in degrees, 3D use Quaternion).
+    pub fn from_rotation_2d(angle_degrees: f32) -> Self {
+        let radians = angle_degrees.to_radians();
+        Self::from_glam(glam::Quat::from_axis_angle(glam::Vec3::Z, radians))
+    }
+
+    /// Extracts the 2D rotation angle (degrees, Z axis) from this quaternion.
+    /// Used for implicit Quaternion -> f32 conversion when assigning to a float.
+    pub fn to_rotation_2d(&self) -> f32 {
+        let (_, _, roll_radians) = self.to_euler();
+        roll_radians.to_degrees()
     }
 
     pub fn to_euler(&self) -> (f32, f32, f32) {

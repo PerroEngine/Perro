@@ -41,6 +41,10 @@ pub struct RuntimeData {
     pub static_assets: StaticAssets,
     /// Script constructor registry (compile-time perfect hash map)
     pub script_registry: &'static Map<&'static str, CreateFn>,
+    /// Global script identifiers in deterministic order (Root = 1, first global = 2, etc.)
+    pub global_registry_order: &'static [&'static str],
+    /// Global display names from @global Name (same order as global_registry_order)
+    pub global_registry_names: &'static [&'static str],
 }
 
 /// Generic static script provider that lives in core
@@ -48,6 +52,8 @@ pub struct StaticScriptProvider {
     ctors: &'static Map<&'static str, CreateFn>,
     pub scenes: &'static Lazy<HashMap<&'static str, &'static SceneData>>,
     pub fur: &'static Lazy<HashMap<&'static str, &'static [FurElement]>>,
+    global_registry_order: &'static [&'static str],
+    global_registry_names: &'static [&'static str],
 }
 
 impl StaticScriptProvider {
@@ -56,6 +62,8 @@ impl StaticScriptProvider {
             ctors: data.script_registry,
             scenes: data.static_assets.scenes,
             fur: data.static_assets.fur,
+            global_registry_order: data.global_registry_order,
+            global_registry_names: data.global_registry_names,
         }
     }
 }
@@ -71,6 +79,14 @@ impl ScriptProvider for StaticScriptProvider {
             .get(short)
             .copied()
             .ok_or_else(|| anyhow::anyhow!("No static ctor for {short}"))
+    }
+
+    fn get_global_registry_order(&self) -> &[&str] {
+        self.global_registry_order
+    }
+
+    fn get_global_registry_names(&self) -> &[&str] {
+        self.global_registry_names
     }
 
     fn load_scene_data(&self, path: &str) -> io::Result<SceneData> {

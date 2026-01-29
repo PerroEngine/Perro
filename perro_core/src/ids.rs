@@ -25,35 +25,39 @@ macro_rules! define_generational_id {
             }
 
             #[inline]
-            pub fn index(self) -> u32 {
+            pub const fn index(self) -> u32 {
                 (self.0 & 0xFFFF_FFFF) as u32
             }
 
             #[inline]
-            pub fn generation(self) -> u32 {
+            pub const fn generation(self) -> u32 {
                 (self.0 >> 32) as u32
             }
 
-            pub fn from_parts(index: u32, generation: u32) -> Self {
+            #[inline]
+            pub const fn from_parts(index: u32, generation: u32) -> Self {
                 Self((index as u64) | ((generation as u64) << 32))
             }
 
             #[inline]
-            pub fn as_u64(self) -> u64 {
+            pub const fn as_u64(self) -> u64 {
                 self.0
             }
 
-            pub fn from_u64(value: u64) -> Self {
+            #[inline]
+            pub const fn from_u64(value: u64) -> Self {
                 Self(value)
             }
 
             #[inline]
-            pub fn is_nil(self) -> bool {
+            pub const fn is_nil(self) -> bool {
                 self.0 == 0
             }
 
+
             /// Legacy: index in low 32, generation 0 (e.g. deserialization).
-            pub fn from_u32(index: u32) -> Self {
+            #[inline]
+            pub const fn from_u32(index: u32) -> Self {
                 Self::from_parts(index, 0)
             }
         }

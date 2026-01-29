@@ -1043,11 +1043,12 @@ impl Compiler {
             self.copy_script_dll(profile_str)
                 .map_err(|e| format!("Failed to copy DLL: {}", e))?;
             
-            // Write script hash after successful compilation and DLL copy
-            // This ensures the hash is only written when everything is complete
-            let current_hash = compute_script_hash(&self.project_root)?;
-            if let Err(e) = write_script_hash(&self.project_root, &current_hash) {
-                eprintln!("⚠️  Warning: Failed to write script hash: {}", e);
+            // Write script hash after successful compilation and DLL copy (skip in source mode)
+            if !self.from_source {
+                let current_hash = compute_script_hash(&self.project_root)?;
+                if let Err(e) = write_script_hash(&self.project_root, &current_hash) {
+                    eprintln!("⚠️  Warning: Failed to write script hash: {}", e);
+                }
             }
         }
 
@@ -1447,6 +1448,14 @@ impl Compiler {
         writeln!(
             main_file,
             "        script_registry: scripts::get_script_registry(),"
+        )?;
+        writeln!(
+            main_file,
+            "        global_registry_order: scripts::get_global_registry_order(),"
+        )?;
+        writeln!(
+            main_file,
+            "        global_registry_names: scripts::get_global_registry_names(),"
         )?;
         writeln!(main_file, "    }}, runtime_params);")?;
         writeln!(main_file, "}}")?;

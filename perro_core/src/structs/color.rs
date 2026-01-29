@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Color {
@@ -17,6 +18,12 @@ impl Default for Color {
             b: 255,
             a: 255,
         }
+    }
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Color(r:{}, g:{}, b:{}, a:{})", self.r, self.g, self.b, self.a)
     }
 }
 

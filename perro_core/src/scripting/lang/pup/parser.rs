@@ -292,6 +292,172 @@ impl PupParser {
             module_functions: std::collections::HashMap::new(), // Will be set by transpiler
             module_variables: std::collections::HashMap::new(), // Will be set by transpiler
             module_scope_variables: None,
+            is_global: false,
+            global_names: std::collections::HashSet::new(), // Will be set by transpiler
+            global_name_to_node_id: std::collections::HashMap::new(), // Will be set by transpiler
+        })
+    }
+
+    /// Parse @global Name - like a script that always extends Node internally (no "extends" in source).
+    /// Globals get deterministic NodeIDs: Root=1, first global=2, second=3, etc.
+    pub fn parse_global(&mut self) -> Result<Script, String> {
+        let global_name = if self.current_token == PupToken::At {
+            self.next_token();
+            if self.current_token == PupToken::Global {
+                self.next_token();
+                if let PupToken::Ident(name) = &self.current_token {
+                    let name = name.clone();
+                    self.next_token();
+                    name
+                } else {
+                    return Err("Expected global name after @global".into());
+                }
+            } else {
+                return Err("Expected 'global' after '@'".into());
+            }
+        } else {
+            return Err("Expected @global declaration at start of file".into());
+        };
+
+        // No "extends" - always Node internally
+        let mut script_vars = Vec::new();
+        let mut functions = Vec::new();
+        let mut structs = Vec::new();
+        let mut on_signal_functions = Vec::new();
+
+        while self.current_token != PupToken::Eof {
+            match &self.current_token {
+                PupToken::At => {
+                    self.next_token();
+                    if self.current_token == PupToken::Expose {
+                        self.next_token();
+                        let mut var = self.parse_variable_decl()?;
+                        var.is_exposed = true;
+                        var.is_public = true;
+                        if !var.attributes.contains(&"Expose".to_string()) {
+                            var.attributes.push("Expose".to_string());
+                        }
+                        script_vars.push(var);
+                    } else if let PupToken::Ident(attr_name) = &self.current_token {
+                        self.pending_attributes.push(attr_name.clone());
+                        self.next_token();
+                        continue;
+                    } else {
+                        return Err(format!(
+                            "Expected identifier after '@', got {:?}",
+                            self.current_token
+                        ));
+                    }
+                }
+                PupToken::On => {
+                    self.next_token();
+                    let name = if let PupToken::Ident(name) = &self.current_token {
+                        name.clone()
+                    } else {
+                        return Err("Expected identifier after 'on'".into());
+                    };
+                    self.next_token();
+                    let is_lifecycle = name == "init" || name == "update" || name == "fixed_update";
+                    if is_lifecycle {
+                        let mut func = self.parse_function_with_name(name.clone())?;
+                        func.is_trait_method = true;
+                        func.is_lifecycle_method = true;
+                        functions.push(func);
+                    } else {
+                        let mut func = self.parse_function_with_name(name.clone())?;
+                        func.is_on_signal = true;
+                        func.signal_name = Some(name.clone());
+                        on_signal_functions.push(name);
+                        functions.push(func);
+                    }
+                }
+                PupToken::Struct => {
+                    let def = self.parse_struct_def()?;
+                    self.parsed_structs.push(def.clone());
+                    structs.push(def);
+                }
+                PupToken::Var | PupToken::Const => {
+                    let mut var = self.parse_variable_decl()?;
+                    var.is_exposed = false;
+                    var.is_public = true;
+                    script_vars.push(var);
+                }
+                PupToken::Fn => functions.push(self.parse_function()?),
+                other => {
+                    return Err(format!("Unexpected top-level token {:?}", other));
+                }
+            }
+        }
+
+        if !on_signal_functions.is_empty() {
+            let init_func = functions.iter_mut().find(|f| f.name == "init");
+            if let Some(init_func) = init_func {
+                for signal_name in &on_signal_functions {
+                    let connect_stmt = self.create_signal_connect_stmt(signal_name.clone());
+                    init_func.body.insert(0, connect_stmt);
+                }
+            } else {
+                let mut init_body = Vec::new();
+                for signal_name in &on_signal_functions {
+                    let connect_stmt = self.create_signal_connect_stmt(signal_name.clone());
+                    init_body.push(connect_stmt);
+                }
+                functions.insert(0, Function {
+                    name: "init".to_string(),
+                    params: Vec::new(),
+                    locals: Vec::new(),
+                    body: init_body,
+                    is_trait_method: true,
+                    uses_self: false,
+                    cloned_child_nodes: Vec::new(),
+                    return_type: Type::Void,
+                    span: None,
+                    attributes: Vec::new(),
+                    is_on_signal: false,
+                    signal_name: None,
+                    is_lifecycle_method: false,
+                });
+            }
+        }
+
+        let mut attributes = HashMap::new();
+        for var in &script_vars {
+            if !var.attributes.is_empty() {
+                attributes.insert(var.name.clone(), var.attributes.clone());
+            }
+        }
+        for func in &functions {
+            if !func.attributes.is_empty() {
+                attributes.insert(func.name.clone(), func.attributes.clone());
+            }
+        }
+        for struct_def in &structs {
+            for field in &struct_def.fields {
+                if !field.attributes.is_empty() {
+                    let qualified_name = format!("{}.{}", struct_def.name, field.name);
+                    attributes.insert(qualified_name, field.attributes.clone());
+                }
+            }
+        }
+
+        Ok(Script {
+            script_name: Some(global_name.clone()),
+            node_type: "Node".to_string(), // Globals always use Node as nodetype
+            variables: script_vars,
+            language: Some("pup".to_string()),
+            source_file: None,
+            functions,
+            structs,
+            verbose: true,
+            attributes,
+            module_names: std::collections::HashSet::new(),
+            module_name_to_identifier: std::collections::HashMap::new(),
+            module_functions: std::collections::HashMap::new(),
+            module_variables: std::collections::HashMap::new(),
+            module_scope_variables: None,
+            is_global: true,
+            global_names: std::collections::HashSet::new(),
+            global_name_to_node_id: std::collections::HashMap::new(),
         })
     }
 

@@ -2261,7 +2261,7 @@ impl Graphics {
         let zoom = cam.zoom;
         let t = &cam.transform;
 
-        let rotation = glam::Mat4::from_rotation_z(t.rotation);
+        let rotation = glam::Mat4::from_rotation_z(t.rotation.to_radians());
         let translation =
             glam::Mat4::from_translation(glam::vec3(-t.position.x, -t.position.y, 0.0));
         let view = rotation * translation;

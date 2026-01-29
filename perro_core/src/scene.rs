@@ -618,7 +618,7 @@ pub struct SignalBus {
     pub connections: HashMap<u64, HashMap<NodeID, SmallVec<[u64; 4]>>>,
 }
 
-impl<P: ScriptProvider> Scene<P> {
+impl<P: ScriptProvider + 'static> Scene<P> {
     /// Check if any UINode has a focused text input element
     pub fn has_focused_text_input(&self) -> bool {
         for node in self.nodes.values() {
@@ -891,7 +891,7 @@ impl<P: ScriptProvider> Scene<P> {
         provider: P,
         gfx: &mut crate::rendering::Graphics,
     ) -> anyhow::Result<Self> {
-        // Create game root - it will get ID 1 from NodeID::new()
+        // Create game root (id 1) — Root, owns main scene, has root script.
         let mut root_node = Node::new();
         root_node.name = Cow::Borrowed("Root");
         let root_node = SceneNode::Node(root_node);
@@ -905,6 +905,29 @@ impl<P: ScriptProvider> Scene<P> {
             input_mgr.load_action_map(input_map);
         }
 
+        // Create global nodes (id 2, 3, ...) as siblings of Root — parent None, same as Root. Before main scene is merged.
+        let global_order: Vec<String> = game_scene
+            .provider
+            .get_global_registry_order()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let global_names: Vec<String> = game_scene
+            .provider
+            .get_global_registry_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
+        for (i, identifier) in global_order.iter().enumerate() {
+            let name = global_names.get(i).map(|s| s.as_str()).unwrap_or(identifier.as_str());
+            let mut node = Node::new();
+            node.name = Cow::Owned(name.to_string());
+            let global_node = SceneNode::Node(node);
+            let global_id = game_scene.nodes.insert(global_node);
+            // No parent — globals are top-level siblings of Root, same as Root (parent None).
+            global_node_ids.push(global_id);
+        }
 
         // ✅ root script first
         let root_script_opt: Option<String> = {
@@ -944,6 +967,29 @@ impl<P: ScriptProvider> Scene<P> {
             }
         }
 
+        // ✅ attach global scripts in order and call init
+        for (identifier, &global_id) in global_order.iter().zip(global_node_ids.iter()) {
+            if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
+                let boxed = game_scene.instantiate_script(ctor, global_id);
+                let handle = Rc::new(UnsafeCell::new(boxed));
+                game_scene.scripts.insert(global_id, handle);
+
+                let project_ref = game_scene.project.clone();
+                let mut project_borrow = project_ref.borrow_mut();
+                let now = Instant::now();
+                let true_delta = match game_scene.last_scene_update {
+                    Some(prev) => now.duration_since(prev).as_secs_f32(),
+                    None => 0.0,
+                };
+                let mut api = ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
+                api.call_init(global_id);
+                if let Some(node) = game_scene.nodes.get(global_id) {
+                    if node.is_renderable() {
+                        game_scene.needs_rerender.insert(global_id);
+                    }
+                }
+            }
+        }
 
         // ✅ main scene second
         let main_scene_path: String = {
@@ -3534,7 +3580,7 @@ impl<P: ScriptProvider> Scene<P> {
 // ---------------- SceneAccess impl ----------------
 //
 
-impl<P: ScriptProvider> SceneAccess for Scene<P> {
+impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
     fn get_scene_node_ref(&self, id: NodeID) -> Option<&SceneNode> {
         self.nodes.get(id)
     }
@@ -3809,7 +3855,10 @@ impl Scene<DllScriptProvider> {
         } else {
         }
 
-        // Now move `project` into Scene
+        // Create game root (id 1) — Root, owns main scene, has root script.
+        let mut root_node = Node::new();
+        root_node.name = Cow::Borrowed("Root");
+        let root_node = SceneNode::Node(root_node);
         let mut game_scene = Scene::new(root_node, provider, project);
 
         // Initialize input manager with action map from project.toml
@@ -3820,7 +3869,30 @@ impl Scene<DllScriptProvider> {
             input_mgr.load_action_map(input_map);
         }
 
-        
+        // Create global nodes (id 2, 3, ...) as siblings of Root — parent None, same as Root. Before main scene is merged.
+        let global_order: Vec<String> = game_scene
+            .provider
+            .get_global_registry_order()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let global_names: Vec<String> = game_scene
+            .provider
+            .get_global_registry_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
+        for (i, identifier) in global_order.iter().enumerate() {
+            let name = global_names.get(i).map(|s| s.as_str()).unwrap_or(identifier.as_str());
+            let mut node = Node::new();
+            node.name = Cow::Owned(name.to_string());
+            let global_node = SceneNode::Node(node);
+            let global_id = game_scene.nodes.insert(global_node);
+            // No parent — globals are top-level siblings of Root, same as Root (parent None).
+            global_node_ids.push(global_id);
+        }
+
         // ✅ root script first - load before merging main scene
         let root_script_path_opt = {
             let project_ref = game_scene.project.borrow();
@@ -3856,6 +3928,30 @@ impl Scene<DllScriptProvider> {
                     }
                 } else {
                     println!("❌ Could not find symbol for {}", identifier);
+                }
+            }
+        }
+
+        // ✅ attach global scripts in order and call init
+        for (identifier, &global_id) in global_order.iter().zip(global_node_ids.iter()) {
+            if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
+                let boxed = game_scene.instantiate_script(ctor, global_id);
+                let handle = Rc::new(UnsafeCell::new(boxed));
+                game_scene.scripts.insert(global_id, handle);
+
+                let project_ref = game_scene.project.clone();
+                let mut project_borrow = project_ref.borrow_mut();
+                let now = Instant::now();
+                let true_delta = match game_scene.last_scene_update {
+                    Some(prev) => now.duration_since(prev).as_secs_f32(),
+                    None => 0.0,
+                };
+                let mut api = ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
+                api.call_init(global_id);
+                if let Some(node) = game_scene.nodes.get(global_id) {
+                    if node.is_renderable() {
+                        game_scene.needs_rerender.insert(global_id);
+                    }
                 }
             }
         }

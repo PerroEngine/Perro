@@ -195,7 +195,7 @@ pub struct App<P: ScriptProvider> {
     command_rx: Receiver<AppCommand>,
 }
 
-impl<P: ScriptProvider> App<P> {
+impl<P: ScriptProvider + 'static> App<P> {
     /// Create a new App with pre-created Graphics
     /// Graphics must be created synchronously before calling this, so we can render
     /// the first frame before showing the window (prevents black/white flash)
@@ -465,7 +465,7 @@ impl<P: ScriptProvider> App<P> {
     }
 }
 
-impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
+impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // If window was created at virtual size and doesn't fit on the primary monitor,
         // scale it down (preserving aspect ratio) so it fits.

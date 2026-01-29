@@ -43,5 +43,6 @@ fn main() {
             textures: &static_assets::textures::PERRO_TEXTURES,
         },
         script_registry: scripts::get_script_registry(),
+        global_registry_order: scripts::get_global_registry_order(),
     }, runtime_params);
 }

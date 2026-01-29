@@ -51,6 +51,17 @@ pub trait ScriptProvider: Sync {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn load_scene_data(&self, path: &str) -> io::Result<SceneData>;
     fn load_fur_data(&self, path: &str) -> io::Result<Vec<FurElement>>;
+
+    /// Global script identifiers in deterministic order. Root = NodeID(1); first global = 2, etc.
+    /// Used when building the scene to create global nodes and attach scripts in the correct order.
+    fn get_global_registry_order(&self) -> &[&str] {
+        &[]
+    }
+
+    /// Global display names from @global Name (same order as get_global_registry_order). Used for node names.
+    fn get_global_registry_names(&self) -> &[&str] {
+        &[]
+    }
 }
 
 /// Trait implemented by all user scripts (dyn‑safe)

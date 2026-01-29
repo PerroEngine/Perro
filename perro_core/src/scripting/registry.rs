@@ -6,12 +6,24 @@ use crate::{
     script::{CreateFn, ScriptProvider},
 };
 use libloading::Library;
+use std::sync::RwLock;
 use std::{collections::HashMap, ffi::CString, io, os::raw::c_char};
+
+/// Wraps (ptr, len) from the DLL so we can store it in RwLock (raw pointers are !Send + !Sync).
+/// The pointer points at the DLL's static GLOBAL_ORDER; the DLL is kept alive by DllScriptProvider.
+#[derive(Clone, Copy)]
+struct GlobalSlicePtr(*const u8, usize);
+unsafe impl Send for GlobalSlicePtr {}
+unsafe impl Sync for GlobalSlicePtr {}
 
 /// Dynamic DLL-based provider (default for game projects)
 pub struct DllScriptProvider {
     lib: Option<Library>,
     ctors: HashMap<String, CreateFn>,
+    /// Cached (ptr, len) from DLL's get_global_registry_order() for get_global_registry_order().
+    cached_global_slice: RwLock<Option<GlobalSlicePtr>>,
+    /// Cached (ptr, len) from DLL's get_global_registry_names() for node display names.
+    cached_global_names_slice: RwLock<Option<GlobalSlicePtr>>,
 }
 
 impl DllScriptProvider {
@@ -19,7 +31,43 @@ impl DllScriptProvider {
         Self {
             lib,
             ctors: HashMap::new(),
+            cached_global_slice: RwLock::new(None),
+            cached_global_names_slice: RwLock::new(None),
         }
+    }
+
+    /// Call DLL's perro_get_global_registry_slice and return (ptr to first &str, length).
+    fn fetch_global_registry_slice(&self) -> GlobalSlicePtr {
+        let lib = match self.lib.as_ref() {
+            Some(l) => l,
+            None => return GlobalSlicePtr(std::ptr::null(), 0),
+        };
+        type Fn = extern "C" fn(*mut *const u8, *mut usize);
+        let sym: libloading::Symbol<Fn> = match unsafe { lib.get(b"perro_get_global_registry_slice\0") } {
+            Ok(s) => s,
+            Err(_) => return GlobalSlicePtr(std::ptr::null(), 0),
+        };
+        let mut ptr: *const u8 = std::ptr::null();
+        let mut len: usize = 0;
+        sym(&mut ptr, &mut len);
+        GlobalSlicePtr(ptr, len)
+    }
+
+    /// Call DLL's perro_get_global_registry_names_slice for display names.
+    fn fetch_global_registry_names_slice(&self) -> GlobalSlicePtr {
+        let lib = match self.lib.as_ref() {
+            Some(l) => l,
+            None => return GlobalSlicePtr(std::ptr::null(), 0),
+        };
+        type Fn = extern "C" fn(*mut *const u8, *mut usize);
+        let sym: libloading::Symbol<Fn> = match unsafe { lib.get(b"perro_get_global_registry_names_slice\0") } {
+            Ok(s) => s,
+            Err(_) => return GlobalSlicePtr(std::ptr::null(), 0),
+        };
+        let mut ptr: *const u8 = std::ptr::null();
+        let mut len: usize = 0;
+        sym(&mut ptr, &mut len);
+        GlobalSlicePtr(ptr, len)
     }
 
     pub fn inject_project_root(&self, root: &ProjectRoot) -> anyhow::Result<()> {
@@ -118,5 +166,39 @@ impl ScriptProvider for DllScriptProvider {
             }
             Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
         }
+    }
+
+    fn get_global_registry_order(&self) -> &[&str] {
+        if self.cached_global_slice.read().unwrap().is_none() {
+            *self.cached_global_slice.write().unwrap() = Some(self.fetch_global_registry_slice());
+        }
+        let GlobalSlicePtr(ptr, len) = self
+            .cached_global_slice
+            .read()
+            .unwrap()
+            .as_ref()
+            .copied()
+            .unwrap_or(GlobalSlicePtr(std::ptr::null(), 0));
+        if ptr.is_null() || len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(ptr as *const &str, len) }
+    }
+
+    fn get_global_registry_names(&self) -> &[&str] {
+        if self.cached_global_names_slice.read().unwrap().is_none() {
+            *self.cached_global_names_slice.write().unwrap() = Some(self.fetch_global_registry_names_slice());
+        }
+        let GlobalSlicePtr(ptr, len) = self
+            .cached_global_names_slice
+            .read()
+            .unwrap()
+            .as_ref()
+            .copied()
+            .unwrap_or(GlobalSlicePtr(std::ptr::null(), 0));
+        if ptr.is_null() || len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(ptr as *const &str, len) }
     }
 }

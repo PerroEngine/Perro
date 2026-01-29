@@ -185,10 +185,16 @@ fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Res
         }
     }
 
-    rebuild_lib_rs(project_root, &active_ids, &std::collections::HashSet::new())?;
+    rebuild_lib_rs(project_root, &active_ids, &std::collections::HashSet::new(), &[], &[])?;
     Ok(())
 }
-pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>, module_identifiers: &HashSet<String>) -> Result<(), String> {
+pub fn rebuild_lib_rs(
+    project_root: &Path,
+    active_ids: &HashSet<String>,
+    module_identifiers: &HashSet<String>,
+    global_order: &[String],
+    global_names: &[String],
+) -> Result<(), String> {
     let lib_rs_path = project_root.join(".perro/scripts/src/lib.rs");
 
     if let Some(parent) = lib_rs_path.parent() {
@@ -206,7 +212,8 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>, module_
         }\n\n\
         static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {\n\
         // __PERRO_REGISTRY__\n\
-        };\n\n",
+        };\n\n\
+        // __PERRO_GLOBAL_ORDER__\n",
     );
 
     // Separate scripts from modules
@@ -251,6 +258,52 @@ pub fn rebuild_lib_rs(project_root: &Path, active_ids: &HashSet<String>, module_
             );
         }
     }
+
+    // Global order: deterministic list of global script identifiers (for load_ctor) and display names (for node names from @global Name).
+    let global_order_fn = if global_order.is_empty() {
+        "/// Global script identifiers in deterministic order. Root = NodeID(1); first global = 2, etc.\npub fn get_global_registry_order() -> &'static [&'static str] { &[] }\n\n/// Global display names from @global Name (same order as get_global_registry_order).\npub fn get_global_registry_names() -> &'static [&'static str] { &[] }\n".to_string()
+    } else {
+        let order_str = global_order.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ");
+        let names_str = global_names.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(", ");
+        format!(
+            "/// Global script identifiers in deterministic order. Root = NodeID(1); first global = 2, etc.\npub fn get_global_registry_order() -> &'static [&'static str] {{\n    static GLOBAL_ORDER: &[&str] = &[{}];\n    GLOBAL_ORDER\n}}\n\n/// Global display names from @global Name (same order as get_global_registry_order).\npub fn get_global_registry_names() -> &'static [&'static str] {{\n    static GLOBAL_ORDER_NAMES: &[&str] = &[{}];\n    GLOBAL_ORDER_NAMES\n}}\n",
+            order_str, names_str
+        )
+    };
+    content = content.replace("// __PERRO_GLOBAL_ORDER__", &global_order_fn);
+
+    // In static mode the host calls get_global_registry_order() directly (same as get_script_registry()).
+    // In DLL mode the host cannot call get_global_registry_order() — &[&str] is not FFI-safe across the
+    // DLL boundary. So we expose a C-compatible export that writes (ptr, len); the host uses that to
+    // reconstruct the slice. (Script registry doesn't need this because in DLL mode the host only
+    // does load_ctor(name) = symbol lookup by name, never "give me the whole map".)
+    let global_registry_ffi = r#"
+
+/// DLL mode: host calls this to get (ptr, len) of get_global_registry_order(). Same data as get_global_registry_order(), C-ABI only.
+#[unsafe(no_mangle)]
+pub extern "C" fn perro_get_global_registry_slice(ptr_out: *mut *const u8, len_out: *mut usize) {
+    let slice = get_global_registry_order();
+    if !ptr_out.is_null() && !len_out.is_null() {
+        unsafe {
+            *ptr_out = slice.as_ptr() as *const u8;
+            *len_out = slice.len();
+        }
+    }
+}
+
+/// DLL mode: host calls this to get (ptr, len) of get_global_registry_names() for node display names.
+#[unsafe(no_mangle)]
+pub extern "C" fn perro_get_global_registry_names_slice(ptr_out: *mut *const u8, len_out: *mut usize) {
+    let slice = get_global_registry_names();
+    if !ptr_out.is_null() && !len_out.is_null() {
+        unsafe {
+            *ptr_out = slice.as_ptr() as *const u8;
+            *len_out = slice.len();
+        }
+    }
+}
+"#;
+    content.push_str(global_registry_ffi);
 
     // Add debug-only FFI function for project root
     let ffi_fn_marker = "perro_set_project_root";
@@ -432,11 +485,13 @@ fn setup_dll_panic_handler() {
 
 /// Transpile all scripts in res/. When `project_mode` is true, generated module code
 /// gets `#[inline]` on functions and constants (for release/project builds).
-pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Result<(), String> {
+/// When `from_source` is true (e.g. `cargo run -p perro_core`), script hash is ignored:
+/// we always transpile and do not read/write scripts_hash.
+pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool, from_source: bool) -> Result<(), String> {
     let total_start = Instant::now();
 
-    // In project mode, skip hash compare so we always transpile
-    if !project_mode {
+    // In project mode or source mode, skip hash compare so we always transpile
+    if !project_mode && !from_source {
         let current_hash = compute_script_hash(project_root)?;
         let stored_hash = read_stored_hash(project_root)?;
         if let Some(stored) = stored_hash {
@@ -460,8 +515,8 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
     if script_paths.is_empty() {
         println!("📜 No scripts found. Creating minimal lib.rs...");
         // Still create a minimal lib.rs so the DLL can be built
-        rebuild_lib_rs(project_root, &std::collections::HashSet::new(), &std::collections::HashSet::new())?;
-        if !project_mode {
+        rebuild_lib_rs(project_root, &std::collections::HashSet::new(), &std::collections::HashSet::new(), &[], &[])?;
+        if !project_mode && !from_source {
             let current_hash = compute_script_hash(project_root)?;
             write_script_hash(project_root, &current_hash)?;
         }
@@ -494,6 +549,8 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
     let mut module_name_to_identifier: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map module name -> identifier (reverse map)
     let mut module_functions: std::collections::HashMap<String, Vec<crate::scripting::ast::Function>> = std::collections::HashMap::new(); // Map module name -> functions
     let mut module_variables: std::collections::HashMap<String, Vec<crate::scripting::ast::Variable>> = std::collections::HashMap::new(); // Map module name -> variables (constants)
+    let mut global_identifiers: HashSet<String> = HashSet::new(); // Track which file identifiers are @global scripts
+    let mut identifier_to_global_name: std::collections::HashMap<String, String> = std::collections::HashMap::new(); // Map identifier -> global script name (e.g. "utils_pup" -> "Utils")
     
     for path in &script_paths {
         let extension = path
@@ -505,7 +562,7 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
             let code = fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             
-            // Check if it's a module
+            // Check if it's a module or global
             if code.trim_start().starts_with("@module") {
                 let mut parser = PupParser::new(&code);
                 if let Ok(module) = parser.parse_module() {
@@ -514,16 +571,44 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
                     module_identifiers.insert(identifier.clone());
                     identifier_to_module_name.insert(identifier.clone(), module.module_name.clone());
                     module_name_to_identifier.insert(module.module_name.clone(), identifier.clone());
-                    // Store module functions for type inference
                     module_functions.insert(module.module_name.clone(), module.functions.clone());
-                    // Store module variables (constants) for type inference
                     module_variables.insert(module.module_name.clone(), module.variables.clone());
+                }
+            } else if code.trim_start().starts_with("@global") {
+                let mut parser = PupParser::new(&code);
+                if let Ok(script) = parser.parse_global() {
+                    let identifier = script_path_to_identifier(&path.to_string_lossy())?;
+                    let name = script.script_name.as_deref().unwrap_or("");
+                    if !name.is_empty() {
+                        identifier_to_global_name.insert(identifier.clone(), name.to_string());
+                        global_identifiers.insert(identifier.clone());
+                    }
                 }
             }
         }
     }
-    
+
+    // Deterministic order for globals: sort by global *name* alphabetically. Same order used in lib.rs and scene creation.
+    let global_name_to_identifier: std::collections::HashMap<String, String> = identifier_to_global_name
+        .iter()
+        .map(|(id, name)| (name.clone(), id.clone()))
+        .collect();
+    let mut sorted_global_names: Vec<String> = global_name_to_identifier.keys().cloned().collect();
+    sorted_global_names.sort();
+    // global_order = list of identifiers in same order as sorted names (for lib.rs and scene.rs).
+    let global_order: Vec<String> = sorted_global_names
+        .iter()
+        .filter_map(|name| global_name_to_identifier.get(name).cloned())
+        .collect();
+    // Single source of truth: Root = 1; @global names = 2, 3, 4... by alphabetical order (globals are siblings of Root, same parent None).
+    let mut global_name_to_node_id: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    global_name_to_node_id.insert("Root".to_string(), 1);
+    for (i, name) in sorted_global_names.iter().enumerate() {
+        global_name_to_node_id.insert(name.clone(), 2 + i as u32);
+    }
+
     println!("📦 Found {} module(s): {:?}", module_names.len(), module_names.iter().collect::<Vec<_>>());
+    println!("🌐 Found {} global(s) (order): {:?}", global_order.len(), sorted_global_names);
 
     // ============================================================
     // SECOND PASS: Generate code for all files with full module knowledge
@@ -582,10 +667,37 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
                 let mut parser = PupParser::new(&code);
                 parser.set_source_file(res_path.clone());
                 
-                // Try to parse as module first (check for @module)
+                // Try to parse as module, then global, then script
                 let is_module = code.trim_start().starts_with("@module");
+                let is_global = code.trim_start().starts_with("@global");
                 
-                if is_module {
+                if is_global {
+                    let mut script = parser.parse_global()?;
+                    script.source_file = Some(res_path.clone());
+                    script.module_names = module_names.clone();
+                    script.module_name_to_identifier = module_name_to_identifier.clone();
+                    script.module_functions = module_functions.clone();
+                    script.module_variables = module_variables.clone();
+                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                    for name in global_name_to_node_id.keys() {
+                        script.global_names.insert(name.clone());
+                    }
+                    script.global_name_to_node_id = global_name_to_node_id.clone();
+                    parse_time = parse_start.elapsed();
+
+                    transpile_start = Instant::now();
+                    let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
+                    transpile_time = transpile_start.elapsed();
+
+                    let script_source_map = build_source_map_from_script(
+                        &res_path,
+                        &identifier,
+                        &code,
+                        &generated_code,
+                        &script,
+                    );
+                    source_map.add_script(identifier.clone(), script_source_map.clone());
+                } else if is_module {
                     let mut module = parser.parse_module()?;
                     module.source_file = Some(res_path.clone());
                     // Module names were already collected in first pass, but ensure identifier is tracked
@@ -609,14 +721,21 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
                 } else {
                     let mut script = parser.parse_script()?;
                     script.source_file = Some(res_path.clone());
+                    script.module_names = module_names.clone();
+                    script.module_name_to_identifier = module_name_to_identifier.clone();
+                    script.module_functions = module_functions.clone();
+                    script.module_variables = module_variables.clone();
+                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                    for name in global_name_to_node_id.keys() {
+                        script.global_names.insert(name.clone());
+                    }
+                    script.global_name_to_node_id = global_name_to_node_id.clone();
                     parse_time = parse_start.elapsed();
 
                     transpile_start = Instant::now();
-                    // Pass module names and mapping to script codegen so it knows which identifiers are modules
                     let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
                     transpile_time = transpile_start.elapsed();
                     
-                    // Build source map and embed it in the generated code
                     let script_source_map = build_source_map_from_script(
                         &res_path,
                         &identifier,
@@ -629,7 +748,12 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
             }
             "cs" => {
                 let mut script = CsParser::new(&code).parse_script()?;
-                parse_time = parse_start.elapsed();
+                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                    for name in global_name_to_node_id.keys() {
+                        script.global_names.insert(name.clone());
+                    }
+                    script.global_name_to_node_id = global_name_to_node_id.clone();
+                    parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
                 let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
@@ -671,7 +795,12 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
             }
             "ts" => {
                 let mut script = TypeScriptParser::new(&code).parse_script()?;
-                parse_time = parse_start.elapsed();
+                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                    for name in global_name_to_node_id.keys() {
+                        script.global_names.insert(name.clone());
+                    }
+                    script.global_name_to_node_id = global_name_to_node_id.clone();
+                    parse_time = parse_start.elapsed();
 
                 transpile_start = Instant::now();
                 let generated_code = script.to_rust(&identifier, project_root, None, verbose, &module_names, &module_name_to_identifier, &module_functions, &module_variables);
@@ -773,8 +902,8 @@ pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Resu
         eprintln!("⚠️  Warning: Failed to serialize source map");
     }
 
-    // Rebuild lib.rs with all active identifiers and module information
-    rebuild_lib_rs(project_root, &active_ids, &module_identifiers)?;
+    // Rebuild lib.rs with all active identifiers, module information, global order (identifiers) and global names (for node display)
+    rebuild_lib_rs(project_root, &active_ids, &module_identifiers, &global_order, &sorted_global_names)?;
 
     // Note: Hash is written after successful compilation, not here
     // This allows the compile step to check if recompilation is needed

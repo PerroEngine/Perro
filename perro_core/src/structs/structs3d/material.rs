@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt;
 
 use crate::renderer_3d::MaterialUniform;
 
@@ -39,6 +40,17 @@ pub struct Material {
     /// Optional display name (used by editor or inspector).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<Cow<'static, str>>,
+}
+
+impl fmt::Display for Material {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Material(base_color:[{},{},{}], metallic:{}, roughness:{})",
+            self.base_color[0], self.base_color[1], self.base_color[2],
+            self.metallic, self.roughness
+        )
+    }
 }
 
 impl Material {

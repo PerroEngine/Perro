@@ -97,6 +97,22 @@ impl Script {
             (StrRef, CowStr) => {
                 return format!("Cow::Borrowed({})", expr);
             }
+            // Vector3 -> Vector2 (drop z)
+            (EngineStruct(EngineStructKind::Vector3), EngineStruct(EngineStructKind::Vector2)) => {
+                return format!("Vector2::new({}.x, {}.y)", expr, expr);
+            }
+            // Vector2 -> Vector3 (pad z with 0)
+            (EngineStruct(EngineStructKind::Vector2), EngineStruct(EngineStructKind::Vector3)) => {
+                return format!("Vector3::new({}.x, {}.y, 0.0)", expr, expr);
+            }
+            // Quaternion -> f32 (2D rotation angle)
+            (EngineStruct(EngineStructKind::Quaternion), Number(Float(32))) => {
+                return format!("{}.to_rotation_2d()", expr);
+            }
+            // f32 -> Quaternion (2D rotation)
+            (Number(Float(32)), EngineStruct(EngineStructKind::Quaternion)) => {
+                return format!("Quaternion::from_rotation_2d({})", expr);
+            }
             // CowStr -> CowStr (no conversion needed, but handle if already a Cow)
             (CowStr, CowStr) => {
                 // If expr is already a Cow::Borrowed or Cow::Owned, return as-is
@@ -217,16 +233,20 @@ impl Script {
                     }
                     // 4. Script-level variable or exposed field
                     else {
-                        // Try both original and renamed name
+                        // Try both original and renamed name, then global nodes (e.g. Root). Chain Option<Type>.
                         self.get_variable_type(name)
-                            .or_else(|| self.get_variable_type(original_name))
                             .cloned()
+                            .or_else(|| self.get_variable_type(original_name).cloned())
+                            .or_else(|| self.global_name_to_node_id.get(name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
+                            .or_else(|| self.global_name_to_node_id.get(original_name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
                     }
                 } else {
-                    // Try both original and renamed name
+                    // Try both original and renamed name, then global nodes (e.g. Root). Chain Option<Type>.
                     self.get_variable_type(name)
-                        .or_else(|| self.get_variable_type(original_name))
                         .cloned()
+                        .or_else(|| self.get_variable_type(original_name).cloned())
+                        .or_else(|| self.global_name_to_node_id.get(name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
+                        .or_else(|| self.global_name_to_node_id.get(original_name).map(|_| Type::Node(crate::node_registry::NodeType::Node)))
                 }
             }
             Expr::Range(_, _) => {
@@ -461,7 +481,62 @@ impl Script {
             (Type::Number(NumberKind::Unsigned(w1)), Type::Number(NumberKind::Unsigned(w2))) => {
                 Some(Type::Number(NumberKind::Unsigned(*w1.max(w2))))
             }
+            // DynNode field unification: use widest type so assignees get correct inference
+            (Type::EngineStruct(EngineStructKind::Vector2), Type::EngineStruct(EngineStructKind::Vector3))
+            | (Type::EngineStruct(EngineStructKind::Vector3), Type::EngineStruct(EngineStructKind::Vector2)) => {
+                Some(Type::EngineStruct(EngineStructKind::Vector3))
+            }
+            (Type::EngineStruct(EngineStructKind::Transform2D), Type::EngineStruct(EngineStructKind::Transform3D))
+            | (Type::EngineStruct(EngineStructKind::Transform3D), Type::EngineStruct(EngineStructKind::Transform2D)) => {
+                Some(Type::EngineStruct(EngineStructKind::Transform3D))
+            }
+            (Type::EngineStruct(EngineStructKind::Quaternion), Type::Number(NumberKind::Float(32)))
+            | (Type::Number(NumberKind::Float(32)), Type::EngineStruct(EngineStructKind::Quaternion)) => {
+                Some(Type::EngineStruct(EngineStructKind::Quaternion))
+            }
             _ => Some(left.clone()),
+        }
+    }
+
+    /// Unify types that can appear from a DynNode field (e.g. position: Vector2|Vector3 -> Vector3).
+    fn unify_dynnode_field_types(types: &[Type]) -> Option<Type> {
+        use Type::*;
+        use NumberKind::*;
+        if types.is_empty() {
+            return None;
+        }
+        if types.len() == 1 {
+            return Some(types[0].clone());
+        }
+        let mut result = types[0].clone();
+        for t in &types[1..] {
+            if let Some(unified) = Self::unify_two_field_types(&result, t) {
+                result = unified;
+            }
+        }
+        Some(result)
+    }
+
+    fn unify_two_field_types(a: &Type, b: &Type) -> Option<Type> {
+        use Type::*;
+        use NumberKind::*;
+        if a == b {
+            return Some(a.clone());
+        }
+        match (a, b) {
+            (EngineStruct(EngineStructKind::Vector2), EngineStruct(EngineStructKind::Vector3))
+            | (EngineStruct(EngineStructKind::Vector3), EngineStruct(EngineStructKind::Vector2)) => {
+                Some(Type::EngineStruct(EngineStructKind::Vector3))
+            }
+            (EngineStruct(EngineStructKind::Transform2D), EngineStruct(EngineStructKind::Transform3D))
+            | (EngineStruct(EngineStructKind::Transform3D), EngineStruct(EngineStructKind::Transform2D)) => {
+                Some(Type::EngineStruct(EngineStructKind::Transform3D))
+            }
+            (EngineStruct(EngineStructKind::Quaternion), Number(Float(32)))
+            | (Number(Float(32)), EngineStruct(EngineStructKind::Quaternion)) => {
+                Some(Type::EngineStruct(EngineStructKind::Quaternion))
+            }
+            _ => Some(a.clone()),
         }
     }
 
@@ -504,11 +579,13 @@ impl Script {
                 if nodes_with_field.is_empty() {
                     return None;
                 }
-                if let Some(first_node) = nodes_with_field.first() {
-                    ENGINE_REGISTRY.get_field_type_node(first_node, member)
-                } else {
-                    None
-                }
+                // Collect types from all nodes that have this field and unify (e.g. Vector2|Vector3 -> Vector3)
+                // so that assignees like "var vecas: Vector2 = c_name" get correct RHS type and implicit cast.
+                let types: Vec<Type> = nodes_with_field
+                    .iter()
+                    .filter_map(|node_type| ENGINE_REGISTRY.get_field_type_node(node_type, member))
+                    .collect();
+                Self::unify_dynnode_field_types(&types)
             }
             Type::EngineStruct(engine_struct) => {
                 ENGINE_REGISTRY.get_field_type_struct(engine_struct, member)

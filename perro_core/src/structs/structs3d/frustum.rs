@@ -1,6 +1,14 @@
+use std::fmt;
+
 #[derive(Clone, Copy)]
 pub struct Frustum {
     pub planes: [glam::Vec4; 6], // each plane: (a, b, c, d)
+}
+
+impl fmt::Display for Frustum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Frustum(planes: 6)")
+    }
 }
 
 impl Frustum {

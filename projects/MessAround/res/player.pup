@@ -12,6 +12,9 @@ struct Cabbage {
 var cab = new Cabbage { x: 111111 }
 
 on init() {
+   Console.info("TestGlobal", TestGlobal::b)
+
+   var test_global_b = TestGlobal::b
   tex = Texture.load("res://doug.PNG")
     self.transform.position = new Vector2(-700, -70)
 
@@ -46,6 +49,15 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
 
     Console.print("befor1e", test_b)
     var c_par = collision.get_parent()
+
+    var c_name = c_par.transform.rotation
+    var r_name = Root.name
+    Console.info("c_namse", c_name)
+    Console.info("r_name", r_name)
+
+    var vecas: float = c_name
+    Console.warn(vecas)
+    
     var t = "test"
     c_par::[t](1122)
     c_par::test(9217)

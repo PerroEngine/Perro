@@ -234,15 +234,16 @@ impl Stmt {
                     // Don't clone if the expression already produces an owned value (e.g., from unwrap_or_default, from_str, etc.)
                     // This is important for generic functions like FromPrimitive::from_f32 where cloning breaks type inference
                     // Also don't clone if the expression already produces an owned value
-                    // Note: read_node now returns Clone types, and for non-Copy types the .clone() inside the closure
-                    // already produces an owned value, so read_node calls don't need an extra .clone()
+                    // Note: read_node/read_scene_node return Clone types; the .clone() (or Cow::Owned) inside the closure
+                    // already produces an owned value, so we don't add an extra .clone()
                     let already_owned = raw_expr.contains(".unwrap_or_default()")
                         || raw_expr.contains(".unwrap()")
                         || raw_expr.contains("::from_str")
                         || raw_expr.contains("::from(")
                         || raw_expr.contains("::new(")
                         || raw_expr.contains("get_element_clone")
-                        || raw_expr.contains("read_node(");
+                        || raw_expr.contains("read_node(")
+                        || raw_expr.contains("read_scene_node(");
 
                     if (needs_clone || needs_clone_fallback) && !already_owned {
                         format!("{}.clone()", raw_expr)
@@ -278,7 +279,8 @@ impl Stmt {
                     (None, expr_str.clone())
                 };
 
-                // Add type annotation if variable has explicit type OR if we can infer from the expression
+                // Add type annotation if variable has explicit type OR if we can infer from the expression.
+                // Do not annotate when RHS is a DynNode match (match api.get_type(...)) so the compiler can infer Vector2 vs Vector3 etc.
                 let inferred_type = if let Some(expr) = &var.value {
                     script.infer_expr_type(&expr.expr, current_func)
                 } else {
@@ -297,9 +299,31 @@ impl Stmt {
                 let type_annotation = if let Some(typ) = &var.typ {
                     format!(": {}", type_to_rust_annotation(typ))
                 } else if let Some(ref inferred) = inferred_type {
-                    format!(": {}", type_to_rust_annotation(inferred))
+                    // DynNode match: omit type so compiler infers, unless we unified (Vector2->Vector3 or f32->Quaternion)
+                    if final_expr_str.contains("match api.get_type(") {
+                        if final_expr_str.contains("Vector3::new(") {
+                            ": Vector3".to_string()
+                        } else if final_expr_str.contains("Quaternion::from_rotation_2d(") {
+                            ": Quaternion".to_string()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        format!(": {}", type_to_rust_annotation(inferred))
+                    }
                 } else {
                     String::new()
+                };
+
+                // When declared type (e.g. Vector2) differs from RHS type (e.g. Vector3), emit implicit conversion
+                let rhs_emit = if let (Some(lhs_ty), Some(rhs_ty)) = (var.typ.as_ref(), inferred_type.as_ref()) {
+                    if rhs_ty.can_implicitly_convert_to(lhs_ty) && rhs_ty != lhs_ty {
+                        script.generate_implicit_cast_for_expr(&final_expr_str, rhs_ty, lhs_ty)
+                    } else {
+                        final_expr_str.clone()
+                    }
+                } else {
+                    final_expr_str.clone()
                 };
 
                 // Use inferred type for renaming if var.typ is None
@@ -313,7 +337,7 @@ impl Stmt {
                     } else {
                         format!(
                             "        {} let mut {}{} = {};\n",
-                            temp_stmt.trim_end(), renamed_name, type_annotation, final_expr_str
+                            temp_stmt.trim_end(), renamed_name, type_annotation, rhs_emit
                         )
                     }
                 } else if expr_str.is_empty() {
@@ -321,7 +345,7 @@ impl Stmt {
                 } else {
                     format!(
                         "        let mut {}{} = {};\n",
-                        renamed_name, type_annotation, final_expr_str
+                        renamed_name, type_annotation, rhs_emit
                     )
                 }
             }
@@ -619,19 +643,15 @@ impl Stmt {
                             }
                             
                             let inner_call = &expr_str[start..end];
-                            // Check if this inner call is already a temp variable (avoid redeclaration)
+                            let fixed_inner_call = inner_call.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                             if inner_call.starts_with("temp_api_var_") && !inner_call.contains("(") {
                                 // It's already a temp variable, don't redeclare
                                 (None, expr_str)
                             } else {
-                                // Generate deterministic temp variable name using occurrence counter
+                                // Extract get_parent/get_child_by_name (and other nested API calls) to a temp to avoid borrow checker errors (e.g. api.read_node(api.get_parent(...), ...))
                                 let current_index = temp_counter;
                                 temp_counter += 1;
                                 let temp_var = format!("temp_api_var_{}", current_index);
-                                
-                                // Fix the inner call - replace any incorrect renaming of "api" back to "api"
-                                // The "api" identifier should NEVER be renamed - it's always the API parameter
-                                let fixed_inner_call = inner_call.replace("__t_api.", "api.").replace("t_id_api.", "api.");
                                 
                                 // Check if we're trying to assign temp_var to itself
                                 if fixed_inner_call == temp_var {
@@ -2275,8 +2295,9 @@ impl Stmt {
                 let rhs_str = rhs.to_rust(needs_self, script, current_func);
                 // rhs is TypedExpr, which already passes span through
                 
-                // Get the node ID variable name (should already have _id suffix from parser)
-                let node_id_var = format!("{}_id", var);
+                // If var is a global (Root, @global TestGlobal, etc.), use NodeID::from_u32 from global registry (Root=1, first global=2, ...).
+                // Otherwise use the node variable's _id suffix.
+                let node_id_expr = script.global_name_to_node_id.get(var).copied().map(|id| format!("NodeID::from_u32({})", id)).unwrap_or_else(|| format!("{}_id", var));
                 
                 // Precompute the variable ID hash at compile time
                 use crate::prelude::string_to_u64;
@@ -2291,7 +2312,7 @@ impl Stmt {
 
                 format!(
                     "        api.set_script_var_id({}, {}u64, {});\n",
-                    node_id_var, var_id, val_expr
+                    node_id_expr, var_id, val_expr
                 )
             }
 
@@ -2299,8 +2320,8 @@ impl Stmt {
                 let rhs_str = rhs.to_rust(needs_self, script, current_func);
                 // rhs is TypedExpr, which already passes span through
                 
-                // Get the node ID variable name (should already have _id suffix from parser)
-                let node_id_var = format!("{}_id", var);
+                // If var is a global, use NodeID::from_u32 from global registry; else use {}_id
+                let node_id_expr = script.global_name_to_node_id.get(var).copied().map(|id| format!("NodeID::from_u32({})", id)).unwrap_or_else(|| format!("{}_id", var));
                 
                 // Precompute the variable ID hash at compile time
                 use crate::prelude::string_to_u64;
@@ -2323,7 +2344,7 @@ impl Stmt {
                 // For now, assume it's a simple numeric expression
                 format!(
                     "        {{\n            let __current_val = api.get_script_var_id({}, {}u64);\n            let __rhs_val = json!({});\n            let __new_val = json!((__current_val.as_f64().unwrap_or(0.0) {} __rhs_val.as_f64().unwrap_or(0.0)));\n            api.set_script_var_id({}, {}u64, __new_val);\n        }}\n",
-                    node_id_var, var_id, rhs_str, op_rust, node_id_var, var_id
+                    node_id_expr, var_id, rhs_str, op_rust, node_id_expr, var_id
                 )
             }
 

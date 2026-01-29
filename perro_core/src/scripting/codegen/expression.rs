@@ -10,6 +10,29 @@ use super::utils::{is_node_type, rename_variable, string_to_node_type, rename_fu
 use super::analysis::{extract_node_member_info, extract_mutable_api_call};
 use super::cache::SCRIPT_MEMBERS_CACHE;
 
+/// Closure body for read_scene_node when reading a base Node field (name, id, parent, etc.).
+/// Uses BaseNode trait on SceneNode (get_name(), get_id(), etc.) — not read_node with &Node.
+fn scene_node_base_field_read(field: &str, result_type: Option<&Type>) -> String {
+    use crate::scripting::ast::Type;
+    match field {
+        "name" => {
+            if matches!(result_type, Some(Type::CowStr)) {
+                "Cow::Owned(n.get_name().to_string())".into()
+            } else {
+                "n.get_name().to_string()".into()
+            }
+        }
+        "id" => "n.get_id()".into(),
+        "parent" => "n.get_parent().map(|p| p.id).unwrap_or(NodeID::nil())".into(),
+        "node_type" => "n.get_type()".into(),
+        _ => {
+            // Fallback: assume script field name matches BaseNode method (e.g. get_script_path)
+            let getter = format!("get_{}", field);
+            format!("n.{}()", getter)
+        }
+    }
+}
+
 impl TypedExpr {
     pub fn to_rust(
         &self,
@@ -140,6 +163,11 @@ impl Expr {
                 // Special case: "api" should NEVER be renamed - it's always the API parameter
                 if name == "api" {
                     return "api".to_string();
+                }
+                
+                // Global (Root, @global TestGlobal): use global registry NodeID (Root=1, first global=2, etc.)
+                if let Some(&node_id) = script.global_name_to_node_id.get(name) {
+                    return format!("NodeID::from_u32({})", node_id);
                 }
                 
                 // Helper function to find a variable in nested blocks (if, for, etc.)
@@ -1057,9 +1085,22 @@ impl Expr {
                 if let Some((node_id, node_type, field_path, closure_var)) = 
                     extract_node_member_info(&Expr::MemberAccess(base.clone(), field.clone()), script, current_func) 
                 {
-                    // This is accessing node fields - use api.read_node
-                    // Determine if we need to clone the result44
-                    
+                    // Node or DynNode + field on base Node (engine registry) -> read_scene_node only, no match
+                    let fields: Vec<&str> = field_path.split('.').collect();
+                    if fields.len() == 1 {
+                        let first_field = fields[0];
+                        if ENGINE_REGISTRY.get_field_type_node(&crate::node_registry::NodeType::Node, first_field).is_some() {
+                            let result_type = script.get_member_type(&Type::Node(crate::node_registry::NodeType::Node), first_field);
+                            let scene_field_access = scene_node_base_field_read(first_field, result_type.as_ref());
+                            let (temp_decl, actual_node_id) = extract_mutable_api_call(&node_id);
+                            if !temp_decl.is_empty() {
+                                return format!("{}{}api.read_scene_node({}, |n| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, scene_field_access);
+                            }
+                            return format!("api.read_scene_node({}, |n| {})", node_id, scene_field_access);
+                        }
+                    }
+
+                    // This is accessing node fields - use api.read_node (or match for DynNode)
                     if let Some(node_type_enum) = string_to_node_type(&node_type) {
                         let node_type_obj = Type::Node(node_type_enum);
                         
@@ -1176,6 +1217,16 @@ impl Expr {
                             node_id.clone()
                         };
                         
+                        // (Base Node field case already handled at top of extract_node_member_info block.)
+                        // Base Node (NodeType::Node): always use read_scene_node, never read_node (globals and var b: Node = ...)
+                        if node_type_enum == crate::node_registry::NodeType::Node {
+                            let result_type = script.get_member_type(&Type::Node(node_type_enum), fields[0]);
+                            let scene_field_access = scene_node_base_field_read(fields[0], result_type.as_ref());
+                            if !temp_decl.is_empty() {
+                                return format!("{}{}api.read_scene_node({}, |n| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, scene_field_access);
+                            }
+                            return format!("api.read_scene_node({}, |n| {})", node_id_with_self, scene_field_access);
+                        }
                         // Ensure closure_var doesn't have "self." prefix (it's a new variable in the closure)
                         let clean_closure_var = closure_var.strip_prefix("self.").unwrap_or(&closure_var);
                         
@@ -1188,10 +1239,89 @@ impl Expr {
                             format!("{}.{}", clean_closure_var, resolved_field_path)
                         };
                         
-                        // Use read_node with the determined node type (type must be known via cast or variable annotation)
+                        // Use read_node with the determined node type (Node2D, Sprite2D, etc. — not base Node)
                         // Wrap in parentheses to allow chaining (e.g., (api.read_node(...)).position.y)
-                        // Note: temp_decl should be handled at statement level, not here in expression
                         return format!("(api.read_node({}, |{}: &{}| {}))", node_id_with_self, clean_closure_var, node_type, field_access);
+                    } else if node_type == "__DYN_NODE__" {
+                        // DynNode with full path from extract_node_member_info (e.g. c_par.transform.position -> one match, each arm returns full path value)
+                        let field_path_only: Vec<String> = field_path.split('.').map(|s| s.to_string()).collect();
+                        let (temp_decl, actual_node_id) = extract_mutable_api_call(&node_id);
+                        let base_code = if temp_decl.is_empty() { node_id.clone() } else { actual_node_id.clone() };
+                        let compatible_node_types = ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
+                        if compatible_node_types.is_empty() {
+                            return format!("{}.{}", node_id, field_path.replace('.', "."));
+                        }
+                        // Check if we need to unify Vector2/Vector3 (match arms return different types)
+                        let mut has_vector2 = false;
+                        let mut has_vector3 = false;
+                        let mut has_f32_rotation = false;
+                        let mut has_quaternion = false;
+                        for nt in &compatible_node_types {
+                            let rt = ENGINE_REGISTRY.resolve_chain_from_node(nt, &field_path_only);
+                            if matches!(rt.as_ref(), Some(Type::EngineStruct(EngineStructKind::Vector2))) {
+                                has_vector2 = true;
+                            }
+                            if matches!(rt.as_ref(), Some(Type::EngineStruct(EngineStructKind::Vector3))) {
+                                has_vector3 = true;
+                            }
+                            if matches!(rt.as_ref(), Some(Type::Number(NumberKind::Float(32)))) {
+                                has_f32_rotation = true;
+                            }
+                            if matches!(rt.as_ref(), Some(Type::EngineStruct(EngineStructKind::Quaternion))) {
+                                has_quaternion = true;
+                            }
+                        }
+                        let needs_unify_vector = has_vector2 && has_vector3;
+                        let needs_unify_rotation = has_f32_rotation && has_quaternion;
+                        let mut match_arms = Vec::new();
+                        for nt in &compatible_node_types {
+                            let node_type_name = format!("{:?}", nt);
+                            let result_type = ENGINE_REGISTRY.resolve_chain_from_node(nt, &field_path_only);
+                            let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
+                            let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
+                            let resolved_path: Vec<String> = field_path_only.iter()
+                                .map(|f| ENGINE_REGISTRY.resolve_field_name(nt, f))
+                                .collect();
+                            let field_access_str = resolved_path.join(".");
+                            let field_access = if is_option {
+                                format!("n.{}.unwrap()", field_access_str)
+                            } else if needs_clone {
+                                format!("n.{}.clone()", field_access_str)
+                            } else {
+                                format!("n.{}", field_access_str)
+                            };
+                            let arm_value = if needs_unify_vector {
+                                match result_type.as_ref() {
+                                    Some(Type::EngineStruct(EngineStructKind::Vector2)) => {
+                                        format!("Vector3::new({}.x, {}.y, 0.0)", field_access, field_access)
+                                    }
+                                    _ => field_access,
+                                }
+                            } else if needs_unify_rotation {
+                                match result_type.as_ref() {
+                                    Some(Type::Number(NumberKind::Float(32))) => {
+                                        format!("Quaternion::from_rotation_2d({})", field_access)
+                                    }
+                                    _ => field_access,
+                                }
+                            } else {
+                                field_access
+                            };
+                            match_arms.push(format!(
+                                "NodeType::{} => api.read_node({}, |n: &{}| {})",
+                                node_type_name, base_code, node_type_name, arm_value
+                            ));
+                        }
+                        let match_expr = format!(
+                            "match api.get_type({}) {{\n            {},\n            _ => panic!(\"Node type not compatible with field access: {}\") }}",
+                            base_code,
+                            match_arms.join(",\n            "),
+                            field_path_only.join(".")
+                        );
+                        if !temp_decl.is_empty() {
+                            return format!("{}{}{}", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, match_expr);
+                        }
+                        return match_expr;
                     }
                 }
                 
@@ -1243,6 +1373,40 @@ impl Expr {
                         }
                     }
                     // Otherwise, it's a node field, use self.base.field
+                }
+
+                // Global access (Root, @global TestGlobal): same as node variable access — use global registry for NodeID (Root=1, first global=2, etc.).
+                // Base.to_rust() already returns NodeID::from_u32(id) for Ident(global_name). Route through engine_bindings (GetVar / read_scene_node) like Root::b.
+                if let Expr::Ident(name) = base.as_ref() {
+                    if script.global_name_to_node_id.contains_key(name) {
+                        let is_node_method = ENGINE_REGISTRY
+                            .method_ref_map
+                            .get(&(crate::node_registry::NodeType::Node, field.clone()))
+                            .is_some()
+                            || ENGINE_REGISTRY.node_defs.keys().any(|nt| {
+                                ENGINE_REGISTRY.method_ref_map.get(&(*nt, field.clone())).is_some()
+                            });
+                        if !is_node_method {
+                            // Node/DynNode + field on base Node (engine registry) -> read_scene_node
+                            if ENGINE_REGISTRY.get_field_type_node(&crate::node_registry::NodeType::Node, field).is_some() {
+                                let result_type = script.get_member_type(&Type::Node(crate::node_registry::NodeType::Node), field);
+                                let field_access = scene_node_base_field_read(field, result_type.as_ref());
+                                let node_id_expr = base.to_rust(needs_self, script, None, current_func, None);
+                                return format!(
+                                    "api.read_scene_node({}, |n| {})",
+                                    node_id_expr, field_access
+                                );
+                            }
+                            // Script variable on global: use GetVar binding (same as Root::b / node.get_var("b"))
+                            use crate::api_bindings::generate_rust_args;
+                            use crate::structs::engine_bindings::EngineMethodCodegen;
+                            use crate::structs::engine_registry::NodeMethodRef;
+                            let get_var_args: Vec<Expr> = vec![(**base).clone(), Expr::Literal(Literal::String(field.clone()))];
+                            let expected = NodeMethodRef::GetVar.param_types();
+                            let rust_args = generate_rust_args(&get_var_args, script, needs_self, current_func, expected.as_ref());
+                            return NodeMethodRef::GetVar.to_rust_prepared(&get_var_args, &rust_args, script, needs_self, current_func);
+                        }
+                    }
                 }
 
                 // Check if this is module access (e.g., Utils.function())
@@ -1362,9 +1526,16 @@ impl Expr {
                             };
                             
                             if is_node_id_var || is_option_uuid {
-                                // Use api.read_node to access node properties
-                                // Check if the result type requires cloning
+                                // Type::Custom is for concrete node type names (Sprite2D, Node2D, etc.), not base Node.
+                                // Base Node is Type::Node(NodeType::Node) or Type::DynNode — handled in those arms.
                                 if let Some(node_type) = string_to_node_type(type_name.as_str()) {
+                                    let node_id_expr = if is_option_uuid {
+                                        format!("{}.unwrap()", base_code)
+                                    } else {
+                                        base_code.clone()
+                                    };
+                                    let (temp_decl, actual_node_id) = extract_mutable_api_call(&node_id_expr);
+                                    let temp_prefix = if temp_decl.is_empty() { "" } else { if temp_decl.ends_with(';') { " " } else { "" } };
                                     let base_node_type = Type::Node(node_type);
                                     let result_type = script.get_member_type(&base_node_type, field);
                                     let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
@@ -1377,13 +1548,6 @@ impl Expr {
                                         &base_code[..base_code.len() - 3]
                                     } else {
                                         &base_code
-                                    };
-                                    
-                                    // If base is Option<Uuid>, unwrap it before passing to read_node
-                                    let node_id_expr = if is_option_uuid {
-                                        format!("{}.unwrap()", base_code)
-                                    } else {
-                                        base_code.clone()
                                     };
                                     
                                     // Resolve field name (e.g., "texture" -> "texture_id")
@@ -1427,10 +1591,8 @@ impl Expr {
                                         format!("{}.{}", param_name, resolved_field)
                                     };
                                     
-                                    // Extract mutable API calls to temporary variables to avoid borrow checker issues
-                                    let (temp_decl, actual_node_id) = extract_mutable_api_call(&node_id_expr);
                                     if !temp_decl.is_empty() {
-                                        return format!("{}{}api.read_node({}, |{}: &{}| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, param_name, type_name, field_access);
+                                        return format!("{}{}api.read_node({}, |{}: &{}| {})", temp_decl, temp_prefix, actual_node_id, param_name, type_name, field_access);
                                     } else {
                                         return format!("api.read_node({}, |{}: &{}| {})", node_id_expr, param_name, type_name, field_access);
                                     }
@@ -1631,18 +1793,33 @@ impl Expr {
                         let is_node_id_var = base_code.ends_with("_id") || base_code == "self.id";
                         
                         if is_node_id_var {
-                            // Get the node type name from the base type
+                            // Base Node type: use read_scene_node only for base Node fields (name, id, parent, node_type).
+                            // Match table is only for DynNode; for Node-typed variables we only support base Node fields here.
+                            if node_type == crate::node_registry::NodeType::Node {
+                                let is_base_node_field = ENGINE_REGISTRY.get_field_type_node(&crate::node_registry::NodeType::Node, field).is_some();
+                                if is_base_node_field {
+                                    let base_node_type = Type::Node(node_type.clone());
+                                    let result_type = script.get_member_type(&base_node_type, field);
+                                    let field_access = scene_node_base_field_read(field, result_type.as_ref());
+                                    let (temp_decl, actual_node_id) = extract_mutable_api_call(&base_code);
+                                    if !temp_decl.is_empty() {
+                                        return format!("{}{}api.read_scene_node({}, |n| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, field_access);
+                                    } else {
+                                        return format!("api.read_scene_node({}, |n| {})", base_code, field_access);
+                                    }
+                                }
+                                // Node type does not have this field (e.g. transform, texture). Cast to Node2D/Node3D/etc. or use a DynNode variable.
+                                return format!(
+                                    "{{ panic!(\"Node does not have field '{}'; cast to a concrete type (e.g. Node2D, Sprite2D) or use a DynNode variable\") }}",
+                                    field
+                                );
+                            }
+                            // Concrete node type (Node2D, Sprite2D, etc.): use read_node with that type
                             let node_type_name = format!("{:?}", node_type);
-                            
-                            // Use api.read_node and check if cloning is needed
                             let base_node_type = Type::Node(node_type.clone());
                             let result_type = script.get_member_type(&base_node_type, field);
                             let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
-                            
-                            // Check if the result type is Option<T> - if so, unwrap inside the closure
                             let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
-                            
-                            // Extract variable name from node_id (e.g., "c_id" -> "c", "self.id" -> "self_node")
                             let param_name = if base_code.ends_with("_id") {
                                 &base_code[..base_code.len() - 3]
                             } else if base_code == "self.id" {
@@ -1650,10 +1827,7 @@ impl Expr {
                             } else {
                                 "n"
                             };
-                            
-                            // Resolve field name (e.g., "texture" -> "texture_id")
                             let resolved_field = ENGINE_REGISTRY.resolve_field_name(&node_type, field);
-                            
                             let field_access = if is_option {
                                 format!("{}.{}.unwrap()", param_name, resolved_field)
                             } else if needs_clone {
@@ -1661,8 +1835,6 @@ impl Expr {
                             } else {
                                 format!("{}.{}", param_name, resolved_field)
                             };
-                            
-                            // Extract mutable API calls to temporary variables to avoid borrow checker issues
                             let (temp_decl, actual_node_id) = extract_mutable_api_call(&base_code);
                             if !temp_decl.is_empty() {
                                 format!("{}{}api.read_node({}, |{}: &{}| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, param_name, node_type_name, field_access)
@@ -1674,48 +1846,70 @@ impl Expr {
                         }
                     }
                     Some(Type::DynNode) => {
-                        // DynNode: generate match arms for all node types that have this field
+                        // DynNode: when the field is on base Node only, use read_scene_node instead of match on every type.
                         let base_code = base.to_rust(needs_self, script, None, current_func, None);
                         let is_node_id_var = base_code.ends_with("_id") || base_code == "self.id";
                         
                         if is_node_id_var {
-                            // Build field path from the expression (e.g., node.transform.position.x)
+                            // Single base Node field (name, id, parent, etc.): use read_scene_node, no match
+                            let field_path_only: Vec<String> = vec![field.clone()];
+                            let is_base_node_field = ENGINE_REGISTRY.get_field_type_node(&crate::node_registry::NodeType::Node, field).is_some();
+                            if is_base_node_field {
+                                let result_type = script.get_member_type(&Type::Node(crate::node_registry::NodeType::Node), field);
+                                let field_access = scene_node_base_field_read(field, result_type.as_ref());
+                                let (temp_decl, actual_node_id) = extract_mutable_api_call(&base_code);
+                                if !temp_decl.is_empty() {
+                                    return format!("{}{}api.read_scene_node({}, |n| {})", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, actual_node_id, field_access);
+                                } else {
+                                    return format!("api.read_scene_node({}, |n| {})", base_code, field_access);
+                                }
+                            }
+                            // Build full field path for nested access (e.g. node.transform.position.x)
+                            // Use full path so narrow_nodes_by_fields correctly narrows: transform.position -> Node2D/Node3D and descendants; transform.position.z -> Node3D and descendants; texture -> Sprite2D and descendants
                             let mut field_path = vec![field.clone()];
                             let mut current_expr = base.as_ref();
                             while let Expr::MemberAccess(inner_base, inner_field) = current_expr {
                                 field_path.push(inner_field.clone());
                                 current_expr = inner_base.as_ref();
                             }
-                            field_path.reverse(); // Now field_path is [node_base, transform, position, x]
+                            field_path.reverse();
+                            let field_path_only: Vec<String> = field_path.clone();
                             
-                            // Extract just the field path (skip the base identifier)
-                            // For nested access like node.transform.position.x, we want [transform, position, x]
-                            let field_path_only: Vec<String> = if field_path.len() > 1 {
-                                field_path[1..].to_vec()
-                            } else {
-                                field_path.clone()
-                            };
-                            
-                            // Find all node types that have this field path
+                            // Find all node types that have this field path — generate match arms
                             let compatible_node_types = ENGINE_REGISTRY.narrow_nodes_by_fields(&field_path_only);
                             
                             if compatible_node_types.is_empty() {
                                 // No compatible node types found, fallback to error or default behavior
                                 format!("{}.{}", base_code, field)
                             } else {
-                                // Generate match arms for all compatible node types
+                                let mut has_vector2 = false;
+                                let mut has_vector3 = false;
+                                let mut has_f32_rotation = false;
+                                let mut has_quaternion = false;
+                                for nt in &compatible_node_types {
+                                    let rt = ENGINE_REGISTRY.resolve_chain_from_node(nt, &field_path_only);
+                                    if matches!(rt.as_ref(), Some(Type::EngineStruct(EngineStructKind::Vector2))) {
+                                        has_vector2 = true;
+                                    }
+                                    if matches!(rt.as_ref(), Some(Type::EngineStruct(EngineStructKind::Vector3))) {
+                                        has_vector3 = true;
+                                    }
+                                    if matches!(rt.as_ref(), Some(Type::Number(NumberKind::Float(32)))) {
+                                        has_f32_rotation = true;
+                                    }
+                                    if matches!(rt.as_ref(), Some(Type::EngineStruct(EngineStructKind::Quaternion))) {
+                                        has_quaternion = true;
+                                    }
+                                }
+                                let needs_unify_vector = has_vector2 && has_vector3;
+                                let needs_unify_rotation = has_f32_rotation && has_quaternion;
                                 let mut match_arms = Vec::new();
                                 for node_type in &compatible_node_types {
                                     let node_type_name = format!("{:?}", node_type);
-                                    let _base_node_type = Type::Node(*node_type);
-                                    
-                                    // Resolve the full field path to get the result type
                                     let result_type = ENGINE_REGISTRY.resolve_chain_from_node(node_type, &field_path_only);
                                     let needs_clone = result_type.as_ref().map_or(false, |t| t.requires_clone());
                                     let is_option = matches!(result_type.as_ref(), Some(Type::Option(_)));
-                                    
                                     let param_name = "n";
-                                    // Resolve field names in the path (e.g., "texture" -> "texture_id")
                                     let resolved_path: Vec<String> = field_path_only.iter()
                                         .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type, f))
                                         .collect();
@@ -1727,18 +1921,33 @@ impl Expr {
                                     } else {
                                         format!("{}.{}", param_name, field_access_str)
                                     };
-                                    
+                                    let arm_value = if needs_unify_vector {
+                                        match result_type.as_ref() {
+                                            Some(Type::EngineStruct(EngineStructKind::Vector2)) => {
+                                                format!("Vector3::new({}.x, {}.y, 0.0)", field_access, field_access)
+                                            }
+                                            _ => field_access,
+                                        }
+                                    } else if needs_unify_rotation {
+                                        match result_type.as_ref() {
+                                            Some(Type::Number(NumberKind::Float(32))) => {
+                                                format!("Quaternion::from_rotation_2d({})", field_access)
+                                            }
+                                            _ => field_access,
+                                        }
+                                    } else {
+                                        field_access
+                                    };
                                     match_arms.push(format!(
                                         "NodeType::{} => api.read_node({}, |{}: &{}| {})",
-                                        node_type_name, base_code, param_name, node_type_name, field_access
+                                        node_type_name, base_code, param_name, node_type_name, arm_value
                                     ));
                                 }
-                                
-                                // Generate match expression
+                                // One arm per line, comma before _ => so Rust parses correctly
                                 format!(
-                                    "match api.get_type({}) {{ {} _ => panic!(\"Node type not compatible with field access: {}\") }}",
+                                    "match api.get_type({}) {{\n            {},\n            _ => panic!(\"Node type not compatible with field access: {}\") }}",
                                     base_code,
-                                    match_arms.join(", "),
+                                    match_arms.join(",\n            "),
                                     field_path_only.join(".")
                                 )
                             }
@@ -1857,109 +2066,100 @@ impl Expr {
                         .copied();
                     
                     if let Some(method_ref) = method_ref_opt {
-                        // Check if this method's first parameter is Uuid
-                        if let Some(param_types) = method_ref.param_types() {
-                            if let Some(first_param_type) = param_types.get(0) {
-                                if matches!(first_param_type, Type::DynNode) {
-                                    // Check if base is an ApiCall that returns Uuid, or a MemberAccess that should be treated as one
-                                    let (inner_call_str, temp_var_name) = if let Expr::ApiCall(api, args) = base.as_ref() {
-                                        // Direct ApiCall
-                                        if let Some(return_type) = api.return_type() {
-                                            if matches!(return_type, Type::DynNode) {
-                                                let mut inner_call_str = api.to_rust(args, script, needs_self, current_func);
-                                                // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
-                                                // The "api" identifier should NEVER be renamed - it's always the API parameter
-                                                inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
-                                                // Generate deterministic temp variable name using hash of the API call
-                                                use std::collections::hash_map::DefaultHasher;
-                                                use std::hash::{Hash, Hasher};
-                                                let mut hasher = DefaultHasher::new();
-                                                inner_call_str.hash(&mut hasher);
-                                                let hash = hasher.finish();
-                                                let temp_var = format!("__temp_api_{}", hash);
-                                                (Some(inner_call_str), Some(temp_var))
-                                            } else {
-                                                (None, None)
-                                            }
-                                        } else {
-                                            (None, None)
-                                        }
-                                    } else if let Expr::MemberAccess(inner_base, inner_method) = base.as_ref() {
-                                        // Handle nested MemberAccess like collision.get_parent()
-                                        // Check if this is a node method call
-                                        let inner_method_ref_opt = ENGINE_REGISTRY.method_ref_map.get(&(crate::node_registry::NodeType::Node, inner_method.clone()))
-                                            .or_else(|| {
-                                                ENGINE_REGISTRY.node_defs.keys()
-                                                    .find_map(|node_type| {
-                                                        ENGINE_REGISTRY.method_ref_map.get(&(*node_type, inner_method.clone()))
-                                                    })
-                                            })
-                                            .copied();
-                                        
-                                        if let Some(inner_method_ref) = inner_method_ref_opt {
-                                            if let Some(return_type) = inner_method_ref.return_type() {
-                                                if matches!(return_type, Type::DynNode) {
-                                                    // Create args for the inner API call - the base becomes the first arg
-                                                    let inner_api_args = vec![*inner_base.clone()];
-                                                    use crate::api_bindings::generate_rust_args;
-                                                    use crate::structs::engine_bindings::EngineMethodCodegen;
-                                                    let expected_arg_types = inner_method_ref.param_types();
-                                                    let rust_args_strings = generate_rust_args(
-                                                        &inner_api_args,
-                                                        script,
-                                                        needs_self,
-                                                        current_func,
-                                                        expected_arg_types.as_ref(),
-                                                    );
-                                                    let mut inner_call_str = inner_method_ref.to_rust_prepared(&inner_api_args, &rust_args_strings, script, needs_self, current_func);
-                                                    // Fix any incorrect renaming of "api" to "__t_api" or "t_id_api"
-                                                    // The "api" identifier should NEVER be renamed - it's always the API parameter
-                                                    inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
-                                                    // Generate deterministic temp variable name using hash of the API call
-                                                    use std::collections::hash_map::DefaultHasher;
-                                                    use std::hash::{Hash, Hasher};
-                                                    let mut hasher = DefaultHasher::new();
-                                                    inner_call_str.hash(&mut hasher);
-                                                    let hash = hasher.finish();
-                                                    let temp_var = format!("__temp_api_{}", hash);
-                                                    (Some(inner_call_str), Some(temp_var))
-                                                } else {
-                                                    (None, None)
-                                                }
-                                            } else {
-                                                (None, None)
-                                            }
-                                        } else {
-                                            (None, None)
-                                        }
-                                    } else {
-                                        (None, None)
-                                    };
-                                    
-                                    if let (Some(inner_call_str), Some(temp_var)) = (inner_call_str, temp_var_name) {
-                                        // This is a chained call: inner_api() returns Uuid,
-                                        // and outer_api() accepts Uuid as first param
-                                        // Both APIs require mutable borrows (all NodeSugar APIs take &mut self),
-                                        // so we MUST extract the inner call to a temporary variable
-                                        // to avoid borrow checker errors
-                                        
-                                        let temp_decl = format!("let {}: NodeID = {};", temp_var, inner_call_str);
-                                        
-                                        // Create an Ident expression for the temp variable
-                                        let temp_var_expr = Expr::Ident(temp_var.clone());
-                                        let outer_args = vec![temp_var_expr];
-                                        
-                                        // Generate the outer call with the temp variable as argument
-                                        // Use CallModule::NodeMethod to generate the call
-                                        use crate::call_modules::CallModule;
-                                        let outer_call_module = CallModule::NodeMethod(method_ref);
-                                        let outer_call = outer_call_module.to_rust(&outer_args, script, needs_self, current_func);
-                                        
-                                        // Combine temp declaration with outer call
-                                        return format!("{}{}{}", temp_decl, if temp_decl.ends_with(';') { " " } else { "" }, outer_call);
-                                    }
+                        // One path for all node method calls: base is a node reference (NodeType / DynNode).
+                        // Get node_id from base: global (Root, @global) = known NodeID; or ApiCall/MemberAccess that returns NodeID.
+                        use crate::api_bindings::generate_rust_args;
+                        use crate::structs::engine_bindings::EngineMethodCodegen;
+                        // (node_id_expr_or_literal, temp_var if needed). For globals we pass literal in id slot, no temp.
+                        let (inner_call_str, temp_var_name) = if let Expr::Ident(name) = base.as_ref() {
+                            // Global (Root, @global): same path as c_par_id — only override is id slot = NodeID::from_u32(id), no temp
+                            script.global_name_to_node_id.get(name).copied().map(|node_id| {
+                                (format!("NodeID::from_u32({})", node_id), None as Option<String>)
+                            }).map(|(s, t)| (Some(s), t)).unwrap_or((None, None))
+                        } else if let Expr::ApiCall(api, api_args) = base.as_ref() {
+                            if let Some(return_type) = api.return_type() {
+                                if matches!(return_type, Type::DynNode) {
+                                    let mut inner_call_str = api.to_rust(api_args, script, needs_self, current_func);
+                                    inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
+                                    use std::collections::hash_map::DefaultHasher;
+                                    use std::hash::{Hash, Hasher};
+                                    let mut hasher = DefaultHasher::new();
+                                    inner_call_str.hash(&mut hasher);
+                                    let temp_var = format!("__temp_api_{}", hasher.finish());
+                                    (Some(inner_call_str), Some(temp_var))
+                                } else {
+                                    (None, None)
                                 }
+                            } else {
+                                (None, None)
                             }
+                        } else if let Expr::MemberAccess(inner_base, inner_method) = base.as_ref() {
+                            let inner_method_ref_opt = ENGINE_REGISTRY.method_ref_map.get(&(crate::node_registry::NodeType::Node, inner_method.clone()))
+                                .or_else(|| {
+                                    ENGINE_REGISTRY.node_defs.keys()
+                                        .find_map(|nt| ENGINE_REGISTRY.method_ref_map.get(&(*nt, inner_method.clone())))
+                                })
+                                .copied();
+                            if let Some(inner_method_ref) = inner_method_ref_opt {
+                                if inner_method_ref.return_type().map_or(false, |t| matches!(t, Type::DynNode)) {
+                                    let inner_api_args = vec![*inner_base.clone()];
+                                    let rust_args_strings = generate_rust_args(
+                                        &inner_api_args,
+                                        script,
+                                        needs_self,
+                                        current_func,
+                                        inner_method_ref.param_types().as_ref(),
+                                    );
+                                    let mut inner_call_str = inner_method_ref.to_rust_prepared(&inner_api_args, &rust_args_strings, script, needs_self, current_func);
+                                    inner_call_str = inner_call_str.replace("__t_api.", "api.").replace("t_id_api.", "api.");
+                                    use std::collections::hash_map::DefaultHasher;
+                                    use std::hash::{Hash, Hasher};
+                                    let mut hasher = DefaultHasher::new();
+                                    inner_call_str.hash(&mut hasher);
+                                    let temp_var = format!("__temp_api_{}", hasher.finish());
+                                    (Some(inner_call_str), Some(temp_var))
+                                } else {
+                                    (None, None)
+                                }
+                            } else {
+                                (None, None)
+                            }
+                        } else {
+                            (None, None)
+                        };
+                        if let Some(inner_call_str) = inner_call_str {
+                            if let Some(temp_var) = temp_var_name {
+                                // Base was ApiCall or MemberAccess returning NodeID — need temp, same as c_par_id from a call
+                                let temp_decl = format!("let {}: NodeID = {};", temp_var, inner_call_str);
+                                let temp_var_expr = Expr::Ident(temp_var.clone());
+                                let outer_args: Vec<Expr> = std::iter::once(temp_var_expr).chain(args.iter().cloned()).collect();
+                                let rust_args_strings = generate_rust_args(
+                                    &outer_args,
+                                    script,
+                                    needs_self,
+                                    current_func,
+                                    method_ref.param_types().as_ref(),
+                                );
+                                let call_code = method_ref.to_rust_prepared(&outer_args, &rust_args_strings, script, needs_self, current_func);
+                                return format!(
+                                    "{}{} {}",
+                                    temp_decl,
+                                    if temp_decl.ends_with(';') { " " } else { "" },
+                                    call_code
+                                );
+                            }
+                            // Global: put literal in id slot only — same path as c_par.get_node(...), no temp
+                            let args_rust = generate_rust_args(
+                                args,
+                                script,
+                                needs_self,
+                                current_func,
+                                method_ref.param_types().as_ref(),
+                            );
+                            let rust_args_strings: Vec<String> = std::iter::once(inner_call_str).chain(args_rust).collect();
+                            let outer_args: Vec<Expr> = std::iter::once(Expr::SelfAccess).chain(args.iter().cloned()).collect();
+                            let call_code = method_ref.to_rust_prepared(&outer_args, &rust_args_strings, script, needs_self, current_func);
+                            return call_code;
                         }
                     }
                 }

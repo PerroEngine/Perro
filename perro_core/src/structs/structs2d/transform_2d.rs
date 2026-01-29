@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use crate::structs2d::Vector2;
 
 fn default_position() -> Vector2 {
@@ -39,7 +40,13 @@ pub struct Transform2D {
         default = "default_rotation",
         skip_serializing_if = "is_default_rotation"
     )]
-    pub rotation: f32, // Rotation in radians
+    pub rotation: f32, // Rotation in degrees (scene file and script use degrees)
+}
+
+impl fmt::Display for Transform2D {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Transform2D(position:{}, rotation:{}, scale:{})", self.position, self.rotation, self.scale)
+    }
 }
 
 impl Transform2D {
@@ -81,7 +88,7 @@ impl Transform2D {
     pub fn to_mat4(&self) -> glam::Mat4 {
         glam::Mat4::from_scale_rotation_translation(
             glam::Vec3::new(self.scale.x, self.scale.y, 1.0),
-            glam::Quat::from_rotation_z(self.rotation),
+            glam::Quat::from_rotation_z(self.rotation.to_radians()),
             glam::Vec3::new(self.position.x, self.position.y, 0.0),
         )
     }
@@ -97,8 +104,9 @@ impl Transform2D {
         // [-scale.y * sin(rot), scale.y * cos(rot), 0]
         // [position.x, position.y, 1]
         
-        let cos = self.rotation.cos();
-        let sin = self.rotation.sin();
+        let r = self.rotation.to_radians();
+        let cos = r.cos();
+        let sin = r.sin();
         
         glam::Mat3::from_cols(
             glam::Vec3::new(self.scale.x * cos, self.scale.x * sin, 0.0),
@@ -146,7 +154,7 @@ impl Transform2D {
         Self {
             position: Vector2::new(tx, ty),
             scale: Vector2::new(scale_x, scale_y),
-            rotation,
+            rotation: rotation.to_degrees(),
         }
     }
     
@@ -190,8 +198,9 @@ impl Transform2D {
     /// Useful for transforming directions/velocities
     #[inline]
     pub fn transform_vector(&self, vec: Vector2) -> Vector2 {
-        let cos = self.rotation.cos();
-        let sin = self.rotation.sin();
+        let r = self.rotation.to_radians();
+        let cos = r.cos();
+        let sin = r.sin();
         Vector2::new(
             vec.x * self.scale.x * cos - vec.y * self.scale.y * sin,
             vec.x * self.scale.x * sin + vec.y * self.scale.y * cos,
@@ -301,12 +310,14 @@ impl Transform2D {
     /// Get the forward direction vector (after rotation)
     #[inline]
     pub fn forward(&self) -> Vector2 {
-        Vector2::new(self.rotation.cos(), self.rotation.sin())
+        let r = self.rotation.to_radians();
+        Vector2::new(r.cos(), r.sin())
     }
     
     /// Get the right direction vector (after rotation)
     #[inline]
     pub fn right(&self) -> Vector2 {
-        Vector2::new(-self.rotation.sin(), self.rotation.cos())
+        let r = self.rotation.to_radians();
+        Vector2::new(-r.sin(), r.cos())
     }
 }
