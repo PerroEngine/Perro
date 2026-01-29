@@ -1131,6 +1131,67 @@ impl TextureApi {
         }
     }
 
+    /// Preload a texture from path and pin it so it is never evicted; only Texture.remove(id) frees it.
+    pub fn preload(&mut self, path: &str) -> Option<TextureID> {
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                self.set_api_ptr(ptr);
+                ptr
+            } else {
+                eprintln!("[Texture.preload] ERROR: No ScriptApi context available!");
+                return None;
+            }
+        };
+        unsafe {
+            let api = &mut *api_ptr;
+            Some(Self::preload_impl(api, path))
+        }
+    }
+
+    pub(crate) fn preload_impl(api: &mut ScriptApi, path: &str) -> TextureID {
+        if let Some(gfx) = api.gfx.as_mut() {
+            let id = match gfx.texture_manager.get_or_load_texture_id(path, &gfx.device, &gfx.queue) {
+                Ok(id) => id,
+                Err(e) => panic!("{}", e),
+            };
+            gfx.texture_manager.pin_texture(id);
+            id
+        } else {
+            panic!("Graphics not available");
+        }
+    }
+
+    /// Remove (unpin and free) a texture by id. Safe to call with nil or already-removed id.
+    pub fn remove(&mut self, id: Option<TextureID>) {
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            Some(ptr)
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            tl_ptr.map(|ptr| {
+                self.set_api_ptr(ptr);
+                ptr
+            })
+        };
+        if let Some(api_ptr) = api_ptr {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::remove_impl(api, id);
+            }
+        }
+    }
+
+    pub(crate) fn remove_impl(api: &mut ScriptApi, id: Option<TextureID>) {
+        if let Some(id) = id {
+            if let Some(gfx) = api.gfx.as_mut() {
+                gfx.texture_manager.unpin_texture(id);
+                gfx.texture_manager.remove_texture(id);
+            }
+        }
+    }
+
     /// Create a texture from raw RGBA8 bytes and return its UUID
     pub fn create_from_bytes(&mut self, bytes: &[u8], width: u32, height: u32) -> Option<TextureID> {
         // Get ScriptApi pointer - try stored pointer first

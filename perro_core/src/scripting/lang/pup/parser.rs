@@ -1425,33 +1425,73 @@ impl PupParser {
                         _ => false,
                     };
                     
-                    // Check node API registry for the method
-                    // This allows node.get_var("name") to work the same as node::var_name
-                    // even if we don't know the exact node type yet
-                    let node_type_to_check = match &**obj {
-                        Expr::SelfAccess => {
-                            // For self, check base Node type
-                            Some(crate::node_registry::NodeType::Node)
+                    // Resolve by receiver type first: if variable has a resource type (Texture, Signal, etc.),
+                    // try that resource API so tex.remove() -> Texture.remove(tex), not remove_node.
+                    if let Expr::Ident(var_name) = &**obj {
+                        if let Some(var_type) = self.type_env.get(var_name) {
+                            let norm_type_name = normalize_type_name(var_type);
+                            if !norm_type_name.is_empty() {
+                                if let Some(api) = PupAPI::resolve(&norm_type_name, method) {
+                                    let mut call_args = vec![*obj.clone()];
+                                    call_args.extend(args);
+                                    return Ok(Expr::ApiCall(CallModule::Module(api), call_args));
+                                }
+                                if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method) {
+                                    let mut call_args = vec![*obj.clone()];
+                                    call_args.extend(args);
+                                    return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
+                                }
+                            }
                         }
+                    }
+                    
+                    // GetVar/SetVar are special node methods — always resolve to ApiCall(GetVar/SetVar)
+                    // when the receiver is a node (including DynNode), so codegen uses get_script_var/set_script_var
+                    // instead of read_node(..., |n| n.get_var)(...).
+                    if is_node_instance && (method == "get_var" || method == "set_var") {
+                        if method == "get_var" && args.len() == 1 {
+                            if let Some(method_def) = PUP_NODE_API.get_methods(&crate::node_registry::NodeType::Node)
+                                .iter()
+                                .find(|m| m.script_name == "get_var")
+                            {
+                                let mut args_full = vec![*obj.clone()];
+                                args_full.extend(args.iter().cloned());
+                                return Ok(Expr::ApiCall(
+                                    CallModule::NodeMethod(method_def.rust_method),
+                                    args_full,
+                                ));
+                            }
+                        }
+                        if method == "set_var" && args.len() == 2 {
+                            if let Some(method_def) = PUP_NODE_API.get_methods(&crate::node_registry::NodeType::Node)
+                                .iter()
+                                .find(|m| m.script_name == "set_var")
+                            {
+                                let mut args_full = vec![*obj.clone()];
+                                args_full.extend(args.iter().cloned());
+                                return Ok(Expr::ApiCall(
+                                    CallModule::NodeMethod(method_def.rust_method),
+                                    args_full,
+                                ));
+                            }
+                        }
+                    }
+
+                    // Check node API registry only when receiver is actually a node (self or variable typed Node/DynNode).
+                    // Do not fall back to node methods for other Idents (e.g. Texture.remove(tex) must be Texture API).
+                    let node_type_to_check = match &**obj {
+                        Expr::SelfAccess => Some(crate::node_registry::NodeType::Node),
                         Expr::Ident(var_name) => {
-                            // If we know the type, use it; otherwise default to base Node
                             if let Some(Type::Node(nt)) = self.type_env.get(var_name) {
                                 Some(*nt)
                             } else {
-                                // Even if type is unknown, check base Node for node sugar methods
-                                // This allows c_par.get_var("name") to work when c_par type isn't inferred yet
-                                Some(crate::node_registry::NodeType::Node)
+                                None // Only use node API when type is actually Node/DynNode
                             }
                         }
-                        _ => {
-                            // For other expressions (like method calls), try base Node
-                            Some(crate::node_registry::NodeType::Node)
-                        }
+                        _ => None,
                     };
                     
-                    // If it's a known node instance OR we want to check for node methods anyway,
-                    // look up the method in the node API registry
-                    if is_node_instance || matches!(&**obj, Expr::SelfAccess | Expr::Ident(_)) {
+                    if is_node_instance {
                         if let Some(nt) = node_type_to_check {
                             // Check if method exists in node API registry (including inherited methods)
                             if let Some(method_def) = PUP_NODE_API.get_methods(&nt)

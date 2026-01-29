@@ -553,6 +553,26 @@ impl ModuleCodegen for TextureResource {
                 
                 format!("api.Texture.load({})", arg_str)
             }
+            TextureResource::Preload => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
+                    arg
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        inner.to_string()
+                    } else {
+                        format!("&{}", arg)
+                    }
+                } else {
+                    format!("&{}", arg)
+                };
+                format!("api.Texture.preload({})", arg_str)
+            }
+            TextureResource::Remove => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "TextureID::nil()".into());
+                format!("api.Texture.remove({})", arg)
+            }
             TextureResource::CreateFromBytes => {
                 let bytes = args_strs.get(0).cloned().unwrap_or_else(|| "vec![]".into());
                 let width = args_strs.get(1).cloned().unwrap_or_else(|| "0".into());
@@ -578,8 +598,9 @@ impl ModuleCodegen for TextureResource {
 impl ModuleTypes for TextureResource {
     fn return_type(&self) -> Option<Type> {
         match self {
-            TextureResource::Load => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID
-            TextureResource::CreateFromBytes => Some(Type::EngineStruct(EngineStruct::Texture)), // Returns Texture - texture ID
+            TextureResource::Load | TextureResource::Preload => Some(Type::EngineStruct(EngineStruct::Texture)),
+            TextureResource::CreateFromBytes => Some(Type::EngineStruct(EngineStruct::Texture)),
+            TextureResource::Remove => None, // void
             TextureResource::GetWidth | TextureResource::GetHeight => Some(Type::Number(NumberKind::Unsigned(32))),
             TextureResource::GetSize => Some(Type::EngineStruct(EngineStruct::Vector2)),
         }
@@ -587,7 +608,8 @@ impl ModuleTypes for TextureResource {
 
     fn param_types(&self) -> Option<Vec<Type>> {
         match self {
-            TextureResource::Load => Some(vec![Type::String]),
+            TextureResource::Load | TextureResource::Preload => Some(vec![Type::String]),
+            TextureResource::Remove => Some(vec![Type::EngineStruct(EngineStruct::Texture)]),
             TextureResource::CreateFromBytes => Some(vec![
                 Type::Container(ContainerKind::Array, vec![Type::Number(NumberKind::Unsigned(8))]),
                 Type::Number(NumberKind::Unsigned(32)),
@@ -600,7 +622,8 @@ impl ModuleTypes for TextureResource {
     /// Script-side parameter names (what PUP users see)
     fn param_names(&self) -> Option<Vec<&'static str>> {
         match self {
-            TextureResource::Load => Some(vec!["path"]),
+            TextureResource::Load | TextureResource::Preload => Some(vec!["path"]),
+            TextureResource::Remove => Some(vec!["texture"]),
             TextureResource::CreateFromBytes => Some(vec!["bytes", "width", "height"]),
             TextureResource::GetWidth | TextureResource::GetHeight | TextureResource::GetSize => Some(vec!["texture"]),
         }

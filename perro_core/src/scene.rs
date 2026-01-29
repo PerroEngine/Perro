@@ -3115,6 +3115,7 @@ impl<P: ScriptProvider> Scene<P> {
             // Step 3: Separate render commands by type and resolve texture paths
             let mut rect_commands = Vec::new();
             let mut texture_commands = Vec::new();
+            let mut texture_id_updates = Vec::new(); // (node_id, new_texture_id) when evicted id was reloaded
             let mut ui_nodes = Vec::new();
             let mut camera_2d_updates = Vec::new();
             let mut camera_3d_updates = Vec::new();
@@ -3132,9 +3133,14 @@ impl<P: ScriptProvider> Scene<P> {
                             }),
                         };
                         if let Some(tex_id) = resolved_id {
+                            // If id was evicted, reload from disk (we keep id→path when evicting)
+                            let effective_id = gfx.texture_manager.ensure_texture_loaded(tex_id, &gfx.device, &gfx.queue).unwrap_or(tex_id);
+                            if effective_id != tex_id {
+                                texture_id_updates.push((node_id, effective_id));
+                            }
                             texture_commands.push((
                                 node_id,
-                                tex_id,
+                                effective_id,
                                 global_transform,
                                 pivot,
                                 z_index,
@@ -3223,6 +3229,12 @@ impl<P: ScriptProvider> Scene<P> {
                     z_index,
                     timestamp,
                 );
+            }
+            // Update node texture_ids when we reloaded an evicted texture (so next frame uses the new id)
+            for (node_id, new_id) in texture_id_updates {
+                if let Some(SceneNode::Sprite2D(sprite)) = self.nodes.get_mut(node_id) {
+                    sprite.texture_id = Some(new_id);
+                }
             }
             
             // Process UI nodes (they need mutable access to gfx)
@@ -3323,6 +3335,11 @@ impl<P: ScriptProvider> Scene<P> {
                                     }),
                                 };
                                 if let Some(tex_id) = resolved_id {
+                                    // If id was evicted, reload from disk and update node so next frame uses new id
+                                    let effective_id = gfx.texture_manager.ensure_texture_loaded(tex_id, &gfx.device, &gfx.queue).unwrap_or(tex_id);
+                                    if effective_id != tex_id {
+                                        sprite.texture_id = Some(effective_id);
+                                    }
                                     if let Some(global_transform) = global_transform_opt {
                                         gfx.renderer_2d.queue_texture(
                                             &mut gfx.renderer_prim,
@@ -3330,7 +3347,7 @@ impl<P: ScriptProvider> Scene<P> {
                                             &gfx.device,
                                             &gfx.queue,
                                             node_id,
-                                            tex_id,
+                                            effective_id,
                                             global_transform,
                                             sprite.pivot,
                                             sprite.z_index,

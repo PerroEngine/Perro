@@ -529,11 +529,16 @@ impl Renderer3D {
         if let Some(&slot) = self.mesh_node_to_slot.get(&node_id) {
             if let Some(existing) = &mut self.mesh_instance_slots[slot] {
                 if existing.instance != new_instance || existing.mesh_id != mesh_id {
+                    if existing.mesh_id != mesh_id {
+                        mesh_manager.remove_mesh_user(existing.mesh_id, node_id);
+                    }
                     *existing = new_slot;
+                    mesh_manager.add_mesh_user(mesh_id, node_id);
                     self.instances_need_rebuild = true;
                 }
             }
         } else {
+            mesh_manager.add_mesh_user(mesh_id, node_id);
             let slot = self
                 .free_mesh_slots
                 .pop()
@@ -547,8 +552,12 @@ impl Renderer3D {
         }
     }
 
-    pub fn stop_rendering_mesh(&mut self, node_id: crate::ids::NodeID) {
+    /// Stops rendering the mesh for this node and unregisters mesh user for eviction.
+    pub fn stop_rendering_mesh(&mut self, node_id: crate::ids::NodeID, mesh_manager: &mut MeshManager) {
         if let Some(slot_idx) = self.mesh_node_to_slot.remove(&node_id) {
+            if let Some(ref slot_data) = self.mesh_instance_slots[slot_idx] {
+                mesh_manager.remove_mesh_user(slot_data.mesh_id, node_id);
+            }
             self.mesh_instance_slots[slot_idx] = None;
             self.free_mesh_slots.push(slot_idx);
             self.instances_need_rebuild = true;

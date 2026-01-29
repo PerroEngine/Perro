@@ -360,6 +360,7 @@ impl Stmt {
                 
                 let is_direct_texture_call = matches!(&expr.expr,
                     Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::Load)), _) |
+                    Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::Preload)), _) |
                     Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::CreateFromBytes)), _)
                 );
                 
@@ -741,6 +742,7 @@ impl Stmt {
                 
                 let is_direct_texture_call = matches!(&expr.expr,
                     Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::Load)), _) |
+                    Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::Preload)), _) |
                     Expr::ApiCall(crate::call_modules::CallModule::Resource(crate::resource_modules::ResourceModule::Texture(TextureResource::CreateFromBytes)), _)
                 );
                 

@@ -1,5 +1,5 @@
 use std::{borrow::Cow, time::Instant};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use crate::ids::{LightID, MaterialID, MeshID, TextureID, NodeID};
 
 use wgpu::{
@@ -51,8 +51,12 @@ struct TextureSlot {
     bind_group: Option<wgpu::BindGroup>,
 }
 
+/// Frames at zero users before evicting an unused texture/mesh (reload on next use).
+const EVICTION_FRAMES: u32 = 1000;
+
 /// Texture arena: slot-based storage like NodeArena. TextureID is generational (index + generation).
 /// path_to_id used only when loading (scene or Texture.load()); rendering uses id.
+/// Ref-count by node uuid: when no nodes use a texture for EVICTION_FRAMES frames, it is unloaded.
 pub struct TextureManager {
     /// Slots: index 0 = TextureID index 1, etc. None = free slot.
     slots: Vec<Option<TextureSlot>>,
@@ -63,6 +67,14 @@ pub struct TextureManager {
     /// Path → TextureID for loading; hot path uses id only.
     path_to_id: FxHashMap<String, TextureID>,
     cached_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    /// Node uuids (2D/UI) that are currently using each texture. Used for eviction.
+    texture_users: FxHashMap<TextureID, FxHashSet<u64>>,
+    /// Frames this texture has had zero users (reset when a user is added).
+    texture_frames_at_zero: FxHashMap<TextureID, u32>,
+    /// When a texture is evicted/removed, we keep id→path so we can reload from disk if that id is used again.
+    evicted_id_to_path: FxHashMap<TextureID, String>,
+    /// Pinned texture IDs (e.g. from Texture.preload) are never evicted; only removed by explicit Texture.remove().
+    pinned: FxHashSet<TextureID>,
 }
 
 impl TextureManager {
@@ -73,6 +85,76 @@ impl TextureManager {
             free_slots: Vec::new(),
             path_to_id: FxHashMap::default(),
             cached_bind_group_layout: None,
+            texture_users: FxHashMap::default(),
+            texture_frames_at_zero: FxHashMap::default(),
+            evicted_id_to_path: FxHashMap::default(),
+            pinned: FxHashSet::default(),
+        }
+    }
+
+    /// Pin a texture so it is never evicted; only Texture.remove(id) will free it.
+    pub fn pin_texture(&mut self, id: TextureID) {
+        if !id.is_nil() {
+            self.pinned.insert(id);
+        }
+    }
+
+    /// Unpin a texture (e.g. before explicit remove).
+    pub fn unpin_texture(&mut self, id: TextureID) {
+        self.pinned.remove(&id);
+    }
+
+    /// Register that node `uuid` is using texture `id` (e.g. queued for 2D/UI). Resets eviction countdown.
+    pub fn add_texture_user(&mut self, id: TextureID, uuid: u64) {
+        if id.is_nil() {
+            return;
+        }
+        self.texture_users.entry(id).or_default().insert(uuid);
+        self.texture_frames_at_zero.insert(id, 0);
+    }
+
+    /// Unregister node `uuid` from texture `id` (node removed or switched to another texture).
+    pub fn remove_texture_user(&mut self, id: TextureID, uuid: u64) {
+        if id.is_nil() {
+            return;
+        }
+        if let Some(users) = self.texture_users.get_mut(&id) {
+            users.remove(&uuid);
+        }
+    }
+
+    /// Call once per frame. Unloads textures that have had zero users for EVICTION_FRAMES frames.
+    pub fn tick_eviction(&mut self) {
+        let live_ids: Vec<TextureID> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| {
+                if slot.is_some() && idx < self.generations.len() {
+                    Some(TextureID::from_parts((idx + 1) as u32, self.generations[idx]))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut to_evict = Vec::new();
+        for &id in &live_ids {
+            if self.pinned.contains(&id) {
+                continue; // Never evict pinned textures
+            }
+            let n = self.texture_users.get(&id).map(|s| s.len()).unwrap_or(0);
+            if n == 0 {
+                let f = self.texture_frames_at_zero.entry(id).or_insert(0);
+                *f += 1;
+                if *f >= EVICTION_FRAMES {
+                    to_evict.push(id);
+                }
+            } else {
+                self.texture_frames_at_zero.insert(id, 0);
+            }
+        }
+        for id in to_evict {
+            self.remove_texture(id);
         }
     }
 
@@ -259,6 +341,22 @@ impl TextureManager {
         self.slots.get(idx)?.as_ref().map(|s| &s.texture)
     }
 
+    /// Returns the TextureID to use: same id if still valid, or reloads from disk if this id was evicted
+    /// (we keep id→path when evicting). Caller should update node's texture_id if the returned id differs.
+    pub fn ensure_texture_loaded(
+        &mut self,
+        id: TextureID,
+        device: &Device,
+        queue: &Queue,
+    ) -> Option<TextureID> {
+        if self.get_texture_by_id(&id).is_some() {
+            return Some(id);
+        }
+        let path = self.evicted_id_to_path.remove(&id)?;
+        let new_id = self.get_or_load_texture_id(&path, device, queue).ok()?;
+        Some(new_id)
+    }
+
     /// Get texture path from TextureID (for serialization / fallback).
     pub fn get_texture_path_from_id(&self, id: &TextureID) -> Option<&str> {
         let idx = Self::slot_index(*id)?;
@@ -390,11 +488,20 @@ impl TextureManager {
             return false;
         }
         if let Some(slot) = self.slots.get_mut(idx) {
-            if let Some(path) = slot.as_ref().map(|s| s.path.clone()) {
-                self.path_to_id.remove(&path);
+            let path = slot.as_ref().map(|s| s.path.clone());
+            if let Some(ref p) = path {
+                self.path_to_id.remove(p);
+                // Keep id→path so we can reload from disk if this id is used again (e.g. script still holds it).
+                if !p.starts_with("__synthetic__") {
+                    self.evicted_id_to_path.insert(id, p.clone());
+                }
             }
+            println!("[Texture] removed id={:?} path={:?}", id, path.as_deref().unwrap_or("(unknown)"));
             *slot = None;
             self.free_slots.push(idx);
+            self.texture_users.remove(&id);
+            self.texture_frames_at_zero.remove(&id);
+            self.pinned.remove(&id);
             return true;
         }
         false
@@ -416,11 +523,14 @@ struct MeshSlot {
 }
 
 /// Mesh arena: generational slots like TextureManager. MeshID = index + generation.
+/// Ref-count by NodeID: when no nodes use a mesh for EVICTION_FRAMES frames, it is unloaded.
 pub struct MeshManager {
     slots: Vec<Option<MeshSlot>>,
     generations: Vec<u32>,
     free_slots: Vec<usize>,
     path_to_id: FxHashMap<String, MeshID>,
+    mesh_users: FxHashMap<MeshID, FxHashSet<NodeID>>,
+    mesh_frames_at_zero: FxHashMap<MeshID, u32>,
 }
 
 impl MeshManager {
@@ -430,6 +540,59 @@ impl MeshManager {
             generations: Vec::new(),
             free_slots: Vec::new(),
             path_to_id: FxHashMap::default(),
+            mesh_users: FxHashMap::default(),
+            mesh_frames_at_zero: FxHashMap::default(),
+        }
+    }
+
+    /// Register that node `node_id` is using mesh `id`. Resets eviction countdown.
+    pub fn add_mesh_user(&mut self, id: MeshID, node_id: NodeID) {
+        if id.is_nil() {
+            return;
+        }
+        self.mesh_users.entry(id).or_default().insert(node_id);
+        self.mesh_frames_at_zero.insert(id, 0);
+    }
+
+    /// Unregister node `node_id` from mesh `id` (node removed or switched to another mesh).
+    pub fn remove_mesh_user(&mut self, id: MeshID, node_id: NodeID) {
+        if id.is_nil() {
+            return;
+        }
+        if let Some(users) = self.mesh_users.get_mut(&id) {
+            users.remove(&node_id);
+        }
+    }
+
+    /// Call once per frame. Unloads meshes that have had zero users for EVICTION_FRAMES frames.
+    pub fn tick_eviction(&mut self) {
+        let live_ids: Vec<MeshID> = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| {
+                if slot.is_some() && idx < self.generations.len() {
+                    Some(MeshID::from_parts((idx + 1) as u32, self.generations[idx]))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut to_evict = Vec::new();
+        for &id in &live_ids {
+            let n = self.mesh_users.get(&id).map(|s| s.len()).unwrap_or(0);
+            if n == 0 {
+                let f = self.mesh_frames_at_zero.entry(id).or_insert(0);
+                *f += 1;
+                if *f >= EVICTION_FRAMES {
+                    to_evict.push(id);
+                }
+            } else {
+                self.mesh_frames_at_zero.insert(id, 0);
+            }
+        }
+        for id in to_evict {
+            self.remove_mesh(id);
         }
     }
 
@@ -526,6 +689,8 @@ impl MeshManager {
             if let Some(MeshSlot { path, .. }) = slot.take() {
                 self.path_to_id.remove(&path);
                 self.free_slots.push(idx);
+                self.mesh_users.remove(&id);
+                self.mesh_frames_at_zero.remove(&id);
                 return true;
             }
         }
@@ -2191,8 +2356,12 @@ impl Graphics {
         // This method is kept for compatibility but does nothing
     }
 
+    /// Stops rendering this node: 2D/UI (rect + texture) and 3D mesh. Unregisters texture/mesh
+    /// users so eviction can reclaim resources after EVICTION_FRAMES at zero users.
     pub fn stop_rendering(&mut self, uuid: u64) {
-        self.renderer_prim.stop_rendering(uuid);
+        self.renderer_prim.stop_rendering(uuid, &mut self.texture_manager);
+        self.renderer_3d
+            .stop_rendering_mesh(NodeID::from_u64(uuid), &mut self.mesh_manager);
     }
 
     /// Queue a 3D mesh with automatic material resolution
@@ -2241,6 +2410,10 @@ impl Graphics {
 
     /// Main render method that coordinates all renderers
     pub fn render(&mut self, rpass: &mut RenderPass<'_>) {
+        // Evict textures/meshes that have had zero users for EVICTION_FRAMES (reload on next use)
+        self.texture_manager.tick_eviction();
+        self.mesh_manager.tick_eviction();
+
         // Upload any dirty materials/lights before rendering
         {
             #[cfg(feature = "profiling")]

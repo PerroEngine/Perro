@@ -1,3 +1,76 @@
+[scripts.shape_pup]
+src = "res://shape.pup"
+lang = "pup"
+id = "shape_pup"
+
+[[scripts.shape_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 68
+
+[scripts.shape_pup.names]
+
+[scripts.camera_pup]
+src = "res://camera.pup"
+lang = "pup"
+id = "camera_pup"
+
+[[scripts.camera_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 88
+
+[scripts.camera_pup.names]
+__t_speed = "speed"
+
+[scripts.player_pup]
+src = "res://player.pup"
+lang = "pup"
+id = "player_pup"
+
+[[scripts.player_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 122
+
+[[scripts.player_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 122
+g_end = 127
+
+[[scripts.player_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 127
+g_end = 139
+
+[[scripts.player_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 139
+g_end = 166
+
+[[scripts.player_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 166
+g_end = 178
+
+[scripts.player_pup.names]
+__t_test_var = "test_var"
+tex_id = "tex"
+__t_test = "test"
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_Cabbage = "Cabbage"
+__t_time = "time"
+__t_test_b = "test_b"
+__t_cab = "cab"
+
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
 lang = "pup"
@@ -23,22 +96,8 @@ g_end = 90
 
 [scripts.test_engine_structs_pup.names]
 __t_test_variable_access = "test_variable_access"
-__t_test_constructors = "test_constructors"
 __t_test_nested_access = "test_nested_access"
-
-[scripts.camera_pup]
-src = "res://camera.pup"
-lang = "pup"
-id = "camera_pup"
-
-[[scripts.camera_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 88
-
-[scripts.camera_pup.names]
-__t_speed = "speed"
+__t_test_constructors = "test_constructors"
 
 [scripts.p2_pup]
 src = "res://p2.pup"
@@ -53,51 +112,18 @@ g_end = 69
 
 [scripts.p2_pup.names]
 
-[scripts.player_pup]
-src = "res://player.pup"
+[scripts.root_pup]
+src = "res://root.pup"
 lang = "pup"
-id = "player_pup"
+id = "root_pup"
 
-[[scripts.player_pup.lines]]
+[[scripts.root_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 121
+g_end = 67
 
-[[scripts.player_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 121
-g_end = 126
-
-[[scripts.player_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 126
-g_end = 138
-
-[[scripts.player_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 138
-g_end = 166
-
-[[scripts.player_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 166
-g_end = 178
-
-[scripts.player_pup.names]
-__t_cab = "cab"
-__t_test_var = "test_var"
-tex_id = "tex"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
-__t_Cabbage = "Cabbage"
-__t_time = "time"
-__t_test_b = "test_b"
-__t_test = "test"
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+[scripts.root_pup.names]
 
 [scripts.col_pup]
 src = "res://col.pup"
@@ -118,29 +144,3 @@ g_end = 78
 
 [scripts.col_pup.names]
 s_id = "s"
-
-[scripts.root_pup]
-src = "res://root.pup"
-lang = "pup"
-id = "root_pup"
-
-[[scripts.root_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 67
-
-[scripts.root_pup.names]
-
-[scripts.shape_pup]
-src = "res://shape.pup"
-lang = "pup"
-id = "shape_pup"
-
-[[scripts.shape_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 68
-
-[scripts.shape_pup.names]

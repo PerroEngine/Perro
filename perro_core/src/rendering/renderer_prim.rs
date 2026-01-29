@@ -595,7 +595,9 @@ impl PrimitiveRenderer {
             rotation: transform.rotation,
         };
         
-        // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
+        // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D).
+        // We clear the draw slot so we don't render this frame, but we do NOT unregister the
+        // texture user: the node still "owns" the texture and may come back on screen.
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size) {
             if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
                 if self.texture_instance_slots[slot].is_some() {
@@ -672,6 +674,9 @@ impl PrimitiveRenderer {
                     || existing.1.pivot != new_instance.pivot
                     || existing.1.z_index != new_instance.z_index;
                 if existing.0 != layer || instance_changed || existing.2 != texture_id {
+                    if existing.2 != texture_id {
+                        texture_manager.remove_texture_user(existing.2, uuid);
+                    }
                     let order_or_group_changed = existing.0 != layer
                         || existing.1.z_index != new_instance.z_index
                         || existing.2 != texture_id;
@@ -682,6 +687,7 @@ impl PrimitiveRenderer {
                     existing.1 = new_instance;
                     existing.2 = texture_id;
                     existing.3 = tex_size;
+                    texture_manager.add_texture_user(texture_id, uuid);
                     self.mark_texture_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -689,6 +695,7 @@ impl PrimitiveRenderer {
             }
         } else {
             self.structure_changed = true;
+            texture_manager.add_texture_user(texture_id, uuid);
             let slot = if let Some(free_slot) = self.free_texture_slots.pop() {
                 free_slot
             } else {
@@ -872,7 +879,8 @@ impl PrimitiveRenderer {
         // Native text rendering uses glyph_atlas instead, initialized on-demand
     }
 
-    pub fn stop_rendering(&mut self, uuid: u64) {
+    /// Stops rendering the given node (rect + texture). Unregisters texture user for eviction.
+    pub fn stop_rendering(&mut self, uuid: u64, texture_manager: &mut TextureManager) {
         // Remove from rect slots
         if let Some(slot) = self.rect_uuid_to_slot.remove(&uuid) {
             self.rect_instance_slots[slot] = None;
@@ -883,8 +891,11 @@ impl PrimitiveRenderer {
             self.structure_changed = true;
         }
 
-        // Remove from texture slots
+        // Remove from texture slots and unregister texture user for eviction
         if let Some(slot) = self.texture_uuid_to_slot.remove(&uuid) {
+            if let Some(ref existing) = self.texture_instance_slots[slot] {
+                texture_manager.remove_texture_user(existing.2, uuid);
+            }
             self.texture_instance_slots[slot] = None;
             self.free_texture_slots.push(slot);
             self.mark_texture_slot_dirty(slot);

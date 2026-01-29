@@ -916,8 +916,11 @@ impl Compiler {
 
     /// Build and copy the output to the final location
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
-        // For Scripts target, check hash before compiling
-        if matches!(self.target, CompileTarget::Scripts) {
+        // For Scripts target, check hash before compiling (skip this in source mode)
+        // In source mode the scripts crate depends on perro_core via path, so we must
+        // always run cargo so it can see core changes and rebuild; hash-skip would
+        // leave a stale DLL built against an older core.
+        if matches!(self.target, CompileTarget::Scripts) && !self.from_source {
             let current_hash = compute_script_hash(&self.project_root)?;
             let stored_hash = read_stored_hash(&self.project_root)?;
             

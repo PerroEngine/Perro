@@ -12,7 +12,7 @@ struct Cabbage {
 var cab = new Cabbage { x: 111111 }
 
 on init() {
-
+  tex = Texture.load("res://doug.PNG")
     self.transform.position = new Vector2(-700, -70)
 
     PoopyButt.test(12312)
@@ -65,7 +65,6 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     
     var ppos
     if p_type == NODE_TYPE.Sprite2D {
-        var tex = Texture.load("res://doug.PNG")
         self.texture = tex
         ppos = (collision.get_parent() as Sprite2D).transform.position
     }

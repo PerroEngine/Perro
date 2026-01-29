@@ -1770,6 +1770,33 @@ impl Expr {
                 }
             }
             Expr::Call(target, args) => {
+                // GetVar/SetVar are special node methods — always use get_script_var/set_script_var,
+                // never read_node. Handle Call(MemberAccess(node, "get_var"), [name]) and
+                // Call(MemberAccess(node, "set_var"), [name, value]) here so they don't fall through
+                // to target.to_rust() which would generate read_node(..., |n| n.get_var)(...).
+                if let Expr::MemberAccess(base, method) = target.as_ref() {
+                    if method == "get_var" && args.len() == 1 {
+                        use crate::api_bindings::generate_rust_args;
+                        use crate::structs::engine_bindings::EngineMethodCodegen;
+                        use crate::structs::engine_registry::NodeMethodRef;
+                        let get_var_args: Vec<Expr> = vec![(**base).clone(), args[0].clone()];
+                        let expected = NodeMethodRef::GetVar.param_types();
+                        let rust_args = generate_rust_args(&get_var_args, script, needs_self, current_func, expected.as_ref());
+                        let code = NodeMethodRef::GetVar.to_rust_prepared(&get_var_args, &rust_args, script, needs_self, current_func);
+                        return code;
+                    }
+                    if method == "set_var" && args.len() == 2 {
+                        use crate::api_bindings::generate_rust_args;
+                        use crate::structs::engine_bindings::EngineMethodCodegen;
+                        use crate::structs::engine_registry::NodeMethodRef;
+                        let set_var_args: Vec<Expr> = vec![(**base).clone(), args[0].clone(), args[1].clone()];
+                        let expected = NodeMethodRef::SetVar.param_types();
+                        let rust_args = generate_rust_args(&set_var_args, script, needs_self, current_func, expected.as_ref());
+                        let code = NodeMethodRef::SetVar.to_rust_prepared(&set_var_args, &rust_args, script, needs_self, current_func);
+                        return code;
+                    }
+                }
+
                 // Special case: chained API calls like api.get_parent(...).get_type()
                 // Convert to api.get_parent_type(...) - this should NOT be treated as a call
                 if let Expr::MemberAccess(base, field) = target.as_ref() {

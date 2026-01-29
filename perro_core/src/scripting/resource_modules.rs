@@ -24,11 +24,13 @@ pub enum SignalResource {
 
 #[derive(Debug, Clone)]
 pub enum TextureResource {
-    Load, 
+    Load,
+    Preload,
+    Remove,
     CreateFromBytes,
-    GetWidth, 
-    GetHeight, 
-    GetSize, 
+    GetWidth,
+    GetHeight,
+    GetSize,
 }
 
 #[derive(Debug, Clone)]

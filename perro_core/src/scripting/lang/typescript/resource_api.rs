@@ -49,6 +49,8 @@ impl TypeScriptTexture {
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "load" => Some(ResourceModule::Texture(TextureResource::Load)),
+            "preload" => Some(ResourceModule::Texture(TextureResource::Preload)),
+            "remove" => Some(ResourceModule::Texture(TextureResource::Remove)),
             "createFromBytes" | "create_from_bytes" => Some(ResourceModule::Texture(TextureResource::CreateFromBytes)),
             "getWidth" | "get_width" => Some(ResourceModule::Texture(TextureResource::GetWidth)),
             "getHeight" | "get_height" => Some(ResourceModule::Texture(TextureResource::GetHeight)),
@@ -58,7 +60,7 @@ impl TypeScriptTexture {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["load", "createFromBytes", "create_from_bytes", "getWidth", "get_width", "getHeight", "get_height", "getSize", "get_size"]
+        vec!["load", "preload", "remove", "createFromBytes", "create_from_bytes", "getWidth", "get_width", "getHeight", "get_height", "getSize", "get_size"]
     }
 }
 

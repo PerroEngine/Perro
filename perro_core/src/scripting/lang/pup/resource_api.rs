@@ -77,6 +77,8 @@ impl PupTexture {
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "load" => Some(ResourceModule::Texture(TextureResource::Load)),
+            "preload" => Some(ResourceModule::Texture(TextureResource::Preload)),
+            "remove" => Some(ResourceModule::Texture(TextureResource::Remove)),
             "create_from_bytes" => Some(ResourceModule::Texture(TextureResource::CreateFromBytes)),
             "get_width" => Some(ResourceModule::Texture(TextureResource::GetWidth)),
             "get_height" => Some(ResourceModule::Texture(TextureResource::GetHeight)),
@@ -86,7 +88,7 @@ impl PupTexture {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["load", "create_from_bytes", "get_width", "get_height", "get_size"]
+        vec!["load", "preload", "remove", "create_from_bytes", "get_width", "get_height", "get_size"]
     }
 }
 

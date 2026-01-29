@@ -49,6 +49,8 @@ impl CSharpTexture {
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "Load" => Some(ResourceModule::Texture(TextureResource::Load)),
+            "Preload" => Some(ResourceModule::Texture(TextureResource::Preload)),
+            "Remove" => Some(ResourceModule::Texture(TextureResource::Remove)),
             "CreateFromBytes" => Some(ResourceModule::Texture(TextureResource::CreateFromBytes)),
             "GetWidth" => Some(ResourceModule::Texture(TextureResource::GetWidth)),
             "GetHeight" => Some(ResourceModule::Texture(TextureResource::GetHeight)),
@@ -58,7 +60,7 @@ impl CSharpTexture {
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Load", "CreateFromBytes", "GetWidth", "GetHeight", "GetSize"]
+        vec!["Load", "Preload", "Remove", "CreateFromBytes", "GetWidth", "GetHeight", "GetSize"]
     }
 }
 

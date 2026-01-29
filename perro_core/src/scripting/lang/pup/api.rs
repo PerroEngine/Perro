@@ -199,10 +199,16 @@ impl PupMath {
 /// Returns an empty string if the type doesn't map to any API module
 pub fn normalize_type_name(typ: &crate::ast::Type) -> String {
     use crate::ast::Type;
+    use crate::structs::engine_structs::EngineStruct;
     match typ {
         Type::Signal => "Signal".to_string(),
         Type::Container(crate::ast::ContainerKind::Array, _) => "Array".to_string(),
         Type::Container(crate::ast::ContainerKind::Map, _) => "Map".to_string(),
+        Type::EngineStruct(es) => match es {
+            EngineStruct::Texture => "Texture".to_string(),
+            EngineStruct::Shape2D => "Shape2D".to_string(),
+            _ => String::new(),
+        },
         Type::Custom(name) => {
             // Check if it matches any module API names
             match name.as_str() {
