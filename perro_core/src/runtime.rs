@@ -357,9 +357,12 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // 6. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 6. Create window and Graphics before building scene
+    // 6. Create window at scaled-down size so it fits typical monitors (e.g. 1080x1920 → 720x1280); resumed() may clamp further to primary monitor
     #[cfg(not(target_arch = "wasm32"))]
-    let default_size = winit::dpi::PhysicalSize::new(1280, 720); // Default size, monitor info not available before window creation
+    let default_size = crate::rendering::app::initial_window_size_from_virtual(
+        project.virtual_width(),
+        project.virtual_height(),
+    );
 
     let title = project.name().to_string();
     let mut window_attrs = Window::default_attributes()
@@ -406,7 +409,11 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     };
 
     // Create Graphics synchronously
-    let mut graphics = create_graphics_sync(window.clone());
+    let mut graphics = create_graphics_sync(
+        window.clone(),
+        project.virtual_width(),
+        project.virtual_height(),
+    );
 
     // 7. Build runtime scene using StaticScriptProvider (now with Graphics)
     let provider = StaticScriptProvider::new(&data);
@@ -859,9 +866,12 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         }
     };
 
-    // 8. Create window and Graphics before building scene
+    // 8. Create window at scaled-down size so it fits typical monitors; resumed() may clamp further to primary monitor
     #[cfg(not(target_arch = "wasm32"))]
-    let default_size = winit::dpi::PhysicalSize::new(1280, 720); // Default size, monitor info not available before window creation
+    let default_size = crate::rendering::app::initial_window_size_from_virtual(
+        project_rc.borrow().virtual_width(),
+        project_rc.borrow().virtual_height(),
+    );
 
     let title = project_rc.borrow().name().to_string();
     let mut window_attrs = Window::default_attributes()
@@ -907,8 +917,12 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         w
     };
 
-    // Create Graphics synchronously
-    let mut graphics = create_graphics_sync(window.clone());
+    // Create Graphics synchronously (pass virtual resolution from project)
+    let mut graphics = create_graphics_sync(
+        window.clone(),
+        project_rc.borrow().virtual_width(),
+        project_rc.borrow().virtual_height(),
+    );
 
     // 9. Build runtime scene with DllScriptProvider (now with Graphics)
     let mut game_scene = match Scene::<DllScriptProvider>::from_project(project_rc.clone(), &mut graphics) {

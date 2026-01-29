@@ -1849,7 +1849,7 @@ impl<'a> ScriptApi<'a> {
             .get_runtime_param("project_path")
             .ok_or("Missing runtime param: project_path")?;
         let project_path = Path::new(project_path_str);
-        transpile(project_path, false).map_err(|e| format!("Transpile failed: {}", e))?;
+        transpile(project_path, false, false).map_err(|e| format!("Transpile failed: {}", e))?;
         let compiler = Compiler::new(project_path, target, false);
         compiler
             .compile(profile)

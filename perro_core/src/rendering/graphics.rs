@@ -37,8 +37,9 @@ pub type SharedWindow = std::rc::Rc<Window>;
 #[cfg(not(target_arch = "wasm32"))]
 pub type SharedWindow = std::sync::Arc<Window>;
 
-pub const VIRTUAL_WIDTH: f32 = 1920.0;
-pub const VIRTUAL_HEIGHT: f32 = 1080.0;
+/// Default virtual resolution when not overridden by project.toml [graphics]
+pub const DEFAULT_VIRTUAL_WIDTH: f32 = 1920.0;
+pub const DEFAULT_VIRTUAL_HEIGHT: f32 = 1080.0;
 
 /// One slot in the texture arena. TextureID = 1-based index into slots.
 struct TextureSlot {
@@ -732,6 +733,10 @@ impl LightManager {
 }
 
 pub struct Graphics {
+    // Virtual resolution (from project.toml [graphics], used for coordinate space and aspect ratio)
+    pub virtual_width: f32,
+    pub virtual_height: f32,
+
     // Core WGPU resources
     window: Rc<Window>,
     #[allow(dead_code)]
@@ -1128,8 +1133,8 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // Initialize UI camera: stretches to fill window (no black bars) while maintaining coordinate system
     // Virtual size defines the coordinate space (e.g., -540 is always left edge of 1080-wide space)
     // NDC scale maps virtual coordinates directly to window, stretching to fill
-    let ui_virtual_width = VIRTUAL_WIDTH;
-    let ui_virtual_height = VIRTUAL_HEIGHT;
+    let ui_virtual_width = DEFAULT_VIRTUAL_WIDTH;
+    let ui_virtual_height = DEFAULT_VIRTUAL_HEIGHT;
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
     
@@ -1264,8 +1269,8 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     });
 
     // 6) Initialize 2D camera data
-    let virtual_width = VIRTUAL_WIDTH;
-    let virtual_height = VIRTUAL_HEIGHT;
+    let virtual_width = DEFAULT_VIRTUAL_WIDTH;
+    let virtual_height = DEFAULT_VIRTUAL_HEIGHT;
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
 
@@ -1289,8 +1294,13 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // 7) Create renderers
     let mut renderer_3d =
         Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
-    let renderer_prim =
-        PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
+    let renderer_prim = PrimitiveRenderer::new(
+        &device,
+        &camera_bind_group_layout,
+        surface_config.format,
+        DEFAULT_VIRTUAL_WIDTH,
+        DEFAULT_VIRTUAL_HEIGHT,
+    );
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
 
@@ -1325,6 +1335,8 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     let egui_renderer = None; // Will be initialized lazily in render() 
     
     let gfx = Graphics {
+        virtual_width: DEFAULT_VIRTUAL_WIDTH,
+        virtual_height: DEFAULT_VIRTUAL_HEIGHT,
         window: window.clone(),
         instance,
         surface,
@@ -1372,8 +1384,9 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 }
 
 /// Synchronous version of create_graphics for use during initialization
-/// Returns Graphics directly instead of sending via proxy
-pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
+/// Returns Graphics directly instead of sending via proxy.
+/// `virtual_width` and `virtual_height` define the coordinate space (e.g. from project.toml [graphics]).
+pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_height: f32) -> Graphics {
     
     
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
@@ -1698,15 +1711,13 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
         usage: BufferUsages::VERTEX,
     });
     
-    // Initialize 2D camera data
-    let virtual_width = VIRTUAL_WIDTH;
-    let virtual_height = VIRTUAL_HEIGHT;
+    // Initialize 2D camera data (use params: virtual_width, virtual_height)
     let window_width = surface_config.width as f32;
     let window_height = surface_config.height as f32;
-    
+
     let virtual_aspect = virtual_width / virtual_height;
     let window_aspect = window_width / window_height;
-    
+
     let (scale_x, scale_y) = if window_aspect > virtual_aspect {
         (virtual_aspect / window_aspect, 1.0)
     } else {
@@ -1763,10 +1774,9 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     });
 
     // UI camera: stretches to fill window (no black bars) while maintaining coordinate system
-    // Virtual size defines the coordinate space (e.g., -540 is always left edge of 1080-wide space)
-    // NDC scale maps virtual coordinates directly to window, stretching to fill
-    let ui_virtual_width = VIRTUAL_WIDTH;
-    let ui_virtual_height = VIRTUAL_HEIGHT;
+    // Virtual size from params
+    let ui_virtual_width = virtual_width;
+    let ui_virtual_height = virtual_height;
     
     // UI camera: stretch to fill window (no black bars)
     // Scale virtual coordinates by window/virtual ratio using view matrix, then convert to NDC
@@ -1794,8 +1804,13 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     // Create renderers
     let mut renderer_3d =
         Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
-    let renderer_prim =
-        PrimitiveRenderer::new(&device, &camera_bind_group_layout, surface_config.format);
+    let renderer_prim = PrimitiveRenderer::new(
+        &device,
+        &camera_bind_group_layout,
+        surface_config.format,
+        virtual_width,
+        virtual_height,
+    );
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
     
@@ -1821,6 +1836,8 @@ pub fn create_graphics_sync(window: SharedWindow) -> Graphics {
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
     
     Graphics {
+        virtual_width,
+        virtual_height,
         window: window.clone(),
         instance,
         surface,
@@ -1901,8 +1918,8 @@ impl Graphics {
     }
 
     fn update_camera_uniform(&self) {
-        let virtual_width = VIRTUAL_WIDTH;
-        let virtual_height = VIRTUAL_HEIGHT;
+        let virtual_width = self.virtual_width;
+        let virtual_height = self.virtual_height;
         let window_width = self.surface_config.width as f32;
         let window_height = self.surface_config.height as f32;
 
@@ -1928,10 +1945,9 @@ impl Graphics {
 
     fn update_ui_camera_uniform(&self) {
         // UI camera: stretches to fill window (no black bars) while maintaining coordinate system
-        // Virtual size defines the coordinate space (e.g., -540 is always left edge of 1080-wide space)
-        // NDC scale maps virtual coordinates directly to window, stretching to fill
-        let ui_virtual_width = VIRTUAL_WIDTH;
-        let ui_virtual_height = VIRTUAL_HEIGHT;
+        // Virtual size from project [graphics]
+        let ui_virtual_width = self.virtual_width;
+        let ui_virtual_height = self.virtual_height;
         let window_width = self.surface_config.width as f32;
         let window_height = self.surface_config.height as f32;
 
@@ -1989,9 +2005,20 @@ impl Graphics {
             glam::Mat4::from_translation(glam::vec3(-t.position.x, -t.position.y, 0.0));
         let view = rotation * translation;
 
-        let vw = VIRTUAL_WIDTH;
-        let vh = VIRTUAL_HEIGHT;
-        let ndc_scale = glam::vec2(2.0 / vw, 2.0 / vh);
+        let vw = self.virtual_width;
+        let vh = self.virtual_height;
+        // Use same letterboxing as resize: ndc_scale must account for window vs virtual aspect
+        // so the image doesn't stretch when the window aspect differs from virtual (e.g. vertical resolution)
+        let window_width = self.surface_config.width as f32;
+        let window_height = self.surface_config.height as f32;
+        let virtual_aspect = vw / vh;
+        let window_aspect = window_width / window_height;
+        let (scale_x, scale_y) = if window_aspect > virtual_aspect {
+            (virtual_aspect / window_aspect, 1.0)
+        } else {
+            (1.0, window_aspect / virtual_aspect)
+        };
+        let ndc_scale = glam::vec2(scale_x * 2.0 / vw, scale_y * 2.0 / vh);
 
         #[repr(C)]
         #[derive(Clone, Copy)]

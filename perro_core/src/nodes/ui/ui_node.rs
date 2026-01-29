@@ -13,7 +13,7 @@ use crate::{
     Node,
     nodes::node_registry::NodeType,
 
-    rendering::graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
+    rendering::graphics::{DEFAULT_VIRTUAL_HEIGHT, DEFAULT_VIRTUAL_WIDTH},
 
     scripting::api::ScriptApi,
     structs2d::Vector2,
@@ -356,9 +356,15 @@ impl UINode {
             })
             .unwrap_or((1920.0, 1080.0));
     
+        // Use virtual size from Graphics when available, else defaults
+        let (virt_w, virt_h) = api
+            .gfx
+            .as_ref()
+            .map(|g| (g.virtual_width, g.virtual_height))
+            .unwrap_or((DEFAULT_VIRTUAL_WIDTH, DEFAULT_VIRTUAL_HEIGHT));
         let mouse_pos = Vector2::new(
-            (screen_mouse.x / window_w - 0.5) * VIRTUAL_WIDTH,
-            (0.5 - screen_mouse.y / window_h) * VIRTUAL_HEIGHT,
+            (screen_mouse.x / window_w - 0.5) * virt_w,
+            (0.5 - screen_mouse.y / window_h) * virt_h,
         );
     
         // -----------------------------------------

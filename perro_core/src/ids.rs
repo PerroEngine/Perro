@@ -20,7 +20,7 @@ macro_rules! define_generational_id {
 
         impl $type_name {
             #[inline]
-            pub fn nil() -> Self {
+            pub const fn nil() -> Self {
                 Self(0)
             }
 

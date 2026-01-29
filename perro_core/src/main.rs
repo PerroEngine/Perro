@@ -163,7 +163,7 @@ fn main() {
                 
                 // Build scripts automatically so the project is ready to run
                 println!("📜 Building scripts...");
-                if let Err(e) = transpile(&project_path, true) {
+                if let Err(e) = transpile(&project_path, true, false) {
                     eprintln!("⚠️  Warning: Failed to transpile scripts: {}", e);
                     eprintln!("   You can build scripts later with: cargo run -p perro_core -- --path {} --scripts", project_path.display());
                 } else {
@@ -325,7 +325,7 @@ fn main() {
 
         // Build scripts first
         println!("📜 Building scripts…");
-        if let Err(e) = transpile(&project_root, true) {
+        if let Err(e) = transpile(&project_root, true, false) {
             eprintln!("❌ Transpile failed: {}", e);
             std::process::exit(1);
         }
@@ -378,7 +378,7 @@ fn main() {
 
         // Build scripts first
         println!("📜 Building scripts…");
-        if let Err(e) = transpile(&project_root, true) {
+        if let Err(e) = transpile(&project_root, true, false) {
             eprintln!("❌ Transpile failed: {}", e);
             std::process::exit(1);
         }
@@ -486,7 +486,7 @@ fn main() {
     match target {
         CompileTarget::Scripts => {
             println!("📜 Transpiling scripts…");
-            if let Err(e) = transpile(&project_root, true) {
+            if let Err(e) = transpile(&project_root, true, false) {
                 eprintln!("❌ Transpile failed: {}", e);
                 return;
             }
@@ -501,7 +501,7 @@ fn main() {
         }
         CompileTarget::Project => {
             println!("🏗️  Building project…");
-            if let Err(e) = transpile(&project_root, false) {
+            if let Err(e) = transpile(&project_root, false, true) {
                 eprintln!("❌ Transpile failed: {}", e);
                 return;
             }
@@ -516,7 +516,7 @@ fn main() {
         }
         CompileTarget::VerboseProject => {
             println!("🏗️  Building verbose project…");
-            if let Err(e) = transpile(&project_root, true) {
+            if let Err(e) = transpile(&project_root, true, true) {
                 eprintln!("❌ Transpile failed: {}", e);
                 return;
             }

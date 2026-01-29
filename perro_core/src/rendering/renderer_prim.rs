@@ -142,10 +142,19 @@ pub struct PrimitiveRenderer {
     camera_rotation: f32,
     camera_zoom: f32,
     viewport_enabled: bool,
+    /// Virtual resolution (from project [graphics]) for viewport culling
+    virtual_width: f32,
+    virtual_height: f32,
 }
 
 impl PrimitiveRenderer {
-    pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
+    pub fn new(
+        device: &Device,
+        camera_bgl: &BindGroupLayout,
+        format: TextureFormat,
+        virtual_width: f32,
+        virtual_height: f32,
+    ) -> Self {
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Texture BGL"),
@@ -237,6 +246,8 @@ impl PrimitiveRenderer {
             camera_rotation: 0.0,
             camera_zoom: 1.0,
             viewport_enabled: false,
+            virtual_width,
+            virtual_height,
         }
     }
     
@@ -254,12 +265,9 @@ impl PrimitiveRenderer {
             return false; // No culling if camera not set
         }
         
-        use crate::rendering::VIRTUAL_WIDTH;
-        use crate::rendering::VIRTUAL_HEIGHT;
-        
         // Calculate viewport bounds in world space (axis-aligned, ignoring camera rotation for simplicity)
-        let viewport_half_width = (VIRTUAL_WIDTH / self.camera_zoom) * 0.5;
-        let viewport_half_height = (VIRTUAL_HEIGHT / self.camera_zoom) * 0.5;
+        let viewport_half_width = (self.virtual_width / self.camera_zoom) * 0.5;
+        let viewport_half_height = (self.virtual_height / self.camera_zoom) * 0.5;
         
         let viewport_min_x = self.camera_position.x - viewport_half_width;
         let viewport_max_x = self.camera_position.x + viewport_half_width;

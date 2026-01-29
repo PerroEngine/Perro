@@ -12,11 +12,29 @@ struct ProjectSettings {
     #[serde(default)]
     performance: PerformanceSection,
     #[serde(default)]
+    graphics: GraphicsSection,
+    #[serde(default)]
     root: RootSection,
     #[serde(default)]
     meta: MetadataSection,
     #[serde(default)]
     input: InputSection,
+}
+
+/// `[graphics]` section - virtual resolution and window aspect
+#[derive(Deserialize, Default, Clone)]
+struct GraphicsSection {
+    #[serde(default = "default_virtual_width")]
+    virtual_width: f32,
+    #[serde(default = "default_virtual_height")]
+    virtual_height: f32,
+}
+
+fn default_virtual_width() -> f32 {
+    1920.0
+}
+fn default_virtual_height() -> f32 {
+    1080.0
 }
 
 /// `[project]` section
@@ -92,6 +110,8 @@ impl Project {
         icon: Option<String>,
         fps_cap: f32,
         xps: f32,
+        virtual_width: f32,
+        virtual_height: f32,
         root_script: Option<String>,
         metadata: &phf::Map<&'static str, &'static str>,
         input_actions: &phf::Map<&'static str, &'static [&'static str]>,
@@ -117,6 +137,10 @@ impl Project {
                 icon,
             },
             performance: PerformanceSection { fps_cap, xps },
+            graphics: GraphicsSection {
+                virtual_width,
+                virtual_height,
+            },
             root: RootSection {
                 script: root_script,
             },
@@ -215,6 +239,16 @@ impl Project {
     }
 
     #[inline]
+    pub fn virtual_width(&self) -> f32 {
+        self.settings.graphics.virtual_width
+    }
+
+    #[inline]
+    pub fn virtual_height(&self) -> f32 {
+        self.settings.graphics.virtual_height
+    }
+
+    #[inline]
     pub fn root_script(&self) -> Option<&str> {
         self.settings.root.script.as_deref()
     }
@@ -270,6 +304,16 @@ impl Project {
     #[inline]
     pub fn set_xps(&mut self, xps: f32) {
         self.settings.performance.xps = xps;
+    }
+
+    #[inline]
+    pub fn set_virtual_width(&mut self, w: f32) {
+        self.settings.graphics.virtual_width = w;
+    }
+
+    #[inline]
+    pub fn set_virtual_height(&mut self, h: f32) {
+        self.settings.graphics.virtual_height = h;
     }
 
     #[inline]

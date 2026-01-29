@@ -11,3 +11,7 @@ fn test(u: int) {
 fn return_true() -> bool {
     return true
 }
+
+fn add(a: int, b: int) -> int {
+    return a + b
+}

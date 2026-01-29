@@ -440,18 +440,20 @@ fn setup_dll_panic_handler() {
     Ok(())
 }
 
-pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
+/// Transpile all scripts in res/. When `project_mode` is true, generated module code
+/// gets `#[inline]` on functions and constants (for release/project builds).
+pub fn transpile(project_root: &Path, verbose: bool, project_mode: bool) -> Result<(), String> {
     let total_start = Instant::now();
 
-    // Compute hash of all script files before transpiling
-    let current_hash = compute_script_hash(project_root)?;
-    let stored_hash = read_stored_hash(project_root)?;
-    
-    // If hash matches, skip transpilation
-    if let Some(stored) = stored_hash {
-        if stored == current_hash {
-            println!("✅ Script hash unchanged, skipping transpilation");
-            return Ok(());
+    // In project mode, skip hash compare so we always transpile
+    if !project_mode {
+        let current_hash = compute_script_hash(project_root)?;
+        let stored_hash = read_stored_hash(project_root)?;
+        if let Some(stored) = stored_hash {
+            if stored == current_hash {
+                println!("✅ Script hash unchanged, skipping transpilation");
+                return Ok(());
+            }
         }
     }
 
@@ -469,8 +471,10 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
         println!("📜 No scripts found. Creating minimal lib.rs...");
         // Still create a minimal lib.rs so the DLL can be built
         rebuild_lib_rs(project_root, &std::collections::HashSet::new(), &std::collections::HashSet::new())?;
-        // Save hash even for empty scripts
-        write_script_hash(project_root, &current_hash)?;
+        if !project_mode {
+            let current_hash = compute_script_hash(project_root)?;
+            write_script_hash(project_root, &current_hash)?;
+        }
         return Ok(());
     }
 
@@ -607,7 +611,7 @@ pub fn transpile(project_root: &Path, verbose: bool) -> Result<(), String> {
                     // Use the identifier from the path (same as scripts)
                     // The module name is used internally but file-based identifier is used for file naming
                     // Pass module_names so modules can reference other modules
-                    let _generated_code = module.to_rust(&identifier, project_root, verbose, &module_names);
+                    let _generated_code = module.to_rust(&identifier, project_root, verbose, &module_names, project_mode);
                     transpile_time = transpile_start.elapsed();
                     
                     // Modules don't need source maps for now (they're simple)

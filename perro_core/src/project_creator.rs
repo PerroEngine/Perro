@@ -357,6 +357,11 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 version = "1.0.0"
 
+[graphics]
+# Virtual resolution (coordinate space). Window opens at this size.
+virtual_width = 1920
+virtual_height = 1080
+
 [performance]
 fps_cap = 500
 xps = 30

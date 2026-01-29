@@ -4,6 +4,10 @@ main_scene = "res://editor.scn"
 icon = "res://perro-logo.png"
 version="1.0.0"
 
+[graphics]
+virtual_width = 1920
+virtual_height = 1080
+
 [performance]
 fps_cap = 500
 xps = 60

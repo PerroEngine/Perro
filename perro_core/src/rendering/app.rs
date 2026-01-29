@@ -7,7 +7,7 @@ use std::sync::mpsc::Receiver;
 #[cfg(not(target_arch = "wasm32"))]
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalSize,
+    dpi::{PhysicalPosition, PhysicalSize},
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop},
     window::WindowId,
@@ -61,6 +61,32 @@ const DEFAULT_TARGET_FPS: f32 = 500.0;
 
 // Default Perro icon embedded at compile time
 const DEFAULT_ICON_BYTES: &[u8] = include_bytes!("../resources/default-icon.png");
+
+/// Fraction of monitor size to use as max (leave room for taskbar and window decorations).
+const MONITOR_USABLE_FRACTION: f64 = 0.85;
+
+/// Clamp a size to fit within max bounds, preserving aspect ratio. Returns the same size if it already fits.
+#[cfg(not(target_arch = "wasm32"))]
+fn clamp_size_to_fit(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
+    let (dw, dh) = (desired.width.max(1), desired.height.max(1));
+    if dw <= max_width && dh <= max_height {
+        return desired;
+    }
+    let scale = (max_width as f64 / dw as f64).min(max_height as f64 / dh as f64);
+    let w = (dw as f64 * scale).max(1.0).min(max_width as f64) as u32;
+    let h = (dh as f64 * scale).max(1.0).min(max_height as f64) as u32;
+    PhysicalSize::new(w.max(1), h.max(1))
+}
+
+/// Default initial window size from virtual size: scaled down so it fits on typical monitors (e.g. 1080x1920 → 720x1280).
+/// Used when creating the window; resumed() may clamp further to the actual primary monitor.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn initial_window_size_from_virtual(virtual_width: f32, virtual_height: f32) -> PhysicalSize<u32> {
+    const SCALE: f32 = 1.5;
+    let w = (virtual_width.max(1.0) / SCALE).max(1.0) as u32;
+    let h = (virtual_height.max(1.0) / SCALE).max(1.0) as u32;
+    PhysicalSize::new(w.max(1), h.max(1))
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn load_default_icon() -> Option<winit::window::Icon> {
@@ -432,9 +458,33 @@ impl<P: ScriptProvider> App<P> {
 }
 
 impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-        // Graphics are always created synchronously before App creation
-        // No async initialization needed
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // If window was created at virtual size and doesn't fit on the primary monitor,
+        // scale it down (preserving aspect ratio) so it fits.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(gfx) = self.state.graphics.as_ref() {
+            let window = gfx.window();
+            let current = window.inner_size();
+            if let Some(monitor) = event_loop.primary_monitor() {
+                let raw = monitor.size();
+                // Use a fraction of monitor size so we leave room for taskbar and decorations
+                let max_w = (raw.width as f64 * MONITOR_USABLE_FRACTION).max(1.0) as u32;
+                let max_h = (raw.height as f64 * MONITOR_USABLE_FRACTION).max(1.0) as u32;
+                let clamped = clamp_size_to_fit(current, max_w, max_h);
+                if clamped.width < current.width || clamped.height < current.height {
+                    let _ = window.request_inner_size(clamped);
+                }
+                // Center the window on the primary monitor
+                let mon_pos = monitor.position();
+                let mon_size = monitor.size();
+                let outer = window.outer_size();
+                let center_x = mon_pos.x + (mon_size.width as i32) / 2;
+                let center_y = mon_pos.y + (mon_size.height as i32) / 2;
+                let window_x = center_x - (outer.width as i32) / 2;
+                let window_y = center_y - (outer.height as i32) / 2;
+                window.set_outer_position(PhysicalPosition::new(window_x, window_y));
+            }
+        }
     }
 
     #[inline(always)]

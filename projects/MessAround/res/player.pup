@@ -9,7 +9,7 @@ struct Cabbage {
     var x: int
 }
 
-var cab = new Cabbage { x: 111 }
+var cab = new Cabbage { x: 1111 }
 
 on init() {
 
@@ -21,6 +21,9 @@ on init() {
     var v = PoopyButt.v
     Console.info("b, v", b, v)
     var c = 0
+
+    var sum = PoopyButt.add(5, 2)
+    Console.info("sum", sum)
 
     Console.info(self)
    

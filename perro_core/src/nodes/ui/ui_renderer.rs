@@ -10,7 +10,6 @@ use crate::{
     Graphics,
     font::{Font, FontAtlas, Style, Weight},
     fur_ast::FurAnchor,
-    graphics::{VIRTUAL_HEIGHT, VIRTUAL_WIDTH},
     structs::Color,
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
@@ -103,18 +102,23 @@ impl LayoutCache {
     }
 }
 
+/// Default viewport size when not provided (e.g. when layout is run without Graphics).
+const DEFAULT_VIEWPORT: Vector2 = Vector2 { x: 1920.0, y: 1080.0 };
+
 /// Helper function to find the parent element for percentage calculations
-/// Uses layout containers with explicit sizes, but skips auto-sizing layout containers
+/// Uses layout containers with explicit sizes, but skips auto-sizing layout containers.
+/// When no suitable parent is found, returns viewport_size or DEFAULT_VIEWPORT.
 fn find_percentage_reference_ancestor(
     elements: &IndexMap<UIElementID, UIElement>,
     current_id: &UIElementID,
+    viewport_size: Option<Vector2>,
 ) -> Option<Vector2> {
-    let current = elements.get(current_id)?;
+    let _current = elements.get(current_id)?;
 
     // Walk up the parent chain to find a non-zero size
 
     // If we reach here, no suitable parent found, use viewport
-    Some(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT))
+    Some(viewport_size.unwrap_or(DEFAULT_VIEWPORT))
 }
 
 /// Helper function to check if an element is effectively visible (considering parent visibility)
@@ -205,7 +209,7 @@ fn calculate_content_size_with_visibility_cache(
                 let percentage_reference_size = percentage_ref_cache
                     .get(&child_id)
                     .copied()
-                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                    .unwrap_or(DEFAULT_VIEWPORT);
 
                 // Resolve percentages
                 let style_map = child.get_style_map();
@@ -263,8 +267,8 @@ pub fn calculate_content_size(elements: &IndexMap<UIElementID, UIElement>, paren
 
                 // Find the percentage reference for this child
                 let percentage_reference_size =
-                    find_percentage_reference_ancestor(elements, &child_id)
-                        .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                    find_percentage_reference_ancestor(elements, &child_id, None)
+                        .unwrap_or(DEFAULT_VIEWPORT);
 
                 // Resolve percentages using the smart reference (skip auto-sizing)
                 // Use f64 for precision to avoid rounding errors
@@ -540,16 +544,16 @@ fn update_global_transforms_with_layout_impl(
                 let size = *parent.get_size();
                 (size, parent.get_z_index())
             } else {
-                (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
+                (DEFAULT_VIEWPORT, 0)
             }
         } else {
-            (Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT), 0)
+            (DEFAULT_VIEWPORT, 0)
         }
     };
 
     // Find the reference size for percentages
-    let percentage_reference_size = find_percentage_reference_ancestor(elements, current_id)
-        .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+    let percentage_reference_size = find_percentage_reference_ancestor(elements, current_id, None)
+        .unwrap_or(DEFAULT_VIEWPORT);
 
     // Get element and calculate its global transform
     if let Some(element) = elements.get_mut(current_id) {
@@ -850,14 +854,15 @@ pub fn render_ui(ui_node: &mut UINode, gfx: &mut Graphics, provider: Option<&dyn
         HashSet::new()
     };
     
-    // Build percentage reference cache ONCE (no more repeated parent chain walks!)
+    // Build percentage reference cache ONCE (use virtual size from Graphics for viewport)
+    let viewport_size = Vector2::new(gfx.virtual_width, gfx.virtual_height);
     let percentage_ref_cache: HashMap<UIElementID, Vector2> = if let Some(elements) = &ui_node.elements {
         let elements_ref: &IndexMap<UIElementID, UIElement> = elements;
         elements_ref
             .par_iter()
             .map(|(id, _)| {
-                let ref_size = find_percentage_reference_ancestor(elements_ref, id)
-                    .unwrap_or(Vector2::new(VIRTUAL_WIDTH, VIRTUAL_HEIGHT));
+                let ref_size = find_percentage_reference_ancestor(elements_ref, id, Some(viewport_size))
+                    .unwrap_or(viewport_size);
                 (*id, ref_size)
             })
             .collect()

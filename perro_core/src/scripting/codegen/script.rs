@@ -347,6 +347,7 @@ impl Module {
         project_path: &Path,
         verbose: bool,
         module_names: &std::collections::HashSet<String>,
+        project_mode: bool,
     ) -> String {
         let mut out = String::with_capacity(4096);
 
@@ -371,7 +372,7 @@ impl Module {
                 f.split('/').last().unwrap_or(f).to_string()
             })
             .unwrap_or_else(|| {
-                format!("{}.pup", module_name)
+                format!("{}.pup", self.module_name)
             });
         
         write!(out, "const __PERRO_SOURCE_FILE: &str = \"{}\";\n\n", module_file).unwrap();
@@ -422,6 +423,7 @@ impl Module {
                         typ.rust_default_value()
                     };
                     // All module variables are const in Rust; use transpiled ident on definition
+                    // (Rust doesn't allow #[inline] on constants, only on functions)
                     let renamed_name = rename_variable(&var.name, var.typ.as_ref());
                     write!(out, "    pub const {}: {} = {};\n", renamed_name, rust_type, value).unwrap();
                 }
@@ -436,7 +438,10 @@ impl Module {
             out.push_str("    // ========================================================================\n\n");
 
             for func in &self.functions {
-                // Indent function definitions
+                // Indent function definitions; add #[inline] in project mode
+                if project_mode {
+                    out.push_str("    #[inline]\n");
+                }
                 let func_code = func.to_rust_free_function(verbose, module_names, Some(&self.variables));
                 for line in func_code.lines() {
                     out.push_str("    ");
