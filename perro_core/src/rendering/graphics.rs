@@ -41,6 +41,9 @@ pub type SharedWindow = std::sync::Arc<Window>;
 pub const DEFAULT_VIRTUAL_WIDTH: f32 = 1920.0;
 pub const DEFAULT_VIRTUAL_HEIGHT: f32 = 1080.0;
 
+/// Default MSAA when not set in project.toml [graphics] msaa
+const DEFAULT_MSAA_SAMPLES: u32 = 4;
+
 /// One slot in the texture arena. TextureID = 1-based index into slots.
 struct TextureSlot {
     texture: ImageTexture,
@@ -779,6 +782,13 @@ pub struct Graphics {
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
 
+    /// MSAA sample count (1 = off, 4 = on). From project.toml [graphics] msaa.
+    pub msaa_samples: u32,
+    /// When > 1: multisampled color target; resolved to swap chain each frame. When 1: None (render directly to swap chain).
+    msaa_color_texture: Option<wgpu::Texture>,
+    /// Main render pass color attachment when MSAA on; use swap chain view as resolve_target. When MSAA off, None.
+    pub msaa_color_view: Option<wgpu::TextureView>,
+
     // Cached render state
     #[allow(dead_code)]
     cached_operations: wgpu::Operations<wgpu::Color>,
@@ -1045,8 +1055,9 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // Using Immediate prevents double-limiting and pixel waving/jitter
     //
     // GPU usage note: High FPS (e.g. default fps_cap 500) + Immediate = GPU renders every frame.
-    // For simple 2D scenes, lower GPU use: set fps_cap to 60 in project.toml, or use Fifo
-    // (VSync) so the display caps frame rate and GPU idles between vsyncs.
+    // To reduce GPU % on simple 2D: set fps_cap to 60 in project.toml, or use Fifo (VSync)
+    // so the display caps frame rate. Instance data uses partial buffer updates when only
+    // transforms change (no full re-upload per frame).
     let surface_caps = surface.get_capabilities(&adapter);
     let preferred_present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
         wgpu::PresentMode::Immediate
@@ -1291,15 +1302,17 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     ];
     queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&camera_data));
 
-    // 7) Create renderers
+    // 7) Create renderers (async path uses default MSAA)
+    let msaa_samples = DEFAULT_MSAA_SAMPLES;
     let mut renderer_3d =
-        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
+        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format, msaa_samples);
     let renderer_prim = PrimitiveRenderer::new(
         &device,
         &camera_bind_group_layout,
         surface_config.format,
         DEFAULT_VIRTUAL_WIDTH,
         DEFAULT_VIRTUAL_HEIGHT,
+        msaa_samples,
     );
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
@@ -1307,7 +1320,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     // 8) Initialize material system with default material
     let material_manager = initialize_material_system(&mut renderer_3d, &queue);
 
-    // 9) Create depth texture
+    // 9) Create depth texture (multisampled when MSAA on)
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Depth Texture"),
         size: wgpu::Extent3d {
@@ -1316,7 +1329,7 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count: msaa_samples,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -1324,6 +1337,28 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
     });
 
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    // 9b) Create MSAA color texture only when MSAA on (sample_count > 1)
+    let (msaa_color_texture, msaa_color_view) = if msaa_samples > 1 {
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("MSAA Color Texture"),
+            size: wgpu::Extent3d {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: msaa_samples,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        (Some(tex), Some(view))
+    } else {
+        (None, None)
+    };
     
     // Initialize egui integration
     let egui_integration = EguiIntegration::new();
@@ -1367,6 +1402,9 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 
         depth_texture,
         depth_view,
+        msaa_samples,
+        msaa_color_texture,
+        msaa_color_view,
         
         egui_integration,
         egui_renderer,
@@ -1386,7 +1424,13 @@ fn initialize_material_system(renderer_3d: &mut Renderer3D, queue: &Queue) -> Ma
 /// Synchronous version of create_graphics for use during initialization
 /// Returns Graphics directly instead of sending via proxy.
 /// `virtual_width` and `virtual_height` define the coordinate space (e.g. from project.toml [graphics]).
-pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_height: f32) -> Graphics {
+/// `msaa_samples`: 1 = off, 4 = on (from project.toml [graphics] msaa).
+pub fn create_graphics_sync(
+    window: SharedWindow,
+    virtual_width: f32,
+    virtual_height: f32,
+    msaa_samples: u32,
+) -> Graphics {
     
     
     // GPU-aware backend selection: probe all backends, detect GPU vendors, choose best match
@@ -1803,13 +1847,14 @@ pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_he
     
     // Create renderers
     let mut renderer_3d =
-        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format);
+        Renderer3D::new(&device, &camera3d_bind_group_layout, surface_config.format, msaa_samples);
     let renderer_prim = PrimitiveRenderer::new(
         &device,
         &camera_bind_group_layout,
         surface_config.format,
         virtual_width,
         virtual_height,
+        msaa_samples,
     );
     let renderer_2d = Renderer2D::new();
     let renderer_ui = RendererUI::new();
@@ -1817,7 +1862,7 @@ pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_he
     // Initialize material system with default material
     let material_manager = initialize_material_system(&mut renderer_3d, &queue);
     
-    // Create depth texture
+    // Create depth texture (multisampled when MSAA on)
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Depth Texture"),
         size: wgpu::Extent3d {
@@ -1826,7 +1871,7 @@ pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_he
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count: msaa_samples,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -1834,6 +1879,28 @@ pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_he
     });
     
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    // Create MSAA color texture only when MSAA on (sample_count > 1)
+    let (msaa_color_texture, msaa_color_view) = if msaa_samples > 1 {
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("MSAA Color Texture"),
+            size: wgpu::Extent3d {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: msaa_samples,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        (Some(tex), Some(view))
+    } else {
+        (None, None)
+    };
     
     Graphics {
         virtual_width,
@@ -1865,6 +1932,9 @@ pub fn create_graphics_sync(window: SharedWindow, virtual_width: f32, virtual_he
         renderer_3d,
         depth_texture,
         depth_view,
+        msaa_samples,
+        msaa_color_texture,
+        msaa_color_view,
         
         egui_integration: EguiIntegration::new(),
         egui_renderer: None,
@@ -1897,7 +1967,7 @@ impl Graphics {
         self.update_camera_uniform();
         self.update_ui_camera_uniform();
 
-        // Recreate depth texture with new size
+        // Recreate depth texture with new size (multisampled when MSAA on)
         self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
             size: wgpu::Extent3d {
@@ -1906,7 +1976,7 @@ impl Graphics {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: self.msaa_samples,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -1915,6 +1985,32 @@ impl Graphics {
         self.depth_view = self
             .depth_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Recreate MSAA color texture only when MSAA on
+        if self.msaa_samples > 1 {
+            self.msaa_color_texture = Some(
+                self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("MSAA Color Texture"),
+                    size: wgpu::Extent3d {
+                        width: self.surface_config.width,
+                        height: self.surface_config.height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: self.msaa_samples,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.surface_config.format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                }),
+            );
+            self.msaa_color_view = self.msaa_color_texture.as_ref().map(|t| {
+                t.create_view(&wgpu::TextureViewDescriptor::default())
+            });
+        } else {
+            self.msaa_color_texture = None;
+            self.msaa_color_view = None;
+        }
     }
 
     fn update_camera_uniform(&self) {

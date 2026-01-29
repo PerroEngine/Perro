@@ -21,13 +21,16 @@ struct ProjectSettings {
     input: InputSection,
 }
 
-/// `[graphics]` section - virtual resolution and window aspect
-#[derive(Deserialize, Default, Clone)]
+/// `[graphics]` section - virtual resolution, window aspect, and MSAA
+#[derive(Deserialize, Clone)]
 struct GraphicsSection {
     #[serde(default = "default_virtual_width")]
     virtual_width: f32,
     #[serde(default = "default_virtual_height")]
     virtual_height: f32,
+    /// MSAA for smooth 3D edges: "off" (1x), "on" (4x).
+    #[serde(default = "default_msaa")]
+    msaa: String,
 }
 
 fn default_virtual_width() -> f32 {
@@ -35,6 +38,19 @@ fn default_virtual_width() -> f32 {
 }
 fn default_virtual_height() -> f32 {
     1080.0
+}
+fn default_msaa() -> String {
+    "on".into()
+}
+
+impl Default for GraphicsSection {
+    fn default() -> Self {
+        Self {
+            virtual_width: default_virtual_width(),
+            virtual_height: default_virtual_height(),
+            msaa: default_msaa(),
+        }
+    }
 }
 
 /// `[project]` section
@@ -140,6 +156,7 @@ impl Project {
             graphics: GraphicsSection {
                 virtual_width,
                 virtual_height,
+                msaa: default_msaa(),
             },
             root: RootSection {
                 script: root_script,
@@ -246,6 +263,16 @@ impl Project {
     #[inline]
     pub fn virtual_height(&self) -> f32 {
         self.settings.graphics.virtual_height
+    }
+
+    /// MSAA sample count from [graphics] msaa: "off" => 1, "on" => 4 (case-insensitive).
+    #[inline]
+    pub fn msaa_samples(&self) -> u32 {
+        if self.settings.graphics.msaa.to_lowercase().as_str() == "off" {
+            1
+        } else {
+            4 // "on" or unknown
+        }
     }
 
     #[inline]

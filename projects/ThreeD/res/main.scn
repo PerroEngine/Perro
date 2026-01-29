@@ -1,0 +1,51 @@
+{
+  "root_id": 0,
+  "nodes": {
+    "0": {
+      "type": "Node3D",
+      "base": { "type": "Node", "name": "World" }
+    },
+    "1": {
+      "type": "Camera3D",
+      "active": true,
+      "base": {
+        "type": "Node3D",
+        "transform": {
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
+        },
+        "base": { "type": "Node", "name": "Camera", "parent": "0" }
+      }
+    },
+    "2": {
+      "type": "MeshInstance3D",
+      "mesh_path": "__cube__",
+      "base": {
+        "type": "Node3D",
+        "transform": {
+          "position": [0, 0, -3],
+          "rotation": [0.25, 0.5, 0, 1],
+          "scale": [1, 1, 1]
+        },
+
+        "base": { "type": "Node", "name": "Cube", "parent": "0" }
+      }
+    },
+    "3": {
+      "type": "OmniLight3D",
+      "color": { "r": 255, "g": 255, "b": 255, "a": 255 },
+      "intensity": 1.0,
+      "range": 10.0,
+      "base": {
+        "type": "Node3D",
+        "transform": {
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
+        },
+        "base": { "type": "Node", "name": "Light", "parent": "0" }
+      }
+    }
+  }
+}

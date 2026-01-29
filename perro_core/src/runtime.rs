@@ -408,11 +408,12 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
         w
     };
 
-    // Create Graphics synchronously
+    // Create Graphics synchronously (MSAA from project.toml [graphics] msaa)
     let mut graphics = create_graphics_sync(
         window.clone(),
         project.virtual_width(),
         project.virtual_height(),
+        project.msaa_samples(),
     );
 
     // 7. Build runtime scene using StaticScriptProvider (now with Graphics)
@@ -917,11 +918,12 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         w
     };
 
-    // Create Graphics synchronously (pass virtual resolution from project)
+    // Create Graphics synchronously (virtual resolution and MSAA from project.toml [graphics])
     let mut graphics = create_graphics_sync(
         window.clone(),
         project_rc.borrow().virtual_width(),
         project_rc.borrow().virtual_height(),
+        project_rc.borrow().msaa_samples(),
     );
 
     // 9. Build runtime scene with DllScriptProvider (now with Graphics)
@@ -948,16 +950,27 @@ pub fn run_dev_with_path(project_root: PathBuf) {
         let now = std::time::Instant::now();
         game_scene.update(&mut graphics, now);
         
-        // Render the frame
+        // Render the frame (MSAA on: render to msaa_color_view then resolve; off: render to swap chain)
         let (frame, view, mut encoder) = graphics.begin_frame();
-        let color_attachment = wgpu::RenderPassColorAttachment {
-            view: &view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                store: wgpu::StoreOp::Store,
+        let color_attachment = match &graphics.msaa_color_view {
+            Some(msaa_view) => wgpu::RenderPassColorAttachment {
+                view: msaa_view,
+                resolve_target: Some(&view),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
             },
-            depth_slice: None,
+            None => wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            },
         };
         
         let depth_attachment = wgpu::RenderPassDepthStencilAttachment {

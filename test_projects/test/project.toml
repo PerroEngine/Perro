@@ -7,6 +7,7 @@ version="1.0.0"
 [graphics]
 virtual_width = 1920
 virtual_height = 1080
+msaa = "on"
 
 [performance]
 fps_cap = 500

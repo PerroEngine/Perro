@@ -98,10 +98,6 @@ pub struct PrimitiveRenderer {
 
     texture_bind_group_layout: BindGroupLayout,
 
-    // egui integration for text rendering
-    egui_context: egui::Context,
-    egui_renderer: Option<egui_wgpu::Renderer>,
-
     // Optimized rect storage
     rect_instance_slots: Vec<Option<(RenderLayer, RectInstance, u64)>>, // Added timestamp for sorting
     rect_uuid_to_slot: FxHashMap<u64, usize>,
@@ -125,8 +121,6 @@ pub struct PrimitiveRenderer {
     world_texture_buffer_ranges: Vec<Range<u64>>,
     ui_texture_buffer_ranges: Vec<Range<u64>>,
 
-    temp_texture_map: FxHashMap<TextureID, Vec<TextureInstance>>,
-    temp_sorted_groups: Vec<(TextureID, Vec<TextureInstance>)>,
     temp_all_texture_instances: Vec<TextureInstance>,
 
     // Batching optimization fields
@@ -136,7 +130,14 @@ pub struct PrimitiveRenderer {
     dirty_threshold: usize,
 
     instances_need_rebuild: bool,
-    
+    /// Set when add/remove or z_index changes; forces full rebuild. When false, we can partial-update only dirty slots.
+    structure_changed: bool,
+
+    /// Slot index -> (layer, index in world_rect_instances or ui_rect_instances). Built on full rebuild; used for partial uploads.
+    rect_slot_to_buffer: Vec<Option<(RenderLayer, usize)>>,
+    /// Slot index -> flat index in texture instance buffer. Built on full rebuild; used for partial uploads.
+    texture_slot_to_flat_index: Vec<Option<usize>>,
+
     // OPTIMIZED: 2D viewport culling - cache camera info
     camera_position: Vector2,
     camera_rotation: f32,
@@ -154,6 +155,7 @@ impl PrimitiveRenderer {
         format: TextureFormat,
         virtual_width: f32,
         virtual_height: f32,
+        sample_count: u32,
     ) -> Self {
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -192,14 +194,15 @@ impl PrimitiveRenderer {
             mapped_at_creation: false,
         });
 
-        let rect_instanced_pipeline = Self::create_rect_pipeline(device, camera_bgl, format);
-        let texture_instanced_pipeline =
-            Self::create_texture_pipeline(device, &texture_bind_group_layout, camera_bgl, format);
-        
-        // Initialize egui (TODO: fix API call once we verify egui-wgpu version)
-        let egui_context = egui::Context::default();
-        // TODO: Initialize egui_wgpu::Renderer with correct API
-        // let egui_renderer = egui_wgpu::Renderer::new(...);
+        let rect_instanced_pipeline =
+            Self::create_rect_pipeline(device, camera_bgl, format, sample_count);
+        let texture_instanced_pipeline = Self::create_texture_pipeline(
+            device,
+            &texture_bind_group_layout,
+            camera_bgl,
+            format,
+            sample_count,
+        );
 
         Self {
             rect_instance_buffer,
@@ -207,8 +210,6 @@ impl PrimitiveRenderer {
             rect_instanced_pipeline,
             texture_instanced_pipeline,
             texture_bind_group_layout,
-            egui_context,
-            egui_renderer: None, // TODO: Initialize once API is fixed
 
             // Optimized storage
             rect_instance_slots: Vec::with_capacity(MAX_INSTANCES),
@@ -229,8 +230,6 @@ impl PrimitiveRenderer {
             ui_texture_group_offsets: Vec::new(),
             world_texture_buffer_ranges: Vec::new(),
             ui_texture_buffer_ranges: Vec::new(),
-            temp_texture_map: FxHashMap::default(),
-            temp_sorted_groups: Vec::new(),
             temp_all_texture_instances: Vec::new(),
 
             // Batching optimization
@@ -240,7 +239,10 @@ impl PrimitiveRenderer {
             dirty_threshold: 100,                            // Rebuild when 100+ elements are dirty (reduced rebuild frequency)
 
             instances_need_rebuild: false,
-            
+            structure_changed: false,
+            rect_slot_to_buffer: Vec::new(),
+            texture_slot_to_flat_index: Vec::new(),
+
             // OPTIMIZED: Initialize camera culling info
             camera_position: Vector2::ZERO,
             camera_rotation: 0.0,
@@ -429,6 +431,7 @@ impl PrimitiveRenderer {
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
+                    self.structure_changed = true;
                 }
             }
             return; // Don't queue invalid sizes
@@ -447,6 +450,7 @@ impl PrimitiveRenderer {
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
+                    self.structure_changed = true;
                 }
             }
             return; // Don't queue invalid transforms
@@ -464,6 +468,7 @@ impl PrimitiveRenderer {
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
+                    self.structure_changed = true;
                 }
             }
             return; // Don't queue offscreen sprites
@@ -506,6 +511,10 @@ impl PrimitiveRenderer {
             // Update existing slot if changed
             if let Some(ref mut existing) = self.rect_instance_slots[slot] {
                 if existing.0 != layer || existing.1 != new_instance {
+                    let order_changed = existing.0 != layer || existing.1.z_index != new_instance.z_index;
+                    if order_changed {
+                        self.structure_changed = true;
+                    }
                     existing.0 = layer;
                     existing.1 = new_instance;
                     // Keep existing timestamp
@@ -516,6 +525,7 @@ impl PrimitiveRenderer {
             }
         } else {
             // Allocate new slot
+            self.structure_changed = true;
             let slot = if let Some(free_slot) = self.free_rect_slots.pop() {
                 free_slot
             } else {
@@ -595,6 +605,7 @@ impl PrimitiveRenderer {
                     self.mark_texture_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
+                    self.structure_changed = true;
                 }
             }
             return;
@@ -661,6 +672,12 @@ impl PrimitiveRenderer {
                     || existing.1.pivot != new_instance.pivot
                     || existing.1.z_index != new_instance.z_index;
                 if existing.0 != layer || instance_changed || existing.2 != texture_id {
+                    let order_or_group_changed = existing.0 != layer
+                        || existing.1.z_index != new_instance.z_index
+                        || existing.2 != texture_id;
+                    if order_or_group_changed {
+                        self.structure_changed = true;
+                    }
                     existing.0 = layer;
                     existing.1 = new_instance;
                     existing.2 = texture_id;
@@ -671,6 +688,7 @@ impl PrimitiveRenderer {
                 }
             }
         } else {
+            self.structure_changed = true;
             let slot = if let Some(free_slot) = self.free_texture_slots.pop() {
                 free_slot
             } else {
@@ -854,190 +872,6 @@ impl PrimitiveRenderer {
         // Native text rendering uses glyph_atlas instead, initialized on-demand
     }
 
-    /// Apply gamma correction to font atlas for better mipmap quality
-    /// Fontdue outputs linear coverage, but mipmaps work better in gamma/sRGB space
-    fn apply_gamma_to_font_atlas(&self, bitmap: &[u8]) -> Vec<u8> {
-        bitmap
-            .iter()
-            .map(|&linear| {
-                // Convert from linear [0, 255] to gamma space
-                // Use gamma 1.8 (less aggressive than 2.2) to prevent thinning at small sizes
-                let normalized = linear as f32 / 255.0;
-                let gamma_corrected = normalized.powf(1.0 / 1.8);
-                (gamma_corrected * 255.0) as u8
-            })
-            .collect()
-    }
-
-    fn generate_mipmaps(
-        &self,
-        device: &Device,
-        queue: &Queue,
-        texture: &wgpu::Texture,
-        mip_count: u32,
-        width: u32,
-        height: u32,
-    ) {
-        // Create a simple shader for mipmap generation
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("Mipmap Blit Shader"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(
-                r#"
-                @group(0) @binding(0) var src_texture: texture_2d<f32>;
-                @group(0) @binding(1) var src_sampler: sampler;
-
-                struct VertexOutput {
-                    @builtin(position) position: vec4<f32>,
-                    @location(0) uv: vec2<f32>,
-                }
-
-                @vertex
-                fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
-                    var out: VertexOutput;
-                    let x = f32((vertex_index & 1u) << 1u);
-                    let y = f32((vertex_index & 2u));
-                    out.position = vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
-                    out.uv = vec2<f32>(x, y);
-                    return out;
-                }
-
-                @fragment
-                fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-                    return textureSample(src_texture, src_sampler, in.uv);
-                }
-                "#,
-            )),
-        });
-
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Mipmap Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Mipmap BGL"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("Mipmap Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("Mipmap Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(ColorTargetState {
-                    format: wgpu::TextureFormat::R8Unorm,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Mipmap Generator"),
-        });
-
-        let mut mip_width = width;
-        let mut mip_height = height;
-
-        for mip_level in 1..mip_count {
-            mip_width = (mip_width / 2).max(1);
-            mip_height = (mip_height / 2).max(1);
-
-            let src_view = texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some("Mipmap Src"),
-                base_mip_level: mip_level - 1,
-                mip_level_count: Some(1),
-                ..Default::default()
-            });
-
-            let dst_view = texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some("Mipmap Dst"),
-                base_mip_level: mip_level,
-                mip_level_count: Some(1),
-                ..Default::default()
-            });
-
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Mipmap Bind Group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&src_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            });
-
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Mipmap Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &dst_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            rpass.set_pipeline(&pipeline);
-            rpass.set_bind_group(0, &bind_group, &[]);
-            rpass.draw(0..3, 0..1);
-            drop(rpass);
-        }
-
-        queue.submit(Some(encoder.finish()));
-    }
-
     pub fn stop_rendering(&mut self, uuid: u64) {
         // Remove from rect slots
         if let Some(slot) = self.rect_uuid_to_slot.remove(&uuid) {
@@ -1046,6 +880,7 @@ impl PrimitiveRenderer {
             self.mark_rect_slot_dirty(slot);
             self.dirty_count += 1;
             self.instances_need_rebuild = true;
+            self.structure_changed = true;
         }
 
         // Remove from texture slots
@@ -1054,6 +889,7 @@ impl PrimitiveRenderer {
             self.free_texture_slots.push(slot);
             self.mark_texture_slot_dirty(slot);
             self.dirty_count += 1;
+            self.structure_changed = true;
             self.instances_need_rebuild = true;
         }
 
@@ -1074,15 +910,38 @@ impl PrimitiveRenderer {
         let now = Instant::now();
         let time_since_rebuild = now.duration_since(self.last_rebuild_time);
 
-        // Smart batching: only rebuild when threshold is met OR max interval passed
-        if self.instances_need_rebuild
-            && (self.dirty_count >= self.dirty_threshold
-                || time_since_rebuild >= self.max_rebuild_interval)
-        {
-            self.rebuild_instances(queue);
-            self.instances_need_rebuild = false;
-            self.dirty_count = 0;
-            self.last_rebuild_time = now;
+        // When only transforms changed (no add/remove/z_index), partial-update dirty rect and/or
+        // texture slots to avoid full buffer re-upload every frame.
+        if self.instances_need_rebuild {
+            let rect_mapping_ok = self.rect_slot_to_buffer.len() >= self.rect_instance_slots.len();
+            let texture_mapping_ok =
+                self.texture_slot_to_flat_index.len() >= self.texture_instance_slots.len();
+            let rect_dirty = !self.rect_dirty_ranges.is_empty();
+            let texture_dirty = !self.texture_dirty_ranges.is_empty();
+            let can_partial = !self.structure_changed
+                && ((rect_dirty && rect_mapping_ok) || (texture_dirty && texture_mapping_ok));
+
+            if can_partial {
+                let mut updated_count = 0usize;
+                if rect_dirty && rect_mapping_ok {
+                    updated_count += self.rect_dirty_ranges.iter().map(|r| r.len()).sum::<usize>();
+                    self.partial_update_rects_to_gpu(queue);
+                }
+                if texture_dirty && texture_mapping_ok {
+                    updated_count += self.texture_dirty_ranges.iter().map(|r| r.len()).sum::<usize>();
+                    self.partial_update_textures_to_gpu(queue);
+                }
+                self.instances_need_rebuild = false;
+                self.dirty_count = self.dirty_count.saturating_sub(updated_count);
+            } else if self.structure_changed
+                || self.dirty_count >= self.dirty_threshold
+                || time_since_rebuild >= self.max_rebuild_interval
+            {
+                self.rebuild_instances(queue);
+                self.instances_need_rebuild = false;
+                self.dirty_count = 0;
+                self.last_rebuild_time = now;
+            }
         }
 
         // Text rendering now handled by egui
@@ -1220,43 +1079,49 @@ impl PrimitiveRenderer {
         }
     }
 
-    // OPTIMIZED: Only upload dirty ranges instead of entire buffer
+    // OPTIMIZED: Full rebuild with slot->buffer mapping for later partial uploads
     fn rebuild_instances(&mut self, queue: &Queue) {
-        // Rebuild from slots
+        // Rebuild from slots and build slot->buffer index mapping
         self.world_rect_instances.clear();
         self.ui_rect_instances.clear();
 
-        // Collect instances with their timestamps for sorting
-        let mut world_with_ts: Vec<(RectInstance, u64)> = Vec::new();
-        let mut ui_with_ts: Vec<(RectInstance, u64)> = Vec::new();
-        
-        for slot in &self.rect_instance_slots {
+        let mut world_with_ts: Vec<(usize, RectInstance, u64)> = Vec::new();
+        let mut ui_with_ts: Vec<(usize, RectInstance, u64)> = Vec::new();
+
+        for (slot_idx, slot) in self.rect_instance_slots.iter().enumerate() {
             if let Some((layer, instance, timestamp)) = slot {
                 match layer {
-                    RenderLayer::World2D => world_with_ts.push((*instance, *timestamp)),
-                    RenderLayer::UI => ui_with_ts.push((*instance, *timestamp)),
+                    RenderLayer::World2D => world_with_ts.push((slot_idx, *instance, *timestamp)),
+                    RenderLayer::UI => ui_with_ts.push((slot_idx, *instance, *timestamp)),
                 }
             }
         }
 
-        // Sort by z_index first, then by timestamp (newer nodes render above older when z_index is same)
         if world_with_ts.len() > 1 {
-            world_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
+            world_with_ts.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index).then_with(|| a.2.cmp(&b.2)));
         }
         if ui_with_ts.len() > 1 {
-            ui_with_ts.sort_by(|a, b| a.0.z_index.cmp(&b.0.z_index).then_with(|| a.1.cmp(&b.1)));
+            ui_with_ts.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index).then_with(|| a.2.cmp(&b.2)));
         }
-        
-        // Extract just the instances after sorting
-        self.world_rect_instances = world_with_ts.into_iter().map(|(inst, _)| inst).collect();
-        self.ui_rect_instances = ui_with_ts.into_iter().map(|(inst, _)| inst).collect();
+
+        self.rect_slot_to_buffer.resize(self.rect_instance_slots.len(), None);
+        for (slot_idx, inst, _) in &world_with_ts {
+            let idx = self.world_rect_instances.len();
+            self.world_rect_instances.push(*inst);
+            self.rect_slot_to_buffer[*slot_idx] = Some((RenderLayer::World2D, idx));
+        }
+        for (slot_idx, inst, _) in &ui_with_ts {
+            let idx = self.ui_rect_instances.len();
+            self.ui_rect_instances.push(*inst);
+            self.rect_slot_to_buffer[*slot_idx] = Some((RenderLayer::UI, idx));
+        }
 
         self.rebuild_texture_groups_by_layer();
         self.upload_instances_to_gpu(queue);
 
-        // Clear dirty ranges after upload
         self.rect_dirty_ranges.clear();
         self.texture_dirty_ranges.clear();
+        self.structure_changed = false;
     }
 
     // Text rendering now handled by egui - rebuild_text_instances removed
@@ -1269,14 +1134,14 @@ impl PrimitiveRenderer {
         self.world_texture_buffer_ranges.clear();
         self.ui_texture_buffer_ranges.clear();
 
-        let mut world_instances: Vec<TextureInstance> = Vec::new();
-        let mut ui_instances: Vec<TextureInstance> = Vec::new();
+        let mut world_with_slot: Vec<(usize, TextureInstance)> = Vec::new();
+        let mut ui_with_slot: Vec<(usize, TextureInstance)> = Vec::new();
         let mut world_texture_id: Option<TextureID> = None;
         let mut ui_texture_id: Option<TextureID> = None;
         let mut world_single_texture = true;
         let mut ui_single_texture = true;
 
-        for slot in &self.texture_instance_slots {
+        for (slot_idx, slot) in self.texture_instance_slots.iter().enumerate() {
             if let Some((layer, instance, texture_id, _tex_size, _timestamp)) = slot {
                 match layer {
                     RenderLayer::World2D => {
@@ -1285,7 +1150,7 @@ impl PrimitiveRenderer {
                         } else if world_texture_id != Some(*texture_id) {
                             world_single_texture = false;
                         }
-                        world_instances.push(*instance);
+                        world_with_slot.push((slot_idx, *instance));
                     }
                     RenderLayer::UI => {
                         if ui_texture_id.is_none() {
@@ -1293,17 +1158,24 @@ impl PrimitiveRenderer {
                         } else if ui_texture_id != Some(*texture_id) {
                             ui_single_texture = false;
                         }
-                        ui_instances.push(*instance);
+                        ui_with_slot.push((slot_idx, *instance));
                     }
                 }
             }
         }
 
+        self.texture_slot_to_flat_index.resize(self.texture_instance_slots.len(), None);
+
         if world_single_texture && ui_single_texture {
-            if !world_instances.is_empty() {
+            if !world_with_slot.is_empty() {
                 if let Some(tid) = world_texture_id {
-                    if world_instances.len() > 1 {
-                        world_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+                    if world_with_slot.len() > 1 {
+                        world_with_slot.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index));
+                    }
+                    let world_instances: Vec<TextureInstance> =
+                        world_with_slot.iter().map(|(_, i)| *i).collect();
+                    for (flat_i, (slot_idx, _)) in world_with_slot.iter().enumerate() {
+                        self.texture_slot_to_flat_index[*slot_idx] = Some(flat_i);
                     }
                     self.world_texture_groups.push((tid, world_instances));
                     self.world_texture_group_offsets.push((0, self.world_texture_groups[0].1.len()));
@@ -1313,16 +1185,21 @@ impl PrimitiveRenderer {
                 }
             }
 
-            if !ui_instances.is_empty() {
+            if !ui_with_slot.is_empty() {
                 if let Some(tid) = ui_texture_id {
-                    if ui_instances.len() > 1 {
-                        ui_instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+                    if ui_with_slot.len() > 1 {
+                        ui_with_slot.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index));
                     }
                     let world_offset = if !self.world_texture_groups.is_empty() {
                         self.world_texture_groups[0].1.len()
                     } else {
                         0
                     };
+                    let ui_instances: Vec<TextureInstance> =
+                        ui_with_slot.iter().map(|(_, i)| *i).collect();
+                    for (flat_i, (slot_idx, _)) in ui_with_slot.iter().enumerate() {
+                        self.texture_slot_to_flat_index[*slot_idx] = Some(world_offset + flat_i);
+                    }
                     self.ui_texture_groups.push((tid, ui_instances));
                     self.ui_texture_group_offsets.push((world_offset, self.ui_texture_groups[0].1.len()));
                     const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
@@ -1339,56 +1216,137 @@ impl PrimitiveRenderer {
             self.world_texture_buffer_ranges.clear();
             self.ui_texture_buffer_ranges.clear();
 
-            self.temp_texture_map.clear();
-            let mut ui_texture_map: FxHashMap<TextureID, Vec<TextureInstance>> = FxHashMap::default();
+            self.texture_slot_to_flat_index
+                .resize(self.texture_instance_slots.len(), None);
 
-            for slot in &self.texture_instance_slots {
+            let mut world_texture_map: FxHashMap<TextureID, Vec<(usize, TextureInstance)>> =
+                FxHashMap::default();
+            let mut ui_texture_map: FxHashMap<TextureID, Vec<(usize, TextureInstance)>> =
+                FxHashMap::default();
+
+            for (slot_idx, slot) in self.texture_instance_slots.iter().enumerate() {
                 if let Some((layer, instance, texture_id, _tex_size, _timestamp)) = slot {
                     match layer {
                         RenderLayer::World2D => {
-                            self.temp_texture_map
+                            world_texture_map
                                 .entry(*texture_id)
                                 .or_insert_with(Vec::new)
-                                .push(*instance);
+                                .push((slot_idx, *instance));
                         }
                         RenderLayer::UI => {
                             ui_texture_map
                                 .entry(*texture_id)
                                 .or_insert_with(Vec::new)
-                                .push(*instance);
+                                .push((slot_idx, *instance));
                         }
                     }
                 }
             }
 
-            // Build world texture groups first - take ownership of temp_texture_map
-            let world_map_owned = std::mem::take(&mut self.temp_texture_map);
-            Self::build_texture_groups(
-                world_map_owned,
+            let mut temp_sorted_with_slots: Vec<(TextureID, Vec<(usize, TextureInstance)>)> =
+                Vec::new();
+            let mut world_slot_order = Vec::new();
+            Self::build_texture_groups_with_slots(
+                world_texture_map,
                 &mut self.world_texture_groups,
                 &mut self.world_texture_group_offsets,
                 &mut self.world_texture_buffer_ranges,
                 0,
-                &mut self.temp_sorted_groups,
+                &mut temp_sorted_with_slots,
+                &mut world_slot_order,
             );
 
-            // Calculate the offset AFTER the first call completes
             let world_total_instances: usize = self
                 .world_texture_groups
                 .iter()
                 .map(|(_, instances)| instances.len())
                 .sum();
 
-            // Now build UI texture groups with the calculated offset
-            Self::build_texture_groups(
+            let mut ui_slot_order = Vec::new();
+            Self::build_texture_groups_with_slots(
                 ui_texture_map,
                 &mut self.ui_texture_groups,
                 &mut self.ui_texture_group_offsets,
                 &mut self.ui_texture_buffer_ranges,
                 world_total_instances,
-                &mut self.temp_sorted_groups,
+                &mut temp_sorted_with_slots,
+                &mut ui_slot_order,
             );
+
+            for (i, &slot_idx) in world_slot_order.iter().enumerate() {
+                if slot_idx < self.texture_slot_to_flat_index.len() {
+                    self.texture_slot_to_flat_index[slot_idx] = Some(i);
+                }
+            }
+            for (i, &slot_idx) in ui_slot_order.iter().enumerate() {
+                if slot_idx < self.texture_slot_to_flat_index.len() {
+                    self.texture_slot_to_flat_index[slot_idx] = Some(world_total_instances + i);
+                }
+            }
         }
+    }
+
+    /// Partial upload: only write dirty rect slots (transform-only changes). Used when !structure_changed.
+    fn partial_update_rects_to_gpu(&mut self, queue: &Queue) {
+        const RECT_INSTANCE_SIZE: usize = std::mem::size_of::<RectInstance>();
+        let world_len = self.world_rect_instances.len();
+
+        for range in &self.rect_dirty_ranges.clone() {
+            for slot in range.clone() {
+                if slot >= self.rect_slot_to_buffer.len() {
+                    continue;
+                }
+                let Some((layer, idx)) = self.rect_slot_to_buffer[slot] else {
+                    continue;
+                };
+                let Some((_, instance, _)) = &self.rect_instance_slots[slot] else {
+                    continue;
+                };
+                let byte_offset = match layer {
+                    RenderLayer::World2D => (idx * RECT_INSTANCE_SIZE) as u64,
+                    RenderLayer::UI => ((world_len + idx) * RECT_INSTANCE_SIZE) as u64,
+                };
+                match layer {
+                    RenderLayer::World2D => self.world_rect_instances[idx] = *instance,
+                    RenderLayer::UI => self.ui_rect_instances[idx] = *instance,
+                }
+                queue.write_buffer(
+                    &self.rect_instance_buffer,
+                    byte_offset,
+                    bytemuck::bytes_of(instance),
+                );
+            }
+        }
+        self.rect_dirty_ranges.clear();
+    }
+
+    /// Partial upload: only write dirty texture slots (transform-only changes). Used when !structure_changed.
+    fn partial_update_textures_to_gpu(&mut self, queue: &Queue) {
+        const TEXTURE_INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
+
+        for range in &self.texture_dirty_ranges.clone() {
+            for slot in range.clone() {
+                if slot >= self.texture_slot_to_flat_index.len() {
+                    continue;
+                }
+                let Some(flat_idx) = self.texture_slot_to_flat_index[slot] else {
+                    continue;
+                };
+                let Some((_, instance, _, _, _)) = &self.texture_instance_slots[slot] else {
+                    continue;
+                };
+                if flat_idx < self.temp_all_texture_instances.len() {
+                    self.temp_all_texture_instances[flat_idx] = *instance;
+                }
+                let byte_offset = (flat_idx * TEXTURE_INSTANCE_SIZE) as u64;
+                queue.write_buffer(
+                    &self.texture_instance_buffer,
+                    byte_offset,
+                    bytemuck::bytes_of(instance),
+                );
+            }
+        }
+        self.texture_dirty_ranges.clear();
     }
 
     fn upload_instances_to_gpu(&mut self, queue: &Queue) {
@@ -1437,20 +1395,22 @@ impl PrimitiveRenderer {
         }
     }
 
-    fn build_texture_groups(
-        mut texture_map: FxHashMap<TextureID, Vec<TextureInstance>>,
+    /// Build texture groups and preserve slot indices for texture_slot_to_flat_index.
+    fn build_texture_groups_with_slots(
+        mut texture_map: FxHashMap<TextureID, Vec<(usize, TextureInstance)>>,
         groups: &mut Vec<(TextureID, Vec<TextureInstance>)>,
         offsets: &mut Vec<(usize, usize)>,
         ranges: &mut Vec<Range<u64>>,
         buffer_offset: usize,
-        temp_sorted_groups: &mut Vec<(TextureID, Vec<TextureInstance>)>,
+        temp_sorted_groups: &mut Vec<(TextureID, Vec<(usize, TextureInstance)>)>,
+        slot_order: &mut Vec<usize>,
     ) {
         temp_sorted_groups.clear();
         temp_sorted_groups.extend(texture_map.drain());
         if temp_sorted_groups.len() > 1 {
             temp_sorted_groups.sort_by(|a, b| {
-                let z_a = a.1.first().map(|c| c.z_index).unwrap_or(0);
-                let z_b = b.1.first().map(|c| c.z_index).unwrap_or(0);
+                let z_a = a.1.first().map(|(_, c)| c.z_index).unwrap_or(0);
+                let z_b = b.1.first().map(|(_, c)| c.z_index).unwrap_or(0);
                 z_a.cmp(&z_b)
             });
         }
@@ -1458,10 +1418,13 @@ impl PrimitiveRenderer {
         let mut current_offset = buffer_offset;
         const INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
 
-        for (texture_id, mut instances) in temp_sorted_groups.drain(..) {
-            if instances.len() > 1 {
-                instances.sort_by(|a, b| a.z_index.cmp(&b.z_index));
+        for (texture_id, mut instances_with_slot) in temp_sorted_groups.drain(..) {
+            if instances_with_slot.len() > 1 {
+                instances_with_slot.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index));
             }
+            let slot_indices: Vec<usize> = instances_with_slot.iter().map(|(s, _)| *s).collect();
+            let instances: Vec<TextureInstance> =
+                instances_with_slot.into_iter().map(|(_, i)| i).collect();
             let count = instances.len();
             let start_byte = current_offset * INSTANCE_SIZE;
             let size_bytes = count * INSTANCE_SIZE;
@@ -1469,6 +1432,7 @@ impl PrimitiveRenderer {
             groups.push((texture_id, instances));
             offsets.push((current_offset, count));
             ranges.push(range);
+            slot_order.extend(slot_indices);
             current_offset += count;
         }
     }
@@ -1532,6 +1496,7 @@ impl PrimitiveRenderer {
         device: &Device,
         camera_bgl: &BindGroupLayout,
         format: TextureFormat,
+        sample_count: u32,
     ) -> RenderPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Rect Instanced Shader"),
@@ -1613,7 +1578,11 @@ impl PrimitiveRenderer {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
             cache: None,
         })
@@ -1624,6 +1593,7 @@ impl PrimitiveRenderer {
         texture_bgl: &BindGroupLayout,
         camera_bgl: &BindGroupLayout,
         format: TextureFormat,
+        sample_count: u32,
     ) -> RenderPipeline {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Sprite Instanced Shader"),
@@ -1694,7 +1664,11 @@ impl PrimitiveRenderer {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: Default::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
             cache: None,
         })

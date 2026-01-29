@@ -398,13 +398,21 @@ impl<P: ScriptProvider> App<P> {
             gfx.begin_frame()
         };
 
-        // Main render pass WITH DEPTH
+        // Main render pass WITH DEPTH (MSAA on: render to msaa target then resolve; off: render to swap chain)
         {
-            let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: self.cached_operations,
-                depth_slice: None,
+            let color_attachment = match &gfx.msaa_color_view {
+                Some(msaa_view) => wgpu::RenderPassColorAttachment {
+                    view: msaa_view,
+                    resolve_target: Some(&view),
+                    ops: self.cached_operations,
+                    depth_slice: None,
+                },
+                None => wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: self.cached_operations,
+                    depth_slice: None,
+                },
             };
 
             let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
@@ -419,7 +427,7 @@ impl<P: ScriptProvider> App<P> {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(RENDER_PASS_LABEL),
                 color_attachments: &[Some(color_attachment)],
-                depth_stencil_attachment: Some(depth_attachment), // ADD THIS
+                depth_stencil_attachment: Some(depth_attachment),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
@@ -604,11 +612,19 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
         // First clear pass to ensure clean buffer
         {
             let (frame, view, mut encoder) = graphics.begin_frame();
-            let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: self.cached_operations,
-                depth_slice: None,
+            let color_attachment = match &graphics.msaa_color_view {
+                Some(msaa_view) => wgpu::RenderPassColorAttachment {
+                    view: msaa_view,
+                    resolve_target: Some(&view),
+                    ops: self.cached_operations,
+                    depth_slice: None,
+                },
+                None => wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: self.cached_operations,
+                    depth_slice: None,
+                },
             };
 
             let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
@@ -624,7 +640,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("First Clear Pass"),
                     color_attachments: &[Some(color_attachment)],
-                    depth_stencil_attachment: Some(depth_attachment), // ADD THIS
+                    depth_stencil_attachment: Some(depth_attachment),
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
@@ -640,11 +656,19 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
 
             // Render the frame
             let (frame, view, mut encoder) = graphics.begin_frame();
-            let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: self.cached_operations,
-                depth_slice: None,
+            let color_attachment = match &graphics.msaa_color_view {
+                Some(msaa_view) => wgpu::RenderPassColorAttachment {
+                    view: msaa_view,
+                    resolve_target: Some(&view),
+                    ops: self.cached_operations,
+                    depth_slice: None,
+                },
+                None => wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: self.cached_operations,
+                    depth_slice: None,
+                },
             };
 
             let depth_attachment = wgpu::RenderPassDepthStencilAttachment {
@@ -660,7 +684,7 @@ impl<P: ScriptProvider> ApplicationHandler<Graphics> for App<P> {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Initial Game Frame"),
                     color_attachments: &[Some(color_attachment)],
-                    depth_stencil_attachment: Some(depth_attachment), // ADD THIS
+                    depth_stencil_attachment: Some(depth_attachment),
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });

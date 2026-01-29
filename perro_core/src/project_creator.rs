@@ -361,6 +361,8 @@ version = "1.0.0"
 # Virtual resolution (coordinate space). Window opens at this size.
 virtual_width = 1920
 virtual_height = 1080
+# MSAA for smooth 3D edges: "off" (1x), "on" (4x)
+msaa = "on"
 
 [performance]
 fps_cap = 500
@@ -391,7 +393,7 @@ move_right = ["KeyD"]
 
 fn generate_main_scn() -> String {
     r#"{
-  "root_index": 0,
+  "root_id": 0,
   "nodes": {
     "0": {
       "type": "Node2D",

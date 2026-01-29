@@ -45,7 +45,7 @@ use crate::ids::{NodeID, TextureID};
 //
 
 /// Pure serializable scene data (no runtime state)
-/// Uses u32 keys as scene-level node identifiers to preserve order during serialization
+/// Uses numeric node ids (keys) for the root and nodes map; order is preserved during serialization.
 #[derive(Debug)]
 pub struct SceneData {
     pub root_key: u32,
@@ -74,8 +74,8 @@ impl Serialize for SceneData {
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("SceneData", 2)?;
-        // Support both "root_key" (new) and "root_index" (legacy) for backward compatibility
-        state.serialize_field("root_index", &self.root_key)?;
+        // Serialize as root_id (id/key terminology); readers still accept root_index for backward compat
+        state.serialize_field("root_id", &self.root_key)?;
         
         // Build reverse mapping: NodeID -> key (for converting parent NodeIDs to scene keys)
         let node_id_to_key: HashMap<NodeID, u32> = self.key_to_node_id.iter()
@@ -149,12 +149,12 @@ impl<'de> Deserialize<'de> for SceneData {
         // Deserialize as raw JSON first to extract parent scene keys
         let raw_value: Value = Value::deserialize(deserializer)?;
         
-        // Accept both "root_key" (new), "root_index" (legacy), and "root_id" (legacy) for compatibility
-        let root_key = raw_value.get("root_key")
+        // Accept root_id, root_key, or root_index (legacy) for compatibility
+        let root_key = raw_value.get("root_id")
+            .or_else(|| raw_value.get("root_key"))
             .or_else(|| raw_value.get("root_index"))
-            .or_else(|| raw_value.get("root_id"))
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| D::Error::custom("root_key, root_index, or root_id must be a u32"))? as u32;
+            .ok_or_else(|| D::Error::custom("root_id, root_key, or root_index must be a number (u32)"))? as u32;
         
         let nodes_obj = raw_value.get("nodes")
             .and_then(|v| v.as_object())
@@ -180,10 +180,15 @@ impl<'de> Deserialize<'de> for SceneData {
         // Helper function to recursively find "parent" field in nested JSON
         fn find_parent_recursive(value: &Value) -> Option<u32> {
             if let Some(obj) = value.as_object() {
-                // Check if "parent" exists at this level
+                // Check if "parent" exists at this level (number or string scene key)
                 if let Some(parent_val) = obj.get("parent") {
                     if let Some(n) = parent_val.as_u64() {
                         return Some(n as u32);
+                    }
+                    if let Some(s) = parent_val.as_str() {
+                        if let Ok(n) = s.parse::<u32>() {
+                            return Some(n);
+                        }
                     }
                 }
                 // Recursively search in nested objects
@@ -1847,32 +1852,29 @@ impl<P: ScriptProvider> Scene<P> {
         }
 
         {
-            // OPTIMIZED: Early exit check before allocating Vec (most common case in empty projects)
-            if self.scripts_with_update.is_empty() {
-                self.process_queued_signals();
-                return;
-            }
-            
-            // OPTIMIZED: Use pre-filtered vector of scripts with update
-            // Collect script IDs to avoid borrow checker issues
-            // OPTIMIZED: Pre-allocate with known capacity (iter().copied() already does this efficiently)
-            let script_ids: Vec<NodeID> = self.scripts_with_update.iter().copied().collect();
-            
-            // Clone project reference before loop to avoid borrow conflicts
-            let project_ref = self.project.clone();
-            
-            #[cfg(feature = "profiling")]
-            let _span = tracing::span!(tracing::Level::INFO, "script_updates", count = script_ids.len()).entered();
-            
-            for id in script_ids {
-                #[cfg(feature = "profiling")]
-                let _span = tracing::span!(tracing::Level::INFO, "script_update", id = %id).entered();
+            // OPTIMIZED: Only run script updates when there are scripts (do not return - we still need the render pass below)
+            if !self.scripts_with_update.is_empty() {
+                // OPTIMIZED: Use pre-filtered vector of scripts with update
+                // Collect script IDs to avoid borrow checker issues
+                // OPTIMIZED: Pre-allocate with known capacity (iter().copied() already does this efficiently)
+                let script_ids: Vec<NodeID> = self.scripts_with_update.iter().copied().collect();
                 
-                // OPTIMIZED: Borrow project once per script (RefCell borrow_mut is fast but still has overhead)
-                // Note: We can't borrow project once for all scripts because ScriptApi needs &mut self (scene)
-                let mut project_borrow = project_ref.borrow_mut();
-                let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow, gfx);
-                api.call_update(id);
+                // Clone project reference before loop to avoid borrow conflicts
+                let project_ref = self.project.clone();
+                
+                #[cfg(feature = "profiling")]
+                let _span = tracing::span!(tracing::Level::INFO, "script_updates", count = script_ids.len()).entered();
+                
+                for id in script_ids {
+                    #[cfg(feature = "profiling")]
+                    let _span = tracing::span!(tracing::Level::INFO, "script_update", id = %id).entered();
+                    
+                    // OPTIMIZED: Borrow project once per script (RefCell borrow_mut is fast but still has overhead)
+                    // Note: We can't borrow project once for all scripts because ScriptApi needs &mut self (scene)
+                    let mut project_borrow = project_ref.borrow_mut();
+                    let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow, gfx);
+                    api.call_update(id);
+                }
             }
         }
 

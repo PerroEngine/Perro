@@ -1,16 +1,3 @@
-[scripts.p2_pup]
-src = "res://p2.pup"
-lang = "pup"
-id = "p2_pup"
-
-[[scripts.p2_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 69
-
-[scripts.p2_pup.names]
-
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
 lang = "pup"
@@ -35,9 +22,9 @@ g_start = 83
 g_end = 90
 
 [scripts.test_engine_structs_pup.names]
-__t_test_nested_access = "test_nested_access"
 __t_test_variable_access = "test_variable_access"
 __t_test_constructors = "test_constructors"
+__t_test_nested_access = "test_nested_access"
 
 [scripts.camera_pup]
 src = "res://camera.pup"
@@ -52,6 +39,19 @@ g_end = 88
 
 [scripts.camera_pup.names]
 __t_speed = "speed"
+
+[scripts.p2_pup]
+src = "res://p2.pup"
+lang = "pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 69
+
+[scripts.p2_pup.names]
 
 [scripts.player_pup]
 src = "res://player.pup"
@@ -89,15 +89,35 @@ g_start = 166
 g_end = 178
 
 [scripts.player_pup.names]
-tex_id = "tex"
-__t_Cabbage = "Cabbage"
-__t_test_var = "test_var"
-__t_test = "test"
 __t_cab = "cab"
+__t_test_var = "test_var"
+tex_id = "tex"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_Cabbage = "Cabbage"
 __t_time = "time"
 __t_test_b = "test_b"
+__t_test = "test"
 __t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+
+[scripts.col_pup]
+src = "res://col.pup"
+lang = "pup"
+id = "col_pup"
+
+[[scripts.col_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 72
+
+[[scripts.col_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 72
+g_end = 78
+
+[scripts.col_pup.names]
+s_id = "s"
 
 [scripts.root_pup]
 src = "res://root.pup"
@@ -124,23 +144,3 @@ g_start = 1
 g_end = 68
 
 [scripts.shape_pup.names]
-
-[scripts.col_pup]
-src = "res://col.pup"
-lang = "pup"
-id = "col_pup"
-
-[[scripts.col_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 72
-
-[[scripts.col_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 72
-g_end = 78
-
-[scripts.col_pup.names]
-s_id = "s"

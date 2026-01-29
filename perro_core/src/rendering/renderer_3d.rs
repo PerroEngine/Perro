@@ -115,7 +115,12 @@ pub struct Renderer3D {
 }
 
 impl Renderer3D {
-    pub fn new(device: &Device, camera_bgl: &BindGroupLayout, format: TextureFormat) -> Self {
+    pub fn new(
+        device: &Device,
+        camera_bgl: &BindGroupLayout,
+        format: TextureFormat,
+        sample_count: u32,
+    ) -> Self {
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("3D Shader"),
             source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/3D/basic3d.wgsl"))),
@@ -299,7 +304,11 @@ impl Renderer3D {
             fragment: fragment_state,
             primitive: primitive_state,
             depth_stencil: depth_stencil_state,
-            multisample: wgpu::MultisampleState::default(),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
             multiview: None,
             cache: None,
         };
@@ -489,11 +498,21 @@ impl Renderer3D {
     ) {
         let mesh_id = match mesh_manager.get_or_load_mesh(mesh_path, device, queue) {
             Some(id) => id,
-            None => return,
+            None => {
+                eprintln!(
+                    "⚠️ 3D mesh failed to load: \"{}\" (unknown path or load error). Use built-ins: __cube__, __sphere__, __plane__, etc.",
+                    mesh_path
+                );
+                return;
+            }
         };
 
         let material_path = material_path.unwrap_or("__default__");
         let material_gpu_slot = material_manager.get_or_upload_material(material_path, self);
+        println!(
+            "🔷 Queued 3D mesh: path=\"{}\" material=\"{}\"",
+            mesh_path, material_path
+        );
 
         let new_instance = MeshInstance {
             model_matrix: transform.to_mat4().to_cols_array_2d(),

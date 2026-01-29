@@ -1,18 +1,20 @@
 [project]
-name = "UITest"
+name = "ThreeD"
 main_scene = "res://main.scn"
 # Icon is optional - if not provided, build will skip icon embedding
 icon = "res://icon.png"
 version = "1.0.0"
 
 [graphics]
+# Virtual resolution (coordinate space). Window opens at this size.
 virtual_width = 1920
 virtual_height = 1080
+# MSAA for smooth 3D edges: "off" (1x), "on" (4x)
 msaa = "on"
 
 [performance]
 fps_cap = 500
-xps = 30
+xps = 60
 
 [input]
 # Input action mappings
