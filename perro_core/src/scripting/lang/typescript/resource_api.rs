@@ -16,6 +16,7 @@ impl TypeScriptResourceAPI {
             TypeScriptArray::NAME => TypeScriptArray::resolve_method(func),
             TypeScriptMap::NAME => TypeScriptMap::resolve_method(func),
             TypeScriptShape2D::NAME => TypeScriptShape2D::resolve_method(func),
+            TypeScriptQuaternion::NAME => TypeScriptQuaternion::resolve_method(func),
             _ => None,
         }
     }
@@ -167,5 +168,35 @@ impl TypeScriptShape2D {
 
     pub fn get_all_method_names() -> Vec<&'static str> {
         vec!["rectangle", "circle", "square", "triangle"]
+    }
+}
+
+/// Quaternion resource API - for quaternion math helpers
+pub struct TypeScriptQuaternion;
+impl TypeScriptQuaternion {
+    pub const NAME: &'static str = "Quaternion";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "identity" => Some(ResourceModule::QuaternionOp(QuaternionResource::Identity)),
+            "fromEuler" | "from_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
+            "fromEulerXYZ" | "from_euler_xyz" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ))
+            }
+            "asEuler" | "as_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec![
+            "identity",
+            "fromEuler",
+            "from_euler",
+            "fromEulerXYZ",
+            "from_euler_xyz",
+            "asEuler",
+            "as_euler",
+        ]
     }
 }

@@ -146,6 +146,10 @@ impl TypeScriptMath {
             "random" => Some(ApiModule::Math(MathApi::Random)),
             "randomRange" | "random_range" => Some(ApiModule::Math(MathApi::RandomRange)),
             "randomInt" | "random_int" => Some(ApiModule::Math(MathApi::RandomInt)),
+            "lerp" => Some(ApiModule::Math(MathApi::Lerp)),
+            "lerpVec2" | "lerp_vec2" => Some(ApiModule::Math(MathApi::LerpVec2)),
+            "lerpVec3" | "lerp_vec3" => Some(ApiModule::Math(MathApi::LerpVec3)),
+            "slerp" => Some(ApiModule::Math(MathApi::Slerp)),
             _ => None,
         }
     }
@@ -157,6 +161,12 @@ impl TypeScriptMath {
             "random_range",
             "randomInt",
             "random_int",
+            "lerp",
+            "lerpVec2",
+            "lerp_vec2",
+            "lerpVec3",
+            "lerp_vec3",
+            "slerp",
         ]
     }
 }

@@ -118,6 +118,13 @@ impl Quaternion {
         (p.to_degrees(), y.to_degrees(), r.to_degrees())
     }
 
+    /// Convenience: convert this quaternion to Euler degrees as a `Vector3(pitch, yaw, roll)`.
+    /// This matches script expectations for `q.as_euler()`.
+    pub fn as_euler(&self) -> crate::structs3d::Vector3 {
+        let (p, y, r) = self.to_euler_degrees();
+        crate::structs3d::Vector3::new(p, y, r)
+    }
+
     pub fn normalize(&self) -> Self {
         Self::from_glam(self.to_glam().normalize())
     }

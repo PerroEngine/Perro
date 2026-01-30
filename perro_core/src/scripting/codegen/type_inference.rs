@@ -104,6 +104,13 @@ impl Script {
             (EngineStruct(EngineStructKind::Vector2), EngineStruct(EngineStructKind::Vector3)) => {
                 return format!("Vector3::new({}.x, {}.y, 0.0)", expr, expr);
             }
+            // Vector3 (Euler degrees) -> Quaternion (3D rotation)
+            (EngineStruct(EngineStructKind::Vector3), EngineStruct(EngineStructKind::Quaternion)) => {
+                // Avoid evaluating expr 3x if it's complex
+                return format!(
+                    "{{ let __e = {expr}; Quaternion::from_euler_degrees(__e.x, __e.y, __e.z) }}"
+                );
+            }
             // Quaternion -> f32 (2D rotation angle)
             (EngineStruct(EngineStructKind::Quaternion), Number(Float(32))) => {
                 return format!("{}.to_rotation_2d()", expr);
@@ -219,11 +226,56 @@ impl Script {
                 };
 
                 if let Some(func) = current_func {
+                    // Also search for variable declarations in nested blocks (if/for/etc).
+                    // Parser only collects top-level locals, but nested locals are still valid identifiers.
+                    fn find_var_in_stmt<'a>(
+                        name: &str,
+                        stmt: &'a Stmt,
+                    ) -> std::option::Option<&'a Variable> {
+                        match stmt {
+                            Stmt::VariableDecl(v) if v.name == name => Some(v),
+                            Stmt::If {
+                                then_body,
+                                else_body,
+                                ..
+                            } => then_body
+                                .iter()
+                                .find_map(|s| find_var_in_stmt(name, s))
+                                .or_else(|| {
+                                    else_body.as_ref().and_then(|b| {
+                                        b.iter().find_map(|s| find_var_in_stmt(name, s))
+                                    })
+                                }),
+                            Stmt::For { body, .. } | Stmt::ForTraditional { body, .. } => {
+                                body.iter().find_map(|s| find_var_in_stmt(name, s))
+                            }
+                            _ => None,
+                        }
+                    }
+                    fn find_var_in_body<'a>(
+                        name: &str,
+                        body: &'a [Stmt],
+                    ) -> std::option::Option<&'a Variable> {
+                        body.iter().find_map(|s| find_var_in_stmt(name, s))
+                    }
+
                     // 1. Local variable (check both original and renamed name)
                     if let Some(local) = func
                         .locals
                         .iter()
                         .find(|v| v.name == *name || v.name == original_name)
+                    {
+                        if let Some(t) = &local.typ {
+                            Some(t.clone())
+                        } else if let Some(val) = &local.value {
+                            self.infer_expr_type(&val.expr, current_func)
+                        } else {
+                            None
+                        }
+                    }
+                    // 1b. Nested local variable (declared inside if/for/etc.)
+                    else if let Some(local) = find_var_in_body(name, &func.body)
+                        .or_else(|| find_var_in_body(original_name, &func.body))
                     {
                         if let Some(t) = &local.typ {
                             Some(t.clone())

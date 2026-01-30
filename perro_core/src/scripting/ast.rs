@@ -763,6 +763,11 @@ impl Type {
                 Type::EngineStruct(EngineStruct::Vector2),
                 Type::EngineStruct(EngineStruct::Vector3),
             ) => true,
+            // Vector3 (Euler degrees) -> Quaternion (3D rotation)
+            (
+                Type::EngineStruct(EngineStruct::Vector3),
+                Type::EngineStruct(EngineStruct::Quaternion),
+            ) => true,
             (Type::EngineStruct(EngineStruct::Quaternion), Type::Number(Float(32))) => true,
             (Type::Number(Float(32)), Type::EngineStruct(EngineStruct::Quaternion)) => true,
 

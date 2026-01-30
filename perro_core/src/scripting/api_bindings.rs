@@ -1310,6 +1310,48 @@ impl ModuleCodegen for MathApi {
                 let max = args_strs.get(1).cloned().unwrap_or_else(|| "1".into());
                 format!("api.Math.random_int({}, {})", min, max)
             }
+            MathApi::Lerp => {
+                let a = args_strs.get(0).cloned().unwrap_or_else(|| "0.0".into());
+                let b = args_strs.get(1).cloned().unwrap_or_else(|| "1.0".into());
+                let t = args_strs.get(2).cloned().unwrap_or_else(|| "0.0".into());
+                format!("api.Math.lerp({}, {}, {})", a, b, t)
+            }
+            MathApi::LerpVec2 => {
+                let a = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "crate::Vector2::ZERO".into());
+                let b = args_strs
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "crate::Vector2::ONE".into());
+                let t = args_strs.get(2).cloned().unwrap_or_else(|| "0.0".into());
+                format!("api.Math.lerp_vec2({}, {}, {})", a, b, t)
+            }
+            MathApi::LerpVec3 => {
+                let a = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "crate::Vector3::ZERO".into());
+                let b = args_strs
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "crate::Vector3::ONE".into());
+                let t = args_strs.get(2).cloned().unwrap_or_else(|| "0.0".into());
+                format!("api.Math.lerp_vec3({}, {}, {})", a, b, t)
+            }
+            MathApi::Slerp => {
+                let a = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "crate::Quaternion::identity()".into());
+                let b = args_strs
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "crate::Quaternion::identity()".into());
+                let t = args_strs.get(2).cloned().unwrap_or_else(|| "0.0".into());
+                format!("api.Math.slerp({}, {}, {})", a, b, t)
+            }
         }
     }
 }
@@ -1320,6 +1362,10 @@ impl ModuleTypes for MathApi {
         match self {
             MathApi::Random | MathApi::RandomRange => Some(Type::Number(Float(32))),
             MathApi::RandomInt => Some(Type::Number(Signed(32))),
+            MathApi::Lerp => Some(Type::Number(Float(32))),
+            MathApi::LerpVec2 => Some(Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector2)),
+            MathApi::LerpVec3 => Some(Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector3)),
+            MathApi::Slerp => Some(Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Quaternion)),
         }
     }
 
@@ -1329,6 +1375,26 @@ impl ModuleTypes for MathApi {
             MathApi::Random => None,
             MathApi::RandomRange => Some(vec![Type::Number(Float(32)), Type::Number(Float(32))]),
             MathApi::RandomInt => Some(vec![Type::Number(Signed(32)), Type::Number(Signed(32))]),
+            MathApi::Lerp => Some(vec![
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+            ]),
+            MathApi::LerpVec2 => Some(vec![
+                Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector2),
+                Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector2),
+                Type::Number(Float(32)),
+            ]),
+            MathApi::LerpVec3 => Some(vec![
+                Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector3),
+                Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector3),
+                Type::Number(Float(32)),
+            ]),
+            MathApi::Slerp => Some(vec![
+                Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Quaternion),
+                Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Quaternion),
+                Type::Number(Float(32)),
+            ]),
         }
     }
 
@@ -1338,6 +1404,9 @@ impl ModuleTypes for MathApi {
             MathApi::Random => None,
             MathApi::RandomRange => Some(vec!["min", "max"]),
             MathApi::RandomInt => Some(vec!["min", "max"]),
+            MathApi::Lerp | MathApi::LerpVec2 | MathApi::LerpVec3 | MathApi::Slerp => {
+                Some(vec!["a", "b", "t"])
+            }
         }
     }
 }

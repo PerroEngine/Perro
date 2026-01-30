@@ -194,12 +194,24 @@ impl PupMath {
             "random" => Some(ApiModule::Math(MathApi::Random)),
             "random_range" => Some(ApiModule::Math(MathApi::RandomRange)),
             "random_int" => Some(ApiModule::Math(MathApi::RandomInt)),
+            "lerp" => Some(ApiModule::Math(MathApi::Lerp)),
+            "lerp_vec2" => Some(ApiModule::Math(MathApi::LerpVec2)),
+            "lerp_vec3" => Some(ApiModule::Math(MathApi::LerpVec3)),
+            "slerp" => Some(ApiModule::Math(MathApi::Slerp)),
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["random", "random_range", "random_int"]
+        vec![
+            "random",
+            "random_range",
+            "random_int",
+            "lerp",
+            "lerp_vec2",
+            "lerp_vec3",
+            "slerp",
+        ]
     }
 }
 
@@ -215,6 +227,7 @@ pub fn normalize_type_name(typ: &crate::ast::Type) -> String {
         Type::EngineStruct(es) => match es {
             EngineStruct::Texture => "Texture".to_string(),
             EngineStruct::Shape2D => "Shape2D".to_string(),
+            EngineStruct::Quaternion => "Quaternion".to_string(),
             _ => String::new(),
         },
         Type::Custom(name) => {

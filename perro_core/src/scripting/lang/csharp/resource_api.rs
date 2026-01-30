@@ -16,6 +16,7 @@ impl CSharpResourceAPI {
             CSharpArray::NAME => CSharpArray::resolve_method(func),
             CSharpMap::NAME => CSharpMap::resolve_method(func),
             CSharpShape2D::NAME => CSharpShape2D::resolve_method(func),
+            CSharpQuaternion::NAME => CSharpQuaternion::resolve_method(func),
             _ => None,
         }
     }
@@ -151,5 +152,25 @@ impl CSharpShape2D {
 
     pub fn get_all_method_names() -> Vec<&'static str> {
         vec!["Rectangle", "Circle", "Square", "Triangle"]
+    }
+}
+
+/// Quaternion resource API - for quaternion math helpers
+pub struct CSharpQuaternion;
+impl CSharpQuaternion {
+    pub const NAME: &'static str = "Quaternion";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "Identity" => Some(ResourceModule::QuaternionOp(QuaternionResource::Identity)),
+            "FromEuler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
+            "FromEulerXYZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ)),
+            "AsEuler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["Identity", "FromEuler", "FromEulerXYZ", "AsEuler"]
     }
 }

@@ -1514,6 +1514,40 @@ impl Expr {
                         let clean_closure_var =
                             closure_var.strip_prefix("self.").unwrap_or(&closure_var);
 
+                        // Centralized read behavior (engine registry).
+                        // Example: global_transform is a computed value so reads use the getter.
+                        if let Some(first_script_field) = fields.first().copied() {
+                            use crate::scripting::lang::pup::node_api::PUP_NODE_API;
+                            if let Some(api_field) = PUP_NODE_API
+                                .get_fields(&node_type_enum)
+                                .iter()
+                                .find(|f| f.script_name == first_script_field)
+                            {
+                                if let Some(read_behavior) =
+                                    ENGINE_REGISTRY.get_field_read_behavior(&api_field.rust_field)
+                                {
+                                    let get_call = match read_behavior {
+                                        crate::structs::engine_registry::NodeFieldReadBehavior::GlobalTransform2D => format!(
+                                            "api.get_global_transform({}).unwrap_or_default()",
+                                            node_id_with_self
+                                        ),
+                                        crate::structs::engine_registry::NodeFieldReadBehavior::GlobalTransform3D => format!(
+                                            "api.get_global_transform_3d({}).unwrap_or_default()",
+                                            node_id_with_self
+                                        ),
+                                    };
+
+                                    // If the access was exactly `global_transform`, return the getter call.
+                                    // Otherwise, access the remaining resolved path.
+                                    if resolved_fields.len() <= 1 {
+                                        return get_call;
+                                    }
+                                    let rest = resolved_fields[1..].join(".");
+                                    return format!("({}).{}", get_call, rest);
+                                }
+                            }
+                        }
+
                         // Use clean_closure_var for field access (not the original closure_var which might have self.)
                         let field_access = if should_unwrap {
                             format!("{}.{}.unwrap()", clean_closure_var, resolved_field_path)
@@ -2794,8 +2828,10 @@ impl Expr {
                             // ----------------------------------------------------------
                             (Expr::Literal(Literal::String(_)), _)
                             | (Expr::Literal(Literal::Interpolated(_)), _) => {
-                                // Strings use owned String, so clone
-                                format!("{}.clone()", code)
+                                // String-ish literals already evaluate to a fresh owned/borrowed value
+                                // (e.g. `String::from("...")`, `format!(...)`, or `"..."` for &str),
+                                // so cloning here is redundant and can double-allocate.
+                                code
                             }
                             (Expr::Literal(_), _) => {
                                 // Numeric or bool literals — pass directly
@@ -2902,11 +2938,12 @@ impl Expr {
 
                 // If this is a local user-defined function, prefix with `self.`
                 // BUT: don't override if it's already a module call (starts with crate::)
-                if is_local_function
-                    && !target_str.starts_with("self.")
-                    && !target_str.starts_with("crate::")
-                {
-                    target_str = format!("self.{}", func_name.unwrap());
+                if is_local_function && !target_str.starts_with("crate::") {
+                    // Script-local functions are emitted as methods on the script struct with renamed names.
+                    // Always call the renamed version to match the generated impl (e.g. __t_apply_step).
+                    let name = func_name.unwrap();
+                    let renamed = rename_function(&name);
+                    target_str = format!("self.{}", renamed);
                 }
 
                 // ==============================================================

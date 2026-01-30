@@ -1496,6 +1496,35 @@ impl MathApi {
         let mut rng = rand::thread_rng();
         Rng::gen_range(&mut rng, min..max)
     }
+
+    /// Linear interpolation between a and b by t (0..1).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn lerp(&self, a: f32, b: f32, t: f32) -> f32 {
+        a + (b - a) * t
+    }
+
+    /// Linear interpolation between two Vector2s by t (0..1).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn lerp_vec2(&self, a: crate::Vector2, b: crate::Vector2, t: f32) -> crate::Vector2 {
+        crate::Vector2::lerp(a, b, t)
+    }
+
+    /// Linear interpolation between two Vector3s by t (0..1).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn lerp_vec3(&self, a: crate::Vector3, b: crate::Vector3, t: f32) -> crate::Vector3 {
+        crate::Vector3::from_glam_public(a.to_glam_public().lerp(b.to_glam_public(), t))
+    }
+
+    /// Spherical interpolation between two quaternions by t (0..1).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn slerp(
+        &self,
+        a: crate::Quaternion,
+        b: crate::Quaternion,
+        t: f32,
+    ) -> crate::Quaternion {
+        crate::Quaternion::from_glam_public(a.to_glam_public().slerp(b.to_glam_public(), t))
+    }
 }
 
 #[derive(Default)]

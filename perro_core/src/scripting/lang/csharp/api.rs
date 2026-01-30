@@ -127,11 +127,23 @@ impl CSharpMath {
             "Random" => Some(ApiModule::Math(MathApi::Random)),
             "RandomRange" => Some(ApiModule::Math(MathApi::RandomRange)),
             "RandomInt" => Some(ApiModule::Math(MathApi::RandomInt)),
+            "Lerp" => Some(ApiModule::Math(MathApi::Lerp)),
+            "LerpVec2" => Some(ApiModule::Math(MathApi::LerpVec2)),
+            "LerpVec3" => Some(ApiModule::Math(MathApi::LerpVec3)),
+            "Slerp" => Some(ApiModule::Math(MathApi::Slerp)),
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Random", "RandomRange", "RandomInt"]
+        vec![
+            "Random",
+            "RandomRange",
+            "RandomInt",
+            "Lerp",
+            "LerpVec2",
+            "LerpVec3",
+            "Slerp",
+        ]
     }
 }

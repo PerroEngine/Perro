@@ -12,6 +12,7 @@ pub enum ResourceModule {
     Shape(ShapeResource),
     ArrayOp(ArrayResource),
     MapOp(MapResource),
+    QuaternionOp(QuaternionResource),
 }
 
 #[derive(Debug, Clone)]
@@ -62,4 +63,16 @@ pub enum MapResource {
     Clear,
 
     New,
+}
+
+#[derive(Debug, Clone)]
+pub enum QuaternionResource {
+    /// Quaternion.identity() -> Quaternion
+    Identity,
+    /// Quaternion.from_euler(euler_deg: Vector3) -> Quaternion
+    FromEuler,
+    /// Quaternion.from_euler_xyz(pitch_deg: f32, yaw_deg: f32, roll_deg: f32) -> Quaternion
+    FromEulerXYZ,
+    /// Quaternion.as_euler(q: Quaternion) -> Vector3 (degrees)
+    AsEuler,
 }

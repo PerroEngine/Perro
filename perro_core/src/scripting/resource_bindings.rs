@@ -762,6 +762,90 @@ impl ModuleTypes for ShapeResource {
 }
 
 // ===========================================================
+// Quaternion API Implementations
+// ===========================================================
+
+impl ModuleCodegen for QuaternionResource {
+    fn to_rust_prepared(
+        &self,
+        args: &[Expr],
+        args_strs: &[String],
+        script: &Script,
+        needs_self: bool,
+        current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            QuaternionResource::Identity => "Quaternion::identity()".into(),
+            QuaternionResource::FromEuler => {
+                let e = args_strs.get(0).cloned().unwrap_or_else(|| "Vector3::ZERO".into());
+                format!("Quaternion::from_euler_degrees({e}.x, {e}.y, {e}.z)")
+            }
+            QuaternionResource::FromEulerXYZ => {
+                let pitch = args_strs.get(0).cloned().unwrap_or_else(|| "0.0".into());
+                let yaw = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
+                let roll = args_strs.get(2).cloned().unwrap_or_else(|| "0.0".into());
+                format!("Quaternion::from_euler_degrees({pitch}, {yaw}, {roll})")
+            }
+            QuaternionResource::AsEuler => {
+                // IMPORTANT: avoid implicit casts here.
+                // If type inference is momentarily wrong, `args_strs[0]` might include an unwanted cast
+                // (e.g. Vector3->Quaternion by interpreting x/y/z as degrees). Re-render the argument
+                // directly from the AST with no expected type hint to preserve the real expression.
+                let q_raw = args
+                    .get(0)
+                    .map(|e| e.to_rust(needs_self, script, None, current_func, None))
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        args_strs
+                            .get(0)
+                            .cloned()
+                            .unwrap_or_else(|| "Quaternion::identity()".into())
+                    });
+
+                // `Quaternion::as_euler()` returns a Vector3 in degrees.
+                format!("({}).as_euler()", q_raw)
+            }
+        }
+    }
+}
+
+impl ModuleTypes for QuaternionResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            QuaternionResource::Identity
+            | QuaternionResource::FromEuler
+            | QuaternionResource::FromEulerXYZ => {
+                Some(Type::EngineStruct(EngineStruct::Quaternion))
+            }
+            QuaternionResource::AsEuler => Some(Type::EngineStruct(EngineStruct::Vector3)),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        use NumberKind::*;
+        match self {
+            QuaternionResource::Identity => None,
+            QuaternionResource::FromEuler => Some(vec![Type::EngineStruct(EngineStruct::Vector3)]),
+            QuaternionResource::FromEulerXYZ => Some(vec![
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+            ]),
+            QuaternionResource::AsEuler => Some(vec![Type::EngineStruct(EngineStruct::Quaternion)]),
+        }
+    }
+
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            QuaternionResource::Identity => None,
+            QuaternionResource::FromEuler => Some(vec!["euler_deg"]),
+            QuaternionResource::FromEulerXYZ => Some(vec!["pitch_deg", "yaw_deg", "roll_deg"]),
+            QuaternionResource::AsEuler => Some(vec!["q"]),
+        }
+    }
+}
+
+// ===========================================================
 // ResourceModule routing - similar to ApiModule
 // ===========================================================
 
@@ -801,6 +885,9 @@ impl ResourceModule {
             ResourceModule::MapOp(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
+            ResourceModule::QuaternionOp(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
         }
     }
 
@@ -811,6 +898,7 @@ impl ResourceModule {
             ResourceModule::Shape(api) => api.return_type(),
             ResourceModule::ArrayOp(api) => api.return_type(),
             ResourceModule::MapOp(api) => api.return_type(),
+            ResourceModule::QuaternionOp(api) => api.return_type(),
         }
     }
 
@@ -821,6 +909,7 @@ impl ResourceModule {
             ResourceModule::Shape(api) => api.param_types(),
             ResourceModule::ArrayOp(api) => api.param_types(),
             ResourceModule::MapOp(api) => api.param_types(),
+            ResourceModule::QuaternionOp(api) => api.param_types(),
         }
     }
 
@@ -832,6 +921,7 @@ impl ResourceModule {
             ResourceModule::Shape(api) => api.param_names(),
             ResourceModule::ArrayOp(api) => api.param_names(),
             ResourceModule::MapOp(api) => api.param_names(),
+            ResourceModule::QuaternionOp(api) => api.param_names(),
         }
     }
 }

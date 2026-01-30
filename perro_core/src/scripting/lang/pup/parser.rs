@@ -13,6 +13,8 @@ pub struct PupParser {
     current_token: PupToken,
     /// Variable name → inferred type (for local scope/type inference during parsing)
     type_env: HashMap<String, Type>,
+    /// Current script's node type name (from `@script ... extends <NodeType>`)
+    script_node_type: Option<String>,
     pub parsed_structs: Vec<StructDef>,
     /// Pending attributes that were consumed at top level (for @AttributeName before var/fn)
     pending_attributes: Vec<String>,
@@ -37,6 +39,7 @@ impl PupParser {
             lexer: lex,
             current_token: cur,
             type_env: HashMap::new(),
+            script_node_type: None,
             parsed_structs: Vec::new(),
             pending_attributes: Vec::new(),
             source_file: None,
@@ -122,6 +125,7 @@ impl PupParser {
             return Err("Expected identifier after extends".into());
         };
         self.next_token();
+        self.script_node_type = Some(node_type.clone());
 
         let mut script_vars = Vec::new(); // This is the unified, ordered list of all script-level variables
         let mut functions = Vec::new();
@@ -1178,6 +1182,49 @@ impl PupParser {
             let expr = self.parse_expression(0)?;
 
             if typ.is_none() {
+                // Try to infer simple types for member access (e.g. `var g = self.global_transform`)
+                // so later calls like `g.rotation.as_euler()` can resolve via receiver type.
+                fn infer_member_access_type(
+                    script_node_type: Option<&str>,
+                    type_env: &HashMap<String, Type>,
+                    expr: &Expr,
+                ) -> Option<Type> {
+                    use std::str::FromStr;
+                    match expr {
+                        Expr::SelfAccess => {
+                            let nt_str = script_node_type?;
+                            let nt = crate::node_registry::NodeType::from_str(nt_str).ok()?;
+                            Some(Type::Node(nt))
+                        }
+                        Expr::Ident(name) => type_env.get(name).cloned(),
+                        Expr::MemberAccess(base, field) => {
+                            let base_ty =
+                                infer_member_access_type(script_node_type, type_env, base)?;
+                            match base_ty {
+                                Type::Node(nt) => {
+                                    // Prefer script-side types via node API
+                                    let fields = PUP_NODE_API.get_fields(&nt);
+                                    if let Some(api_field) =
+                                        fields.iter().find(|f| f.script_name == field)
+                                    {
+                                        Some(api_field.get_script_type())
+                                    } else {
+                                        // Fallback to engine registry
+                                        let rust_field = crate::structs::engine_registry::ENGINE_REGISTRY
+                                            .resolve_field_name(&nt, field);
+                                        crate::structs::engine_registry::ENGINE_REGISTRY
+                                            .get_field_type_node(&nt, &rust_field)
+                                    }
+                                }
+                                Type::EngineStruct(es) => crate::structs::engine_registry::ENGINE_REGISTRY
+                                    .get_field_type_struct(&es, field),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }
+
                 typ = match &expr {
                     Expr::Literal(Literal::Number(_)) => Some(Type::Number(NumberKind::Float(32))),
                     Expr::Literal(Literal::String(_)) | Expr::Literal(Literal::Interpolated(_)) => {
@@ -1243,6 +1290,9 @@ impl PupParser {
                         } else {
                             None
                         }
+                    }
+                    Expr::MemberAccess(..) => {
+                        infer_member_access_type(self.script_node_type.as_deref(), &self.type_env, &expr)
                     }
                     _ => None,
                 };
@@ -1657,6 +1707,69 @@ impl PupParser {
                                         call_args,
                                     ));
                                 }
+                            }
+                        }
+                    }
+
+                    // Resolve by receiver *expression* type (not just Ident variables).
+                    // This enables calls like `self.transform.rotation.as_euler()`.
+                    fn infer_expr_type_simple(
+                        node_type: Option<&str>,
+                        type_env: &HashMap<String, Type>,
+                        expr: &Expr,
+                    ) -> Option<Type> {
+                        use std::str::FromStr;
+                        match expr {
+                            Expr::SelfAccess => {
+                                let nt_str = node_type?;
+                                let nt = crate::node_registry::NodeType::from_str(nt_str).ok()?;
+                                Some(Type::Node(nt))
+                            }
+                            Expr::Ident(name) => type_env.get(name).cloned(),
+                            Expr::MemberAccess(base, field) => {
+                                let base_ty = infer_expr_type_simple(node_type, type_env, base)?;
+                                match base_ty {
+                                    Type::Node(nt) => {
+                                        // Use PUP_NODE_API so script-side field names map correctly.
+                                        let fields = PUP_NODE_API.get_fields(&nt);
+                                        if let Some(api_field) =
+                                            fields.iter().find(|f| f.script_name == field)
+                                        {
+                                            Some(api_field.get_script_type())
+                                        } else {
+                                            // Fallback to engine registry for Rust field names.
+                                            let rust_field =
+                                                crate::structs::engine_registry::ENGINE_REGISTRY
+                                                    .resolve_field_name(&nt, field);
+                                            crate::structs::engine_registry::ENGINE_REGISTRY
+                                                .get_field_type_node(&nt, &rust_field)
+                                        }
+                                    }
+                                    Type::EngineStruct(es) => crate::structs::engine_registry::ENGINE_REGISTRY
+                                        .get_field_type_struct(&es, field),
+                                    _ => None,
+                                }
+                            }
+                            _ => None,
+                        }
+                    }
+
+                    if let Some(receiver_ty) = infer_expr_type_simple(
+                        self.script_node_type.as_deref(),
+                        &self.type_env,
+                        obj,
+                    ) {
+                        let norm_type_name = normalize_type_name(&receiver_ty);
+                        if !norm_type_name.is_empty() {
+                            if let Some(api) = PupAPI::resolve(&norm_type_name, method) {
+                                let mut call_args = vec![*obj.clone()];
+                                call_args.extend(args);
+                                return Ok(Expr::ApiCall(CallModule::Module(api), call_args));
+                            }
+                            if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method) {
+                                let mut call_args = vec![*obj.clone()];
+                                call_args.extend(args);
+                                return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
                             }
                         }
                     }

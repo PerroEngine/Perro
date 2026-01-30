@@ -74,6 +74,17 @@ pub enum NodeFieldAssignBehavior {
     EulerAxisGlobal3DZ,
 }
 
+/// When a script reads this field (or a subfield), codegen should lower it to an API getter
+/// rather than reading the stored field directly. This keeps read semantics consistent with
+/// write semantics and avoids stale/computed-value mismatches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NodeFieldReadBehavior {
+    /// Read global_transform via api.get_global_transform(node_id)
+    GlobalTransform2D,
+    /// Read global_transform via api.get_global_transform_3d(node_id)
+    GlobalTransform3D,
+}
+
 impl NodeFieldAssignBehavior {
     /// Emit the Rust block for get global → mutate __g → compute new local from parent → mutate_node(transform).
     /// Caller adds indentation and newline as needed.
@@ -349,6 +360,9 @@ pub struct EngineRegistry {
     /// Field *paths* that use special lowering on assign (e.g. transform.rotation.z → rotate_z).
     /// Key: (NodeType, rust_field_path) where path is dot-separated Rust field names.
     pub field_assign_behavior_path: HashMap<(NodeType, String), NodeFieldAssignBehavior>,
+
+    /// Fields that use an API getter on read. Keyed by NodeFieldRef to avoid string mismatches.
+    pub field_read_behavior: HashMap<NodeFieldRef, NodeFieldReadBehavior>,
 }
 
 /// Global engine registry - initialized once, used during transpilation
@@ -370,6 +384,7 @@ impl EngineRegistry {
             method_defs: HashMap::new(),
             field_assign_behavior: HashMap::new(),
             field_assign_behavior_path: HashMap::new(),
+            field_read_behavior: HashMap::new(),
         };
 
         //--------------------------------
@@ -579,6 +594,10 @@ impl EngineRegistry {
             ],
         );
         reg.register_field_assign_behavior(NodeType::Node2D, "global_transform", NodeFieldAssignBehavior::GlobalTransform2D);
+        reg.register_field_read_behavior(
+            NodeFieldRef::Node2DGlobalTransform,
+            NodeFieldReadBehavior::GlobalTransform2D,
+        );
 
         // Sprite2D - inherits from Node2D
         // Only script-accessible fields are registered here
@@ -684,15 +703,10 @@ impl EngineRegistry {
             ],
         );
         reg.register_field_assign_behavior(NodeType::Node3D, "global_transform", NodeFieldAssignBehavior::GlobalTransform3D);
-        // 3D Euler-axis semantics for script writes:
-        // - `+=/-=` lowers to rotate_{x,y,z}(delta_degrees)
-        // - `=`/`*=`/`/=` operate on Euler degrees via rotation_euler()/set_rotation_euler()
-        reg.register_field_assign_behavior_path(NodeType::Node3D, "transform.rotation.x", NodeFieldAssignBehavior::EulerAxisLocal3DX);
-        reg.register_field_assign_behavior_path(NodeType::Node3D, "transform.rotation.y", NodeFieldAssignBehavior::EulerAxisLocal3DY);
-        reg.register_field_assign_behavior_path(NodeType::Node3D, "transform.rotation.z", NodeFieldAssignBehavior::EulerAxisLocal3DZ);
-        reg.register_field_assign_behavior_path(NodeType::Node3D, "global_transform.rotation.x", NodeFieldAssignBehavior::EulerAxisGlobal3DX);
-        reg.register_field_assign_behavior_path(NodeType::Node3D, "global_transform.rotation.y", NodeFieldAssignBehavior::EulerAxisGlobal3DY);
-        reg.register_field_assign_behavior_path(NodeType::Node3D, "global_transform.rotation.z", NodeFieldAssignBehavior::EulerAxisGlobal3DZ);
+        reg.register_field_read_behavior(
+            NodeFieldRef::Node3DGlobalTransform,
+            NodeFieldReadBehavior::GlobalTransform3D,
+        );
 
         // MeshInstance3D - inherits from Node3D
         reg.register_node(
@@ -860,6 +874,24 @@ impl EngineRegistry {
     ) {
         self.field_assign_behavior_path
             .insert((kind, rust_field_path.to_string()), behavior);
+    }
+
+    /// Register that reads of this field should lower to an API getter.
+    /// This is keyed by `NodeFieldRef` to avoid string mismatches.
+    pub fn register_field_read_behavior(
+        &mut self,
+        field_ref: NodeFieldRef,
+        behavior: NodeFieldReadBehavior,
+    ) {
+        self.field_read_behavior.insert(field_ref, behavior);
+    }
+
+    /// Look up read behavior for a field reference.
+    pub fn get_field_read_behavior(
+        &self,
+        field_ref: &NodeFieldRef,
+    ) -> Option<NodeFieldReadBehavior> {
+        self.field_read_behavior.get(field_ref).copied()
     }
 
     /// Look up assign behavior for a field *path*, walking the node base chain so subtypes inherit.

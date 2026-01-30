@@ -41,6 +41,109 @@ impl Stmt {
                     temp_counter: &mut usize,
                 ) -> Expr {
                     match expr {
+                        // Node member access chains can lower into mutable API getters (e.g. global_transform).
+                        // Hoist those into temps when nested, so we never end up with `api.*( ... api.get_*() ... )`
+                        // which can trip Rust's evaluation/borrow order (receiver borrow happens before args).
+                        Expr::MemberAccess(_base, _field) if !is_top_level => {
+                            if let Some((node_id, node_type, field_path, _closure_var)) =
+                                extract_node_member_info(expr, script, current_func)
+                            {
+                                if let Some(node_type_enum) = string_to_node_type(&node_type) {
+                                    let first = field_path.split('.').next().unwrap_or("");
+                                    if !first.is_empty() {
+                                        use crate::scripting::lang::pup::node_api::PUP_NODE_API;
+                                        if let Some(api_field) = PUP_NODE_API
+                                            .get_fields(&node_type_enum)
+                                            .iter()
+                                            .find(|f| f.script_name == first)
+                                        {
+                                            if let Some(read_behavior) = ENGINE_REGISTRY
+                                                .get_field_read_behavior(&api_field.rust_field)
+                                            {
+                                                // Deduplicate identical getter calls within the same statement:
+                                                // use a stable hash-based temp name and only declare once.
+                                                use std::collections::hash_map::DefaultHasher;
+                                                use std::hash::{Hash, Hasher};
+
+                                                let node_id_with_self = if !node_id.starts_with("self.")
+                                                    && !node_id.starts_with("api.")
+                                                    && script.is_struct_field(&node_id)
+                                                {
+                                                    format!("self.{}", node_id)
+                                                } else {
+                                                    node_id.clone()
+                                                };
+
+                                                let (getter_call, getter_type) = match read_behavior {
+                                                    crate::structs::engine_registry::NodeFieldReadBehavior::GlobalTransform2D => (
+                                                        format!(
+                                                            "api.get_global_transform({}).unwrap_or_default()",
+                                                            node_id_with_self
+                                                        ),
+                                                        Type::EngineStruct(EngineStructKind::Transform2D),
+                                                    ),
+                                                    crate::structs::engine_registry::NodeFieldReadBehavior::GlobalTransform3D => (
+                                                        format!(
+                                                            "api.get_global_transform_3d({}).unwrap_or_default()",
+                                                            node_id_with_self
+                                                        ),
+                                                        Type::EngineStruct(EngineStructKind::Transform3D),
+                                                    ),
+                                                };
+
+                                                let mut hasher = DefaultHasher::new();
+                                                getter_call.hash(&mut hasher);
+                                                let temp_var = format!("__temp_read_{}", hasher.finish());
+
+                                                if !temp_var_types.contains_key(&temp_var) {
+                                                    extracted.push((
+                                                        format!(
+                                                            "let {}: {} = {};",
+                                                            temp_var,
+                                                            getter_type.to_rust_type(),
+                                                            getter_call
+                                                        ),
+                                                        temp_var.clone(),
+                                                    ));
+                                                    temp_var_types.insert(temp_var.clone(), getter_type);
+                                                }
+
+                                                // Rebuild the expression as `temp_var.<rest>`
+                                                let rest = field_path
+                                                    .strip_prefix(first)
+                                                    .unwrap_or("")
+                                                    .strip_prefix('.')
+                                                    .unwrap_or("");
+                                                let mut out = Expr::Ident(temp_var);
+                                                if !rest.is_empty() {
+                                                    for seg in rest.split('.') {
+                                                        out = Expr::MemberAccess(
+                                                            Box::new(out),
+                                                            seg.to_string(),
+                                                        );
+                                                    }
+                                                }
+                                                return out;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Fall through to normal recursive behavior below (handled by MemberAccess arm).
+                            let Expr::MemberAccess(base, field) = expr else { return expr.clone(); };
+                            let new_base = extract_all_nested_api_calls(
+                                base,
+                                script,
+                                current_func,
+                                extracted,
+                                temp_var_types,
+                                needs_self,
+                                false,
+                                temp_counter,
+                            );
+                            return Expr::MemberAccess(Box::new(new_base), field.clone());
+                        }
                         // Extract API calls (like api.get_parent, api.call_function_id, etc.)
                         Expr::ApiCall(api_module, api_args) => {
                             // First, recursively extract nested API calls from arguments

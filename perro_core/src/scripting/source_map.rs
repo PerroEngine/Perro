@@ -81,13 +81,14 @@ pub fn build_source_map_from_script(
             // Create a range mapping
             builder.start_range(approx_source_line);
             // Set generated line to where function starts
-            for _ in 0..(gen_start - current_generated_line) {
+            // Use saturating math in case function detection is out-of-order or duplicated.
+            for _ in 0..gen_start.saturating_sub(current_generated_line) {
                 builder.increment_generated_line();
             }
             current_generated_line = gen_start;
 
             // End range at function end
-            for _ in 0..(gen_end - current_generated_line) {
+            for _ in 0..gen_end.saturating_sub(current_generated_line) {
                 builder.increment_generated_line();
             }
             current_generated_line = gen_end;

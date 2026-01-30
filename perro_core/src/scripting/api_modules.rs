@@ -69,4 +69,8 @@ pub enum MathApi {
     Random,      // api.Math.random() -> f32
     RandomRange, // api.Math.random_range(min: f32, max: f32) -> f32
     RandomInt,   // api.Math.random_int(min: i32, max: i32) -> i32
+    Lerp,        // api.Math.lerp(a: f32, b: f32, t: f32) -> f32
+    LerpVec2,    // api.Math.lerp_vec2(a: Vector2, b: Vector2, t: f32) -> Vector2
+    LerpVec3,    // api.Math.lerp_vec3(a: Vector3, b: Vector3, t: f32) -> Vector3
+    Slerp,       // api.Math.slerp(a: Quaternion, b: Quaternion, t: f32) -> Quaternion
 }

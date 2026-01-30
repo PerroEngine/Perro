@@ -16,6 +16,7 @@ impl PupResourceAPI {
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
             PupShape2D::NAME => PupShape2D::resolve_method(func),
+            PupQuaternion::NAME => PupQuaternion::resolve_method(func),
             _ => None,
         }
     }
@@ -28,6 +29,7 @@ impl PupResourceAPI {
             PupArray::NAME,
             PupMap::NAME,
             PupShape2D::NAME,
+            PupQuaternion::NAME,
         ]
     }
 
@@ -44,6 +46,7 @@ impl PupResourceAPI {
             PupArray::NAME => PupArray::get_all_method_names(),
             PupMap::NAME => PupMap::get_all_method_names(),
             PupShape2D::NAME => PupShape2D::get_all_method_names(),
+            PupQuaternion::NAME => PupQuaternion::get_all_method_names(),
             _ => Vec::new(),
         }
     }
@@ -174,5 +177,25 @@ impl PupShape2D {
 
     pub fn get_all_method_names() -> Vec<&'static str> {
         vec!["rectangle", "circle", "square", "triangle"]
+    }
+}
+
+/// Quaternion resource API - for quaternion math helpers
+pub struct PupQuaternion;
+impl PupQuaternion {
+    pub const NAME: &'static str = "Quaternion";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "identity" => Some(ResourceModule::QuaternionOp(QuaternionResource::Identity)),
+            "from_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
+            "from_euler_xyz" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ)),
+            "as_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["identity", "from_euler", "from_euler_xyz", "as_euler"]
     }
 }
