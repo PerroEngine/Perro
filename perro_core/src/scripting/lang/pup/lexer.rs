@@ -27,6 +27,7 @@ pub enum PupToken {
     Script,
     Module,
     Global,
+    Root,
     Ident(String),
     Number(String),
     String(String),
@@ -225,6 +226,7 @@ impl PupLexer {
             "script" => PupToken::Script,
             "module" => PupToken::Module,
             "global" => PupToken::Global,
+            "root" => PupToken::Root,
             _ => PupToken::Ident(s),
         }
     }

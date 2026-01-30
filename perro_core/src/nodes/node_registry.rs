@@ -165,6 +165,11 @@ pub trait BaseNode: Any + Debug + Send {
         // Default implementation does nothing - only Node2D nodes override this
     }
 
+    /// Mark transform as dirty for Node3D nodes (no-op for other node types)
+    fn mark_transform_dirty_if_node3d(&mut self) {
+        // Default implementation does nothing - only Node3D nodes override this
+    }
+
     /// Get the creation timestamp (Unix time in seconds as u64)
     /// Used for tie-breaking when z_index values are the same (newer nodes render above older)
     fn get_created_timestamp(&self) -> u64;
@@ -566,6 +571,12 @@ macro_rules! define_nodes {
                 }
             }
 
+            fn mark_transform_dirty_if_node3d(&mut self) {
+                if let Some(node3d) = self.as_node3d_mut() {
+                    node3d.transform_dirty = true;
+                }
+            }
+
             fn get_created_timestamp(&self) -> u64 {
                 match self {
                     $( SceneNode::$variant(n) => n.get_created_timestamp(), )+
@@ -611,6 +622,37 @@ macro_rules! define_nodes {
             /// Uses Deref to access transform through Node2D
             pub fn get_node2d_transform(&self) -> Option<crate::structs2d::Transform2D> {
                 self.as_node2d().map(|node2d| node2d.transform)
+            }
+
+            /// Get a mutable reference to the Node3D if this is a Node3D-based node
+            pub fn as_node3d_mut(&mut self) -> Option<&mut crate::nodes::_3d::node_3d::Node3D> {
+                match self {
+                    SceneNode::Node3D(n3d) => Some(n3d),
+                    SceneNode::MeshInstance3D(mesh) => Some(&mut mesh.base),
+                    SceneNode::Camera3D(cam) => Some(&mut cam.base),
+                    SceneNode::DirectionalLight3D(light) => Some(&mut light.base),
+                    SceneNode::OmniLight3D(light) => Some(&mut light.base),
+                    SceneNode::SpotLight3D(light) => Some(&mut light.base),
+                    _ => None,
+                }
+            }
+
+            /// Get a reference to the Node3D if this is a Node3D-based node
+            pub fn as_node3d(&self) -> Option<&crate::nodes::_3d::node_3d::Node3D> {
+                match self {
+                    SceneNode::Node3D(n3d) => Some(n3d),
+                    SceneNode::MeshInstance3D(mesh) => Some(&mesh.base),
+                    SceneNode::Camera3D(cam) => Some(&cam.base),
+                    SceneNode::DirectionalLight3D(light) => Some(&light.base),
+                    SceneNode::OmniLight3D(light) => Some(&light.base),
+                    SceneNode::SpotLight3D(light) => Some(&light.base),
+                    _ => None,
+                }
+            }
+
+            /// Get the local transform if this is a Node3D-based node
+            pub fn get_node3d_transform(&self) -> Option<crate::structs3d::Transform3D> {
+                self.as_node3d().map(|node3d| node3d.transform)
             }
 
             /// Optimized typed access using compile-time match dispatch instead of Any downcast

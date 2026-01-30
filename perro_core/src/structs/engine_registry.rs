@@ -12,12 +12,14 @@ pub enum NodeFieldRef {
 
     // Node2D fields
     Node2DTransform,
+    Node2DGlobalTransform,
     Node2DPivot,
     Node2DVisible,
     Node2DZIndex,
 
     // Node3D fields
     Node3DTransform,
+    Node3DGlobalTransform,
     Node3DPivot,
     Node3DVisible,
 
@@ -34,6 +36,177 @@ pub enum NodeFieldRef {
     Shape2DColor,
     Shape2DFilled,
     // Add more as needed when registering nodes...
+}
+
+/// When a script assigns to this field (or a subfield), codegen should use get/set API
+/// instead of mutate_node, so the engine can convert global → local.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NodeFieldAssignBehavior {
+    /// Assignments to global_transform on Node2D: emit get_global_transform → mutate → set_global_transform
+    GlobalTransform2D,
+    /// Assignments to global_transform on Node3D: emit get_global_transform_3d → mutate → set_global_transform_3d
+    GlobalTransform3D,
+    /// 3D local rotation delta around X axis (lower to Transform3D::rotate_x)
+    RotateLocal3DX,
+    /// 3D local rotation delta around Y axis (lower to Transform3D::rotate_y)
+    RotateLocal3DY,
+    /// 3D local rotation delta around Z axis (lower to Transform3D::rotate_z)
+    RotateLocal3DZ,
+    /// 3D global rotation delta around X axis (apply to desired global, derive local, then set local)
+    RotateGlobal3DX,
+    /// 3D global rotation delta around Y axis (apply to desired global, derive local, then set local)
+    RotateGlobal3DY,
+    /// 3D global rotation delta around Z axis (apply to desired global, derive local, then set local)
+    RotateGlobal3DZ,
+
+    /// 3D Euler axis behavior for `transform.rotation.x` (degrees).
+    EulerAxisLocal3DX,
+    /// 3D Euler axis behavior for `transform.rotation.y` (degrees).
+    EulerAxisLocal3DY,
+    /// 3D Euler axis behavior for `transform.rotation.z` (degrees).
+    EulerAxisLocal3DZ,
+
+    /// 3D Euler axis behavior for `global_transform.rotation.x` (degrees).
+    EulerAxisGlobal3DX,
+    /// 3D Euler axis behavior for `global_transform.rotation.y` (degrees).
+    EulerAxisGlobal3DY,
+    /// 3D Euler axis behavior for `global_transform.rotation.z` (degrees).
+    EulerAxisGlobal3DZ,
+}
+
+impl NodeFieldAssignBehavior {
+    /// Emit the Rust block for get global → mutate __g → compute new local from parent → mutate_node(transform).
+    /// Caller adds indentation and newline as needed.
+    /// node_type_name is the concrete node type for the closure (e.g. "MeshInstance3D", "Sprite2D").
+    pub fn emit_get_set_block(
+        &self,
+        node_id: &str,
+        mutate_expr: &str,
+        node_type_name: &str,
+    ) -> String {
+        match self {
+            NodeFieldAssignBehavior::GlobalTransform2D => format!(
+                "{{ let mut __g = api.get_global_transform({}).unwrap_or_default(); {}; let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                node_id, mutate_expr, node_id, node_id, node_type_name
+            ),
+            NodeFieldAssignBehavior::GlobalTransform3D => format!(
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); {}; let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                node_id, mutate_expr, node_id, node_id, node_type_name
+            ),
+            _ => {
+                // Not supported by this helper (rotation behaviors have their own emitter)
+                "{ /* unsupported assign behavior */ }".to_string()
+            }
+        }
+    }
+
+    /// Emit a block expression that applies an Euler rotation delta using Transform3D::rotate_{x,y,z}.
+    /// Used to lower `transform.rotation.{axis} += delta` and `global_transform.rotation.{axis} += delta`.
+    pub fn emit_rotate3d_block_expr(&self, node_id: &str, node_type_name: &str, delta_expr: &str) -> String {
+        match self {
+            NodeFieldAssignBehavior::RotateLocal3DX => format!(
+                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotate_x({}); }}); }}",
+                node_id, node_type_name, delta_expr
+            ),
+            NodeFieldAssignBehavior::RotateLocal3DY => format!(
+                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotate_y({}); }}); }}",
+                node_id, node_type_name, delta_expr
+            ),
+            NodeFieldAssignBehavior::RotateLocal3DZ => format!(
+                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotate_z({}); }}); }}",
+                node_id, node_type_name, delta_expr
+            ),
+            NodeFieldAssignBehavior::RotateGlobal3DX => format!(
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotate_x({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                node_id, delta_expr, node_id, node_id, node_type_name
+            ),
+            NodeFieldAssignBehavior::RotateGlobal3DY => format!(
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotate_y({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                node_id, delta_expr, node_id, node_id, node_type_name
+            ),
+            NodeFieldAssignBehavior::RotateGlobal3DZ => format!(
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotate_z({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                node_id, delta_expr, node_id, node_id, node_type_name
+            ),
+            _ => "{ /* not a rotate3d behavior */ }".to_string(),
+        }
+    }
+
+    /// Emit a block expression for 3D Euler-axis semantics on `transform.rotation.{x,y,z}` and `global_transform.rotation.{x,y,z}`.
+    ///
+    /// - `op_kind`:
+    ///   - "set": set Euler axis to rhs_expr (degrees)
+    ///   - "add": add delta (degrees) (lowered to rotate_x/y/z)
+    ///   - "sub": subtract delta (degrees) (lowered to rotate_x/y/z with negated delta)
+    ///   - "mul": multiply Euler axis by rhs_expr (degrees scaling)
+    ///   - "div": divide Euler axis by rhs_expr (degrees scaling)
+    pub fn emit_euler_axis_3d_block_expr(
+        &self,
+        node_id: &str,
+        node_type_name: &str,
+        op_kind: &str,
+        rhs_expr: &str,
+    ) -> Option<String> {
+        let (axis, is_global) = match self {
+            NodeFieldAssignBehavior::EulerAxisLocal3DX => ("x", false),
+            NodeFieldAssignBehavior::EulerAxisLocal3DY => ("y", false),
+            NodeFieldAssignBehavior::EulerAxisLocal3DZ => ("z", false),
+            NodeFieldAssignBehavior::EulerAxisGlobal3DX => ("x", true),
+            NodeFieldAssignBehavior::EulerAxisGlobal3DY => ("y", true),
+            NodeFieldAssignBehavior::EulerAxisGlobal3DZ => ("z", true),
+            _ => return None,
+        };
+
+        // += / -= => rotate_* (degrees)
+        if op_kind == "add" || op_kind == "sub" {
+            let delta = if op_kind == "sub" {
+                format!("-({})", rhs_expr)
+            } else {
+                rhs_expr.to_string()
+            };
+            if is_global {
+                let rot_call = match axis {
+                    "x" => "rotate_x",
+                    "y" => "rotate_y",
+                    _ => "rotate_z",
+                };
+                return Some(format!(
+                    "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.{}({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                    node_id, rot_call, delta, node_id, node_id, node_type_name
+                ));
+            } else {
+                let rot_call = match axis {
+                    "x" => "rotate_x",
+                    "y" => "rotate_y",
+                    _ => "rotate_z",
+                };
+                return Some(format!(
+                    "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.{}({}); }}); }}",
+                    node_id, node_type_name, rot_call, delta
+                ));
+            }
+        }
+
+        // = / *= / /= => Euler read/modify/write (degrees)
+        let axis_op = match op_kind {
+            "set" => format!("e.{axis} = {rhs_expr};"),
+            "mul" => format!("e.{axis} *= {rhs_expr};"),
+            "div" => format!("e.{axis} /= {rhs_expr};"),
+            _ => return None,
+        };
+
+        if is_global {
+            Some(format!(
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); let mut e = __g.rotation_euler(); {}; __g.set_rotation_euler(e); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                node_id, axis_op, node_id, node_id, node_type_name
+            ))
+        } else {
+            Some(format!(
+                "{{ api.mutate_node({}, |n: &mut {}| {{ let mut e = n.transform.rotation_euler(); {}; n.transform.set_rotation_euler(e); }}); }}",
+                node_id, node_type_name, axis_op
+            ))
+        }
+    }
 }
 
 /// Strongly-typed reference to a method in engine_registry
@@ -73,6 +246,10 @@ impl NodeMethodRef {
 
     /// Get the return type from engine_registry
     pub fn return_type(&self) -> Option<Type> {
+        // CallFunction is not registered in method_defs; script calls always return Value (Object)
+        if matches!(self, NodeMethodRef::CallFunction) {
+            return Some(Type::Object);
+        }
         if let Some((node_type, method_name)) = ENGINE_REGISTRY.method_ref_reverse_map.get(self) {
             ENGINE_REGISTRY.get_method_return_type(node_type, method_name)
         } else {
@@ -166,6 +343,12 @@ pub struct EngineRegistry {
     // Method definitions: (NodeType, rust_method_name) -> (params, return_type, param_names)
     // Stores the actual method signature with script-side parameter names
     pub method_defs: HashMap<(NodeType, String), (Vec<Type>, Type, Vec<&'static str>)>,
+
+    /// Fields that use get/set on assign (e.g. global_transform → convert to local). Key: (NodeType, rust_field_name).
+    pub field_assign_behavior: HashMap<(NodeType, String), NodeFieldAssignBehavior>,
+    /// Field *paths* that use special lowering on assign (e.g. transform.rotation.z → rotate_z).
+    /// Key: (NodeType, rust_field_path) where path is dot-separated Rust field names.
+    pub field_assign_behavior_path: HashMap<(NodeType, String), NodeFieldAssignBehavior>,
 }
 
 /// Global engine registry - initialized once, used during transpilation
@@ -185,6 +368,8 @@ impl EngineRegistry {
             method_ref_map: HashMap::new(),
             method_ref_reverse_map: HashMap::new(),
             method_defs: HashMap::new(),
+            field_assign_behavior: HashMap::new(),
+            field_assign_behavior_path: HashMap::new(),
         };
 
         //--------------------------------
@@ -364,8 +549,8 @@ impl EngineRegistry {
             ],
         );
 
-        // Node2D - inherits from Node, adds transform
-        // Note: global_transform and transform_dirty are runtime-only and not registered
+        // Node2D - inherits from Node, adds transform and global_transform
+        // Note: transform_dirty is runtime-only and not registered
         reg.register_node(
             NodeType::Node2D,
             Some(NodeType::Node),
@@ -374,6 +559,11 @@ impl EngineRegistry {
                     "transform",
                     Type::EngineStruct(EngineStruct::Transform2D),
                     Some(NodeFieldRef::Node2DTransform),
+                ),
+                (
+                    "global_transform",
+                    Type::EngineStruct(EngineStruct::Transform2D),
+                    Some(NodeFieldRef::Node2DGlobalTransform),
                 ),
                 (
                     "pivot",
@@ -388,6 +578,7 @@ impl EngineRegistry {
                 ),
             ],
         );
+        reg.register_field_assign_behavior(NodeType::Node2D, "global_transform", NodeFieldAssignBehavior::GlobalTransform2D);
 
         // Sprite2D - inherits from Node2D
         // Only script-accessible fields are registered here
@@ -477,12 +668,31 @@ impl EngineRegistry {
                 (
                     "transform",
                     Type::EngineStruct(EngineStruct::Transform3D),
-                    None,
+                    Some(NodeFieldRef::Node3DTransform),
                 ),
-                ("pivot", Type::EngineStruct(EngineStruct::Vector3), None),
-                ("visible", Type::Bool, None),
+                (
+                    "global_transform",
+                    Type::EngineStruct(EngineStruct::Transform3D),
+                    Some(NodeFieldRef::Node3DGlobalTransform),
+                ),
+                (
+                    "pivot",
+                    Type::EngineStruct(EngineStruct::Vector3),
+                    Some(NodeFieldRef::Node3DPivot),
+                ),
+                ("visible", Type::Bool, Some(NodeFieldRef::Node3DVisible)),
             ],
         );
+        reg.register_field_assign_behavior(NodeType::Node3D, "global_transform", NodeFieldAssignBehavior::GlobalTransform3D);
+        // 3D Euler-axis semantics for script writes:
+        // - `+=/-=` lowers to rotate_{x,y,z}(delta_degrees)
+        // - `=`/`*=`/`/=` operate on Euler degrees via rotation_euler()/set_rotation_euler()
+        reg.register_field_assign_behavior_path(NodeType::Node3D, "transform.rotation.x", NodeFieldAssignBehavior::EulerAxisLocal3DX);
+        reg.register_field_assign_behavior_path(NodeType::Node3D, "transform.rotation.y", NodeFieldAssignBehavior::EulerAxisLocal3DY);
+        reg.register_field_assign_behavior_path(NodeType::Node3D, "transform.rotation.z", NodeFieldAssignBehavior::EulerAxisLocal3DZ);
+        reg.register_field_assign_behavior_path(NodeType::Node3D, "global_transform.rotation.x", NodeFieldAssignBehavior::EulerAxisGlobal3DX);
+        reg.register_field_assign_behavior_path(NodeType::Node3D, "global_transform.rotation.y", NodeFieldAssignBehavior::EulerAxisGlobal3DY);
+        reg.register_field_assign_behavior_path(NodeType::Node3D, "global_transform.rotation.z", NodeFieldAssignBehavior::EulerAxisGlobal3DZ);
 
         // MeshInstance3D - inherits from Node3D
         reg.register_node(
@@ -627,6 +837,64 @@ impl EngineRegistry {
                     .insert(field_ref, (kind, field_name_str));
             }
         }
+    }
+
+    /// Register that assignments to this field should use get/set API (e.g. global_transform → convert to local).
+    pub fn register_field_assign_behavior(
+        &mut self,
+        kind: NodeType,
+        rust_field_name: &str,
+        behavior: NodeFieldAssignBehavior,
+    ) {
+        self.field_assign_behavior
+            .insert((kind, rust_field_name.to_string()), behavior);
+    }
+
+    /// Register that assignments to this *field path* should use a special lowering.
+    /// The path should be dot-separated Rust field names (e.g. "transform.rotation.z").
+    pub fn register_field_assign_behavior_path(
+        &mut self,
+        kind: NodeType,
+        rust_field_path: &str,
+        behavior: NodeFieldAssignBehavior,
+    ) {
+        self.field_assign_behavior_path
+            .insert((kind, rust_field_path.to_string()), behavior);
+    }
+
+    /// Look up assign behavior for a field *path*, walking the node base chain so subtypes inherit.
+    pub fn get_field_assign_behavior_path(
+        &self,
+        node_type: &NodeType,
+        rust_field_path: &str,
+    ) -> Option<NodeFieldAssignBehavior> {
+        let mut current = Some(*node_type);
+        while let Some(nt) = current {
+            if let Some(behavior) = self
+                .field_assign_behavior_path
+                .get(&(nt, rust_field_path.to_string()))
+            {
+                return Some(*behavior);
+            }
+            current = self.node_bases.get(&nt).copied();
+        }
+        None
+    }
+
+    /// Look up assign behavior for a field, walking the node base chain so subtypes inherit.
+    pub fn get_field_assign_behavior(
+        &self,
+        node_type: &NodeType,
+        rust_field_name: &str,
+    ) -> Option<NodeFieldAssignBehavior> {
+        let mut current = Some(*node_type);
+        while let Some(nt) = current {
+            if let Some(behavior) = self.field_assign_behavior.get(&(nt, rust_field_name.to_string())) {
+                return Some(*behavior);
+            }
+            current = self.node_bases.get(&nt).copied();
+        }
+        None
     }
 
     pub fn register_node_methods(

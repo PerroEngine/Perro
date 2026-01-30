@@ -13,6 +13,8 @@ var cab = new Cabbage { x: 111111 }
 
 on init() {
    Console.info("TestGlobal", TestGlobal::b)
+   Console.info("Root", Root::gas)
+   Console.info("AnotherGlobal", AnotherGlobal::a)
 
    var test_global_b = TestGlobal::b
   tex = Texture.load("res://doug.PNG")
@@ -40,11 +42,17 @@ on update() {
     self.transform.position.x += 150 * delta
 }
 
+
+
 fn test(u: int) {
     test_b = true
     Console.info("I was called externally through double colon", test_b, u)
 
-    Root::cabbage(123)
+    var b = Root::cabbage(123)
+    Console.error("b", b)
+
+    var c = b * 2.765
+    Console.error("c", c)
 }
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {

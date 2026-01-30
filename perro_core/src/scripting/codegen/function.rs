@@ -426,7 +426,12 @@ impl Function {
         param_list.push_str(", api: &mut ScriptApi<'_>");
 
         let renamed_func_name = rename_function(&self.name);
-        writeln!(out, "    fn {}({}) {{", renamed_func_name, param_list).unwrap();
+        let return_type_suffix = if self.return_type == Type::Void {
+            String::new()
+        } else {
+            format!(" -> {}", self.return_type.to_rust_type())
+        };
+        writeln!(out, "    fn {}({}){} {{", renamed_func_name, param_list, return_type_suffix).unwrap();
 
         let needs_self = self.uses_self;
 
@@ -515,6 +520,13 @@ impl Function {
                     merge_pairs.join(", ")
                 ));
             }
+        }
+
+        // Default return for non-void script methods (dispatch table wraps in json!())
+        if self.return_type != Type::Void {
+            out.push_str("    ");
+            out.push_str(&self.return_type.rust_default_value());
+            out.push_str("\n");
         }
 
         out.push_str("    }\n\n");

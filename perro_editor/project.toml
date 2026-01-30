@@ -13,9 +13,6 @@ msaa = "on"
 fps_cap = 500
 xps = 60
 
-[root]
-script = "res://scripts/root.rs"
-
 [meta]
 toolchain = "1.92.0"
 

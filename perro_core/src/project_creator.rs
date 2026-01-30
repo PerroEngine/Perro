@@ -373,7 +373,7 @@ msaa = "on"
 
 [performance]
 fps_cap = 500
-xps = 30
+xps = 60
 
 [input]
 # Input action mappings

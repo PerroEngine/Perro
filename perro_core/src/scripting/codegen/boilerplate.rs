@@ -741,10 +741,17 @@ let {param_name} = match {param_name}_opt {{
             param_list.push_str("api");
         }
 
+        let return_expr = if func.return_type == Type::Void {
+            format!(
+                "script.{renamed_func_name}({param_list});\n            Value::Null"
+            )
+        } else {
+            format!("json!(script.{renamed_func_name}({param_list}))")
+        };
         write!(
             dispatch_entries,
-            "        {func_id}u64 => | script: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| {{
-{param_parsing}            script.{renamed_func_name}({param_list});
+            "        {func_id}u64 => | script: &mut {struct_name}, params: &[Value], api: &mut ScriptApi<'_>| -> Value {{
+{param_parsing}            {return_expr}
         }},\n"
         )
         .unwrap();
@@ -789,10 +796,8 @@ impl ScriptObject for {struct_name} {{
         id: u64,
         api: &mut ScriptApi<'_>,
         params: &[Value],
-    ) {{
-        if let Some(f) = DISPATCH_TABLE.get(&id) {{
-            f(self, params, api);
-        }}
+    ) -> Value {{
+        DISPATCH_TABLE.get(&id).map_or(Value::Null, |f| f(self, params, api))
     }}
 
     // Attributes
@@ -842,7 +847,7 @@ static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut {struct_name}, &Value)> =
 
 static DISPATCH_TABLE: phf::Map<
     u64,
-    fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>),
+    fn(&mut {struct_name}, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {{
 {dispatch_entries}
     }};

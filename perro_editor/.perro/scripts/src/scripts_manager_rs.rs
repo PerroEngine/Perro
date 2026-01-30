@@ -1699,10 +1699,11 @@ impl ScriptObject for ManagerScript {
         id: u64,
         api: &mut ScriptApi<'_>,
         params: &[Value],
-    ) {
+    ) -> Value {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+        Value::Null
     }
 
     // Attributes

@@ -2287,31 +2287,75 @@ impl Stmt {
                         let field_path_vec: Vec<&str> = field_path.split('.').collect();
 
                         // Resolve field names in path (e.g., "texture" -> "texture_id")
-                        let resolved_field_path =
+                        let (resolved_field_path, node_type_enum_opt) =
                             if let Some(node_type_enum) = string_to_node_type(&node_type) {
                                 let resolved_path: Vec<String> = field_path_vec
                                     .iter()
                                     .map(|f| ENGINE_REGISTRY.resolve_field_name(&node_type_enum, f))
                                     .collect();
-                                resolved_path.join(".")
+                                (resolved_path.join("."), Some(node_type_enum))
                             } else {
-                                field_path.clone()
+                                (field_path.clone(), None)
                             };
 
                         let temp_decl = combined_temp_decl
                             .as_ref()
                             .map(|d| format!("        {}\n", d))
                             .unwrap_or_default();
-                        format!(
-                            "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                            temp_decl,
-                            node_id_with_self,
-                            clean_closure_var,
-                            node_type,
-                            clean_closure_var,
-                            resolved_field_path,
-                            final_rhs
-                        )
+
+                        let output = if let Some(node_type_enum) = node_type_enum_opt {
+                            let resolved_path: Vec<String> = field_path_vec
+                                .iter()
+                                .map(|f| ENGINE_REGISTRY.resolve_field_name(&node_type_enum, f))
+                                .collect();
+                            let resolved_field_path_full = resolved_path.join(".");
+                            // Path-based behaviors for plain assignment (e.g. transform.rotation.z = rhs)
+                            if let Some(behavior) = ENGINE_REGISTRY
+                                .get_field_assign_behavior_path(&node_type_enum, &resolved_field_path_full)
+                            {
+                                if let Some(code) = behavior.emit_euler_axis_3d_block_expr(
+                                    &node_id_with_self,
+                                    &node_type,
+                                    "set",
+                                    &final_rhs,
+                                ) {
+                                    return format!("{}        {}\n", temp_decl, code);
+                                }
+                            }
+                            let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
+                            if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(&node_type_enum, first_segment) {
+                                let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                                let mutate_expr = if rest_path.is_empty() {
+                                    format!("__g = {}", final_rhs)
+                                } else {
+                                    format!("__g.{} = {}", rest_path, final_rhs)
+                                };
+                                format!("{}        {}\n", temp_decl, behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type))
+                            } else {
+                                format!(
+                                    "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                    temp_decl,
+                                    node_id_with_self,
+                                    clean_closure_var,
+                                    node_type,
+                                    clean_closure_var,
+                                    resolved_field_path,
+                                    final_rhs
+                                )
+                            }
+                        } else {
+                            format!(
+                                "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                temp_decl,
+                                node_id_with_self,
+                                clean_closure_var,
+                                node_type,
+                                clean_closure_var,
+                                resolved_field_path,
+                                final_rhs
+                            )
+                        };
+                        output
                     }
                 } else {
                     // Regular member assignment (not a node)
@@ -2485,31 +2529,119 @@ impl Stmt {
                                     })
                                     .collect();
                                 let resolved_field_path = resolved_path.join(".");
-                                format!(
-                                    "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
-                                    node_id_with_self,
-                                    clean_closure_var,
-                                    node_type_name,
-                                    clean_closure_var,
-                                    resolved_field_path,
-                                    op.to_rust_assign(),
-                                    final_rhs
-                                )
+                                // Path-based behaviors (e.g. transform.rotation.z op= rhs)
+                                if let Some(behavior) = ENGINE_REGISTRY
+                                    .get_field_assign_behavior_path(&compatible_node_types[0], &resolved_field_path)
+                                {
+                                    let op_kind = match op {
+                                        Op::Add => Some("add"),
+                                        Op::Sub => Some("sub"),
+                                        Op::Mul => Some("mul"),
+                                        Op::Div => Some("div"),
+                                        _ => None,
+                                    };
+                                    if let Some(op_kind) = op_kind {
+                                        if let Some(code) = behavior.emit_euler_axis_3d_block_expr(
+                                            &node_id_with_self,
+                                            &node_type_name,
+                                            op_kind,
+                                            &final_rhs,
+                                        ) {
+                                            return format!("        {}\n", code);
+                                        }
+                                    }
+                                }
+                                let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
+                                if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(&compatible_node_types[0], first_segment) {
+                                    let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                                    let mutate_expr = if rest_path.is_empty() {
+                                        format!("__g {}= {}", op.to_rust_assign(), final_rhs)
+                                    } else {
+                                        format!("__g.{} {}= {}", rest_path, op.to_rust_assign(), final_rhs)
+                                    };
+                                    format!("        {}\n", behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type_name))
+                                } else {
+                                    format!(
+                                        "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
+                                        node_id_with_self,
+                                        clean_closure_var,
+                                        node_type_name,
+                                        clean_closure_var,
+                                        resolved_field_path,
+                                        op.to_rust_assign(),
+                                        final_rhs
+                                    )
+                                }
                             } else {
                                 let mut match_arms = Vec::new();
                                 for node_type_enum in &compatible_node_types {
                                     let node_type_name = format!("{:?}", node_type_enum);
-                                    // Resolve field names in path for this node type
                                     let resolved_path: Vec<String> = field_path_vec
                                         .iter()
-                                        .map(|f| {
-                                            ENGINE_REGISTRY.resolve_field_name(node_type_enum, f)
-                                        })
+                                        .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type_enum, f))
                                         .collect();
                                     let resolved_field_path = resolved_path.join(".");
+                                    // Path-based behaviors first (rotation/euler lowering)
+                                    let path_behavior = ENGINE_REGISTRY
+                                        .get_field_assign_behavior_path(node_type_enum, &resolved_field_path);
+                                    let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
+                                    let arm_code = if let Some(behavior) = path_behavior {
+                                        let op_kind = match op {
+                                            Op::Add => Some("add"),
+                                            Op::Sub => Some("sub"),
+                                            Op::Mul => Some("mul"),
+                                            Op::Div => Some("div"),
+                                            _ => None,
+                                        };
+                                        if let Some(op_kind) = op_kind {
+                                            if let Some(code) = behavior.emit_euler_axis_3d_block_expr(
+                                                &node_id_with_self,
+                                                &node_type_name,
+                                                op_kind,
+                                                &final_rhs,
+                                            ) {
+                                                code
+                                            } else {
+                                                format!(
+                                                    "api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }})",
+                                                    node_id_with_self,
+                                                    clean_closure_var,
+                                                    node_type_name,
+                                                    clean_closure_var,
+                                                    resolved_field_path,
+                                                    op.to_rust_assign(),
+                                                    final_rhs
+                                                )
+                                            }
+                                        } else {
+                                            format!(
+                                                "api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }})",
+                                                node_id_with_self,
+                                                clean_closure_var,
+                                                node_type_name,
+                                                clean_closure_var,
+                                                resolved_field_path,
+                                                op.to_rust_assign(),
+                                                final_rhs
+                                            )
+                                        }
+                                    } else if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(node_type_enum, first_segment) {
+                                        let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                                        let mutate_expr = if rest_path.is_empty() {
+                                            format!("__g {}= {}", op.to_rust_assign(), final_rhs)
+                                        } else {
+                                            format!("__g.{} {}= {}", rest_path, op.to_rust_assign(), final_rhs)
+                                        };
+                                        behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type_name)
+                                    } else {
+                                        format!(
+                                            "api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }})",
+                                            node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
+                                        )
+                                    };
                                     match_arms.push(format!(
-                                        "            NodeType::{} => api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }}),",
-                                        node_type_name, node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
+                                        "            NodeType::{} => {},",
+                                        node_type_name, arm_code
                                     ));
                                 }
 
@@ -2872,6 +3004,49 @@ impl Stmt {
                             .as_ref()
                             .map(|d| format!("        {}\n", d))
                             .unwrap_or_default();
+
+                        // Known node type: use get/set API for global_transform etc. if registered
+                        let field_path_vec: Vec<&str> = field_path.split('.').collect();
+                        if let Some(node_type_enum) = string_to_node_type(&node_type) {
+                            let resolved_path: Vec<String> = field_path_vec
+                                .iter()
+                                .map(|f| ENGINE_REGISTRY.resolve_field_name(&node_type_enum, f))
+                                .collect();
+                            let resolved_field_path = resolved_path.join(".");
+                            // Path-based behaviors first (rotation/euler lowering)
+                            if let Some(behavior) = ENGINE_REGISTRY
+                                .get_field_assign_behavior_path(&node_type_enum, &resolved_field_path)
+                            {
+                                let op_kind = match op {
+                                    Op::Add => Some("add"),
+                                    Op::Sub => Some("sub"),
+                                    Op::Mul => Some("mul"),
+                                    Op::Div => Some("div"),
+                                    _ => None,
+                                };
+                                if let Some(op_kind) = op_kind {
+                                    if let Some(code) = behavior.emit_euler_axis_3d_block_expr(
+                                        &node_id_with_self,
+                                        &node_type,
+                                        op_kind,
+                                        &final_rhs,
+                                    ) {
+                                        return format!("{}        {}\n", temp_decl, code);
+                                    }
+                                }
+                            }
+                            let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
+                            if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(&node_type_enum, first_segment) {
+                                let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                                let mutate_expr = if rest_path.is_empty() {
+                                    format!("__g {}= {}", op.to_rust_assign(), final_rhs)
+                                } else {
+                                    format!("__g.{} {}= {}", rest_path, op.to_rust_assign(), final_rhs)
+                                };
+                                return format!("{}        {}\n", temp_decl, behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type));
+                            }
+                        }
+
                         format!(
                             "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
                             temp_decl,

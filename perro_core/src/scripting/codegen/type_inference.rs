@@ -535,6 +535,9 @@ impl Script {
                 Type::Number(NumberKind::Float(32)),
                 Type::EngineStruct(EngineStructKind::Quaternion),
             ) => Some(Type::EngineStruct(EngineStructKind::Quaternion)),
+            // Value (Any/Object) op Number -> use the Number type so e.g. var c = b * 2 infers c as f32
+            (Type::Any | Type::Object, Type::Number(_)) => Some(right.clone()),
+            (Type::Number(_), Type::Any | Type::Object) => Some(left.clone()),
             _ => Some(left.clone()),
         }
     }

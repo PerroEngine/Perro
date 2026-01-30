@@ -75,7 +75,7 @@ pub trait ScriptObject: Script {
     fn get_var(&self, var_id: u64) -> Option<Value>;
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()>;
     fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>);
-    fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &[Value]);
+    fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &[Value]) -> Value;
 
     fn set_id(&mut self, id: NodeID);
     fn get_id(&self) -> NodeID;
@@ -168,6 +168,15 @@ pub trait SceneAccess {
     /// Clear the Node2D children cache when all children are removed
     fn update_node2d_children_cache_on_clear(&mut self, parent_id: NodeID);
 
+    /// Update the Node3D children cache when a child is added
+    fn update_node3d_children_cache_on_add(&mut self, parent_id: NodeID, child_id: NodeID);
+
+    /// Update the Node3D children cache when a child is removed
+    fn update_node3d_children_cache_on_remove(&mut self, parent_id: NodeID, child_id: NodeID);
+
+    /// Clear the Node3D children cache when all children are removed
+    fn update_node3d_children_cache_on_clear(&mut self, parent_id: NodeID);
+
     /// Get the next available node ID from the arena.
     /// Used in DLL mode to ensure unique IDs across DLLs.
     fn next_node_id(&mut self) -> NodeID;
@@ -202,6 +211,9 @@ pub trait SceneAccess {
         self.emit_signal_id_deferred(signal, params);
     }
 
+    /// Get the parent node ID if the node has a parent; None for root nodes.
+    fn get_parent_opt(&mut self, node_id: NodeID) -> Option<NodeID>;
+
     /// Get the global transform for a node (calculates lazily if dirty)
     fn get_global_transform(&mut self, node_id: NodeID) -> Option<crate::structs2d::Transform2D>;
 
@@ -214,4 +226,14 @@ pub trait SceneAccess {
 
     /// Mark a node's transform as dirty (and all its children)
     fn mark_transform_dirty_recursive(&mut self, node_id: NodeID);
+
+    /// Get the global transform for a Node3D (calculates lazily if dirty)
+    fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<crate::structs3d::Transform3D>;
+
+    /// Set the global transform for a Node3D (marks it as dirty)
+    fn set_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        transform: crate::structs3d::Transform3D,
+    ) -> Option<()>;
 }

@@ -102,7 +102,7 @@ fn default_fps_cap() -> f32 {
     500.0
 }
 fn default_xps() -> f32 {
-    30.0
+    60.0
 }
 
 /// Project handle — represents either a loaded or statically defined project.

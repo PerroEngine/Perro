@@ -74,6 +74,16 @@ impl Quaternion {
         self.to_glam()
     }
 
+    /// Create quaternion from Euler angles in **degrees** (pitch, yaw, roll).
+    /// Internally converted to radians for glam.
+    pub fn from_euler_degrees(pitch_deg: f32, yaw_deg: f32, roll_deg: f32) -> Self {
+        Self::from_euler(
+            pitch_deg.to_radians(),
+            yaw_deg.to_radians(),
+            roll_deg.to_radians(),
+        )
+    }
+
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Self {
         Self::from_glam(glam::Quat::from_euler(
             glam::EulerRot::YXZ,
@@ -100,6 +110,12 @@ impl Quaternion {
     pub fn to_euler(&self) -> (f32, f32, f32) {
         let (yaw, pitch, roll) = self.to_glam().to_euler(glam::EulerRot::YXZ);
         (pitch, yaw, roll)
+    }
+
+    /// Convert quaternion to Euler angles in **degrees** (pitch, yaw, roll).
+    pub fn to_euler_degrees(&self) -> (f32, f32, f32) {
+        let (p, y, r) = self.to_euler();
+        (p.to_degrees(), y.to_degrees(), r.to_degrees())
     }
 
     pub fn normalize(&self) -> Self {

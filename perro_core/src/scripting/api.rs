@@ -2157,9 +2157,9 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_function(&mut self, id: NodeID, func: &str, params: &[Value]) {
+    pub fn call_function(&mut self, id: NodeID, func: &str, params: &[Value]) -> Value {
         let func_id = self.string_to_u64(func);
-        self.call_function_id(id, func_id, params);
+        self.call_function_id(id, func_id, params)
     }
 
     /// Call a function on a script by ID
@@ -2176,7 +2176,7 @@ impl<'a> ScriptApi<'a> {
     /// because all access goes through the API, execution is synchronous, and the API controls
     /// all state mutations. There's no memory safety concern - each script is independently
     /// stored in the HashMap and accessed through the API.
-    pub fn call_function_id(&mut self, id: NodeID, func: u64, params: &[Value]) {
+    pub fn call_function_id(&mut self, id: NodeID, func: u64, params: &[Value]) -> Value {
         // Set ScriptApi context (for JoyCon API thread-local access)
         // This is idempotent - safe to call multiple times
         self.set_context();
@@ -2190,7 +2190,7 @@ impl<'a> ScriptApi<'a> {
         // Set current script ID for nested call detection
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
 
-        // Scripts are now always in memory as Rc<UnsafeCell<Box<dyn ScriptObject>>>, so we can access them directly
+        let result = // Scripts are now always in memory as Rc<UnsafeCell<Box<dyn ScriptObject>>>, so we can access them directly
         if let Some(script_rc) = self.scene.get_script(id) {
             // With UnsafeCell, we can always get a mutable reference, even for nested calls
             //
@@ -2242,20 +2242,23 @@ impl<'a> ScriptApi<'a> {
                 let script_ptr = script_rc.get();
                 let script_mut = &mut *script_ptr;
                 let script_mut = Box::as_mut(script_mut);
-                script_mut.call_function(func, self, params);
+                script_mut.call_function(func, self, params)
             }
-        }
+        } else {
+            Value::Null
+        };
 
         // Restore previous script ID (if any)
         CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = previous_script_id);
         Self::clear_context();
+        result
     }
 
     /// Alias for call_function_id (for backwards compatibility)
     /// The "fast" version was meant to skip context setup, but we always do it now
     #[cfg_attr(not(debug_assertions), inline)]
     pub(crate) fn call_function_id_fast(&mut self, id: NodeID, func: u64, params: &[Value]) {
-        self.call_function_id(id, func, params);
+        let _ = self.call_function_id(id, func, params);
     }
 
     #[cfg_attr(not(debug_assertions), inline)]
@@ -2505,7 +2508,7 @@ impl<'a> ScriptApi<'a> {
         F: FnOnce(&mut T),
     {
         // Get mutable access to the node
-        let is_node2d = {
+        let is_node2d_or_3d = {
             let node = self
                 .scene
                 .get_scene_node_mut(id)
@@ -2529,23 +2532,24 @@ impl<'a> ScriptApi<'a> {
                 );
             }
 
-            // Check if Node2D before releasing borrow (avoid redundant lookup)
+            // Check if Node2D/Node3D before releasing borrow (avoid redundant lookup)
             let is_node2d = node.as_node2d().is_some();
+            let is_node3d = node.as_node3d().is_some();
 
-            // Mark transform dirty if Node2D
+            // Mark transform dirty if Node2D or Node3D
             node.mark_transform_dirty_if_node2d();
+            node.mark_transform_dirty_if_node3d();
 
-            is_node2d
+            (is_node2d, is_node3d)
         }; // node borrow released here
 
         // Always call mark_needs_rerender - it will check HashSet.contains() (O(1))
         // and only add if not already in the set
         self.scene.mark_needs_rerender(id);
 
-        // If this is a Node2D, mark transform dirty recursively (including children)
-        // This ensures children's global transforms are recalculated when parent moves
-        // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
-        if is_node2d {
+        // If this is a Node2D or Node3D, mark transform dirty recursively (including children)
+        let (is_node2d, is_node3d) = is_node2d_or_3d;
+        if is_node2d || is_node3d {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
@@ -2560,7 +2564,7 @@ impl<'a> ScriptApi<'a> {
         F: FnOnce(&mut crate::nodes::node_registry::SceneNode),
     {
         // Get mutable access to the node
-        let is_node2d = {
+        let is_node2d_or_3d = {
             let node = self
                 .scene
                 .get_scene_node_mut(id)
@@ -2568,22 +2572,24 @@ impl<'a> ScriptApi<'a> {
 
             f(node); // mutate in place using BaseNode methods
 
-            // Check if Node2D before releasing borrow (avoid redundant lookup)
+            // Check if Node2D/Node3D before releasing borrow (avoid redundant lookup)
             let is_node2d = node.as_node2d().is_some();
+            let is_node3d = node.as_node3d().is_some();
 
-            // Mark transform dirty if Node2D
+            // Mark transform dirty if Node2D or Node3D
             node.mark_transform_dirty_if_node2d();
+            node.mark_transform_dirty_if_node3d();
 
-            is_node2d
+            (is_node2d, is_node3d)
         }; // node borrow released here
 
         // Always call mark_needs_rerender - it will check HashSet.contains() (O(1))
         // and only add if not already in the set
         self.scene.mark_needs_rerender(id);
 
-        // If this is a Node2D, mark transform dirty recursively (including children)
-        // Note: mark_transform_dirty_recursive will also add to dirty_nodes if needed
-        if is_node2d {
+        // If this is a Node2D or Node3D, mark transform dirty recursively (including children)
+        let (is_node2d, is_node3d) = is_node2d_or_3d;
+        if is_node2d || is_node3d {
             self.scene.mark_transform_dirty_recursive(id);
         }
     }
@@ -2790,6 +2796,49 @@ impl<'a> ScriptApi<'a> {
             return;
         }
 
+        // Preserve child's world transform by recomputing its local transform relative to the new parent.
+        // This matches the global→local conversion we do for global_transform assignment:
+        // new_local = inverse(new_parent_global) * old_child_global
+        let (child_global_2d_opt, new_parent_global_2d, child_global_3d_opt, new_parent_global_3d) = {
+            let child_node = self
+                .scene
+                .get_scene_node_ref(child_id)
+                .expect("Child node should exist (checked above)");
+
+            let is_2d = child_node.as_node2d().is_some();
+            let is_3d = child_node.as_node3d().is_some();
+
+            let child_global_2d_opt = if is_2d {
+                self.scene.get_global_transform(child_id)
+            } else {
+                None
+            };
+            let child_global_3d_opt = if is_3d {
+                self.scene.get_global_transform_3d(child_id)
+            } else {
+                None
+            };
+
+            // Parent global for the corresponding dimension; default = identity if parent isn't 2D/3D (or no parent).
+            let new_parent_global_2d = if is_2d {
+                self.scene.get_global_transform(new_parent_id).unwrap_or_default()
+            } else {
+                crate::structs2d::Transform2D::default()
+            };
+            let new_parent_global_3d = if is_3d {
+                self.scene.get_global_transform_3d(new_parent_id).unwrap_or_default()
+            } else {
+                crate::structs3d::Transform3D::default()
+            };
+
+            (
+                child_global_2d_opt,
+                new_parent_global_2d,
+                child_global_3d_opt,
+                new_parent_global_3d,
+            )
+        };
+
         let old_parent_id_opt = {
             let child_node = self
                 .scene
@@ -2801,9 +2850,11 @@ impl<'a> ScriptApi<'a> {
         // Remove from old parent if it has one (this also sets child's parent to None)
         if let Some(old_parent_id) = old_parent_id_opt {
             self.remove_child(old_parent_id, child_id);
-            // Update Node2D children cache for the old parent
+            // Update Node2D/Node3D children cache for the old parent
             self.scene
                 .update_node2d_children_cache_on_remove(old_parent_id, child_id);
+            self.scene
+                .update_node3d_children_cache_on_remove(old_parent_id, child_id);
         }
 
         // Create ParentType for new parent (need to do this before mutable borrow)
@@ -2821,9 +2872,37 @@ impl<'a> ScriptApi<'a> {
             parent_node.add_child(child_id);
         }
 
-        // Update Node2D children cache for the parent (if it's Node2D-based)
+        // Update Node2D/Node3D children cache for the parent
         self.scene
             .update_node2d_children_cache_on_add(new_parent_id, child_id);
+        self.scene
+            .update_node3d_children_cache_on_add(new_parent_id, child_id);
+
+        // Apply preserved transform (local = inv(parent_global) * old_global) for 2D/3D nodes.
+        let mut changed_transform = false;
+        if let Some(child_global_2d) = child_global_2d_opt {
+            let new_local = new_parent_global_2d.inverse().multiply(&child_global_2d);
+            if let Some(child_node) = self.scene.get_scene_node_mut(child_id) {
+                if let Some(node2d) = child_node.as_node2d_mut() {
+                    node2d.transform = new_local;
+                    changed_transform = true;
+                }
+            }
+        }
+        if let Some(child_global_3d) = child_global_3d_opt {
+            let new_local = new_parent_global_3d.inverse().multiply(&child_global_3d);
+            if let Some(child_node) = self.scene.get_scene_node_mut(child_id) {
+                if let Some(node3d) = child_node.as_node3d_mut() {
+                    node3d.transform = new_local;
+                    changed_transform = true;
+                }
+            }
+        }
+        if changed_transform {
+            // Ensure caches update and descendants recalc if needed
+            self.scene.mark_transform_dirty_recursive(child_id);
+            self.scene.mark_needs_rerender(child_id);
+        }
     }
 
     /// Get a child node by name, searching through the parent's children
@@ -2865,6 +2944,13 @@ impl<'a> ScriptApi<'a> {
             .unwrap_or_else(|| panic!("Node {} has no parent", node_id));
 
         parent_id
+    }
+
+    /// Get the parent node ID if the node has a parent; None for root nodes.
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn get_parent_opt(&mut self, node_id: NodeID) -> Option<NodeID> {
+        let node = self.scene.get_scene_node_ref(node_id)?;
+        node.get_parent().map(|p| p.id)
     }
 
     /// Returns the parent's NodeType if the node has a parent
@@ -3056,8 +3142,9 @@ impl<'a> ScriptApi<'a> {
             parent.clear_children();
         }
 
-        // Update Node2D children cache for the parent (now empty)
+        // Update Node2D/Node3D children cache for the parent (now empty)
         self.scene.update_node2d_children_cache_on_clear(parent_id);
+        self.scene.update_node3d_children_cache_on_clear(parent_id);
     }
 
     /// Remove a node from the scene
@@ -3085,9 +3172,11 @@ impl<'a> ScriptApi<'a> {
                 parent.remove_child(&node_id);
             }
 
-            // Update Node2D children cache for the parent
+            // Update Node2D/Node3D children cache for the parent
             self.scene
                 .update_node2d_children_cache_on_remove(parent_id, node_id);
+            self.scene
+                .update_node3d_children_cache_on_remove(parent_id, node_id);
         }
 
         // Now actually remove the node from the scene
@@ -3113,6 +3202,23 @@ impl<'a> ScriptApi<'a> {
         transform: crate::structs2d::Transform2D,
     ) -> Option<()> {
         self.scene.set_global_transform(node_id, transform)
+    }
+
+    /// Get the global transform for a Node3D (calculates lazily if dirty)
+    pub fn get_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+    ) -> Option<crate::structs3d::Transform3D> {
+        self.scene.get_global_transform_3d(node_id)
+    }
+
+    /// Set the global transform for a Node3D (marks it as dirty)
+    pub fn set_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        transform: crate::structs3d::Transform3D,
+    ) -> Option<()> {
+        self.scene.set_global_transform_3d(node_id, transform)
     }
 
     /// Set a script variable by name

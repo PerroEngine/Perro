@@ -284,6 +284,23 @@ impl PupParser {
         })
     }
 
+    /// Parse @root - script that attaches to the scene root (NodeID 1). Same as @global but fixed name "Root".
+    pub fn parse_root(&mut self) -> Result<Script, String> {
+        if self.current_token == PupToken::At {
+            self.next_token();
+            if self.current_token == PupToken::Root {
+                self.next_token();
+            } else {
+                return Err("Expected 'root' after '@'".into());
+            }
+        } else {
+            return Err("Expected @root declaration at start of file".into());
+        };
+        // Delegate to same body as global with name "Root"
+        let global_name = "Root".to_string();
+        self.parse_global_body(global_name)
+    }
+
     /// Parse @global Name - like a script that always extends Node internally (no "extends" in source).
     /// Globals get deterministic NodeIDs: Root=1, first global=2, second=3, etc.
     pub fn parse_global(&mut self) -> Result<Script, String> {
@@ -305,6 +322,11 @@ impl PupParser {
             return Err("Expected @global declaration at start of file".into());
         };
 
+        self.parse_global_body(global_name)
+    }
+
+    /// Shared body for @root and @global: parse vars, functions, etc. with given global name.
+    fn parse_global_body(&mut self, global_name: String) -> Result<Script, String> {
         // No "extends" - always Node internally
         let mut script_vars = Vec::new();
         let mut functions = Vec::new();

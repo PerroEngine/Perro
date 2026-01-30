@@ -510,10 +510,6 @@ impl Renderer3D {
 
         let material_path = material_path.unwrap_or("__default__");
         let material_gpu_slot = material_manager.get_or_upload_material(material_path, self);
-        println!(
-            "🔷 Queued 3D mesh: path=\"{}\" material=\"{}\"",
-            mesh_path, material_path
-        );
 
         let new_instance = MeshInstance {
             model_matrix: transform.to_mat4().to_cols_array_2d(),

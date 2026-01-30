@@ -11,11 +11,8 @@ virtual_height = 1080
 msaa = "on"
 
 [performance]
-fps_cap = 500
-xps = 30
-
-[root]
-script = "res://root.pup"
+fps_cap = 240
+xps = 60
 
 [input]
 # Input action mappings

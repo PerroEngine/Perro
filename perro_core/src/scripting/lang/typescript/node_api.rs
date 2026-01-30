@@ -91,6 +91,10 @@ impl TypeScriptNodeApiRegistry {
                     rust_field: NodeFieldRef::Node2DTransform,
                 },
                 NodeApiField {
+                    script_name: "globalTransform",
+                    rust_field: NodeFieldRef::Node2DGlobalTransform,
+                },
+                NodeApiField {
                     script_name: "pivot",
                     rust_field: NodeFieldRef::Node2DPivot,
                 },
@@ -183,6 +187,10 @@ impl TypeScriptNodeApiRegistry {
                 NodeApiField {
                     script_name: "transform",
                     rust_field: NodeFieldRef::Node3DTransform,
+                },
+                NodeApiField {
+                    script_name: "globalTransform",
+                    rust_field: NodeFieldRef::Node3DGlobalTransform,
                 },
                 NodeApiField {
                     script_name: "pivot",

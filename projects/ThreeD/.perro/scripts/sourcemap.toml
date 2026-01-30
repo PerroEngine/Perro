@@ -1,0 +1,18 @@
+[scripts.threed_pup]
+src = "res://threed.pup"
+lang = "pup"
+id = "threed_pup"
+
+[[scripts.threed_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 68
+
+[[scripts.threed_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 68
+g_end = 73
+
+[scripts.threed_pup.names]

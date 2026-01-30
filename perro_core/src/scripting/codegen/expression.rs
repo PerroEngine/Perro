@@ -705,6 +705,69 @@ impl Expr {
                     return format!("format!(\"{{}}{{}}\", {}, {})", l_str, r_str);
                 }
 
+                // Value (serde_json::Value) * Number or Number * Value: extract Value to the known numeric type
+                // so we do numeric op numeric instead of Value * Value (which doesn't implement Mul).
+                let is_numeric_op = matches!(
+                    op,
+                    Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Lt | Op::Gt | Op::Le | Op::Ge
+                );
+                let left_is_value =
+                    left_type == Some(Type::Any) || left_type == Some(Type::Object);
+                let right_is_value =
+                    right_type == Some(Type::Any) || right_type == Some(Type::Object);
+                let right_is_number =
+                    right_type.as_ref().map_or(false, |t| matches!(t, Type::Number(_)));
+                let left_is_number =
+                    left_type.as_ref().map_or(false, |t| matches!(t, Type::Number(_)));
+
+                fn value_to_numeric_extract(expr: &str, ty: &Type) -> String {
+                    let expr_clean = if expr.ends_with(".clone()") {
+                        &expr[..expr.len() - 7]
+                    } else {
+                        expr
+                    };
+                    match ty {
+                        Type::Number(NumberKind::Float(32)) => {
+                            format!("({}.as_f64().unwrap_or(0.0) as f32)", expr_clean)
+                        }
+                        Type::Number(NumberKind::Float(64)) => {
+                            format!("({}.as_f64().unwrap_or(0.0))", expr_clean)
+                        }
+                        Type::Number(NumberKind::Signed(w)) => match w {
+                            8 => format!("({}.as_i64().unwrap_or(0) as i8)", expr_clean),
+                            16 => format!("({}.as_i64().unwrap_or(0) as i16)", expr_clean),
+                            32 => format!("({}.as_i64().unwrap_or(0) as i32)", expr_clean),
+                            64 | 128 => format!("({}.as_i64().unwrap_or(0))", expr_clean),
+                            _ => format!("({}.as_i64().unwrap_or(0) as i32)", expr_clean),
+                        },
+                        Type::Number(NumberKind::Unsigned(w)) => match w {
+                            8 => format!("({}.as_u64().unwrap_or(0) as u8)", expr_clean),
+                            16 => format!("({}.as_u64().unwrap_or(0) as u16)", expr_clean),
+                            32 => format!("({}.as_u64().unwrap_or(0) as u32)", expr_clean),
+                            64 | 128 => format!("({}.as_u64().unwrap_or(0))", expr_clean),
+                            _ => format!("({}.as_u64().unwrap_or(0) as u32)", expr_clean),
+                        },
+                        _ => expr.to_string(),
+                    }
+                }
+
+                let (l_str, r_str, dominant_type) = if is_numeric_op
+                    && ((left_is_value && right_is_number) || (right_is_value && left_is_number))
+                {
+                    let (new_l, new_r, dom) = if left_is_value && right_is_number {
+                        let num_ty = right_type.as_ref().unwrap();
+                        let extract = value_to_numeric_extract(&l_str, num_ty);
+                        (extract, r_str.clone(), Some(num_ty.clone()))
+                    } else {
+                        let num_ty = left_type.as_ref().unwrap();
+                        let extract = value_to_numeric_extract(&r_str, num_ty);
+                        (l_str.clone(), extract, Some(num_ty.clone()))
+                    };
+                    (new_l, new_r, dom)
+                } else {
+                    (l_str.clone(), r_str.clone(), dominant_type)
+                };
+
                 // CRITICAL: If we detect integer * float mixing, ALWAYS cast the integer to the float type
                 // This must happen BEFORE any other type conversion logic
                 let (left_str, right_str) = if is_left_int

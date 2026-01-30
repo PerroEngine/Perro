@@ -91,6 +91,10 @@ impl CSharpNodeApiRegistry {
                     rust_field: NodeFieldRef::Node2DTransform,
                 },
                 NodeApiField {
+                    script_name: "GlobalTransform",
+                    rust_field: NodeFieldRef::Node2DGlobalTransform,
+                },
+                NodeApiField {
                     script_name: "Pivot",
                     rust_field: NodeFieldRef::Node2DPivot,
                 },
@@ -183,6 +187,10 @@ impl CSharpNodeApiRegistry {
                 NodeApiField {
                     script_name: "Transform",
                     rust_field: NodeFieldRef::Node3DTransform,
+                },
+                NodeApiField {
+                    script_name: "GlobalTransform",
+                    rust_field: NodeFieldRef::Node3DGlobalTransform,
                 },
                 NodeApiField {
                     script_name: "Pivot",

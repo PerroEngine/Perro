@@ -1,0 +1,11 @@
+@script Three extends MeshInstance3D
+
+on init() {
+ Console.info("hi")
+}
+
+on update(){
+var d = Time.get_delta()
+
+self.global_transform.position.z -= 10 * d
+}

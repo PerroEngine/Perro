@@ -959,7 +959,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             input_mgr.load_action_map(input_map);
         }
 
-        // Create global nodes (id 2, 3, ...) as siblings of Root — parent None, same as Root. Before main scene is merged.
+        // Global order: index 0 = @root script (attaches to Root node NodeID(1)); indices 1.. = @global scripts (siblings of Root).
         let global_order: Vec<String> = game_scene
             .provider
             .get_global_registry_order()
@@ -972,59 +972,26 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .iter()
             .map(|s| s.to_string())
             .collect();
+        let root_id = game_scene.get_root().get_id();
         let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
         for (i, identifier) in global_order.iter().enumerate() {
             let name = global_names
                 .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or(identifier.as_str());
-            let mut node = Node::new();
-            node.name = Cow::Owned(name.to_string());
-            let global_node = SceneNode::Node(node);
-            let global_id = game_scene.nodes.insert(global_node);
-            // No parent — globals are top-level siblings of Root, same as Root (parent None).
-            global_node_ids.push(global_id);
-        }
-
-        // ✅ root script first
-        let root_script_opt: Option<String> = {
-            let proj_ref = game_scene.project.borrow();
-            proj_ref.root_script().map(|s| s.to_string())
-        };
-
-        if let Some(root_script_path) = root_script_opt {
-            if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
-                if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
-                    let root_id = game_scene.get_root().get_id();
-                    let boxed = game_scene.instantiate_script(ctor, root_id);
-                    let handle = Rc::new(UnsafeCell::new(boxed));
-                    game_scene.scripts.insert(root_id, handle);
-
-                    let project_ref = game_scene.project.clone();
-                    let mut project_borrow = project_ref.borrow_mut();
-
-                    let now = Instant::now();
-                    let true_delta = match game_scene.last_scene_update {
-                        Some(prev) => now.duration_since(prev).as_secs_f32(),
-                        None => 0.0,
-                    };
-
-                    let mut api =
-                        ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
-                    api.call_init(root_id);
-
-                    // After script initialization, ensure renderable nodes are marked for rerender
-                    // (old system would have called mark_dirty() here)
-                    if let Some(node) = game_scene.nodes.get(root_id) {
-                        if node.is_renderable() {
-                            game_scene.needs_rerender.insert(root_id);
-                        }
-                    }
-                }
+            if i == 0 {
+                // Index 0 = Root script; attach to root node, don't create a new node.
+                global_node_ids.push(root_id);
+            } else {
+                let mut node = Node::new();
+                node.name = Cow::Owned(name.to_string());
+                let global_node = SceneNode::Node(node);
+                let global_id = game_scene.nodes.insert(global_node);
+                global_node_ids.push(global_id);
             }
         }
 
-        // ✅ attach global scripts in order and call init
+        // ✅ attach global scripts in order (index 0 = root script on root node) and call init
         for (identifier, &global_id) in global_order.iter().zip(global_node_ids.iter()) {
             if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
                 let boxed = game_scene.instantiate_script(ctor, global_id);
@@ -2579,23 +2546,147 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         }
     }
 
-    /// Set the global transform for a node (marks it as dirty)
+    /// Set the global transform for a Node2D.
+    /// Converts the desired world-space transform into local space (relative to parent) and sets
+    /// `transform` so that the normal propagation (parent_global * local → global) yields this value.
     pub fn set_global_transform(
         &mut self,
         node_id: NodeID,
-        transform: crate::structs2d::Transform2D,
+        desired_global: crate::structs2d::Transform2D,
     ) -> Option<()> {
-        if let Some(node) = self.nodes.get_mut(node_id) {
+        let parent_global = self
+            .nodes
+            .get(node_id)
+            .and_then(|n| n.get_parent())
+            .map(|p| self.get_global_transform(p.id))
+            .flatten()
+            .unwrap_or_default();
+
+        let local = parent_global.inverse().multiply(&desired_global);
+
+        let ok = if let Some(node) = self.nodes.get_mut(node_id) {
             if let Some(node2d) = node.as_node2d_mut() {
-                node2d.global_transform = transform;
-                node2d.transform_dirty = true;
-                Some(())
+                node2d.transform = local;
+                node2d.global_transform = desired_global;
+                node2d.transform_dirty = false;
+                true
             } else {
-                None
+                false
             }
         } else {
-            None
+            false
+        };
+        if ok {
+            self.mark_children_transform_dirty_recursive(node_id);
         }
+        ok.then_some(())
+    }
+
+    /// Get the global transform for a Node3D, calculating it lazily if dirty
+    pub fn get_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+    ) -> Option<crate::structs3d::Transform3D> {
+        if let Some(node) = self.nodes.get(node_id) {
+            if let Some(node3d) = node.as_node3d() {
+                if !node3d.transform_dirty {
+                    return Some(node3d.global_transform);
+                }
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        }
+
+        let mut chain: Vec<(NodeID, crate::structs3d::Transform3D)> = Vec::new();
+        let mut current_id = Some(node_id);
+        let mut cached_ancestor_id = None;
+        let mut cached_ancestor_transform = crate::structs3d::Transform3D::default();
+
+        while let Some(id) = current_id {
+            if let Some(node) = self.nodes.get(id) {
+                if let Some(node3d) = node.as_node3d() {
+                    if !node3d.transform_dirty {
+                        cached_ancestor_id = Some(id);
+                        cached_ancestor_transform = node3d.global_transform;
+                        break;
+                    }
+                    if let Some(local) = node.get_node3d_transform() {
+                        chain.push((id, local));
+                    } else {
+                        break;
+                    }
+                    current_id = node.get_parent().map(|p| p.id);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        if chain.is_empty() {
+            return None;
+        }
+
+        let mut parent_global = if cached_ancestor_id.is_some() {
+            cached_ancestor_transform
+        } else {
+            crate::structs3d::Transform3D::default()
+        };
+
+        for &(id, local) in chain.iter().rev() {
+            let global =
+                crate::structs3d::Transform3D::calculate_global(&parent_global, &local);
+
+            if let Some(node) = self.nodes.get_mut(id) {
+                if let Some(node3d) = node.as_node3d_mut() {
+                    node3d.global_transform = global;
+                    node3d.transform_dirty = false;
+                }
+            }
+
+            parent_global = global;
+        }
+
+        Some(parent_global)
+    }
+
+    /// Set the global transform for a Node3D.
+    /// Converts the desired world-space transform into local space (relative to parent) and sets
+    /// `transform` so that the normal propagation (parent_global * local → global) yields this value.
+    pub fn set_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        desired_global: crate::structs3d::Transform3D,
+    ) -> Option<()> {
+        let parent_global = self
+            .nodes
+            .get(node_id)
+            .and_then(|n| n.get_parent())
+            .map(|p| self.get_global_transform_3d(p.id))
+            .flatten()
+            .unwrap_or_default();
+
+        let local = parent_global.inverse().multiply(&desired_global);
+
+        let ok = if let Some(node) = self.nodes.get_mut(node_id) {
+            if let Some(node3d) = node.as_node3d_mut() {
+                node3d.transform = local;
+                node3d.global_transform = desired_global;
+                node3d.transform_dirty = false;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if ok {
+            self.mark_children_transform_dirty_recursive(node_id);
+        }
+        ok.then_some(())
     }
 
     /// Mark a node's transform as dirty (and all its children)
@@ -2623,7 +2714,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
 
             // Step 1: Get Node2D children list (immutable borrow)
-            let (node2d_child_ids, needs_cache_update): (Vec<NodeID>, bool) = {
+            let (node2d_child_ids, needs_2d_cache_update): (Vec<NodeID>, bool) = {
                 // Check if we have a cached list of Node2D children
                 let cached = self
                     .nodes
@@ -2690,17 +2781,83 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 }
             };
 
-            // Step 2: Mark this node as dirty and update cache if needed (mutable borrow)
+            // Step 1b: Get Node3D children list (immutable borrow)
+            let (node3d_child_ids, needs_3d_cache_update): (Vec<NodeID>, bool) = {
+                let cached = self
+                    .nodes
+                    .get(current_id)
+                    .and_then(|node| node.as_node3d())
+                    .and_then(|n3d| n3d.node3d_children_cache.as_ref());
+
+                if let Some(cached_ids) = cached {
+                    let filtered: Vec<NodeID> = cached_ids
+                        .iter()
+                        .copied()
+                        .filter(|&child_id| {
+                            if let Some(child_node) = self.nodes.get(child_id) {
+                                if let Some(parent) = child_node.get_parent() {
+                                    parent.id == current_id && child_node.as_node3d().is_some()
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        })
+                        .collect();
+
+                    let needs_update = filtered.len() != cached_ids.len();
+                    (filtered, needs_update)
+                } else {
+                    let child_ids: Vec<NodeID> = self
+                        .nodes
+                        .get(current_id)
+                        .map(|node| node.get_children().iter().copied().collect())
+                        .unwrap_or_default();
+
+                    let node3d_ids: Vec<NodeID> = child_ids
+                        .iter()
+                        .copied()
+                        .filter_map(|child_id| {
+                            if let Some(child_node) = self.nodes.get(child_id) {
+                                if child_node.as_node3d().is_some() {
+                                    Some(child_id)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if let Some(node) = self.nodes.get_mut(current_id) {
+                        if let Some(node3d) = node.as_node3d_mut() {
+                            node3d.node3d_children_cache = Some(node3d_ids.clone());
+                        }
+                    }
+
+                    (node3d_ids, false)
+                }
+            };
+
+            // Step 2: Mark this node as dirty and update caches if needed (mutable borrow)
             let is_renderable = {
                 let node = self.nodes.get_mut(current_id).unwrap();
 
                 // Mark transform as dirty if it's a Node2D-based node
                 if let Some(node2d) = node.as_node2d_mut() {
                     node2d.transform_dirty = true;
-
-                    // Update cache if we filtered out stale entries
-                    if needs_cache_update {
+                    if needs_2d_cache_update {
                         node2d.node2d_children_cache = Some(node2d_child_ids.clone());
+                    }
+                }
+
+                // Mark transform as dirty if it's a Node3D-based node
+                if let Some(node3d) = node.as_node3d_mut() {
+                    node3d.transform_dirty = true;
+                    if needs_3d_cache_update {
+                        node3d.node3d_children_cache = Some(node3d_child_ids.clone());
                     }
                 }
 
@@ -2713,13 +2870,31 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 self.needs_rerender.insert(current_id);
             }
 
-            // Step 4: Add Node2D children to work queue (process them iteratively)
-            // OPTIMIZED: Add to front of queue so we process depth-first (better cache locality)
-            // This ensures we process a subtree completely before moving to siblings
+            // Step 4: Add Node2D and Node3D children to work queue (depth-first)
             for child_id in node2d_child_ids.into_iter().rev() {
                 if self.nodes.contains_key(child_id) {
                     work_queue.push(child_id);
                 }
+            }
+            for child_id in node3d_child_ids.into_iter().rev() {
+                if self.nodes.contains_key(child_id) {
+                    work_queue.push(child_id);
+                }
+            }
+        }
+    }
+
+    /// Mark only the children (and their descendants) as transform dirty, not the node itself.
+    /// Used after set_global_transform so the node we set stays clean and children get recalculated.
+    fn mark_children_transform_dirty_recursive(&mut self, node_id: NodeID) {
+        let child_ids: Vec<NodeID> = self
+            .nodes
+            .get(node_id)
+            .map(|node| node.get_children().iter().copied().collect())
+            .unwrap_or_default();
+        for child_id in child_ids {
+            if self.nodes.contains_key(child_id) {
+                self.mark_transform_dirty_recursive(child_id);
             }
         }
     }
@@ -2786,6 +2961,49 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
         // If parent doesn't exist, that's also fine - node was probably deleted
+    }
+
+    /// Clear the Node3D children cache for a parent node (when all children are removed)
+    pub fn update_node3d_children_cache_on_clear(&mut self, parent_id: NodeID) {
+        if let Some(node) = self.nodes.get_mut(parent_id) {
+            if let Some(node3d) = node.as_node3d_mut() {
+                node3d.node3d_children_cache = Some(Vec::new());
+            }
+        }
+    }
+
+    /// Update the Node3D children cache for a parent node when a child is added
+    pub fn update_node3d_children_cache_on_add(&mut self, parent_id: NodeID, child_id: NodeID) {
+        let is_node3d = self
+            .nodes
+            .get(child_id)
+            .map(|n| n.as_node3d().is_some())
+            .unwrap_or(false);
+        if !is_node3d {
+            return;
+        }
+        if let Some(parent_node) = self.nodes.get_mut(parent_id) {
+            if let Some(node3d) = parent_node.as_node3d_mut() {
+                if let Some(ref mut cache) = node3d.node3d_children_cache {
+                    if !cache.contains(&child_id) {
+                        cache.push(child_id);
+                    }
+                } else {
+                    node3d.node3d_children_cache = None;
+                }
+            }
+        }
+    }
+
+    /// Update the Node3D children cache for a parent node when a child is removed
+    fn update_node3d_children_cache_on_remove(&mut self, parent_id: NodeID, child_id: NodeID) {
+        if let Some(parent_node) = self.nodes.get_mut(parent_id) {
+            if let Some(node3d) = parent_node.as_node3d_mut() {
+                if let Some(ref mut cache) = node3d.node3d_children_cache {
+                    cache.retain(|&id| id != child_id);
+                }
+            }
+        }
     }
 
     /// Update collider transforms to match node transforms
@@ -3132,6 +3350,18 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         // is calculated once and cached before all children use it.
         self.precalculate_transforms_in_dependency_order(&nodes_needing_rerender);
 
+        // Pre-calculate 3D global transforms for Node3D nodes (so render commands use world-space transform)
+        for &node_id in &nodes_needing_rerender {
+            if self
+                .nodes
+                .get(node_id)
+                .and_then(|n| n.as_node3d())
+                .is_some()
+            {
+                let _ = self.get_global_transform_3d(node_id);
+            }
+        }
+
         // OPTIMIZED: Parallelize data collection and batch queue operations
         // Collect render commands first, then batch queue them
         const PARALLEL_THRESHOLD: usize = 10;
@@ -3148,20 +3378,25 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         let needs_transform = node.as_node2d().is_some();
                         let node_type = node.get_type();
                         // OPTIMIZED: After precalculate_transforms_in_dependency_order, transforms are cached
-                        // Read cached transform directly (read-only) instead of calling get_global_transform
                         let global_transform_opt = if needs_transform {
                             node.as_node2d()
-                                .filter(|n2d| !n2d.transform_dirty) // Only use if not dirty (should be clean after precalc)
+                                .filter(|n2d| !n2d.transform_dirty)
                                 .map(|n2d| n2d.global_transform)
                         } else {
                             None
                         };
+                        // 3D global transform (pre-calculated above)
+                        let global_transform_3d_opt = node
+                            .as_node3d()
+                            .filter(|n3d| !n3d.transform_dirty)
+                            .map(|n3d| n3d.global_transform);
                         Some((
                             node_id,
                             timestamp,
                             needs_transform,
                             node_type,
                             global_transform_opt,
+                            global_transform_3d_opt,
                         ))
                     } else {
                         None
@@ -3173,7 +3408,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             // We'll defer texture path resolution until after parallel processing
             let render_data: Vec<_> = node_data
                 .par_iter()
-                .filter_map(|(node_id, timestamp, _needs_transform, _node_type, global_transform_opt)| {
+                .filter_map(
+                    |(node_id, timestamp, _needs_transform, _node_type, global_transform_opt, global_transform_3d_opt)| {
                     // Read-only access to process the node
                     if let Some(node) = self.nodes.get(*node_id) {
                         match node {
@@ -3286,12 +3522,14 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                             SceneNode::MeshInstance3D(mesh) => {
                                 if mesh.visible {
                                     if let Some(path) = &mesh.mesh_path {
+                                        let transform = global_transform_3d_opt
+                                            .unwrap_or(mesh.base.transform);
                                         return Some((
                                             *node_id,
                                             *timestamp,
                                             RenderCommand::Mesh {
                                                 path: path.to_string(),
-                                                transform: mesh.transform,
+                                                transform,
                                                 material_path: mesh.material_path.as_ref().map(|p| p.to_string()),
                                             },
                                         ));
@@ -3299,11 +3537,14 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                 }
                             }
                             SceneNode::OmniLight3D(light) => {
+                                let pos = global_transform_3d_opt
+                                    .map(|t| t.position.to_array())
+                                    .unwrap_or_else(|| light.base.transform.position.to_array());
                                 return Some((
                                     *node_id,
                                     *timestamp,
                                     RenderCommand::Light(crate::renderer_3d::LightUniform {
-                                        position: light.transform.position.to_array(),
+                                        position: pos,
                                         color: light.color.to_array(),
                                         intensity: light.intensity,
                                         ambient: [0.05, 0.05, 0.05],
@@ -3312,7 +3553,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                 ));
                             }
                             SceneNode::DirectionalLight3D(light) => {
-                                let dir = light.transform.forward();
+                                let dir = global_transform_3d_opt
+                                    .map(|t| t.forward())
+                                    .unwrap_or_else(|| light.base.transform.forward());
                                 return Some((
                                     *node_id,
                                     *timestamp,
@@ -3326,7 +3569,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                 ));
                             }
                             SceneNode::SpotLight3D(light) => {
-                                let dir = light.transform.forward();
+                                let dir = global_transform_3d_opt
+                                    .map(|t| t.forward())
+                                    .unwrap_or_else(|| light.base.transform.forward());
                                 return Some((
                                     *node_id,
                                     *timestamp,
@@ -3443,6 +3688,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 if let Some(node) = self.nodes.get_mut(node_id) {
                     if let Some(node2d) = node.as_node2d_mut() {
                         node2d.transform_dirty = false;
+                    }
+                    if let Some(node3d) = node.as_node3d_mut() {
+                        node3d.transform_dirty = false;
                     }
                 }
             }
@@ -3581,6 +3829,16 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     } else {
                         None
                     }
+                } else {
+                    None
+                };
+                let global_transform_3d_opt = if self
+                    .nodes
+                    .get(node_id)
+                    .and_then(|n| n.as_node3d())
+                    .is_some()
+                {
+                    self.get_global_transform_3d(node_id)
                 } else {
                     None
                 };
@@ -3725,10 +3983,12 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         SceneNode::MeshInstance3D(mesh) => {
                             if mesh.visible {
                                 if let Some(path) = &mesh.mesh_path {
+                                    let transform = global_transform_3d_opt
+                                        .unwrap_or(mesh.base.transform);
                                     gfx.renderer_3d.queue_mesh(
                                         node_id,
                                         path,
-                                        mesh.transform,
+                                        transform,
                                         mesh.material_path.as_deref(),
                                         &mut gfx.mesh_manager,
                                         &mut gfx.material_manager,
@@ -3743,10 +4003,13 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                 light.light_id = Some(gfx.light_manager.allocate());
                             }
                             let light_id = light.light_id.unwrap();
+                            let pos = global_transform_3d_opt
+                                .map(|t| t.position.to_array())
+                                .unwrap_or_else(|| light.base.transform.position.to_array());
                             gfx.renderer_3d.queue_light(
                                 light_id,
                                 crate::renderer_3d::LightUniform {
-                                    position: light.transform.position.to_array(),
+                                    position: pos,
                                     color: light.color.to_array(),
                                     intensity: light.intensity,
                                     ambient: [0.05, 0.05, 0.05],
@@ -3759,7 +4022,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                 light.light_id = Some(gfx.light_manager.allocate());
                             }
                             let light_id = light.light_id.unwrap();
-                            let dir = light.transform.forward();
+                            let dir = global_transform_3d_opt
+                                .map(|t| t.forward())
+                                .unwrap_or_else(|| light.base.transform.forward());
                             gfx.renderer_3d.queue_light(
                                 light_id,
                                 crate::renderer_3d::LightUniform {
@@ -3776,7 +4041,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                 light.light_id = Some(gfx.light_manager.allocate());
                             }
                             let light_id = light.light_id.unwrap();
-                            let dir = light.transform.forward();
+                            let dir = global_transform_3d_opt
+                                .map(|t| t.forward())
+                                .unwrap_or_else(|| light.base.transform.forward());
                             gfx.renderer_3d.queue_light(
                                 light_id,
                                 crate::renderer_3d::LightUniform {
@@ -3792,6 +4059,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     }
                     if let Some(node2d) = node.as_node2d_mut() {
                         node2d.transform_dirty = false;
+                    }
+                    if let Some(node3d) = node.as_node3d_mut() {
+                        node3d.transform_dirty = false;
                     }
                 }
             }
@@ -3929,6 +4199,12 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         self.physics_2d.as_ref()
     }
 
+    fn get_parent_opt(&mut self, node_id: NodeID) -> Option<NodeID> {
+        self.nodes
+            .get(node_id)
+            .and_then(|n| n.get_parent().map(|p| p.id))
+    }
+
     fn get_global_transform(&mut self, node_id: NodeID) -> Option<crate::structs2d::Transform2D> {
         Self::get_global_transform(self, node_id)
     }
@@ -3955,6 +4231,30 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
 
     fn update_node2d_children_cache_on_clear(&mut self, parent_id: NodeID) {
         Self::update_node2d_children_cache_on_clear(self, parent_id)
+    }
+
+    fn update_node3d_children_cache_on_add(&mut self, parent_id: NodeID, child_id: NodeID) {
+        Self::update_node3d_children_cache_on_add(self, parent_id, child_id)
+    }
+
+    fn update_node3d_children_cache_on_remove(&mut self, parent_id: NodeID, child_id: NodeID) {
+        Self::update_node3d_children_cache_on_remove(self, parent_id, child_id)
+    }
+
+    fn update_node3d_children_cache_on_clear(&mut self, parent_id: NodeID) {
+        Self::update_node3d_children_cache_on_clear(self, parent_id)
+    }
+
+    fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<crate::structs3d::Transform3D> {
+        Self::get_global_transform_3d(self, node_id)
+    }
+
+    fn set_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+        transform: crate::structs3d::Transform3D,
+    ) -> Option<()> {
+        Self::set_global_transform_3d(self, node_id, transform)
     }
 
     fn remove_node(&mut self, node_id: NodeID, gfx: &mut crate::rendering::Graphics) {
@@ -4108,7 +4408,7 @@ impl Scene<DllScriptProvider> {
             input_mgr.load_action_map(input_map);
         }
 
-        // Create global nodes (id 2, 3, ...) as siblings of Root — parent None, same as Root. Before main scene is merged.
+        // Global order: index 0 = @root script (attaches to Root node NodeID(1)); indices 1.. = @global scripts (siblings of Root).
         let global_order: Vec<String> = game_scene
             .provider
             .get_global_registry_order()
@@ -4121,61 +4421,25 @@ impl Scene<DllScriptProvider> {
             .iter()
             .map(|s| s.to_string())
             .collect();
+        let root_id = game_scene.get_root().get_id();
         let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
         for (i, identifier) in global_order.iter().enumerate() {
             let name = global_names
                 .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or(identifier.as_str());
-            let mut node = Node::new();
-            node.name = Cow::Owned(name.to_string());
-            let global_node = SceneNode::Node(node);
-            let global_id = game_scene.nodes.insert(global_node);
-            // No parent — globals are top-level siblings of Root, same as Root (parent None).
-            global_node_ids.push(global_id);
-        }
-
-        // ✅ root script first - load before merging main scene
-        let root_script_path_opt = {
-            let project_ref = game_scene.project.borrow();
-            project_ref.root_script().map(|s| s.to_string())
-        };
-
-        if let Some(root_script_path) = root_script_path_opt {
-            if let Ok(identifier) = script_path_to_identifier(&root_script_path) {
-                if let Ok(ctor) = game_scene.provider.load_ctor(&identifier) {
-                    let root_id = game_scene.get_root().get_id();
-                    let boxed = game_scene.instantiate_script(ctor, root_id);
-                    let handle = Rc::new(UnsafeCell::new(boxed));
-                    game_scene.scripts.insert(root_id, handle);
-
-                    let project_ref = game_scene.project.clone();
-                    let mut project_borrow = project_ref.borrow_mut();
-
-                    let now = Instant::now();
-                    let true_delta = match game_scene.last_scene_update {
-                        Some(prev) => now.duration_since(prev).as_secs_f32(),
-                        None => 0.0,
-                    };
-
-                    let mut api =
-                        ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
-                    api.call_init(root_id);
-
-                    // After script initialization, ensure renderable nodes are marked for rerender
-                    // (old system would have called mark_dirty() here)
-                    if let Some(node) = game_scene.nodes.get(root_id) {
-                        if node.is_renderable() {
-                            game_scene.needs_rerender.insert(root_id);
-                        }
-                    }
-                } else {
-                    println!("❌ Could not find symbol for {}", identifier);
-                }
+            if i == 0 {
+                global_node_ids.push(root_id);
+            } else {
+                let mut node = Node::new();
+                node.name = Cow::Owned(name.to_string());
+                let global_node = SceneNode::Node(node);
+                let global_id = game_scene.nodes.insert(global_node);
+                global_node_ids.push(global_id);
             }
         }
 
-        // ✅ attach global scripts in order and call init
+        // ✅ attach global scripts in order (index 0 = root script on root node) and call init
         for (identifier, &global_id) in global_order.iter().zip(global_node_ids.iter()) {
             if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
                 let boxed = game_scene.instantiate_script(ctor, global_id);

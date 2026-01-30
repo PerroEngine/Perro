@@ -519,10 +519,11 @@ impl ScriptObject for TypesPupScript {
         id: u64,
         api: &mut ScriptApi<'_>,
         params: &SmallVec<[Value; 3]>,
-    ) {
+    ) -> Value {
         if let Some(f) = DISPATCH_TABLE.get(&id) {
             f(self, params, api);
         }
+        Value::Null
     }
 
     // Attributes

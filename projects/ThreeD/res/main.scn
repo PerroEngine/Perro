@@ -29,7 +29,7 @@
           "scale": [1, 1, 1]
         },
 
-        "base": { "type": "Node", "name": "Cube", "parent": "0" }
+        "base": { "type": "Node", "name": "Cube", "parent": "0", "script_path": "res://threed.pup" }
       }
     },
     "3": {

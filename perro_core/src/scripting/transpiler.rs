@@ -583,6 +583,7 @@ pub fn transpile(
     let mut global_identifiers: HashSet<String> = HashSet::new(); // Track which file identifiers are @global scripts
     let mut identifier_to_global_name: std::collections::HashMap<String, String> =
         std::collections::HashMap::new(); // Map identifier -> global script name (e.g. "utils_pup" -> "Utils")
+    let mut root_identifier: Option<String> = None; // Script with @root attaches to NodeID(1)
 
     for path in &script_paths {
         let extension = path
@@ -594,7 +595,7 @@ pub fn transpile(
             let code = fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
-            // Check if it's a module or global
+            // Check if it's a module, root, or global
             if code.trim_start().starts_with("@module") {
                 let mut parser = PupParser::new(&code);
                 if let Ok(module) = parser.parse_module() {
@@ -607,6 +608,15 @@ pub fn transpile(
                         .insert(module.module_name.clone(), identifier.clone());
                     module_functions.insert(module.module_name.clone(), module.functions.clone());
                     module_variables.insert(module.module_name.clone(), module.variables.clone());
+                }
+            } else if code.trim_start().starts_with("@root") {
+                let mut parser = PupParser::new(&code);
+                if parser.parse_root().is_ok() {
+                    let identifier = script_path_to_identifier(&path.to_string_lossy())?;
+                    if root_identifier.replace(identifier.clone()).is_some() {
+                        return Err("Multiple @root scripts found; only one is allowed".to_string());
+                    }
+                    global_identifiers.insert(identifier);
                 }
             } else if code.trim_start().starts_with("@global") {
                 let mut parser = PupParser::new(&code);
@@ -622,7 +632,7 @@ pub fn transpile(
         }
     }
 
-    // Deterministic order for globals: sort by global *name* alphabetically. Same order used in lib.rs and scene creation.
+    // Deterministic order for globals: Root = index 0 (NodeID 1); then @global names alphabetically = 2, 3, 4...
     let global_name_to_identifier: std::collections::HashMap<String, String> =
         identifier_to_global_name
             .iter()
@@ -630,11 +640,29 @@ pub fn transpile(
             .collect();
     let mut sorted_global_names: Vec<String> = global_name_to_identifier.keys().cloned().collect();
     sorted_global_names.sort();
-    // global_order = list of identifiers in same order as sorted names (for lib.rs and scene.rs).
-    let global_order: Vec<String> = sorted_global_names
-        .iter()
-        .filter_map(|name| global_name_to_identifier.get(name).cloned())
-        .collect();
+    // global_order = [root_identifier?, ...@global identifiers by name order]. Root is always first (NodeID 1).
+    let global_order: Vec<String> = if let Some(ref r) = root_identifier {
+        let mut order = vec![r.clone()];
+        order.extend(
+            sorted_global_names
+                .iter()
+                .filter_map(|name| global_name_to_identifier.get(name).cloned()),
+        );
+        order
+    } else {
+        sorted_global_names
+            .iter()
+            .filter_map(|name| global_name_to_identifier.get(name).cloned())
+            .collect()
+    };
+    // Display names for get_global_registry_names: "Root" first, then @global names.
+    let global_names: Vec<String> = if root_identifier.is_some() {
+        let mut names = vec!["Root".to_string()];
+        names.extend(sorted_global_names.clone());
+        names
+    } else {
+        sorted_global_names.clone()
+    };
     // Single source of truth: Root = 1; @global names = 2, 3, 4... by alphabetical order (globals are siblings of Root, same parent None).
     let mut global_name_to_node_id: std::collections::HashMap<String, u32> =
         std::collections::HashMap::new();
@@ -651,7 +679,7 @@ pub fn transpile(
     println!(
         "🌐 Found {} global(s) (order): {:?}",
         global_order.len(),
-        sorted_global_names
+        global_names
     );
 
     // ============================================================
@@ -712,11 +740,47 @@ pub fn transpile(
                 let mut parser = PupParser::new(&code);
                 parser.set_source_file(res_path.clone());
 
-                // Try to parse as module, then global, then script
+                // Try to parse as module, then root, then global, then script
                 let is_module = code.trim_start().starts_with("@module");
+                let is_root = code.trim_start().starts_with("@root");
                 let is_global = code.trim_start().starts_with("@global");
 
-                if is_global {
+                if is_root {
+                    let mut script = parser.parse_root()?;
+                    script.source_file = Some(res_path.clone());
+                    script.module_names = module_names.clone();
+                    script.module_name_to_identifier = module_name_to_identifier.clone();
+                    script.module_functions = module_functions.clone();
+                    script.module_variables = module_variables.clone();
+                    script.global_names = std::collections::HashSet::from(["Root".to_string()]);
+                    for name in global_name_to_node_id.keys() {
+                        script.global_names.insert(name.clone());
+                    }
+                    script.global_name_to_node_id = global_name_to_node_id.clone();
+                    parse_time = parse_start.elapsed();
+
+                    transpile_start = Instant::now();
+                    let generated_code = script.to_rust(
+                        &identifier,
+                        project_root,
+                        None,
+                        verbose,
+                        &module_names,
+                        &module_name_to_identifier,
+                        &module_functions,
+                        &module_variables,
+                    );
+                    transpile_time = transpile_start.elapsed();
+
+                    let script_source_map = build_source_map_from_script(
+                        &res_path,
+                        &identifier,
+                        &code,
+                        &generated_code,
+                        &script,
+                    );
+                    source_map.add_script(identifier.clone(), script_source_map.clone());
+                } else if is_global {
                     let mut script = parser.parse_global()?;
                     script.source_file = Some(res_path.clone());
                     script.module_names = module_names.clone();
@@ -999,7 +1063,7 @@ pub fn transpile(
         &active_ids,
         &module_identifiers,
         &global_order,
-        &sorted_global_names,
+        &global_names,
     )?;
 
     // Note: Hash is written after successful compilation, not here

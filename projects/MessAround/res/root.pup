@@ -1,4 +1,4 @@
-@script Root extends Node
+@root
 
 var gas = "hello gas"
 
@@ -6,7 +6,7 @@ on init() {
 
 }
 
-fn cabbage(c: int) {
-    Console.info("cabbage", c)
+fn cabbage(c: int) -> int {
+    return c * 2
 }
 

@@ -3681,12 +3681,8 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         writeln!(manifest_file, "        {}f32,", project.virtual_width())?;
         writeln!(manifest_file, "        {}f32,", project.virtual_height())?;
 
-        // Handle optional root script
-        if let Some(script) = project.root_script() {
-            writeln!(manifest_file, "        Some(\"{}\".to_string()),", script)?;
-        } else {
-            writeln!(manifest_file, "        None,")?;
-        }
+        // Root script is now from @root in a .pup file (first in get_global_registry_order), not project.toml
+        writeln!(manifest_file, "        None,")?;
 
         // Pass PHF map references
         if !project.metadata().is_empty() {
