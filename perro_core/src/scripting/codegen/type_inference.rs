@@ -5,7 +5,6 @@ use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Type};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 
-use super::cache::{get_cached_type, set_cached_type};
 use super::utils::{is_node_type, string_to_node_type};
 
 impl Script {
@@ -306,13 +305,9 @@ impl Script {
     pub fn infer_expr_type(&self, expr: &Expr, current_func: Option<&Function>) -> Option<Type> {
         use Type::*;
 
-        // Check cache first for performance
-        let cache_key = expr as *const Expr as usize;
-        if let Some(cached) = get_cached_type(cache_key) {
-            // eprintln!("[INFER_TYPE] CACHE HIT for expr {:?} -> {:?}", expr, cached);
-            return cached;
-        }
-        // eprintln!("[INFER_TYPE] CACHE MISS for expr {:?}", expr);
+        // Do not use a cache keyed by pointer address: addresses differ between runs, so cache
+        // hits/misses are non-deterministic and cause different types → different codegen.
+        // Always recompute for deterministic output.
 
         let result = match expr {
             Expr::Literal(lit) => {
@@ -582,10 +577,6 @@ impl Script {
             }
             Expr::BaseAccess => Some(Custom(self.node_type.clone())),
         };
-
-        // Cache the result
-        // eprintln!("[INFER_TYPE] CACHING result for expr {:?} -> {:?}", expr, result);
-        set_cached_type(cache_key, result.clone());
 
         result
     }

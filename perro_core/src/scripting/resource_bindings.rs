@@ -153,7 +153,7 @@ impl ModuleCodegen for SignalResource {
                             format!("api.emit_signal_id_deferred({signal}, &[])")
                         }
                     }
-                    _ => unreachable!(),
+                    _ => unreachable!("SignalResource variant covered above"),
                 }
             }
         }

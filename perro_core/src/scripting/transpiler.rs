@@ -1066,6 +1066,33 @@ pub fn transpile(
         &global_names,
     )?;
 
+    // Hash all generated Rust output for deterministic verification (same PUP → same hash)
+    let scripts_src = project_root.join(".perro/scripts/src");
+    let mut output_hash: Option<String> = None;
+    if scripts_src.exists() {
+        let mut entries: Vec<_> = fs::read_dir(&scripts_src)
+            .map_err(|e| format!("Failed to read scripts src dir: {}", e))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().extension().and_then(|s| s.to_str()) == Some("rs")
+            })
+            .collect();
+        entries.sort_by(|a, b| a.path().to_string_lossy().cmp(&b.path().to_string_lossy()));
+        let mut hasher = Sha256::new();
+        for entry in entries {
+            let path = entry.path();
+            let content = fs::read_to_string(&path).unwrap_or_default();
+            hasher.update(path.to_string_lossy().as_bytes());
+            hasher.update(b"\0");
+            hasher.update(content.as_bytes());
+            hasher.update(b"\0");
+        }
+        output_hash = Some(format!("{:x}", hasher.finalize()));
+    }
+    if let Some(ref hash) = output_hash {
+        println!("✅ Scripts ready. Output hash: {}", hash);
+    }
+
     // Note: Hash is written after successful compilation, not here
     // This allows the compile step to check if recompilation is needed
 

@@ -439,98 +439,19 @@ impl ModuleCodegen for ConsoleApi {
         _needs_self: bool,
         current_func: Option<&Function>,
     ) -> String {
-        // DEBUG: Log what we're receiving
-        if !args.is_empty()
-            && (args_strs.is_empty() || args_strs.iter().any(|s| s.trim().is_empty()))
-        {
-            eprintln!(
-                "[DEBUG ConsoleApi::to_rust_prepared] args.len()={}, args_strs.len()={}, args_strs={:?}, args={:?}",
-                args.len(),
-                args_strs.len(),
-                args_strs,
-                args
-            );
-        }
-
-        // Ensure we have arguments - if args_strs is empty but args is not, regenerate from args
-        // This is critical when nested API calls are extracted to temp variables
-        // Use the same needs_self that was passed to to_rust_prepared
-        let mut args_strs = if args_strs.is_empty() && !args.is_empty() {
-            // Fallback: generate args_strs directly from args using generate_rust_args
-            generate_rust_args(args, script, _needs_self, current_func, None)
-        } else {
-            args_strs.to_vec()
-        };
-
-        // Check if args_strs has wrong length or contains empty strings - regenerate if so
-        // This handles cases where args_strs was generated before temp variable extraction
-        if args_strs.len() != args.len() || args_strs.iter().any(|s| s.trim().is_empty()) {
+        // Ensure args_strs is valid: same length as args, no empty strings.
+        // Regenerate from args when needed (e.g. after temp variable extraction).
+        let mut args_strs = args_strs.to_vec();
+        let needs_regenerate = args_strs.is_empty() && !args.is_empty()
+            || args_strs.len() != args.len()
+            || args_strs.iter().any(|s| s.trim().is_empty());
+        if needs_regenerate {
             args_strs = generate_rust_args(args, script, _needs_self, current_func, None);
-        }
-
-        // Double-check: if args_strs is still empty but args is not, something is very wrong
-        // In this case, generate args_strs from args directly using generate_rust_args again
-        // This handles cases where generate_rust_args might have failed the first time
-        if args_strs.is_empty() && !args.is_empty() {
-            // Last resort: try generate_rust_args again, or convert args to strings directly
-            let regenerated = generate_rust_args(args, script, _needs_self, current_func, None);
-            if regenerated.is_empty() {
-                // If still empty, convert Expr to strings directly as last resort
+            if args_strs.is_empty() && !args.is_empty() {
                 args_strs = args
                     .iter()
-                    .map(|a| {
-                        // Use the Expr's to_rust method directly
-                        a.to_rust(_needs_self, script, None, current_func, None)
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                args_strs = regenerated;
-            }
-        }
-
-        // Ensure args_strs is not empty - if it is, we have a serious problem
-        if args_strs.is_empty() && !args.is_empty() {
-            // This should never happen if the fallbacks above worked, but just in case
-            // Generate a format string with the arguments directly
-            let direct_args: Vec<String> = args
-                .iter()
-                .map(|a| a.to_rust(_needs_self, script, None, current_func, None))
-                .collect();
-            if !direct_args.is_empty() {
-                return match self {
-                    ConsoleApi::Log => format!(
-                        "api.print(format!(\"{}\", {}))",
-                        (0..direct_args.len())
-                            .map(|_| "{}")
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        direct_args.join(", ")
-                    ),
-                    ConsoleApi::Warn => format!(
-                        "api.print_warn(format!(\"{}\", {}))",
-                        (0..direct_args.len())
-                            .map(|_| "{}")
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        direct_args.join(", ")
-                    ),
-                    ConsoleApi::Error => format!(
-                        "api.print_error(format!(\"{}\", {}))",
-                        (0..direct_args.len())
-                            .map(|_| "{}")
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        direct_args.join(", ")
-                    ),
-                    ConsoleApi::Info => format!(
-                        "api.print_info(format!(\"{}\", {}))",
-                        (0..direct_args.len())
-                            .map(|_| "{}")
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        direct_args.join(", ")
-                    ),
-                };
+                    .map(|a| a.to_rust(_needs_self, script, None, current_func, None))
+                    .collect::<Vec<_>>();
             }
         }
 

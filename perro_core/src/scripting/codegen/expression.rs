@@ -11,6 +11,15 @@ use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Stmt, Type
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 
+/// If `key` is a string literal or identifier, return the field name for struct field access.
+fn index_field_name(key: &Expr) -> Option<&str> {
+    match key {
+        Expr::Literal(Literal::String(s)) => Some(s.as_str()),
+        Expr::Ident(s) => Some(s.as_str()),
+        _ => None,
+    }
+}
+
 /// Closure body for read_scene_node when reading a base Node field (name, id, parent, etc.).
 /// Uses BaseNode trait on SceneNode (get_name(), get_id(), etc.) — not read_node with &Node.
 fn scene_node_base_field_read(field: &str, result_type: Option<&Type>) -> String {
@@ -4419,15 +4428,10 @@ impl Expr {
                     base_type.clone()
                 };
                 if key_is_field_like {
-                    if let Some(Type::Custom(_)) = &effective_base_type {
-                        let field_name = match key.as_ref() {
-                            Expr::Literal(Literal::String(s)) => s.as_str(),
-                            Expr::Ident(s) => s.as_str(),
-                            _ => "",
-                        };
-                        if !field_name.is_empty() {
-                            return format!("{}.{}", base_code, field_name);
-                        }
+                    if let (Some(Type::Custom(_)), Some(field_name)) =
+                        (&effective_base_type, index_field_name(key))
+                    {
+                        return format!("{}.{}", base_code, field_name);
                     }
                 }
 
@@ -4469,24 +4473,20 @@ impl Expr {
 
                     // ----------------------------------------------------------
                     // ✅ Dynamic JSON object (serde_json::Value)
-                    // When base is an Ident, check variable's declared type: if Custom (struct), use field access.
+                    // When base is an Ident, check declared type: if Custom (struct), use field access.
                     // ----------------------------------------------------------
                     Some(Type::Object) => {
-                        if let Expr::Ident(var_name) = base.as_ref() {
-                            if matches!(key.as_ref(), Expr::Literal(Literal::String(_)) | Expr::Ident(_)) {
-                                if let Some(Type::Custom(_)) = script.get_variable_type(var_name) {
-                                    let field_name = match key.as_ref() {
-                                        Expr::Literal(Literal::String(s)) => s.as_str(),
-                                        Expr::Ident(s) => s.as_str(),
-                                        _ => "",
-                                    };
-                                    if !field_name.is_empty() {
-                                        return format!("{}.{}", base_code, field_name);
-                                    }
-                                }
+                        if let (Expr::Ident(var_name), Some(field_name)) =
+                            (base.as_ref(), index_field_name(key))
+                        {
+                            if script
+                                .get_declared_variable_type(var_name, current_func)
+                                .as_ref()
+                                .map_or(false, |t| matches!(t, Type::Custom(_)))
+                            {
+                                return format!("{}.{}", base_code, field_name);
                             }
                         }
-                        // Produces a `Value`, good for later .as_* casts
                         format!("{}[{}].clone()", base_code, key_code)
                     }
 
@@ -4550,17 +4550,10 @@ impl Expr {
                     }
 
                     // ----------------------------------------------------------
-                    // Custom type (struct): key is field name -> use field access .field_name
-                    // e.g. player_as_entity_from_array["entity_name"] -> .entity_name
-                    // Key can be Literal::String("entity_name") or Ident("entity_name") depending on parser.
+                    // Custom type (struct): key is field name -> .field_name; else numeric index.
                     // ----------------------------------------------------------
                     Some(Type::Custom(_)) => {
-                        let field_name = match key.as_ref() {
-                            Expr::Literal(Literal::String(s)) => Some(s.as_str()),
-                            Expr::Ident(s) => Some(s.as_str()),
-                            _ => None,
-                        };
-                        if let Some(field_name) = field_name {
+                        if let Some(field_name) = index_field_name(key) {
                             format!("{}.{}", base_code, field_name)
                         } else {
                             let index_code = key.to_rust(
@@ -4576,24 +4569,8 @@ impl Expr {
                             )
                         }
                     }
-                    // When base_type is None (or other) but base is a variable typed as Custom (struct), use field access.
-                    _ => {
-                        if let Expr::Ident(var_name) = base.as_ref() {
-                            if matches!(key.as_ref(), Expr::Literal(Literal::String(_)) | Expr::Ident(_))
-                                && script.get_variable_type(var_name).as_ref().map_or(false, |t| matches!(t, Type::Custom(_)))
-                            {
-                                let field_name = match key.as_ref() {
-                                    Expr::Literal(Literal::String(s)) => s.as_str(),
-                                    Expr::Ident(s) => s.as_str(),
-                                    _ => "",
-                                };
-                                if !field_name.is_empty() {
-                                    return format!("{}.{}", base_code, field_name);
-                                }
-                            }
-                        }
-                        "/* unsupported index expression */".to_string()
-                    }
+                    // Unsupported: not Map/Array/FixedArray/Object/Custom (e.g. unknown type).
+                    _ => "/* unsupported index expression */".to_string(),
                 }
             }
             Expr::ObjectLiteral(items) => {

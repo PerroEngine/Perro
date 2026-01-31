@@ -1,34 +1,15 @@
-// Type inference cache for performance optimization
-use crate::scripting::ast::{Expr, Type};
+// Caches for codegen (script members only; type inference cache was removed for determinism)
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 thread_local! {
-    static TYPE_CACHE: RefCell<HashMap<usize, Option<Type>>> = RefCell::new(HashMap::new());
     pub(crate) static SCRIPT_MEMBERS_CACHE: RefCell<Option<(usize, std::collections::HashSet<String>)>> = RefCell::new(None);
 }
 
-#[allow(dead_code)]
-pub(crate) fn expr_cache_key(expr: &Expr) -> usize {
-    expr as *const Expr as usize
-}
-
-pub(crate) fn clear_type_cache() {
-    TYPE_CACHE.with(|cache| cache.borrow_mut().clear());
-}
+/// No-op: type inference cache was removed so codegen is deterministic (same input → same output).
+pub(crate) fn clear_type_cache() {}
 
 pub(crate) fn clear_script_members_cache() {
     SCRIPT_MEMBERS_CACHE.with(|cache| *cache.borrow_mut() = None);
-}
-
-pub(crate) fn get_cached_type(key: usize) -> Option<Option<Type>> {
-    TYPE_CACHE.with(|cache| cache.borrow().get(&key).cloned())
-}
-
-pub(crate) fn set_cached_type(key: usize, typ: Option<Type>) {
-    TYPE_CACHE.with(|cache| {
-        cache.borrow_mut().insert(key, typ);
-    });
 }
 
 #[allow(dead_code)]

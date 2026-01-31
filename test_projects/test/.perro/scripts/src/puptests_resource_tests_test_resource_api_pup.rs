@@ -139,8 +139,8 @@ impl PuptestsResourceTestsTestResourceApiPupScript {
     fn __t_test_map(&mut self, api: &mut ScriptApi<'_>) {
         let mut __t_m: HashMap<String, Value> = HashMap::new();
         __t_m.insert(String::from("key"), json!(String::from("value")));
-        let mut __t_v: Value = __t_m.get(&String::from("key")).cloned().unwrap_or_default();
-        let mut __t_has: bool = __t_m.contains_key(&String::from("key"));
+        let mut __t_v: Value = __t_m.get(String::from("key").as_str()).cloned().unwrap_or_default();
+        let mut __t_has: bool = __t_m.contains_key(String::from("key").as_str());
         let mut __t_mlen = __t_m["len"].clone();
     }
 
