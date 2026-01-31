@@ -16,12 +16,12 @@ on init() {
     Console.info("time", time)
     Console.info("cam", cam)
     
-   Console.info("TestGlobal", TestGlobal::b)
-   Console.info("Root", Root::gas)
-   Console.info("AnotherGlobal", AnotherGlobal::a)
+    Console.info("TestGlobal", TestGlobal::b)
+    Console.info("Root", Root::gas)
+    Console.info("AnotherGlobal", AnotherGlobal::a)
 
-   var test_global_b = TestGlobal::b
-  tex = Texture.load("res://doug.PNG")
+    var test_global_b = TestGlobal::b
+    tex = Texture.load("res://obama.jpg")
     self.transform.position = new Vector2(-700, -70)
 
     PoopyButt.test(12312)
@@ -37,7 +37,7 @@ on init() {
     Console.info(self)
    
     
- Console.info("Count", c)
+    Console.info("Count", c)
 
 }
 
@@ -105,7 +105,7 @@ on Deadzone_AreaExited(c: CollisionShape2D) {
     if (c.get_parent() == self) {
         Console.info("area exit")
         self.transform.position.y -= 105
-        self.texture = Texture.load("res://obama.jpg")
+        self.texture = tex
         self.transform.scale = new Vector2(0.25, 0.25)
     }
 }

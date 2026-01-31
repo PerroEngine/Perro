@@ -3688,14 +3688,24 @@ impl Stmt {
                     .copied()
                     .map(|id| format!("NodeID::from_u32({})", id))
                     .unwrap_or_else(|| format!("{}_id", var));
-                // If var is Option<NodeID> (e.g. from get_node), unwrap so get_script_var_id/set_script_var_id get NodeID
-                if let Some(ty) = script.get_variable_type(var).or_else(|| {
+                // If var is Option<NodeID> (e.g. from get_node), unwrap so get_script_var_id/set_script_var_id get NodeID.
+                // Do NOT add .expect() for globals (NodeID::from_u32) or for function params typed as node (concrete NodeID).
+                let ty = script.get_variable_type(var).or_else(|| {
                     current_func.and_then(|f| {
                         f.locals.iter().find(|v| v.name == *var).and_then(|v| v.typ.as_ref())
+                    }).or_else(|| {
+                        current_func.and_then(|f| {
+                            f.params.iter().find(|p| p.name == *var).map(|p| &p.typ)
+                        })
                     })
-                }) {
-                    if matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
-                        || matches!(ty, Type::Custom(name) if name == "UuidOption")
+                });
+                if let Some(ty) = ty {
+                    let is_concrete_node_param = current_func.and_then(|f| {
+                        f.params.iter().find(|p| p.name == *var).map(|p| matches!(p.typ, Type::Node(_) | Type::DynNode))
+                    }).unwrap_or(false);
+                    if !node_id_expr.starts_with("NodeID::from_u32(") && !is_concrete_node_param
+                        && (matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
+                            || matches!(ty, Type::Custom(name) if name == "UuidOption"))
                     {
                         node_id_expr = format!("{}.expect(\"Child node not found\")", node_id_expr);
                     }
@@ -3729,13 +3739,22 @@ impl Stmt {
                     .copied()
                     .map(|id| format!("NodeID::from_u32({})", id))
                     .unwrap_or_else(|| format!("{}_id", var));
-                if let Some(ty) = script.get_variable_type(var).or_else(|| {
+                let ty = script.get_variable_type(var).or_else(|| {
                     current_func.and_then(|f| {
                         f.locals.iter().find(|v| v.name == *var).and_then(|v| v.typ.as_ref())
+                    }).or_else(|| {
+                        current_func.and_then(|f| {
+                            f.params.iter().find(|p| p.name == *var).map(|p| &p.typ)
+                        })
                     })
-                }) {
-                    if matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
-                        || matches!(ty, Type::Custom(name) if name == "UuidOption")
+                });
+                if let Some(ty) = ty {
+                    let is_concrete_node_param = current_func.and_then(|f| {
+                        f.params.iter().find(|p| p.name == *var).map(|p| matches!(p.typ, Type::Node(_) | Type::DynNode))
+                    }).unwrap_or(false);
+                    if !node_id_expr.starts_with("NodeID::from_u32(") && !is_concrete_node_param
+                        && (matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
+                            || matches!(ty, Type::Custom(name) if name == "UuidOption"))
                     {
                         node_id_expr = format!("{}.expect(\"Child node not found\")", node_id_expr);
                     }

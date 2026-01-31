@@ -61,6 +61,16 @@ impl Script {
             return "self.id".to_string();
         }
 
+        // Concrete NodeID: Node/DynNode or NodeID::from_u32(...) — no cast or .expect() needed
+        if matches!(to, Type::DynNode) {
+            if matches!(from, Type::Node(_) | Type::DynNode) {
+                return expr.to_string();
+            }
+            if expr.starts_with("NodeID::from_u32(") {
+                return expr.to_string();
+            }
+        }
+
         // Direct handling for common conversions
         match (from, to) {
             (from_ty, Type::Option(inner)) if from_ty == inner.as_ref() => {

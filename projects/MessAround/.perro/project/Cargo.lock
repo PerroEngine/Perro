@@ -3,24 +3,6 @@
 version = 4
 
 [[package]]
-name = "MessAround"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "embed-resource",
- "ico",
- "image 0.24.9",
- "indexmap 1.9.3",
- "once_cell",
- "perro_core",
- "phf",
- "resvg",
- "scripts",
- "toml",
- "uuid",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2061,6 +2043,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "744133e4a0e0a658e1374cf3bf8e415c4052a15a111acd372764c55b4177d490"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "messaround"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "embed-resource",
+ "ico",
+ "image 0.24.9",
+ "indexmap 1.9.3",
+ "once_cell",
+ "perro_core",
+ "phf",
+ "resvg",
+ "scripts",
+ "toml",
+ "uuid",
 ]
 
 [[package]]

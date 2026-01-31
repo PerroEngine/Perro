@@ -253,7 +253,7 @@ impl TextureManager {
                 let upload_elapsed = upload_start.elapsed();
                 let total_elapsed = start.elapsed();
                 println!(
-                    "⏱️ Runtime texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
+                    "⏱️ Runtime texture loaded in {:.2}ms total (disk: {:.2}ms, parse: {:.2}ms, upload: {:.2}ms)",
                     total_elapsed.as_secs_f64() * 1000.0,
                     load_elapsed.as_secs_f64() * 1000.0,
                     decode_elapsed.as_secs_f64() * 1000.0,
@@ -275,7 +275,7 @@ impl TextureManager {
             let upload_elapsed = upload_start.elapsed();
             let total_elapsed = start.elapsed();
             println!(
-                "⏱️ Dev texture loaded in {:.2}ms total (load: {:.2}ms, decode: {:.2}ms, upload: {:.2}ms)",
+                "⏱️ Dev texture loaded in {:.2}ms total (disk: {:.2}ms, parse: {:.2}ms, upload: {:.2}ms)",
                 total_elapsed.as_secs_f64() * 1000.0,
                 load_elapsed.as_secs_f64() * 1000.0,
                 decode_elapsed.as_secs_f64() * 1000.0,
@@ -314,25 +314,53 @@ impl TextureManager {
                 );
                 texture
             } else {
+                let load_start = Instant::now();
                 let img_bytes = load_asset(path)
                     .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+                let load_elapsed = load_start.elapsed();
+                let decode_start = Instant::now();
                 let img = image::load_from_memory(&img_bytes)
                     .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+                let decode_elapsed = decode_start.elapsed();
                 println!(
                     "🖼️ Loading texture: {} ({}x{})",
                     path,
                     img.width(),
                     img.height()
                 );
-                ImageTexture::from_image(&img, device, queue)
+                let upload_start = Instant::now();
+                let texture = ImageTexture::from_image(&img, device, queue);
+                let upload_elapsed = upload_start.elapsed();
+                println!(
+                    "⏱️ Runtime texture loaded in {:.2}ms total (disk: {:.2}ms, parse: {:.2}ms, upload: {:.2}ms)",
+                    start.elapsed().as_secs_f64() * 1000.0,
+                    load_elapsed.as_secs_f64() * 1000.0,
+                    decode_elapsed.as_secs_f64() * 1000.0,
+                    upload_elapsed.as_secs_f64() * 1000.0
+                );
+                texture
             }
         } else {
+            let load_start = Instant::now();
             let img_bytes = load_asset(path)
                 .map_err(|e| format!("Failed to read image file '{}': {}", path, e))?;
+            let load_elapsed = load_start.elapsed();
+            let decode_start = Instant::now();
             let (rgba, width, height) = image_loader::load_and_decode_image_fast(&img_bytes, path)
                 .map_err(|e| format!("Failed to decode image '{}': {}", path, e))?;
+            let decode_elapsed = decode_start.elapsed();
             println!("🖼️ Loading texture: {} ({}x{})", path, width, height);
-            ImageTexture::from_rgba8(&rgba, device, queue)
+            let upload_start = Instant::now();
+            let texture = ImageTexture::from_rgba8(&rgba, device, queue);
+            let upload_elapsed = upload_start.elapsed();
+            println!(
+                "⏱️ Dev texture loaded in {:.2}ms total (disk: {:.2}ms, parse: {:.2}ms, upload: {:.2}ms)",
+                start.elapsed().as_secs_f64() * 1000.0,
+                load_elapsed.as_secs_f64() * 1000.0,
+                decode_elapsed.as_secs_f64() * 1000.0,
+                upload_elapsed.as_secs_f64() * 1000.0
+            );
+            texture
         };
 
         Ok(self.insert_slot(img_texture, key))

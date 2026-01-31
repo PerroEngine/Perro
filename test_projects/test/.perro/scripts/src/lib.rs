@@ -233,6 +233,7 @@ pub fn setup_dll_panic_handler() {
 use panic_handler::setup_dll_panic_handler;
 
 #[cfg(not(debug_assertions))]
+#[allow(dead_code)]
 fn setup_dll_panic_handler() {
-    // No-op in release builds - panic handler not needed
+    // No-op in release builds - panic handler not needed (perro_set_project_root is debug-only)
 }

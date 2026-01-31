@@ -46,17 +46,20 @@ fn calculate_bytes_per_row(width: u32) -> u32 {
     align_to(unaligned_bytes_per_row, 256)
 }
 
-/// Pre-decoded texture data for static assets (compile-time decoded RGBA8 bytes)
+/// Static texture data: image bytes (Zstd-compressed RGBA8 in .ptex); getter decompresses at runtime.
 #[derive(Debug, Clone)]
 pub struct StaticTextureData {
     pub width: u32,
     pub height: u32,
-    pub rgba8_bytes: &'static [u8],
+    pub image_bytes: &'static [u8],
 }
 
 impl StaticTextureData {
-    /// Create ImageTexture from pre-decoded data at runtime
+    /// Decompress .ptex and upload to GPU.
     pub fn to_image_texture(&self, device: &Device, queue: &Queue) -> ImageTexture {
+        let rgba: Vec<u8> =
+            zstd::stream::decode_all(self.image_bytes).expect("static texture Zstd decompress");
+
         let texture_size = Extent3d {
             width: self.width,
             height: self.height,
@@ -89,7 +92,7 @@ impl StaticTextureData {
                 let dst_offset = (row * bytes_per_row) as usize;
                 let src_end = src_offset + actual_bytes_per_row as usize;
                 aligned_data[dst_offset..dst_offset + actual_bytes_per_row as usize]
-                    .copy_from_slice(&self.rgba8_bytes[src_offset..src_end]);
+                    .copy_from_slice(&rgba[src_offset..src_end]);
             }
 
             queue.write_texture(
@@ -116,7 +119,7 @@ impl StaticTextureData {
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                &self.rgba8_bytes,
+                &rgba,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(actual_bytes_per_row),

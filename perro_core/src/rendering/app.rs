@@ -131,14 +131,11 @@ pub fn load_icon(path: &str) -> Option<winit::window::Icon> {
     // Check static textures first (runtime mode)
     let img = if let Some(static_textures) = get_static_textures() {
         if let Some(static_data) = static_textures.get(path) {
-            // Convert pre-decoded RGBA8 bytes to DynamicImage
-            ImageBuffer::from_raw(
-                static_data.width,
-                static_data.height,
-                static_data.rgba8_bytes.to_vec(),
-            )
-            .map(image::DynamicImage::ImageRgba8)
-            .ok_or_else(|| "Failed to create image from static texture data".to_string())
+            let rgba = zstd::stream::decode_all(static_data.image_bytes)
+                .expect("static texture Zstd decompress for icon");
+            ImageBuffer::from_raw(static_data.width, static_data.height, rgba)
+                .map(image::DynamicImage::ImageRgba8)
+                .ok_or_else(|| "Failed to create image from static texture data".to_string())
         } else {
             // Not in static textures, load from disk/BRK
             match load_asset(path) {

@@ -346,12 +346,6 @@ impl Script for PuptestsTypeTestsTypesPupScript {
     }
 
     fn update(&mut self, api: &mut ScriptApi<'_>) {
-        self.__t_test_primitive_operations(api);
-        self.__t_test_explicit_casting(api);
-        self.__t_test_assignments(api);
-        self.__t_test_struct_inheritance_and_casting(api);
-        self.__t_test_dynamic_containers_ops(api);
-        self.__t_test_static_containers_ops(api);
     }
 
 }

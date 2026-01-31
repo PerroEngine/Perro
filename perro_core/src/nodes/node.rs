@@ -1,6 +1,6 @@
 // node.rs
 use crate::ids::NodeID;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::{
     borrow::Cow,
@@ -9,6 +9,117 @@ use std::{
 };
 
 use crate::node_registry::NodeType;
+
+/// Value for script_exp_vars: either a JSON value or a node reference (NodeID).
+/// At runtime we detect NodeRef and remap to the actual runtime NodeID.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScriptExpVarValue {
+    Value(Value),
+    NodeRef(NodeID),
+}
+
+impl ScriptExpVarValue {
+    /// Convert to serde_json::Value for the script API (apply_exposed). NodeRef becomes hex string.
+    pub fn to_json_value(&self) -> Value {
+        match self {
+            ScriptExpVarValue::Value(v) => v.clone(),
+            ScriptExpVarValue::NodeRef(id) => Value::String(format!("{:016x}", id.as_u64())),
+        }
+    }
+
+    /// Build from serde_json::Value (e.g. when setting from editor). String that parses as NodeID → NodeRef.
+    pub fn from_json_value(v: &Value) -> Self {
+        if let Some(s) = v.as_str() {
+            if let Ok(id) = NodeID::parse_str(s) {
+                return ScriptExpVarValue::NodeRef(id);
+            }
+        }
+        ScriptExpVarValue::Value(v.clone())
+    }
+
+    // --- Constructors for codegen: no serde_json in generated project ---
+
+    pub fn null() -> Self {
+        ScriptExpVarValue::Value(Value::Null)
+    }
+
+    pub fn bool(b: bool) -> Self {
+        ScriptExpVarValue::Value(Value::Bool(b))
+    }
+
+    pub fn number_i64(i: i64) -> Self {
+        ScriptExpVarValue::Value(Value::Number(
+            serde_json::Number::from(i),
+        ))
+    }
+
+    pub fn number_u64(u: u64) -> Self {
+        ScriptExpVarValue::Value(Value::Number(
+            serde_json::Number::from(u),
+        ))
+    }
+
+    pub fn number_f64(f: f64) -> Self {
+        ScriptExpVarValue::Value(Value::Number(
+            serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)),
+        ))
+    }
+
+    pub fn string(s: impl Into<Cow<'static, str>>) -> Self {
+        ScriptExpVarValue::Value(Value::String(s.into().into_owned()))
+    }
+
+    pub fn array(arr: impl IntoIterator<Item = ScriptExpVarValue>) -> Self {
+        ScriptExpVarValue::Value(Value::Array(
+            arr.into_iter().map(|v| v.to_json_value()).collect(),
+        ))
+    }
+
+    pub fn object(
+        entries: impl IntoIterator<Item = (Cow<'static, str>, ScriptExpVarValue)>,
+    ) -> Self {
+        ScriptExpVarValue::Value(Value::Object(
+            entries
+                .into_iter()
+                .map(|(k, v)| (k.into_owned(), v.to_json_value()))
+                .collect(),
+        ))
+    }
+}
+
+impl Serialize for ScriptExpVarValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            ScriptExpVarValue::Value(v) => v.serialize(serializer),
+            // Store as {"@node": scene_key} for round-trip (scene key is id.index())
+            ScriptExpVarValue::NodeRef(id) => {
+                serde_json::json!({ "@node": id.index() }).serialize(serializer)
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ScriptExpVarValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v = Value::deserialize(deserializer)?;
+        let key_opt = v
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .and_then(|o| o.get("@node"))
+            .and_then(|n| n.as_u64())
+            .map(|n| n as u32);
+        if let Some(key) = key_opt {
+            return Ok(ScriptExpVarValue::NodeRef(NodeID::from_u32(key)));
+        }
+        Ok(ScriptExpVarValue::Value(v))
+    }
+}
 
 // Note: Use NodeID::nil() for nil IDs
 
@@ -95,7 +206,7 @@ pub struct Node {
     pub script_path: Option<Cow<'static, str>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub script_exp_vars: Option<HashMap<String, Value>>,
+    pub script_exp_vars: Option<HashMap<Cow<'static, str>, ScriptExpVarValue>>,
 
     #[serde(
         rename = "parent",

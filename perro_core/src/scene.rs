@@ -187,7 +187,7 @@ impl<'de> Deserialize<'de> for SceneData {
         for key_str in nodes_obj.keys() {
             if let Ok(key) = key_str.parse::<u32>() {
                 // Generate deterministic NodeID from scene key (add 1 to avoid nil)
-                let node_id = NodeID::from_parts(key.wrapping_add(1), 0);
+                let node_id = NodeID::from_u32(key.wrapping_add(1));
                 key_to_node_id.insert(key, node_id);
             }
         }
@@ -304,32 +304,8 @@ impl<'de> Deserialize<'de> for SceneData {
             }
         }
 
-        // Resolve node references in script_exp_vars to NodeID hex strings.
-        // Only the object form {"@node": <scene_key>} is treated as a node reference, so plain
-        // numbers (e.g. time: 100) are never mistaken for scene keys.
-        // Merge then remaps those strings to runtime NodeIDs via remap_script_exp_vars_node_ids.
-        for (_, node) in nodes.iter_mut() {
-            if let Some(mut script_vars) = node.get_script_exp_vars() {
-                for (_, value) in script_vars.iter_mut() {
-                    let key_opt = value
-                        .as_object()
-                        .filter(|o| o.len() == 1)
-                        .and_then(|o| o.get("@node"))
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as u32);
-                    if let Some(key) = key_opt {
-                        if let Some(&node_id) = key_to_node_id.get(&key) {
-                            // Store hex so NodeID::parse_str works (Display is "index:generation")
-                            let hex_str = format!("{:016x}", node_id.as_u64());
-                            #[cfg(debug_assertions)]
-                            eprintln!("[perro scene] resolve @node key {} -> NodeID {}", key, hex_str);
-                            *value = Value::String(hex_str);
-                        }
-                    }
-                }
-                node.set_script_exp_vars(Some(script_vars));
-            }
-        }
+        // script_exp_vars deserialize via ScriptExpVarValue: {"@node": 8} → NodeRef(NodeID::from_u32(8)), not a string.
+        // to_runtime_nodes() and merge_scene_data() look for NodeRef (node IDs) and remap them to runtime IDs.
 
         // Store key_to_node_id mapping for later use when converting to runtime
         let key_to_node_id_map: HashMap<u32, NodeID> = key_to_node_id.into_iter().collect();
@@ -372,7 +348,7 @@ impl SceneData {
         // Generate deterministic NodeIDs based on scene keys
         for (&key, node) in nodes.iter_mut() {
             // Create deterministic NodeID from scene key (add 1 to avoid nil)
-            let node_id = NodeID::from_parts(key.wrapping_add(1), 0);
+            let node_id = NodeID::from_u32(key.wrapping_add(1));
 
             // Set the node's ID to match the deterministic NodeID
             node.set_id(node_id);
@@ -533,6 +509,28 @@ impl SceneData {
                     // Add to parent's children list
                     if let Some(parent) = runtime_nodes.get_mut(parent_id) {
                         parent.add_child(child_id);
+                    }
+                }
+            }
+        }
+
+        // Remap script_exp_vars NodeRef(scene_key) → NodeRef(runtime_id)
+        use crate::nodes::node::ScriptExpVarValue;
+        for node in runtime_nodes.values_mut() {
+            if let Some(script_vars) = node.get_script_exp_vars_raw_mut() {
+                for (_, v) in script_vars.iter_mut() {
+                    if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
+                        let key = scene_key_id.index();
+                        if let Some(&old_id) = self.key_to_node_id.get(&key) {
+                            if let Some(&new_id) = old_to_new_id.get(&old_id) {
+                                #[cfg(debug_assertions)]
+                                eprintln!(
+                                    "[perro scene] remap script_exp_vars NodeRef(key {}) -> runtime {}",
+                                    key, new_id
+                                );
+                                *v = ScriptExpVarValue::NodeRef(new_id);
+                            }
+                        }
                     }
                 }
             }
@@ -1069,61 +1067,6 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         Ok(game_scene)
     }
 
-    fn remap_node_ids_in_json_value(
-        value: &mut serde_json::Value,
-        id_map: &HashMap<NodeID, NodeID>,
-    ) {
-        match value {
-            serde_json::Value::String(s) => {
-                if let Ok(old_node_id) = NodeID::parse_str(s) {
-                    if let Some(&new_node_id) = id_map.get(&old_node_id) {
-                        #[cfg(debug_assertions)]
-                        eprintln!(
-                            "[perro scene] remap script_exp_vars NodeID {} -> {}",
-                            old_node_id,
-                            new_node_id
-                        );
-                        // Use hex so APPLY_TABLE's NodeID::parse_str works
-                        *s = format!("{:016x}", new_node_id.as_u64());
-                    }
-                }
-            }
-            serde_json::Value::Object(obj) => {
-                if obj.len() > 1 {
-                    let mut entries: Vec<_> = obj.iter_mut().collect();
-                    entries.par_iter_mut().for_each(|(_, v)| {
-                        Self::remap_node_ids_in_json_value(v, id_map);
-                    });
-                } else if let Some((_, v)) = obj.iter_mut().next() {
-                    Self::remap_node_ids_in_json_value(v, id_map);
-                }
-            }
-            serde_json::Value::Array(arr) => {
-                if arr.len() > 1 {
-                    arr.par_iter_mut().for_each(|v| {
-                        Self::remap_node_ids_in_json_value(v, id_map);
-                    });
-                } else if let Some(v) = arr.iter_mut().next() {
-                    Self::remap_node_ids_in_json_value(v, id_map);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn remap_script_exp_vars_node_ids(
-        script_exp_vars: &mut HashMap<String, serde_json::Value>,
-        id_map: &HashMap<NodeID, NodeID>,
-    ) {
-        if script_exp_vars.len() > 1 {
-            let mut entries: Vec<_> = script_exp_vars.iter_mut().collect();
-            entries.par_iter_mut().for_each(|(_, value)| {
-                Self::remap_node_ids_in_json_value(value, id_map);
-            });
-        } else if let Some((_, value)) = script_exp_vars.iter_mut().next() {
-            Self::remap_node_ids_in_json_value(value, id_map);
-        }
-    }
     pub fn merge_scene_data(
         &mut self,
         mut other: SceneData,
@@ -1234,15 +1177,24 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
 
-        // Remap script_exp_vars in each inserted node
+        // Remap script_exp_vars NodeRef(scene_key) → NodeRef(new arena ID)
+        use crate::nodes::node::ScriptExpVarValue;
         for (_, new_id, _) in &insert_info {
             if let Some(node) = self.nodes.get_mut(*new_id) {
-                if let Some(mut script_vars) = node.get_script_exp_vars() {
-                    Self::remap_script_exp_vars_node_ids(
-                        &mut script_vars,
-                        &old_node_id_to_new_node_id,
-                    );
-                    node.set_script_exp_vars(Some(script_vars));
+                if let Some(script_vars) = node.get_script_exp_vars_raw_mut() {
+                    for (_, v) in script_vars.iter_mut() {
+                        if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
+                            let key = scene_key_id.index();
+                            if let Some(&new_node_id) = key_to_new_id.get(&key) {
+                                #[cfg(debug_assertions)]
+                                eprintln!(
+                                    "[perro scene] merge remap script_exp_vars NodeRef(key {}) -> {}",
+                                    key, new_node_id
+                                );
+                                *v = ScriptExpVarValue::NodeRef(new_node_id);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1574,11 +1526,18 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
 
+        use crate::nodes::node::ScriptExpVarValue;
         for (_, new_id, _) in &insert_info {
             if let Some(node) = self.nodes.get_mut(*new_id) {
-                if let Some(mut script_vars) = node.get_script_exp_vars() {
-                    Self::remap_script_exp_vars_node_ids(&mut script_vars, &old_node_id_to_new_id);
-                    node.set_script_exp_vars(Some(script_vars));
+                if let Some(script_vars) = node.get_script_exp_vars_raw_mut() {
+                    for (_, v) in script_vars.iter_mut() {
+                        if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
+                            let key = scene_key_id.index();
+                            if let Some(&new_node_id) = key_to_new_id.get(&key) {
+                                *v = ScriptExpVarValue::NodeRef(new_node_id);
+                            }
+                        }
+                    }
                 }
             }
         }

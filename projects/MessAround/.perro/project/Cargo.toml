@@ -1,5 +1,5 @@
 [[bin]]
-name = "MessAround"
+name = "messaround"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -37,7 +37,7 @@ version = "1.4"
 [package]
 build = "build.rs"
 edition = "2024"
-name = "MessAround"
+name = "messaround"
 version = "0.1.0"
 
 [profile.release]

@@ -2,6 +2,10 @@
 
 Reference for scripting in Perro: node types, resources, and APIs you use in your scripts.
 
+## Engine overview
+
+For a high-level picture of how the engine works — why we transpile, dev vs release, static assets, and the `.perro` folder — see **[ENGINE.md](ENGINE.md)**.
+
 ## Transpiler architecture: scripts become Rust, one way or another
 
 No matter which language you write in (PUP, TypeScript, or C#), **none of them are run directly.** The transpiler turns your scripts into **Rust**; that Rust is written into the **`.perro/scripts/src`** crate. The engine then runs that Rust:

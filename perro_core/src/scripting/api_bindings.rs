@@ -181,6 +181,36 @@ impl ApiModule {
     }
 }
 
+/// True when an Ident used as a NodeID argument is already a concrete NodeID (no .expect() needed).
+/// Callback params (c: CollisionShape2D), globals (NodeID::from_u32), and self.id are always concrete.
+fn is_concrete_node_id_arg(
+    _script: &Script,
+    current_func: Option<&Function>,
+    name: &str,
+    code_raw: &str,
+    actual_ty: Option<&Type>,
+) -> bool {
+    // Globals: code is NodeID::from_u32(...) — always concrete
+    if code_raw.starts_with("NodeID::from_u32(") {
+        return true;
+    }
+    // Function param typed as node (e.g. on Deadzone_AreaExited(c: CollisionShape2D)) — engine always passes concrete NodeID
+    if let Some(f) = current_func {
+        if let Some(p) = f.params.iter().find(|p| p.name == name) {
+            if matches!(p.typ, Type::Node(_) | Type::DynNode) {
+                return true;
+            }
+        }
+    }
+    // Inferred/declared type is concrete Node/DynNode (not Option<NodeID> or UuidOption)
+    if let Some(ty) = actual_ty {
+        if matches!(ty, Type::Node(_) | Type::DynNode) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Helper function to process raw `Expr` arguments into formatted Rust code strings.
 /// This includes converting the `Expr` to its basic Rust code, applying `self.` prefixing
 /// for script fields, and handling implicit type casts based on `expected_arg_types`.
@@ -214,7 +244,7 @@ pub(crate) fn generate_rust_args(
                         }
                     } else if i == 0
                         && matches!(expect_ty, Type::DynNode)
-                        && matches!(a, Expr::Ident(_))
+                        && matches!(a, Expr::Ident(name) if !is_concrete_node_id_arg(script, current_func, name, &code_raw, None))
                         && !code_raw.is_empty()
                         && code_raw != "self.id"
                         && code_raw != "self"
@@ -226,14 +256,14 @@ pub(crate) fn generate_rust_args(
                     }
                 }
             }
-            // Deterministic unwrap: when first arg expects NodeID and is an Ident, always add .expect()
-            // if not already present. Type inference can non-deterministically return None, Option(DynNode),
-            // or (wrongly) DynNode for get_node results; always unwrapping here fixes intermittent compile failures.
+            // Only add .expect() when the argument is actually Option<NodeID>/UuidOption (e.g. get_node result).
+            // Do NOT add for concrete NodeIDs: callback params (c: CollisionShape2D), globals (NodeID::from_u32), self.id.
             if let Some(expected_types) = expected_arg_types {
                 if let Some(expect_ty) = expected_types.get(i) {
+                    let actual_ty = script.infer_expr_type(a, current_func);
                     if i == 0
                         && matches!(expect_ty, Type::DynNode)
-                        && matches!(a, Expr::Ident(_))
+                        && matches!(a, Expr::Ident(name) if !is_concrete_node_id_arg(script, current_func, name, &code_raw, actual_ty.as_ref()))
                         && !code_raw.is_empty()
                         && code_raw != "self.id"
                         && code_raw != "self"

@@ -77,6 +77,39 @@ pub fn script_dylib_name() -> &'static str {
     }
 }
 
+/// Derive a valid Rust crate name from a project display name (e.g. "Perro Test Project" → "perro_test_project").
+fn project_name_to_crate_name(name: &str) -> String {
+    let s = name.trim();
+    let mut out = String::with_capacity(s.len());
+    let mut prev_underscore = false;
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_lowercase().next().unwrap_or(c));
+            prev_underscore = false;
+        } else if c == ' ' || c == '-' || c == '_' {
+            if !prev_underscore {
+                out.push('_');
+                prev_underscore = true;
+            }
+        }
+    }
+    // Trim leading/trailing underscores
+    let out = out.trim_matches('_').to_string();
+    // Must be valid Rust identifier: start with letter or underscore, rest alphanumeric or underscore
+    if out.is_empty() {
+        return "perro_game".to_string();
+    }
+    let mut chars = out.chars();
+    let first = chars.next().unwrap();
+    if first.is_ascii_digit() {
+        return format!("game_{}", out);
+    }
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return format!("game_{}", out);
+    }
+    out
+}
+
 pub struct Compiler {
     pub crate_manifest_path: PathBuf,
     target: CompileTarget,
@@ -1200,6 +1233,9 @@ impl Compiler {
             // Generate scenes in the project crate instead of scripts crate
             let project_manifest = self.project_root.join(".perro/project/Cargo.toml");
             if project_manifest.exists() {
+                // Sync project crate name from project.toml so binary name matches project name
+                self.sync_project_crate_name_from_project_toml()?;
+
                 let project_crate_root = project_manifest
                     .parent()
                     .expect("Project crate manifest has no parent");
@@ -1352,6 +1388,68 @@ impl Compiler {
             .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
 
         println!("🔧 Removed Windows subsystem flag for verbose build (console will be visible)");
+
+        Ok(())
+    }
+
+    /// Read project name from project.toml, derive a valid Rust crate name, and update
+    /// .perro/project/Cargo.toml [package] name and [[bin]] name so the release binary
+    /// matches the project name.
+    fn sync_project_crate_name_from_project_toml(&self) -> Result<(), String> {
+        use std::fs;
+        use toml::Value;
+
+        let project_toml_path = self.project_root.join("project.toml");
+        if !project_toml_path.exists() {
+            return Ok(());
+        }
+        let content = fs::read_to_string(&project_toml_path)
+            .map_err(|e| format!("Failed to read project.toml: {}", e))?;
+        let config: Value = content
+            .parse()
+            .map_err(|e| format!("Invalid project.toml: {}", e))?;
+        let project_name = config
+            .get("project")
+            .and_then(|p| p.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Perro Game");
+        let crate_name = project_name_to_crate_name(project_name);
+
+        let cargo_path = self.project_root.join(".perro/project/Cargo.toml");
+        let cargo_content = fs::read_to_string(&cargo_path)
+            .map_err(|e| format!("Failed to read Cargo.toml: {}", e))?;
+        let mut doc: Value = cargo_content
+            .parse()
+            .map_err(|e| format!("Failed to parse Cargo.toml: {}", e))?;
+
+        let mut changed = false;
+        if let Some(root) = doc.as_table_mut() {
+            if let Some(pkg) = root.get_mut("package").and_then(|v| v.as_table_mut()) {
+                if let Some(name_val) = pkg.get("name").and_then(|v| v.as_str()) {
+                    if name_val != crate_name {
+                        pkg.insert("name".to_string(), Value::String(crate_name.clone()));
+                        changed = true;
+                    }
+                }
+            }
+            if let Some(bins) = root.get_mut("bin").and_then(|v| v.as_array_mut()) {
+                if let Some(first_bin) = bins.first_mut().and_then(|v| v.as_table_mut()) {
+                    if let Some(name_val) = first_bin.get("name").and_then(|v| v.as_str()) {
+                        if name_val != crate_name {
+                            first_bin.insert("name".to_string(), Value::String(crate_name.clone()));
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if changed {
+            let out = toml::to_string_pretty(&doc)
+                .map_err(|e| format!("Failed to serialize Cargo.toml: {}", e))?;
+            fs::write(&cargo_path, out).map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+            println!("📝 Synced project crate name from project.toml → {}", crate_name);
+        }
 
         Ok(())
     }
@@ -2965,6 +3063,50 @@ impl Compiler {
         use regex::Regex;
         use std::fmt::Write as _;
 
+        /// Emit ScriptExpVarValue constructor calls (no serde_json in generated project).
+        fn emit_script_exp_var_value_as_rust(v: &serde_json::Value) -> String {
+            match v {
+                serde_json::Value::Null => "ScriptExpVarValue::null()".to_string(),
+                serde_json::Value::Bool(b) => format!("ScriptExpVarValue::bool({})", b),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        format!("ScriptExpVarValue::number_i64({}i64)", i)
+                    } else if let Some(u) = n.as_u64() {
+                        format!("ScriptExpVarValue::number_u64({}u64)", u)
+                    } else if let Some(f) = n.as_f64() {
+                        format!("ScriptExpVarValue::number_f64({})", f)
+                    } else {
+                        format!("ScriptExpVarValue::number_f64({})", n)
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    let esc = s.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("ScriptExpVarValue::string(Cow::Borrowed(\"{}\"))", esc)
+                }
+                serde_json::Value::Array(arr) => {
+                    let parts: Vec<String> = arr
+                        .iter()
+                        .map(emit_script_exp_var_value_as_rust)
+                        .collect();
+                    format!("ScriptExpVarValue::array(vec![{}])", parts.join(", "))
+                }
+                serde_json::Value::Object(obj) => {
+                    let parts: Vec<String> = obj
+                        .iter()
+                        .map(|(k, v)| {
+                            let k_esc = k.replace('\\', "\\\\").replace('"', "\\\"");
+                            format!(
+                                "(Cow::Borrowed(\"{}\"), {})",
+                                k_esc,
+                                emit_script_exp_var_value_as_rust(v)
+                            )
+                        })
+                        .collect();
+                    format!("ScriptExpVarValue::object(vec![{}])", parts.join(", "))
+                }
+            }
+        }
+
         let scenes_output_path = static_assets_dir.join("scenes.rs");
         let mut scenes_file = File::create(&scenes_output_path)?;
 
@@ -2975,6 +3117,7 @@ impl Compiler {
         writeln!(scenes_file, "use perro_core::NodeID;")?;
         writeln!(scenes_file, "use indexmap::IndexMap;")?;
         writeln!(scenes_file, "use perro_core::scene::SceneData;")?;
+        writeln!(scenes_file, "use perro_core::nodes::node::ScriptExpVarValue;")?;
         writeln!(scenes_file, "use perro_core::structs::*;")?;
         writeln!(scenes_file, "use perro_core::structs2d::Shape2D;")?;
         writeln!(scenes_file, "use perro_core::node_registry::*;")?;
@@ -3098,6 +3241,71 @@ impl Compiler {
             let mut entries = String::new();
             for (key, node) in &scene_data.nodes {
                 let mut node_str = format!("{:#?}", node);
+
+                // --- script_exp_vars: emit as HashMap<String, ScriptExpVarValue> with NodeRef(NodeID::from_parts(...)) for node refs ---
+                if let Some(raw_vars) = node.get_script_exp_vars_raw() {
+                    use crate::nodes::node::ScriptExpVarValue;
+                    {
+                        let entries: Vec<String> = raw_vars
+                            .iter()
+                            .map(|(k, v)| {
+                                let k_str = k.as_ref();
+                                let k_esc = k_str.replace('\\', "\\\\").replace('"', "\\\"");
+                                match v {
+                                    ScriptExpVarValue::NodeRef(id) => {
+                                        let idx = id.index();
+                                        format!(
+                                            "(Cow::Borrowed(\"{}\"), ScriptExpVarValue::NodeRef(NodeID::from_u32({}u32)))",
+                                            k_esc, idx
+                                        )
+                                    }
+                                    ScriptExpVarValue::Value(v) => {
+                                        let val_rust = emit_script_exp_var_value_as_rust(v);
+                                        format!("(Cow::Borrowed(\"{}\"), {})", k_esc, val_rust)
+                                    }
+                                }
+                            })
+                            .collect();
+                        let replacement = format!("Some(HashMap::from([\n    {}]))", entries.join(",\n    "));
+                        if let Some(start) = node_str.find("script_exp_vars: ") {
+                            let value_start = start + "script_exp_vars: ".len();
+                            let rest = &node_str[value_start..];
+                            let value_len: usize = if rest.trim_start().starts_with("None") {
+                                rest.find("None").unwrap_or(0) + 4
+                            } else if rest.trim_start().starts_with("Some(") {
+                                let some_start = rest.find("Some(").unwrap_or(0);
+                                let mut depth = 1u32;
+                                let mut j = some_start + 5;
+                                while j < rest.len() {
+                                    match rest.as_bytes()[j] {
+                                        b'(' => depth += 1,
+                                        b')' => {
+                                            depth -= 1;
+                                            if depth == 0 {
+                                                j += 1;
+                                                break;
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                    j += 1;
+                                }
+                                j
+                            } else {
+                                0
+                            };
+                            if value_len > 0 {
+                                let value_end = value_start + value_len;
+                                node_str = format!(
+                                    "{}{}{}",
+                                    &node_str[..value_start],
+                                    replacement,
+                                    &node_str[value_end..]
+                                );
+                            }
+                        }
+                    }
+                }
 
                 // --- UUID fixups ---
                 let uuid_literal_regex = Regex::new(
@@ -3401,8 +3609,6 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
         writeln!(fur_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(fur_file, "#![allow(clippy::all)]")?;
         writeln!(fur_file, "use once_cell::sync::Lazy;")?;
-        writeln!(fur_file, "use perro_core::NodeID;")?;
-        writeln!(fur_file, "use indexmap::IndexMap;")?;
         writeln!(
             fur_file,
             "use perro_core::ui::fur_ast::{{FurElement, FurNode}};"
@@ -3719,7 +3925,7 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             textures_file,
             "use perro_core::structs2d::texture::StaticTextureData;"
         )?;
-        writeln!(textures_file, "\n// --- GENERATED TEXTURE DEFINITIONS ---")?;
+        writeln!(textures_file, "\n// --- .ptex in embedded_assets/ ---")?;
 
         let res_dir = self.project_root.join("res");
         if !res_dir.exists() {
@@ -3729,7 +3935,7 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             );
             writeln!(
                 textures_file,
-                "\n/// A map of texture paths to their statically compiled pre-decoded RGBA8 data."
+                "\n/// Map of texture paths to .ptex data."
             )?;
             writeln!(
                 textures_file,
@@ -3741,29 +3947,26 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             return Ok(());
         }
 
-        // Create embedded_assets directory in project root (outside src/)
-        // static_assets_dir is project_crate_root/src/static_assets
-        // So project_crate_root is static_assets_dir.parent().parent()
         let project_crate_root = static_assets_dir
             .parent()
             .and_then(|p| p.parent())
             .ok_or_else(|| anyhow::anyhow!("Could not determine project crate root"))?;
         let embedded_assets_dir = project_crate_root.join("embedded_assets");
 
-        // Clean embedded_assets directory at the start to prevent accumulation of old files
         if embedded_assets_dir.exists() {
             fs::remove_dir_all(&embedded_assets_dir)?;
         }
         fs::create_dir_all(&embedded_assets_dir)?;
 
+        // Zstd level 1–22: higher = smaller .ptex, slower build; decompress speed barely changes.
+        const ZSTD_LEVEL: i32 = 5;
+
         let mut processed_texture_paths: HashSet<String> = HashSet::new();
         let mut static_texture_definitions_code = String::new();
         let mut map_insertions_code = String::new();
 
-        // Supported image formats
         let image_extensions = ["png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp"];
 
-        // --- Walk `res/` for image files ---
         for entry in WalkDir::new(&res_dir) {
             let entry = entry?;
             let path = entry.path();
@@ -3776,7 +3979,6 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                         let res_path = format!("res://{}", relative_path.replace('\\', "/"));
 
                         if processed_texture_paths.insert(res_path.clone()) {
-                            // Load and decode image at compile time
                             let img_bytes = std::fs::read(path).map_err(|e| {
                                 anyhow::anyhow!("Failed to read image {}: {}", path.display(), e)
                             })?;
@@ -3785,56 +3987,47 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                                 anyhow::anyhow!("Failed to decode image {}: {}", path.display(), e)
                             })?;
 
-                            // Convert to RGBA8 (same as ImageTexture::from_image does)
                             let rgba = img.to_rgba8();
                             let (width, height) = img.dimensions();
+                            let raw = rgba.as_raw();
+
+                            let compressed = zstd::stream::encode_all(std::io::Cursor::new(raw), ZSTD_LEVEL)
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Zstd compress texture {}: {}", path.display(), e)
+                                })?;
 
                             println!(
-                                "🖼️ Pre-decoding texture: {} ({}x{})",
+                                "🖼️ Pre-decode + .ptex texture: {} ({}x{})",
                                 res_path, width, height
                             );
 
-                            // Generate static texture data
-                            // Append extension (uppercase) to avoid collisions (e.g., icon.png vs icon.jpg)
                             let ext_upper = ext.to_uppercase();
                             let static_texture_name = Self::sanitize_res_path_to_ident(&res_path);
                             let static_texture_name_with_ext =
                                 format!("{}_{}", static_texture_name, ext_upper);
 
-                            // Write RGBA8 bytes to a binary file in embedded_assets/
-                            // Use sanitized name with extension for the file to avoid filesystem collisions
-                            let rgba_file_name = format!("{}.rgba", static_texture_name_with_ext);
-                            let rgba_file_path = embedded_assets_dir.join(&rgba_file_name);
-                            std::fs::write(&rgba_file_path, rgba.as_raw()).map_err(|e| {
+                            // Write to embedded_assets/ only (never res/): .ptex = Perro texture (Zstd-compressed RGBA)
+                            let ptex_file_name = format!("{}.ptex", static_texture_name_with_ext);
+                            let ptex_file_path = embedded_assets_dir.join(&ptex_file_name);
+                            std::fs::write(&ptex_file_path, &compressed).map_err(|e| {
                                 anyhow::anyhow!(
-                                    "Failed to write RGBA file {}: {}",
-                                    rgba_file_path.display(),
+                                    "Failed to write .ptex texture {}: {}",
+                                    ptex_file_path.display(),
                                     e
                                 )
                             })?;
 
-                            // Note: Cargo automatically tracks files included via include_bytes!,
-                            // so we don't need to add rerun-if-changed for the rgba file.
-                            // The source image is already tracked above.
-
-                            // Generate code using include_bytes! macro
-                            // Path is relative to textures.rs location (src/static_assets/)
-                            // embedded_assets/ is at project root, so relative path is ../../embedded_assets/
-                            let include_path = format!("../../embedded_assets/{}", rgba_file_name);
+                            let include_path = format!("../../embedded_assets/{}", ptex_file_name);
                             static_texture_definitions_code.push_str(&format!(
                                 r#"
-/// Auto-generated static texture bytes for {path}
-/// Loaded from embedded binary file at compile time
 static {bytes_name}: &[u8] = include_bytes!("{include_path}");
 
-/// Auto-generated static texture data for {path}
 static {name}: StaticTextureData = StaticTextureData {{
     width: {width},
     height: {height},
-    rgba8_bytes: {bytes_name},
+    image_bytes: {bytes_name},
 }};
 "#,
-                                path = res_path,
                                 name = static_texture_name_with_ext,
                                 bytes_name = format!("{}_BYTES", static_texture_name_with_ext),
                                 include_path = include_path,
@@ -3852,13 +4045,10 @@ static {name}: StaticTextureData = StaticTextureData {{
             }
         }
 
-        // --- Write all texture definitions ---
         writeln!(textures_file, "{}", static_texture_definitions_code)?;
-
-        // --- Write PERRO_TEXTURES map ---
         writeln!(
             textures_file,
-            "\n/// A map of texture paths to their statically compiled pre-decoded RGBA8 data."
+            "\n/// Map of texture paths to .ptex data."
         )?;
         writeln!(
             textures_file,
