@@ -48,15 +48,11 @@ impl ScriptExpVarValue {
     }
 
     pub fn number_i64(i: i64) -> Self {
-        ScriptExpVarValue::Value(Value::Number(
-            serde_json::Number::from(i),
-        ))
+        ScriptExpVarValue::Value(Value::Number(serde_json::Number::from(i)))
     }
 
     pub fn number_u64(u: u64) -> Self {
-        ScriptExpVarValue::Value(Value::Number(
-            serde_json::Number::from(u),
-        ))
+        ScriptExpVarValue::Value(Value::Number(serde_json::Number::from(u)))
     }
 
     pub fn number_f64(f: f64) -> Self {

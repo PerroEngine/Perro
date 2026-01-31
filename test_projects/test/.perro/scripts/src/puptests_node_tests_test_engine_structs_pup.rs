@@ -175,15 +175,15 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut PuptestsNodeTestsTestEngineStructsPupScript, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {
-        12793707753389395980u64 => | script: &mut PuptestsNodeTestsTestEngineStructsPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        7062170532480987093u64 => | script: &mut PuptestsNodeTestsTestEngineStructsPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_nested_access(api);
             Value::Null
         },
-        10083070610641106631u64 => | script: &mut PuptestsNodeTestsTestEngineStructsPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        16384055960281181247u64 => | script: &mut PuptestsNodeTestsTestEngineStructsPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_constructors(api);
             Value::Null
         },
-        11417255439301240557u64 => | script: &mut PuptestsNodeTestsTestEngineStructsPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        12571733813710817153u64 => | script: &mut PuptestsNodeTestsTestEngineStructsPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_variable_access(api);
             Value::Null
         },

@@ -220,7 +220,7 @@ impl ScriptObject for PuptestsNodeTestsTestNode3dApiPupScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsNodeTestsTestNode3dApiPupScript) -> Option<Value>> =
     phf::phf_map! {
-        10059247272099910969u64 => |script: &PuptestsNodeTestsTestNode3dApiPupScript| -> Option<Value> {
+        1263699021464731510u64 => |script: &PuptestsNodeTestsTestNode3dApiPupScript| -> Option<Value> {
                         Some(json!(script.__t_spin))
                     },
 
@@ -228,7 +228,7 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsNodeTestsTestNode3dApiPupScript)
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsNodeTestsTestNode3dApiPupScript, Value) -> Option<()>> =
     phf::phf_map! {
-        10059247272099910969u64 => |script: &mut PuptestsNodeTestsTestNode3dApiPupScript, val: Value| -> Option<()> {
+        1263699021464731510u64 => |script: &mut PuptestsNodeTestsTestNode3dApiPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.__t_spin = v as f32;
                                 return Some(());
@@ -247,23 +247,23 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut PuptestsNodeTestsTestNode3dApiPupScript, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {
-        9771421818664213151u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        432816268499948822u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_transform_read_write(api);
             Value::Null
         },
-        5540664655208342312u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        16102145252734054829u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_rotation_assign_and_rotate(api);
             Value::Null
         },
-        18312641610065054329u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        12614002744515878282u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_rotation_set_equal_to_other(api);
             Value::Null
         },
-        12572180884665163825u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        5299181515774658578u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_for_loops_with_rotation(api);
             Value::Null
         },
-        1623331180437190040u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        1038358772608182020u64 => | script: &mut PuptestsNodeTestsTestNode3dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_scale_and_position_assign(api);
             Value::Null
         },

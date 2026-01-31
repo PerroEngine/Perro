@@ -1447,8 +1447,12 @@ impl Compiler {
         if changed {
             let out = toml::to_string_pretty(&doc)
                 .map_err(|e| format!("Failed to serialize Cargo.toml: {}", e))?;
-            fs::write(&cargo_path, out).map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
-            println!("📝 Synced project crate name from project.toml → {}", crate_name);
+            fs::write(&cargo_path, out)
+                .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
+            println!(
+                "📝 Synced project crate name from project.toml → {}",
+                crate_name
+            );
         }
 
         Ok(())
@@ -3084,10 +3088,8 @@ impl Compiler {
                     format!("ScriptExpVarValue::string(Cow::Borrowed(\"{}\"))", esc)
                 }
                 serde_json::Value::Array(arr) => {
-                    let parts: Vec<String> = arr
-                        .iter()
-                        .map(emit_script_exp_var_value_as_rust)
-                        .collect();
+                    let parts: Vec<String> =
+                        arr.iter().map(emit_script_exp_var_value_as_rust).collect();
                     format!("ScriptExpVarValue::array(vec![{}])", parts.join(", "))
                 }
                 serde_json::Value::Object(obj) => {
@@ -3117,7 +3119,10 @@ impl Compiler {
         writeln!(scenes_file, "use perro_core::NodeID;")?;
         writeln!(scenes_file, "use indexmap::IndexMap;")?;
         writeln!(scenes_file, "use perro_core::scene::SceneData;")?;
-        writeln!(scenes_file, "use perro_core::nodes::node::ScriptExpVarValue;")?;
+        writeln!(
+            scenes_file,
+            "use perro_core::nodes::node::ScriptExpVarValue;"
+        )?;
         writeln!(scenes_file, "use perro_core::structs::*;")?;
         writeln!(scenes_file, "use perro_core::structs2d::Shape2D;")?;
         writeln!(scenes_file, "use perro_core::node_registry::*;")?;
@@ -3266,7 +3271,8 @@ impl Compiler {
                                 }
                             })
                             .collect();
-                        let replacement = format!("Some(HashMap::from([\n    {}]))", entries.join(",\n    "));
+                        let replacement =
+                            format!("Some(HashMap::from([\n    {}]))", entries.join(",\n    "));
                         if let Some(start) = node_str.find("script_exp_vars: ") {
                             let value_start = start + "script_exp_vars: ".len();
                             let rest = &node_str[value_start..];
@@ -3933,10 +3939,7 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                 "WARNING: `res` directory not found at {}. No textures will be compiled.",
                 res_dir.display()
             );
-            writeln!(
-                textures_file,
-                "\n/// Map of texture paths to .ptex data."
-            )?;
+            writeln!(textures_file, "\n/// Map of texture paths to .ptex data.")?;
             writeln!(
                 textures_file,
                 "pub static PERRO_TEXTURES: Lazy<HashMap<&'static str, &'static StaticTextureData>> = Lazy::new(|| {{"
@@ -3991,10 +3994,15 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                             let (width, height) = img.dimensions();
                             let raw = rgba.as_raw();
 
-                            let compressed = zstd::stream::encode_all(std::io::Cursor::new(raw), ZSTD_LEVEL)
-                                .map_err(|e| {
-                                    anyhow::anyhow!("Zstd compress texture {}: {}", path.display(), e)
-                                })?;
+                            let compressed =
+                                zstd::stream::encode_all(std::io::Cursor::new(raw), ZSTD_LEVEL)
+                                    .map_err(|e| {
+                                        anyhow::anyhow!(
+                                            "Zstd compress texture {}: {}",
+                                            path.display(),
+                                            e
+                                        )
+                                    })?;
 
                             println!(
                                 "🖼️ Pre-decode + .ptex texture: {} ({}x{})",
@@ -4046,10 +4054,7 @@ static {name}: StaticTextureData = StaticTextureData {{
         }
 
         writeln!(textures_file, "{}", static_texture_definitions_code)?;
-        writeln!(
-            textures_file,
-            "\n/// Map of texture paths to .ptex data."
-        )?;
+        writeln!(textures_file, "\n/// Map of texture paths to .ptex data.")?;
         writeln!(
             textures_file,
             "pub static PERRO_TEXTURES: Lazy<HashMap<&'static str, &'static StaticTextureData>> = Lazy::new(|| {{"

@@ -431,7 +431,12 @@ impl Function {
         } else {
             format!(" -> {}", self.return_type.to_rust_type())
         };
-        writeln!(out, "    fn {}({}){} {{", renamed_func_name, param_list, return_type_suffix).unwrap();
+        writeln!(
+            out,
+            "    fn {}({}){} {{",
+            renamed_func_name, param_list, return_type_suffix
+        )
+        .unwrap();
 
         let needs_self = self.uses_self;
 

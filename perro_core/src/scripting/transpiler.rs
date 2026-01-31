@@ -1074,9 +1074,7 @@ pub fn transpile(
         let mut entries: Vec<_> = fs::read_dir(&scripts_src)
             .map_err(|e| format!("Failed to read scripts src dir: {}", e))?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path().extension().and_then(|s| s.to_str()) == Some("rs")
-            })
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("rs"))
             .collect();
         entries.sort_by(|a, b| a.path().to_string_lossy().cmp(&b.path().to_string_lossy()));
         let mut hasher = Sha256::new();

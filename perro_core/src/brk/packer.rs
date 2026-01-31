@@ -20,13 +20,13 @@ const SKIP_SCRIPTING: &[&str] = &["pup", "rs", "cs", "ts"];
 const SKIP_SCENE_DATA: &[&str] = &["scn", "fur"];
 
 // Images are pre-decoded + Zstd-compressed into static assets (no PNG parse at runtime)
-const SKIP_IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba"];
+const SKIP_IMAGES: &[&str] = &[
+    "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
+];
 
 // Helper function to check if extension should be skipped
 fn should_skip_extension(ext: &str) -> bool {
-    SKIP_SCRIPTING.contains(&ext)
-        || SKIP_SCENE_DATA.contains(&ext)
-        || SKIP_IMAGES.contains(&ext)
+    SKIP_SCRIPTING.contains(&ext) || SKIP_SCENE_DATA.contains(&ext) || SKIP_IMAGES.contains(&ext)
 }
 
 /// File types to ENCRYPT (sensitive data files that users might want to protect)

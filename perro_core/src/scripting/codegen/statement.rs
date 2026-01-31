@@ -4,8 +4,8 @@ use super::utils::{TRANSPILED_IDENT, is_node_type, rename_variable, string_to_no
 use crate::ast::*;
 use crate::node_registry::NodeType;
 use crate::resource_modules::TextureResource;
-use crate::scripting::ast::{ContainerKind, Expr, NumberKind, Op, Stmt, Type};
 use crate::scripting::api_bindings::ModuleCodegen;
+use crate::scripting::ast::{ContainerKind, Expr, NumberKind, Op, Stmt, Type};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 
@@ -41,8 +41,10 @@ impl Stmt {
                 //
                 // This avoids hardcoding per-method behavior in expression codegen and keeps the sugar generic.
                 // ----------------------------------------------------------------
-                if let Expr::ApiCall(crate::call_modules::CallModule::Resource(resource), call_args) =
-                    &expr.expr
+                if let Expr::ApiCall(
+                    crate::call_modules::CallModule::Resource(resource),
+                    call_args,
+                ) = &expr.expr
                 {
                     if let Some(receiver) = call_args.first() {
                         // Only apply when return type matches receiver type.
@@ -95,8 +97,9 @@ impl Stmt {
                                             // Use the compiler-generated closure parameter name as-is.
                                             // User variables are always renamed with `__t_` so they cannot collide in Rust,
                                             // even if the user writes `var self_node`.
-                                            let closure_param =
-                                                closure_var.strip_prefix("self.").unwrap_or(&closure_var);
+                                            let closure_param = closure_var
+                                                .strip_prefix("self.")
+                                                .unwrap_or(&closure_var);
 
                                             // If receiver type is Copy, we can avoid the temp receiver variable.
                                             // For non-Copy types, the temp avoids borrow-checker issues on self-referential assignment.
@@ -111,12 +114,15 @@ impl Stmt {
                                                 // (`<closure_param>.<field_path>`) so it doesn't get renamed.
                                                 use crate::api_bindings::generate_rust_args;
 
-                                                let receiver_str =
-                                                    format!("{}.{}", closure_param, resolved_field_path);
+                                                let receiver_str = format!(
+                                                    "{}.{}",
+                                                    closure_param, resolved_field_path
+                                                );
 
                                                 let expected = resource.param_types();
-                                                let expected_rest: Option<Vec<Type>> =
-                                                    expected.as_ref().map(|v| v.iter().skip(1).cloned().collect());
+                                                let expected_rest: Option<Vec<Type>> = expected
+                                                    .as_ref()
+                                                    .map(|v| v.iter().skip(1).cloned().collect());
                                                 let rest_args: Vec<Expr> =
                                                     call_args.iter().skip(1).cloned().collect();
                                                 let mut rest_strs = generate_rust_args(
@@ -143,42 +149,43 @@ impl Stmt {
                                                     crate::resource_modules::ResourceModule::QuaternionOp(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
                                                 };
 
-                                        return format!(
-                                            "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                                            node_id_with_self,
-                                            closure_param,
-                                            node_type,
-                                            closure_param,
-                                            resolved_field_path,
-                                            rhs_code
-                                        );
-                                    } else {
-                                        // Build a new args list where arg0 is a temp local inside the closure.
-                                        let mut new_args: Vec<Expr> =
-                                            Vec::with_capacity(call_args.len());
-                                        new_args.push(Expr::Ident("__t_recv_tmp".to_string()));
-                                        new_args.extend(call_args.iter().skip(1).cloned());
+                                                return format!(
+                                                    "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                                    node_id_with_self,
+                                                    closure_param,
+                                                    node_type,
+                                                    closure_param,
+                                                    resolved_field_path,
+                                                    rhs_code
+                                                );
+                                            } else {
+                                                // Build a new args list where arg0 is a temp local inside the closure.
+                                                let mut new_args: Vec<Expr> =
+                                                    Vec::with_capacity(call_args.len());
+                                                new_args
+                                                    .push(Expr::Ident("__t_recv_tmp".to_string()));
+                                                new_args.extend(call_args.iter().skip(1).cloned());
 
-                                        // Generate the resource call RHS using the temp receiver.
-                                        let rhs_code = resource.to_rust(
-                                            &new_args,
-                                            script,
-                                            /*needs_self*/ false,
-                                            current_func,
-                                        );
+                                                // Generate the resource call RHS using the temp receiver.
+                                                let rhs_code = resource.to_rust(
+                                                    &new_args,
+                                                    script,
+                                                    /*needs_self*/ false,
+                                                    current_func,
+                                                );
 
-                                        return format!(
-                                            "        api.mutate_node({}, |{}: &mut {}| {{ let __t_recv_tmp = {}.{}; {}.{} = {}; }});\n",
-                                            node_id_with_self,
-                                            closure_param,
-                                            node_type,
-                                            closure_param,
-                                            resolved_field_path,
-                                            closure_param,
-                                            resolved_field_path,
-                                            rhs_code
-                                        );
-                                    }
+                                                return format!(
+                                                    "        api.mutate_node({}, |{}: &mut {}| {{ let __t_recv_tmp = {}.{}; {}.{} = {}; }});\n",
+                                                    node_id_with_self,
+                                                    closure_param,
+                                                    node_type,
+                                                    closure_param,
+                                                    resolved_field_path,
+                                                    closure_param,
+                                                    resolved_field_path,
+                                                    rhs_code
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -234,7 +241,8 @@ impl Stmt {
                                                 use std::collections::hash_map::DefaultHasher;
                                                 use std::hash::{Hash, Hasher};
 
-                                                let node_id_with_self = if !node_id.starts_with("self.")
+                                                let node_id_with_self = if !node_id
+                                                    .starts_with("self.")
                                                     && !node_id.starts_with("api.")
                                                     && script.is_struct_field(&node_id)
                                                 {
@@ -262,7 +270,8 @@ impl Stmt {
 
                                                 let mut hasher = DefaultHasher::new();
                                                 getter_call.hash(&mut hasher);
-                                                let temp_var = format!("__temp_read_{}", hasher.finish());
+                                                let temp_var =
+                                                    format!("__temp_read_{}", hasher.finish());
 
                                                 if !temp_var_types.contains_key(&temp_var) {
                                                     extracted.push((
@@ -274,7 +283,8 @@ impl Stmt {
                                                         ),
                                                         temp_var.clone(),
                                                     ));
-                                                    temp_var_types.insert(temp_var.clone(), getter_type);
+                                                    temp_var_types
+                                                        .insert(temp_var.clone(), getter_type);
                                                 }
 
                                                 // Rebuild the expression as `temp_var.<rest>`
@@ -300,7 +310,9 @@ impl Stmt {
                             }
 
                             // Fall through to normal recursive behavior below (handled by MemberAccess arm).
-                            let Expr::MemberAccess(base, field) = expr else { return expr.clone(); };
+                            let Expr::MemberAccess(base, field) = expr else {
+                                return expr.clone();
+                            };
                             let new_base = extract_all_nested_api_calls(
                                 base,
                                 script,
@@ -2582,9 +2594,10 @@ impl Stmt {
                                 .collect();
                             let resolved_field_path_full = resolved_path.join(".");
                             // Path-based behaviors for plain assignment (e.g. transform.rotation.z = rhs)
-                            if let Some(behavior) = ENGINE_REGISTRY
-                                .get_field_assign_behavior_path(&node_type_enum, &resolved_field_path_full)
-                            {
+                            if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior_path(
+                                &node_type_enum,
+                                &resolved_field_path_full,
+                            ) {
                                 if let Some(code) = behavior.emit_euler_axis_3d_block_expr(
                                     &node_id_with_self,
                                     &node_type,
@@ -2594,27 +2607,41 @@ impl Stmt {
                                     return format!("{}        {}\n", temp_decl, code);
                                 }
                             }
-                            let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
-                            if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(&node_type_enum, first_segment) {
-                                let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                            let first_segment =
+                                resolved_path.first().map(String::as_str).unwrap_or("");
+                            if let Some(behavior) = ENGINE_REGISTRY
+                                .get_field_assign_behavior(&node_type_enum, first_segment)
+                            {
+                                let rest_path = resolved_path
+                                    .get(1..)
+                                    .map(|v| v.join("."))
+                                    .unwrap_or_default();
                                 let mutate_expr = if rest_path.is_empty() {
                                     format!("__g = {}", final_rhs)
                                 } else {
                                     format!("__g.{} = {}", rest_path, final_rhs)
                                 };
-                                format!("{}        {}\n", temp_decl, behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type))
-                        } else {
-                            format!(
-                                "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                                temp_decl,
-                                node_id_with_self,
-                                clean_closure_var,
-                                node_type,
-                                clean_closure_var,
-                                resolved_field_path,
-                                final_rhs
-                            )
-                        }
+                                format!(
+                                    "{}        {}\n",
+                                    temp_decl,
+                                    behavior.emit_get_set_block(
+                                        &node_id_with_self,
+                                        &mutate_expr,
+                                        &node_type
+                                    )
+                                )
+                            } else {
+                                format!(
+                                    "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                    temp_decl,
+                                    node_id_with_self,
+                                    clean_closure_var,
+                                    node_type,
+                                    clean_closure_var,
+                                    resolved_field_path,
+                                    final_rhs
+                                )
+                            }
                         } else {
                             // When node_type is empty (e.g. TypeScript class without extends) or not a known engine type, use script's Rust struct name
                             let closure_type = if node_type.is_empty()
@@ -2811,7 +2838,10 @@ impl Stmt {
                                 let resolved_field_path = resolved_path.join(".");
                                 // Path-based behaviors (e.g. transform.rotation.z op= rhs)
                                 if let Some(behavior) = ENGINE_REGISTRY
-                                    .get_field_assign_behavior_path(&compatible_node_types[0], &resolved_field_path)
+                                    .get_field_assign_behavior_path(
+                                        &compatible_node_types[0],
+                                        &resolved_field_path,
+                                    )
                                 {
                                     let op_kind = match op {
                                         Op::Add => Some("add"),
@@ -2831,15 +2861,34 @@ impl Stmt {
                                         }
                                     }
                                 }
-                                let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
-                                if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(&compatible_node_types[0], first_segment) {
-                                    let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                                let first_segment =
+                                    resolved_path.first().map(String::as_str).unwrap_or("");
+                                if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(
+                                    &compatible_node_types[0],
+                                    first_segment,
+                                ) {
+                                    let rest_path = resolved_path
+                                        .get(1..)
+                                        .map(|v| v.join("."))
+                                        .unwrap_or_default();
                                     let mutate_expr = if rest_path.is_empty() {
                                         format!("__g {}= {}", op.to_rust_assign(), final_rhs)
                                     } else {
-                                        format!("__g.{} {}= {}", rest_path, op.to_rust_assign(), final_rhs)
+                                        format!(
+                                            "__g.{} {}= {}",
+                                            rest_path,
+                                            op.to_rust_assign(),
+                                            final_rhs
+                                        )
                                     };
-                                    format!("        {}\n", behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type_name))
+                                    format!(
+                                        "        {}\n",
+                                        behavior.emit_get_set_block(
+                                            &node_id_with_self,
+                                            &mutate_expr,
+                                            &node_type_name
+                                        )
+                                    )
                                 } else {
                                     format!(
                                         "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }});\n",
@@ -2858,13 +2907,19 @@ impl Stmt {
                                     let node_type_name = format!("{:?}", node_type_enum);
                                     let resolved_path: Vec<String> = field_path_vec
                                         .iter()
-                                        .map(|f| ENGINE_REGISTRY.resolve_field_name(node_type_enum, f))
+                                        .map(|f| {
+                                            ENGINE_REGISTRY.resolve_field_name(node_type_enum, f)
+                                        })
                                         .collect();
                                     let resolved_field_path = resolved_path.join(".");
                                     // Path-based behaviors first (rotation/euler lowering)
                                     let path_behavior = ENGINE_REGISTRY
-                                        .get_field_assign_behavior_path(node_type_enum, &resolved_field_path);
-                                    let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
+                                        .get_field_assign_behavior_path(
+                                            node_type_enum,
+                                            &resolved_field_path,
+                                        );
+                                    let first_segment =
+                                        resolved_path.first().map(String::as_str).unwrap_or("");
                                     let arm_code = if let Some(behavior) = path_behavior {
                                         let op_kind = match op {
                                             Op::Add => Some("add"),
@@ -2874,12 +2929,14 @@ impl Stmt {
                                             _ => None,
                                         };
                                         if let Some(op_kind) = op_kind {
-                                            if let Some(code) = behavior.emit_euler_axis_3d_block_expr(
-                                                &node_id_with_self,
-                                                &node_type_name,
-                                                op_kind,
-                                                &final_rhs,
-                                            ) {
+                                            if let Some(code) = behavior
+                                                .emit_euler_axis_3d_block_expr(
+                                                    &node_id_with_self,
+                                                    &node_type_name,
+                                                    op_kind,
+                                                    &final_rhs,
+                                                )
+                                            {
                                                 code
                                             } else {
                                                 format!(
@@ -2905,18 +2962,38 @@ impl Stmt {
                                                 final_rhs
                                             )
                                         }
-                                    } else if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(node_type_enum, first_segment) {
-                                        let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                                    } else if let Some(behavior) = ENGINE_REGISTRY
+                                        .get_field_assign_behavior(node_type_enum, first_segment)
+                                    {
+                                        let rest_path = resolved_path
+                                            .get(1..)
+                                            .map(|v| v.join("."))
+                                            .unwrap_or_default();
                                         let mutate_expr = if rest_path.is_empty() {
                                             format!("__g {}= {}", op.to_rust_assign(), final_rhs)
                                         } else {
-                                            format!("__g.{} {}= {}", rest_path, op.to_rust_assign(), final_rhs)
+                                            format!(
+                                                "__g.{} {}= {}",
+                                                rest_path,
+                                                op.to_rust_assign(),
+                                                final_rhs
+                                            )
                                         };
-                                        behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type_name)
+                                        behavior.emit_get_set_block(
+                                            &node_id_with_self,
+                                            &mutate_expr,
+                                            &node_type_name,
+                                        )
                                     } else {
                                         format!(
                                             "api.mutate_node({}, |{}: &mut {}| {{ {}.{} {}= {}; }})",
-                                            node_id_with_self, clean_closure_var, node_type_name, clean_closure_var, resolved_field_path, op.to_rust_assign(), final_rhs
+                                            node_id_with_self,
+                                            clean_closure_var,
+                                            node_type_name,
+                                            clean_closure_var,
+                                            resolved_field_path,
+                                            op.to_rust_assign(),
+                                            final_rhs
                                         )
                                     };
                                     match_arms.push(format!(
@@ -3294,9 +3371,10 @@ impl Stmt {
                                 .collect();
                             let resolved_field_path = resolved_path.join(".");
                             // Path-based behaviors first (rotation/euler lowering)
-                            if let Some(behavior) = ENGINE_REGISTRY
-                                .get_field_assign_behavior_path(&node_type_enum, &resolved_field_path)
-                            {
+                            if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior_path(
+                                &node_type_enum,
+                                &resolved_field_path,
+                            ) {
                                 let op_kind = match op {
                                     Op::Add => Some("add"),
                                     Op::Sub => Some("sub"),
@@ -3315,15 +3393,34 @@ impl Stmt {
                                     }
                                 }
                             }
-                            let first_segment = resolved_path.first().map(String::as_str).unwrap_or("");
-                            if let Some(behavior) = ENGINE_REGISTRY.get_field_assign_behavior(&node_type_enum, first_segment) {
-                                let rest_path = resolved_path.get(1..).map(|v| v.join(".")).unwrap_or_default();
+                            let first_segment =
+                                resolved_path.first().map(String::as_str).unwrap_or("");
+                            if let Some(behavior) = ENGINE_REGISTRY
+                                .get_field_assign_behavior(&node_type_enum, first_segment)
+                            {
+                                let rest_path = resolved_path
+                                    .get(1..)
+                                    .map(|v| v.join("."))
+                                    .unwrap_or_default();
                                 let mutate_expr = if rest_path.is_empty() {
                                     format!("__g {}= {}", op.to_rust_assign(), final_rhs)
                                 } else {
-                                    format!("__g.{} {}= {}", rest_path, op.to_rust_assign(), final_rhs)
+                                    format!(
+                                        "__g.{} {}= {}",
+                                        rest_path,
+                                        op.to_rust_assign(),
+                                        final_rhs
+                                    )
                                 };
-                                return format!("{}        {}\n", temp_decl, behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type));
+                                return format!(
+                                    "{}        {}\n",
+                                    temp_decl,
+                                    behavior.emit_get_set_block(
+                                        &node_id_with_self,
+                                        &mutate_expr,
+                                        &node_type
+                                    )
+                                );
                             }
                         }
 
@@ -3691,19 +3788,30 @@ impl Stmt {
                 // If var is Option<NodeID> (e.g. from get_node), unwrap so get_script_var_id/set_script_var_id get NodeID.
                 // Do NOT add .expect() for globals (NodeID::from_u32) or for function params typed as node (concrete NodeID).
                 let ty = script.get_variable_type(var).or_else(|| {
-                    current_func.and_then(|f| {
-                        f.locals.iter().find(|v| v.name == *var).and_then(|v| v.typ.as_ref())
-                    }).or_else(|| {
-                        current_func.and_then(|f| {
-                            f.params.iter().find(|p| p.name == *var).map(|p| &p.typ)
+                    current_func
+                        .and_then(|f| {
+                            f.locals
+                                .iter()
+                                .find(|v| v.name == *var)
+                                .and_then(|v| v.typ.as_ref())
                         })
-                    })
+                        .or_else(|| {
+                            current_func.and_then(|f| {
+                                f.params.iter().find(|p| p.name == *var).map(|p| &p.typ)
+                            })
+                        })
                 });
                 if let Some(ty) = ty {
-                    let is_concrete_node_param = current_func.and_then(|f| {
-                        f.params.iter().find(|p| p.name == *var).map(|p| matches!(p.typ, Type::Node(_) | Type::DynNode))
-                    }).unwrap_or(false);
-                    if !node_id_expr.starts_with("NodeID::from_u32(") && !is_concrete_node_param
+                    let is_concrete_node_param = current_func
+                        .and_then(|f| {
+                            f.params
+                                .iter()
+                                .find(|p| p.name == *var)
+                                .map(|p| matches!(p.typ, Type::Node(_) | Type::DynNode))
+                        })
+                        .unwrap_or(false);
+                    if !node_id_expr.starts_with("NodeID::from_u32(")
+                        && !is_concrete_node_param
                         && (matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
                             || matches!(ty, Type::Custom(name) if name == "UuidOption"))
                     {
@@ -3740,19 +3848,30 @@ impl Stmt {
                     .map(|id| format!("NodeID::from_u32({})", id))
                     .unwrap_or_else(|| format!("{}_id", var));
                 let ty = script.get_variable_type(var).or_else(|| {
-                    current_func.and_then(|f| {
-                        f.locals.iter().find(|v| v.name == *var).and_then(|v| v.typ.as_ref())
-                    }).or_else(|| {
-                        current_func.and_then(|f| {
-                            f.params.iter().find(|p| p.name == *var).map(|p| &p.typ)
+                    current_func
+                        .and_then(|f| {
+                            f.locals
+                                .iter()
+                                .find(|v| v.name == *var)
+                                .and_then(|v| v.typ.as_ref())
                         })
-                    })
+                        .or_else(|| {
+                            current_func.and_then(|f| {
+                                f.params.iter().find(|p| p.name == *var).map(|p| &p.typ)
+                            })
+                        })
                 });
                 if let Some(ty) = ty {
-                    let is_concrete_node_param = current_func.and_then(|f| {
-                        f.params.iter().find(|p| p.name == *var).map(|p| matches!(p.typ, Type::Node(_) | Type::DynNode))
-                    }).unwrap_or(false);
-                    if !node_id_expr.starts_with("NodeID::from_u32(") && !is_concrete_node_param
+                    let is_concrete_node_param = current_func
+                        .and_then(|f| {
+                            f.params
+                                .iter()
+                                .find(|p| p.name == *var)
+                                .map(|p| matches!(p.typ, Type::Node(_) | Type::DynNode))
+                        })
+                        .unwrap_or(false);
+                    if !node_id_expr.starts_with("NodeID::from_u32(")
+                        && !is_concrete_node_param
                         && (matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
                             || matches!(ty, Type::Custom(name) if name == "UuidOption"))
                     {

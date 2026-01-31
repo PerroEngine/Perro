@@ -192,21 +192,20 @@ pub trait SceneAccess {
 
     fn connect_signal_id(&mut self, signal: u64, target_id: NodeID, function: u64);
 
-    /// Get signal connections for a signal ID (for direct emission within API context)
+    /// Get signal connections for a signal ID. Used by API for instant emit (API calls
+    /// call_function_id for each handler; scene does not invoke handlers).
     fn get_signal_connections(
         &self,
         signal: u64,
     ) -> Option<&std::collections::HashMap<NodeID, smallvec::SmallVec<[u64; 4]>>>;
 
-    /// Emit signal instantly (zero-allocation, direct call)
-    /// Params are passed as compile-time slice, never stored
-    fn emit_signal_id(&mut self, signal: u64, params: &[Value]);
+    /// Emit signal instantly. Default is no-op; API does instant emit via get_signal_connections + call_function_id.
+    fn emit_signal_id(&mut self, _signal: u64, _params: &[Value]) {}
 
-    /// Emit signal deferred (queued, processed at end of frame)
-    /// Use this when you need to emit during iteration or want frame-end processing
+    /// Emit signal deferred: queue (signal, params). Processed at end of frame via API.emit_signal_id.
     fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]);
 
-    /// Legacy method - now calls emit_signal_id_deferred for safety
+    /// Legacy alias for emit_signal_id_deferred.
     fn queue_signal_id(&mut self, signal: u64, params: &[Value]) {
         self.emit_signal_id_deferred(signal, params);
     }
@@ -228,7 +227,8 @@ pub trait SceneAccess {
     fn mark_transform_dirty_recursive(&mut self, node_id: NodeID);
 
     /// Get the global transform for a Node3D (calculates lazily if dirty)
-    fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<crate::structs3d::Transform3D>;
+    fn get_global_transform_3d(&mut self, node_id: NodeID)
+    -> Option<crate::structs3d::Transform3D>;
 
     /// Set the global transform for a Node3D (marks it as dirty)
     fn set_global_transform_3d(

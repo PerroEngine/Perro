@@ -690,7 +690,7 @@ impl Type {
                 use crate::engine_structs::EngineStruct;
                 match es {
                     EngineStruct::Texture => "None".to_string(), // Texture is Option<TextureID>, default is None
-                    EngineStruct::Mesh => "None".to_string(),    // Mesh is Option<MeshID>, default is None
+                    EngineStruct::Mesh => "None".to_string(), // Mesh is Option<MeshID>, default is None
                     _ => format!("{}::default()", format!("{:?}", es)), // Other engine structs implement Default
                 }
             }

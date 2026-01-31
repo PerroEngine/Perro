@@ -116,13 +116,13 @@ impl PuptestsNodeTestsTestNode2dApiPupScript {
         let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
         let mut __t_ty: NodeType = api.get_type(self.id);
         let mut __t_pty: NodeType = api.get_parent_type(self.id);
-        api.set_script_var_id(self.id, 15902901984413996407u64, json!((json!(42f32) as Value)));
-        let mut __t_v: Value = api.get_script_var_id(self.id, 15902901984413996407u64);
-        api.call_function_id(self.id, 17023777509718577390u64, &[(json!(1.0f32) as Value)]);
+        api.set_script_var_id(self.id, 1032136658935082110u64, json!((json!(42f32) as Value)));
+        let mut __t_v: Value = api.get_script_var_id(self.id, 1032136658935082110u64);
+        api.call_function_id(self.id, 14019570758099282180u64, &[(json!(1.0f32) as Value)]);
         let mut c_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Other").as_str());
         if c_id.is_some() {
-            let mut __t_cv = api.get_script_var_id(c_id.expect("Child node not found"), 12638214688346347271u64);
-            let temp_api_var_0: f32 = api.Time.get_delta(); api.call_function_id(c_id.expect("Child node not found"), 11578024777410741332u64, &[json!(temp_api_var_0)]);
+            let mut __t_cv = api.get_script_var_id(c_id.expect("Child node not found"), 1903775884355078583u64);
+            let temp_api_var_0: f32 = api.Time.get_delta(); api.call_function_id(c_id.expect("Child node not found"), 17956486561529147460u64, &[json!(temp_api_var_0)]);
         }
     }
 
@@ -211,7 +211,7 @@ impl ScriptObject for PuptestsNodeTestsTestNode2dApiPupScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsNodeTestsTestNode2dApiPupScript) -> Option<Value>> =
     phf::phf_map! {
-        16655378055757661210u64 => |script: &PuptestsNodeTestsTestNode2dApiPupScript| -> Option<Value> {
+        8594669766308487599u64 => |script: &PuptestsNodeTestsTestNode2dApiPupScript| -> Option<Value> {
                         Some(json!(script.__t_acc))
                     },
 
@@ -219,7 +219,7 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsNodeTestsTestNode2dApiPupScript)
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsNodeTestsTestNode2dApiPupScript, Value) -> Option<()>> =
     phf::phf_map! {
-        16655378055757661210u64 => |script: &mut PuptestsNodeTestsTestNode2dApiPupScript, val: Value| -> Option<()> {
+        8594669766308487599u64 => |script: &mut PuptestsNodeTestsTestNode2dApiPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.__t_acc = v as f32;
                                 return Some(());
@@ -238,23 +238,23 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut PuptestsNodeTestsTestNode2dApiPupScript, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {
-        9771421818664213151u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        432816268499948822u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_transform_read_write(api);
             Value::Null
         },
-        2549815676698311619u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        10634414633195722237u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_transform_assign_to_other(api);
             Value::Null
         },
-        14129428719625018879u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        4508521169317302366u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_node_methods(api);
             Value::Null
         },
-        4646864879468115013u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        4985906182962114350u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_for_loops(api);
             Value::Null
         },
-        17023777509718577390u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        14019570758099282180u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
 let __t_x = params.get(0)
                             .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|i| i as f64)))
                             .unwrap_or_default() as f32;

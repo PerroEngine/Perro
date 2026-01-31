@@ -206,12 +206,10 @@ impl PupNodeApiRegistry {
         self.register_node(
             NodeType::MeshInstance3D,
             Some(NodeType::Node3D),
-            vec![
-                NodeApiField {
-                    script_name: "mesh",
-                    rust_field: NodeFieldRef::MeshInstance3DMeshId,
-                },
-            ],
+            vec![NodeApiField {
+                script_name: "mesh",
+                rust_field: NodeFieldRef::MeshInstance3DMeshId,
+            }],
             vec![],
         );
 

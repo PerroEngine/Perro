@@ -115,15 +115,15 @@ impl PuptestsResourceTestsTestResourceApiPupScript {
     }
 
     fn __t_test_signal_new_connect_emit(&mut self, api: &mut ScriptApi<'_>) {
-        let mut __t_sig: u64 = 12863628130621643238u64;
-        api.connect_signal_id(12863628130621643238u64, self.id, 15891415482422161649u64);
+        let mut __t_sig: u64 = 1780630955181868898u64;
+        api.connect_signal_id(1780630955181868898u64, self.id, 499805904335854216u64);
         api.emit_signal_id(__t_sig, &[]);
         api.emit_signal_id(__t_sig, &[]);
     }
 
     fn __t_test_signal_emit_deferred(&mut self, api: &mut ScriptApi<'_>) {
-        let mut __t_sig2: u64 = 6252300950692974454u64;
-        api.connect_signal_id(6252300950692974454u64, self.id, 8539718162271983822u64);
+        let mut __t_sig2: u64 = 1522096033513419117u64;
+        api.connect_signal_id(1522096033513419117u64, self.id, 7012539771050356804u64);
         api.emit_signal_id_deferred(__t_sig2, &[]);
         api.emit_signal_id_deferred(__t_sig2, &[]);
     }
@@ -222,7 +222,7 @@ impl ScriptObject for PuptestsResourceTestsTestResourceApiPupScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsResourceTestsTestResourceApiPupScript) -> Option<Value>> =
     phf::phf_map! {
-        9332267950230239222u64 => |script: &PuptestsResourceTestsTestResourceApiPupScript| -> Option<Value> {
+        7824945591447400731u64 => |script: &PuptestsResourceTestsTestResourceApiPupScript| -> Option<Value> {
                         Some(json!(script.__t_emit_count))
                     },
 
@@ -230,7 +230,7 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsResourceTestsTestResourceApiPupS
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsResourceTestsTestResourceApiPupScript, Value) -> Option<()>> =
     phf::phf_map! {
-        9332267950230239222u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: Value| -> Option<()> {
+        7824945591447400731u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_emit_count = v as i32;
                                 return Some(());
@@ -249,43 +249,43 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut PuptestsResourceTestsTestResourceApiPupScript, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {
-        7880464646272170321u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        18390795106357310575u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_texture(api);
             Value::Null
         },
-        14801928087785011895u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        14483491357096536422u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_mesh(api);
             Value::Null
         },
-        659671514298471190u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        9879402641008011397u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_quaternion(api);
             Value::Null
         },
-        17657417272605923597u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        4152446755791417629u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_shape2d(api);
             Value::Null
         },
-        3497552624715609828u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        9866335983713501206u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_signal_new_connect_emit(api);
             Value::Null
         },
-        7935796306813564562u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        8519384925195691834u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_signal_emit_deferred(api);
             Value::Null
         },
-        17460559410220403735u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        10523903633552724164u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_array(api);
             Value::Null
         },
-        4461473229972980648u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        1404378301208568344u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_map(api);
             Value::Null
         },
-        15891415482422161649u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        499805904335854216u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_on_signal(api);
             Value::Null
         },
-        8539718162271983822u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        7012539771050356804u64 => | script: &mut PuptestsResourceTestsTestResourceApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_on_other_signal(api);
             Value::Null
         },

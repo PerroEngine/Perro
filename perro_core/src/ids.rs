@@ -186,15 +186,7 @@ impl TextureID {
 impl UIElementID {
     /// Synthetic ID from string (e.g. "{parent}-border"). Uses hash; generation 0.
     pub fn from_string(s: &str) -> Self {
-        const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-        const FNV_PRIME: u64 = 0x100000001b3;
-        let mut hash = FNV_OFFSET;
-        for b in s.bytes() {
-            hash ^= b as u64;
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-        let index = (hash & 0xFFFF_FFFF) as u32;
-        Self::from_parts(if index == 0 { 1 } else { index }, 0)
+        Self::from_u64(crate::prelude::string_to_u64(s))
     }
 
     pub fn to_string(self) -> String {

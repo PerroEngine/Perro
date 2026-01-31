@@ -211,12 +211,16 @@ impl PupQuaternion {
         match method {
             "identity" => Some(ResourceModule::QuaternionOp(QuaternionResource::Identity)),
             "from_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
-            "from_euler_xyz" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ)),
+            "from_euler_xyz" => Some(ResourceModule::QuaternionOp(
+                QuaternionResource::FromEulerXYZ,
+            )),
             "as_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
             "rotate_x" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX)),
             "rotate_y" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY)),
             "rotate_z" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ)),
-            "rotate_euler_xyz" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateEulerXYZ)),
+            "rotate_euler_xyz" => Some(ResourceModule::QuaternionOp(
+                QuaternionResource::RotateEulerXYZ,
+            )),
             _ => None,
         }
     }

@@ -563,124 +563,124 @@ impl ScriptObject for PuptestsTypeTestsTypesPupScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsTypeTestsTypesPupScript) -> Option<Value>> =
     phf::phf_map! {
-        2485169244931714667u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        16983684379699066234u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_untyped_num_default))
                     },
-        1504910378154860307u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        14517213455044966814u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_int_default))
                     },
-        658168785591864834u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        9991895559085875155u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_int_8))
                     },
-        17966784340007944020u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        6907763954442211222u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_int_64))
                     },
-        3252444866660192402u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        8973349814173977172u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_uint_16))
                     },
-        5074350817013894852u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        3046066777449785432u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_float_default))
                     },
-        8575771357858329841u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        17752868004351243279u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_float_64))
                     },
-        8584268266216124416u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        2316659670110490855u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_big_int))
                     },
-        16018926697858484043u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        13465214740335122705u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_decimal))
                     },
-        2918741743342288797u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        8016390511073804230u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_typed_string))
                     },
-        8500958789799191182u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        4650343261514860800u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_local_int))
                     },
-        99173539736040918u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        13872638014380309739u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_local_uint_8))
                     },
-        15330836304937290421u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        14119881660771232270u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_local_float))
                     },
-        17238125180867109320u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        4004498235135167394u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_local_string))
                     },
-        17472032820032879803u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        8471447144323710791u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_local_big_int))
                     },
-        381633674885011772u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        10117708436004083557u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_local_decimal))
                     },
-        6760292584569910041u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        3779798166684576882u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_my_base_entity))
                     },
-        15631901558265132697u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        33335519538336474u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_my_player))
                     },
-        4372286770362822343u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        10529494944849640348u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_other_player))
                     },
-        1107408580180678471u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        7698666437609805814u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_my_derived_player))
                     },
-        11197902529099507753u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        5572972401027398504u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                         Some(json!(script.__t_my_derived_player_var))
                     },
-        397621861165125654u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        8364184064363316174u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_dynamic_array_inferred).unwrap_or_default())
                             },
-        7350485059281851515u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        12470944778840737214u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_dynamic_map_inferred).unwrap_or_default())
                             },
-        8275284063617525799u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        15283463302963209113u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_dynamic_array_annotated).unwrap_or_default())
                             },
-        5183367058847120760u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        3321606593962831259u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_dynamic_map_annotated).unwrap_or_default())
                             },
-        5337103969028899u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        9336664533782502695u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_int).unwrap_or_default())
                             },
-        11147407808312781560u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        1271683299559677683u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_uint_16).unwrap_or_default())
                             },
-        11774070694902202195u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        15698851478682963940u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_string).unwrap_or_default())
                             },
-        12618829247944308375u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        6959878892809981207u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_float_64).unwrap_or_default())
                             },
-        11622495865823915786u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        13991636420448652013u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_big_int).unwrap_or_default())
                             },
-        15605525470769910961u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        3207371733137647740u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_decimal).unwrap_or_default())
                             },
-        10539066375271246519u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        13077044168226195572u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_string_int_64).unwrap_or_default())
                             },
-        13676620148509593656u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        17330210884486471798u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_int_string).unwrap_or_default())
                             },
-        15879637269458870541u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        15105601501878002875u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_uint_8_float).unwrap_or_default())
                             },
-        13381633098612637663u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        5572691632809516563u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_string_big).unwrap_or_default())
                             },
-        2532243207680400902u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        4461889529609239001u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_string_decimal).unwrap_or_default())
                             },
-        9044830729489509861u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        7798308244576020780u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_entities).unwrap_or_default())
                             },
-        1181354728222443296u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        13656408154601714349u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_array_players).unwrap_or_default())
                             },
-        16255415596013162047u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        11975180591347374301u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_players).unwrap_or_default())
                             },
-        937814722116048519u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
+        15489989065689765635u64 => |script: &PuptestsTypeTestsTypesPupScript| -> Option<Value> {
                                 Some(serde_json::to_value(&script.__t_static_map_super_players).unwrap_or_default())
                             },
 
@@ -688,280 +688,280 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsTypeTestsTypesPupScript) -> Opti
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsTypeTestsTypesPupScript, Value) -> Option<()>> =
     phf::phf_map! {
-        2485169244931714667u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        16983684379699066234u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.__t_untyped_num_default = v as f32;
                                 return Some(());
                             }
                             None
                         },
-        1504910378154860307u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        14517213455044966814u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_typed_int_default = v as i32;
                                 return Some(());
                             }
                             None
                         },
-        658168785591864834u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        9991895559085875155u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_typed_int_8 = v as i8;
                                 return Some(());
                             }
                             None
                         },
-        17966784340007944020u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        6907763954442211222u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_typed_int_64 = v as i64;
                                 return Some(());
                             }
                             None
                         },
-        3252444866660192402u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        8973349814173977172u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_u64() {
                                 script.__t_typed_uint_16 = v as u16;
                                 return Some(());
                             }
                             None
                         },
-        5074350817013894852u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        3046066777449785432u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.__t_typed_float_default = v as f32;
                                 return Some(());
                             }
                             None
                         },
-        8575771357858329841u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        17752868004351243279u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.__t_typed_float_64 = v as f64;
                                 return Some(());
                             }
                             None
                         },
-        8584268266216124416u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        2316659670110490855u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_str() {
                                 script.__t_typed_big_int = v.parse::<BigInt>().unwrap();
                                 return Some(());
                             }
                             None
                         },
-        16018926697858484043u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        13465214740335122705u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_str() {
                                 script.__t_typed_decimal = v.parse::<Decimal>().unwrap();
                                 return Some(());
                             }
                             None
                         },
-        2918741743342288797u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        8016390511073804230u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_str() {
                                 script.__t_typed_string = v.to_string();
                                 return Some(());
                             }
                             None
                         },
-        8500958789799191182u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        4650343261514860800u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_local_int = v as i32;
                                 return Some(());
                             }
                             None
                         },
-        99173539736040918u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        13872638014380309739u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_u64() {
                                 script.__t_local_uint_8 = v as u8;
                                 return Some(());
                             }
                             None
                         },
-        15330836304937290421u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        14119881660771232270u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_f64() {
                                 script.__t_local_float = v as f32;
                                 return Some(());
                             }
                             None
                         },
-        17238125180867109320u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        4004498235135167394u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_str() {
                                 script.__t_local_string = v.to_string();
                                 return Some(());
                             }
                             None
                         },
-        17472032820032879803u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        8471447144323710791u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_str() {
                                 script.__t_local_big_int = v.parse::<BigInt>().unwrap();
                                 return Some(());
                             }
                             None
                         },
-        381633674885011772u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        10117708436004083557u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_str() {
                                 script.__t_local_decimal = v.parse::<Decimal>().unwrap();
                                 return Some(());
                             }
                             None
                         },
-        6760292584569910041u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        3779798166684576882u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Ok(v) = serde_json::from_value::<__t_GameEntity>(val) {
                                 script.__t_my_base_entity = v;
                                 return Some(());
                             }
                             None
                         },
-        15631901558265132697u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        33335519538336474u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Ok(v) = serde_json::from_value::<__t_TestPlayer>(val) {
                                 script.__t_my_player = v;
                                 return Some(());
                             }
                             None
                         },
-        4372286770362822343u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        10529494944849640348u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Ok(v) = serde_json::from_value::<__t_TestPlayer>(val) {
                                 script.__t_other_player = v;
                                 return Some(());
                             }
                             None
                         },
-        1107408580180678471u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        7698666437609805814u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Ok(v) = serde_json::from_value::<__t_SuperTestPlayer>(val) {
                                 script.__t_my_derived_player = v;
                                 return Some(());
                             }
                             None
                         },
-        11197902529099507753u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        5572972401027398504u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                             if let Ok(v) = serde_json::from_value::<__t_SuperTestPlayer>(val) {
                                 script.__t_my_derived_player_var = v;
                                 return Some(());
                             }
                             None
                         },
-        397621861165125654u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        8364184064363316174u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Some(v) = val.as_array() {
                                         script.__t_dynamic_array_inferred = v.clone();
                                         return Some(());
                                     }
                                     None
                                 },
-        7350485059281851515u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        12470944778840737214u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Some(v) = val.as_object() {
                                         script.__t_dynamic_map_inferred = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                         return Some(());
                                     }
                                     None
                                 },
-        8275284063617525799u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        15283463302963209113u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Some(v) = val.as_array() {
                                         script.__t_dynamic_array_annotated = v.clone();
                                         return Some(());
                                     }
                                     None
                                 },
-        5183367058847120760u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        3321606593962831259u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Some(v) = val.as_object() {
                                         script.__t_dynamic_map_annotated = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                         return Some(());
                                     }
                                     None
                                 },
-        5337103969028899u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        9336664533782502695u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<i32>>(val) {
                                         script.__t_static_array_int = vec_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        11147407808312781560u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        1271683299559677683u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<u16>>(val) {
                                         script.__t_static_array_uint_16 = vec_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        11774070694902202195u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        15698851478682963940u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<String>>(val) {
                                         script.__t_static_array_string = vec_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        12618829247944308375u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        6959878892809981207u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<f64>>(val) {
                                         script.__t_static_array_float_64 = vec_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        11622495865823915786u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        13991636420448652013u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<BigInt>>(val) {
                                         script.__t_static_array_big_int = vec_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        15605525470769910961u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        3207371733137647740u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<Decimal>>(val) {
                                         script.__t_static_array_decimal = vec_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        10539066375271246519u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        13077044168226195572u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, i64>>(val) {
                                         script.__t_static_map_string_int_64 = map_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        13676620148509593656u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        17330210884486471798u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<i32, String>>(val) {
                                         script.__t_static_map_int_string = map_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        15879637269458870541u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        15105601501878002875u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<u8, f32>>(val) {
                                         script.__t_static_map_uint_8_float = map_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        13381633098612637663u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        5572691632809516563u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, BigInt>>(val) {
                                         script.__t_static_map_string_big = map_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        2532243207680400902u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        4461889529609239001u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, Decimal>>(val) {
                                         script.__t_static_map_string_decimal = map_typed;
                                         return Some(());
                                     }
                                     None
                                 },
-        9044830729489509861u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        7798308244576020780u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<__t_GameEntity>>(val) {
                                         script.__t_static_array_entities = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                         return Some(());
                                     }
                                     None
                                 },
-        1181354728222443296u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        13656408154601714349u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<__t_TestPlayer>>(val) {
                                         script.__t_static_array_players = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                         return Some(());
                                     }
                                     None
                                 },
-        16255415596013162047u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        11975180591347374301u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, __t_TestPlayer>>(val) {
                                         script.__t_static_map_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                         return Some(());
                                     }
                                     None
                                 },
-        937814722116048519u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
+        15489989065689765635u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: Value| -> Option<()> {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, __t_SuperTestPlayer>>(val) {
                                         script.__t_static_map_super_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                         return Some(());
@@ -973,162 +973,162 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsTypeTestsTypesPupScript, Val
 
 static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsTypeTestsTypesPupScript, &Value)> =
     phf::phf_map! {
-        2485169244931714667u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        16983684379699066234u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_f64() {
                                 script.__t_untyped_num_default = v as f32;
                             }
                         },
-        1504910378154860307u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        14517213455044966814u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.__t_typed_int_default = v as i32;
                             }
                         },
-        658168785591864834u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        9991895559085875155u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.__t_typed_int_8 = v as i8;
                             }
                         },
-        17966784340007944020u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        6907763954442211222u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_i64() {
                                 script.__t_typed_int_64 = v as i64;
                             }
                         },
-        3252444866660192402u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        8973349814173977172u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_u64() {
                                 script.__t_typed_uint_16 = v as u16;
                             }
                         },
-        5074350817013894852u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        3046066777449785432u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_f64() {
                                 script.__t_typed_float_default = v as f32;
                             }
                         },
-        8575771357858329841u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        17752868004351243279u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_f64() {
                                 script.__t_typed_float_64 = v as f64;
                             }
                         },
-        8584268266216124416u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        2316659670110490855u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_str() {
                                 script.__t_typed_big_int = v.parse::<BigInt>().unwrap();
                             }
                         },
-        16018926697858484043u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        13465214740335122705u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_str() {
                                 script.__t_typed_decimal = v.parse::<Decimal>().unwrap();
                             }
                         },
-        2918741743342288797u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        8016390511073804230u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Some(v) = val.as_str() {
                                 script.__t_typed_string = v.to_string();
                             }
                         },
-        6760292584569910041u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        3779798166684576882u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Ok(v) = serde_json::from_value::<__t_GameEntity>(val.clone()) {
                                 script.__t_my_base_entity = v;
                             }
                         },
-        15631901558265132697u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        33335519538336474u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Ok(v) = serde_json::from_value::<__t_TestPlayer>(val.clone()) {
                                 script.__t_my_player = v;
                             }
                         },
-        1107408580180678471u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        7698666437609805814u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                             if let Ok(v) = serde_json::from_value::<__t_SuperTestPlayer>(val.clone()) {
                                 script.__t_my_derived_player = v;
                             }
                         },
-        397621861165125654u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        8364184064363316174u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Some(v) = val.as_array() {
                                         script.__t_dynamic_array_inferred = v.clone();
                                     }
                                 },
-        7350485059281851515u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        12470944778840737214u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Some(v) = val.as_object() {
                                         script.__t_dynamic_map_inferred = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                     }
                                 },
-        8275284063617525799u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        15283463302963209113u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Some(v) = val.as_array() {
                                         script.__t_dynamic_array_annotated = v.clone();
                                     }
                                 },
-        5183367058847120760u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        3321606593962831259u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Some(v) = val.as_object() {
                                         script.__t_dynamic_map_annotated = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                     }
                                 },
-        5337103969028899u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        9336664533782502695u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<i32>>(val.clone()) {
                                         script.__t_static_array_int = vec_typed;
                                     }
                                 },
-        11147407808312781560u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        1271683299559677683u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<u16>>(val.clone()) {
                                         script.__t_static_array_uint_16 = vec_typed;
                                     }
                                 },
-        11774070694902202195u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        15698851478682963940u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<String>>(val.clone()) {
                                         script.__t_static_array_string = vec_typed;
                                     }
                                 },
-        12618829247944308375u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        6959878892809981207u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<f64>>(val.clone()) {
                                         script.__t_static_array_float_64 = vec_typed;
                                     }
                                 },
-        11622495865823915786u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        13991636420448652013u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<BigInt>>(val.clone()) {
                                         script.__t_static_array_big_int = vec_typed;
                                     }
                                 },
-        15605525470769910961u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        3207371733137647740u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<Decimal>>(val.clone()) {
                                         script.__t_static_array_decimal = vec_typed;
                                     }
                                 },
-        10539066375271246519u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        13077044168226195572u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, i64>>(val.clone()) {
                                         script.__t_static_map_string_int_64 = map_typed;
                                     }
                                 },
-        13676620148509593656u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        17330210884486471798u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<i32, String>>(val.clone()) {
                                         script.__t_static_map_int_string = map_typed;
                                     }
                                 },
-        15879637269458870541u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        15105601501878002875u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<u8, f32>>(val.clone()) {
                                         script.__t_static_map_uint_8_float = map_typed;
                                     }
                                 },
-        13381633098612637663u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        5572691632809516563u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, BigInt>>(val.clone()) {
                                         script.__t_static_map_string_big = map_typed;
                                     }
                                 },
-        2532243207680400902u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        4461889529609239001u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, Decimal>>(val.clone()) {
                                         script.__t_static_map_string_decimal = map_typed;
                                     }
                                 },
-        9044830729489509861u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        7798308244576020780u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<__t_GameEntity>>(val.clone()) {
                                         script.__t_static_array_entities = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                     }
                                 },
-        1181354728222443296u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        13656408154601714349u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<__t_TestPlayer>>(val.clone()) {
                                         script.__t_static_array_players = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                     }
                                 },
-        16255415596013162047u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        11975180591347374301u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, __t_TestPlayer>>(val.clone()) {
                                         script.__t_static_map_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                     }
                                 },
-        937814722116048519u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
+        15489989065689765635u64 => |script: &mut PuptestsTypeTestsTypesPupScript, val: &Value| {
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<String, __t_SuperTestPlayer>>(val.clone()) {
                                         script.__t_static_map_super_players = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                     }
@@ -1140,27 +1140,27 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut PuptestsTypeTestsTypesPupScript, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {
-        8498657248953742794u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        15129565733604795035u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_primitive_operations(api);
             Value::Null
         },
-        7792328159662995076u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        13961433632852279095u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_explicit_casting(api);
             Value::Null
         },
-        8784565498339593560u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        13238379453555765253u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_assignments(api);
             Value::Null
         },
-        6891749365949355100u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        12767587787056846261u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_struct_inheritance_and_casting(api);
             Value::Null
         },
-        15775999022398286627u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        11206208867763550666u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_dynamic_containers_ops(api);
             Value::Null
         },
-        8968113419297778246u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        941936871380472241u64 => | script: &mut PuptestsTypeTestsTypesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_static_containers_ops(api);
             Value::Null
         },

@@ -77,7 +77,9 @@ impl Transform3D {
     /// This avoids gimbal lock by applying quaternion rotations incrementally
     pub fn rotate_euler(&mut self, delta_pitch: f32, delta_yaw: f32, delta_roll: f32) {
         // Deltas are in degrees.
-        self.rotation = self.rotation.rotate_euler_degrees(delta_pitch, delta_yaw, delta_roll);
+        self.rotation = self
+            .rotation
+            .rotate_euler_degrees(delta_pitch, delta_yaw, delta_roll);
     }
 
     /// Rotate only around pitch (X-axis)

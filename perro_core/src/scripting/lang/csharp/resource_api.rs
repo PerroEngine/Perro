@@ -184,12 +184,16 @@ impl CSharpQuaternion {
         match method {
             "Identity" => Some(ResourceModule::QuaternionOp(QuaternionResource::Identity)),
             "FromEuler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
-            "FromEulerXYZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ)),
+            "FromEulerXYZ" => Some(ResourceModule::QuaternionOp(
+                QuaternionResource::FromEulerXYZ,
+            )),
             "AsEuler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
             "RotateX" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX)),
             "RotateY" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY)),
             "RotateZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ)),
-            "RotateEulerXYZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateEulerXYZ)),
+            "RotateEulerXYZ" => Some(ResourceModule::QuaternionOp(
+                QuaternionResource::RotateEulerXYZ,
+            )),
             _ => None,
         }
     }

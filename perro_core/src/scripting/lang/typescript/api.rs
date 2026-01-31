@@ -86,7 +86,6 @@ impl TypeScriptConsole {
     }
 }
 
-
 pub struct TypeScriptInput;
 impl TypeScriptInput {
     pub const NAME: &'static str = "Input";

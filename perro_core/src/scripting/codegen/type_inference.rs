@@ -122,7 +122,10 @@ impl Script {
                 return format!("Vector3::new({}.x, {}.y, 0.0)", expr, expr);
             }
             // Vector3 (Euler degrees) -> Quaternion (3D rotation)
-            (EngineStruct(EngineStructKind::Vector3), EngineStruct(EngineStructKind::Quaternion)) => {
+            (
+                EngineStruct(EngineStructKind::Vector3),
+                EngineStruct(EngineStructKind::Quaternion),
+            ) => {
                 // Avoid evaluating expr 3x if it's complex
                 return format!(
                     "{{ let __e = {expr}; Quaternion::from_euler_degrees(__e.x, __e.y, __e.z) }}"
@@ -240,7 +243,11 @@ impl Script {
         name: &str,
         current_func: Option<&Function>,
     ) -> Option<Type> {
-        let original_name = if name.starts_with("__t_") { &name[4..] } else { name };
+        let original_name = if name.starts_with("__t_") {
+            &name[4..]
+        } else {
+            name
+        };
         if let Some(func) = current_func {
             if let Some(local) = func
                 .locals
@@ -254,7 +261,11 @@ impl Script {
                 for stmt in body {
                     match stmt {
                         Stmt::VariableDecl(v) if v.name == name => return Some(v),
-                        Stmt::If { then_body, else_body, .. } => {
+                        Stmt::If {
+                            then_body,
+                            else_body,
+                            ..
+                        } => {
                             if let Some(v) = find_var_in_body(name, then_body) {
                                 return Some(v);
                             }
@@ -274,10 +285,16 @@ impl Script {
                 }
                 None
             }
-            if let Some(local) = find_var_in_body(name, &func.body).or_else(|| find_var_in_body(original_name, &func.body)) {
+            if let Some(local) = find_var_in_body(name, &func.body)
+                .or_else(|| find_var_in_body(original_name, &func.body))
+            {
                 return local.typ.clone();
             }
-            if let Some(param) = func.params.iter().find(|p| p.name == name || p.name == original_name) {
+            if let Some(param) = func
+                .params
+                .iter()
+                .find(|p| p.name == name || p.name == original_name)
+            {
                 return Some(param.typ.clone());
             }
         }
@@ -811,7 +828,9 @@ impl Script {
                     }
                     // Script's node_type is the engine type (e.g. Camera2D); resolve member from engine registry
                     if let Some(node_type_enum) = string_to_node_type(type_name) {
-                        if let Some(ty) = ENGINE_REGISTRY.get_field_type_node(&node_type_enum, member) {
+                        if let Some(ty) =
+                            ENGINE_REGISTRY.get_field_type_node(&node_type_enum, member)
+                        {
                             return Some(ty);
                         }
                     }

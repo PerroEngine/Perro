@@ -210,12 +210,15 @@ impl ModuleCodegen for ArrayResource {
                 // Infer the type of the array itself to get its inner type
                 let array_type = script.infer_expr_type(array_expr, current_func);
 
-                let inner_type =
-                    if let Some(Type::Container(ContainerKind::Array, ref inner_types)) = array_type {
-                        inner_types.get(0).cloned().unwrap_or(Type::Object)
-                    } else {
-                        Type::Object // Fallback if array type couldn't be inferred
-                    };
+                let inner_type = if let Some(Type::Container(
+                    ContainerKind::Array,
+                    ref inner_types,
+                )) = array_type
+                {
+                    inner_types.get(0).cloned().unwrap_or(Type::Object)
+                } else {
+                    Type::Object // Fallback if array type couldn't be inferred
+                };
 
                 let mut value_code =
                     value_expr.to_rust(needs_self, script, Some(&inner_type), current_func, None);
@@ -850,7 +853,10 @@ impl ModuleCodegen for QuaternionResource {
         match self {
             QuaternionResource::Identity => "Quaternion::identity()".into(),
             QuaternionResource::FromEuler => {
-                let e = args_strs.get(0).cloned().unwrap_or_else(|| "Vector3::ZERO".into());
+                let e = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "Vector3::ZERO".into());
                 format!("Quaternion::from_euler_degrees({e}.x, {e}.y, {e}.z)")
             }
             QuaternionResource::FromEulerXYZ => {
@@ -968,9 +974,12 @@ impl ModuleTypes for QuaternionResource {
             QuaternionResource::RotateX => Some(vec!["q", "delta_pitch_deg"]),
             QuaternionResource::RotateY => Some(vec!["q", "delta_yaw_deg"]),
             QuaternionResource::RotateZ => Some(vec!["q", "delta_roll_deg"]),
-            QuaternionResource::RotateEulerXYZ => {
-                Some(vec!["q", "delta_pitch_deg", "delta_yaw_deg", "delta_roll_deg"])
-            }
+            QuaternionResource::RotateEulerXYZ => Some(vec![
+                "q",
+                "delta_pitch_deg",
+                "delta_yaw_deg",
+                "delta_roll_deg",
+            ]),
         }
     }
 }
@@ -1122,7 +1131,9 @@ impl ModuleCodegen for MeshResource {
 impl ModuleTypes for MeshResource {
     fn return_type(&self) -> Option<Type> {
         match self {
-            MeshResource::Load | MeshResource::Preload => Some(Type::EngineStruct(EngineStruct::Mesh)),
+            MeshResource::Load | MeshResource::Preload => {
+                Some(Type::EngineStruct(EngineStruct::Mesh))
+            }
             MeshResource::Remove => None,
         }
     }

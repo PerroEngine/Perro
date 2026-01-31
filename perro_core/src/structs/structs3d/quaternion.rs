@@ -146,9 +146,18 @@ impl Quaternion {
     ///
     /// This is the 3D equivalent of "rotation.x += delta" style updates, but implemented via
     /// quaternion multiplication (avoids gimbal lock and keeps the quaternion normalized).
-    pub fn rotate_euler_degrees(&self, delta_pitch_deg: f32, delta_yaw_deg: f32, delta_roll_deg: f32) -> Self {
-        self.mul(Quaternion::from_euler_degrees(delta_pitch_deg, delta_yaw_deg, delta_roll_deg))
-            .normalize()
+    pub fn rotate_euler_degrees(
+        &self,
+        delta_pitch_deg: f32,
+        delta_yaw_deg: f32,
+        delta_roll_deg: f32,
+    ) -> Self {
+        self.mul(Quaternion::from_euler_degrees(
+            delta_pitch_deg,
+            delta_yaw_deg,
+            delta_roll_deg,
+        ))
+        .normalize()
     }
 
     /// Rotate around X axis by `delta_pitch_deg` degrees and return the new quaternion.

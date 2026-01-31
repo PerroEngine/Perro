@@ -199,17 +199,27 @@ impl TypeScriptQuaternion {
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {
             "identity" => Some(ResourceModule::QuaternionOp(QuaternionResource::Identity)),
-            "fromEuler" | "from_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
-            "fromEulerXYZ" | "from_euler_xyz" => {
-                Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ))
+            "fromEuler" | "from_euler" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler))
             }
-            "asEuler" | "as_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
-            "rotateX" | "rotate_x" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX)),
-            "rotateY" | "rotate_y" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY)),
-            "rotateZ" | "rotate_z" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ)),
-            "rotateEulerXYZ" | "rotate_euler_xyz" => {
-                Some(ResourceModule::QuaternionOp(QuaternionResource::RotateEulerXYZ))
+            "fromEulerXYZ" | "from_euler_xyz" => Some(ResourceModule::QuaternionOp(
+                QuaternionResource::FromEulerXYZ,
+            )),
+            "asEuler" | "as_euler" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler))
             }
+            "rotateX" | "rotate_x" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX))
+            }
+            "rotateY" | "rotate_y" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY))
+            }
+            "rotateZ" | "rotate_z" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ))
+            }
+            "rotateEulerXYZ" | "rotate_euler_xyz" => Some(ResourceModule::QuaternionOp(
+                QuaternionResource::RotateEulerXYZ,
+            )),
             _ => None,
         }
     }

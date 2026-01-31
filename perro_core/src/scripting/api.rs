@@ -1,6 +1,37 @@
-// scripting/lang/script_api.rs
-//! Perro Script API (single-file version with Deref)
-//! Provides all engine APIs (JSON, Time, OS, Process) directly under `api`
+//! # Perro Script API
+//!
+//! ## Table of contents (sections in this file)
+//!
+//! 1. **Module APIs** — Engine modules (no Graphics dependency): JsonApi, TimeApi, OsApi, ProcessApi,
+//!    InputApi (JoyCon, Controller, Keyboard, Mouse), MathApi, DirectoryApi, EditorApi, FileSystemApi.
+//!    Methods are grouped by sub-API; within each sub-API, methods are in logical order.
+//! 2. **Resource APIs** — TextureApi, MeshApi (require ScriptApi/Graphics for load/preload).
+//! 3. **Engine API aggregator** — `EngineApi` struct and `Default`.
+//! 4. **Deref** — `ScriptApi` derefs to `EngineApi` so `api.Input`, `api.Texture`, etc. work.
+//! 5. **ScriptApi** — Main entry point for scripts. Subsections:
+//!    - Core (constructor, project, context)
+//!    - Joy-Con helpers
+//!    - Compilation (compile_scripts, compile_project, compile_and_run)
+//!    - Lifecycle (apply_exposed, call_init, call_update, call_function_id, script vars)
+//!    - Signals (emit_signal, connect_signal)
+//!    - Asset IO (load_asset, save_asset, resolve_path)
+//!    - Node / Scene (read_node, mutate_node, create_node, reparent, transforms, UI)
+//!    - Printing (print, print_warn, print_error, print_info)
+//!
+//! ## SAFETY (unsafe in this module)
+//!
+//! - **Parent pointer** (`InputApi`, `TextureApi`, `MeshApi`, `EditorApi`): Each stores an optional
+//!   `*mut ScriptApi<'static>`. Set in `Deref`/`DerefMut` so sub-APIs can call back into `ScriptApi`.
+//!   Safe because we control the lifetime of `ScriptApi` and only use the pointer while the borrow
+//!   is active; no concurrent access. Sub-APIs are only used via `api.Input`, `api.Texture`, etc.,
+//!   so the pointer is always set by `Deref`/`DerefMut` before any method runs.
+//! - **UnsafeCell for script calls** (`call_init`, `call_update`, `call_function_id`, script vars):
+//!   Scripts are `Rc<UnsafeCell<Box<dyn ScriptObject>>>`. We take `&mut` via `UnsafeCell::get()`.
+//!   Safe because execution is synchronous, single-threaded, and all access goes through this API.
+//! - **Borrow splitting** (`call_node_internal_fixed_update`, `call_node_internal_render_update`):
+//!   We use a raw pointer to the scene to get `RefMut` from the scene’s RefCell while holding
+//!   `&mut self`. Safe because the `RefMut` borrows from the RefCell, not from the `SceneAccess`
+//!   reference.
 
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
@@ -12,7 +43,6 @@ use serde::Serialize;
 use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
-    cell::RefCell,
     collections::HashMap,
     env, io,
     ops::{Deref, DerefMut},
@@ -35,10 +65,11 @@ use crate::{
     ui_element::BaseElement,
 };
 
-//-----------------------------------------------------
-// 1️⃣ Sub‑APIs (Engine modules)
-//-----------------------------------------------------
+// =============================================================================
+// MODULE APIS (engine modules; no Graphics dependency)
+// =============================================================================
 
+// ---------- JsonApi ----------
 #[derive(Default)]
 pub struct JsonApi;
 impl JsonApi {
@@ -52,6 +83,7 @@ impl JsonApi {
     }
 }
 
+// ---------- TimeApi ----------
 #[derive(Default)]
 pub struct TimeApi {
     pub delta: f32,
@@ -97,6 +129,7 @@ impl TimeApi {
     }
 }
 
+// ---------- OsApi ----------
 #[derive(Default)]
 pub struct OsApi;
 impl OsApi {
@@ -133,6 +166,7 @@ impl OsApi {
     }
 }
 
+// ---------- ProcessApi ----------
 #[derive(Default)]
 pub struct ProcessApi;
 impl ProcessApi {
@@ -147,16 +181,10 @@ impl ProcessApi {
     }
 }
 
-// Thread-local storage for current ScriptApi context
-// This allows JoyConApi methods to access the ScriptApi without lifetime issues
-thread_local! {
-    static SCRIPT_API_CONTEXT: RefCell<Option<*mut ScriptApi<'static>>> = RefCell::new(None);
-    // Track the current script ID being executed (for nested call detection)
-    // Scripts are now stored as Rc<RefCell<Box<dyn ScriptObject>>>, so they're always in the HashMap
-    // We just track the ID to detect when a script calls itself (nested calls)
-    static CURRENT_SCRIPT_ID: RefCell<Option<NodeID>> = RefCell::new(None);
-}
+// ---------- InputApi family (JoyCon, Controller, Keyboard, Mouse) ----------
+// Sub-APIs get ScriptApi via stored pointer set in Deref/DerefMut when script accesses api.Input, etc.
 
+// ---------- JoyConApi ----------
 pub struct JoyConApi {
     // Store a pointer to the ScriptApi that owns this instance
     // This allows methods to access the ScriptApi without thread-local storage
@@ -202,23 +230,10 @@ impl JoyConApi {
     /// to avoid thread-local context issues. This public method is kept for API compatibility.
     pub fn scan_joycon1(&mut self) -> Vec<Value> {
         // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                // Store it for next time using unsafe
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return vec![];
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return vec![],
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::scan_joycon1_impl(api)
@@ -255,22 +270,10 @@ impl JoyConApi {
     /// Scan for Joy-Con 2 devices (BLE)
     /// Returns a vector of device addresses/identifiers as JSON
     pub fn scan_joycon2(&mut self) -> Vec<Value> {
-        // Get ScriptApi pointer
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return vec![];
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return vec![],
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::scan_joycon2_impl(api)
@@ -303,22 +306,10 @@ impl JoyConApi {
     /// Connect to a Joy-Con 2 device (BLE)
     /// Returns true if connection was successful, false otherwise
     pub fn connect_joycon2(&mut self, address: &str) -> bool {
-        // Get ScriptApi pointer
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return false;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return false,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::connect_joycon2_impl(api, address)
@@ -350,23 +341,10 @@ impl JoyConApi {
     /// Connect to a Joy-Con 1 device
     /// Returns true if connection was successful, false otherwise
     pub fn connect_joycon1(&mut self, serial: &str, vid: u64, pid: u64) -> bool {
-        // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return false;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return false,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::connect_joycon1_impl(api, serial, vid, pid)
@@ -400,23 +378,10 @@ impl JoyConApi {
     /// Get data from all connected controllers as structs
     /// Returns Vec<JoyconState> directly - allows direct field access like controller.gyro.x
     pub fn get_data(&mut self) -> Vec<crate::input::joycon::JoyconState> {
-        // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return vec![];
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return vec![],
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::get_data_impl(api)
@@ -489,23 +454,10 @@ impl JoyConApi {
 
     /// Enable polling
     pub fn enable_polling(&mut self) -> bool {
-        // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return false;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return false,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::enable_polling_impl(api)
@@ -555,14 +507,12 @@ impl JoyConApi {
 
     /// Disable polling
     pub fn disable_polling(&mut self) {
-        SCRIPT_API_CONTEXT.with(|ctx| {
-            if let Some(api_ptr) = *ctx.borrow() {
-                unsafe {
-                    let api = &mut *api_ptr;
-                    Self::disable_polling_impl(api);
-                }
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::disable_polling_impl(api);
             }
-        })
+        }
     }
 
     pub(crate) fn disable_polling_impl(api: &mut ScriptApi) {
@@ -574,27 +524,11 @@ impl JoyConApi {
 
     /// Poll Joy-Con 1 synchronously (call from main loop)
     pub fn poll_joycon1_sync(&mut self) {
-        // Get ScriptApi pointer - try stored pointer first, then get from parent InputApi
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut JoyConApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                eprintln!("[poll_joycon1_sync] ERROR: No context available!");
-                return;
+        if let Some(api_ptr) = self.get_api_ptr() {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::poll_joycon1_sync_impl(api);
             }
-        };
-
-        unsafe {
-            let api = &mut *api_ptr;
-            Self::poll_joycon1_sync_impl(api);
         }
     }
 
@@ -607,16 +541,13 @@ impl JoyConApi {
 
     /// Check if polling is enabled
     pub fn is_polling_enabled(&mut self) -> bool {
-        SCRIPT_API_CONTEXT.with(|ctx| {
-            if let Some(api_ptr) = *ctx.borrow() {
-                unsafe {
-                    let api = &mut *api_ptr;
-                    Self::is_polling_enabled_impl(api)
-                }
-            } else {
-                false
-            }
-        })
+        match self.get_api_ptr() {
+            Some(api_ptr) => unsafe {
+                let api = &mut *api_ptr;
+                Self::is_polling_enabled_impl(api)
+            },
+            None => false,
+        }
     }
 
     pub(crate) fn is_polling_enabled_impl(api: &mut ScriptApi) -> bool {
@@ -629,6 +560,7 @@ impl JoyConApi {
     }
 }
 
+// ---------- ControllerApi ----------
 pub struct ControllerApi {
     // Pointer to the parent ScriptApi - set when accessed through DerefMut
     api_ptr: Option<*mut ScriptApi<'static>>,
@@ -662,21 +594,10 @@ impl ControllerApi {
     /// Enable the controller manager
     /// This must be called before using any controller functionality
     pub fn enable(&mut self) -> bool {
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut ControllerApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return false;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return false,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::enable_impl(api)
@@ -688,6 +609,7 @@ impl ControllerApi {
     }
 }
 
+// ---------- KeyboardApi ----------
 pub struct KeyboardApi {
     // Pointer to the parent ScriptApi - set when accessed through DerefMut
     api_ptr: Option<*mut ScriptApi<'static>>,
@@ -978,6 +900,7 @@ impl MouseApi {
     }
 }
 
+// ---------- InputApi ----------
 pub struct InputApi {
     pub Controller: ControllerApi,
     pub JoyCon: JoyConApi,
@@ -1053,15 +976,17 @@ impl InputApi {
     }
 }
 
-//-----------------------------------------------------
-// 2️⃣ Engine API Aggregator
-//-----------------------------------------------------
+// =============================================================================
+// RESOURCE APIS (Texture, Mesh — require ScriptApi/Graphics for load/preload)
+// =============================================================================
 
+// ---------- TextureApi ----------
 pub struct TextureApi {
     // Pointer to the parent ScriptApi - set when accessed through DerefMut
     api_ptr: Option<*mut ScriptApi<'static>>,
 }
 
+// ---------- MeshApi ----------
 pub struct MeshApi {
     // Pointer to the parent ScriptApi - set when accessed through DerefMut
     api_ptr: Option<*mut ScriptApi<'static>>,
@@ -1094,17 +1019,9 @@ impl MeshApi {
 
     /// Load a mesh from a path (built-ins: __cube__, __sphere__, __plane__, etc.)
     pub fn load(&mut self, path: &str) -> Option<crate::ids::MeshID> {
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                self.set_api_ptr(ptr);
-                ptr
-            } else {
-                eprintln!("[Mesh.load] ERROR: No ScriptApi context available!");
-                return None;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return None,
         };
         unsafe {
             let api = &mut *api_ptr;
@@ -1129,16 +1046,7 @@ impl MeshApi {
 
     /// Remove a mesh by id. Safe to call with nil/None.
     pub fn remove(&mut self, id: Option<crate::ids::MeshID>) {
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            Some(ptr)
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            tl_ptr.map(|ptr| {
-                self.set_api_ptr(ptr);
-                ptr
-            })
-        };
-        if let Some(api_ptr) = api_ptr {
+        if let Some(api_ptr) = self.get_api_ptr() {
             unsafe {
                 let api = &mut *api_ptr;
                 Self::remove_impl(api, id);
@@ -1187,22 +1095,10 @@ impl TextureApi {
     /// Load a texture from a path
     /// Panics if Graphics is not available or texture cannot be loaded
     pub fn load(&mut self, path: &str) -> Option<crate::ids::TextureID> {
-        // Get ScriptApi pointer - try stored pointer first
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                // Store it for next time
-                self.set_api_ptr(ptr);
-                ptr
-            } else {
-                eprintln!("[Texture.load] ERROR: No ScriptApi context available!");
-                return None;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return None,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Some(Self::load_impl(api, path))
@@ -1229,17 +1125,9 @@ impl TextureApi {
 
     /// Preload a texture from path and pin it so it is never evicted; only Texture.remove(id) frees it.
     pub fn preload(&mut self, path: &str) -> Option<TextureID> {
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                self.set_api_ptr(ptr);
-                ptr
-            } else {
-                eprintln!("[Texture.preload] ERROR: No ScriptApi context available!");
-                return None;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return None,
         };
         unsafe {
             let api = &mut *api_ptr;
@@ -1265,16 +1153,7 @@ impl TextureApi {
 
     /// Remove (unpin and free) a texture by id. Safe to call with nil or already-removed id.
     pub fn remove(&mut self, id: Option<TextureID>) {
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            Some(ptr)
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            tl_ptr.map(|ptr| {
-                self.set_api_ptr(ptr);
-                ptr
-            })
-        };
-        if let Some(api_ptr) = api_ptr {
+        if let Some(api_ptr) = self.get_api_ptr() {
             unsafe {
                 let api = &mut *api_ptr;
                 Self::remove_impl(api, id);
@@ -1298,22 +1177,10 @@ impl TextureApi {
         width: u32,
         height: u32,
     ) -> Option<TextureID> {
-        // Get ScriptApi pointer - try stored pointer first
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if DerefMut works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                // Store it for next time
-                self.set_api_ptr(ptr);
-                ptr
-            } else {
-                eprintln!("[Texture.create_from_bytes] ERROR: No ScriptApi context available!");
-                return None;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return None,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::create_from_bytes_impl(api, bytes, width, height)
@@ -1346,24 +1213,10 @@ impl TextureApi {
     /// Get the width of a texture by its UUID.
     /// Accepts Option<TextureID> so script-side `tex_id` (from load/preload) can be passed directly.
     pub fn get_width(&self, id: Option<TextureID>) -> u32 {
-        // Get ScriptApi pointer - try stored pointer first
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if Deref works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                // Store it for next time (need mutable access)
-                unsafe {
-                    let self_mut = self as *const TextureApi as *mut TextureApi;
-                    (*self_mut).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return 0;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return 0,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::get_width_impl(api, id)
@@ -1391,24 +1244,10 @@ impl TextureApi {
     /// Get the height of a texture by its UUID.
     /// Accepts Option<TextureID> so script-side `tex_id` (from load/preload) can be passed directly.
     pub fn get_height(&self, id: Option<TextureID>) -> u32 {
-        // Get ScriptApi pointer - try stored pointer first
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if Deref works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                // Store it for next time (need mutable access)
-                unsafe {
-                    let self_mut = self as *const TextureApi as *mut TextureApi;
-                    (*self_mut).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return 0;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return 0,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::get_height_impl(api, id)
@@ -1434,24 +1273,10 @@ impl TextureApi {
     /// Get the size of a texture by its UUID (returns Vector2).
     /// Accepts Option<TextureID> so script-side `tex_id` (from load/preload) can be passed directly.
     pub fn get_size(&self, id: Option<TextureID>) -> crate::Vector2 {
-        // Get ScriptApi pointer - try stored pointer first
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            // Fallback to thread-local (shouldn't be needed if Deref works correctly)
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                // Store it for next time (need mutable access)
-                unsafe {
-                    let self_mut = self as *const TextureApi as *mut TextureApi;
-                    (*self_mut).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                return crate::Vector2::new(0.0, 0.0);
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return crate::Vector2::new(0.0, 0.0),
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::get_size_impl(api, id)
@@ -1474,6 +1299,7 @@ impl TextureApi {
     }
 }
 
+// ---------- DirectoryApi ----------
 #[derive(Default)]
 pub struct DirectoryApi;
 impl DirectoryApi {
@@ -1577,6 +1403,7 @@ impl DirectoryApi {
     }
 }
 
+// ---------- MathApi ----------
 #[derive(Default)]
 pub struct MathApi;
 
@@ -1626,16 +1453,12 @@ impl MathApi {
 
     /// Spherical interpolation between two quaternions by t (0..1).
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn slerp(
-        &self,
-        a: crate::Quaternion,
-        b: crate::Quaternion,
-        t: f32,
-    ) -> crate::Quaternion {
+    pub fn slerp(&self, a: crate::Quaternion, b: crate::Quaternion, t: f32) -> crate::Quaternion {
         crate::Quaternion::from_glam_public(a.to_glam_public().slerp(b.to_glam_public(), t))
     }
 }
 
+// ---------- EditorApi ----------
 #[derive(Default)]
 pub struct EditorApi {
     // Store a pointer to the ScriptApi that owns this instance
@@ -1658,22 +1481,10 @@ impl EditorApi {
     /// Create a new Perro project
     /// Returns true on success, false on failure
     pub fn create_project(&mut self, project_name: &str, project_path: &str) -> bool {
-        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
-            ptr
-        } else {
-            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
-            if let Some(ptr) = tl_ptr {
-                let self_ptr = self as *mut EditorApi;
-                unsafe {
-                    (*self_ptr).set_api_ptr(ptr);
-                }
-                ptr
-            } else {
-                eprintln!("❌ EditorApi: No ScriptApi context available");
-                return false;
-            }
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return false,
         };
-
         unsafe {
             let api = &mut *api_ptr;
             Self::create_project_impl(api, project_name, project_path)
@@ -1722,6 +1533,7 @@ impl EditorApi {
     }
 }
 
+// ---------- FileSystemApi ----------
 #[derive(Default)]
 pub struct FileSystemApi;
 
@@ -1791,6 +1603,10 @@ impl FileSystemApi {
     }
 }
 
+// =============================================================================
+// ENGINE API AGGREGATOR
+// =============================================================================
+
 #[allow(non_snake_case)]
 #[derive(Default)]
 pub struct EngineApi {
@@ -1807,9 +1623,9 @@ pub struct EngineApi {
     pub FileSystem: FileSystemApi,
 }
 
-//-----------------------------------------------------
-// 4️⃣  Deref Implementation
-//-----------------------------------------------------
+// =============================================================================
+// DEREF (ScriptApi -> EngineApi so api.Input, api.Texture, etc. work)
+// =============================================================================
 
 impl<'a> Deref for ScriptApi<'a> {
     type Target = EngineApi;
@@ -1862,9 +1678,10 @@ impl<'a> DerefMut for ScriptApi<'a> {
     }
 }
 
-//-----------------------------------------------------
-// 3️⃣ Script API Context (main entry point for scripts)
-//-----------------------------------------------------
+// =============================================================================
+// SCRIPT API (main entry point for scripts)
+// =============================================================================
+
 pub struct ScriptApi<'a> {
     pub(crate) scene: &'a mut dyn SceneAccess,
     project: &'a mut Project,
@@ -1889,35 +1706,13 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    /// Set the thread-local context for this ScriptApi
-    /// This allows JoyConApi methods to access the ScriptApi
-    #[cfg_attr(not(debug_assertions), inline)]
-    pub(crate) fn set_context(&mut self) {
-        let api_ptr: *mut ScriptApi<'static> = unsafe { std::mem::transmute(self) };
-
-        SCRIPT_API_CONTEXT.with(|ctx| {
-            *ctx.borrow_mut() = Some(api_ptr);
-        });
-    }
-
-    #[cfg_attr(not(debug_assertions), inline)]
-    pub(crate) fn clear_context() {
-        SCRIPT_API_CONTEXT.with(|ctx| {
-            *ctx.borrow_mut() = None;
-        });
-    }
-
-    //-------------------------------------------------
-    // Core access
-    //-------------------------------------------------
+    // ---------- Core access ----------
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn project(&mut self) -> &mut Project {
         self.project
     }
 
-    //-------------------------------------------------
-    // Input / Joy-Con API helpers
-    //-------------------------------------------------
+    // ---------- Joy-Con helpers ----------
     /// Scan for Joy-Con 1 devices (HID)
     pub fn scan_joycon1(&mut self) -> Vec<Value> {
         JoyConApi::scan_joycon1_impl(self)
@@ -1948,9 +1743,7 @@ impl<'a> ScriptApi<'a> {
         JoyConApi::is_polling_enabled_impl(self)
     }
 
-    //-------------------------------------------------
-    // Compilation helpers
-    //-------------------------------------------------
+    // ---------- Compilation ----------
     pub fn compile_scripts(&mut self) -> Result<(), String> {
         self.run_compile(BuildProfile::Dev, CompileTarget::Scripts)
     }
@@ -2160,9 +1953,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    //-------------------------------------------------
-    // Lifecycle / Updates
-    //-------------------------------------------------
+    // ---------- Lifecycle / Script calls ----------
     /// Apply exposed script variables from the node's script_exp_vars (scene/editor values)
     /// to the script instance. Converts variable names (strings) to u64 IDs and calls
     /// the script's apply_exposed so APPLY_TABLE runs. Call this before call_init so
@@ -2206,12 +1997,7 @@ impl<'a> ScriptApi<'a> {
     /// - Scripts are never accessed concurrently
     /// - All script code goes through the API (transpiler guarantee)
     pub fn call_init(&mut self, script_id: NodeID) {
-        self.set_context();
-        // Set current script ID in thread-local context
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(script_id));
-        // Scripts are now always in memory as Rc<UnsafeCell<>>, so we can access them directly
         if let Some(script_rc) = self.scene.get_script(script_id) {
-            // Check if script has init implemented before calling
             unsafe {
                 let script_ptr = script_rc.get();
                 let has_init = (*script_ptr).script_flags().has_init();
@@ -2222,8 +2008,6 @@ impl<'a> ScriptApi<'a> {
                 }
             }
         }
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = None);
-        Self::clear_context();
     }
 
     /// Call the update() method on a script
@@ -2234,12 +2018,7 @@ impl<'a> ScriptApi<'a> {
     /// - Nested calls (through call_function_id) are safe (same execution context)
     /// - All script code goes through the API (transpiler guarantee)
     pub fn call_update(&mut self, id: NodeID) {
-        self.set_context();
-        // Set current script ID in thread-local context
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
-        // Scripts are now always in memory as Rc<UnsafeCell<>>, so we can access them directly
         if let Some(script_rc) = self.scene.get_script(id) {
-            // Check if script has update implemented before calling
             unsafe {
                 let script_ptr = script_rc.get();
                 let has_update = (*script_ptr).script_flags().has_update();
@@ -2250,17 +2029,10 @@ impl<'a> ScriptApi<'a> {
                 }
             }
         }
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = None);
-        Self::clear_context();
     }
 
     pub fn call_fixed_update(&mut self, id: NodeID) {
-        self.set_context();
-        // Set current script ID in thread-local context
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
-        // Scripts are now always in memory as Rc<UnsafeCell<>>, so we can access them directly
         if let Some(script_rc) = self.scene.get_script(id) {
-            // Check if script has fixed_update implemented before calling
             unsafe {
                 let script_ptr = script_rc.get();
                 let has_fixed_update = (*script_ptr).script_flags().has_fixed_update();
@@ -2271,8 +2043,6 @@ impl<'a> ScriptApi<'a> {
                 }
             }
         }
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = None);
-        Self::clear_context();
     }
 
     pub fn call_node_internal_fixed_update(&mut self, node_id: NodeID) {
@@ -2358,21 +2128,7 @@ impl<'a> ScriptApi<'a> {
     /// all state mutations. There's no memory safety concern - each script is independently
     /// stored in the HashMap and accessed through the API.
     pub fn call_function_id(&mut self, id: NodeID, func: u64, params: &[Value]) -> Value {
-        // Set ScriptApi context (for JoyCon API thread-local access)
-        // This is idempotent - safe to call multiple times
-        self.set_context();
-
-        // Check if this is a nested call to the same script
-        let current_id_opt = CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow());
-
-        // Store previous script ID before setting new one
-        let previous_script_id = current_id_opt;
-
-        // Set current script ID for nested call detection
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = Some(id));
-
-        let result = // Scripts are now always in memory as Rc<UnsafeCell<Box<dyn ScriptObject>>>, so we can access them directly
-        if let Some(script_rc) = self.scene.get_script(id) {
+        let result = if let Some(script_rc) = self.scene.get_script(id) {
             // With UnsafeCell, we can always get a mutable reference, even for nested calls
             //
             // SAFETY: This is safe because of our design invariants:
@@ -2429,9 +2185,6 @@ impl<'a> ScriptApi<'a> {
             Value::Null
         };
 
-        // Restore previous script ID (if any)
-        CURRENT_SCRIPT_ID.with(|ctx| *ctx.borrow_mut() = previous_script_id);
-        Self::clear_context();
         result
     }
 
@@ -2447,7 +2200,7 @@ impl<'a> ScriptApi<'a> {
         string_to_u64(string)
     }
 
-    // ========== INSTANT SIGNALS (zero-allocation, immediate) ==========
+    // ---------- Signals ----------
 
     /// Emit signal instantly - handlers called immediately
     /// Params passed as compile-time slice, zero allocation
@@ -2478,10 +2231,6 @@ impl<'a> ScriptApi<'a> {
             }
         }
 
-        // OPTIMIZED: Set context once for all calls instead of per-call
-        self.set_context();
-
-        // OPTIMIZED: Use fast-path calls that skip redundant context operations
         // IMPORTANT: Check if node still exists before EACH handler call
         // (previous handler might have deleted the node)
         for (target_id, fn_id) in call_list.iter() {
@@ -2519,12 +2268,7 @@ impl<'a> ScriptApi<'a> {
                 self.call_function_id_fast(*target_id, *fn_id, params);
             }
         }
-
-        // Clear context once after all calls
-        Self::clear_context();
     }
-
-    // ========== DEFERRED SIGNALS (queued, processed at frame end) ==========
 
     /// Emit signal deferred - queued and processed at end of frame
     /// Use when emitting during iteration or need frame-end processing
@@ -2591,9 +2335,7 @@ impl<'a> ScriptApi<'a> {
         Some(boxed)
     }
 
-    //-------------------------------------------------
-    // Asset IO
-    //-------------------------------------------------
+    // ---------- Asset IO ----------
     pub fn load_asset(&mut self, path: &str) -> Option<Vec<u8>> {
         asset_io::load_asset(path).ok()
     }
@@ -2610,9 +2352,7 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    //-------------------------------------------------
-    // Scene / Node Access
-    //-------------------------------------------------
+    // ---------- Node / Scene ----------
 
     /// Read a value from a node using a closure
     /// The closure receives &T where T is the node type and returns any Clone value (including Copy types)
@@ -3002,12 +2742,16 @@ impl<'a> ScriptApi<'a> {
 
             // Parent global for the corresponding dimension; default = identity if parent isn't 2D/3D (or no parent).
             let new_parent_global_2d = if is_2d {
-                self.scene.get_global_transform(new_parent_id).unwrap_or_default()
+                self.scene
+                    .get_global_transform(new_parent_id)
+                    .unwrap_or_default()
             } else {
                 crate::structs2d::Transform2D::default()
             };
             let new_parent_global_3d = if is_3d {
-                self.scene.get_global_transform_3d(new_parent_id).unwrap_or_default()
+                self.scene
+                    .get_global_transform_3d(new_parent_id)
+                    .unwrap_or_default()
             } else {
                 crate::structs3d::Transform3D::default()
             };
@@ -3402,6 +3146,8 @@ impl<'a> ScriptApi<'a> {
         self.scene.set_global_transform_3d(node_id, transform)
     }
 
+    // ---------- Script variables ----------
+
     /// Set a script variable by name
     ///
     /// Self-calls are now supported - you can call this with `self.id` from within the same script.
@@ -3465,16 +3211,10 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    //prints
+    // ---------- Printing (alphabetical: print, print_error, print_info, print_warn) ----------
 
     pub fn print<T: std::fmt::Display>(&self, msg: T) {
         println!("{}", msg);
-    }
-
-    /// Print a warning in yellow
-    pub fn print_warn<T: std::fmt::Display>(&self, msg: T) {
-        // [WARN] in bright yellow, message in dim golden yellow
-        println!("\x1b[93m[WARN]\x1b[0m \x1b[33m{}\x1b[0m", msg);
     }
 
     /// Print an error with `[ERROR]` in ruby red and message in red
@@ -3487,5 +3227,11 @@ impl<'a> ScriptApi<'a> {
     pub fn print_info<T: std::fmt::Display>(&self, msg: T) {
         // [INFO] in bright blue, message in cyan (or pale yellow if you want warmth)
         println!("\x1b[94m[INFO]\x1b[0m \x1b[96m{}\x1b[0m", msg);
+    }
+
+    /// Print a warning in yellow
+    pub fn print_warn<T: std::fmt::Display>(&self, msg: T) {
+        // [WARN] in bright yellow, message in dim golden yellow
+        println!("\x1b[93m[WARN]\x1b[0m \x1b[33m{}\x1b[0m", msg);
     }
 }

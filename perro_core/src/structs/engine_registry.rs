@@ -116,7 +116,12 @@ impl NodeFieldAssignBehavior {
 
     /// Emit a block expression that applies an Euler rotation delta using Transform3D::rotate_{x,y,z}.
     /// Used to lower `transform.rotation.{axis} += delta` and `global_transform.rotation.{axis} += delta`.
-    pub fn emit_rotate3d_block_expr(&self, node_id: &str, node_type_name: &str, delta_expr: &str) -> String {
+    pub fn emit_rotate3d_block_expr(
+        &self,
+        node_id: &str,
+        node_type_name: &str,
+        delta_expr: &str,
+    ) -> String {
         match self {
             NodeFieldAssignBehavior::RotateLocal3DX => format!(
                 "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotation = n.transform.rotation.rotate_x({}); }}); }}",
@@ -570,8 +575,8 @@ impl EngineRegistry {
                     Type::Any,
                     Some(NodeMethodRef::CallFunction),
                     vec![
-                        "name", "arg1", "arg2", "arg3", "arg4", "arg5",
-                        "arg6", "arg7", "arg8", "arg9", "arg10", "arg11",
+                        "name", "arg1", "arg2", "arg3", "arg4", "arg5", "arg6", "arg7", "arg8",
+                        "arg9", "arg10", "arg11",
                     ],
                 ),
             ],
@@ -606,7 +611,11 @@ impl EngineRegistry {
                 ),
             ],
         );
-        reg.register_field_assign_behavior(NodeType::Node2D, "global_transform", NodeFieldAssignBehavior::GlobalTransform2D);
+        reg.register_field_assign_behavior(
+            NodeType::Node2D,
+            "global_transform",
+            NodeFieldAssignBehavior::GlobalTransform2D,
+        );
         reg.register_field_read_behavior(
             NodeFieldRef::Node2DGlobalTransform,
             NodeFieldReadBehavior::GlobalTransform2D,
@@ -715,7 +724,11 @@ impl EngineRegistry {
                 ("visible", Type::Bool, Some(NodeFieldRef::Node3DVisible)),
             ],
         );
-        reg.register_field_assign_behavior(NodeType::Node3D, "global_transform", NodeFieldAssignBehavior::GlobalTransform3D);
+        reg.register_field_assign_behavior(
+            NodeType::Node3D,
+            "global_transform",
+            NodeFieldAssignBehavior::GlobalTransform3D,
+        );
         reg.register_field_read_behavior(
             NodeFieldRef::Node3DGlobalTransform,
             NodeFieldReadBehavior::GlobalTransform3D,
@@ -939,7 +952,10 @@ impl EngineRegistry {
     ) -> Option<NodeFieldAssignBehavior> {
         let mut current = Some(*node_type);
         while let Some(nt) = current {
-            if let Some(behavior) = self.field_assign_behavior.get(&(nt, rust_field_name.to_string())) {
+            if let Some(behavior) = self
+                .field_assign_behavior
+                .get(&(nt, rust_field_name.to_string()))
+            {
                 return Some(*behavior);
             }
             current = self.node_bases.get(&nt).copied();

@@ -755,9 +755,7 @@ let {param_name} = match {param_name}_opt {{
         }
 
         let return_expr = if func.return_type == Type::Void {
-            format!(
-                "script.{renamed_func_name}({param_list});\n            Value::Null"
-            )
+            format!("script.{renamed_func_name}({param_list});\n            Value::Null")
         } else {
             format!("json!(script.{renamed_func_name}({param_list}))")
         };

@@ -257,7 +257,9 @@ impl Script {
                 let transpiled = rename_variable(&ref_var.name, ref_var.typ.as_ref());
                 if transpiled != ref_var.name && init_code.contains(&transpiled) {
                     let re = Regex::new(&format!(r"\b{}\b", regex::escape(&transpiled))).unwrap();
-                    init_code = re.replace_all(&init_code, ref_var.name.as_str()).to_string();
+                    init_code = re
+                        .replace_all(&init_code, ref_var.name.as_str())
+                        .to_string();
                 }
             }
 

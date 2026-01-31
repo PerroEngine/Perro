@@ -999,10 +999,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .collect();
         let root_id = game_scene.get_root().get_id();
         let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
-        let first_is_root = global_names
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("") == "Root";
+        let first_is_root = global_names.first().map(|s| s.as_str()).unwrap_or("") == "Root";
         for (i, identifier) in global_order.iter().enumerate() {
             let name = global_names
                 .get(i)
@@ -2029,7 +2026,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "process_queued_signals").entered();
-            self.process_queued_signals();
+            self.process_queued_signals(gfx, true_delta);
         }
 
         // RENDERING - unified with update (no separate draw() calls)
@@ -2086,6 +2083,13 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         }
     }
 
+    // ---------- Signals ----------
+    // Scene stores: connections (signal_id → target → function_ids) and deferred queue.
+    // Instant emit: api.emit_signal_id gets connections via get_signal_connections and calls
+    // call_function_id for each handler (no scene.emit_signal_id). Deferred: api calls
+    // scene.emit_signal_id_deferred to queue; at end of frame process_queued_signals runs
+    // handlers via ScriptApi::emit_signal_id (same path as instant).
+
     fn connect_signal(&mut self, signal: u64, target_id: NodeID, function_id: u64) {
         // Top-level map: signal_id → inner map (script → list of fn ids)
         let script_map = self.signals.connections.entry(signal).or_default();
@@ -2107,68 +2111,19 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         self.queued_signals.push((signal, smallvec));
     }
 
-    // ✅ OPTIMIZED: Use drain() to collect, then process (avoids borrow checker issues)
-    fn process_queued_signals(&mut self) {
-        // OPTIMIZED: Early exit before allocation (most common case)
+    /// Process deferred signals at end of frame. Scene only stores the queue; handler
+    /// invocation goes through ScriptApi (same path as instant emit).
+    fn process_queued_signals(&mut self, gfx: &mut crate::rendering::Graphics, delta: f32) {
         if self.queued_signals.is_empty() {
             return;
         }
-
-        // OPTIMIZED: drain() already pre-allocates efficiently
-        // Collect drained items first to release the borrow, then process
-        let signals: Vec<_> = self.queued_signals.drain(..).collect();
-        for (signal, params) in signals {
-            self.emit_signal_impl(signal, &params);
-        }
-    }
-
-    /// Emit signal instantly - zero allocation, direct function call
-    /// Params are passed as compile-time static slice, never stored
-    fn emit_signal_id(&mut self, signal: u64, params: &[Value]) {
-        self.emit_signal_impl(signal, params);
-    }
-
-    /// Internal implementation - emits signal immediately to all connected handlers
-    /// Params passed as slice reference - zero allocation when called from emit_signal_id
-    /// OPTIMIZED: Uses SmallVec for stack allocation when listener count is small
-    fn emit_signal_impl(&mut self, signal: u64, _params: &[Value]) {
-        let start_time = Instant::now();
-
-        // Copy out listeners before mutable borrow
-        let script_map_opt = self.signals.connections.get(&signal);
-        if script_map_opt.is_none() {
-            return;
-        }
-
-        // OPTIMIZED: Use SmallVec with inline capacity of 4 listeners
-        // Most signals have 1-3 listeners, so this avoids heap allocation in common case
-        // For signals with >4 listeners, only allocates once
-        let script_map = script_map_opt.unwrap();
-        let mut call_list = SmallVec::<[(NodeID, u64); 4]>::new();
-        for (node_id, fns) in script_map.iter() {
-            for &fn_id in fns.iter() {
-                call_list.push((*node_id, fn_id));
-            }
-        }
-
-        let _setup_time = start_time.elapsed();
-
-        // Now all borrows of self.signals are dropped ✅
-        let now = Instant::now();
-        let _true_delta = self
-            .last_scene_update
-            .map(|prev| now.duration_since(prev).as_secs_f32())
-            .unwrap_or(0.0);
-
         let project_ref = self.project.clone();
-        let _project_borrow = project_ref.borrow_mut();
-
-        // Note: Signals are called from ScriptApi which has Graphics, but emit_signal_impl
-        // doesn't have access to it. For now, we'll skip signal emission here since
-        // signals should be emitted through ScriptApi which has Graphics.
-        // This is a temporary workaround - signals should be refactored to pass Graphics through.
-        // The actual signal emission happens in ScriptApi::emit_signal_id which has Graphics.
-        return;
+        let queued: Vec<_> = self.queued_signals.drain(..).collect();
+        for (signal, params) in queued {
+            let mut project_borrow = project_ref.borrow_mut();
+            let mut api = ScriptApi::new(delta, self, &mut *project_borrow, gfx);
+            api.emit_signal_id(signal, &params);
+        }
     }
 
     pub fn add_node_to_scene(
@@ -2635,8 +2590,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         };
 
         for &(id, local) in chain.iter().rev() {
-            let global =
-                crate::structs3d::Transform3D::calculate_global(&parent_global, &local);
+            let global = crate::structs3d::Transform3D::calculate_global(&parent_global, &local);
 
             if let Some(node) = self.nodes.get_mut(id) {
                 if let Some(node3d) = node.as_node3d_mut() {
@@ -4030,18 +3984,26 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                                             .mesh_manager
                                             .get_mesh_path_from_id(&id)
                                             .map(|s| s.to_string())
-                                            .or_else(|| mesh.mesh_path.as_deref().map(|s| s.to_string()));
+                                            .or_else(|| {
+                                                mesh.mesh_path.as_deref().map(|s| s.to_string())
+                                            });
 
                                         if let Some(p) = reload_path.as_deref() {
-                                            gfx.mesh_manager
-                                                .get_or_load_mesh(p, &gfx.device, &gfx.queue)
+                                            gfx.mesh_manager.get_or_load_mesh(
+                                                p,
+                                                &gfx.device,
+                                                &gfx.queue,
+                                            )
                                         } else {
                                             None
                                         }
                                     }
                                     None => mesh.mesh_path.as_deref().and_then(|p| {
-                                        gfx.mesh_manager
-                                            .get_or_load_mesh(p, &gfx.device, &gfx.queue)
+                                        gfx.mesh_manager.get_or_load_mesh(
+                                            p,
+                                            &gfx.device,
+                                            &gfx.queue,
+                                        )
                                     }),
                                 };
 
@@ -4195,10 +4157,6 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         self.signals.connections.get(&signal)
     }
 
-    fn emit_signal_id(&mut self, signal: u64, params: &[Value]) {
-        self.emit_signal_id(signal, params);
-    }
-
     fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]) {
         self.emit_signal_id_deferred(signal, params);
     }
@@ -4305,7 +4263,10 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         Self::update_node3d_children_cache_on_clear(self, parent_id)
     }
 
-    fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<crate::structs3d::Transform3D> {
+    fn get_global_transform_3d(
+        &mut self,
+        node_id: NodeID,
+    ) -> Option<crate::structs3d::Transform3D> {
         Self::get_global_transform_3d(self, node_id)
     }
 
@@ -4483,10 +4444,7 @@ impl Scene<DllScriptProvider> {
             .collect();
         let root_id = game_scene.get_root().get_id();
         let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
-        let first_is_root = global_names
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("") == "Root";
+        let first_is_root = global_names.first().map(|s| s.as_str()).unwrap_or("") == "Root";
         for (i, identifier) in global_order.iter().enumerate() {
             let name = global_names
                 .get(i)

@@ -720,14 +720,15 @@ impl Expr {
                     op,
                     Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Lt | Op::Gt | Op::Le | Op::Ge
                 );
-                let left_is_value =
-                    left_type == Some(Type::Any) || left_type == Some(Type::Object);
+                let left_is_value = left_type == Some(Type::Any) || left_type == Some(Type::Object);
                 let right_is_value =
                     right_type == Some(Type::Any) || right_type == Some(Type::Object);
-                let right_is_number =
-                    right_type.as_ref().map_or(false, |t| matches!(t, Type::Number(_)));
-                let left_is_number =
-                    left_type.as_ref().map_or(false, |t| matches!(t, Type::Number(_)));
+                let right_is_number = right_type
+                    .as_ref()
+                    .map_or(false, |t| matches!(t, Type::Number(_)));
+                let left_is_number = left_type
+                    .as_ref()
+                    .map_or(false, |t| matches!(t, Type::Number(_)));
 
                 fn value_to_numeric_extract(expr: &str, ty: &Type) -> String {
                     let expr_clean = if expr.ends_with(".clone()") {
@@ -1773,7 +1774,9 @@ impl Expr {
                                 Expr::Literal(Literal::String(field.clone())),
                             ];
                             let expected = NodeMethodRef::GetVar.param_types().map(|p| {
-                                std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                                std::iter::once(Type::DynNode)
+                                    .chain(p.into_iter())
+                                    .collect::<Vec<_>>()
                             });
                             let rust_args = generate_rust_args(
                                 &get_var_args,
@@ -2509,8 +2512,10 @@ impl Expr {
                 // GetVar/SetVar/Call are special node methods — handle all language names
                 // (get_var/getVar/GetVar, set_var/setVar/SetVar, call/Call) so TS/C# work.
                 if let Expr::MemberAccess(base, method) = target.as_ref() {
-                    let is_get_var = method == "get_var" || method == "getVar" || method == "GetVar";
-                    let is_set_var = method == "set_var" || method == "setVar" || method == "SetVar";
+                    let is_get_var =
+                        method == "get_var" || method == "getVar" || method == "GetVar";
+                    let is_set_var =
+                        method == "set_var" || method == "setVar" || method == "SetVar";
                     let is_call = method == "call" || method == "Call";
 
                     if is_get_var && args.len() == 1 {
@@ -2520,7 +2525,9 @@ impl Expr {
                         let get_var_args: Vec<Expr> = vec![(**base).clone(), args[0].clone()];
                         // Receiver (node id) is first arg; param_types() omits it, so prepend DynNode so Option<NodeID> gets unwrapped
                         let expected = NodeMethodRef::GetVar.param_types().map(|p| {
-                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                            std::iter::once(Type::DynNode)
+                                .chain(p.into_iter())
+                                .collect::<Vec<_>>()
                         });
                         let rust_args = generate_rust_args(
                             &get_var_args,
@@ -2545,7 +2552,9 @@ impl Expr {
                         let set_var_args: Vec<Expr> =
                             vec![(**base).clone(), args[0].clone(), args[1].clone()];
                         let expected = NodeMethodRef::SetVar.param_types().map(|p| {
-                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                            std::iter::once(Type::DynNode)
+                                .chain(p.into_iter())
+                                .collect::<Vec<_>>()
                         });
                         let rust_args = generate_rust_args(
                             &set_var_args,
@@ -2570,7 +2579,9 @@ impl Expr {
                         let mut call_args: Vec<Expr> = vec![(**base).clone()];
                         call_args.extend(args.iter().cloned());
                         let expected = NodeMethodRef::CallFunction.param_types().map(|p| {
-                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                            std::iter::once(Type::DynNode)
+                                .chain(p.into_iter())
+                                .collect::<Vec<_>>()
                         });
                         let rust_args = generate_rust_args(
                             &call_args,
@@ -2588,7 +2599,6 @@ impl Expr {
                         );
                         return code;
                     }
-
                 }
 
                 // Special case: chained API calls like api.get_parent(...).get_type()
@@ -2806,29 +2816,31 @@ impl Expr {
                             );
                             return call_code;
                         } else {
-                        // Base is Ident (e.g. c_id) but not a global — pass base as first arg with DynNode expected so Option<NodeID> gets unwrapped
-                        use crate::api_bindings::generate_rust_args;
-                        use crate::structs::engine_bindings::EngineMethodCodegen;
-                        let outer_args: Vec<Expr> = std::iter::once((**base).clone())
-                            .chain(args.iter().cloned())
-                            .collect();
-                        let expected: Option<Vec<Type>> = method_ref.param_types().map(|p| {
-                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
-                        });
-                        let rust_args_strings = generate_rust_args(
-                            &outer_args,
-                            script,
-                            needs_self,
-                            current_func,
-                            expected.as_ref(),
-                        );
-                        return method_ref.to_rust_prepared(
-                            &outer_args,
-                            &rust_args_strings,
-                            script,
-                            needs_self,
-                            current_func,
-                        );
+                            // Base is Ident (e.g. c_id) but not a global — pass base as first arg with DynNode expected so Option<NodeID> gets unwrapped
+                            use crate::api_bindings::generate_rust_args;
+                            use crate::structs::engine_bindings::EngineMethodCodegen;
+                            let outer_args: Vec<Expr> = std::iter::once((**base).clone())
+                                .chain(args.iter().cloned())
+                                .collect();
+                            let expected: Option<Vec<Type>> = method_ref.param_types().map(|p| {
+                                std::iter::once(Type::DynNode)
+                                    .chain(p.into_iter())
+                                    .collect::<Vec<_>>()
+                            });
+                            let rust_args_strings = generate_rust_args(
+                                &outer_args,
+                                script,
+                                needs_self,
+                                current_func,
+                                expected.as_ref(),
+                            );
+                            return method_ref.to_rust_prepared(
+                                &outer_args,
+                                &rust_args_strings,
+                                script,
+                                needs_self,
+                                current_func,
+                            );
                         }
                     }
                 }
@@ -3470,9 +3482,8 @@ impl Expr {
                         let mut expr_code =
                             expr.to_rust(needs_self, script, Some(fty), current_func, None);
                         let expr_type = script.infer_expr_type(expr, current_func);
-                        let should_clone =
-                            matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
-                                && expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
+                        let should_clone = matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
+                            && expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
                         if should_clone {
                             expr_code = format!("{}.clone()", expr_code);
                         }
@@ -4303,7 +4314,9 @@ impl Expr {
                             inner_code, inner_code
                         )
                     }
-                    (Some(Type::Custom(name)), Type::Number(NumberKind::BigInt)) if name == "Value" => {
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::BigInt))
+                        if name == "Value" =>
+                    {
                         format!(
                             "{}.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
                             inner_code, inner_code
@@ -4317,7 +4330,9 @@ impl Expr {
                             inner_code, inner_code
                         )
                     }
-                    (Some(Type::Custom(name)), Type::Number(NumberKind::Decimal)) if name == "Value" => {
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::Decimal))
+                        if name == "Value" =>
+                    {
                         format!(
                             "{}.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default())",
                             inner_code, inner_code
@@ -4327,16 +4342,12 @@ impl Expr {
                     (inner_opt, Type::Number(NumberKind::Signed(w)))
                         if matches!(inner_opt, None | Some(Type::Object) | Some(Type::Any)) =>
                     {
-                        format!(
-                            "{}.as_i64().unwrap_or_default() as i{}",
-                            inner_code, w
-                        )
+                        format!("{}.as_i64().unwrap_or_default() as i{}", inner_code, w)
                     }
-                    (Some(Type::Custom(name)), Type::Number(NumberKind::Signed(w))) if name == "Value" => {
-                        format!(
-                            "{}.as_i64().unwrap_or_default() as i{}",
-                            inner_code, w
-                        )
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::Signed(w)))
+                        if name == "Value" =>
+                    {
+                        format!("{}.as_i64().unwrap_or_default() as i{}", inner_code, w)
                     }
                     // None -> unsigned integer (e.g. script var typed_big_int not inferred): use .to_u64() so BigInt works
                     (None, Type::Number(NumberKind::Unsigned(w))) => match w {
@@ -4351,16 +4362,12 @@ impl Expr {
                     (inner_opt, Type::Number(NumberKind::Unsigned(w)))
                         if matches!(inner_opt, Some(Type::Object) | Some(Type::Any)) =>
                     {
-                        format!(
-                            "{}.as_u64().unwrap_or_default() as u{}",
-                            inner_code, w
-                        )
+                        format!("{}.as_u64().unwrap_or_default() as u{}", inner_code, w)
                     }
-                    (Some(Type::Custom(name)), Type::Number(NumberKind::Unsigned(w))) if name == "Value" => {
-                        format!(
-                            "{}.as_u64().unwrap_or_default() as u{}",
-                            inner_code, w
-                        )
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::Unsigned(w)))
+                        if name == "Value" =>
+                    {
+                        format!("{}.as_u64().unwrap_or_default() as u{}", inner_code, w)
                     }
 
                     _ => {
@@ -4387,7 +4394,10 @@ impl Expr {
                                 32 => format!("{}.to_u32().unwrap_or_default()", inner_code),
                                 64 => format!("{}.to_u64().unwrap_or_default()", inner_code),
                                 128 => format!("{}.to_u128().unwrap_or_default()", inner_code),
-                                _ => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
+                                _ => format!(
+                                    "({}.to_u64().unwrap_or_default() as u{})",
+                                    inner_code, w
+                                ),
                             }
                         } else {
                             eprintln!(
@@ -4415,7 +4425,10 @@ impl Expr {
                 // Deterministic struct field access: when key is a string/identifier and base is an
                 // identifier, resolve type from inference OR declared type (script vars + locals/params).
                 // Always emit .field for Custom types so we never emit ["field"] for structs.
-                let key_is_field_like = matches!(key.as_ref(), Expr::Literal(Literal::String(_)) | Expr::Ident(_));
+                let key_is_field_like = matches!(
+                    key.as_ref(),
+                    Expr::Literal(Literal::String(_)) | Expr::Ident(_)
+                );
                 let effective_base_type = if key_is_field_like {
                     base_type.clone().or_else(|| {
                         if let Expr::Ident(var_name) = base.as_ref() {

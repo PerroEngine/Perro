@@ -1212,14 +1212,17 @@ impl PupParser {
                                         Some(api_field.get_script_type())
                                     } else {
                                         // Fallback to engine registry
-                                        let rust_field = crate::structs::engine_registry::ENGINE_REGISTRY
-                                            .resolve_field_name(&nt, field);
+                                        let rust_field =
+                                            crate::structs::engine_registry::ENGINE_REGISTRY
+                                                .resolve_field_name(&nt, field);
                                         crate::structs::engine_registry::ENGINE_REGISTRY
                                             .get_field_type_node(&nt, &rust_field)
                                     }
                                 }
-                                Type::EngineStruct(es) => crate::structs::engine_registry::ENGINE_REGISTRY
-                                    .get_field_type_struct(&es, field),
+                                Type::EngineStruct(es) => {
+                                    crate::structs::engine_registry::ENGINE_REGISTRY
+                                        .get_field_type_struct(&es, field)
+                                }
                                 _ => None,
                             }
                         }
@@ -1286,12 +1289,14 @@ impl PupParser {
                                     // works for instance calls (sig.emit() -> Signal.emit(sig)).
                                     match id.as_str() {
                                         "Signal" => Some(Type::Signal),
-                                        "Array" => {
-                                            Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
-                                        }
-                                        "Map" => {
-                                            Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]))
-                                        }
+                                        "Array" => Some(Type::Container(
+                                            ContainerKind::Array,
+                                            vec![Type::Object],
+                                        )),
+                                        "Map" => Some(Type::Container(
+                                            ContainerKind::Map,
+                                            vec![Type::String, Type::Object],
+                                        )),
                                         _ => Some(Type::Custom(id.clone())),
                                     }
                                 } else {
@@ -1312,18 +1317,18 @@ impl PupParser {
                             ResourceModule::ArrayOp(ArrayResource::New) => {
                                 Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
                             }
-                            ResourceModule::MapOp(MapResource::New) => {
-                                Some(Type::Container(
-                                    ContainerKind::Map,
-                                    vec![Type::String, Type::Object],
-                                ))
-                            }
+                            ResourceModule::MapOp(MapResource::New) => Some(Type::Container(
+                                ContainerKind::Map,
+                                vec![Type::String, Type::Object],
+                            )),
                             _ => None,
                         }
                     }
-                    Expr::MemberAccess(..) => {
-                        infer_member_access_type(self.script_node_type.as_deref(), &self.type_env, &expr)
-                    }
+                    Expr::MemberAccess(..) => infer_member_access_type(
+                        self.script_node_type.as_deref(),
+                        &self.type_env,
+                        &expr,
+                    ),
                     _ => None,
                 };
             }
@@ -1757,7 +1762,10 @@ impl PupParser {
                             if let Some(resource) = PupResourceAPI::resolve("Signal", method) {
                                 let mut call_args = vec![*obj.clone()];
                                 call_args.extend(args);
-                                return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
+                                return Ok(Expr::ApiCall(
+                                    CallModule::Resource(resource),
+                                    call_args,
+                                ));
                             }
                         }
                     }
@@ -1796,8 +1804,10 @@ impl PupParser {
                                                 .get_field_type_node(&nt, &rust_field)
                                         }
                                     }
-                                    Type::EngineStruct(es) => crate::structs::engine_registry::ENGINE_REGISTRY
-                                        .get_field_type_struct(&es, field),
+                                    Type::EngineStruct(es) => {
+                                        crate::structs::engine_registry::ENGINE_REGISTRY
+                                            .get_field_type_struct(&es, field)
+                                    }
                                     // Resource types (Signal, Array, Map, etc.): for obj.method() the
                                     // receiver type is the base type, so we can resolve to Resource.method(obj).
                                     _ => Some(base_ty.clone()),
@@ -1819,10 +1829,14 @@ impl PupParser {
                                 call_args.extend(args);
                                 return Ok(Expr::ApiCall(CallModule::Module(api), call_args));
                             }
-                            if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method) {
+                            if let Some(resource) = PupResourceAPI::resolve(&norm_type_name, method)
+                            {
                                 let mut call_args = vec![*obj.clone()];
                                 call_args.extend(args);
-                                return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
+                                return Ok(Expr::ApiCall(
+                                    CallModule::Resource(resource),
+                                    call_args,
+                                ));
                             }
                         }
                     }

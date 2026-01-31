@@ -78,8 +78,8 @@ impl Script for PuptestsTypeTestsTestSyntaxEdgePupScript {
         let mut __t_r: i32 = self.__t_get_my_int(api);;
         self.__t_some_var = 99i32;
         let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
-        let mut __t_cv: Value = api.get_script_var_id(child_id.expect("Child node not found"), 17819110315924748471u64);
-        let mut __t_cr: Value = api.call_function_id(child_id.expect("Child node not found"), 2789383857360210807u64, &[(json!(1.0f32) as Value)]);
+        let mut __t_cv: Value = api.get_script_var_id(child_id.expect("Child node not found"), 18136257161398063279u64);
+        let mut __t_cr: Value = api.call_function_id(child_id.expect("Child node not found"), 2630259753820323773u64, &[(json!(1.0f32) as Value)]);
     }
 
 }
@@ -162,7 +162,7 @@ impl ScriptObject for PuptestsTypeTestsTestSyntaxEdgePupScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsTypeTestsTestSyntaxEdgePupScript) -> Option<Value>> =
     phf::phf_map! {
-        71936255744524551u64 => |script: &PuptestsTypeTestsTestSyntaxEdgePupScript| -> Option<Value> {
+        7939247150948219489u64 => |script: &PuptestsTypeTestsTestSyntaxEdgePupScript| -> Option<Value> {
                         Some(json!(script.__t_some_var))
                     },
 
@@ -170,7 +170,7 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsTypeTestsTestSyntaxEdgePupScript
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsTypeTestsTestSyntaxEdgePupScript, Value) -> Option<()>> =
     phf::phf_map! {
-        71936255744524551u64 => |script: &mut PuptestsTypeTestsTestSyntaxEdgePupScript, val: Value| -> Option<()> {
+        7939247150948219489u64 => |script: &mut PuptestsTypeTestsTestSyntaxEdgePupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_some_var = v as i32;
                                 return Some(());
@@ -189,7 +189,7 @@ static DISPATCH_TABLE: phf::Map<
     u64,
     fn(&mut PuptestsTypeTestsTestSyntaxEdgePupScript, &[Value], &mut ScriptApi<'_>) -> Value,
 > = phf::phf_map! {
-        3111815040097353864u64 => | script: &mut PuptestsTypeTestsTestSyntaxEdgePupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+        9790920126781781537u64 => | script: &mut PuptestsTypeTestsTestSyntaxEdgePupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             json!(script.__t_get_my_int(api))
         },
 

@@ -113,9 +113,13 @@ pub trait BaseNode: Any + Debug + Send {
     fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>>;
     fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>);
     /// Raw script_exp_vars (for codegen/remap). Returns None if empty.
-    fn get_script_exp_vars_raw(&self) -> Option<&HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>>;
+    fn get_script_exp_vars_raw(
+        &self,
+    ) -> Option<&HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>>;
     /// Mutable raw script_exp_vars (for remap NodeRef(scene_key) → NodeRef(runtime_id)).
-    fn get_script_exp_vars_raw_mut(&mut self) -> Option<&mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>>;
+    fn get_script_exp_vars_raw_mut(
+        &mut self,
+    ) -> Option<&mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>>;
 
     /// Check if this node is renderable (actually rendered to screen)
     /// Only renderable nodes should be added to needs_rerender
@@ -281,16 +285,29 @@ macro_rules! impl_scene_node {
             fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>) {
                 self.script_exp_vars = vars.map(|m| {
                     m.into_iter()
-                        .map(|(k, v)| (std::borrow::Cow::Owned(k), crate::nodes::node::ScriptExpVarValue::from_json_value(&v)))
+                        .map(|(k, v)| {
+                            (
+                                std::borrow::Cow::Owned(k),
+                                crate::nodes::node::ScriptExpVarValue::from_json_value(&v),
+                            )
+                        })
                         .collect()
                 });
             }
 
-            fn get_script_exp_vars_raw(&self) -> Option<&HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>> {
+            fn get_script_exp_vars_raw(
+                &self,
+            ) -> Option<
+                &HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>,
+            > {
                 self.script_exp_vars.as_ref()
             }
 
-            fn get_script_exp_vars_raw_mut(&mut self) -> Option<&mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>> {
+            fn get_script_exp_vars_raw_mut(
+                &mut self,
+            ) -> Option<
+                &mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>,
+            > {
                 self.script_exp_vars.as_mut()
             }
 

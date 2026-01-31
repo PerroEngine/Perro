@@ -36,15 +36,27 @@ pub mod prelude {
     // Script API — only what script authors should use
     pub use crate::script::*;
 
+    #[inline]
     pub fn string_to_u64(s: &str) -> u64 {
-        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-        const FNV_PRIME: u64 = 0x100000001b3;
-        let mut hash = FNV_OFFSET_BASIS;
-        for byte in s.as_bytes() {
-            hash ^= *byte as u64;
-            hash = hash.wrapping_mul(FNV_PRIME);
+        let mut hash: u64 = 0xA0761D6478BD642F;
+
+        for &b in s.as_bytes() {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0xE7037ED1A0B428DB);
+            hash = mix64(hash);
         }
-        hash
+
+        mix64(hash ^ (s.len() as u64))
+    }
+
+    #[inline]
+    fn mix64(mut x: u64) -> u64 {
+        x ^= x >> 30;
+        x = x.wrapping_mul(0xBF58476D1CE4E5B9);
+        x ^= x >> 27;
+        x = x.wrapping_mul(0x94D049BB133111EB);
+        x ^= x >> 31;
+        x
     }
 
     pub use crate::api::ScriptApi;

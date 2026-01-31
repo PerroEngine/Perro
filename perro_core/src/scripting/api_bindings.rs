@@ -1343,9 +1343,15 @@ impl ModuleTypes for MathApi {
             MathApi::Random | MathApi::RandomRange => Some(Type::Number(Float(32))),
             MathApi::RandomInt => Some(Type::Number(Signed(32))),
             MathApi::Lerp => Some(Type::Number(Float(32))),
-            MathApi::LerpVec2 => Some(Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector2)),
-            MathApi::LerpVec3 => Some(Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Vector3)),
-            MathApi::Slerp => Some(Type::EngineStruct(crate::structs::engine_structs::EngineStruct::Quaternion)),
+            MathApi::LerpVec2 => Some(Type::EngineStruct(
+                crate::structs::engine_structs::EngineStruct::Vector2,
+            )),
+            MathApi::LerpVec3 => Some(Type::EngineStruct(
+                crate::structs::engine_structs::EngineStruct::Vector3,
+            )),
+            MathApi::Slerp => Some(Type::EngineStruct(
+                crate::structs::engine_structs::EngineStruct::Quaternion,
+            )),
         }
     }
 
