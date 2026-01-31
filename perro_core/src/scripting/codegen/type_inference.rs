@@ -223,6 +223,60 @@ impl Script {
             .and_then(|v| v.typ.as_ref())
     }
 
+    /// Return the declared type of a variable (Variable.typ) for script-level vars and, when
+    /// current_func is set, for that function's locals and params. Used to make struct field
+    /// access deterministic: prefer declared type so we always emit .field not ["field"].
+    pub fn get_declared_variable_type(
+        &self,
+        name: &str,
+        current_func: Option<&Function>,
+    ) -> Option<Type> {
+        let original_name = if name.starts_with("__t_") { &name[4..] } else { name };
+        if let Some(func) = current_func {
+            if let Some(local) = func
+                .locals
+                .iter()
+                .find(|v| v.name == name || v.name == original_name)
+            {
+                return local.typ.clone();
+            }
+            fn find_var_in_body<'a>(name: &str, body: &'a [Stmt]) -> Option<&'a Variable> {
+                use crate::scripting::ast::Stmt;
+                for stmt in body {
+                    match stmt {
+                        Stmt::VariableDecl(v) if v.name == name => return Some(v),
+                        Stmt::If { then_body, else_body, .. } => {
+                            if let Some(v) = find_var_in_body(name, then_body) {
+                                return Some(v);
+                            }
+                            if let Some(b) = else_body {
+                                if let Some(v) = find_var_in_body(name, b) {
+                                    return Some(v);
+                                }
+                            }
+                        }
+                        Stmt::For { body: b, .. } | Stmt::ForTraditional { body: b, .. } => {
+                            if let Some(v) = find_var_in_body(name, b) {
+                                return Some(v);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                None
+            }
+            if let Some(local) = find_var_in_body(name, &func.body).or_else(|| find_var_in_body(original_name, &func.body)) {
+                return local.typ.clone();
+            }
+            if let Some(param) = func.params.iter().find(|p| p.name == name || p.name == original_name) {
+                return Some(param.typ.clone());
+            }
+        }
+        self.get_variable_type(name)
+            .or_else(|| self.get_variable_type(original_name))
+            .cloned()
+    }
+
     /// Check if an identifier is a loop variable by searching for for loops that use it
     fn is_loop_variable(&self, name: &str, body: &[crate::scripting::ast::Stmt]) -> bool {
         use crate::scripting::ast::Stmt;

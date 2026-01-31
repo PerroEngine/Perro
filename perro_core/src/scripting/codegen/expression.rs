@@ -4403,6 +4403,34 @@ impl Expr {
                         key.to_rust(needs_self, script, Some(&Type::String), current_func, None)
                     };
 
+                // Deterministic struct field access: when key is a string/identifier and base is an
+                // identifier, resolve type from inference OR declared type (script vars + locals/params).
+                // Always emit .field for Custom types so we never emit ["field"] for structs.
+                let key_is_field_like = matches!(key.as_ref(), Expr::Literal(Literal::String(_)) | Expr::Ident(_));
+                let effective_base_type = if key_is_field_like {
+                    base_type.clone().or_else(|| {
+                        if let Expr::Ident(var_name) = base.as_ref() {
+                            script.get_declared_variable_type(var_name, current_func)
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    base_type.clone()
+                };
+                if key_is_field_like {
+                    if let Some(Type::Custom(_)) = &effective_base_type {
+                        let field_name = match key.as_ref() {
+                            Expr::Literal(Literal::String(s)) => s.as_str(),
+                            Expr::Ident(s) => s.as_str(),
+                            _ => "",
+                        };
+                        if !field_name.is_empty() {
+                            return format!("{}.{}", base_code, field_name);
+                        }
+                    }
+                }
+
                 match base_type {
                     // ----------------------------------------------------------
                     // ✅ Typed HashMap<K,V>
@@ -4441,8 +4469,23 @@ impl Expr {
 
                     // ----------------------------------------------------------
                     // ✅ Dynamic JSON object (serde_json::Value)
+                    // When base is an Ident, check variable's declared type: if Custom (struct), use field access.
                     // ----------------------------------------------------------
                     Some(Type::Object) => {
+                        if let Expr::Ident(var_name) = base.as_ref() {
+                            if matches!(key.as_ref(), Expr::Literal(Literal::String(_)) | Expr::Ident(_)) {
+                                if let Some(Type::Custom(_)) = script.get_variable_type(var_name) {
+                                    let field_name = match key.as_ref() {
+                                        Expr::Literal(Literal::String(s)) => s.as_str(),
+                                        Expr::Ident(s) => s.as_str(),
+                                        _ => "",
+                                    };
+                                    if !field_name.is_empty() {
+                                        return format!("{}.{}", base_code, field_name);
+                                    }
+                                }
+                            }
+                        }
                         // Produces a `Value`, good for later .as_* casts
                         format!("{}[{}].clone()", base_code, key_code)
                     }
@@ -4509,9 +4552,15 @@ impl Expr {
                     // ----------------------------------------------------------
                     // Custom type (struct): key is field name -> use field access .field_name
                     // e.g. player_as_entity_from_array["entity_name"] -> .entity_name
+                    // Key can be Literal::String("entity_name") or Ident("entity_name") depending on parser.
                     // ----------------------------------------------------------
                     Some(Type::Custom(_)) => {
-                        if let Expr::Literal(Literal::String(field_name)) = key.as_ref() {
+                        let field_name = match key.as_ref() {
+                            Expr::Literal(Literal::String(s)) => Some(s.as_str()),
+                            Expr::Ident(s) => Some(s.as_str()),
+                            _ => None,
+                        };
+                        if let Some(field_name) = field_name {
                             format!("{}.{}", base_code, field_name)
                         } else {
                             let index_code = key.to_rust(
@@ -4527,7 +4576,24 @@ impl Expr {
                             )
                         }
                     }
-                    _ => "/* unsupported index expression */".to_string(),
+                    // When base_type is None (or other) but base is a variable typed as Custom (struct), use field access.
+                    _ => {
+                        if let Expr::Ident(var_name) = base.as_ref() {
+                            if matches!(key.as_ref(), Expr::Literal(Literal::String(_)) | Expr::Ident(_))
+                                && script.get_variable_type(var_name).as_ref().map_or(false, |t| matches!(t, Type::Custom(_)))
+                            {
+                                let field_name = match key.as_ref() {
+                                    Expr::Literal(Literal::String(s)) => s.as_str(),
+                                    Expr::Ident(s) => s.as_str(),
+                                    _ => "",
+                                };
+                                if !field_name.is_empty() {
+                                    return format!("{}.{}", base_code, field_name);
+                                }
+                            }
+                        }
+                        "/* unsupported index expression */".to_string()
+                    }
                 }
             }
             Expr::ObjectLiteral(items) => {

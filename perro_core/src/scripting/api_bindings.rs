@@ -226,6 +226,23 @@ pub(crate) fn generate_rust_args(
                     }
                 }
             }
+            // Deterministic unwrap: when first arg expects NodeID and is an Ident, always add .expect()
+            // if not already present. Type inference can non-deterministically return None, Option(DynNode),
+            // or (wrongly) DynNode for get_node results; always unwrapping here fixes intermittent compile failures.
+            if let Some(expected_types) = expected_arg_types {
+                if let Some(expect_ty) = expected_types.get(i) {
+                    if i == 0
+                        && matches!(expect_ty, Type::DynNode)
+                        && matches!(a, Expr::Ident(_))
+                        && !code_raw.is_empty()
+                        && code_raw != "self.id"
+                        && code_raw != "self"
+                        && !code_raw.contains(".expect(")
+                    {
+                        code_raw = format!("{}.expect(\"Child node not found\")", code_raw);
+                    }
+                }
+            }
 
             // 3. Now, take the (potentially casted) `code_raw` and apply `self.` prefixing.
             //    This is the *last* step to construct the final argument string.
