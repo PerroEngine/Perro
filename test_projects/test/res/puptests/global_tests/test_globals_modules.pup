@@ -1,0 +1,57 @@
+// Compile-only test: @root, @global, @module and cross-calls.
+// Exercises: Root, GameState, UIHelper; MathUtils, MoreUtils;
+// root calling module; global calling global; global calling module; module calling module.
+@script TestGlobalsModules extends Node2D
+
+on init() {
+    // Root: read var and call fn
+    var rv = Root::get_root_value()
+    var rc = Root::root_counter
+    var rmod = Root::root_uses_module()
+
+    // GameState: global calling module (MathUtils)
+    var gs = GameState::get_score()
+    var gmath = GameState::game_uses_math()
+    var groot = GameState::get_root_value_via_root()
+
+    // UIHelper: global calling other global (GameState) and module (MoreUtils)
+    var lbl = UIHelper::get_label()
+    var uscore = UIHelper::read_score()
+    UIHelper::add_to_score(10)
+    var umore = UIHelper::ui_uses_more_utils()
+
+    // Module only (no ::)
+    var pi = MathUtils.PI
+    var two = MathUtils.TWO
+    var sum = MathUtils.add(1, 2)
+    var scaled = MathUtils.scale(2.0, 3.0)
+
+    // Module calling module
+    var dsum = MoreUtils.double_sum(4, 5)
+    var spi = MoreUtils.scaled_pi(2.0)
+}
+
+fn test_root_and_module() -> bool {
+    var v = Root::get_root_value()
+    var m = Root::root_uses_module()
+    return v == 100 and m > 3.0
+}
+
+fn test_global_calls_global() -> bool {
+    var from_root = GameState::get_root_value_via_root()
+    GameState::set_score(42)
+    var score = UIHelper::read_score()
+    return from_root == 100 and score == 42
+}
+
+fn test_global_calls_module() -> bool {
+    var g = GameState::game_uses_math()
+    var u = UIHelper::ui_uses_more_utils()
+    return g == 30 and u == 16
+}
+
+fn test_module_calls_module() -> bool {
+    var d = MoreUtils.double_sum(1, 2)
+    var s = MoreUtils.scaled_pi(1.0)
+    return d == 6 and s > 3.0
+}

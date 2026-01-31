@@ -1,7 +1,36 @@
+//! Abstract Syntax Tree for Perro scripts (PUP, TypeScript, C#).
+//!
+//! ## PUP ↔ Rust type mapping (input type in PUP → output type in Rust)
+//!
+//! | PUP (input)           | Rust (output)           |
+//! |-----------------------|-------------------------|
+//! | `int` / `int32`       | `i32`                   |
+//! | `int64`               | `i64`                   |
+//! | `uint` / `uint32`     | `u32`                   |
+//! | `uint64`              | `u64`                   |
+//! | `float`               | `f32`                   |
+//! | `double`              | `f64`                   |
+//! | `bool`                | `bool`                  |
+//! | `string`              | `String` / `&'static str` / `Cow<'static, str>` |
+//! | `T?` (nullable)       | `Option<T>`             |
+//! | `Array[T]`            | `Vec<T>`                |
+//! | `Map<[K: V]>`           | `HashMap<K, V>`       |
+//! | `any`                 | `Value` (serde_json)    |
+//! | `Node` (dynamic)      | `NodeID`                |
+//! | `Sprite2D`, etc.      | `NodeID`                |
+//! | `NODE_TYPE`           | `NodeType` (enum)       |
+//! | `signal`              | `SignalID`              |
+//! | `Vector2`, `Rect`, …  | `Vector2`, `Rect`, … (engine structs) |
+//! | `Texture`             | `Option<TextureID>`     |
+//! | `Mesh`                | `Option<MeshID>`        |
+//! | `void`                | `()`                    |
+
 use std::collections::HashMap;
 
 use crate::scripting::source_span::SourceSpan;
 use crate::{engine_structs::EngineStruct, node_registry::NodeType};
+
+// ---------- Top-level AST (script / module) ----------
 
 /// Built-in enum variants available in the scripting language
 /// This represents enum access like NODE_TYPE.Sprite2D (SCREAMING_SNAKE_CASE for enum names)
@@ -50,6 +79,8 @@ pub struct Module {
     pub source_file: Option<String>, // Original source file path (e.g., "res://utils.pup")
     pub language: Option<String>,    // Language identifier (e.g., "pup")
 }
+
+// ---------- Definitions (variables, functions, params, structs) ----------
 
 #[derive(Debug, Clone)]
 pub struct Variable {
@@ -231,7 +262,7 @@ impl Variable {
             }
             Type::Object | Type::Any => ("as_object", ".clone().into()".into()),
 
-            Type::Signal => ("as_u64", "".into()),
+            Type::Signal => ("as_u64", "".into()), // SignalID serializes as u64 for JSON
             Type::NodeType => ("as_str", ".parse::<NodeType>().unwrap()".into()), // NodeType is serialized as string
             Type::ScriptApi => {
                 panic!("ScriptApi cannot be deserialized from JSON - it's injected by the runtime")
@@ -308,27 +339,15 @@ pub struct Param {
     pub span: Option<SourceSpan>, // Source location of this parameter
 }
 
+// ---------- Type system (PUP ↔ Rust mapping: see module-level docs) ----------
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum Type {
-    Number(NumberKind),
-    Bool,
-    String,
-    StrRef,
-    CowStr,            // Cow<'static, str> - for node name and other borrowed strings
-    Option(Box<Type>), // Option<T>
-    Signal,            // u64 - signal ID type
-    Void,
-
-    Container(ContainerKind, Vec<Type>),
-    Object, // serde_json::Value - dynamic any type (legacy name, use Any)
-    Any,    // serde_json::Value - dynamic any type (preferred name)
-
-    Node(NodeType), // Node instance type - maps to NodeID in Rust
-    DynNode, // Dynamic node type - no type resolution at compile time, resolved to UUID at runtime
-    NodeType, // NodeType enum itself (e.g., from get_type())
-    EngineStruct(EngineStruct),
-    ScriptApi, // ScriptApi<'a> - runtime API context (internal use only)
-    Custom(String),
+pub enum NumberKind {
+    Signed(u8),   // width: 8,16,32,64,128
+    Unsigned(u8), // width: ^
+    Float(u8),    // 16,32,64,128
+    Decimal,
+    BigInt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -338,7 +357,47 @@ pub enum ContainerKind {
     FixedArray(usize),
 }
 
+/// AST type representation. PUP input types map to Rust output types; see module-level docs for the full table.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+    // Special / no value
+    Void,
+
+    // Primitives: numbers
+    Number(NumberKind),
+    Bool,
+    String,
+    StrRef,
+    CowStr, // Cow<'static, str> - for node name and other borrowed strings
+
+    // Optional
+    Option(Box<Type>),
+
+    // Containers
+    Container(ContainerKind, Vec<Type>),
+
+    // Dynamic (serde_json::Value)
+    Object, // legacy name
+    Any,    // preferred name
+
+    // Node system (all → NodeID in Rust except NodeType)
+    Node(NodeType), // node instance → NodeID
+    DynNode,        // dynamic node → NodeID
+    NodeType,       // enum from get_type() → NodeType
+
+    // Engine structs (Vector2, Rect, Texture, Mesh, …)
+    EngineStruct(EngineStruct),
+
+    // Internal / runtime
+    Signal,   // SignalID
+    ScriptApi, // &mut ScriptApi<'_> - injected by runtime
+
+    // User-defined
+    Custom(String),
+}
+
 impl Type {
+    // --- Type string conversions (PUP / Rust / C# / TypeScript) ---
     pub fn to_rust_type(&self) -> String {
         match self {
             Type::Number(NumberKind::Signed(w)) => match w {
@@ -402,7 +461,7 @@ impl Type {
             // ---- "Object" and "Any" (serde_json::Value) ----
             Type::Object | Type::Any => "Value".to_string(),
 
-            Type::Signal => "u64".to_string(),
+            Type::Signal => "SignalID".to_string(),
             Type::ScriptApi => "&mut ScriptApi<'_>".to_string(),
             Type::Custom(name) => {
                 // Custom types are user-defined structs - rename with __t_ prefix
@@ -653,6 +712,7 @@ impl Type {
         }
     }
 
+    // --- Default value and conversion / copy behavior ---
     pub fn rust_default_value(&self) -> String {
         use ContainerKind::*;
         match self {
@@ -667,7 +727,7 @@ impl Type {
             Type::Number(NumberKind::BigInt) => "BigInt::from_str(\"0\").unwrap()".to_string(),
 
             Type::Bool => "false".into(),
-            Type::Signal => "0u64".into(),
+            Type::Signal => "SignalID::nil()".into(),
             Type::String => "String::new()".into(),
             Type::StrRef => "\"\"".into(),
             Type::CowStr => "Cow::Borrowed(\"\")".into(),
@@ -836,14 +896,7 @@ impl Type {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum NumberKind {
-    Signed(u8),   // width: 8,16,32,64,128
-    Unsigned(u8), // width: ^
-    Float(u8),    // 16,32,64,128
-    Decimal,
-    BigInt,
-}
+// ---------- Statements & expressions ----------
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
@@ -902,6 +955,8 @@ impl Stmt {
     }
 }
 
+// ---------- Expressions, literals, operators ----------
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     Ident(String),
@@ -959,7 +1014,10 @@ pub enum Op {
     Ge, // >=
     Eq, // ==
     Ne, // !=
+    And, // logical and (&& in Rust)
 }
+
+// ---------- User struct definitions ----------
 
 #[derive(Debug, Clone)]
 pub struct StructDef {

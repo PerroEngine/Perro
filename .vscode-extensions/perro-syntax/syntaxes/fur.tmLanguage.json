@@ -302,11 +302,11 @@
 			"patterns": [
 				{
 					"name": "constant.numeric.float.pup",
-					"match": "\\b\\d+\\.\\d+\\b"
+					"match": "\\b\\d(\\d|_\\d)*\\.\\d(\\d|_\\d)*\\b"
 				},
 				{
 					"name": "constant.numeric.integer.pup",
-					"match": "\\b\\d+\\b"
+					"match": "\\b\\d(\\d|_\\d)*\\b"
 				}
 			]
 		},

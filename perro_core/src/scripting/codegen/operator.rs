@@ -14,6 +14,7 @@ impl Op {
             Op::Ge => ">=",
             Op::Eq => "==",
             Op::Ne => "!=",
+            Op::And => "&&",
         }
     }
 
@@ -23,8 +24,8 @@ impl Op {
             Op::Sub => "-",
             Op::Mul => "*",
             Op::Div => "/",
-            Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
-                panic!("Comparison operators cannot be used in assignment")
+            Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne | Op::And => {
+                panic!("Comparison/logical operators cannot be used in assignment")
             }
         }
     }

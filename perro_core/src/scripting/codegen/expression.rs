@@ -20,6 +20,33 @@ fn index_field_name(key: &Expr) -> Option<&str> {
     }
 }
 
+/// Wrap a Value-returning expression (e.g. api.call_function_id(...)) to extract the expected type.
+fn value_to_expected_rust(expr: &str, ty: &Type) -> String {
+    use crate::scripting::ast::NumberKind;
+    match ty {
+        Type::Object | Type::Any => expr.to_string(),
+        Type::Bool => format!("({}.as_bool().unwrap_or(false))", expr),
+        Type::String => format!("({}.as_str().unwrap_or(\"\").to_string())", expr),
+        Type::Number(NumberKind::Float(32)) => format!("({}.as_f64().unwrap_or(0.0) as f32)", expr),
+        Type::Number(NumberKind::Float(64)) => format!("({}.as_f64().unwrap_or(0.0))", expr),
+        Type::Number(NumberKind::Signed(w)) => match w {
+            8 => format!("({}.as_i64().unwrap_or(0) as i8)", expr),
+            16 => format!("({}.as_i64().unwrap_or(0) as i16)", expr),
+            32 => format!("({}.as_i64().unwrap_or(0) as i32)", expr),
+            64 | 128 => format!("({}.as_i64().unwrap_or(0))", expr),
+            _ => format!("({}.as_i64().unwrap_or(0) as i32)", expr),
+        },
+        Type::Number(NumberKind::Unsigned(w)) => match w {
+            8 => format!("({}.as_u64().unwrap_or(0) as u8)", expr),
+            16 => format!("({}.as_u64().unwrap_or(0) as u16)", expr),
+            32 => format!("({}.as_u64().unwrap_or(0) as u32)", expr),
+            64 | 128 => format!("({}.as_u64().unwrap_or(0))", expr),
+            _ => format!("({}.as_u64().unwrap_or(0) as u32)", expr),
+        },
+        _ => expr.to_string(),
+    }
+}
+
 /// Closure body for read_scene_node when reading a base Node field (name, id, parent, etc.).
 /// Uses BaseNode trait on SceneNode (get_name(), get_id(), etc.) — not read_node with &Node.
 fn scene_node_base_field_read(field: &str, result_type: Option<&Type>) -> String {
@@ -412,7 +439,20 @@ impl Expr {
                     renamed_name
                 };
 
-                // ✨ Add this: wrap in json! if going to Value/Object/Any
+                // Script-level or local variable of non-Copy type (String, Container, Custom): add .clone() when read
+                // so return/assign don't move out of the variable.
+                let needs_clone = type_for_renaming.map_or(false, |t| {
+                    matches!(t, Type::String | Type::CowStr)
+                        || matches!(t, Type::Container(_, _))
+                        || matches!(t, Type::Custom(_))
+                });
+                let ident_code = if needs_clone {
+                    format!("{}.clone()", ident_code)
+                } else {
+                    ident_code
+                };
+
+                // ✨ Wrap in json! if going to Value/Object/Any
                 if matches!(expected_type, Some(Type::Object | Type::Any)) {
                     format!("json!({})", ident_code)
                 } else {
@@ -496,9 +536,36 @@ impl Expr {
                 // Loop variables are now always inferred as i32 in infer_expr_type (deterministic)
                 // The promotion/casting logic below will handle converting to f32 when used with floats
 
-                let dominant_type = if let Some(expected) = expected_type.cloned() {
-                    // eprintln!("[BINARY_OP] Using expected_type: {:?}", expected);
-                    Some(expected)
+                // Logical ops (And, Or): result is always bool; force dominant_type so we don't promote to f32.
+                let is_logical_op = matches!(op, Op::And); // Or not yet in Op enum
+                let dominant_type = if is_logical_op {
+                    Some(Type::Bool)
+                } else if let Some(expected) = expected_type.cloned() {
+                // When expected_type is Value but op is numeric (e.g. s + delta for set_score arg),
+                // use promoted numeric type for operands so we generate (s_extracted + delta) then wrap in json!().
+                let is_numeric_op_type = matches!(op, Op::Add | Op::Sub | Op::Mul | Op::Div);
+                    if matches!(expected, Type::Object | Type::Any) && is_numeric_op_type {
+                        // Use promoted type for operands so we don't wrap each operand in json!()
+                        match (&left_type, &right_type) {
+                            (Some(l), Some(r)) => script
+                                .promote_types(l, r)
+                                .filter(|t| !matches!(t, Type::Object | Type::Any))
+                                .or_else(|| {
+                                    if !matches!(l, Type::Object | Type::Any) {
+                                        Some(l.clone())
+                                    } else if !matches!(r, Type::Object | Type::Any) {
+                                        Some(r.clone())
+                                    } else {
+                                        None
+                                    }
+                                }),
+                            (Some(l), None) if !matches!(l, Type::Object | Type::Any) => Some(l.clone()),
+                            (None, Some(r)) if !matches!(r, Type::Object | Type::Any) => Some(r.clone()),
+                            _ => Some(expected),
+                        }
+                    } else {
+                        Some(expected)
+                    }
                 } else {
                     let promoted = match (&left_type, &right_type) {
                         (Some(l), Some(r)) => script.promote_types(l, r).or(Some(l.clone())),
@@ -506,7 +573,6 @@ impl Expr {
                         (None, Some(r)) => Some(r.clone()),
                         _ => None,
                     };
-                    // eprintln!("[BINARY_OP] Promoted dominant_type: {:?}", promoted);
                     promoted
                 };
 
@@ -714,11 +780,13 @@ impl Expr {
                     return format!("format!(\"{{}}{{}}\", {}, {})", l_str, r_str);
                 }
 
-                // Value (serde_json::Value) * Number or Number * Value: extract Value to the known numeric type
-                // so we do numeric op numeric instead of Value * Value (which doesn't implement Mul).
-                let is_numeric_op = matches!(
+                // Value (serde_json::Value) with Number: extract Value to the known numeric type
+                // for numeric ops and comparisons (Value == 100, Value > 3.0) so we don't generate "Value as f32".
+                let is_numeric_or_comparison_op = matches!(
                     op,
-                    Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Lt | Op::Gt | Op::Le | Op::Ge
+                    Op::Add | Op::Sub | Op::Mul | Op::Div
+                        | Op::Lt | Op::Gt | Op::Le | Op::Ge
+                        | Op::Eq | Op::Ne
                 );
                 let left_is_value = left_type == Some(Type::Any) || left_type == Some(Type::Object);
                 let right_is_value =
@@ -761,7 +829,17 @@ impl Expr {
                     }
                 }
 
-                let (l_str, r_str, dominant_type) = if is_numeric_op
+                // For comparison/logical ops with expected_type Bool, keep dominant_type = Bool so we never
+                // cast the result to f32 (bool as f32 is invalid).
+                let is_comparison_or_logical =
+                    matches!(op, Op::Eq | Op::Ne | Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::And);
+                // Logical ops (And, Or): operands are always bool; never cast them to f32/f64 or we get (bool as f32).
+                let is_logical_binary = matches!(op, Op::And);
+                let (l_str, r_str, dominant_type) = if is_logical_binary
+                {
+                    // Use sub-expressions as-is; do not apply any numeric/float casting to operands of &&.
+                    (l_str.clone(), r_str.clone(), dominant_type)
+                } else if is_numeric_or_comparison_op
                     && ((left_is_value && right_is_number) || (right_is_value && left_is_number))
                 {
                     let (new_l, new_r, dom) = if left_is_value && right_is_number {
@@ -773,6 +851,12 @@ impl Expr {
                         let extract = value_to_numeric_extract(&r_str, num_ty);
                         (l_str.clone(), extract, Some(num_ty.clone()))
                     };
+                    // Preserve Bool so later "Final cast" and Float(32) operand casting don't apply to comparison result
+                    let dom = if is_comparison_or_logical && expected_type == Some(&Type::Bool) {
+                        Some(Type::Bool)
+                    } else {
+                        dom
+                    };
                     (new_l, new_r, dom)
                 } else {
                     (l_str.clone(), r_str.clone(), dominant_type)
@@ -780,7 +864,10 @@ impl Expr {
 
                 // CRITICAL: If we detect integer * float mixing, ALWAYS cast the integer to the float type
                 // This must happen BEFORE any other type conversion logic
-                let (left_str, right_str) = if is_left_int
+                // Logical ops (And/Or): operands are bool; never cast them.
+                let (left_str, right_str) = if is_logical_binary {
+                    (l_str.clone(), r_str.clone())
+                } else if is_left_int
                     && (is_right_float || right_is_float_literal)
                 {
                     // Integer * Float -> cast integer to float
@@ -802,8 +889,11 @@ impl Expr {
                     };
                     let cast_type = if float_w == 64 { "f64" } else { "f32" };
                     (l_str, format!("({} as {})", r_str_clean, cast_type))
-                } else if let Some(Type::Number(NumberKind::Float(32))) = dominant_type {
+                } else if !is_comparison_or_logical
+                    && matches!(dominant_type, Some(Type::Number(NumberKind::Float(32))))
+                {
                     // Expected type is f32 - ensure integers are cast to f32 (use aggressive detection)
+                    // Skip for comparison/logical so we don't cast (bool) result to f32
                     let l_str_final = if is_left_int || is_left_int_like {
                         let l_str_clean = if l_str.ends_with(".clone()") {
                             &l_str[..l_str.len() - 7]
@@ -825,7 +915,9 @@ impl Expr {
                         r_str.clone()
                     };
                     (l_str_final, r_str_final)
-                } else if let Some(Type::Number(NumberKind::Float(64))) = dominant_type {
+                } else if !is_comparison_or_logical
+                    && matches!(dominant_type, Some(Type::Number(NumberKind::Float(64))))
+                {
                     // Expected type is f64 - ensure integers are cast to f64 (use aggressive detection)
                     let l_str_final = if is_left_int || is_left_int_like {
                         let l_str_clean = if l_str.ends_with(".clone()") {
@@ -1193,10 +1285,14 @@ impl Expr {
                     }
                 }
 
-                // Final cast: if expected_type is a float but both operands are integers,
-                // cast the entire result to ensure determinism (e.g., i32 * i32 -> f32 when expected is f32)
+                // Final cast: only for numeric ops (Add/Sub/Mul/Div). Never cast logical/comparison result to f32.
                 let result_expr = format!("({} {} {})", left_final, op.to_rust(), right_final);
-                if let Some(Type::Number(NumberKind::Float(32))) = dominant_type {
+                let is_numeric_result_op = matches!(op, Op::Add | Op::Sub | Op::Mul | Op::Div);
+                // Comparison and logical ops produce bool; never wrap result in (result as f32).
+                if is_comparison_or_logical {
+                    return result_expr;
+                }
+                if is_numeric_result_op && matches!(dominant_type, Some(Type::Number(NumberKind::Float(32)))) {
                     // Check if both operands are integers
                     let both_integers = matches!(
                         &left_type,
@@ -1213,7 +1309,7 @@ impl Expr {
                         // Cast the entire result to f32 for determinism
                         return format!("({} as f32)", result_expr);
                     }
-                } else if let Some(Type::Number(NumberKind::Float(64))) = dominant_type {
+                } else if is_numeric_result_op && matches!(dominant_type, Some(Type::Number(NumberKind::Float(64)))) {
                     // Check if both operands are integers
                     let both_integers = matches!(
                         &left_type,
@@ -1719,6 +1815,14 @@ impl Expr {
                         if let Some(var) = script.variables.iter().find(|v| v.name == *field) {
                             // It's a variable, use renamed variable name
                             let renamed_name = rename_variable(&var.name, var.typ.as_ref());
+                            let needs_clone = var.typ.as_ref().map_or(false, |t| {
+                                matches!(t, Type::String | Type::CowStr)
+                                    || matches!(t, Type::Container(_, _))
+                                    || matches!(t, Type::Custom(_))
+                            });
+                            if needs_clone {
+                                return format!("self.{}.clone()", renamed_name);
+                            }
                             return format!("self.{}", renamed_name);
                         } else if script.functions.iter().any(|f| f.name == *field) {
                             // It's a function, use renamed function name
@@ -2597,6 +2701,11 @@ impl Expr {
                             needs_self,
                             current_func,
                         );
+                        // call_function_id returns Value; wrap in extraction when expected type is concrete
+                        if let Some(ty) = expected_type {
+                            let wrapped = value_to_expected_rust(&code, ty);
+                            return wrapped;
+                        }
                         return code;
                     }
                 }
@@ -3639,13 +3748,11 @@ impl Expr {
                     );
                 }
 
-                // If we have an expected_type and the API returns Object, cast the result
-                // This handles cases like: let x: number = map.get("key");
-                // BUT: Only apply cast if the map is actually dynamic (returns Value)
-                // For static maps (e.g., HashMap<String, BigInt>), the API already returns the correct type
+                // If we have an expected_type and the API returns Object/Any (Value), cast the result
+                // This handles: let x: int = Root::get_value(); and map.get("key")
                 if let Some(expected_ty) = expected_type {
                     let api_return_type = module.return_type();
-                    if let Some(Type::Object) = api_return_type.as_ref() {
+                    if matches!(api_return_type.as_ref(), Some(Type::Object | Type::Any)) {
                         // Check if this is MapResource::Get and if the map is actually dynamic
                         let should_cast = if let crate::call_modules::CallModule::Resource(
                             crate::resource_modules::ResourceModule::MapOp(MapResource::Get),
@@ -3664,56 +3771,10 @@ impl Expr {
                             true // For other APIs, apply cast if they return Object
                         };
 
-                        if should_cast && *expected_ty != Type::Object {
-                            // Generate cast from Value to expected type
-                            match expected_ty {
-                                Type::Number(NumberKind::Float(64)) => {
-                                    format!("{}.as_f64().unwrap_or_default()", api_call_code)
-                                }
-                                Type::Number(NumberKind::Float(32)) => {
-                                    format!("{}.as_f64().unwrap_or_default() as f32", api_call_code)
-                                }
-                                Type::Number(NumberKind::BigInt) => {
-                                    // Value can be a string representation of BigInt or a number
-                                    format!(
-                                        "{}.as_str().and_then(|s| s.parse::<BigInt>().ok()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
-                                        api_call_code, api_call_code
-                                    )
-                                }
-                                Type::Number(NumberKind::Decimal) => {
-                                    // Decimal is stored as f64 in Value, convert using from_str_exact
-                                    format!(
-                                        "rust_decimal::Decimal::from_str_exact(&{}.as_f64().unwrap_or_default().to_string()).unwrap_or_default()",
-                                        api_call_code
-                                    )
-                                }
-                                Type::String => {
-                                    format!(
-                                        "{}.as_str().unwrap_or_default().to_string()",
-                                        api_call_code
-                                    )
-                                }
-                                Type::Bool => {
-                                    format!("{}.as_bool().unwrap_or_default()", api_call_code)
-                                }
-                                Type::Custom(custom_type) => {
-                                    // Strip 'mut' if present in type name; use transpiled struct name (__t_Foo)
-                                    let clean_type = if custom_type.starts_with("mut ") {
-                                        custom_type.strip_prefix("mut ").unwrap_or(custom_type)
-                                    } else {
-                                        custom_type
-                                    };
-                                    let rust_type = rename_struct(clean_type);
-                                    format!(
-                                        "serde_json::from_value::<{}>({}).unwrap_or_default()",
-                                        rust_type, api_call_code
-                                    )
-                                }
-                                _ => api_call_code,
-                            }
-                        } else {
-                            api_call_code
+                        if should_cast && !matches!(expected_ty, Type::Object | Type::Any) {
+                            return value_to_expected_rust(&api_call_code, expected_ty);
                         }
+                        api_call_code
                     } else {
                         api_call_code
                     }

@@ -16,7 +16,7 @@
 @expose var typed_decimal: decimal = 987.6543210987654321
 @expose var typed_string: string = "HelloPerro"
 
-// Local Primitives (defined before custom structs that might use them)
+
 var local_int: int = 5
 var local_uint_8: uint_8 = 250
 var local_float: float = 2.5
@@ -24,7 +24,7 @@ var local_string: string = "LocalString"
 var local_big_int: big = 1000000000000000000
 var local_decimal: decimal = 12.34567890123456789
 
-// --- Custom Struct Definitions (must precede their usage) ---
+
 struct TestVector {
     var x: float
     var y: float

@@ -1,4 +1,4 @@
-// Compile-only test: All resource APIs — Texture, Mesh, Quaternion, Shape2D, Signal (new/connect/emit/emit_deferred), Array, Map.
+// Compile-only test: All resource APIs — Texture, Mesh, Quaternion, Shape, Signal (new/connect/emit/emit_deferred), Array, Map.
 @script TestResourceApi extends Node
 
 var emit_count: int = 0
@@ -38,10 +38,10 @@ fn test_quaternion() {
 }
 
 fn test_shape2d() {
-    var rect = Shape2D.rectangle(10.0, 20.0)
-    var circle = Shape2D.circle(5.0)
-    var square = Shape2D.square(8.0)
-    var tri = Shape2D.triangle(4.0, 6.0)
+    var rect = Shape.rectangle(10.0, 20.0)
+    var circle = Shape.circle(5.0)
+    var square = Shape.square(8.0)
+    var tri = Shape.triangle(4.0, 6.0)
 }
 
 fn test_signal_new_connect_emit() {

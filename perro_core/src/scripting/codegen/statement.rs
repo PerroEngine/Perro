@@ -3479,9 +3479,10 @@ impl Stmt {
 
             Stmt::Return(expr) => {
                 if let Some(expr) = expr {
+                    let return_type_hint = current_func.map(|f| &f.return_type);
                     let expr_code = expr
                         .expr
-                        .to_rust(needs_self, script, None, current_func, None);
+                        .to_rust(needs_self, script, return_type_hint, current_func, None);
                     format!("return {};", expr_code)
                 } else {
                     "return;".to_string()
@@ -3740,9 +3741,9 @@ impl Stmt {
                                 Op::Sub => "-=",
                                 Op::Mul => "*=",
                                 Op::Div => "/=",
-                                Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
+                                Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne | Op::And => {
                                     unreachable!(
-                                        "Comparison operators cannot be used in assignment operations"
+                                        "Comparison/logical operators cannot be used in assignment operations"
                                     )
                                 }
                             };
@@ -3890,8 +3891,8 @@ impl Stmt {
                     Op::Sub => "-",
                     Op::Mul => "*",
                     Op::Div => "/",
-                    Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne => {
-                        unreachable!("Comparison operators cannot be used in assignment operations")
+                    Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne | Op::And => {
+                        unreachable!("Comparison/logical operators cannot be used in assignment operations")
                     }
                 };
 
@@ -4053,15 +4054,17 @@ impl Stmt {
                     let index_refs_array = index_code.contains(&base_code);
 
                     // If the index references the array, extract it to a temporary variable first
-                    if index_refs_array {
-                        // Generate a temporary variable name based on the array name
-                        // Extract the variable name from base_code (e.g., "self.array" -> "array")
-                        let temp_index_var = if base_code.starts_with("self.") {
-                            let var_name = base_code.strip_prefix("self.").unwrap_or(&base_code);
-                            format!("__{}_idx", var_name.replace(".", "_"))
-                        } else {
-                            format!("__{}_idx", base_code.replace(".", "_"))
-                        };
+                        if index_refs_array {
+                        // Generate a temporary variable name based on the array name.
+                        // Sanitize base_code so we don't get __idx____var_clone() (strip .clone() and () from expr code).
+                        let mut base_sanitized = base_code
+                            .replace(".clone()", "")
+                            .replace("()", "");
+                        base_sanitized = base_sanitized.trim_start_matches("self.").to_string();
+                        let temp_index_var = format!(
+                            "__{}_idx",
+                            base_sanitized.replace(".", "_").trim_start_matches('_')
+                        );
                         let bounds_check = if is_dynamic_array {
                             format!(
                                 "        if {}.len() <= {} {{\n            {}.resize({} + 1, json!(null));\n        }}\n",
@@ -4086,10 +4089,15 @@ impl Stmt {
                             && rhs_type.as_ref().map_or(false, |ty| ty.requires_clone());
 
                         if is_dynamic_array {
-                            // For dynamic arrays, extract index and check bounds
+                            // For dynamic arrays, extract index and check bounds.
+                            // Sanitize base_code so temp var isn't __idx____var_clone() (strip .clone() and () from expr code).
+                            let mut base_sanitized = base_code
+                                .replace(".clone()", "")
+                                .replace("()", "");
+                            base_sanitized = base_sanitized.trim_start_matches("self.").to_string();
                             let temp_index_var = format!(
                                 "__idx_{}",
-                                base_code.replace(".", "_").replace("self", "")
+                                base_sanitized.replace(".", "_").trim_start_matches('_')
                             );
                             format!(
                                 "        let {} = {};\n        if {}.len() <= {} {{\n            {}.resize({} + 1, json!(null));\n        }}\n        {}[{}] = {};\n",
@@ -4224,6 +4232,27 @@ impl Stmt {
             },
             (Number(Signed(_) | Unsigned(_)), Number(Decimal)) => {
                 format!("Decimal::from({})", expr)
+            }
+            (Number(Float(32)), Number(Decimal)) => {
+                // RHS may already be Decimal (e.g. literal emitted as Decimal::from_str when target was Decimal)
+                if expr.contains("Decimal::") {
+                    expr.to_string()
+                } else {
+                    format!(
+                        "rust_decimal::prelude::FromPrimitive::from_f32({}).unwrap_or_default()",
+                        expr
+                    )
+                }
+            }
+            (Number(Float(64)), Number(Decimal)) => {
+                if expr.contains("Decimal::") {
+                    expr.to_string()
+                } else {
+                    format!(
+                        "rust_decimal::prelude::FromPrimitive::from_f64({}).unwrap_or_default()",
+                        expr
+                    )
+                }
             }
 
             // String type conversions

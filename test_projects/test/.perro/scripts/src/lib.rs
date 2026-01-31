@@ -6,24 +6,38 @@ use std::os::raw::c_char;
 use perro_core::script::CreateFn;
 use phf::{phf_map, Map};
 
+pub mod puptests_global_tests_game_state_pup;
+pub mod puptests_global_tests_math_utils_pup;
+pub mod puptests_global_tests_more_utils_pup;
+pub mod puptests_global_tests_root_pup;
+pub mod puptests_global_tests_test_globals_modules_pup;
+pub mod puptests_global_tests_ui_helper_pup;
 pub mod puptests_node_tests_test_camera2d_api_pup;
 pub mod puptests_node_tests_test_engine_structs_pup;
 pub mod puptests_node_tests_test_mesh_instance_3d_api_pup;
 pub mod puptests_node_tests_test_node2d_api_pup;
 pub mod puptests_node_tests_test_node3d_api_pup;
+pub mod puptests_node_tests_test_node_methods_pup;
 pub mod puptests_node_tests_test_shape_instance_2d_api_pup;
 pub mod puptests_node_tests_test_sprite2d_api_pup;
+pub mod puptests_resource_tests_test_mesh_api_pup;
 pub mod puptests_resource_tests_test_resource_api_pup;
 pub mod puptests_type_tests_test_syntax_edge_pup;
 pub mod puptests_type_tests_types_pup;
 // __PERRO_MODULES__
+use puptests_global_tests_game_state_pup::puptests_global_tests_game_state_pup_create_script;
+use puptests_global_tests_root_pup::puptests_global_tests_root_pup_create_script;
+use puptests_global_tests_test_globals_modules_pup::puptests_global_tests_test_globals_modules_pup_create_script;
+use puptests_global_tests_ui_helper_pup::puptests_global_tests_ui_helper_pup_create_script;
 use puptests_node_tests_test_camera2d_api_pup::puptests_node_tests_test_camera2d_api_pup_create_script;
 use puptests_node_tests_test_engine_structs_pup::puptests_node_tests_test_engine_structs_pup_create_script;
 use puptests_node_tests_test_mesh_instance_3d_api_pup::puptests_node_tests_test_mesh_instance_3d_api_pup_create_script;
 use puptests_node_tests_test_node2d_api_pup::puptests_node_tests_test_node2d_api_pup_create_script;
 use puptests_node_tests_test_node3d_api_pup::puptests_node_tests_test_node3d_api_pup_create_script;
+use puptests_node_tests_test_node_methods_pup::puptests_node_tests_test_node_methods_pup_create_script;
 use puptests_node_tests_test_shape_instance_2d_api_pup::puptests_node_tests_test_shape_instance_2d_api_pup_create_script;
 use puptests_node_tests_test_sprite2d_api_pup::puptests_node_tests_test_sprite2d_api_pup_create_script;
+use puptests_resource_tests_test_mesh_api_pup::puptests_resource_tests_test_mesh_api_pup_create_script;
 use puptests_resource_tests_test_resource_api_pup::puptests_resource_tests_test_resource_api_pup_create_script;
 use puptests_type_tests_test_syntax_edge_pup::puptests_type_tests_test_syntax_edge_pup_create_script;
 use puptests_type_tests_types_pup::puptests_type_tests_types_pup_create_script;
@@ -34,13 +48,19 @@ pub fn get_script_registry() -> &'static Map<&'static str, CreateFn> {
 }
 
 static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
-    "puptests_node_tests_test_camera2d_api_pup" => puptests_node_tests_test_camera2d_api_pup_create_script as CreateFn,
+    "puptests_global_tests_game_state_pup" => puptests_global_tests_game_state_pup_create_script as CreateFn,
+        "puptests_global_tests_root_pup" => puptests_global_tests_root_pup_create_script as CreateFn,
+        "puptests_global_tests_test_globals_modules_pup" => puptests_global_tests_test_globals_modules_pup_create_script as CreateFn,
+        "puptests_global_tests_ui_helper_pup" => puptests_global_tests_ui_helper_pup_create_script as CreateFn,
+        "puptests_node_tests_test_camera2d_api_pup" => puptests_node_tests_test_camera2d_api_pup_create_script as CreateFn,
         "puptests_node_tests_test_engine_structs_pup" => puptests_node_tests_test_engine_structs_pup_create_script as CreateFn,
         "puptests_node_tests_test_mesh_instance_3d_api_pup" => puptests_node_tests_test_mesh_instance_3d_api_pup_create_script as CreateFn,
         "puptests_node_tests_test_node2d_api_pup" => puptests_node_tests_test_node2d_api_pup_create_script as CreateFn,
         "puptests_node_tests_test_node3d_api_pup" => puptests_node_tests_test_node3d_api_pup_create_script as CreateFn,
+        "puptests_node_tests_test_node_methods_pup" => puptests_node_tests_test_node_methods_pup_create_script as CreateFn,
         "puptests_node_tests_test_shape_instance_2d_api_pup" => puptests_node_tests_test_shape_instance_2d_api_pup_create_script as CreateFn,
         "puptests_node_tests_test_sprite2d_api_pup" => puptests_node_tests_test_sprite2d_api_pup_create_script as CreateFn,
+        "puptests_resource_tests_test_mesh_api_pup" => puptests_resource_tests_test_mesh_api_pup_create_script as CreateFn,
         "puptests_resource_tests_test_resource_api_pup" => puptests_resource_tests_test_resource_api_pup_create_script as CreateFn,
         "puptests_type_tests_test_syntax_edge_pup" => puptests_type_tests_test_syntax_edge_pup_create_script as CreateFn,
         "puptests_type_tests_types_pup" => puptests_type_tests_types_pup_create_script as CreateFn,
@@ -48,10 +68,16 @@ static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
 };
 
 /// Global script identifiers in deterministic order. Root = NodeID(1); first global = 2, etc.
-pub fn get_global_registry_order() -> &'static [&'static str] { &[] }
+pub fn get_global_registry_order() -> &'static [&'static str] {
+    static GLOBAL_ORDER: &[&str] = &["puptests_global_tests_root_pup", "puptests_global_tests_game_state_pup", "puptests_global_tests_ui_helper_pup"];
+    GLOBAL_ORDER
+}
 
 /// Global display names from @global Name (same order as get_global_registry_order).
-pub fn get_global_registry_names() -> &'static [&'static str] { &[] }
+pub fn get_global_registry_names() -> &'static [&'static str] {
+    static GLOBAL_ORDER_NAMES: &[&str] = &["Root", "GameState", "UIHelper"];
+    GLOBAL_ORDER_NAMES
+}
 
 
 

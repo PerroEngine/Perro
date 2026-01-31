@@ -30,7 +30,7 @@ Each node type **composes its ancestor**. The concrete type (e.g. `Sprite2D`, `C
 - **Node2D**: `type: "Node2D"`, `base: { type: "Node", name, parent, … }`, plus `transform`, `z_index`, etc.
 - **Sprite2D**: `type: "Sprite2D"`, `texture_path`, `base: { type: "Node2D", base: { type: "Node", name, parent, script_path }, transform, … }`.
 - **Node3D**: `type: "Node3D"`, `base: { type: "Node", name, parent, … }`, plus `transform` (3D).
-- **MeshInstance3D**: `type: "MeshInstance3D"`, `mesh_path`, `base: { type: "Node3D", base: { type: "Node", … }, transform }, …`.
+- **MeshInstance3D**: `type: "MeshInstance3D"`, `mesh_path`, `base: { type: "Node3D", base: { type: "Node", … }, transform }, …`. Use `mesh_path`: `"res://model.glb"` if the file has one mesh; if it has multiple, use `"res://model.glb:0"`, `"res://model.glb:1"`, etc. (index, not internal names).
 
 So: **all naming, parenting, and script attachment are done on the base Node level** (the innermost `base` in the chain).
 
@@ -179,7 +179,7 @@ These sit **next to** `type` and `base` on the node object (not inside base).
 | Node type           | Extra fields |
 |---------------------|--------------|
 | **Sprite2D**        | `texture_path`: string (e.g. `"res://icon.png"`) |
-| **MeshInstance3D**  | `mesh_path`: string (e.g. `"res://model.obj"` or `"__cube__"`) |
+| **MeshInstance3D**  | `mesh_path`: string — `"res://model.glb"` (single mesh), `"res://model.glb:0"` / `"res://model.glb:1"` (multiple meshes by index), or `"__cube__"` / `"__sphere__"` for built-ins |
 | **CollisionShape2D**| `shape`: e.g. `{ "Rectangle": { "width": 200, "height": 1000 } }` or `{ "Circle": { "radius": 120 } }` |
 | **ShapeInstance2D** | `shape`, `color`: `{ "r", "g", "b", "a" }`, `filled`: bool |
 | **Camera2D**        | `active`: bool |

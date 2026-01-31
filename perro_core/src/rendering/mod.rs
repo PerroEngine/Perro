@@ -1,6 +1,8 @@
 pub mod font;
 pub mod graphics;
 pub mod image_loader;
+pub mod mesh_loader;
+pub mod static_mesh;
 pub mod vertex;
 // Text rendering now handled by egui
 // pub mod text_renderer;

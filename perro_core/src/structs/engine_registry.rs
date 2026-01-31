@@ -226,6 +226,7 @@ pub enum NodeMethodRef {
     GetVar,
     SetVar,
     CallFunction,
+    CallDeferred,
     GetChildByName,
     GetParent,
     AddChild,
@@ -574,6 +575,30 @@ impl EngineRegistry {
                     ],
                     Type::Any,
                     Some(NodeMethodRef::CallFunction),
+                    vec![
+                        "name", "arg1", "arg2", "arg3", "arg4", "arg5", "arg6", "arg7", "arg8",
+                        "arg9", "arg10", "arg11",
+                    ],
+                ),
+                // call_deferred(methodName: string, ...args?) — queue call for end of frame
+                (
+                    "call_deferred",
+                    vec![
+                        Type::String,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                    ],
+                    Type::Void,
+                    Some(NodeMethodRef::CallDeferred),
                     vec![
                         "name", "arg1", "arg2", "arg3", "arg4", "arg5", "arg6", "arg7", "arg8",
                         "arg9", "arg10", "arg11",

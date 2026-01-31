@@ -15,7 +15,7 @@ pub mod structs;
 pub mod thread_utils;
 pub mod types;
 
-pub use ids::{LightID, MaterialID, MeshID, NodeID, TextureID, UIElementID};
+pub use ids::{LightID, MaterialID, MeshID, NodeID, SignalID, TextureID, UIElementID};
 pub use nodes::*;
 pub use project::*;
 pub use rendering::*;
@@ -65,5 +65,5 @@ pub mod prelude {
     pub use crate::types::*;
 
     // IDs (u64) and type-safe wrappers from ids.rs
-    pub use crate::{LightID, MaterialID, MeshID, NodeID, TextureID, UIElementID};
+    pub use crate::{LightID, MaterialID, MeshID, NodeID, SignalID, TextureID, UIElementID};
 }

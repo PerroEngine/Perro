@@ -1,0 +1,12 @@
+@module MathUtils
+
+const PI: float = 3.14159265
+const TWO: int = 2
+
+fn add(a: int, b: int) -> int {
+    return a + b
+}
+
+fn scale(x: float, s: float) -> float {
+    return x * s
+}

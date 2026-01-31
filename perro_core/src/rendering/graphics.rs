@@ -19,10 +19,11 @@ use crate::{
     renderer_3d::{MaterialUniform, Mesh, Renderer3D},
     renderer_prim::PrimitiveRenderer,
     renderer_ui::RendererUI,
-    runtime::get_static_textures,
+    runtime::{get_static_meshes, get_static_textures},
     structs2d::ImageTexture,
     vertex::Vertex,
 };
+use crate::rendering::mesh_loader;
 
 use crate::rendering::image_loader;
 
@@ -569,6 +570,7 @@ struct MeshSlot {
 
 /// Mesh arena: generational slots like TextureManager. MeshID = index + generation.
 /// Ref-count by NodeID: when no nodes use a mesh for EVICTION_FRAMES frames, it is unloaded.
+/// Pinned mesh IDs (e.g. default primitives, Mesh.preload) are never evicted; only Mesh.remove() frees them.
 pub struct MeshManager {
     slots: Vec<Option<MeshSlot>>,
     generations: Vec<u32>,
@@ -579,6 +581,8 @@ pub struct MeshManager {
     id_to_path: FxHashMap<MeshID, String>,
     mesh_users: FxHashMap<MeshID, FxHashSet<NodeID>>,
     mesh_frames_at_zero: FxHashMap<MeshID, u32>,
+    /// Pinned mesh IDs (default primitives, Mesh.preload) are never evicted; only Mesh.remove() frees them.
+    pinned: FxHashSet<MeshID>,
 }
 
 impl MeshManager {
@@ -591,7 +595,20 @@ impl MeshManager {
             id_to_path: FxHashMap::default(),
             mesh_users: FxHashMap::default(),
             mesh_frames_at_zero: FxHashMap::default(),
+            pinned: FxHashSet::default(),
         }
+    }
+
+    /// Pin a mesh so it is never evicted; only Mesh.remove(id) will free it.
+    pub fn pin_mesh(&mut self, id: MeshID) {
+        if !id.is_nil() {
+            self.pinned.insert(id);
+        }
+    }
+
+    /// Unpin a mesh (e.g. before explicit remove).
+    pub fn unpin_mesh(&mut self, id: MeshID) {
+        self.pinned.remove(&id);
     }
 
     /// Register that node `node_id` is using mesh `id`. Resets eviction countdown.
@@ -629,6 +646,9 @@ impl MeshManager {
             .collect();
         let mut to_evict = Vec::new();
         for &id in &live_ids {
+            if self.pinned.contains(&id) {
+                continue; // Never evict pinned meshes
+            }
             let n = self.mesh_users.get(&id).map(|s| s.len()).unwrap_or(0);
             if n == 0 {
                 let f = self.mesh_frames_at_zero.entry(id).or_insert(0);
@@ -680,18 +700,33 @@ impl MeshManager {
     }
 
     /// Get or load mesh by path; returns MeshID. Call get_mesh_by_id for the mesh reference.
+    /// Path: `res://model.glb` = first/only mesh (normalized to `res://model.glb:0` for cache); `res://model.glb:0`, `:1` = by index.
+    /// Release: uses static .pmesh if path in static meshes. Dev: loads from disk (GLTF/GLB or built-in primitives).
     pub fn get_or_load_mesh(
         &mut self,
         path: &str,
         device: &Device,
-        _queue: &Queue,
+        queue: &Queue,
     ) -> Option<MeshID> {
-        if let Some(&id) = self.path_to_id.get(path) {
+        let canonical = mesh_loader::normalize_mesh_path(path);
+        if let Some(&id) = self.path_to_id.get(&canonical) {
             return Some(id);
         }
-        let mesh = Self::load_mesh_from_file(path, device)?;
-        println!("🔷 Loading mesh: {}", path);
-        Some(self.insert_slot(mesh, path.to_string()))
+        let mesh = if let Some(static_meshes) = get_static_meshes() {
+            if let Some(static_data) = static_meshes.get(canonical.as_str()) {
+                println!("🔷 Loading static mesh: {}", canonical);
+                static_data.to_mesh(device, queue)
+            } else {
+                let m = Self::load_mesh_from_file(path, device)?;
+                println!("🔷 Loading mesh: {}", canonical);
+                m
+            }
+        } else {
+            let m = Self::load_mesh_from_file(path, device)?;
+            println!("🔷 Loading mesh: {}", canonical);
+            m
+        };
+        Some(self.insert_slot(mesh, canonical))
     }
 
     /// Get mesh by MeshID (generational).
@@ -722,7 +757,19 @@ impl MeshManager {
             "__t_pyramid__" => {
                 Some(crate::renderer_3d::Renderer3D::create_triangular_pyramid_mesh(device))
             }
-            _ => None,
+            _ => {
+                // Dev path: load model from disk; path = "res://model.glb" or "res://model.glb:0", "res://model.glb:1", …
+                let (base_path, mesh_name) = mesh_loader::parse_mesh_path(path);
+                let is_gltf = base_path.ends_with(".glb") || base_path.ends_with(".gltf");
+                if is_gltf {
+                    let bytes = load_asset(base_path).ok()?;
+                    let (vertices, indices) =
+                        mesh_loader::load_gltf_mesh(&bytes, mesh_name)?;
+                    Some(Renderer3D::create_mesh_from_vertices(device, &vertices, &indices))
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -739,9 +786,11 @@ impl MeshManager {
         if !self.slot_valid(idx, id) {
             return false;
         }
+        self.pinned.remove(&id);
         if let Some(slot) = self.slots.get_mut(idx) {
             if let Some(MeshSlot { path, .. }) = slot.take() {
                 self.path_to_id.remove(&path);
+                self.id_to_path.remove(&id);
                 self.free_slots.push(idx);
                 self.mesh_users.remove(&id);
                 self.mesh_frames_at_zero.remove(&id);
@@ -1599,6 +1648,24 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     // Create renderer lazily in render() to avoid type issues
     let egui_renderer = None; // Will be initialized lazily in render() 
 
+    // Mesh arena: preload and pin default built-in meshes so they're always available
+    let mut mesh_manager = MeshManager::new();
+    const DEFAULT_MESH_PATHS: &[&str] = &[
+        "__cube__",
+        "__sphere__",
+        "__plane__",
+        "__cylinder__",
+        "__capsule__",
+        "__cone__",
+        "__s_pyramid__",
+        "__t_pyramid__",
+    ];
+    for path in DEFAULT_MESH_PATHS {
+        if let Some(id) = mesh_manager.get_or_load_mesh(path, &device, &queue) {
+            mesh_manager.pin_mesh(id);
+        }
+    }
+
     let gfx = Graphics {
         virtual_width: DEFAULT_VIRTUAL_WIDTH,
         virtual_height: DEFAULT_VIRTUAL_HEIGHT,
@@ -1610,7 +1677,7 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
         device,
         queue,
         texture_manager: TextureManager::new(),
-        mesh_manager: MeshManager::new(),
+        mesh_manager,
         material_manager,
         light_manager: LightManager::new(),
         camera_buffer,

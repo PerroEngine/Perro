@@ -60,7 +60,8 @@ impl ModuleCodegen for SignalResource {
         match self {
             SignalResource::New => {
                 let signal = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
-                prehash_if_literal(&signal)
+                let id = prehash_if_literal(&signal);
+                format!("SignalID::from_u64({id})")
             }
             SignalResource::Connect | SignalResource::Emit | SignalResource::EmitDeferred => {
                 // First arg is the signal. Pass through if already typed as signal/u64 or if it's
@@ -69,7 +70,7 @@ impl ModuleCodegen for SignalResource {
                 let arg_type = script.infer_expr_type(arg_expr, current_func);
                 let first = args_strs[0].trim();
 
-                let signal = match arg_type {
+                let signal_raw = match arg_type {
                     Some(Type::Number(NumberKind::Unsigned(64))) | Some(Type::Signal) => {
                         args_strs[0].clone()
                     }
@@ -83,6 +84,11 @@ impl ModuleCodegen for SignalResource {
                             args_strs[0].clone()
                         }
                     }
+                };
+                // API expects SignalID; script-side Signal is already SignalID in Rust, u64 literals/vars need wrapping
+                let signal = match arg_type {
+                    Some(Type::Signal) => signal_raw,
+                    _ => format!("SignalID::from_u64({})", signal_raw),
                 };
 
                 match self {
@@ -1124,6 +1130,14 @@ impl ModuleCodegen for MeshResource {
                     .unwrap_or_else(|| "MeshID::nil()".into());
                 format!("api.Mesh.remove({})", arg)
             }
+            MeshResource::Cube => "api.Mesh.cube()".to_string(),
+            MeshResource::Sphere => "api.Mesh.sphere()".to_string(),
+            MeshResource::Plane => "api.Mesh.plane()".to_string(),
+            MeshResource::Cylinder => "api.Mesh.cylinder()".to_string(),
+            MeshResource::Capsule => "api.Mesh.capsule()".to_string(),
+            MeshResource::Cone => "api.Mesh.cone()".to_string(),
+            MeshResource::SquarePyramid => "api.Mesh.square_pyramid()".to_string(),
+            MeshResource::TriangularPyramid => "api.Mesh.triangular_pyramid()".to_string(),
         }
     }
 }
@@ -1131,7 +1145,10 @@ impl ModuleCodegen for MeshResource {
 impl ModuleTypes for MeshResource {
     fn return_type(&self) -> Option<Type> {
         match self {
-            MeshResource::Load | MeshResource::Preload => {
+            MeshResource::Load | MeshResource::Preload
+            | MeshResource::Cube | MeshResource::Sphere | MeshResource::Plane
+            | MeshResource::Cylinder | MeshResource::Capsule | MeshResource::Cone
+            | MeshResource::SquarePyramid | MeshResource::TriangularPyramid => {
                 Some(Type::EngineStruct(EngineStruct::Mesh))
             }
             MeshResource::Remove => None,
@@ -1142,6 +1159,9 @@ impl ModuleTypes for MeshResource {
         match self {
             MeshResource::Load | MeshResource::Preload => Some(vec![Type::String]),
             MeshResource::Remove => Some(vec![Type::EngineStruct(EngineStruct::Mesh)]),
+            MeshResource::Cube | MeshResource::Sphere | MeshResource::Plane
+            | MeshResource::Cylinder | MeshResource::Capsule | MeshResource::Cone
+            | MeshResource::SquarePyramid | MeshResource::TriangularPyramid => Some(vec![]),
         }
     }
 
@@ -1149,6 +1169,9 @@ impl ModuleTypes for MeshResource {
         match self {
             MeshResource::Load | MeshResource::Preload => Some(vec!["path"]),
             MeshResource::Remove => Some(vec!["mesh"]),
+            MeshResource::Cube | MeshResource::Sphere | MeshResource::Plane
+            | MeshResource::Cylinder | MeshResource::Capsule | MeshResource::Cone
+            | MeshResource::SquarePyramid | MeshResource::TriangularPyramid => Some(vec![]),
         }
     }
 }

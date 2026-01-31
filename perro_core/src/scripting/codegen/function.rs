@@ -563,12 +563,18 @@ impl Function {
         batch_consecutive_mutations(&out)
     }
 
-    // For module free functions (api as last param)
+    /// Generate Rust for a module free function (api as last param).
+    /// `language` is the source language of the module (e.g. "pup", "typescript"); used only for
+    /// the synthetic script context so codegen stays language-agnostic.
     pub fn to_rust_free_function(
         &self,
         verbose: bool,
         module_names: &std::collections::HashSet<String>,
+        module_name_to_identifier: &std::collections::HashMap<String, String>,
+        module_functions: &std::collections::HashMap<String, Vec<Function>>,
+        module_variables_all: &std::collections::HashMap<String, Vec<Variable>>,
         module_variables: Option<&[Variable]>,
+        language: Option<&str>,
     ) -> String {
         let mut out = String::with_capacity(512);
 
@@ -607,26 +613,23 @@ impl Function {
         )
         .unwrap();
 
-        // Generate body - modules have api context (passed as parameter)
-        // Create a minimal script context for statement generation
-        // Module functions can use api calls since api is passed as parameter
-        // Use the verbose flag to control whether API calls are stripped
-        // Pass module_names so modules can reference other modules
-        // Pass module_scope_variables so Ident/Assign use transpiled names for module constants
-        let dummy_script = Script {
+        // Generate body - modules have api context (passed as parameter).
+        // Synthetic script context: module functions have no real script/node, but stmt.to_rust()
+        // expects a Script for variable/module resolution. We pass a minimal Script (language-agnostic).
+        let module_codegen_context = Script {
             script_name: None,
             node_type: "Node".to_string(),
             variables: Vec::new(),
             functions: Vec::new(),
             structs: Vec::new(),
-            verbose, // Use the verbose flag passed to the function
+            verbose,
             attributes: std::collections::HashMap::new(),
             source_file: None,
-            language: Some("pup".to_string()),
-            module_names: module_names.clone(), // Pass module_names so modules can reference other modules
-            module_name_to_identifier: std::collections::HashMap::new(), // Not needed for module function codegen
-            module_functions: std::collections::HashMap::new(), // Not needed for module function codegen
-            module_variables: std::collections::HashMap::new(), // Not needed for module function codegen
+            language: language.map(String::from),
+            module_names: module_names.clone(),
+            module_name_to_identifier: module_name_to_identifier.clone(),
+            module_functions: module_functions.clone(), // So module→module refs use __t_add, __t_PI, etc.
+            module_variables: module_variables_all.clone(),
             module_scope_variables: module_variables.map(|v| v.to_vec()),
             is_global: false,
             global_names: std::collections::HashSet::new(),
@@ -635,7 +638,7 @@ impl Function {
         };
 
         for stmt in &self.body {
-            let stmt_code = stmt.to_rust(false, &dummy_script, Some(self));
+            let stmt_code = stmt.to_rust(false, &module_codegen_context, Some(self));
             // Indent the statement
             for line in stmt_code.lines() {
                 if !line.trim().is_empty() {

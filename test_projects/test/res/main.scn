@@ -13,7 +13,17 @@
       "base": {
         "type": "Node",
         "name": "Pup_001",
+        "parent": 0,
         "script_path": "res://puptests/type_tests/types.pup"
+      }
+    },
+    "2": {
+      "type": "Node2D",
+      "base": {
+        "type": "Node",
+        "name": "GlobalsTest",
+        "parent": 0,
+        "script_path": "res://puptests/global_tests/test_globals_modules.pup"
       }
     }
   }

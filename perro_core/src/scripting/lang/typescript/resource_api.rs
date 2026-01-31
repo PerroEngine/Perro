@@ -16,7 +16,7 @@ impl TypeScriptResourceAPI {
             TypeScriptMesh::NAME => TypeScriptMesh::resolve_method(func),
             TypeScriptArray::NAME => TypeScriptArray::resolve_method(func),
             TypeScriptMap::NAME => TypeScriptMap::resolve_method(func),
-            TypeScriptShape2D::NAME => TypeScriptShape2D::resolve_method(func),
+            TypeScriptShape::NAME => TypeScriptShape::resolve_method(func),
             TypeScriptQuaternion::NAME => TypeScriptQuaternion::resolve_method(func),
             _ => None,
         }
@@ -99,12 +99,40 @@ impl TypeScriptMesh {
             "load" => Some(ResourceModule::Mesh(MeshResource::Load)),
             "preload" => Some(ResourceModule::Mesh(MeshResource::Preload)),
             "remove" => Some(ResourceModule::Mesh(MeshResource::Remove)),
+            "cube" => Some(ResourceModule::Mesh(MeshResource::Cube)),
+            "sphere" => Some(ResourceModule::Mesh(MeshResource::Sphere)),
+            "plane" => Some(ResourceModule::Mesh(MeshResource::Plane)),
+            "cylinder" => Some(ResourceModule::Mesh(MeshResource::Cylinder)),
+            "capsule" => Some(ResourceModule::Mesh(MeshResource::Capsule)),
+            "cone" => Some(ResourceModule::Mesh(MeshResource::Cone)),
+            "squarePyramid" | "square_pyramid" | "sq_pyramid" => {
+                Some(ResourceModule::Mesh(MeshResource::SquarePyramid))
+            }
+            "triangularPyramid" | "triangular_pyramid" | "tri_pyramid" => {
+                Some(ResourceModule::Mesh(MeshResource::TriangularPyramid))
+            }
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["load", "preload", "remove"]
+        vec![
+            "load",
+            "preload",
+            "remove",
+            "cube",
+            "sphere",
+            "plane",
+            "cylinder",
+            "capsule",
+            "cone",
+            "squarePyramid",
+            "square_pyramid",
+            "sq_pyramid",
+            "triangularPyramid",
+            "triangular_pyramid",
+            "tri_pyramid",
+        ]
     }
 }
 
@@ -171,10 +199,10 @@ impl TypeScriptMap {
     }
 }
 
-/// Shape2D resource API - for creating 2D shapes
-pub struct TypeScriptShape2D;
-impl TypeScriptShape2D {
-    pub const NAME: &'static str = "Shape2D";
+/// Shape resource API - for creating 2D shapes
+pub struct TypeScriptShape;
+impl TypeScriptShape {
+    pub const NAME: &'static str = "Shape";
 
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {

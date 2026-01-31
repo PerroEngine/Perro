@@ -1,0 +1,28 @@
+// Compile-only test: Mesh resource API — load (built-ins + path), preload, remove.
+// Path syntax: res://model.glb = first mesh; res://model.glb:MeshName = named mesh in model.
+@script TestMeshApi extends Node
+
+on init() {
+    test_builtin_meshes()
+    test_preload_and_remove()
+}
+
+fn test_builtin_meshes() {
+    // Factory API (preferred)
+    var cube = Mesh.cube()
+    var sphere = Mesh.sphere()
+    var plane = Mesh.plane()
+    var cylinder = Mesh.cylinder()
+    var capsule = Mesh.capsule()
+    var cone = Mesh.cone()
+    var sq_pyr = Mesh.sq_pyramid()
+    var tri_pyr = Mesh.tri_pyramid()
+    // Or by path: Mesh.load("__cube__"), etc.
+    // GLB: first mesh Mesh.load("res://model.glb"); named mesh Mesh.load("res://model.glb:Body")
+}
+
+fn test_preload_and_remove() {
+    var m = Mesh.preload("__cube__")
+    Mesh.remove(m)
+    Mesh.remove(Mesh.load("__sphere__"))
+}

@@ -21,7 +21,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
-use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};
+use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
 use perro_core::prelude::*;
 
@@ -79,7 +79,7 @@ impl Script for PuptestsTypeTestsTestSyntaxEdgePupScript {
         self.__t_some_var = 99i32;
         let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
         let mut __t_cv: Value = api.get_script_var_id(child_id.expect("Child node not found"), 18136257161398063279u64);
-        let mut __t_cr: Value = api.call_function_id(child_id.expect("Child node not found"), 2630259753820323773u64, &[(json!(1.0f32) as Value)]);
+        let mut __t_cr: Value = api.call_function_id(child_id.expect("Child node not found"), 2630259753820323773u64, &[json!(json!(1.0f32))]);
     }
 
 }

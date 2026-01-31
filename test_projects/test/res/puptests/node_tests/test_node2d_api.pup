@@ -1,4 +1,4 @@
-// Compile-only: Node2D API — transform, get_node, get_parent, get_var, call, add_child, for loops, assignments.
+// Compile-only: Node2D API — transform, get_node, get_parent, get_var, call, call_deferred, add_child, for loops, assignments.
 @script TestNode2DApi extends Node2D
 
 var acc: float = 0.0
@@ -7,6 +7,7 @@ on init() {
     test_transform_read_write()
     test_transform_assign_to_other()
     test_node_methods()
+    test_call_deferred()
     test_for_loops()
 }
 
@@ -51,6 +52,14 @@ fn test_node_methods() {
     if c != null {
         var cv = c.get_var("x")
         c.call("update", Time.get_delta())
+    }
+}
+
+fn test_call_deferred() {
+    self.call_deferred("some_script_fn", 2.0)
+    var other = self.get_node("Other")
+    if other != null {
+        other.call_deferred("update", Time.get_delta())
     }
 }
 

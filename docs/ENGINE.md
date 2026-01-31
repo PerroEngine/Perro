@@ -40,8 +40,9 @@ So in dev: **scripts = DLL, runtime loads DLL, assets and config from disk.**
 - **Assets are compiled into the binary:**
   - **UI and scenes** — `.scn` and `.fur` are turned into **runtime data structures** at compile time and emitted into the project crate’s `static_assets` (e.g. `scenes.rs`, `fur.rs`). At runtime, UI and scenes already exist in their final form; no parsing of `.scn`/`.fur` in release.
   - **Images** — Converted to **.ptex** (Perro texture format: Zstd-compressed RGBA, etc.) and placed under `.perro/project/embedded_assets/`. The build then embeds these into the binary (e.g. via `static_assets::textures`). So in release, images are not loaded from PNG/JPG on disk; they’re already in the binary as textures.
+  - **3D meshes** — You import **models** (`.gltf`/`.glb`); each model can have multiple meshes. Use **`res://model.glb`** if the file has one mesh; if it has multiple, use **`res://model.glb:0`**, **`res://model.glb:1`**, etc. (index; do not rely on internal mesh names, they vary by exporter). Baked data is **.pmesh** (one per mesh, Zstd-compressed) in `embedded_assets/`. In dev, meshes are loaded from disk; in release they're in the binary.
   - **Project manifest** — `project.toml` is compiled into a static manifest (e.g. `static_assets::manifest`) so the release binary doesn’t need a `project.toml` file on disk.
-- Optionally a **BRK** (Binary Resource pacK) is built from `res/` for any remaining assets (e.g. audio); scripting sources, scene source, and preprocessed images are **not** put in the BRK because they’re already in the binary or in `embedded_assets`.
+- Optionally a **BRK** (Binary Resource pacK) is built from `res/` for any remaining assets not covered under static embedding; scripting sources, scene source, and preprocessed images are **not** put in the BRK because they’re already in the binary or in `embedded_assets`.
 
 So in release: **one executable, scripts and static assets (scenes, UI, textures, manifest) compiled in; no VM, no script/config files required at runtime.**
 
@@ -53,8 +54,8 @@ Inside a game project you have:
 - **`.perro/scripts/`** — The **scripts crate**. PUP (and TS/C#) are transpiled to Rust here. In dev this crate is built as a DLL; in release it is a dependency of the project crate.
 - **`.perro/project/`** — The **project crate**. This is the actual game binary in release. It depends on `scripts` and `perro_core`, and contains:
   - Generated `main.rs`, `build.rs`, and `Cargo.toml`
-  - `src/static_assets/` — Generated Rust that embeds scenes, UI (FUR), textures (.ptex), and the project manifest
-  - `embedded_assets/` — Preprocessed assets (e.g. .ptex) that the build embeds
+  - `src/static_assets/` — Generated Rust that embeds scenes, UI (FUR), textures (.ptex), meshes (.pmesh), and the project manifest
+  - `embedded_assets/` — Preprocessed assets in subfolders: `textures/` (.ptex), `meshes/` (.pmesh), embedded by the build
 
 So: **dev** = runtime + scripts DLL + assets from disk; **release** = project crate (binary) that statically links scripts and embeds static assets, with optional BRK for the rest.
 
@@ -69,6 +70,7 @@ The **display name** in `project.toml` (`[project] name = "My Game"`) can be hum
 | Scripts           | Scripts crate → DLL; runtime loads DLL    | Scripts crate linked into project binary                                |
 | Scenes / UI       | Loaded from disk (e.g. `res/`)           | Compiled into `static_assets` (scenes.rs, fur.rs) — runtime form only   |
 | Images            | Loaded from disk                         | Converted to .ptex, stored in `embedded_assets`, embedded in binary     |
+| 3D meshes         | Loaded from disk (GLTF/GLB; path or path:index) | Converted to .pmesh per mesh, stored in `embedded_assets`, embedded in binary |
 | project.toml      | Read from project folder at runtime      | Baked into `static_assets::manifest` at compile time                     |
 | Binary            | Engine binary + scripts DLL              | Single project binary (scripts + static assets inside)                  |
 

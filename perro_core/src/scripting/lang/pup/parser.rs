@@ -976,7 +976,8 @@ impl PupParser {
             // return; (no expression)
             Ok(Stmt::Return(None))
         } else {
-            // return expr;
+            // return expr; — parse the ENTIRE expression (precedence 0) so e.g.
+            // "return v == 100 and m > 3.0" is one return with one expression: (v==100) and (m>3.0).
             let expr = self.parse_expression(0)?;
             Ok(Stmt::Return(Some(TypedExpr {
                 expr,
@@ -2042,20 +2043,27 @@ impl PupParser {
                     self.next_token(); // consume '('
                     let mut args = Vec::new();
                     if self.current_token != PupToken::RParen {
-                        args.push(self.parse_expression(2)?);
+                        args.push(self.parse_expression(0)?);
                         while self.current_token == PupToken::Comma {
                             self.next_token();
-                            args.push(self.parse_expression(2)?);
+                            args.push(self.parse_expression(0)?);
                         }
                     }
                     self.expect(PupToken::RParen)?;
                     // Build args: [node_expr, method_name_expr, ...params]
                     // method_name_expr can be either a literal string (static) or an expression (dynamic)
-                    let mut call_args = vec![left, var_name_expr];
+                    let mut call_args = vec![left, var_name_expr.clone()];
                     call_args.extend(args);
+                    use crate::ast::Literal;
                     use crate::structs::engine_registry::NodeMethodRef;
+                    let method_ref = match &var_name_expr {
+                        Expr::Literal(Literal::String(s)) if s.as_str() == "call_deferred" => {
+                            NodeMethodRef::CallDeferred
+                        }
+                        _ => NodeMethodRef::CallFunction,
+                    };
                     Ok(Expr::ApiCall(
-                        CallModule::NodeMethod(NodeMethodRef::CallFunction),
+                        CallModule::NodeMethod(method_ref),
                         call_args,
                     ))
                 } else if self.current_token == PupToken::Assign {
@@ -2167,6 +2175,14 @@ impl PupParser {
                     Box::new(self.parse_expression(1)?),
                 ))
             }
+            PupToken::And => {
+                self.next_token();
+                Ok(Expr::BinaryOp(
+                    Box::new(left),
+                    Op::And,
+                    Box::new(self.parse_expression(1)?),
+                ))
+            }
             _ => Ok(left),
         }
     }
@@ -2184,7 +2200,8 @@ impl PupParser {
             | PupToken::Le
             | PupToken::Ge
             | PupToken::Eq
-            | PupToken::Ne => 1, // Comparison operators
+            | PupToken::Ne => 2, // Comparison: higher than logical so "a == 1 and b > 2" => (a==1) and (b>2)
+            PupToken::And => 1,   // Logical and: lowest so it binds last
             PupToken::DotDot => 1, // Range operator has low precedence
             _ => 0,
         }

@@ -330,6 +330,111 @@ impl EngineMethodCodegen for NodeMethodRef {
                     }
                 }
             }
+
+            NodeMethodRef::CallDeferred => {
+                let node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
+                let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
+
+                if let Some(Expr::Literal(crate::ast::Literal::String(func_name))) = args.get(1) {
+                    let func_id = string_to_u64(func_name);
+                    let params: Vec<String> = args_strs
+                        .iter()
+                        .skip(2)
+                        .map(|param_str| {
+                            if param_str.starts_with("json!(") || param_str.contains("Value") {
+                                param_str.clone()
+                            } else {
+                                format!("json!({})", param_str)
+                            }
+                        })
+                        .collect();
+
+                    if params.is_empty() {
+                        format!(
+                            "api.call_function_id_deferred({}, {}u64, &[])",
+                            node_id_clean, func_id
+                        )
+                    } else {
+                        format!(
+                            "api.call_function_id_deferred({}, {}u64, &[{}])",
+                            node_id_clean,
+                            func_id,
+                            params.join(", ")
+                        )
+                    }
+                } else {
+                    // Dynamic function name - use call_function_deferred(node_id, name, &[])
+                    let mut func_name_str = args_strs
+                        .get(1)
+                        .cloned()
+                        .unwrap_or_else(|| "\"\"".to_string());
+                    if func_name_str.contains("json!(") {
+                        if let Some(json_start) = func_name_str.find("json!(") {
+                            let inner_start = json_start + 6;
+                            let mut paren_count = 1;
+                            let mut json_end = inner_start;
+                            for (i, ch) in func_name_str[inner_start..].char_indices() {
+                                if ch == '(' {
+                                    paren_count += 1;
+                                } else if ch == ')' {
+                                    paren_count -= 1;
+                                    if paren_count == 0 {
+                                        json_end = inner_start + i;
+                                        break;
+                                    }
+                                }
+                            }
+                            func_name_str = func_name_str[inner_start..json_end].to_string();
+                            if func_name_str.ends_with(" as Value") {
+                                func_name_str = func_name_str
+                                    .strip_suffix(" as Value")
+                                    .unwrap_or(&func_name_str)
+                                    .to_string();
+                            }
+                        }
+                    }
+                    if func_name_str.ends_with(".as_str()") {
+                        func_name_str = func_name_str
+                            .strip_suffix(".as_str()")
+                            .unwrap_or(&func_name_str)
+                            .to_string();
+                    }
+                    if !func_name_str.starts_with('"')
+                        && !func_name_str.starts_with('&')
+                        && !func_name_str.contains(".as_str()")
+                    {
+                        func_name_str = format!("{}.as_str()", func_name_str);
+                    }
+                    let params: Vec<String> = args_strs
+                        .iter()
+                        .skip(2)
+                        .map(|param_str| {
+                            if param_str.starts_with("json!(") || param_str.contains("Value") {
+                                param_str.clone()
+                            } else {
+                                format!("json!({})", param_str)
+                            }
+                        })
+                        .collect();
+
+                    if params.is_empty() {
+                        format!(
+                            "api.call_function_deferred({}, {}, &[])",
+                            node_id_clean, func_name_str
+                        )
+                    } else {
+                        format!(
+                            "api.call_function_deferred({}, {}, &[{}])",
+                            node_id_clean,
+                            func_name_str,
+                            params.join(", ")
+                        )
+                    }
+                }
+            }
         }
     }
 }

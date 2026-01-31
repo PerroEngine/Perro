@@ -21,7 +21,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
-use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};
+use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
 use perro_core::prelude::*;
 
@@ -93,8 +93,8 @@ impl PuptestsResourceTestsTestResourceApiPupScript {
     }
 
     fn __t_test_mesh(&mut self, api: &mut ScriptApi<'_>) {
-        let mut __t_mesh: Option<MeshID> = api.Mesh.load("res://mesh.obj");
-        let mut __t_mesh2: Option<MeshID> = api.Mesh.preload("res://mesh.obj");
+        let mut mesh_id: Option<MeshID> = api.Mesh.load("res://mesh.obj");
+        let mut mesh2_id: Option<MeshID> = api.Mesh.preload("res://mesh.obj");
     }
 
     fn __t_test_quaternion(&mut self, api: &mut ScriptApi<'_>) {
@@ -115,33 +115,33 @@ impl PuptestsResourceTestsTestResourceApiPupScript {
     }
 
     fn __t_test_signal_new_connect_emit(&mut self, api: &mut ScriptApi<'_>) {
-        let mut __t_sig: u64 = 1780630955181868898u64;
-        api.connect_signal_id(1780630955181868898u64, self.id, 499805904335854216u64);
-        api.emit_signal_id(__t_sig, &[]);
-        api.emit_signal_id(__t_sig, &[]);
+        let mut sig_id: SignalID = SignalID::from_u64(1780630955181868898u64);
+        api.connect_signal_id(SignalID::from_u64(1780630955181868898u64), self.id, 499805904335854216u64);
+        api.emit_signal_id(sig_id, &[]);
+        api.emit_signal_id(sig_id, &[]);
     }
 
     fn __t_test_signal_emit_deferred(&mut self, api: &mut ScriptApi<'_>) {
-        let mut __t_sig2: u64 = 1522096033513419117u64;
-        api.connect_signal_id(1522096033513419117u64, self.id, 7012539771050356804u64);
-        api.emit_signal_id_deferred(__t_sig2, &[]);
-        api.emit_signal_id_deferred(__t_sig2, &[]);
+        let mut sig2_id: SignalID = SignalID::from_u64(1522096033513419117u64);
+        api.connect_signal_id(SignalID::from_u64(1522096033513419117u64), self.id, 7012539771050356804u64);
+        api.emit_signal_id_deferred(sig2_id, &[]);
+        api.emit_signal_id_deferred(sig2_id, &[]);
     }
 
     fn __t_test_array(&mut self, api: &mut ScriptApi<'_>) {
         let mut __t_arr: Vec<Value> = Vec::new();
-        __t_arr.push(json!(1f32));
-        __t_arr.push(json!(String::from("two")));
-        let mut __t_len = __t_arr.len();
-        let mut __t_elem: Value = __t_arr.get(0u32 as usize).cloned().unwrap_or_default();
+        __t_arr.clone().push(json!(1f32));
+        __t_arr.clone().push(json!(String::from("two")));
+        let mut __t_len = __t_arr.clone().len();
+        let mut __t_elem: Value = __t_arr.clone().get(0u32 as usize).cloned().unwrap_or_default();
     }
 
     fn __t_test_map(&mut self, api: &mut ScriptApi<'_>) {
         let mut __t_m: HashMap<String, Value> = HashMap::new();
-        __t_m.insert(String::from("key"), json!(String::from("value")));
-        let mut __t_v: Value = __t_m.get(String::from("key").as_str()).cloned().unwrap_or_default();
-        let mut __t_has: bool = __t_m.contains_key(String::from("key").as_str());
-        let mut __t_mlen = __t_m["len"].clone();
+        __t_m.clone().insert(String::from("key"), json!(String::from("value")));
+        let mut __t_v: Value = __t_m.clone().get(String::from("key").as_str()).cloned().unwrap_or_default();
+        let mut __t_has: bool = __t_m.clone().contains_key(String::from("key").as_str());
+        let mut __t_mlen = __t_m.clone()["len"].clone();
     }
 
     fn __t_on_signal(&mut self, api: &mut ScriptApi<'_>) {

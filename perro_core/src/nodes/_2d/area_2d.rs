@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::ids::NodeID;
+use crate::ids::{NodeID, SignalID};
 use crate::{
     api::ScriptApi,
     nodes::_2d::node_2d::Node2D,
@@ -157,7 +157,7 @@ impl Area2D {
                 // (it might have been deleted by a previous signal handler in this same loop)
                 if api.scene.get_scene_node_ref(*node_id).is_some() {
                     let params = [Value::Number(Number::from(node_id.as_u64()))];
-                    api.emit_signal_id(entered_signal_id, &params);
+                    api.emit_signal_id(SignalID::from_u64(entered_signal_id), &params);
                 }
             }
         }
@@ -171,7 +171,7 @@ impl Area2D {
                 // Double-check node still exists before emitting signal
                 if api.scene.get_scene_node_ref(*node_id).is_some() {
                     let params = [Value::Number(Number::from(node_id.as_u64()))];
-                    api.emit_signal_id(exited_signal_id, &params);
+                    api.emit_signal_id(SignalID::from_u64(exited_signal_id), &params);
                 }
             }
         }
@@ -187,7 +187,7 @@ impl Area2D {
                 // Double-check node still exists before emitting signal
                 if api.scene.get_scene_node_ref(*node_id).is_some() {
                     let params = [Value::Number(Number::from(node_id.as_u64()))];
-                    api.emit_signal_id(occupied_signal_id, &params);
+                    api.emit_signal_id(SignalID::from_u64(occupied_signal_id), &params);
                 }
             }
         }

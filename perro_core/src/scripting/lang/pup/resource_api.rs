@@ -16,7 +16,7 @@ impl PupResourceAPI {
             PupMesh::NAME => PupMesh::resolve_method(func),
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
-            PupShape2D::NAME => PupShape2D::resolve_method(func),
+            PupShape::NAME => PupShape::resolve_method(func),
             PupQuaternion::NAME => PupQuaternion::resolve_method(func),
             _ => None,
         }
@@ -30,7 +30,7 @@ impl PupResourceAPI {
             PupMesh::NAME,
             PupArray::NAME,
             PupMap::NAME,
-            PupShape2D::NAME,
+            PupShape::NAME,
             PupQuaternion::NAME,
         ]
     }
@@ -48,7 +48,7 @@ impl PupResourceAPI {
             PupMesh::NAME => PupMesh::get_all_method_names(),
             PupArray::NAME => PupArray::get_all_method_names(),
             PupMap::NAME => PupMap::get_all_method_names(),
-            PupShape2D::NAME => PupShape2D::get_all_method_names(),
+            PupShape::NAME => PupShape::get_all_method_names(),
             PupQuaternion::NAME => PupQuaternion::get_all_method_names(),
             _ => Vec::new(),
         }
@@ -116,12 +116,24 @@ impl PupMesh {
             "load" => Some(ResourceModule::Mesh(MeshResource::Load)),
             "preload" => Some(ResourceModule::Mesh(MeshResource::Preload)),
             "remove" => Some(ResourceModule::Mesh(MeshResource::Remove)),
+            "cube" => Some(ResourceModule::Mesh(MeshResource::Cube)),
+            "sphere" => Some(ResourceModule::Mesh(MeshResource::Sphere)),
+            "plane" => Some(ResourceModule::Mesh(MeshResource::Plane)),
+            "cylinder" => Some(ResourceModule::Mesh(MeshResource::Cylinder)),
+            "capsule" => Some(ResourceModule::Mesh(MeshResource::Capsule)),
+            "cone" => Some(ResourceModule::Mesh(MeshResource::Cone)),
+            "square_pyramid" | "sq_pyramid" => Some(ResourceModule::Mesh(MeshResource::SquarePyramid)),
+            "triangular_pyramid" | "tri_pyramid" => Some(ResourceModule::Mesh(MeshResource::TriangularPyramid)),
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["load", "preload", "remove"]
+        vec![
+            "load", "preload", "remove",
+            "cube", "sphere", "plane", "cylinder", "capsule", "cone",
+            "square_pyramid", "triangular_pyramid",
+        ]
     }
 }
 
@@ -182,10 +194,10 @@ impl PupMap {
     }
 }
 
-/// Shape2D resource API - for creating 2D shapes
-pub struct PupShape2D;
-impl PupShape2D {
-    pub const NAME: &'static str = "Shape2D";
+/// Shape resource API - for creating 2D shapes (rectangle, circle, square, triangle)
+pub struct PupShape;
+impl PupShape {
+    pub const NAME: &'static str = "Shape";
 
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {

@@ -16,7 +16,7 @@ impl CSharpResourceAPI {
             CSharpMesh::NAME => CSharpMesh::resolve_method(func),
             CSharpArray::NAME => CSharpArray::resolve_method(func),
             CSharpMap::NAME => CSharpMap::resolve_method(func),
-            CSharpShape2D::NAME => CSharpShape2D::resolve_method(func),
+            CSharpShape::NAME => CSharpShape::resolve_method(func),
             CSharpQuaternion::NAME => CSharpQuaternion::resolve_method(func),
             _ => None,
         }
@@ -84,12 +84,38 @@ impl CSharpMesh {
             "Load" => Some(ResourceModule::Mesh(MeshResource::Load)),
             "Preload" => Some(ResourceModule::Mesh(MeshResource::Preload)),
             "Remove" => Some(ResourceModule::Mesh(MeshResource::Remove)),
+            "Cube" => Some(ResourceModule::Mesh(MeshResource::Cube)),
+            "Sphere" => Some(ResourceModule::Mesh(MeshResource::Sphere)),
+            "Plane" => Some(ResourceModule::Mesh(MeshResource::Plane)),
+            "Cylinder" => Some(ResourceModule::Mesh(MeshResource::Cylinder)),
+            "Capsule" => Some(ResourceModule::Mesh(MeshResource::Capsule)),
+            "Cone" => Some(ResourceModule::Mesh(MeshResource::Cone)),
+            "SquarePyramid" | "SqPyramid" => {
+                Some(ResourceModule::Mesh(MeshResource::SquarePyramid))
+            }
+            "TriangularPyramid" | "TriPyramid" => {
+                Some(ResourceModule::Mesh(MeshResource::TriangularPyramid))
+            }
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Load", "Preload", "Remove"]
+        vec![
+            "Load",
+            "Preload",
+            "Remove",
+            "Cube",
+            "Sphere",
+            "Plane",
+            "Cylinder",
+            "Capsule",
+            "Cone",
+            "SquarePyramid",
+            "SqPyramid",
+            "TriangularPyramid",
+            "TriPyramid",
+        ]
     }
 }
 
@@ -155,10 +181,10 @@ impl CSharpMap {
     }
 }
 
-/// Shape2D resource API - for creating 2D shapes
-pub struct CSharpShape2D;
-impl CSharpShape2D {
-    pub const NAME: &'static str = "Shape2D";
+/// Shape resource API - for creating 2D shapes
+pub struct CSharpShape;
+impl CSharpShape {
+    pub const NAME: &'static str = "Shape";
 
     pub fn resolve_method(method: &str) -> Option<ResourceModule> {
         match method {

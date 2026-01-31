@@ -131,8 +131,8 @@ These are the types you see in PUP. They correspond to engine structs; some are 
 | `Color`     | RGBA color. |
 | `Rect`      | Rectangle. |
 | `Texture`   | Texture handle (e.g. from `Texture.load("res://...")`). Used as `Sprite2D.texture`. |
-| `Mesh`      | Mesh handle (e.g. from `Mesh.load("res://...")`). Used as `MeshInstance3D.mesh`. |
-| `Shape2D`   | 2D shape (Rectangle, Circle, Square, Triangle from `Shape2D.rectangle(...)` etc.). |
+| `Mesh`      | Mesh handle (e.g. from `Mesh.load("res://...")` or `Mesh.cube()`, `Mesh.sphere()`, etc.). Used as `MeshInstance3D.mesh`. |
+| `Shape2D`   | 2D shape (Rectangle, Circle, Square, Triangle from `Shape.rectangle(...)` etc.). |
 
 ---
 
@@ -156,7 +156,7 @@ Script **field** names are what you type in PUP (e.g. `texture`, `mesh`, `transf
 
 ### ShapeInstance2D (inherits Node2D)
 
-- **Fields:** `shape` (Shape2D, from `Shape2D.rectangle`, `.circle`, etc.), `color` (Color), `filled` (bool).
+- **Fields:** `shape` (Shape2D, from `Shape.rectangle`, `.circle`, etc.), `color` (Color), `filled` (bool).
 
 ### Camera2D (inherits Node2D)
 
@@ -226,9 +226,10 @@ Script type **Texture** is the handle; e.g. `Sprite2D.texture` is of type Textur
 
 ### Mesh
 
-- `Mesh.load(path)` → Mesh  
+- `Mesh.load(path)` → Mesh — use `res://model.glb` if the file has one mesh; use `res://model.glb:0`, `res://model.glb:1`, … for multiple meshes (by index)  
 - `Mesh.preload(path)` → Mesh  
 - `Mesh.remove(mesh)`  
+- **Primitives:** `Mesh.cube()`, `Mesh.sphere()`, `Mesh.plane()`, `Mesh.cylinder()`, `Mesh.capsule()`, `Mesh.cone()`, `Mesh.sq_pyramid()`, `Mesh.tri_pyramid()`  
 
 Script type **Mesh** is the handle; e.g. `MeshInstance3D.mesh` is of type Mesh.
 
@@ -243,9 +244,9 @@ Script type **Mesh** is the handle; e.g. `MeshInstance3D.mesh` is of type Mesh.
 
 Use these for 3D rotation; you can call them on `self.transform.rotation` and the result is written back.
 
-### Shape2D
+### Shape
 
-- `Shape2D.rectangle(width, height)`, `.circle(radius)`, `.square(size)`, `.triangle(base, height)` → Shape2D  
+- `Shape.rectangle(width, height)`, `.circle(radius)`, `.square(size)`, `.triangle(base, height)` → Shape2D  
 
 Used with ShapeInstance2D’s `shape` field.
 

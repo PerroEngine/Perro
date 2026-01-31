@@ -40,6 +40,15 @@ pub enum MeshResource {
     Load,
     Preload,
     Remove,
+    // Primitive factories (match built-in paths __cube__, __sphere__, etc.)
+    Cube,
+    Sphere,
+    Plane,
+    Cylinder,
+    Capsule,
+    Cone,
+    SquarePyramid,
+    TriangularPyramid,
 }
 
 #[derive(Debug, Clone)]

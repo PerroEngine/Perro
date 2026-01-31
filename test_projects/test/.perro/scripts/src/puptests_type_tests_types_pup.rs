@@ -21,7 +21,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
-use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};
+use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
 use perro_core::prelude::*;
 
@@ -163,8 +163,8 @@ pub extern "C" fn puptests_type_tests_types_pup_create_script() -> *mut dyn Scri
     let static_map_string_decimal = HashMap::<String, Decimal>::from([(String::from("price"), Decimal::from_str("19.99").unwrap()), (String::from("tax"), Decimal::from_str("1.50").unwrap())]);
     let static_array_entities = vec![json!(my_base_entity.clone()), json!(my_player.clone()), json!(my_derived_player.clone())];
     let static_array_players = vec![json!(my_player.clone()), json!(other_player.clone())];
-    let static_map_players = HashMap::<String, Value>::from([(String::from("main"), json!(my_player.clone())), (String::from("other"), json!(other_player.clone()))]);
-    let static_map_super_players = HashMap::<String, Value>::from([(String::from("super"), json!(my_derived_player.clone())), (String::from("local_super"), json!(my_derived_player_var.clone()))]);
+    let static_map_players = HashMap::<String, Value>::from([(String::from("main"), json!(my_player.clone().clone())), (String::from("other"), json!(other_player.clone().clone()))]);
+    let static_map_super_players = HashMap::<String, Value>::from([(String::from("super"), json!(my_derived_player.clone().clone())), (String::from("local_super"), json!(my_derived_player_var.clone().clone()))]);
 
     Box::into_raw(Box::new(PuptestsTypeTestsTypesPupScript {
         id,
@@ -379,10 +379,10 @@ impl PuptestsTypeTestsTypesPupScript {
         let mut __t_string_to_uint16: u16 = String::from("65530").parse::<u16>().unwrap_or_default();
         let mut __t_big_to_string: String = self.__t_typed_big_int.to_string().clone();
         api.print(format!("{} {} {} {} {} {} {}", "Numeric Casts:", __t_int64_to_big, __t_big_to_int, __t_float_to_decimal, __t_decimal_to_float_64, __t_string_to_uint16, __t_big_to_string));
-        let mut __t_dyn_val_big: BigInt = self.__t_dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
-        let mut __t_dyn_val_decimal: Decimal = self.__t_dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
+        let mut __t_dyn_val_big: BigInt = self.__t_dynamic_array_inferred.clone().get(4u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.clone().get(4u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
+        let mut __t_dyn_val_decimal: Decimal = self.__t_dynamic_array_inferred.clone().get(5u32 as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_array_inferred.clone().get(5u32 as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
         api.print(format!("{} {} {}", "Dyn->Big/Dec Casts:", __t_dyn_val_big, __t_dyn_val_decimal));
-        let mut __t_casted_and_op_big: BigInt = (self.__t_dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default())) + self.__t_typed_big_int.clone());
+        let mut __t_casted_and_op_big: BigInt = (self.__t_dynamic_array_inferred.clone().get(0u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.clone().get(0u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default())) + self.__t_typed_big_int.clone());
         api.print(format!("{} {}", "Casted & Op (Big):", __t_casted_and_op_big));
     }
 
@@ -400,98 +400,98 @@ impl PuptestsTypeTestsTypesPupScript {
         let mut __t_assign_prom_decimal: Decimal = Decimal::from(self.__t_typed_int_default);
         __t_assign_prom_decimal += { let tmp: Decimal = rust_decimal::prelude::FromPrimitive::from_f32(self.__t_typed_float_default).unwrap_or_default(); tmp };
         api.print(format!("{} {}", "Assign Promo decimal:", __t_assign_prom_decimal));
-        self.__t_my_player.pos.x = self.__t_typed_big_int.to_f32().unwrap_or_default();
-        self.__t_my_player.health = self.__t_typed_decimal.to_f32().unwrap_or_default();
-        api.print(format!("{} {} {}", "Member Assign (Big/Dec to float):", self.__t_my_player.pos.x, self.__t_my_player.health));
+        self.__t_my_player.clone().pos.x = self.__t_typed_big_int.to_f32().unwrap_or_default();
+        self.__t_my_player.clone().health = self.__t_typed_decimal.to_f32().unwrap_or_default();
+        api.print(format!("{} {} {}", "Member Assign (Big/Dec to float):", self.__t_my_player.clone().pos.x, self.__t_my_player.clone().health));
     }
 
     fn __t_test_struct_inheritance_and_casting(&mut self, api: &mut ScriptApi<'_>) {
         api.print(String::from("--- Test Struct Inheritance & Casting ---"));
-        api.print(format!("{} {}", "Player name (via SuperTestPlayer):", self.__t_my_derived_player.entity_name));
-        api.print(format!("{} {}", "Entity ID (via SuperTestPlayer):", self.__t_my_derived_player.entity_id));
-        api.print(format!("{} {}", "Player Health (via SuperTestPlayer):", self.__t_my_derived_player.health));
-        api.print(format!("{} {}", "SuperTestPlayer ability:", self.__t_my_derived_player.special_ability));
-        api.print(format!("{} {}", "SuperTestPlayer energy_core:", self.__t_my_derived_player.energy_core));
-        self.__t_my_derived_player.health = (self.__t_my_derived_player.health - 10.0f32);
-        self.__t_my_derived_player.pos.x = (self.__t_my_derived_player.pos.x + 1.0f32);
-        self.__t_my_derived_player.entity_type = String::from("ElitePlayer");
-        api.print(format!("{} {}", "Modified SuperTestPlayer health:", self.__t_my_derived_player.health));
-        api.print(format!("{} {}", "Modified SuperTestPlayer pos.x:", self.__t_my_derived_player.pos.x));
-        api.print(format!("{} {}", "Modified SuperTestPlayer entity_type:", self.__t_my_derived_player.entity_type));
+        api.print(format!("{} {}", "Player name (via SuperTestPlayer):", self.__t_my_derived_player.clone().entity_name));
+        api.print(format!("{} {}", "Entity ID (via SuperTestPlayer):", self.__t_my_derived_player.clone().entity_id));
+        api.print(format!("{} {}", "Player Health (via SuperTestPlayer):", self.__t_my_derived_player.clone().health));
+        api.print(format!("{} {}", "SuperTestPlayer ability:", self.__t_my_derived_player.clone().special_ability));
+        api.print(format!("{} {}", "SuperTestPlayer energy_core:", self.__t_my_derived_player.clone().energy_core));
+        self.__t_my_derived_player.clone().health = (self.__t_my_derived_player.clone().health - 10.0f32);
+        self.__t_my_derived_player.clone().pos.x = (self.__t_my_derived_player.clone().pos.x + 1.0f32);
+        self.__t_my_derived_player.clone().entity_type = String::from("ElitePlayer");
+        api.print(format!("{} {}", "Modified SuperTestPlayer health:", self.__t_my_derived_player.clone().health));
+        api.print(format!("{} {}", "Modified SuperTestPlayer pos.x:", self.__t_my_derived_player.clone().pos.x));
+        api.print(format!("{} {}", "Modified SuperTestPlayer entity_type:", self.__t_my_derived_player.clone().entity_type));
         let mut __t_player_as_entity: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(serde_json::to_value(&self.__t_my_player.clone()).unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "TestPlayer as GameEntity name:", __t_player_as_entity.entity_name));
+        api.print(format!("{} {}", "TestPlayer as GameEntity name:", __t_player_as_entity.clone().entity_name));
         let mut __t_super_player_as_player: __t_TestPlayer = serde_json::from_value::<__t_TestPlayer>(serde_json::to_value(&self.__t_my_derived_player.clone()).unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "SuperTestPlayer as TestPlayer health:", __t_super_player_as_player.health));
+        api.print(format!("{} {}", "SuperTestPlayer as TestPlayer health:", __t_super_player_as_player.clone().health));
         let mut __t_player_to_super_player: __t_SuperTestPlayer = serde_json::from_value::<__t_SuperTestPlayer>(serde_json::to_value(&self.__t_my_player.clone()).unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "TestPlayer as SuperTestPlayer (entity_name should be Hero OR default):", __t_player_to_super_player.entity_name));
-        api.print(format!("{} {}", "TestPlayer as SuperTestPlayer (ability should be default/empty):", __t_player_to_super_player.special_ability));
-        let mut __t_super_player_roundtrip: __t_SuperTestPlayer = self.__t_my_derived_player.clone();
-        api.print(format!("{} {}", "SuperTestPlayer roundtrip ability (expect Flight):", __t_super_player_roundtrip.special_ability));
+        api.print(format!("{} {}", "TestPlayer as SuperTestPlayer (entity_name should be Hero OR default):", __t_player_to_super_player.clone().entity_name));
+        api.print(format!("{} {}", "TestPlayer as SuperTestPlayer (ability should be default/empty):", __t_player_to_super_player.clone().special_ability));
+        let mut __t_super_player_roundtrip: __t_SuperTestPlayer = self.__t_my_derived_player.clone().clone();
+        api.print(format!("{} {}", "SuperTestPlayer roundtrip ability (expect Flight):", __t_super_player_roundtrip.clone().special_ability));
         let mut __t_entity_from_derived: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(serde_json::to_value(&self.__t_my_derived_player.clone()).unwrap_or_default()).unwrap_or_default();
-        __t_entity_from_derived.entity_name = String::from("DerivedEntity");
-        api.print(format!("{} {}", "Entity from Derived, name changed (expect DerivedEntity):", __t_entity_from_derived.entity_name));
+        __t_entity_from_derived.clone().entity_name = String::from("DerivedEntity");
+        api.print(format!("{} {}", "Entity from Derived, name changed (expect DerivedEntity):", __t_entity_from_derived.clone().entity_name));
     }
 
     fn __t_test_dynamic_containers_ops(&mut self, api: &mut ScriptApi<'_>) {
         api.print(String::from("--- Test Dynamic Containers Ops ---"));
-        let mut __t_arr_dyn_val_big: BigInt = self.__t_dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.get(4u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
+        let mut __t_arr_dyn_val_big: BigInt = self.__t_dynamic_array_inferred.clone().get(4u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.clone().get(4u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
         __t_arr_dyn_val_big *= BigInt::from(BigInt::from_str("2").unwrap());
         api.print(format!("{} {}", "Dyn Array Elem Op (big):", __t_arr_dyn_val_big));
-        let mut __t_arr_dyn_val_decimal: Decimal = self.__t_dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_array_inferred.get(5u32 as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
+        let mut __t_arr_dyn_val_decimal: Decimal = self.__t_dynamic_array_inferred.clone().get(5u32 as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_array_inferred.clone().get(5u32 as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
         __t_arr_dyn_val_decimal += { let tmp: Decimal = Decimal::from_str("0.05").unwrap(); tmp };
         api.print(format!("{} {}", "Dyn Array Elem Op (decimal):", __t_arr_dyn_val_decimal));
-        let __idx____t_dynamic_array_inferred = 0u32 as usize;
-        if self.__t_dynamic_array_inferred.len() <= __idx____t_dynamic_array_inferred {
-            self.__t_dynamic_array_inferred.resize(__idx____t_dynamic_array_inferred + 1, json!(null));
+        let __idx_t_dynamic_array_inferred = 0u32 as usize;
+        if self.__t_dynamic_array_inferred.clone().len() <= __idx_t_dynamic_array_inferred {
+            self.__t_dynamic_array_inferred.clone().resize(__idx_t_dynamic_array_inferred + 1, json!(null));
         }
-        self.__t_dynamic_array_inferred[__idx____t_dynamic_array_inferred] = json!(self.__t_typed_big_int);
-        self.__t_dynamic_array_inferred.push(json!(self.__t_local_decimal));
-        api.print(format!("{} {}", "Dyn Array Set (big):", self.__t_dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.get(0u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()))));
-        let temp_api_var_0: u32 = self.__t_dynamic_array_inferred.len().try_into().unwrap(); api.print(format!("{} {}", "Dyn Array Push (decimal):", self.__t_dynamic_array_inferred.get((temp_api_var_0 - 1u32) as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_array_inferred.get((temp_api_var_0 - 1u32) as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default())));
-        let mut __t_map_dyn_val_big: BigInt = self.__t_dynamic_map_inferred.get(String::from("gamma").as_str()).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_map_inferred.get(String::from("gamma").as_str()).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
+        self.__t_dynamic_array_inferred.clone()[__idx_t_dynamic_array_inferred] = json!(self.__t_typed_big_int);
+        self.__t_dynamic_array_inferred.clone().push(json!(self.__t_local_decimal));
+        api.print(format!("{} {}", "Dyn Array Set (big):", self.__t_dynamic_array_inferred.clone().get(0u32 as usize).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_array_inferred.clone().get(0u32 as usize).cloned().unwrap_or_default().as_i64().unwrap_or_default()))));
+        let temp_api_var_0: u32 = self.__t_dynamic_array_inferred.clone().len().try_into().unwrap(); api.print(format!("{} {}", "Dyn Array Push (decimal):", self.__t_dynamic_array_inferred.clone().get((temp_api_var_0 - 1u32) as usize).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_array_inferred.clone().get((temp_api_var_0 - 1u32) as usize).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default())));
+        let mut __t_map_dyn_val_big: BigInt = self.__t_dynamic_map_inferred.clone().get(String::from("gamma").as_str()).cloned().unwrap_or_default().as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(self.__t_dynamic_map_inferred.clone().get(String::from("gamma").as_str()).cloned().unwrap_or_default().as_i64().unwrap_or_default()));
         __t_map_dyn_val_big -= BigInt::from(BigInt::from_str("12345678901234567800").unwrap());
         api.print(format!("{} {}", "Dyn Map Elem Op (big):", __t_map_dyn_val_big));
-        let mut __t_map_dyn_val_decimal: Decimal = self.__t_dynamic_map_inferred.get(String::from("delta").as_str()).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_map_inferred.get(String::from("delta").as_str()).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
+        let mut __t_map_dyn_val_decimal: Decimal = self.__t_dynamic_map_inferred.clone().get(String::from("delta").as_str()).cloned().unwrap_or_default().as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(self.__t_dynamic_map_inferred.clone().get(String::from("delta").as_str()).cloned().unwrap_or_default().as_f64().unwrap_or_default()).unwrap_or_default());
         __t_map_dyn_val_decimal *= Decimal::from(Decimal::from_str("2").unwrap());
         api.print(format!("{} {}", "Dyn Map Elem Op (decimal):", __t_map_dyn_val_decimal));
-        self.__t_dynamic_map_inferred.insert(String::from("new_big"), json!(self.__t_local_big_int));
-        self.__t_dynamic_map_inferred.insert(String::from("new_decimal"), json!(self.__t_typed_decimal));
-        let temp_api_var_0: Value = self.__t_dynamic_map_inferred.get(String::from("new_big").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Set (new_big):", temp_api_var_0.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(temp_api_var_0.as_i64().unwrap_or_default()))));
-        let temp_api_var_0: Value = self.__t_dynamic_map_inferred.get(String::from("new_decimal").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Set (new_decimal):", temp_api_var_0.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(temp_api_var_0.as_f64().unwrap_or_default()).unwrap_or_default())));
+        self.__t_dynamic_map_inferred.clone().insert(String::from("new_big"), json!(self.__t_local_big_int));
+        self.__t_dynamic_map_inferred.clone().insert(String::from("new_decimal"), json!(self.__t_typed_decimal));
+        let temp_api_var_0: Value = self.__t_dynamic_map_inferred.clone().get(String::from("new_big").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Set (new_big):", temp_api_var_0.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(temp_api_var_0.as_i64().unwrap_or_default()))));
+        let temp_api_var_0: Value = self.__t_dynamic_map_inferred.clone().get(String::from("new_decimal").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Set (new_decimal):", temp_api_var_0.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(temp_api_var_0.as_f64().unwrap_or_default()).unwrap_or_default())));
         let mut __t_dyn_map_numeric_key_big: HashMap<String, Value> = HashMap::<String, Value>::from([(self.__t_typed_int_default.to_string(), json!(json!(self.__t_typed_big_int)))]);
-        let temp_api_var_0: Value = __t_dyn_map_numeric_key_big.get(String::from("20").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Num Key Big (20):", temp_api_var_0.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(temp_api_var_0.as_i64().unwrap_or_default()))));
+        let temp_api_var_0: Value = __t_dyn_map_numeric_key_big.clone().get(String::from("20").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Num Key Big (20):", temp_api_var_0.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from(temp_api_var_0.as_i64().unwrap_or_default()))));
         let mut __t_dyn_map_numeric_key_decimal: HashMap<String, Value> = HashMap::<String, Value>::from([(self.__t_typed_float_default.to_string(), json!(json!(self.__t_typed_decimal)))]);
-        let temp_api_var_0: Value = __t_dyn_map_numeric_key_decimal.get(String::from("30.5").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Num Key Dec (30.5):", temp_api_var_0.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(temp_api_var_0.as_f64().unwrap_or_default()).unwrap_or_default())));
+        let temp_api_var_0: Value = __t_dyn_map_numeric_key_decimal.clone().get(String::from("30.5").as_str()).cloned().unwrap_or_default(); api.print(format!("{} {}", "Dyn Map Num Key Dec (30.5):", temp_api_var_0.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64(temp_api_var_0.as_f64().unwrap_or_default()).unwrap_or_default())));
     }
 
     fn __t_test_static_containers_ops(&mut self, api: &mut ScriptApi<'_>) {
         api.print(String::from("--- Test Static Containers Ops ---"));
-        let mut __t_arr_static_big_elem: BigInt = self.__t_static_array_big_int.get(0u32 as usize).cloned().unwrap_or_default();
+        let mut __t_arr_static_big_elem: BigInt = self.__t_static_array_big_int.clone().get(0u32 as usize).cloned().unwrap_or_default();
         __t_arr_static_big_elem += BigInt::from(BigInt::from_str("50").unwrap());
         api.print(format!("{} {}", "Static Array[big] Elem Op:", __t_arr_static_big_elem));
-        let mut __t_arr_static_decimal_elem: Decimal = self.__t_static_array_decimal.get(0u32 as usize).cloned().unwrap_or_default();
+        let mut __t_arr_static_decimal_elem: Decimal = self.__t_static_array_decimal.clone().get(0u32 as usize).cloned().unwrap_or_default();
         __t_arr_static_decimal_elem -= Decimal::from_str("0.05").unwrap();
         api.print(format!("{} {}", "Static Array[decimal] Elem Op:", __t_arr_static_decimal_elem));
-        let mut __t_map_static_big_val: BigInt = self.__t_static_map_string_big.get(String::from("large_num").as_str()).cloned().unwrap_or_default();
+        let mut __t_map_static_big_val: BigInt = self.__t_static_map_string_big.clone().get(String::from("large_num").as_str()).cloned().unwrap_or_default();
         __t_map_static_big_val *= BigInt::from(BigInt::from_str("2").unwrap());
         api.print(format!("{} {}", "Static Map<string:big> Elem Op:", __t_map_static_big_val));
-        let mut __t_map_static_decimal_val: Decimal = self.__t_static_map_string_decimal.get(String::from("price").as_str()).cloned().unwrap_or_default();
+        let mut __t_map_static_decimal_val: Decimal = self.__t_static_map_string_decimal.clone().get(String::from("price").as_str()).cloned().unwrap_or_default();
         __t_map_static_decimal_val += { let tmp: Decimal = Decimal::from_str("0.01").unwrap(); tmp };
         api.print(format!("{} {}", "Static Map<string:decimal> Elem Op:", __t_map_static_decimal_val));
-        let mut __t_big_to_uint8_key_float_val: f32 = self.__t_static_map_uint_8_float.get(&self.__t_typed_big_int.to_u8().unwrap_or_default()).cloned().unwrap_or_default();
+        let mut __t_big_to_uint8_key_float_val: f32 = self.__t_static_map_uint_8_float.clone().get(&self.__t_typed_big_int.to_u8().unwrap_or_default()).cloned().unwrap_or_default();
         api.print(format!("{} {}", "Static Map<uint_8:float> Get with big key:", __t_big_to_uint8_key_float_val));
-        let mut __t_base_entity: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.get(0u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "Static Array[Entity] base_entity name:", __t_base_entity.entity_name));
-        let mut __t_player_as_entity_from_array: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.get(1u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "Static Array[Entity] player_as_entity_from_array name:", __t_player_as_entity_from_array.entity_name));
-        let mut __t_super_player_as_entity_from_array: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.get(2u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "Static Array[Entity] super_player_as_entity_from_array name:", __t_super_player_as_entity_from_array.entity_name));
-        let mut __t_casted_player: __t_TestPlayer = serde_json::from_value::<__t_TestPlayer>(serde_json::to_value(&serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.get(1u32 as usize).cloned().unwrap_or_default()).unwrap_or_default().clone()).unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "Static Array[Entity] Casted Player health:", __t_casted_player.health));
-        let mut __t_casted_super_player: __t_SuperTestPlayer = serde_json::from_value::<__t_SuperTestPlayer>(serde_json::to_value(&serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.get(2u32 as usize).cloned().unwrap_or_default()).unwrap_or_default().clone()).unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "Static Array[Entity] Casted SuperPlayer ability:", __t_casted_super_player.special_ability));
-        let mut __t_incompatible_downcast: __t_SuperTestPlayer = serde_json::from_value::<__t_SuperTestPlayer>(serde_json::to_value(&serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.get(0u32 as usize).cloned().unwrap_or_default()).unwrap_or_default().clone()).unwrap_or_default()).unwrap_or_default();
-        api.print(format!("{} {}", "Static Array[Entity] Incompatible Downcast name:", __t_incompatible_downcast.entity_name));
+        let mut __t_base_entity: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.clone().get(0u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
+        api.print(format!("{} {}", "Static Array[Entity] base_entity name:", __t_base_entity.clone().entity_name));
+        let mut __t_player_as_entity_from_array: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.clone().get(1u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
+        api.print(format!("{} {}", "Static Array[Entity] player_as_entity_from_array name:", __t_player_as_entity_from_array.clone().entity_name));
+        let mut __t_super_player_as_entity_from_array: __t_GameEntity = serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.clone().get(2u32 as usize).cloned().unwrap_or_default()).unwrap_or_default();
+        api.print(format!("{} {}", "Static Array[Entity] super_player_as_entity_from_array name:", __t_super_player_as_entity_from_array.clone().entity_name));
+        let mut __t_casted_player: __t_TestPlayer = serde_json::from_value::<__t_TestPlayer>(serde_json::to_value(&serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.clone().get(1u32 as usize).cloned().unwrap_or_default()).unwrap_or_default()).unwrap_or_default()).unwrap_or_default();
+        api.print(format!("{} {}", "Static Array[Entity] Casted Player health:", __t_casted_player.clone().health));
+        let mut __t_casted_super_player: __t_SuperTestPlayer = serde_json::from_value::<__t_SuperTestPlayer>(serde_json::to_value(&serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.clone().get(2u32 as usize).cloned().unwrap_or_default()).unwrap_or_default()).unwrap_or_default()).unwrap_or_default();
+        api.print(format!("{} {}", "Static Array[Entity] Casted SuperPlayer ability:", __t_casted_super_player.clone().special_ability));
+        let mut __t_incompatible_downcast: __t_SuperTestPlayer = serde_json::from_value::<__t_SuperTestPlayer>(serde_json::to_value(&serde_json::from_value::<__t_GameEntity>(self.__t_static_array_entities.clone().get(0u32 as usize).cloned().unwrap_or_default()).unwrap_or_default()).unwrap_or_default()).unwrap_or_default();
+        api.print(format!("{} {}", "Static Array[Entity] Incompatible Downcast name:", __t_incompatible_downcast.clone().entity_name));
     }
 
 }

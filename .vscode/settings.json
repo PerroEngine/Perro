@@ -141,9 +141,15 @@
 				}
 			},
 			{
-				"scope": "source.pup storage.type.pup",
+				"scope": "source.pup storage.type.pup, source.pup storage.type.numeric.pup, source.pup storage.type.string.pup",
 				"settings": {
-					"foreground": "#2EE68A"
+					"foreground": "#7BC4E0"
+				}
+			},
+			{
+				"scope": "source.pup constant.numeric",
+				"settings": {
+					"foreground": "#9B7EDE"
 				}
 			},
 			{

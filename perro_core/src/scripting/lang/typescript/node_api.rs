@@ -82,6 +82,10 @@ impl TypeScriptNodeApiRegistry {
                     script_name: "call",
                     rust_method: NodeMethodRef::CallFunction,
                 },
+                NodeApiMethod {
+                    script_name: "callDeferred",
+                    rust_method: NodeMethodRef::CallDeferred,
+                },
             ],
         );
 

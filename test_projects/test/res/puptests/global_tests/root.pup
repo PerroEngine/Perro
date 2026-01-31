@@ -1,0 +1,15 @@
+@root
+
+var root_counter: int = 0
+
+fn get_root_value() -> int {
+    return 100
+}
+
+fn root_uses_module() -> float {
+    return MathUtils.scale(1.0, MathUtils.PI)
+}
+
+on init() {
+    root_counter = 1
+}

@@ -5,7 +5,7 @@ use std::io;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
-use crate::ids::NodeID;
+use crate::ids::{NodeID, SignalID};
 use serde_json::Value;
 
 use crate::SceneData;
@@ -190,25 +190,28 @@ pub trait SceneAccess {
     fn load_ctor(&mut self, short: &str) -> anyhow::Result<CreateFn>;
     fn instantiate_script(&mut self, ctor: CreateFn, node_id: NodeID) -> Box<dyn ScriptObject>;
 
-    fn connect_signal_id(&mut self, signal: u64, target_id: NodeID, function: u64);
+    fn connect_signal_id(&mut self, signal: SignalID, target_id: NodeID, function: u64);
 
     /// Get signal connections for a signal ID. Used by API for instant emit (API calls
     /// call_function_id for each handler; scene does not invoke handlers).
     fn get_signal_connections(
         &self,
-        signal: u64,
+        signal: SignalID,
     ) -> Option<&std::collections::HashMap<NodeID, smallvec::SmallVec<[u64; 4]>>>;
 
     /// Emit signal instantly. Default is no-op; API does instant emit via get_signal_connections + call_function_id.
-    fn emit_signal_id(&mut self, _signal: u64, _params: &[Value]) {}
+    fn emit_signal_id(&mut self, _signal: SignalID, _params: &[Value]) {}
 
     /// Emit signal deferred: queue (signal, params). Processed at end of frame via API.emit_signal_id.
-    fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]);
+    fn emit_signal_id_deferred(&mut self, signal: SignalID, params: &[Value]);
 
     /// Legacy alias for emit_signal_id_deferred.
-    fn queue_signal_id(&mut self, signal: u64, params: &[Value]) {
+    fn queue_signal_id(&mut self, signal: SignalID, params: &[Value]) {
         self.emit_signal_id_deferred(signal, params);
     }
+
+    /// Queue a script function call for end of frame. Processed after update, same as deferred signals.
+    fn call_function_id_deferred(&mut self, node_id: NodeID, function_id: u64, params: &[Value]);
 
     /// Get the parent node ID if the node has a parent; None for root nodes.
     fn get_parent_opt(&mut self, node_id: NodeID) -> Option<NodeID>;

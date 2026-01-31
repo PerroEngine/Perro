@@ -1,0 +1,33 @@
+// Compile-only: Node methods on another node — get_var, set_var, call, call_deferred (dot) and :: shorthand (get, set, call).
+// These are for accessing other nodes; we don't use them on self (direct var/function access).
+@script TestNodeMethods extends Node
+
+on init() {
+    test_dot_on_other_node()
+    test_shorthand_on_other_node()
+}
+
+// --- Dot API on another node: get_var, set_var, call, call_deferred ---
+fn test_dot_on_other_node() {
+    var other = self.get_node("Child")
+    if other != null {
+        other.set_var("counter", 10)
+        var v = other.get_var("counter")
+        other.set_var("flag", true)
+        var f = other.get_var("flag")
+        other.call("inc")
+        other.call("echo", 42)
+        other.call_deferred("inc")
+        other.call_deferred("echo", 100)
+    }
+}
+
+// --- :: shorthand on another node: get var, set var, call method ---
+fn test_shorthand_on_other_node() {
+    var other = self.get_node("Child")
+    if other != null {
+        var val = other::x
+        other::x = 1
+        other::do_something(2.0)
+    }
+}

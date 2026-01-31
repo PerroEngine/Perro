@@ -20,16 +20,44 @@
     },
     "2": {
       "type": "MeshInstance3D",
-      "mesh_path": "__cube__",
+      "mesh_path": "res://glasses1.glb",
       "base": {
         "type": "Node3D",
         "transform": {
-          "position": [0, 0, -3],
-          "rotation": [0, 0.2, 0, 1],
-          "scale": [1, 1, 1]
+          "position": [0, -2.5, -3],
+          "rotation": [0, 0, 0, 1],
+          "scale": [2, 2, 2]
         },
 
         "base": { "type": "Node", "name": "Cube", "parent": "0", "script_path": "res://threed.pup" }
+      }
+    },
+        "5": {
+      "type": "MeshInstance3D",
+      "mesh_path": "res://2Noses.glb:0",
+      "base": {
+        "type": "Node3D",
+        "transform": {
+          "position": [-0.2, 0, -1],
+          "rotation": [0, 0, 0, 1],
+          "scale": [2, 2, 2]
+        },
+
+        "base": { "type": "Node", "name": "Cube", "parent": "0" }
+      }
+    },
+      "6": {
+      "type": "MeshInstance3D",
+      "mesh_path": "res://2Noses.glb:1",
+      "base": {
+        "type": "Node3D",
+        "transform": {
+          "position": [0.2, 0, -1],
+          "rotation": [0, 0, 0, 1],
+          "scale": [2, 2, 2]
+        },
+
+        "base": { "type": "Node", "name": "Cube", "parent": "0" }
       }
     },
     "3": {

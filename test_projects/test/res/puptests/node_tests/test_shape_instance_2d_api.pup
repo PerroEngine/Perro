@@ -2,10 +2,10 @@
 @script TestShapeInstance2DApi extends ShapeInstance2D
 
 on init() {
-    self.shape = Shape2D.rectangle(32.0, 32.0)
-    self.shape = Shape2D.circle(16.0)
-    self.shape = Shape2D.square(24.0)
-    self.shape = Shape2D.triangle(10.0, 20.0)
+    self.shape = Shape.rectangle(32.0, 32.0)
+    self.shape = Shape.circle(16.0)
+    self.shape = Shape.square(24.0)
+    self.shape = Shape.triangle(10.0, 20.0)
     var c = self.color
     self.filled = true
     self.transform.position = new Vector2(0.0, 0.0)

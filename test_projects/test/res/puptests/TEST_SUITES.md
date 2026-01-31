@@ -6,17 +6,19 @@ All PUP tests live under `res/puptests/`, grouped by category. Scripts in `res/`
 
 ```
 res/puptests/
-├── node_tests/     — Node API (Node2D, Node3D, Sprite2D, MeshInstance3D, Camera2D, ShapeInstance2D, engine structs)
+├── node_tests/      — Node API (Node2D, Node3D, Sprite2D, MeshInstance3D, Camera2D, ShapeInstance2D, engine structs)
 ├── type_tests/      — Types, conversions, casting, syntax edge cases
-├── resource_tests/ — Resource APIs (Texture, Mesh, Quaternion, Shape2D, Signal, Array, Map)
-└── TEST_SUITES.md  — This file
+├── resource_tests/  — Resource APIs (Texture, Mesh, Quaternion, Shape2D, Signal, Array, Map)
+├── global_tests/    — @root, @global, @module; globals calling globals, root/modules/globals calling modules
+└── TEST_SUITES.md   — This file
 ```
 
 ## Node tests (`puptests/node_tests/`)
 
 | File | Extends | What it exercises |
 |------|--------|-------------------|
-| test_node2d_api.pup | Node2D | transform, global_transform, pivot, visible, z_index, get_node, get_parent, get_var, set_var, call, for (i in X..Y) |
+| test_node_methods.pup | Node | On another node only: get_var, set_var, call, call_deferred (dot) and :: shorthand (get, set, call) |
+| test_node2d_api.pup | Node2D | transform, global_transform, pivot, visible, z_index, get_node, get_parent, get_var, set_var, call, call_deferred, for (i in X..Y) |
 | test_node3d_api.pup | Node3D | transform (position, rotation, scale), Quaternion rotate on transform.rotation, assignments, for loops |
 | test_sprite2d_api.pup | Sprite2D | texture, region + Node2D |
 | test_mesh_instance_3d_api.pup | MeshInstance3D | mesh + Node3D |
@@ -32,6 +34,15 @@ res/puptests/
 ## Resource tests (`puptests/resource_tests/`)
 
 - **test_resource_api.pup** — Texture, Mesh, Quaternion, Shape2D, Signal (new, connect, emit, emit_deferred), Array, Map. Multiple test functions; signal handlers by name (no `self::`).
+
+## Global / module tests (`puptests/global_tests/`)
+
+- **root.pup** — `@root`: script on scene root (NodeID 1); Root calling module (MathUtils).
+- **game_state.pup** — `@global GameState`: global calling Root (`Root::get_root_value`) and module (`MathUtils.add`).
+- **ui_helper.pup** — `@global UIHelper`: global calling other global (GameState) and module (MoreUtils).
+- **math_utils.pup** — `@module MathUtils`: const and fn; used by Root, GameState, MoreUtils.
+- **more_utils.pup** — `@module MoreUtils`: module calling module (MathUtils.add, MathUtils.TWO, MathUtils.scale).
+- **test_globals_modules.pup** — `@script` attached in main.scn; exercises Root::, GameState::, UIHelper::, MathUtils., MoreUtils.; test_ fns: root and module, global calls global, global calls module, module calls module.
 
 ## Numeric literals with `_`
 

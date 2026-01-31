@@ -15,6 +15,7 @@ use crate::manifest::Project;
 use crate::rendering::app::App;
 use crate::scene::{Scene, SceneData};
 use crate::script::{CreateFn, ScriptProvider};
+use crate::rendering::static_mesh::StaticMeshData;
 use crate::structs2d::texture::StaticTextureData;
 use crate::ui::fur_ast::FurElement;
 use once_cell::sync::Lazy;
@@ -29,6 +30,7 @@ pub struct StaticAssets {
     pub scenes: &'static Lazy<HashMap<&'static str, &'static SceneData>>,
     pub fur: &'static Lazy<HashMap<&'static str, &'static [FurElement]>>,
     pub textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>,
+    pub meshes: &'static Lazy<HashMap<&'static str, &'static StaticMeshData>>,
 }
 
 /// Project-specific data that needs to be passed from the binary
@@ -147,6 +149,29 @@ pub fn set_static_textures(
 pub fn get_static_textures()
 -> Option<&'static std::collections::HashMap<&'static str, &'static StaticTextureData>> {
     let ptr = STATIC_TEXTURES.load(Ordering::Acquire);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { &*ptr })
+    }
+}
+
+static STATIC_MESHES: AtomicPtr<
+    std::collections::HashMap<&'static str, &'static StaticMeshData>,
+> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Initialize static meshes (called once at startup in runtime mode)
+pub fn set_static_meshes(
+    meshes: &'static Lazy<HashMap<&'static str, &'static StaticMeshData>>,
+) {
+    let map_ref = &**meshes;
+    STATIC_MESHES.store(map_ref as *const _ as *mut _, Ordering::Release);
+}
+
+/// Get static meshes map (returns None if not initialized or in dev mode)
+pub fn get_static_meshes()
+-> Option<&'static std::collections::HashMap<&'static str, &'static StaticMeshData>> {
+    let ptr = STATIC_MESHES.load(Ordering::Acquire);
     if ptr.is_null() {
         None
     } else {
@@ -384,6 +409,9 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
 
     // 4. Initialize static textures (runtime mode only)
     set_static_textures(data.static_assets.textures);
+
+    // 4b. Initialize static meshes (runtime mode only)
+    set_static_meshes(data.static_assets.meshes);
 
     // 5. Initialize static FUR map (for Include tag resolution in release mode)
     crate::apply_fur::set_static_fur_map(data.static_assets.fur);

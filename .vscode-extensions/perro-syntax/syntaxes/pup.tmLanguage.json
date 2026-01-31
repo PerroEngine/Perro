@@ -370,8 +370,16 @@
 		"types": {
 			"patterns": [
 				{
+					"name": "storage.type.numeric.pup",
+					"match": "\\b(int_8|int_16|int_32|int_64|int_128|int|uint_8|uint_16|uint_32|uint_64|uint_128|uint|float_32|float_64|float|double|big_int|bigint|big|decimal)\\b"
+				},
+				{
+					"name": "storage.type.string.pup",
+					"match": "\\bstring\\b"
+				},
+				{
 					"name": "storage.type.pup",
-					"match": "\\b(int|float|bool|string)\\b"
+					"match": "\\bbool\\b"
 				},
 				{
 					"name": "entity.name.type.pup",
@@ -397,12 +405,20 @@
 		"numbers": {
 			"patterns": [
 				{
+					"name": "constant.numeric.negative.pup",
+					"match": "-\\d(\\d|_\\d)*\\.\\d(\\d|_\\d)*\\b"
+				},
+				{
+					"name": "constant.numeric.negative.pup",
+					"match": "-\\d(\\d|_\\d)*\\b"
+				},
+				{
 					"name": "constant.numeric.float.pup",
-					"match": "\\b\\d+\\.\\d+\\b"
+					"match": "\\b\\d(\\d|_\\d)*\\.\\d(\\d|_\\d)*\\b"
 				},
 				{
 					"name": "constant.numeric.integer.pup",
-					"match": "\\b\\d+\\b"
+					"match": "\\b\\d(\\d|_\\d)*\\b"
 				}
 			]
 		},

@@ -196,6 +196,48 @@ fn main() {
         }
     }
 
+    // Handle list-meshes: print mesh indices (and internal names) for use with mesh_path res://file.glb:0, :1, …
+    if args.contains(&"list-meshes".to_string()) {
+        let path_flag_i = args.iter().position(|a| a == "--path");
+        let path_arg = path_flag_i.and_then(|i| args.get(i + 1)).unwrap_or_else(|| {
+            eprintln!("❌ list-meshes requires: --path <project> list-meshes <res://file.glb>");
+            std::process::exit(1);
+        });
+        let list_meshes_i = args.iter().position(|a| a == "list-meshes").unwrap();
+        let mesh_path_arg = args.get(list_meshes_i + 1).unwrap_or_else(|| {
+            eprintln!("❌ list-meshes requires a path: --path <project> list-meshes res://file.glb");
+            std::process::exit(1);
+        });
+        let project_root = resolve_project_root(path_arg);
+        let res_root = project_root.join("res");
+        let file_path = if let Some(stripped) = mesh_path_arg.strip_prefix("res://") {
+            res_root.join(stripped.replace('\\', "/"))
+        } else {
+            PathBuf::from(mesh_path_arg)
+        };
+        let bytes = match std::fs::read(&file_path) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("❌ Failed to read {}: {}", file_path.display(), e);
+                std::process::exit(1);
+            }
+        };
+        match perro_core::rendering::mesh_loader::list_gltf_mesh_names(&bytes) {
+            Some(names) => {
+                let base = mesh_path_arg.trim_start_matches("res://");
+                println!("Meshes in {} (use mesh_path: res://file.glb for single mesh, or res://file.glb:0, :1, … for multiple):", file_path.display());
+                for (i, name) in names {
+                    println!("  {}  (internal name: \"{}\")  -> mesh_path: \"res://{}:{}\"", i, name, base, i);
+                }
+            }
+            None => {
+                eprintln!("❌ No meshes found or invalid GLB/GLTF: {}", file_path.display());
+                std::process::exit(1);
+            }
+        }
+        std::process::exit(0);
+    }
+
     // Handle --convert-flamegraph command (convert existing folded file to SVG)
     if args.contains(&"--convert-flamegraph".to_string()) {
         let path_flag_i = args.iter().position(|a| a == "--path");

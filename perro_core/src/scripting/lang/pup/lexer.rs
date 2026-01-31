@@ -67,6 +67,7 @@ pub enum PupToken {
     PlusPlus,   // ++
     MinusMinus, // --
     Arrow,      // ->
+    And,        // logical and (&& in Rust)
     Eof,
 }
 
@@ -227,6 +228,7 @@ impl PupLexer {
             "module" => PupToken::Module,
             "global" => PupToken::Global,
             "root" => PupToken::Root,
+            "and" => PupToken::And,
             _ => PupToken::Ident(s),
         }
     }

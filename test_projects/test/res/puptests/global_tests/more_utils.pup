@@ -1,0 +1,9 @@
+@module MoreUtils
+
+fn double_sum(a: int, b: int) -> int {
+    return MathUtils.add(a, b) * MathUtils.TWO
+}
+
+fn scaled_pi(s: float) -> float {
+    return MathUtils.scale(MathUtils.PI, s)
+}

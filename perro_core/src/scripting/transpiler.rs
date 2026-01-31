@@ -105,9 +105,14 @@ fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(scripts)
 }
 
-/// Compute a hash of all script files in res/ directory
-/// Files are sorted alphabetically for deterministic hashing
-pub fn compute_script_hash(project_root: &Path) -> Result<String, String> {
+/// Codegen version: bump when codegen changes so cached scripts are re-transpiled (API mode only).
+const CODEGEN_HASH_VERSION: &str = "codegen_v2";
+
+/// Compute a hash of all script files in res/ directory.
+/// Files are sorted alphabetically for deterministic hashing.
+/// When `from_source` is false (API mode), includes CODEGEN_HASH_VERSION so codegen fixes force re-transpile.
+/// In source mode we do not use this hash for skip logic; when we do call from API we pass from_source=false.
+pub fn compute_script_hash(project_root: &Path, from_source: bool) -> Result<String, String> {
     let script_paths = discover_scripts(project_root)?;
 
     // Sort paths alphabetically for deterministic ordering
@@ -115,6 +120,10 @@ pub fn compute_script_hash(project_root: &Path) -> Result<String, String> {
     sorted_paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
 
     let mut hasher = Sha256::new();
+    if !from_source {
+        hasher.update(CODEGEN_HASH_VERSION.as_bytes());
+        hasher.update(b"\0");
+    }
 
     for path in sorted_paths {
         let content = fs::read_to_string(path)
@@ -510,7 +519,7 @@ pub fn transpile(
 
     // In project mode or source mode, skip hash compare so we always transpile
     if !project_mode && !from_source {
-        let current_hash = compute_script_hash(project_root)?;
+        let current_hash = compute_script_hash(project_root, from_source)?;
         let stored_hash = read_stored_hash(project_root)?;
         if let Some(stored) = stored_hash {
             if stored == current_hash {
@@ -541,7 +550,7 @@ pub fn transpile(
             &[],
         )?;
         if !project_mode && !from_source {
-            let current_hash = compute_script_hash(project_root)?;
+            let current_hash = compute_script_hash(project_root, from_source)?;
             write_script_hash(project_root, &current_hash)?;
         }
         return Ok(());
@@ -839,6 +848,9 @@ pub fn transpile(
                         project_root,
                         verbose,
                         &module_names,
+                        &module_name_to_identifier,
+                        &module_functions,
+                        &module_variables,
                         project_mode,
                     );
                     transpile_time = transpile_start.elapsed();

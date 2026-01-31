@@ -525,7 +525,8 @@ pub fn implement_script_boilerplate_internal(
                     Type::Signal => format!(
                         "let {param_name} = params.get({actual_param_idx})
                             .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
-                            .unwrap_or_default() as u64;\n"
+                            .map(SignalID::from_u64)
+                            .unwrap_or_default();\n"
                     ),
                     Type::Custom(tn) if is_node_type(tn) => {
                         // For node types, try u32 first (from JSON number), then fall back to string parsing

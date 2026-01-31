@@ -21,7 +21,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
-use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};
+use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
 use perro_core::prelude::*;
 
@@ -70,6 +70,7 @@ impl Script for PuptestsNodeTestsTestNode2dApiPupScript {
         self.__t_test_transform_read_write(api);
         self.__t_test_transform_assign_to_other(api);
         self.__t_test_node_methods(api);
+        self.__t_test_call_deferred(api);
         self.__t_test_for_loops(api);
     }
 
@@ -116,13 +117,21 @@ impl PuptestsNodeTestsTestNode2dApiPupScript {
         let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
         let mut __t_ty: NodeType = api.get_type(self.id);
         let mut __t_pty: NodeType = api.get_parent_type(self.id);
-        api.set_script_var_id(self.id, 1032136658935082110u64, json!((json!(42f32) as Value)));
+        api.set_script_var_id(self.id, 1032136658935082110u64, json!(json!(json!(42f32))));
         let mut __t_v: Value = api.get_script_var_id(self.id, 1032136658935082110u64);
-        api.call_function_id(self.id, 14019570758099282180u64, &[(json!(1.0f32) as Value)]);
+        api.call_function_id(self.id, 14019570758099282180u64, &[json!(json!(1.0f32))]);
         let mut c_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Other").as_str());
         if c_id.is_some() {
             let mut __t_cv = api.get_script_var_id(c_id.expect("Child node not found"), 1903775884355078583u64);
             let temp_api_var_0: f32 = api.Time.get_delta(); api.call_function_id(c_id.expect("Child node not found"), 17956486561529147460u64, &[json!(temp_api_var_0)]);
+        }
+    }
+
+    fn __t_test_call_deferred(&mut self, api: &mut ScriptApi<'_>) {
+        api.call_function_id_deferred(self.id, 14019570758099282180u64, &[json!(json!(2.0f32))]);
+        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Other").as_str());
+        if other_id.is_some() {
+            let temp_api_var_0: f32 = api.Time.get_delta(); api.call_function_id_deferred(other_id.expect("Child node not found"), 17956486561529147460u64, &[json!(temp_api_var_0)]);
         }
     }
 
@@ -248,6 +257,10 @@ static DISPATCH_TABLE: phf::Map<
         },
         4508521169317302366u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             script.__t_test_node_methods(api);
+            Value::Null
+        },
+        16792569369795758087u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+            script.__t_test_call_deferred(api);
             Value::Null
         },
         4985906182962114350u64 => | script: &mut PuptestsNodeTestsTestNode2dApiPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {

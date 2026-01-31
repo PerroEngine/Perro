@@ -69,7 +69,7 @@ impl Script {
         out.push_str("use serde_json::{json, Value};\n");
         out.push_str("use smallvec::{smallvec, SmallVec};\n");
         out.push_str(
-            "use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};\n\n",
+            "use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};\n\n",
         );
 
         // Internal modules
@@ -396,6 +396,9 @@ impl Module {
         project_path: &Path,
         verbose: bool,
         module_names: &std::collections::HashSet<String>,
+        module_name_to_identifier: &std::collections::HashMap<String, String>,
+        module_functions: &std::collections::HashMap<String, Vec<crate::scripting::ast::Function>>,
+        module_variables: &std::collections::HashMap<String, Vec<crate::scripting::ast::Variable>>,
         project_mode: bool,
     ) -> String {
         let mut out = String::with_capacity(4096);
@@ -505,8 +508,15 @@ impl Module {
                 if project_mode {
                     out.push_str("    #[inline]\n");
                 }
-                let func_code =
-                    func.to_rust_free_function(verbose, module_names, Some(&self.variables));
+                let func_code = func.to_rust_free_function(
+                    verbose,
+                    module_names,
+                    module_name_to_identifier,
+                    module_functions,
+                    module_variables,
+                    Some(&self.variables),
+                    self.language.as_deref(),
+                );
                 for line in func_code.lines() {
                     out.push_str("    ");
                     out.push_str(line);

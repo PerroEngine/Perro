@@ -184,9 +184,9 @@
 							}
 						},
 						{
-							"scope": "source.pup storage.type.pup",
+							"scope": "source.pup storage.type.pup, source.pup storage.type.numeric.pup, source.pup storage.type.string.pup",
 							"settings": {
-								"foreground": "#2EE68A"
+								"foreground": "#7BC4E0"
 							}
 						},
 						{
@@ -208,6 +208,12 @@
 								"foreground": "#6A9955",
 								"fontStyle": "italic"
 							}
+						},
+						{
+							"scope": "source.pup constant.numeric",
+							"settings": {
+								"foreground": "#9B7EDE"
+							}
 						}
 					]
 				}
@@ -216,6 +222,12 @@
 				"editor.semanticHighlighting.enabled": false,
 				"editor.tokenColorCustomizations": {
 					"textMateRules": [
+						{
+							"scope": "source.fur constant.numeric.integer.pup, source.fur constant.numeric.float.pup",
+							"settings": {
+								"foreground": "#9B7EDE"
+							}
+						},
 						{
 							"scope": "source.fur entity.name.tag",
 							"settings": {

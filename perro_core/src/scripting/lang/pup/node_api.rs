@@ -76,6 +76,10 @@ impl PupNodeApiRegistry {
                     script_name: "call",
                     rust_method: NodeMethodRef::CallFunction,
                 },
+                NodeApiMethod {
+                    script_name: "call_deferred",
+                    rust_method: NodeMethodRef::CallDeferred,
+                },
             ],
         );
 

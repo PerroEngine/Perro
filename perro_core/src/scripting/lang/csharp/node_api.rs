@@ -82,6 +82,10 @@ impl CSharpNodeApiRegistry {
                     script_name: "Call",
                     rust_method: NodeMethodRef::CallFunction,
                 },
+                NodeApiMethod {
+                    script_name: "CallDeferred",
+                    rust_method: NodeMethodRef::CallDeferred,
+                },
             ],
         );
 

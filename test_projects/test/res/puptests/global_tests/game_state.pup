@@ -1,0 +1,25 @@
+@global GameState
+
+var score: int = 0
+
+fn get_score() -> int {
+    return score
+}
+
+fn set_score(v: int) {
+    score = v
+}
+
+// Global calling another global (Root)
+fn get_root_value_via_root() -> int {
+    return Root::get_root_value()
+}
+
+// Global calling module
+fn game_uses_math() -> int {
+    return MathUtils.add(10, 20)
+}
+
+on init() {
+    score = 0
+}

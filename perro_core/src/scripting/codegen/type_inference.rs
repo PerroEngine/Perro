@@ -207,6 +207,11 @@ impl Script {
             _ => {}
         }
 
+        // Primitive/number/bool/string -> Value (Object/Any): use json!(), not "as Value" (invalid in Rust)
+        if matches!(to, Type::Object | Type::Any) {
+            return format!("json!({})", expr);
+        }
+
         // For now, use simple cast syntax
         // Complex casts will be handled by the Expr::Cast implementation in legacy
         format!("({} as {})", expr, to.to_rust_type())

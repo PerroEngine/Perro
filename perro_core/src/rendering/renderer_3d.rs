@@ -929,6 +929,34 @@ impl Renderer3D {
         (center, radius)
     }
 
+    /// Create a Mesh from vertex and index data (used by static .pmesh and disk-loaded GLTF).
+    pub fn create_mesh_from_vertices(
+        device: &Device,
+        vertices: &[Vertex3D],
+        indices: &[u32],
+    ) -> Mesh {
+        use bytemuck::cast_slice;
+        let (bounds_center, bounds_radius) = Self::compute_bounds(vertices);
+        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh VB"),
+            contents: cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh IB"),
+            contents: cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        Mesh {
+            vertex_buffer: vb,
+            index_buffer: Some(ib),
+            index_count: indices.len() as u32,
+            vertex_count: vertices.len() as u32,
+            bounds_center,
+            bounds_radius,
+        }
+    }
+
     pub fn create_cube_mesh(device: &Device) -> Mesh {
         use bytemuck::cast_slice;
 

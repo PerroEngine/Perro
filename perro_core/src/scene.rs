@@ -22,7 +22,7 @@ use crate::{
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 
-use crate::ids::{MeshID, NodeID, TextureID};
+use crate::ids::{MeshID, NodeID, SignalID, TextureID};
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -637,7 +637,8 @@ pub struct Scene<P: ScriptProvider> {
     pub(crate) nodes: NodeArena,
     pub(crate) root_id: NodeID,
     pub signals: SignalBus,
-    queued_signals: Vec<(u64, SmallVec<[Value; 3]>)>,
+    queued_signals: Vec<(SignalID, SmallVec<[Value; 3]>)>,
+    queued_calls: Vec<(NodeID, u64, SmallVec<[Value; 3]>)>,
     /// Scripts stored as Rc<UnsafeCell<Box<dyn ScriptObject>>>
     ///
     /// SAFETY: Using UnsafeCell is safe because:
@@ -694,7 +695,7 @@ pub struct Scene<P: ScriptProvider> {
 #[derive(Default)]
 pub struct SignalBus {
     // signal_id → { script_uuid → SmallVec<[u64; 4]> (function_ids) }
-    pub connections: HashMap<u64, HashMap<NodeID, SmallVec<[u64; 4]>>>,
+    pub connections: HashMap<SignalID, HashMap<NodeID, SmallVec<[u64; 4]>>>,
 }
 
 impl<P: ScriptProvider + 'static> Scene<P> {
@@ -722,6 +723,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             root_id,
             signals: SignalBus::default(),
             queued_signals: Vec::new(),
+            queued_calls: Vec::new(),
             scripts: FxHashMap::default(),
             provider,
             project,
@@ -773,6 +775,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             root_id,
             signals: SignalBus::default(),
             queued_signals: Vec::new(),
+            queued_calls: Vec::new(),
             scripts: FxHashMap::default(),
             // OPTIMIZED: Lazy physics initialization - only create when needed
             physics_2d: None,
@@ -2025,6 +2028,11 @@ impl<P: ScriptProvider + 'static> Scene<P> {
 
         {
             #[cfg(feature = "profiling")]
+            let _span = tracing::span!(tracing::Level::INFO, "process_queued_calls").entered();
+            self.process_queued_calls(gfx, true_delta);
+        }
+        {
+            #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "process_queued_signals").entered();
             self.process_queued_signals(gfx, true_delta);
         }
@@ -2090,7 +2098,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
     // scene.emit_signal_id_deferred to queue; at end of frame process_queued_signals runs
     // handlers via ScriptApi::emit_signal_id (same path as instant).
 
-    fn connect_signal(&mut self, signal: u64, target_id: NodeID, function_id: u64) {
+    fn connect_signal(&mut self, signal: SignalID, target_id: NodeID, function_id: u64) {
         // Top-level map: signal_id → inner map (script → list of fn ids)
         let script_map = self.signals.connections.entry(signal).or_default();
 
@@ -2104,11 +2112,32 @@ impl<P: ScriptProvider + 'static> Scene<P> {
     }
 
     /// Emit signal deferred - queue for processing at end of frame
-    fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]) {
+    fn emit_signal_id_deferred(&mut self, signal: SignalID, params: &[Value]) {
         // Convert slice to SmallVec for stack-allocated storage (≤3 params = no heap allocation)
         let mut smallvec = SmallVec::new();
         smallvec.extend(params.iter().cloned());
         self.queued_signals.push((signal, smallvec));
+    }
+
+    /// Queue a script function call for processing at end of frame.
+    fn call_function_id_deferred(&mut self, node_id: NodeID, function_id: u64, params: &[Value]) {
+        let mut smallvec = SmallVec::new();
+        smallvec.extend(params.iter().cloned());
+        self.queued_calls.push((node_id, function_id, smallvec));
+    }
+
+    /// Process deferred calls at end of frame (before deferred signals).
+    fn process_queued_calls(&mut self, gfx: &mut crate::rendering::Graphics, delta: f32) {
+        if self.queued_calls.is_empty() {
+            return;
+        }
+        let project_ref = self.project.clone();
+        let queued: Vec<_> = self.queued_calls.drain(..).collect();
+        for (node_id, func_id, params) in queued {
+            let mut project_borrow = project_ref.borrow_mut();
+            let mut api = ScriptApi::new(delta, self, &mut *project_borrow, gfx);
+            let _ = api.call_function_id(node_id, func_id, &params);
+        }
     }
 
     /// Process deferred signals at end of frame. Scene only stores the queue; handler
@@ -4149,16 +4178,20 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         self.add_node_to_scene(node, gfx)
     }
 
-    fn connect_signal_id(&mut self, signal: u64, target_id: NodeID, function: u64) {
+    fn connect_signal_id(&mut self, signal: SignalID, target_id: NodeID, function: u64) {
         self.connect_signal(signal, target_id, function);
     }
 
-    fn get_signal_connections(&self, signal: u64) -> Option<&HashMap<NodeID, SmallVec<[u64; 4]>>> {
+    fn get_signal_connections(&self, signal: SignalID) -> Option<&HashMap<NodeID, SmallVec<[u64; 4]>>> {
         self.signals.connections.get(&signal)
     }
 
-    fn emit_signal_id_deferred(&mut self, signal: u64, params: &[Value]) {
+    fn emit_signal_id_deferred(&mut self, signal: SignalID, params: &[Value]) {
         self.emit_signal_id_deferred(signal, params);
+    }
+
+    fn call_function_id_deferred(&mut self, node_id: NodeID, function_id: u64, params: &[Value]) {
+        self.call_function_id_deferred(node_id, function_id, params);
     }
 
     fn get_script(&mut self, id: NodeID) -> Option<Rc<UnsafeCell<Box<dyn ScriptObject>>>> {

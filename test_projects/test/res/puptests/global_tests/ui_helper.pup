@@ -1,0 +1,30 @@
+@global UIHelper
+
+var label_text: string = ""
+
+fn get_label() -> string {
+    return label_text
+}
+
+fn set_label(t: string) {
+    label_text = t
+}
+
+// Global calling another global (GameState)
+fn read_score() -> int {
+    return GameState::get_score()
+}
+
+fn add_to_score(delta: int) {
+    var s = GameState::get_score()
+    GameState::set_score(s + delta)
+}
+
+// Global calling module (MoreUtils, which calls MathUtils)
+fn ui_uses_more_utils() -> int {
+    return MoreUtils.double_sum(5, 3)
+}
+
+on init() {
+    label_text = "UI"
+}

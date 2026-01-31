@@ -37,7 +37,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
 
-use crate::ids::{NodeID, TextureID};
+use crate::ids::{NodeID, SignalID, TextureID};
 use chrono::{Datelike, Local, Timelike};
 use serde::Serialize;
 use serde_json::Value;
@@ -1039,12 +1039,27 @@ impl MeshApi {
         }
     }
 
-    /// Preload a mesh. Currently equivalent to load (mesh eviction is ref-count based).
+    /// Preload a mesh from path and pin it so it is never evicted; only Mesh.remove(id) frees it.
     pub fn preload(&mut self, path: &str) -> Option<crate::ids::MeshID> {
-        self.load(path)
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return None,
+        };
+        unsafe {
+            let api = &mut *api_ptr;
+            if let Some(gfx) = api.gfx.as_mut() {
+                let id = gfx
+                    .mesh_manager
+                    .get_or_load_mesh(path, &gfx.device, &gfx.queue)?;
+                gfx.mesh_manager.pin_mesh(id);
+                Some(id)
+            } else {
+                None
+            }
+        }
     }
 
-    /// Remove a mesh by id. Safe to call with nil/None.
+    /// Remove (unpin and free) a mesh by id. Safe to call with nil/None.
     pub fn remove(&mut self, id: Option<crate::ids::MeshID>) {
         if let Some(api_ptr) = self.get_api_ptr() {
             unsafe {
@@ -1057,9 +1072,43 @@ impl MeshApi {
     pub(crate) fn remove_impl(api: &mut ScriptApi, id: Option<crate::ids::MeshID>) {
         if let Some(id) = id {
             if let Some(gfx) = api.gfx.as_mut() {
+                gfx.mesh_manager.unpin_mesh(id);
                 gfx.mesh_manager.remove_mesh(id);
             }
         }
+    }
+
+    /// Built-in cube mesh (unit cube). Same as Mesh.load("__cube__").
+    pub fn cube(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__cube__")
+    }
+    /// Built-in sphere mesh. Same as Mesh.load("__sphere__").
+    pub fn sphere(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__sphere__")
+    }
+    /// Built-in plane mesh. Same as Mesh.load("__plane__").
+    pub fn plane(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__plane__")
+    }
+    /// Built-in cylinder mesh. Same as Mesh.load("__cylinder__").
+    pub fn cylinder(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__cylinder__")
+    }
+    /// Built-in capsule mesh. Same as Mesh.load("__capsule__").
+    pub fn capsule(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__capsule__")
+    }
+    /// Built-in cone mesh. Same as Mesh.load("__cone__").
+    pub fn cone(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__cone__")
+    }
+    /// Built-in square pyramid mesh. Same as Mesh.load("__s_pyramid__").
+    pub fn square_pyramid(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__s_pyramid__")
+    }
+    /// Built-in triangular pyramid mesh. Same as Mesh.load("__t_pyramid__").
+    pub fn triangular_pyramid(&mut self) -> Option<crate::ids::MeshID> {
+        self.load("__t_pyramid__")
     }
 }
 
@@ -2206,7 +2255,7 @@ impl<'a> ScriptApi<'a> {
     /// Params passed as compile-time slice, zero allocation
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal(&mut self, name: &str, params: &[Value]) {
-        let id = self.string_to_u64(name);
+        let id = SignalID::from_u64(self.string_to_u64(name));
         self.emit_signal_id(id, params);
     }
 
@@ -2214,7 +2263,7 @@ impl<'a> ScriptApi<'a> {
     /// Params passed as compile-time slice, zero allocation
     /// OPTIMIZED: Handles emission in existing API context to avoid double-borrow
     /// OPTIMIZED: Set context once and batch all calls to minimize overhead
-    pub fn emit_signal_id(&mut self, id: u64, params: &[Value]) {
+    pub fn emit_signal_id(&mut self, id: SignalID, params: &[Value]) {
         // Copy out listeners before calling functions
         let script_map_opt = self.scene.get_signal_connections(id);
         if script_map_opt.is_none() {
@@ -2274,27 +2323,47 @@ impl<'a> ScriptApi<'a> {
     /// Use when emitting during iteration or need frame-end processing
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn emit_signal_deferred(&mut self, name: &str, params: &[Value]) {
-        let id = self.string_to_u64(name);
+        let id = SignalID::from_u64(self.string_to_u64(name));
         self.scene.emit_signal_id_deferred(id, params);
     }
 
     /// Emit signal deferred by ID - queued and processed at end of frame
     /// Use when emitting during iteration or need frame-end processing
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn emit_signal_id_deferred(&mut self, id: u64, params: &[Value]) {
+    pub fn emit_signal_id_deferred(&mut self, id: SignalID, params: &[Value]) {
         self.scene.emit_signal_id_deferred(id, params);
     }
 
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn connect_signal(&mut self, name: &str, target: NodeID, function: &'static str) {
-        let id = string_to_u64(name);
+        let id = SignalID::from_u64(string_to_u64(name));
         let fn_id = string_to_u64(function);
         self.scene.connect_signal_id(id, target, fn_id);
     }
 
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn connect_signal_id(&mut self, id: u64, target: NodeID, function_id: u64) {
+    pub fn connect_signal_id(&mut self, id: SignalID, target: NodeID, function_id: u64) {
         self.scene.connect_signal_id(id, target, function_id);
+    }
+
+    /// Queue a script function call for end of frame. Processed after update, same as deferred signals.
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn call_function_id_deferred(&mut self, node_id: NodeID, function_id: u64, params: &[Value]) {
+        self.scene.call_function_id_deferred(node_id, function_id, params);
+    }
+
+    /// Queue a script function call by name for end of frame. Same as call_function_id_deferred with string_to_u64(name).
+    /// Matches the pattern of call_function(id, func, params) and get_script_var/set_script_var (string-taking API).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn call_deferred_function(&mut self, node_id: NodeID, name: &str, params: &[Value]) {
+        let func_id = string_to_u64(name);
+        self.scene.call_function_id_deferred(node_id, func_id, params);
+    }
+
+    /// Alias for call_deferred_function (used by codegen for dynamic function names).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn call_function_deferred(&mut self, node_id: NodeID, name: &str, params: &[Value]) {
+        self.call_deferred_function(node_id, name, params);
     }
 
     pub fn instantiate_script(&mut self, path: &str) -> Option<ScriptType> {

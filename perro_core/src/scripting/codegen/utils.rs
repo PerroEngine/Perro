@@ -31,10 +31,12 @@ pub fn type_is_node(typ: &Type) -> bool {
     matches!(typ, Type::Node(_) | Type::DynNode)
 }
 
-/// Check if a type becomes NodeID/TextureID or Option thereof (i.e., represents an ID)
+/// Check if a type becomes NodeID/TextureID/MeshID/SignalID or Option thereof (i.e., represents an ID).
+/// Variables of these types get the _id suffix in generated Rust (e.g. var n: Node2D → n_id: NodeID).
 pub(crate) fn type_becomes_id(typ: &Type) -> bool {
     match typ {
-        Type::Node(_) | Type::DynNode | Type::EngineStruct(EngineStructKind::Texture) => true,
+        Type::Node(_) | Type::DynNode | Type::Signal => true,
+        Type::EngineStruct(EngineStructKind::Texture) | Type::EngineStruct(EngineStructKind::Mesh) => true,
         Type::Option(boxed) => matches!(boxed.as_ref(), Type::DynNode | Type::Node(_)),
         _ => false,
     }

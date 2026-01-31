@@ -150,6 +150,10 @@ define_generational_id!(
     UIElementID,
     "UI Element ID — allocated by UI or synthetic. Index + generation."
 );
+define_generational_id!(
+    SignalID,
+    "Signal ID — hash of signal name (or generational). Used for connect/emit."
+);
 
 impl NodeID {
     /// Parse hex string (8 or 16 chars, optional 0x prefix) into NodeID.

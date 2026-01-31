@@ -21,7 +21,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
-use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID};
+use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
 use perro_core::prelude::*;
 
