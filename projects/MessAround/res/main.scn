@@ -112,7 +112,11 @@
           "type": "Node",
           "name": "Player",
           "parent": 72,
-          "script_path": "res://player.pup"
+          "script_path": "res://player.pup",
+          "script_exp_vars": {
+            "time": 54,
+            "cam": { "@node": 8 }
+          }
         },
         "transform": {
           "position": [

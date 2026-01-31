@@ -22,7 +22,7 @@ use crate::{
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 
-use crate::ids::{NodeID, TextureID};
+use crate::ids::{MeshID, NodeID, TextureID};
 use indexmap::IndexMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -301,6 +301,33 @@ impl<'de> Deserialize<'de> for SceneData {
                         }
                     }
                 }
+            }
+        }
+
+        // Resolve node references in script_exp_vars to NodeID hex strings.
+        // Only the object form {"@node": <scene_key>} is treated as a node reference, so plain
+        // numbers (e.g. time: 100) are never mistaken for scene keys.
+        // Merge then remaps those strings to runtime NodeIDs via remap_script_exp_vars_node_ids.
+        for (_, node) in nodes.iter_mut() {
+            if let Some(mut script_vars) = node.get_script_exp_vars() {
+                for (_, value) in script_vars.iter_mut() {
+                    let key_opt = value
+                        .as_object()
+                        .filter(|o| o.len() == 1)
+                        .and_then(|o| o.get("@node"))
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as u32);
+                    if let Some(key) = key_opt {
+                        if let Some(&node_id) = key_to_node_id.get(&key) {
+                            // Store hex so NodeID::parse_str works (Display is "index:generation")
+                            let hex_str = format!("{:016x}", node_id.as_u64());
+                            #[cfg(debug_assertions)]
+                            eprintln!("[perro scene] resolve @node key {} -> NodeID {}", key, hex_str);
+                            *value = Value::String(hex_str);
+                        }
+                    }
+                }
+                node.set_script_exp_vars(Some(script_vars));
             }
         }
 
@@ -974,12 +1001,16 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .collect();
         let root_id = game_scene.get_root().get_id();
         let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
+        let first_is_root = global_names
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("") == "Root";
         for (i, identifier) in global_order.iter().enumerate() {
             let name = global_names
                 .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or(identifier.as_str());
-            if i == 0 {
+            if i == 0 && first_is_root {
                 // Index 0 = Root script; attach to root node, don't create a new node.
                 global_node_ids.push(root_id);
             } else {
@@ -991,7 +1022,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
 
-        // ✅ attach global scripts in order (index 0 = root script on root node) and call init
+        // ✅ attach global scripts in order (index 0 = root script on root node when present) and call init
         for (identifier, &global_id) in global_order.iter().zip(global_node_ids.iter()) {
             if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
                 let boxed = game_scene.instantiate_script(ctor, global_id);
@@ -1007,6 +1038,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 };
                 let mut api =
                     ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
+                api.apply_exposed_vars_from_node(global_id);
                 api.call_init(global_id);
                 if let Some(node) = game_scene.nodes.get(global_id) {
                     if node.is_renderable() {
@@ -1045,7 +1077,14 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             serde_json::Value::String(s) => {
                 if let Ok(old_node_id) = NodeID::parse_str(s) {
                     if let Some(&new_node_id) = id_map.get(&old_node_id) {
-                        *s = new_node_id.to_string();
+                        #[cfg(debug_assertions)]
+                        eprintln!(
+                            "[perro scene] remap script_exp_vars NodeID {} -> {}",
+                            old_node_id,
+                            new_node_id
+                        );
+                        // Use hex so APPLY_TABLE's NodeID::parse_str works
+                        *s = format!("{:016x}", new_node_id.as_u64());
                     }
                 }
             }
@@ -1403,6 +1442,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 self.scripts_dirty = true;
 
                 let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
+                api.apply_exposed_vars_from_node(id);
                 api.call_init(id);
 
                 // After script initialization, ensure renderable nodes are marked for rerender
@@ -1640,6 +1680,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         self.scripts_dirty = true;
 
                         let mut api = ScriptApi::new(dt, self, &mut *project_borrow, gfx);
+                        api.apply_exposed_vars_from_node(id);
                         api.call_init(id);
 
                         // After script initialization, ensure renderable nodes are marked for rerender
@@ -1680,9 +1721,6 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 eprintln!("⚠️ Failed to load nested scene: {}", scene_path);
             }
         }
-
-        // Print scene tree after nested merge
-        self.print_scene_tree();
 
         Ok(())
     }
@@ -2267,6 +2305,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             };
 
             let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow, gfx);
+            api.apply_exposed_vars_from_node(id);
             api.call_init(id);
 
             // After script initialization, ensure renderable nodes are marked for rerender
@@ -3338,7 +3377,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             Camera2D,
             Camera3D,
             Mesh {
-                path: String,
+                mesh_id: Option<MeshID>,
+                path: Option<String>,
                 transform: Transform3D,
                 material_path: Option<String>,
             },
@@ -3521,14 +3561,16 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                             }
                             SceneNode::MeshInstance3D(mesh) => {
                                 if mesh.visible {
-                                    if let Some(path) = &mesh.mesh_path {
-                                        let transform = global_transform_3d_opt
-                                            .unwrap_or(mesh.base.transform);
+                                    let transform = global_transform_3d_opt.unwrap_or(mesh.base.transform);
+                                    let mesh_id = mesh.mesh_id;
+                                    let path = mesh.mesh_path.as_ref().map(|p| p.to_string());
+                                    if mesh_id.is_some() || path.is_some() {
                                         return Some((
                                             *node_id,
                                             *timestamp,
                                             RenderCommand::Mesh {
-                                                path: path.to_string(),
+                                                mesh_id,
+                                                path,
                                                 transform,
                                                 material_path: mesh.material_path.as_ref().map(|p| p.to_string()),
                                             },
@@ -3671,11 +3713,12 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         camera_3d_updates.push(node_id);
                     }
                     RenderCommand::Mesh {
+                        mesh_id,
                         path,
                         transform,
                         material_path,
                     } => {
-                        mesh_commands.push((node_id, path, transform, material_path));
+                        mesh_commands.push((node_id, mesh_id, path, transform, material_path));
                     }
                     RenderCommand::Light(light_uniform) => {
                         light_commands.push((node_id, light_uniform));
@@ -3779,17 +3822,46 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
 
             // Queue meshes
-            for (node_id, path, transform, material_path) in mesh_commands {
-                gfx.renderer_3d.queue_mesh(
-                    node_id,
-                    &path,
-                    transform,
-                    material_path.as_deref(),
-                    &mut gfx.mesh_manager,
-                    &mut gfx.material_manager,
-                    &mut gfx.device,
-                    &mut gfx.queue,
-                );
+            let mut mesh_id_updates: Vec<(NodeID, MeshID)> = Vec::new();
+            for (node_id, mesh_id, path, transform, material_path) in mesh_commands {
+                // Resolve mesh id (prefer existing id; reload from path if evicted/absent)
+                let resolved_id: Option<MeshID> = match mesh_id {
+                    Some(id) if gfx.mesh_manager.get_mesh_by_id(id).is_some() => Some(id),
+                    Some(id) => {
+                        // Try reload via remembered id->path mapping, or provided path
+                        let reload_path = gfx
+                            .mesh_manager
+                            .get_mesh_path_from_id(&id)
+                            .map(|s| s.to_string())
+                            .or(path.clone());
+                        reload_path.and_then(|p| {
+                            gfx.mesh_manager
+                                .get_or_load_mesh(&p, &gfx.device, &gfx.queue)
+                        })
+                    }
+                    None => path.as_deref().and_then(|p| {
+                        gfx.mesh_manager
+                            .get_or_load_mesh(p, &gfx.device, &gfx.queue)
+                    }),
+                };
+
+                if let Some(mid) = resolved_id {
+                    gfx.renderer_3d.queue_mesh_id(
+                        node_id,
+                        mid,
+                        transform,
+                        material_path.as_deref(),
+                        &mut gfx.mesh_manager,
+                        &mut gfx.material_manager,
+                    );
+                    mesh_id_updates.push((node_id, mid));
+                }
+            }
+            // Update node mesh_ids (so script-side `mesh` reflects the runtime handle)
+            for (node_id, new_id) in mesh_id_updates {
+                if let Some(SceneNode::MeshInstance3D(mesh)) = self.nodes.get_mut(node_id) {
+                    mesh.mesh_id = Some(new_id);
+                }
             }
 
             // Queue lights (allocate LightID from LightManager if needed)
@@ -3982,19 +4054,48 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         }
                         SceneNode::MeshInstance3D(mesh) => {
                             if mesh.visible {
-                                if let Some(path) = &mesh.mesh_path {
-                                    let transform = global_transform_3d_opt
-                                        .unwrap_or(mesh.base.transform);
-                                    gfx.renderer_3d.queue_mesh(
+                                let transform =
+                                    global_transform_3d_opt.unwrap_or(mesh.base.transform);
+
+                                // Resolve mesh id: prefer `mesh.mesh_id`, else load from `mesh_path`.
+                                // If the id was evicted, reload from remembered path or mesh_path.
+                                let resolved_id: Option<MeshID> = match mesh.mesh_id {
+                                    Some(id) if gfx.mesh_manager.get_mesh_by_id(id).is_some() => {
+                                        Some(id)
+                                    }
+                                    Some(id) => {
+                                        // IMPORTANT: materialize the reload path as an owned String first,
+                                        // so we don't hold an immutable borrow of gfx.mesh_manager while
+                                        // trying to mutably borrow it to reload.
+                                        let reload_path: Option<String> = gfx
+                                            .mesh_manager
+                                            .get_mesh_path_from_id(&id)
+                                            .map(|s| s.to_string())
+                                            .or_else(|| mesh.mesh_path.as_deref().map(|s| s.to_string()));
+
+                                        if let Some(p) = reload_path.as_deref() {
+                                            gfx.mesh_manager
+                                                .get_or_load_mesh(p, &gfx.device, &gfx.queue)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    None => mesh.mesh_path.as_deref().and_then(|p| {
+                                        gfx.mesh_manager
+                                            .get_or_load_mesh(p, &gfx.device, &gfx.queue)
+                                    }),
+                                };
+
+                                if let Some(mid) = resolved_id {
+                                    gfx.renderer_3d.queue_mesh_id(
                                         node_id,
-                                        path,
+                                        mid,
                                         transform,
                                         mesh.material_path.as_deref(),
                                         &mut gfx.mesh_manager,
                                         &mut gfx.material_manager,
-                                        &mut gfx.device,
-                                        &mut gfx.queue,
                                     );
+                                    mesh.mesh_id = Some(mid);
                                 }
                             }
                         }
@@ -4423,12 +4524,16 @@ impl Scene<DllScriptProvider> {
             .collect();
         let root_id = game_scene.get_root().get_id();
         let mut global_node_ids: Vec<NodeID> = Vec::with_capacity(global_order.len());
+        let first_is_root = global_names
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("") == "Root";
         for (i, identifier) in global_order.iter().enumerate() {
             let name = global_names
                 .get(i)
                 .map(|s| s.as_str())
                 .unwrap_or(identifier.as_str());
-            if i == 0 {
+            if i == 0 && first_is_root {
                 global_node_ids.push(root_id);
             } else {
                 let mut node = Node::new();
@@ -4439,7 +4544,7 @@ impl Scene<DllScriptProvider> {
             }
         }
 
-        // ✅ attach global scripts in order (index 0 = root script on root node) and call init
+        // ✅ attach global scripts in order (index 0 = root script on root node when present) and call init
         for (identifier, &global_id) in global_order.iter().zip(global_node_ids.iter()) {
             if let Ok(ctor) = game_scene.provider.load_ctor(identifier.as_str()) {
                 let boxed = game_scene.instantiate_script(ctor, global_id);
@@ -4455,6 +4560,7 @@ impl Scene<DllScriptProvider> {
                 };
                 let mut api =
                     ScriptApi::new(true_delta, &mut game_scene, &mut *project_borrow, gfx);
+                api.apply_exposed_vars_from_node(global_id);
                 api.call_init(global_id);
                 if let Some(node) = game_scene.nodes.get(global_id) {
                     if node.is_renderable() {

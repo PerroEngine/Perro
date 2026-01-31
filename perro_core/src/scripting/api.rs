@@ -13,6 +13,7 @@ use serde_json::Value;
 use smallvec::SmallVec;
 use std::{
     cell::RefCell,
+    collections::HashMap,
     env, io,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -1061,6 +1062,99 @@ pub struct TextureApi {
     api_ptr: Option<*mut ScriptApi<'static>>,
 }
 
+pub struct MeshApi {
+    // Pointer to the parent ScriptApi - set when accessed through DerefMut
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
+
+impl Default for MeshApi {
+    fn default() -> Self {
+        Self { api_ptr: None }
+    }
+}
+
+impl MeshApi {
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr_immut(&self, api_ptr: *mut ScriptApi<'static>) {
+        unsafe {
+            let self_mut = self as *const MeshApi as *mut MeshApi;
+            (*self_mut).api_ptr = Some(api_ptr);
+        }
+    }
+
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
+        self.api_ptr
+    }
+
+    /// Load a mesh from a path (built-ins: __cube__, __sphere__, __plane__, etc.)
+    pub fn load(&mut self, path: &str) -> Option<crate::ids::MeshID> {
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            ptr
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            if let Some(ptr) = tl_ptr {
+                self.set_api_ptr(ptr);
+                ptr
+            } else {
+                eprintln!("[Mesh.load] ERROR: No ScriptApi context available!");
+                return None;
+            }
+        };
+        unsafe {
+            let api = &mut *api_ptr;
+            Some(Self::load_impl(api, path))
+        }
+    }
+
+    pub(crate) fn load_impl(api: &mut ScriptApi, path: &str) -> crate::ids::MeshID {
+        if let Some(gfx) = api.gfx.as_mut() {
+            gfx.mesh_manager
+                .get_or_load_mesh(path, &gfx.device, &gfx.queue)
+                .unwrap_or_else(|| panic!("Mesh failed to load: {}", path))
+        } else {
+            panic!("Graphics not available");
+        }
+    }
+
+    /// Preload a mesh. Currently equivalent to load (mesh eviction is ref-count based).
+    pub fn preload(&mut self, path: &str) -> Option<crate::ids::MeshID> {
+        self.load(path)
+    }
+
+    /// Remove a mesh by id. Safe to call with nil/None.
+    pub fn remove(&mut self, id: Option<crate::ids::MeshID>) {
+        let api_ptr = if let Some(ptr) = self.get_api_ptr() {
+            Some(ptr)
+        } else {
+            let tl_ptr = SCRIPT_API_CONTEXT.with(|ctx| *ctx.borrow());
+            tl_ptr.map(|ptr| {
+                self.set_api_ptr(ptr);
+                ptr
+            })
+        };
+        if let Some(api_ptr) = api_ptr {
+            unsafe {
+                let api = &mut *api_ptr;
+                Self::remove_impl(api, id);
+            }
+        }
+    }
+
+    pub(crate) fn remove_impl(api: &mut ScriptApi, id: Option<crate::ids::MeshID>) {
+        if let Some(id) = id {
+            if let Some(gfx) = api.gfx.as_mut() {
+                gfx.mesh_manager.remove_mesh(id);
+            }
+        }
+    }
+}
+
 impl Default for TextureApi {
     fn default() -> Self {
         Self { api_ptr: None }
@@ -1249,8 +1343,9 @@ impl TextureApi {
         }
     }
 
-    /// Get the width of a texture by its UUID
-    pub fn get_width(&self, id: TextureID) -> u32 {
+    /// Get the width of a texture by its UUID.
+    /// Accepts Option<TextureID> so script-side `tex_id` (from load/preload) can be passed directly.
+    pub fn get_width(&self, id: Option<TextureID>) -> u32 {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1276,7 +1371,11 @@ impl TextureApi {
     }
 
     /// Internal implementation
-    pub(crate) fn get_width_impl(api: &mut ScriptApi, id: TextureID) -> u32 {
+    pub(crate) fn get_width_impl(api: &mut ScriptApi, id: Option<TextureID>) -> u32 {
+        let id = match id {
+            Some(i) => i,
+            None => return 0,
+        };
         if let Some(gfx) = api.gfx.as_mut() {
             gfx.texture_manager
                 .get_texture_by_id(&id)
@@ -1289,8 +1388,9 @@ impl TextureApi {
         }
     }
 
-    /// Get the height of a texture by its UUID
-    pub fn get_height(&self, id: TextureID) -> u32 {
+    /// Get the height of a texture by its UUID.
+    /// Accepts Option<TextureID> so script-side `tex_id` (from load/preload) can be passed directly.
+    pub fn get_height(&self, id: Option<TextureID>) -> u32 {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1316,7 +1416,11 @@ impl TextureApi {
     }
 
     /// Internal implementation
-    pub(crate) fn get_height_impl(api: &mut ScriptApi, id: TextureID) -> u32 {
+    pub(crate) fn get_height_impl(api: &mut ScriptApi, id: Option<TextureID>) -> u32 {
+        let id = match id {
+            Some(i) => i,
+            None => return 0,
+        };
         if let Some(gfx) = api.gfx.as_mut() {
             gfx.texture_manager
                 .get_texture_by_id(&id)
@@ -1327,8 +1431,9 @@ impl TextureApi {
         }
     }
 
-    /// Get the size of a texture by its UUID (returns Vector2)
-    pub fn get_size(&self, id: TextureID) -> crate::Vector2 {
+    /// Get the size of a texture by its UUID (returns Vector2).
+    /// Accepts Option<TextureID> so script-side `tex_id` (from load/preload) can be passed directly.
+    pub fn get_size(&self, id: Option<TextureID>) -> crate::Vector2 {
         // Get ScriptApi pointer - try stored pointer first
         let api_ptr = if let Some(ptr) = self.get_api_ptr() {
             ptr
@@ -1354,7 +1459,11 @@ impl TextureApi {
     }
 
     /// Internal implementation
-    pub(crate) fn get_size_impl(api: &mut ScriptApi, id: TextureID) -> crate::Vector2 {
+    pub(crate) fn get_size_impl(api: &mut ScriptApi, id: Option<TextureID>) -> crate::Vector2 {
+        let id = match id {
+            Some(i) => i,
+            None => return crate::Vector2::new(0.0, 0.0),
+        };
         if let Some(gfx) = api.gfx.as_mut() {
             gfx.texture_manager
                 .get_texture_size_by_id(&id)
@@ -1691,6 +1800,7 @@ pub struct EngineApi {
     pub Process: ProcessApi,
     pub Input: InputApi,
     pub Texture: TextureApi,
+    pub Mesh: MeshApi,
     pub Math: MathApi,
     pub Editor: EditorApi,
     pub Directory: DirectoryApi,
@@ -1715,6 +1825,9 @@ impl<'a> Deref for ScriptApi<'a> {
 
             let texture_api = &(*api_ptr).engine.Texture;
             texture_api.set_api_ptr_immut(api_ptr);
+
+            let mesh_api = &(*api_ptr).engine.Mesh;
+            mesh_api.set_api_ptr_immut(api_ptr);
         }
         &self.engine
     }
@@ -1734,6 +1847,10 @@ impl<'a> DerefMut for ScriptApi<'a> {
             // Set the pointer in TextureApi
             let texture_api = &mut (*api_ptr).engine.Texture;
             texture_api.set_api_ptr(api_ptr);
+
+            // Set the pointer in MeshApi
+            let mesh_api = &mut (*api_ptr).engine.Mesh;
+            mesh_api.set_api_ptr(api_ptr);
 
             // Set the pointer in EditorApi
             let editor_api = &mut (*api_ptr).engine.Editor;
@@ -2046,6 +2163,41 @@ impl<'a> ScriptApi<'a> {
     //-------------------------------------------------
     // Lifecycle / Updates
     //-------------------------------------------------
+    /// Apply exposed script variables from the node's script_exp_vars (scene/editor values)
+    /// to the script instance. Converts variable names (strings) to u64 IDs and calls
+    /// the script's apply_exposed so APPLY_TABLE runs. Call this before call_init so
+    /// init() sees the values.
+    pub fn apply_exposed_vars_from_node(&mut self, node_id: NodeID) {
+        let exp_vars: Option<HashMap<String, Value>> = self
+            .scene
+            .get_scene_node_ref(node_id)
+            .and_then(|n| n.get_script_exp_vars());
+        let exp_vars = match exp_vars {
+            Some(m) if !m.is_empty() => m,
+            _ => return,
+        };
+        #[cfg(debug_assertions)]
+        for (name, v) in &exp_vars {
+            if let Some(s) = v.as_str() {
+                if NodeID::parse_str(s).is_ok() {
+                    eprintln!(
+                        "[perro scene] apply_exposed node {} var {} => NodeID {}",
+                        node_id, name, s
+                    );
+                }
+            }
+        }
+        let map_u64: HashMap<u64, Value> = exp_vars
+            .iter()
+            .map(|(k, v)| (string_to_u64(k), v.clone()))
+            .collect();
+        if let Some(script_rc) = self.scene.get_script(node_id) {
+            unsafe {
+                (*script_rc.get()).apply_exposed(&map_u64);
+            }
+        }
+    }
+
     /// Call the init() method on a script
     ///
     /// SAFETY: This is safe because:

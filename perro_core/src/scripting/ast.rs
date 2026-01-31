@@ -35,6 +35,8 @@ pub struct Script {
     pub global_names: std::collections::HashSet<String>,
     /// Map global name -> NodeID. Set by transpiler: "Root" -> 1; @global names -> 2, 3, 4... in alphabetical order. Single source of truth for codegen.
     pub global_name_to_node_id: std::collections::HashMap<String, u32>,
+    /// Rust struct name for this script (e.g. "TypesTsScript"). Set at codegen start so mutate_node closure type is valid when node_type is empty.
+    pub rust_struct_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -249,6 +251,7 @@ impl Variable {
                 use crate::engine_structs::EngineStruct;
                 match es {
                     EngineStruct::Texture => ("__CUSTOM__", "Option<TextureID>".to_string()), // Texture is Option<TextureID>, use custom deserialization
+                    EngineStruct::Mesh => ("__CUSTOM__", "Option<MeshID>".to_string()), // Mesh is Option<MeshID>, use custom deserialization
                     _ => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()), // Other engine structs use the generic method
                 }
             }
@@ -419,9 +422,9 @@ impl Type {
                 // Engine structs map to their type-safe ID types where applicable
                 use crate::engine_structs::EngineStruct;
                 match es {
-                    EngineStruct::Texture => "TextureID".to_string(),
-                    // Note: Material, Mesh, Light don't exist in EngineStruct enum yet
-                    // When they do, map them: Material => "MaterialID", Mesh => "MeshID", Light => "LightID"
+                    // Script-facing "Texture" and "Mesh" are optional handles (stored as Option<...> on nodes).
+                    EngineStruct::Texture => "Option<TextureID>".to_string(),
+                    EngineStruct::Mesh => "Option<MeshID>".to_string(),
                     _ => format!("{:?}", es), // Other engine structs are real types (Vector2, Color, etc.)
                 }
             }
@@ -687,6 +690,7 @@ impl Type {
                 use crate::engine_structs::EngineStruct;
                 match es {
                     EngineStruct::Texture => "None".to_string(), // Texture is Option<TextureID>, default is None
+                    EngineStruct::Mesh => "None".to_string(),    // Mesh is Option<MeshID>, default is None
                     _ => format!("{}::default()", format!("{:?}", es)), // Other engine structs implement Default
                 }
             }
@@ -750,6 +754,10 @@ impl Type {
             // Node / DynNode conversions (all are NodeID in Rust)
             (Type::DynNode, Type::Node(_)) => true, // DynNode can be cast to any Node type
             (Type::Node(_), Type::DynNode) => true, // Any Node type can become DynNode
+            // Option<NodeID> -> NodeID (e.g. get_child_by_name result passed to get_script_var_id)
+            (Type::Option(inner), Type::DynNode) if matches!(inner.as_ref(), Type::DynNode) => true,
+            // UuidOption (script name for Option<NodeID>) -> NodeID
+            (Type::Custom(name), Type::DynNode) if name == "UuidOption" => true,
 
             // T -> Option<T> conversions (wrapping in Some)
             (from, Type::Option(inner)) if *from == *inner.as_ref() => true,
@@ -810,6 +818,8 @@ impl Type {
 
                 ES::Texture => true,
                 // Texture is a TextureID (u64), Copy
+                ES::Mesh => true,
+                // Mesh is a MeshID (u64), Copy
             },
             // ScriptApi is a reference type, not Copy
             ScriptApi => false,

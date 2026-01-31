@@ -6,6 +6,8 @@ pub enum EngineStruct {
     Rect,
     Color,
     Texture,
+    /// Mesh handle (runtime MeshID; scripts see this as `Mesh`)
+    Mesh,
     Shape2D,
     // 3D structs
     Transform3D,
@@ -26,6 +28,7 @@ impl EngineStruct {
             "Quaternion" => Some(EngineStruct::Quaternion),
             "Shape2D" => Some(EngineStruct::Shape2D),
             "Texture" => Some(EngineStruct::Texture),
+            "Mesh" => Some(EngineStruct::Mesh),
             _ => None,
         }
     }

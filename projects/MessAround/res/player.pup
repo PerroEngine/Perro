@@ -1,6 +1,7 @@
 @script Player extends Sprite2D
 
 @expose var time = 0
+@expose var cam: Camera2D
 var test_var = 0
 var test_b = false
 var tex: Texture
@@ -12,6 +13,9 @@ struct Cabbage {
 var cab = new Cabbage { x: 111111 }
 
 on init() {
+    Console.info("time", time)
+    Console.info("cam", cam)
+    
    Console.info("TestGlobal", TestGlobal::b)
    Console.info("Root", Root::gas)
    Console.info("AnotherGlobal", AnotherGlobal::a)
@@ -49,10 +53,10 @@ fn test(u: int) {
     Console.info("I was called externally through double colon", test_b, u)
 
     var b = Root::cabbage(123)
-    Console.error("b", b)
+    Console.info("b", b)
 
     var c = b * 2.765
-    Console.error("c", c)
+    Console.info("c", c)
 }
 
 on Deadzone_AreaEntered(collision: CollisionShape2D) {
@@ -66,7 +70,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     Console.info("r_name", r_name)
 
     var vecas: float = c_name
-    Console.warn(vecas)
+    Console.info(vecas)
     
     var t = "test"
     c_par::[t](1122)
@@ -79,7 +83,7 @@ on Deadzone_AreaEntered(collision: CollisionShape2D) {
     c_par::test_var = 12
     c_par::[b] = 15
     
-    Console.warn(c_par::[b])
+    Console.info(c_par::[b])
     Console.print("fter", test_var)
     
     var pos = self.transform.position

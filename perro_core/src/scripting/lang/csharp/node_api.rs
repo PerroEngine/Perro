@@ -78,6 +78,10 @@ impl CSharpNodeApiRegistry {
                     script_name: "Remove",
                     rust_method: NodeMethodRef::Remove,
                 },
+                NodeApiMethod {
+                    script_name: "Call",
+                    rust_method: NodeMethodRef::CallFunction,
+                },
             ],
         );
 
@@ -208,7 +212,12 @@ impl CSharpNodeApiRegistry {
         self.register_node(
             NodeType::MeshInstance3D,
             Some(NodeType::Node3D),
-            vec![],
+            vec![
+                NodeApiField {
+                    script_name: "mesh",
+                    rust_field: NodeFieldRef::MeshInstance3DMeshId,
+                },
+            ],
             vec![],
         );
 

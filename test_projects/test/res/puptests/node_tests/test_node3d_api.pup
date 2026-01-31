@@ -1,0 +1,71 @@
+// Compile-only: Node3D API — transform (position, rotation, scale), Quaternion rotate on transform.rotation, assignments, for loops.
+@script TestNode3DApi extends Node3D
+
+var spin: float = 0.0
+
+on init() {
+    test_transform_read_write()
+    test_rotation_assign_and_rotate()
+    test_rotation_set_equal_to_other()
+    test_for_loops_with_rotation()
+    test_scale_and_position_assign()
+}
+
+fn test_transform_read_write() {
+    var t = self.transform
+    var pos = self.transform.position
+    var rot = self.transform.rotation
+    var scale = self.transform.scale
+    self.transform.position = new Vector3(1.0, 2.0, 3.0)
+    self.transform.position.x = 10.0
+    self.transform.position.y = 20.0
+    self.transform.position.z = 30.0
+    self.transform.rotation = Quaternion.identity()
+    self.transform.rotation = Quaternion.from_euler_xyz(0.0, 90.0, 0.0)
+    var euler = Quaternion.as_euler(self.transform.rotation)
+    self.transform.scale = new Vector3(1.0, 1.0, 1.0)
+    var gt = self.global_transform
+    var pv = self.pivot
+    self.pivot = new Vector3(0.0, 0.0, 0.0)
+    self.visible = false
+    var n = self.name
+}
+
+fn test_rotation_assign_and_rotate() {
+    self.transform.rotation = Quaternion.identity()
+    self.transform.rotation.rotate_x(45.0)
+    self.transform.rotation.rotate_y(90.0)
+    self.transform.rotation.rotate_z(15.0)
+    self.transform.rotation.rotate_euler_xyz(1.0, 2.0, 3.0)
+    var e = Quaternion.as_euler(self.transform.rotation)
+}
+
+fn test_rotation_set_equal_to_other() {
+    var q = Quaternion.from_euler_xyz(30.0, 60.0, 0.0)
+    self.transform.rotation = q
+    var other = self.transform.rotation
+    self.transform.rotation = other
+    var q2 = Quaternion.rotate_y(q, 10.0)
+    self.transform.rotation = q2
+}
+
+fn test_for_loops_with_rotation() {
+    for (i in 0..36) {
+        self.transform.rotation.rotate_y(10.0)
+        spin = spin + 1.0
+    }
+    for (j in 0..10) {
+        var pos = self.transform.position
+        self.transform.position = new Vector3(pos.x + 0.1, pos.y, pos.z)
+        self.transform.rotation.rotate_x(5.0)
+    }
+}
+
+fn test_scale_and_position_assign() {
+    var s = self.transform.scale
+    self.transform.scale = new Vector3(2.0, 2.0, 2.0)
+    var p = self.transform.position
+    self.transform.position = new Vector3(p.x, p.y + 1.0, p.z)
+    var other_scale = new Vector3(0.5, 0.5, 0.5)
+    self.transform.scale = other_scale
+}

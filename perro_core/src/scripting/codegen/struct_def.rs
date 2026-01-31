@@ -4,8 +4,23 @@ use crate::ast::*;
 use std::fmt::Write as _;
 
 impl StructDef {
+    /// Returns all fields in declaration order: base's fields (recursively) then own fields.
+    fn flatten_fields(&self, script: &Script) -> Vec<(String, Type)> {
+        let mut out = Vec::new();
+        if let Some(ref base_name) = self.base {
+            if let Some(base_def) = script.structs.iter().find(|s| s.name == *base_name) {
+                out = base_def.flatten_fields(script);
+            }
+        }
+        for f in &self.fields {
+            out.push((f.name.clone(), f.typ.clone()));
+        }
+        out
+    }
+
     pub fn to_rust_definition(&self, script: &Script) -> String {
         let mut out = String::with_capacity(1024);
+        let flat_fields = self.flatten_fields(script);
 
         // === Struct Definition ===
         writeln!(
@@ -16,8 +31,8 @@ impl StructDef {
         let renamed_struct_name = rename_struct(&self.name);
         writeln!(out, "pub struct {} {{", renamed_struct_name).unwrap();
 
-        for field in &self.fields {
-            writeln!(out, "    pub {}: {},", field.name, field.typ.to_rust_type()).unwrap();
+        for (name, typ) in &flat_fields {
+            writeln!(out, "    pub {}: {},", name, typ.to_rust_type()).unwrap();
         }
 
         writeln!(out, "}}\n").unwrap();
@@ -32,13 +47,12 @@ impl StructDef {
         .unwrap();
         writeln!(out, "        write!(f, \"{{{{ \")?;").unwrap();
 
-        // --- print own fields ---
-        for (i, field) in self.fields.iter().enumerate() {
-            let sep = if i + 1 < self.fields.len() { ", " } else { " " };
+        for (i, (name, _)) in flat_fields.iter().enumerate() {
+            let sep = if i + 1 < flat_fields.len() { ", " } else { " " };
             writeln!(
                 out,
                 "        write!(f, \"{name}: {{:?}}{sep}\", self.{name})?;",
-                name = field.name,
+                name = name,
                 sep = sep
             )
             .unwrap();
@@ -52,14 +66,14 @@ impl StructDef {
         let renamed_struct_name = rename_struct(&self.name);
         writeln!(out, "impl {} {{", renamed_struct_name).unwrap();
         write!(out, "    pub fn new(").unwrap();
-        let mut param_list = Vec::new();
-        for field in &self.fields {
-            param_list.push(format!("{}: {}", field.name, field.typ.to_rust_type()));
-        }
+        let param_list: Vec<String> = flat_fields
+            .iter()
+            .map(|(name, typ)| format!("{}: {}", name, typ.to_rust_type()))
+            .collect();
         writeln!(out, "{}) -> Self {{", param_list.join(", ")).unwrap();
         write!(out, "        Self {{").unwrap();
-        for field in &self.fields {
-            write!(out, " {}: {},", field.name, field.name).unwrap();
+        for (name, _) in &flat_fields {
+            write!(out, " {}: {},", name, name).unwrap();
         }
         writeln!(out, " }}").unwrap();
         writeln!(out, "    }}").unwrap();

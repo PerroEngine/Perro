@@ -1,0 +1,10 @@
+// Compile-only test: Sprite2D API (texture, region) + Node2D.
+@script TestSprite2DApi extends Sprite2D
+
+on init() {
+    self.texture = Texture.load("res://icon.png")
+    var r = self.region
+    self.transform.position.x = 10.0
+    var vis = self.visible
+    var n = self.name
+}

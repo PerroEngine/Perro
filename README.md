@@ -6,6 +6,8 @@
 
 **Perro** is an experimental, open-source game engine written in **Rust**, designed as a modern alternative to engines like Unreal, Godot, and Unity.
 
+**Version: 0.1.0 prerelease.** There is **no editor** right now — this is mainly a showcase of what exists so far. The **whole point** of the scripting system is that your scripts (Pup, and experimentally TypeScript/C#) **transpile to Rust** and interop directly with the engine core; that pipeline is where most of the work lives, and **bugs or rough edges can happen**. If you hit issues — wrong codegen, parse errors, or weird behavior — **please report them.** Contributions and experimentation are welcome.
+
 It focuses on **performance, flexibility, and ease of use** with a unique scripting system that transpiles to Rust for native performance:
 
 - 🐶 **Pup DSL** – a beginner-friendly, lightweight scripting language that compiles to Rust for native performance. Write your gameplay logic in Pup and get the speed of Rust.
@@ -14,7 +16,8 @@ It focuses on **performance, flexibility, and ease of use** with a unique script
 - ⚡ **Optimized Release Builds** – scripts and assets statically link into your final binary.
 - 🔗 **Decoupled Signal System** – global, name-based signals that completely decouple emitters from listeners. Use `on SIGNALNAME() {}` shorthand for automatic connections.
 
-**📚 [Full Documentation →](https://perroengine.com/docs)**
+**📚 [Full Documentation →](https://perroengine.com/docs)**  
+Scripting reference (node API, resources, types) is in the **[docs/](docs/)** folder: [PUP](docs/PUP.md), [TypeScript](docs/TYPESCRIPT.md) (experimental), [C#](docs/CSHARP.md) (experimental).
 
 ---
 

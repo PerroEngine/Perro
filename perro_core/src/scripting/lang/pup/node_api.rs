@@ -72,6 +72,10 @@ impl PupNodeApiRegistry {
                     script_name: "remove",
                     rust_method: NodeMethodRef::Remove,
                 },
+                NodeApiMethod {
+                    script_name: "call",
+                    rust_method: NodeMethodRef::CallFunction,
+                },
             ],
         );
 
@@ -202,7 +206,12 @@ impl PupNodeApiRegistry {
         self.register_node(
             NodeType::MeshInstance3D,
             Some(NodeType::Node3D),
-            vec![],
+            vec![
+                NodeApiField {
+                    script_name: "mesh",
+                    rust_field: NodeFieldRef::MeshInstance3DMeshId,
+                },
+            ],
             vec![],
         );
 

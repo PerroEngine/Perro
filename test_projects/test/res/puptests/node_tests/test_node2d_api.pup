@@ -1,0 +1,70 @@
+// Compile-only: Node2D API — transform, get_node, get_parent, get_var, call, add_child, for loops, assignments.
+@script TestNode2DApi extends Node2D
+
+var acc: float = 0.0
+
+on init() {
+    test_transform_read_write()
+    test_transform_assign_to_other()
+    test_node_methods()
+    test_for_loops()
+}
+
+fn test_transform_read_write() {
+    var t = self.transform
+    var pos = self.transform.position
+    var x = self.transform.position.x
+    var y = self.transform.position.y
+    self.transform.position = new Vector2(1.0, 2.0)
+    self.transform.position.x = 10.0
+    self.transform.position.y = 20.0
+    var gt = self.global_transform
+    var pv = self.pivot
+    self.pivot = new Vector2(0.5, 0.5)
+    var vis = self.visible
+    self.visible = true
+    var zi = self.z_index
+    self.z_index = 1
+    var n = self.name
+    self.name = "TestNode2D"
+}
+
+fn test_transform_assign_to_other() {
+    var other_pos = new Vector2(5.0, 5.0)
+    self.transform.position = other_pos
+    var copy = self.transform.position
+    self.transform.position = copy
+    var t2 = self.global_transform
+    var pos_from_t = t2.position
+    self.transform.position = pos_from_t
+}
+
+fn test_node_methods() {
+    var parent = self.get_parent()
+    var child = self.get_node("Child")
+    var ty = self.get_type()
+    var pty = self.get_parent_type()
+    self.set_var("foo", 42)
+    var v = self.get_var("foo")
+    self.call("some_script_fn", 1.0)
+    var c = self.get_node("Other")
+    if c != null {
+        var cv = c.get_var("x")
+        c.call("update", Time.get_delta())
+    }
+}
+
+fn test_for_loops() {
+    for (i in 0..10) {
+        self.transform.position.x = self.transform.position.x + 0.1
+    }
+    for (j in 0..5) {
+        acc = acc + Time.get_delta()
+        var pos = self.transform.position
+        self.transform.position = new Vector2(pos.x + 0.01, pos.y)
+    }
+}
+
+fn some_script_fn(x: float) {
+    acc = acc + x
+}

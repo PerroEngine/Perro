@@ -1,0 +1,11 @@
+// Compile-only test: Camera2D API (zoom, active) + Node2D.
+@script TestCamera2DApi extends Camera2D
+
+on init() {
+    var z = self.zoom
+    self.zoom = 2
+    var act = self.active
+    self.active = true
+    self.transform.position = new Vector2(0.0, 0.0)
+    var n = self.name
+}

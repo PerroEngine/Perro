@@ -546,6 +546,9 @@ pub struct MeshManager {
     generations: Vec<u32>,
     free_slots: Vec<usize>,
     path_to_id: FxHashMap<String, MeshID>,
+    /// Remembers the original path for a MeshID even after eviction/removal.
+    /// This mirrors TextureManager behavior so scripts holding an old ID can reload.
+    id_to_path: FxHashMap<MeshID, String>,
     mesh_users: FxHashMap<MeshID, FxHashSet<NodeID>>,
     mesh_frames_at_zero: FxHashMap<MeshID, u32>,
 }
@@ -557,6 +560,7 @@ impl MeshManager {
             generations: Vec::new(),
             free_slots: Vec::new(),
             path_to_id: FxHashMap::default(),
+            id_to_path: FxHashMap::default(),
             mesh_users: FxHashMap::default(),
             mesh_frames_at_zero: FxHashMap::default(),
         }
@@ -642,6 +646,7 @@ impl MeshManager {
             (slot_idx, MeshID::from_parts((slot_idx + 1) as u32, 0))
         };
         self.path_to_id.insert(path.clone(), id);
+        self.id_to_path.insert(id, path.clone());
         self.slots[slot_idx] = Some(MeshSlot { mesh, path });
         id
     }
@@ -668,6 +673,11 @@ impl MeshManager {
             return None;
         }
         self.slots.get(idx)?.as_ref().map(|s| &s.mesh)
+    }
+
+    /// Best-effort: recover the original path for an (even invalid/evicted) MeshID.
+    pub fn get_mesh_path_from_id(&self, id: &MeshID) -> Option<&str> {
+        self.id_to_path.get(id).map(|s| s.as_str())
     }
 
     pub fn load_mesh_from_file(path: &str, device: &Device) -> Option<Mesh> {
@@ -2415,7 +2425,7 @@ impl Graphics {
         material_path: &str,
         transform: Transform3D,
     ) {
-        self.renderer_3d.queue_mesh(
+        let _ = self.renderer_3d.queue_mesh(
             uuid,
             mesh_path,
             transform,
@@ -2438,7 +2448,7 @@ impl Graphics {
 
         // Now queue all meshes (material IDs are cached)
         for (uuid, mesh_path, material_path, transform) in meshes {
-            self.renderer_3d.queue_mesh(
+            let _ = self.renderer_3d.queue_mesh(
                 *uuid,
                 mesh_path,
                 *transform,

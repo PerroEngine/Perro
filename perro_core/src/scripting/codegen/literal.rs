@@ -14,10 +14,12 @@ impl Literal {
                     _ => format!("{}f32", raw),
                 },
                 Some(Type::Number(NumberKind::Decimal)) => {
-                    format!("Decimal::from_str(\"{}\").unwrap()", raw)
+                    let clean = raw.replace('_', "");
+                    format!("Decimal::from_str(\"{}\").unwrap()", clean)
                 }
                 Some(Type::Number(NumberKind::BigInt)) => {
-                    format!("BigInt::from_str(\"{}\").unwrap()", raw)
+                    let clean = raw.replace('_', "");
+                    format!("BigInt::from_str(\"{}\").unwrap()", clean)
                 }
                 _ => format!("{}f32", raw),
             },

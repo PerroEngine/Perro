@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+use crate::ids::MeshID;
 use crate::nodes::_3d::node_3d::Node3D;
 use crate::nodes::node_registry::NodeType;
 
@@ -13,6 +14,11 @@ use crate::nodes::node_registry::NodeType;
 pub struct MeshInstance3D {
     #[serde(rename = "type")]
     pub ty: NodeType,
+
+    /// Script-accessible: mesh handle (MeshID reference to MeshManager).
+    /// Runtime-only; scene serialization uses `mesh_path`.
+    #[serde(skip)]
+    pub mesh_id: Option<MeshID>,
 
     /// Resource path for the mesh this instance uses (e.g., "res://models/cube.gltf")
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,6 +45,7 @@ impl MeshInstance3D {
         base.name = Cow::Borrowed("MeshInstance3D");
         Self {
             ty: NodeType::MeshInstance3D,
+            mesh_id: None,
             mesh_path: None,
             material_path: Some(Cow::Borrowed("__default__")), // Always start with default
             material_id: Some(0),                              // Default material is always slot 0

@@ -7,35 +7,35 @@ id = "threed_pup"
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 106
+g_end = 98
 
 [[scripts.threed_pup.lines]]
 s_start = 31
 s_end = 31
-g_start = 106
-g_end = 115
+g_start = 98
+g_end = 107
 
 [[scripts.threed_pup.lines]]
 s_start = 71
 s_end = 71
-g_start = 115
-g_end = 186
+g_start = 107
+g_end = 178
 
 [[scripts.threed_pup.lines]]
 s_start = 121
 s_end = 121
-g_start = 186
-g_end = 190
+g_start = 178
+g_end = 182
 
 [[scripts.threed_pup.lines]]
 s_start = 181
 s_end = 181
-g_start = 190
-g_end = 204
+g_start = 182
+g_end = 188
 
 [scripts.threed_pup.names]
-__t___timer = "__timer"
-__t_log_local = "log_local"
-__t_log_global = "log_global"
-__t_apply_step = "apply_step"
 __t___step = "__step"
+__t_log_local = "log_local"
+__t___timer = "__timer"
+__t_apply_step = "apply_step"
+__t_log_global = "log_global"

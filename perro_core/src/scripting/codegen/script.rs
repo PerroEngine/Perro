@@ -39,6 +39,8 @@ impl Script {
 
         let mut out = String::with_capacity(8192);
         let pascal_struct_name = to_pascal_case(struct_name);
+        // So mutate_node closure type is valid when node_type is empty (e.g. TypeScript class without extends)
+        script.rust_struct_name = Some(format!("{}Script", pascal_struct_name));
 
         // Headers / Lints
         out.push_str("#![allow(improper_ctypes_definitions)]\n");
@@ -244,6 +246,19 @@ impl Script {
 
             if init_code.contains("self.") {
                 init_code = init_code.replace("self.", "");
+            }
+
+            // In creator scope, other script vars are local bindings (let x = ...), not self.__t_x.
+            // Expression codegen emits __t_<name> for script fields; replace with local name.
+            for ref_var in all_script_vars {
+                if ref_var.name == *name {
+                    continue;
+                }
+                let transpiled = rename_variable(&ref_var.name, ref_var.typ.as_ref());
+                if transpiled != ref_var.name && init_code.contains(&transpiled) {
+                    let re = Regex::new(&format!(r"\b{}\b", regex::escape(&transpiled))).unwrap();
+                    init_code = re.replace_all(&init_code, ref_var.name.as_str()).to_string();
+                }
             }
 
             let re_ident = Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\b").unwrap();

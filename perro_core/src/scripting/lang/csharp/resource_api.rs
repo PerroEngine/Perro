@@ -13,6 +13,7 @@ impl CSharpResourceAPI {
         match module {
             CSharpSignal::NAME => CSharpSignal::resolve_method(func),
             CSharpTexture::NAME => CSharpTexture::resolve_method(func),
+            CSharpMesh::NAME => CSharpMesh::resolve_method(func),
             CSharpArray::NAME => CSharpArray::resolve_method(func),
             CSharpMap::NAME => CSharpMap::resolve_method(func),
             CSharpShape2D::NAME => CSharpShape2D::resolve_method(func),
@@ -70,6 +71,25 @@ impl CSharpTexture {
             "GetHeight",
             "GetSize",
         ]
+    }
+}
+
+/// Mesh resource API - for loading and managing meshes
+pub struct CSharpMesh;
+impl CSharpMesh {
+    pub const NAME: &'static str = "Mesh";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "Load" => Some(ResourceModule::Mesh(MeshResource::Load)),
+            "Preload" => Some(ResourceModule::Mesh(MeshResource::Preload)),
+            "Remove" => Some(ResourceModule::Mesh(MeshResource::Remove)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["Load", "Preload", "Remove"]
     }
 }
 
@@ -166,11 +186,24 @@ impl CSharpQuaternion {
             "FromEuler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
             "FromEulerXYZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ)),
             "AsEuler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
+            "RotateX" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX)),
+            "RotateY" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY)),
+            "RotateZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ)),
+            "RotateEulerXYZ" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateEulerXYZ)),
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["Identity", "FromEuler", "FromEulerXYZ", "AsEuler"]
+        vec![
+            "Identity",
+            "FromEuler",
+            "FromEulerXYZ",
+            "AsEuler",
+            "RotateX",
+            "RotateY",
+            "RotateZ",
+            "RotateEulerXYZ",
+        ]
     }
 }

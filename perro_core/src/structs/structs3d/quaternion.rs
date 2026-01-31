@@ -142,6 +142,30 @@ impl Quaternion {
         crate::structs3d::Vector3::from_glam_public(result)
     }
 
+    /// Apply an incremental Euler rotation (degrees) to this quaternion and return the new quaternion.
+    ///
+    /// This is the 3D equivalent of "rotation.x += delta" style updates, but implemented via
+    /// quaternion multiplication (avoids gimbal lock and keeps the quaternion normalized).
+    pub fn rotate_euler_degrees(&self, delta_pitch_deg: f32, delta_yaw_deg: f32, delta_roll_deg: f32) -> Self {
+        self.mul(Quaternion::from_euler_degrees(delta_pitch_deg, delta_yaw_deg, delta_roll_deg))
+            .normalize()
+    }
+
+    /// Rotate around X axis by `delta_pitch_deg` degrees and return the new quaternion.
+    pub fn rotate_x(&self, delta_pitch_deg: f32) -> Self {
+        self.rotate_euler_degrees(delta_pitch_deg, 0.0, 0.0)
+    }
+
+    /// Rotate around Y axis by `delta_yaw_deg` degrees and return the new quaternion.
+    pub fn rotate_y(&self, delta_yaw_deg: f32) -> Self {
+        self.rotate_euler_degrees(0.0, delta_yaw_deg, 0.0)
+    }
+
+    /// Rotate around Z axis by `delta_roll_deg` degrees and return the new quaternion.
+    pub fn rotate_z(&self, delta_roll_deg: f32) -> Self {
+        self.rotate_euler_degrees(0.0, 0.0, delta_roll_deg)
+    }
+
     /// Creates a `Quaternion` from a `glam::Quat`.
     pub fn from_glam_public(q: glam::Quat) -> Self {
         Self {

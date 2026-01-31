@@ -13,6 +13,7 @@ impl TypeScriptResourceAPI {
         match module {
             TypeScriptSignal::NAME => TypeScriptSignal::resolve_method(func),
             TypeScriptTexture::NAME => TypeScriptTexture::resolve_method(func),
+            TypeScriptMesh::NAME => TypeScriptMesh::resolve_method(func),
             TypeScriptArray::NAME => TypeScriptArray::resolve_method(func),
             TypeScriptMap::NAME => TypeScriptMap::resolve_method(func),
             TypeScriptShape2D::NAME => TypeScriptShape2D::resolve_method(func),
@@ -85,6 +86,25 @@ impl TypeScriptTexture {
             "getSize",
             "get_size",
         ]
+    }
+}
+
+/// Mesh resource API - for loading and managing meshes
+pub struct TypeScriptMesh;
+impl TypeScriptMesh {
+    pub const NAME: &'static str = "Mesh";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "load" => Some(ResourceModule::Mesh(MeshResource::Load)),
+            "preload" => Some(ResourceModule::Mesh(MeshResource::Preload)),
+            "remove" => Some(ResourceModule::Mesh(MeshResource::Remove)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["load", "preload", "remove"]
     }
 }
 
@@ -184,6 +204,12 @@ impl TypeScriptQuaternion {
                 Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ))
             }
             "asEuler" | "as_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
+            "rotateX" | "rotate_x" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX)),
+            "rotateY" | "rotate_y" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY)),
+            "rotateZ" | "rotate_z" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ)),
+            "rotateEulerXYZ" | "rotate_euler_xyz" => {
+                Some(ResourceModule::QuaternionOp(QuaternionResource::RotateEulerXYZ))
+            }
             _ => None,
         }
     }
@@ -197,6 +223,14 @@ impl TypeScriptQuaternion {
             "from_euler_xyz",
             "asEuler",
             "as_euler",
+            "rotateX",
+            "rotate_x",
+            "rotateY",
+            "rotate_y",
+            "rotateZ",
+            "rotate_z",
+            "rotateEulerXYZ",
+            "rotate_euler_xyz",
         ]
     }
 }

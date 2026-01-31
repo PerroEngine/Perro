@@ -626,6 +626,7 @@ impl Function {
             is_global: false,
             global_names: std::collections::HashSet::new(),
             global_name_to_node_id: std::collections::HashMap::new(),
+            rust_struct_name: None,
         };
 
         for stmt in &self.body {

@@ -5,6 +5,7 @@ use crate::ast::*;
 use crate::node_registry::NodeType;
 use crate::resource_modules::TextureResource;
 use crate::scripting::ast::{ContainerKind, Expr, NumberKind, Op, Stmt, Type};
+use crate::scripting::api_bindings::ModuleCodegen;
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 
@@ -18,6 +19,174 @@ impl Stmt {
     ) -> String {
         match self {
             Stmt::Expr(expr) => {
+                // ----------------------------------------------------------------
+                // Auto-writeback sugar for "resource instance calls" used as statements
+                //
+                // Example (PUP):
+                //   self.transform.rotation.rotate_x(2)
+                //
+                // Parser lowers instance-style resource calls to:
+                //   Expr::ApiCall(CallModule::Resource(resource), [receiver, arg1, arg2, ...])
+                //
+                // When such a call is used as a *statement* (result ignored) and:
+                // - the resource call returns the same type as the receiver, AND
+                // - the receiver is an assignable node-field chain (self.transform.rotation, etc.), AND
+                // - the other args don't require `api` or `self` access (so they can be captured into the mutate closure),
+                //
+                // then we treat it as an in-place update:
+                //   api.mutate_node(self.id, |n| {
+                //     let __tmp = n.transform.rotation;
+                //     n.transform.rotation = <resource_call>(__tmp, ...);
+                //   });
+                //
+                // This avoids hardcoding per-method behavior in expression codegen and keeps the sugar generic.
+                // ----------------------------------------------------------------
+                if let Expr::ApiCall(crate::call_modules::CallModule::Resource(resource), call_args) =
+                    &expr.expr
+                {
+                    if let Some(receiver) = call_args.first() {
+                        // Only apply when return type matches receiver type.
+                        let recv_ty = script.infer_expr_type(receiver, current_func);
+                        let ret_ty = resource.return_type();
+
+                        if recv_ty.is_some()
+                            && ret_ty.is_some()
+                            && recv_ty == ret_ty
+                            // Ensure other args are "closure-safe" (no api/self access).
+                            && call_args
+                                .iter()
+                                .skip(1)
+                                .all(|a| !a.contains_self() && !a.contains_api_call(script))
+                        {
+                            // Only apply when receiver is a node member chain we can assign into.
+                            if let Some((node_id, node_type, field_path, closure_var)) =
+                                extract_node_member_info(receiver, script, current_func)
+                            {
+                                // Skip DynNode for now (needs match-based mutation plumbing).
+                                if node_type != "__DYN_NODE__" {
+                                    // Resolve field names along the path for the concrete node type.
+                                    if let Some(node_type_enum) = string_to_node_type(&node_type) {
+                                        let fields: Vec<&str> = field_path.split('.').collect();
+                                        if !fields.is_empty() {
+                                            let resolved_fields: Vec<String> = fields
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, f)| {
+                                                    if i == 0 {
+                                                        ENGINE_REGISTRY
+                                                            .resolve_field_name(&node_type_enum, f)
+                                                    } else {
+                                                        f.to_string()
+                                                    }
+                                                })
+                                                .collect();
+                                            let resolved_field_path = resolved_fields.join(".");
+
+                                            // Only add self. prefix if node_id is a struct field (not a local).
+                                            let node_id_with_self = if !node_id.starts_with("self.")
+                                                && !node_id.starts_with("api.")
+                                                && script.is_struct_field(&node_id)
+                                            {
+                                                format!("self.{}", node_id)
+                                            } else {
+                                                node_id.clone()
+                                            };
+
+                                            // Use the compiler-generated closure parameter name as-is.
+                                            // User variables are always renamed with `__t_` so they cannot collide in Rust,
+                                            // even if the user writes `var self_node`.
+                                            let closure_param =
+                                                closure_var.strip_prefix("self.").unwrap_or(&closure_var);
+
+                                            // If receiver type is Copy, we can avoid the temp receiver variable.
+                                            // For non-Copy types, the temp avoids borrow-checker issues on self-referential assignment.
+                                            let receiver_is_copy = recv_ty
+                                                .as_ref()
+                                                .map(|t| t.is_copy_type())
+                                                .unwrap_or(false);
+
+                                            if receiver_is_copy {
+                                                // For Copy receivers, emit A = A.method(...) (no temp receiver).
+                                                // We generate the RHS via the resource module codegen but provide arg0 as a raw string
+                                                // (`<closure_param>.<field_path>`) so it doesn't get renamed.
+                                                use crate::api_bindings::generate_rust_args;
+
+                                                let receiver_str =
+                                                    format!("{}.{}", closure_param, resolved_field_path);
+
+                                                let expected = resource.param_types();
+                                                let expected_rest: Option<Vec<Type>> =
+                                                    expected.as_ref().map(|v| v.iter().skip(1).cloned().collect());
+                                                let rest_args: Vec<Expr> =
+                                                    call_args.iter().skip(1).cloned().collect();
+                                                let mut rest_strs = generate_rust_args(
+                                                    &rest_args,
+                                                    script,
+                                                    needs_self,
+                                                    current_func,
+                                                    expected_rest.as_ref(),
+                                                );
+
+                                                let mut args_strs: Vec<String> =
+                                                    Vec::with_capacity(1 + rest_strs.len());
+                                                args_strs.push(receiver_str);
+                                                args_strs.append(&mut rest_strs);
+
+                                                // Reuse the same routing as ResourceModule::to_rust, but with our custom arg0 string.
+                                                let rhs_code = match resource {
+                                                    crate::resource_modules::ResourceModule::Signal(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::Texture(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::Mesh(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::Shape(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::ArrayOp(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::MapOp(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::QuaternionOp(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                };
+
+                                        return format!(
+                                            "        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                            node_id_with_self,
+                                            closure_param,
+                                            node_type,
+                                            closure_param,
+                                            resolved_field_path,
+                                            rhs_code
+                                        );
+                                    } else {
+                                        // Build a new args list where arg0 is a temp local inside the closure.
+                                        let mut new_args: Vec<Expr> =
+                                            Vec::with_capacity(call_args.len());
+                                        new_args.push(Expr::Ident("__t_recv_tmp".to_string()));
+                                        new_args.extend(call_args.iter().skip(1).cloned());
+
+                                        // Generate the resource call RHS using the temp receiver.
+                                        let rhs_code = resource.to_rust(
+                                            &new_args,
+                                            script,
+                                            /*needs_self*/ false,
+                                            current_func,
+                                        );
+
+                                        return format!(
+                                            "        api.mutate_node({}, |{}: &mut {}| {{ let __t_recv_tmp = {}.{}; {}.{} = {}; }});\n",
+                                            node_id_with_self,
+                                            closure_param,
+                                            node_type,
+                                            closure_param,
+                                            resolved_field_path,
+                                            closure_param,
+                                            resolved_field_path,
+                                            rhs_code
+                                        );
+                                    }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // SECOND PASS: Extract nested API calls to avoid borrow checker issues
                 // This handles cases like api.call_function_id(api.get_parent(collision_id), ...)
                 // Only extracts NESTED API calls, not top-level ones
@@ -2434,18 +2603,6 @@ impl Stmt {
                                     format!("__g.{} = {}", rest_path, final_rhs)
                                 };
                                 format!("{}        {}\n", temp_decl, behavior.emit_get_set_block(&node_id_with_self, &mutate_expr, &node_type))
-                            } else {
-                                format!(
-                                    "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
-                                    temp_decl,
-                                    node_id_with_self,
-                                    clean_closure_var,
-                                    node_type,
-                                    clean_closure_var,
-                                    resolved_field_path,
-                                    final_rhs
-                                )
-                            }
                         } else {
                             format!(
                                 "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
@@ -2453,6 +2610,26 @@ impl Stmt {
                                 node_id_with_self,
                                 clean_closure_var,
                                 node_type,
+                                clean_closure_var,
+                                resolved_field_path,
+                                final_rhs
+                            )
+                        }
+                        } else {
+                            // When node_type is empty (e.g. TypeScript class without extends) or not a known engine type, use script's Rust struct name
+                            let closure_type = if node_type.is_empty()
+                                || string_to_node_type(&node_type).is_none()
+                            {
+                                script.rust_struct_name.as_deref().unwrap_or("Node")
+                            } else {
+                                node_type.as_str()
+                            };
+                            format!(
+                                "{}        api.mutate_node({}, |{}: &mut {}| {{ {}.{} = {}; }});\n",
+                                temp_decl,
+                                node_id_with_self,
+                                clean_closure_var,
+                                closure_type,
                                 clean_closure_var,
                                 resolved_field_path,
                                 final_rhs
@@ -3505,12 +3682,24 @@ impl Stmt {
 
                 // If var is a global (Root, @global TestGlobal, etc.), use NodeID::from_u32 from global registry (Root=1, first global=2, ...).
                 // Otherwise use the node variable's _id suffix.
-                let node_id_expr = script
+                let mut node_id_expr = script
                     .global_name_to_node_id
                     .get(var)
                     .copied()
                     .map(|id| format!("NodeID::from_u32({})", id))
                     .unwrap_or_else(|| format!("{}_id", var));
+                // If var is Option<NodeID> (e.g. from get_node), unwrap so get_script_var_id/set_script_var_id get NodeID
+                if let Some(ty) = script.get_variable_type(var).or_else(|| {
+                    current_func.and_then(|f| {
+                        f.locals.iter().find(|v| v.name == *var).and_then(|v| v.typ.as_ref())
+                    })
+                }) {
+                    if matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
+                        || matches!(ty, Type::Custom(name) if name == "UuidOption")
+                    {
+                        node_id_expr = format!("{}.expect(\"Child node not found\")", node_id_expr);
+                    }
+                }
 
                 // Precompute the variable ID hash at compile time
                 use crate::prelude::string_to_u64;
@@ -3534,12 +3723,23 @@ impl Stmt {
                 // rhs is TypedExpr, which already passes span through
 
                 // If var is a global, use NodeID::from_u32 from global registry; else use {}_id
-                let node_id_expr = script
+                let mut node_id_expr = script
                     .global_name_to_node_id
                     .get(var)
                     .copied()
                     .map(|id| format!("NodeID::from_u32({})", id))
                     .unwrap_or_else(|| format!("{}_id", var));
+                if let Some(ty) = script.get_variable_type(var).or_else(|| {
+                    current_func.and_then(|f| {
+                        f.locals.iter().find(|v| v.name == *var).and_then(|v| v.typ.as_ref())
+                    })
+                }) {
+                    if matches!(ty, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode))
+                        || matches!(ty, Type::Custom(name) if name == "UuidOption")
+                    {
+                        node_id_expr = format!("{}.expect(\"Child node not found\")", node_id_expr);
+                    }
+                }
 
                 // Precompute the variable ID hash at compile time
                 use crate::prelude::string_to_u64;

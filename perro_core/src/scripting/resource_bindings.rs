@@ -63,14 +63,26 @@ impl ModuleCodegen for SignalResource {
                 prehash_if_literal(&signal)
             }
             SignalResource::Connect | SignalResource::Emit | SignalResource::EmitDeferred => {
-                // -- Fix: Accept both u64 and Type::Custom("Signal") as passthrough variables
+                // First arg is the signal. Pass through if already typed as signal/u64 or if it's
+                // not a string literal (variable/expr is already u64). Only prehash string literals.
                 let arg_expr = args.get(0).unwrap();
                 let arg_type = script.infer_expr_type(arg_expr, current_func);
+                let first = args_strs[0].trim();
 
                 let signal = match arg_type {
-                    Some(Type::Number(NumberKind::Unsigned(64))) => args_strs[0].clone(),
-                    Some(Type::Signal) => args_strs[0].clone(),
-                    _ => prehash_if_literal(&args_strs[0]),
+                    Some(Type::Number(NumberKind::Unsigned(64))) | Some(Type::Signal) => {
+                        args_strs[0].clone()
+                    }
+                    _ => {
+                        if first.starts_with('"')
+                            || (first.starts_with("String::from(") && first.ends_with(')'))
+                        {
+                            prehash_if_literal(&args_strs[0])
+                        } else {
+                            // Variable or expression — already a u64/signal, use as-is (same as Array/Map/Texture).
+                            args_strs[0].clone()
+                        }
+                    }
                 };
 
                 match self {
@@ -199,7 +211,7 @@ impl ModuleCodegen for ArrayResource {
                 let array_type = script.infer_expr_type(array_expr, current_func);
 
                 let inner_type =
-                    if let Some(Type::Container(ContainerKind::Array, inner_types)) = array_type {
+                    if let Some(Type::Container(ContainerKind::Array, ref inner_types)) = array_type {
                         inner_types.get(0).cloned().unwrap_or(Type::Object)
                     } else {
                         Type::Object // Fallback if array type couldn't be inferred
@@ -221,14 +233,18 @@ impl ModuleCodegen for ArrayResource {
                         inner_type.to_rust_type(),
                         raw_json_content
                     );
-                } else if value_code.starts_with("json!(")
-                    && matches!(inner_type, Type::Object | Type::Any)
+                } else if matches!(inner_type, Type::Object | Type::Any)
+                    || matches!(inner_type, Type::Custom(ref n) if n == "Value")
                 {
-                    // If target is Type::Object, json! is fine, just use the string directly
-                    // No change needed.
-                } else if matches!(inner_type, Type::Object | Type::Any) {
-                    // For dynamic arrays (any[]), wrap the value in json!()
+                    // For dynamic arrays (Vec<Value>), wrap the value in json!() so it becomes Value
+                    if !value_code.starts_with("json!(") {
+                        value_code = format!("json!({})", value_code);
+                    }
+                } else if array_type.is_none() && !value_code.starts_with("json!(") {
+                    // Array type unknown (e.g. var arr = Array.new()) - assume Vec<Value> and wrap
                     value_code = format!("json!({})", value_code);
+                } else if value_code.starts_with("json!(") {
+                    // Already json! and target is typed - no change
                 } else {
                     // Perform implicit cast if needed and not already handled
                     if let Some(actual_value_type) =
@@ -260,13 +276,30 @@ impl ModuleCodegen for ArrayResource {
                     }
                 }
 
+                // Final safety: primitives pushed to Vec<Value> must be wrapped
+                let is_dynamic_element = matches!(inner_type, Type::Object | Type::Any)
+                    || matches!(inner_type, Type::Custom(ref n) if n == "Value")
+                    || array_type.is_none();
+                if !value_code.starts_with("json!(")
+                    && (value_code.ends_with("i32")
+                        || value_code.ends_with("i64")
+                        || value_code.ends_with("f32")
+                        || value_code.ends_with("f64")
+                        || value_code.starts_with("String::from(")
+                        || (value_code.starts_with('"') && value_code.len() > 1))
+                    && is_dynamic_element
+                {
+                    value_code = format!("json!({})", value_code);
+                }
+
                 format!("{}.push({})", args_strs[0], value_code)
             }
             ArrayResource::Pop => {
                 format!("{}.pop()", args_strs[0])
             }
             ArrayResource::Len => {
-                format!("{}.len()", args_strs[0])
+                // Vec::len() returns usize; script type is u32, so convert
+                format!("{}.len().try_into().unwrap()", args_strs[0])
             }
             ArrayResource::Insert => {
                 let array_expr = &args[0];
@@ -405,11 +438,24 @@ impl ModuleCodegen for MapResource {
                 let mut val_code =
                     args[2].to_rust(needs_self, script, val_type.as_ref(), current_func, None);
 
-                // For dynamic maps (any value type), wrap the value in json!()
-                if let Some(Type::Object) = val_type.as_ref() {
-                    if !val_code.starts_with("json!(") {
-                        val_code = format!("json!({})", val_code);
-                    }
+                // For dynamic maps (HashMap<String, Value>), wrap the value in json!()
+                let is_dynamic_val = matches!(val_type.as_ref(), Some(Type::Object | Type::Any))
+                    || matches!(val_type.as_ref(), Some(Type::Custom(n)) if n == "Value")
+                    || val_type.is_none();
+                if is_dynamic_val && !val_code.starts_with("json!(") {
+                    val_code = format!("json!({})", val_code);
+                }
+                // Final safety: primitive value for HashMap<String, Value> must be wrapped
+                if !val_code.starts_with("json!(")
+                    && (val_code.ends_with("i32")
+                        || val_code.ends_with("i64")
+                        || val_code.ends_with("f32")
+                        || val_code.ends_with("f64")
+                        || val_code.starts_with("String::from(")
+                        || (val_code.starts_with('"') && val_code.len() > 1))
+                    && is_dynamic_val
+                {
+                    val_code = format!("json!({})", val_code);
                 }
 
                 format!("{}.insert({}, {})", args_strs[0], key_code, val_code)
@@ -420,7 +466,16 @@ impl ModuleCodegen for MapResource {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let key_code =
                     args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
-                if let Some(Type::String) = key_type.as_ref() {
+                let use_as_str = matches!(key_type.as_ref(), Some(Type::String))
+                    && !key_code.contains("to_u8()")
+                    && !key_code.contains("to_u16()")
+                    && !key_code.contains("to_u32()")
+                    && !key_code.contains("to_u64()")
+                    && !key_code.contains("to_i8()")
+                    && !key_code.contains("to_i16()")
+                    && !key_code.contains("to_i32()")
+                    && !key_code.contains("to_i64()");
+                if use_as_str {
                     format!("{}.remove({}.as_str())", args_strs[0], key_code)
                 } else {
                     format!("{}.remove(&{})", args_strs[0], key_code)
@@ -435,14 +490,22 @@ impl ModuleCodegen for MapResource {
                 let key_code =
                     args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
 
-                if let Some(Type::String) = key_type.as_ref() {
-                    // for String keys, .as_str() may be appropriate
+                // Only use .as_str() for HashMap<String, V>; for other key types use &key
+                let use_as_str = matches!(key_type.as_ref(), Some(Type::String))
+                    && !key_code.contains("to_u8()")
+                    && !key_code.contains("to_u16()")
+                    && !key_code.contains("to_u32()")
+                    && !key_code.contains("to_u64()")
+                    && !key_code.contains("to_i8()")
+                    && !key_code.contains("to_i16()")
+                    && !key_code.contains("to_i32()")
+                    && !key_code.contains("to_i64()");
+                if use_as_str {
                     format!(
                         "{}.get({}.as_str()).cloned().unwrap_or_default()",
                         args_strs[0], key_code
                     )
                 } else {
-                    // for any other key type (i32, u64, f32, etc)
                     format!(
                         "{}.get(&{}).cloned().unwrap_or_default()",
                         args_strs[0], key_code
@@ -455,7 +518,16 @@ impl ModuleCodegen for MapResource {
                 let key_type = script.infer_map_key_type(&args[0], current_func);
                 let key_code =
                     args[1].to_rust(needs_self, script, key_type.as_ref(), current_func, None);
-                if let Some(Type::String) = key_type.as_ref() {
+                let use_as_str = matches!(key_type.as_ref(), Some(Type::String))
+                    && !key_code.contains("to_u8()")
+                    && !key_code.contains("to_u16()")
+                    && !key_code.contains("to_u32()")
+                    && !key_code.contains("to_u64()")
+                    && !key_code.contains("to_i8()")
+                    && !key_code.contains("to_i16()")
+                    && !key_code.contains("to_i32()")
+                    && !key_code.contains("to_i64()");
+                if use_as_str {
                     format!("{}.contains_key({}.as_str())", args_strs[0], key_code)
                 } else {
                     format!("{}.contains_key(&{})", args_strs[0], key_code)
@@ -464,7 +536,8 @@ impl ModuleCodegen for MapResource {
 
             // args: [map]
             MapResource::Len => {
-                format!("{}.len()", args_strs[0])
+                // HashMap::len() returns usize; script type is u32, so convert
+                format!("{}.len().try_into().unwrap()", args_strs[0])
             }
 
             // args: [map]
@@ -805,6 +878,41 @@ impl ModuleCodegen for QuaternionResource {
                 // `Quaternion::as_euler()` returns a Vector3 in degrees.
                 format!("({}).as_euler()", q_raw)
             }
+            QuaternionResource::RotateX => {
+                // For rotate helpers we can trust args_strs[0] (expected type is Quaternion).
+                let q = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "Quaternion::identity()".into());
+                let delta = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
+                format!("({}).rotate_x({})", q, delta)
+            }
+            QuaternionResource::RotateY => {
+                let q = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "Quaternion::identity()".into());
+                let delta = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
+                format!("({}).rotate_y({})", q, delta)
+            }
+            QuaternionResource::RotateZ => {
+                let q = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "Quaternion::identity()".into());
+                let delta = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
+                format!("({}).rotate_z({})", q, delta)
+            }
+            QuaternionResource::RotateEulerXYZ => {
+                let q = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "Quaternion::identity()".into());
+                let dp = args_strs.get(1).cloned().unwrap_or_else(|| "0.0".into());
+                let dy = args_strs.get(2).cloned().unwrap_or_else(|| "0.0".into());
+                let dr = args_strs.get(3).cloned().unwrap_or_else(|| "0.0".into());
+                format!("({}).rotate_euler_degrees({}, {}, {})", q, dp, dy, dr)
+            }
         }
     }
 }
@@ -814,7 +922,11 @@ impl ModuleTypes for QuaternionResource {
         match self {
             QuaternionResource::Identity
             | QuaternionResource::FromEuler
-            | QuaternionResource::FromEulerXYZ => {
+            | QuaternionResource::FromEulerXYZ
+            | QuaternionResource::RotateX
+            | QuaternionResource::RotateY
+            | QuaternionResource::RotateZ
+            | QuaternionResource::RotateEulerXYZ => {
                 Some(Type::EngineStruct(EngineStruct::Quaternion))
             }
             QuaternionResource::AsEuler => Some(Type::EngineStruct(EngineStruct::Vector3)),
@@ -832,6 +944,18 @@ impl ModuleTypes for QuaternionResource {
                 Type::Number(Float(32)),
             ]),
             QuaternionResource::AsEuler => Some(vec![Type::EngineStruct(EngineStruct::Quaternion)]),
+            QuaternionResource::RotateX
+            | QuaternionResource::RotateY
+            | QuaternionResource::RotateZ => Some(vec![
+                Type::EngineStruct(EngineStruct::Quaternion),
+                Type::Number(Float(32)),
+            ]),
+            QuaternionResource::RotateEulerXYZ => Some(vec![
+                Type::EngineStruct(EngineStruct::Quaternion),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+                Type::Number(Float(32)),
+            ]),
         }
     }
 
@@ -841,6 +965,12 @@ impl ModuleTypes for QuaternionResource {
             QuaternionResource::FromEuler => Some(vec!["euler_deg"]),
             QuaternionResource::FromEulerXYZ => Some(vec!["pitch_deg", "yaw_deg", "roll_deg"]),
             QuaternionResource::AsEuler => Some(vec!["q"]),
+            QuaternionResource::RotateX => Some(vec!["q", "delta_pitch_deg"]),
+            QuaternionResource::RotateY => Some(vec!["q", "delta_yaw_deg"]),
+            QuaternionResource::RotateZ => Some(vec!["q", "delta_roll_deg"]),
+            QuaternionResource::RotateEulerXYZ => {
+                Some(vec!["q", "delta_pitch_deg", "delta_yaw_deg", "delta_roll_deg"])
+            }
         }
     }
 }
@@ -876,6 +1006,9 @@ impl ResourceModule {
             ResourceModule::Texture(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
+            ResourceModule::Mesh(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
             ResourceModule::Shape(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
@@ -895,6 +1028,7 @@ impl ResourceModule {
         match self {
             ResourceModule::Signal(api) => api.return_type(),
             ResourceModule::Texture(api) => api.return_type(),
+            ResourceModule::Mesh(api) => api.return_type(),
             ResourceModule::Shape(api) => api.return_type(),
             ResourceModule::ArrayOp(api) => api.return_type(),
             ResourceModule::MapOp(api) => api.return_type(),
@@ -906,6 +1040,7 @@ impl ResourceModule {
         match self {
             ResourceModule::Signal(api) => api.param_types(),
             ResourceModule::Texture(api) => api.param_types(),
+            ResourceModule::Mesh(api) => api.param_types(),
             ResourceModule::Shape(api) => api.param_types(),
             ResourceModule::ArrayOp(api) => api.param_types(),
             ResourceModule::MapOp(api) => api.param_types(),
@@ -918,10 +1053,91 @@ impl ResourceModule {
         match self {
             ResourceModule::Signal(api) => api.param_names(),
             ResourceModule::Texture(api) => api.param_names(),
+            ResourceModule::Mesh(api) => api.param_names(),
             ResourceModule::Shape(api) => api.param_names(),
             ResourceModule::ArrayOp(api) => api.param_names(),
             ResourceModule::MapOp(api) => api.param_names(),
             ResourceModule::QuaternionOp(api) => api.param_names(),
+        }
+    }
+}
+
+// ===========================================================
+// Mesh API Implementations
+// ===========================================================
+
+impl ModuleCodegen for MeshResource {
+    fn to_rust_prepared(
+        &self,
+        _args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            MeshResource::Load => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
+                    arg
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        inner.to_string()
+                    } else {
+                        format!("&{}", arg)
+                    }
+                } else {
+                    format!("&{}", arg)
+                };
+                format!("api.Mesh.load({})", arg_str)
+            }
+            MeshResource::Preload => {
+                let arg = args_strs.get(0).cloned().unwrap_or_else(|| "\"\"".into());
+                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
+                    arg
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        inner.to_string()
+                    } else {
+                        format!("&{}", arg)
+                    }
+                } else {
+                    format!("&{}", arg)
+                };
+                format!("api.Mesh.preload({})", arg_str)
+            }
+            MeshResource::Remove => {
+                let arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "MeshID::nil()".into());
+                format!("api.Mesh.remove({})", arg)
+            }
+        }
+    }
+}
+
+impl ModuleTypes for MeshResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            MeshResource::Load | MeshResource::Preload => Some(Type::EngineStruct(EngineStruct::Mesh)),
+            MeshResource::Remove => None,
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            MeshResource::Load | MeshResource::Preload => Some(vec![Type::String]),
+            MeshResource::Remove => Some(vec![Type::EngineStruct(EngineStruct::Mesh)]),
+        }
+    }
+
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            MeshResource::Load | MeshResource::Preload => Some(vec!["path"]),
+            MeshResource::Remove => Some(vec!["mesh"]),
         }
     }
 }

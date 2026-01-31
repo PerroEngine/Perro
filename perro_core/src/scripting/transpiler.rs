@@ -663,7 +663,7 @@ pub fn transpile(
     } else {
         sorted_global_names.clone()
     };
-    // Single source of truth: Root = 1; @global names = 2, 3, 4... by alphabetical order (globals are siblings of Root, same parent None).
+    // Single source of truth: Root = 1 always (scene root node); @global names = 2, 3, 4... (first created node after root is always 2).
     let mut global_name_to_node_id: std::collections::HashMap<String, u32> =
         std::collections::HashMap::new();
     global_name_to_node_id.insert("Root".to_string(), 1);

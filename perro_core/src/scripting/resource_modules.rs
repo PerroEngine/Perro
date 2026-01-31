@@ -9,6 +9,7 @@
 pub enum ResourceModule {
     Signal(SignalResource),
     Texture(TextureResource),
+    Mesh(MeshResource),
     Shape(ShapeResource),
     ArrayOp(ArrayResource),
     MapOp(MapResource),
@@ -32,6 +33,13 @@ pub enum TextureResource {
     GetWidth,
     GetHeight,
     GetSize,
+}
+
+#[derive(Debug, Clone)]
+pub enum MeshResource {
+    Load,
+    Preload,
+    Remove,
 }
 
 #[derive(Debug, Clone)]
@@ -75,4 +83,12 @@ pub enum QuaternionResource {
     FromEulerXYZ,
     /// Quaternion.as_euler(q: Quaternion) -> Vector3 (degrees)
     AsEuler,
+    /// Quaternion.rotate_x(q: Quaternion, delta_deg: f32) -> Quaternion
+    RotateX,
+    /// Quaternion.rotate_y(q: Quaternion, delta_deg: f32) -> Quaternion
+    RotateY,
+    /// Quaternion.rotate_z(q: Quaternion, delta_deg: f32) -> Quaternion
+    RotateZ,
+    /// Quaternion.rotate_euler(q: Quaternion, delta_pitch_deg: f32, delta_yaw_deg: f32, delta_roll_deg: f32) -> Quaternion
+    RotateEulerXYZ,
 }

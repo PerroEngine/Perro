@@ -1,125 +1,3 @@
-[scripts.global2_pup]
-src = "res://global2.pup"
-lang = "pup"
-id = "global2_pup"
-
-[[scripts.global2_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 71
-
-[scripts.global2_pup.names]
-__t_a = "a"
-
-[scripts.glob_test_pup]
-src = "res://glob_test.pup"
-lang = "pup"
-id = "glob_test_pup"
-
-[[scripts.glob_test_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 71
-
-[scripts.glob_test_pup.names]
-__t_b = "b"
-
-[scripts.player_pup]
-src = "res://player.pup"
-lang = "pup"
-id = "player_pup"
-
-[[scripts.player_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 129
-
-[[scripts.player_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 129
-g_end = 134
-
-[[scripts.player_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 134
-g_end = 139
-
-[[scripts.player_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 139
-g_end = 155
-
-[[scripts.player_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 155
-g_end = 201
-
-[[scripts.player_pup.lines]]
-s_start = 251
-s_end = 251
-g_start = 201
-g_end = 213
-
-[scripts.player_pup.names]
-__t_test_b = "test_b"
-__t_test_var = "test_var"
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-tex_id = "tex"
-__t_time = "time"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
-__t_cab = "cab"
-__t_test = "test"
-__t_counter = "counter"
-__t_Cabbage = "Cabbage"
-
-[scripts.root_pup]
-src = "res://root.pup"
-lang = "pup"
-id = "root_pup"
-
-[[scripts.root_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 70
-
-[[scripts.root_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 70
-g_end = 81
-
-[scripts.root_pup.names]
-__t_gas = "gas"
-__t_cabbage = "cabbage"
-
-[scripts.col_pup]
-src = "res://col.pup"
-lang = "pup"
-id = "col_pup"
-
-[[scripts.col_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 72
-
-[[scripts.col_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 72
-g_end = 78
-
-[scripts.col_pup.names]
-s_id = "s"
-
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
 lang = "pup"
@@ -144,9 +22,9 @@ g_start = 83
 g_end = 90
 
 [scripts.test_engine_structs_pup.names]
+__t_test_nested_access = "test_nested_access"
 __t_test_constructors = "test_constructors"
 __t_test_variable_access = "test_variable_access"
-__t_test_nested_access = "test_nested_access"
 
 [scripts.shape_pup]
 src = "res://shape.pup"
@@ -161,18 +39,19 @@ g_end = 68
 
 [scripts.shape_pup.names]
 
-[scripts.p2_pup]
-src = "res://p2.pup"
+[scripts.global2_pup]
+src = "res://global2.pup"
 lang = "pup"
-id = "p2_pup"
+id = "global2_pup"
 
-[[scripts.p2_pup.lines]]
+[[scripts.global2_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 69
+g_end = 71
 
-[scripts.p2_pup.names]
+[scripts.global2_pup.names]
+__t_a = "a"
 
 [scripts.camera_pup]
 src = "res://camera.pup"
@@ -187,3 +66,118 @@ g_end = 88
 
 [scripts.camera_pup.names]
 __t_speed = "speed"
+
+[scripts.col_pup]
+src = "res://col.pup"
+lang = "pup"
+id = "col_pup"
+
+[[scripts.col_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 72
+
+[[scripts.col_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 72
+g_end = 78
+
+[scripts.col_pup.names]
+s_id = "s"
+
+[scripts.player_pup]
+src = "res://player.pup"
+lang = "pup"
+id = "player_pup"
+
+[[scripts.player_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 132
+
+[[scripts.player_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 132
+g_end = 137
+
+[[scripts.player_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 137
+g_end = 153
+
+[[scripts.player_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 153
+g_end = 199
+
+[[scripts.player_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 199
+g_end = 211
+
+[scripts.player_pup.names]
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+__t_cab = "cab"
+tex_id = "tex"
+__t_test = "test"
+__t_time = "time"
+cam_id = "cam"
+__t_test_b = "test_b"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
+__t_test_var = "test_var"
+__t_Cabbage = "Cabbage"
+
+[scripts.root_pup]
+src = "res://root.pup"
+lang = "pup"
+id = "root_pup"
+
+[[scripts.root_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 70
+
+[[scripts.root_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 70
+g_end = 81
+
+[scripts.root_pup.names]
+__t_gas = "gas"
+__t_cabbage = "cabbage"
+
+[scripts.glob_test_pup]
+src = "res://glob_test.pup"
+lang = "pup"
+id = "glob_test_pup"
+
+[[scripts.glob_test_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 71
+
+[scripts.glob_test_pup.names]
+__t_b = "b"
+
+[scripts.p2_pup]
+src = "res://p2.pup"
+lang = "pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 69
+
+[scripts.p2_pup.names]

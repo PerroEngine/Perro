@@ -7,7 +7,13 @@ pub struct TypeScriptAPI;
 
 impl TypeScriptAPI {
     pub fn resolve(module: &str, func: &str) -> Option<ApiModule> {
-        match module {
+        // Match case-insensitively for console so "console".log works
+        let module_key = if module.eq_ignore_ascii_case("console") {
+            TypeScriptConsole::NAME
+        } else {
+            module
+        };
+        match module_key {
             TypeScriptJSON::NAME => TypeScriptJSON::resolve_method(func),
             TypeScriptTime::NAME => TypeScriptTime::resolve_method(func),
             TypeScriptOS::NAME => TypeScriptOS::resolve_method(func),
@@ -67,7 +73,7 @@ impl TypeScriptOS {
 
 pub struct TypeScriptConsole;
 impl TypeScriptConsole {
-    pub const NAME: &'static str = "console";
+    pub const NAME: &'static str = "Console";
 
     pub fn resolve_method(method: &str) -> Option<ApiModule> {
         match method {
@@ -80,18 +86,6 @@ impl TypeScriptConsole {
     }
 }
 
-// ScriptType instantiation is handled through node methods, not as an API module
-// pub struct TypeScriptScriptType;
-// impl TypeScriptScriptType {
-//     pub const NAME: &'static str = "ScriptType";
-//
-//     pub fn resolve_method(method: &str) -> Option<ApiModule> {
-//         match method {
-//             "instantiate" => Some(ApiModule::ScriptType(ScriptTypeApi::Instantiate)),
-//             _ => None,
-//         }
-//     }
-// }
 
 pub struct TypeScriptInput;
 impl TypeScriptInput {

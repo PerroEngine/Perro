@@ -1,0 +1,9 @@
+// Compile-only test: MeshInstance3D API (mesh) + Node3D.
+@script TestMeshInstance3DApi extends MeshInstance3D
+
+on init() {
+    self.mesh = Mesh.load("res://mesh.obj")
+    var pos = self.transform.position
+    self.transform.rotation = Quaternion.identity()
+    var n = self.name
+}

@@ -13,7 +13,23 @@
       "base": {
         "type": "Node",
         "name": "Pup_001",
-        "script_path": "res://types.pup"
+        "script_path": "res://puptests/type_tests/types.pup"
+      }
+    },
+    "1": {
+      "type": "Node2D",
+      "base": {
+        "type": "Node",
+        "name": "Pup_001",
+        "script_path": "res://types.ts"
+      }
+    },
+    "1": {
+      "type": "Node2D",
+      "base": {
+        "type": "Node",
+        "name": "Pup_001",
+        "script_path": "res://types.cs"
       }
     }
   }

@@ -1,0 +1,84 @@
+// Compile-only test: All resource APIs — Texture, Mesh, Quaternion, Shape2D, Signal (new/connect/emit/emit_deferred), Array, Map.
+@script TestResourceApi extends Node
+
+var emit_count: int = 0
+
+on init() {
+    test_texture()
+    test_mesh()
+    test_quaternion()
+    test_shape2d()
+    test_signal_new_connect_emit()
+    test_signal_emit_deferred()
+    test_array()
+    test_map()
+}
+
+fn test_texture() {
+    var tex = Texture.load("res://icon.png")
+    var tex2 = Texture.preload("res://icon.png")
+    var w = Texture.get_width(tex)
+    var h = Texture.get_height(tex)
+    var sz = Texture.get_size(tex)
+}
+
+fn test_mesh() {
+    var mesh = Mesh.load("res://mesh.obj")
+    var mesh2 = Mesh.preload("res://mesh.obj")
+}
+
+fn test_quaternion() {
+    var q = Quaternion.identity()
+    var q2 = Quaternion.from_euler_xyz(0.0, 90.0, 0.0)
+    var euler = Quaternion.as_euler(q2)
+    var q3 = Quaternion.rotate_x(q, 45.0)
+    var q4 = Quaternion.rotate_y(q, 10.0)
+    var q5 = Quaternion.rotate_z(q, 5.0)
+    var q6 = Quaternion.rotate_euler_xyz(q, 1.0, 2.0, 3.0)
+}
+
+fn test_shape2d() {
+    var rect = Shape2D.rectangle(10.0, 20.0)
+    var circle = Shape2D.circle(5.0)
+    var square = Shape2D.square(8.0)
+    var tri = Shape2D.triangle(4.0, 6.0)
+}
+
+fn test_signal_new_connect_emit() {
+    var sig = Signal.new("test_signal")
+    Signal.connect("test_signal", on_signal)
+    sig.emit()
+    Signal.emit(sig)
+}
+
+fn test_signal_emit_deferred() {
+    var sig2 = Signal.new("other_signal")
+    Signal.connect("other_signal", on_other_signal)
+    sig2.emit_deferred()
+    Signal.emit_deferred(sig2)
+}
+
+fn test_array() {
+    var arr = Array.new()
+    arr.push(1)
+    arr.push("two")
+    var len = arr.len
+    var elem = arr[0]
+}
+
+fn test_map() {
+    var m = Map.new()
+    m.insert("key", "value")
+    var v = m.get("key")
+    var has = m.contains("key")
+    var mlen = m.len
+}
+
+fn on_signal() {
+    emit_count = emit_count + 1
+    Console.print("signal received")
+}
+
+fn on_other_signal() {
+    Console.print("other_signal received")
+}

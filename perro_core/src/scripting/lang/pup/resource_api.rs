@@ -13,6 +13,7 @@ impl PupResourceAPI {
         match module {
             PupSignal::NAME => PupSignal::resolve_method(func),
             PupTexture::NAME => PupTexture::resolve_method(func),
+            PupMesh::NAME => PupMesh::resolve_method(func),
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
             PupShape2D::NAME => PupShape2D::resolve_method(func),
@@ -26,6 +27,7 @@ impl PupResourceAPI {
         vec![
             PupSignal::NAME,
             PupTexture::NAME,
+            PupMesh::NAME,
             PupArray::NAME,
             PupMap::NAME,
             PupShape2D::NAME,
@@ -43,6 +45,7 @@ impl PupResourceAPI {
         match resource_name {
             PupSignal::NAME => PupSignal::get_all_method_names(),
             PupTexture::NAME => PupTexture::get_all_method_names(),
+            PupMesh::NAME => PupMesh::get_all_method_names(),
             PupArray::NAME => PupArray::get_all_method_names(),
             PupMap::NAME => PupMap::get_all_method_names(),
             PupShape2D::NAME => PupShape2D::get_all_method_names(),
@@ -100,6 +103,25 @@ impl PupTexture {
             "get_height",
             "get_size",
         ]
+    }
+}
+
+/// Mesh resource API - for loading/managing meshes
+pub struct PupMesh;
+impl PupMesh {
+    pub const NAME: &'static str = "Mesh";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "load" => Some(ResourceModule::Mesh(MeshResource::Load)),
+            "preload" => Some(ResourceModule::Mesh(MeshResource::Preload)),
+            "remove" => Some(ResourceModule::Mesh(MeshResource::Remove)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["load", "preload", "remove"]
     }
 }
 
@@ -191,11 +213,24 @@ impl PupQuaternion {
             "from_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEuler)),
             "from_euler_xyz" => Some(ResourceModule::QuaternionOp(QuaternionResource::FromEulerXYZ)),
             "as_euler" => Some(ResourceModule::QuaternionOp(QuaternionResource::AsEuler)),
+            "rotate_x" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateX)),
+            "rotate_y" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateY)),
+            "rotate_z" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateZ)),
+            "rotate_euler_xyz" => Some(ResourceModule::QuaternionOp(QuaternionResource::RotateEulerXYZ)),
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
-        vec!["identity", "from_euler", "from_euler_xyz", "as_euler"]
+        vec![
+            "identity",
+            "from_euler",
+            "from_euler_xyz",
+            "as_euler",
+            "rotate_x",
+            "rotate_y",
+            "rotate_z",
+            "rotate_euler_xyz",
+        ]
     }
 }

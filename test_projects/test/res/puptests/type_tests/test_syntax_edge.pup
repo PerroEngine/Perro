@@ -1,0 +1,24 @@
+// Compile-only test: Edge cases — conversions (as), :: script access, numeric literals with _.
+@script TestSyntaxEdge extends Node2D
+
+var some_var: int = 42
+fn get_my_int() -> int { return 100 }
+
+on init() {
+    var a: int = 10
+    var b: float = a as float
+    var c: int = b as int
+    var s: string = a as string
+    var d: decimal = 123.456_789
+    var bi: big = 1_000_000_000_000
+    var i64: int_64 = 2_000_000
+
+    var v = some_var
+    var r = get_my_int()
+    some_var = 99
+
+    var child = self.get_node("Child")
+    var cv = child::some_script_var
+    var cr = child::some_method(1.0)
+
+}

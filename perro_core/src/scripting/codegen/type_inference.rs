@@ -67,6 +67,14 @@ impl Script {
             (from_ty, Type::Option(inner)) if from_ty == inner.as_ref() => {
                 return format!("Some({})", expr);
             }
+            // Option<NodeID> -> NodeID (e.g. get_child_by_name result assigned to NodeID)
+            (Type::Option(inner), Type::DynNode) if matches!(inner.as_ref(), Type::DynNode) => {
+                return format!("{}.expect(\"Child node not found\")", expr);
+            }
+            // UuidOption (script name for Option<NodeID>) -> NodeID
+            (Type::Custom(name), Type::DynNode) if name == "UuidOption" => {
+                return format!("{}.expect(\"Child node not found\")", expr);
+            }
             (Number(Signed(_) | Unsigned(_)), Number(Float(32))) => {
                 return format!("({} as f32)", expr);
             }
@@ -113,7 +121,20 @@ impl Script {
             }
             // Quaternion -> f32 (2D rotation angle)
             (EngineStruct(EngineStructKind::Quaternion), Number(Float(32))) => {
-                return format!("{}.to_rotation_2d()", expr);
+                // Never apply to_rotation_2d() to a simple numeric literal (e.g. 5.0f32).
+                // That would mean the literal was wrongly inferred as Quaternion (e.g. Shape2D
+                // radius/width/height); pass through as-is.
+                let trimmed = expr.trim();
+                let is_bare_number = trimmed
+                    .strip_suffix("f32")
+                    .or_else(|| trimmed.strip_suffix("f64"))
+                    .map(|s| s.trim().parse::<f64>().is_ok())
+                    .unwrap_or(false)
+                    || trimmed.parse::<f64>().is_ok();
+                if !is_bare_number {
+                    return format!("{}.to_rotation_2d()", expr);
+                }
+                return expr.to_string();
             }
             // f32 -> Quaternion (2D rotation)
             (Number(Float(32)), EngineStruct(EngineStructKind::Quaternion)) => {
@@ -144,6 +165,34 @@ impl Script {
             if matches!(to, Type::DynNode) && (expr.ends_with("_id") || expr == "self.id") {
                 return expr.to_string();
             }
+        }
+
+        // Value (Object/Any) to BigInt/Decimal: use proper extraction, not primitive "as" cast
+        match (from, to) {
+            (Type::Object | Type::Any, Type::Number(NumberKind::BigInt)) => {
+                return format!(
+                    "({}.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default())))",
+                    expr, expr
+                );
+            }
+            (Type::Object | Type::Any, Type::Number(NumberKind::Decimal)) => {
+                return format!(
+                    "({}.as_str().map(|s| rust_decimal::Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default()))",
+                    expr, expr
+                );
+            }
+            // BigInt -> unsigned (e.g. map key): use to_u*(), not .as_u64() (Value) or "as" cast
+            (Type::Number(NumberKind::BigInt), Type::Number(NumberKind::Unsigned(w))) => {
+                return match w {
+                    8 => format!("{}.to_u8().unwrap_or_default()", expr),
+                    16 => format!("{}.to_u16().unwrap_or_default()", expr),
+                    32 => format!("{}.to_u32().unwrap_or_default()", expr),
+                    64 => format!("{}.to_u64().unwrap_or_default()", expr),
+                    128 => format!("{}.to_u128().unwrap_or_default()", expr),
+                    _ => format!("({}.to_u64().unwrap_or_default() as u{})", expr, w),
+                };
+            }
+            _ => {}
         }
 
         // For now, use simple cast syntax
@@ -660,6 +709,10 @@ impl Script {
 
         match base_type {
             Type::Node(node_type) => {
+                // Script variables (e.g. self.typed_big_int) are on the same script instance as the node
+                if let Some(var) = self.variables.iter().find(|v| v.name == member) {
+                    return var.typ.clone();
+                }
                 // Use PUP_NODE_API to get the script type (e.g., Texture instead of Option<Uuid>)
                 use crate::scripting::lang::pup::node_api::PUP_NODE_API;
                 let fields = PUP_NODE_API.get_fields(node_type);
@@ -700,6 +753,12 @@ impl Script {
                 if type_name == &self.node_type {
                     if let Some(var) = self.variables.iter().find(|v| v.name == member) {
                         return var.typ.clone();
+                    }
+                    // Script's node_type is the engine type (e.g. Camera2D); resolve member from engine registry
+                    if let Some(node_type_enum) = string_to_node_type(type_name) {
+                        if let Some(ty) = ENGINE_REGISTRY.get_field_type_node(&node_type_enum, member) {
+                            return Some(ty);
+                        }
                     }
                 }
 

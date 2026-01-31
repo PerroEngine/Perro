@@ -37,8 +37,14 @@ impl CallModule {
             }
             CallModule::NodeMethod(method_ref) => {
                 use crate::api_bindings::generate_rust_args;
+                use crate::scripting::ast::Type;
                 use crate::structs::engine_bindings::EngineMethodCodegen;
-                let expected_arg_types = method_ref.param_types();
+                // Receiver (node id) is first arg; param_types() omits it, so prepend DynNode so Option<NodeID> gets unwrapped
+                let expected_arg_types = method_ref.param_types().map(|p| {
+                    let mut full = vec![Type::DynNode];
+                    full.extend(p);
+                    full
+                });
                 let rust_args_strings = generate_rust_args(
                     args,
                     script,

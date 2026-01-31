@@ -203,14 +203,26 @@ pub(crate) fn generate_rust_args(
             //    This part happens first on the raw expression's representation.
             if let Some(expected_types) = expected_arg_types {
                 if let Some(expect_ty) = expected_types.get(i) {
-                    if let Some(actual_ty) = script.infer_expr_type(a, current_func) {
-                        if actual_ty.can_implicitly_convert_to(expect_ty) && actual_ty != *expect_ty
-                        {
+                    let actual_ty = script.infer_expr_type(a, current_func);
+                    if let Some(ref actual_ty) = actual_ty {
+                        if actual_ty.can_implicitly_convert_to(expect_ty) && actual_ty != expect_ty {
                             code_raw = script.generate_implicit_cast_for_expr(
-                                &code_raw, // Use code_raw here!
-                                &actual_ty, expect_ty,
+                                &code_raw,
+                                actual_ty,
+                                expect_ty,
                             );
                         }
+                    } else if i == 0
+                        && matches!(expect_ty, Type::DynNode)
+                        && matches!(a, Expr::Ident(_))
+                        && !code_raw.is_empty()
+                        && code_raw != "self.id"
+                        && code_raw != "self"
+                        && !code_raw.contains(".expect(")
+                    {
+                        // Fallback: first arg expects NodeID; unwrap Option<NodeID> so get_script_var_id/call_function_id get NodeID.
+                        // Covers both unknown actual_ty and Option(DynNode)/UuidOption when implicit cast wasn't applied.
+                        code_raw = format!("{}.expect(\"Child node not found\")", code_raw);
                     }
                 }
             }

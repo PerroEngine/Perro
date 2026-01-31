@@ -496,7 +496,7 @@ impl Renderer3D {
         material_manager: &mut MaterialManager,
         device: &Device,
         queue: &Queue,
-    ) {
+    ) -> Option<MeshID> {
         let mesh_id = match mesh_manager.get_or_load_mesh(mesh_path, device, queue) {
             Some(id) => id,
             None => {
@@ -504,10 +504,30 @@ impl Renderer3D {
                     "⚠️ 3D mesh failed to load: \"{}\" (unknown path or load error). Use built-ins: __cube__, __sphere__, __plane__, etc.",
                     mesh_path
                 );
-                return;
+                return None;
             }
         };
 
+        self.queue_mesh_id(
+            node_id,
+            mesh_id,
+            transform,
+            material_path,
+            mesh_manager,
+            material_manager,
+        );
+        Some(mesh_id)
+    }
+
+    pub fn queue_mesh_id(
+        &mut self,
+        node_id: crate::ids::NodeID,
+        mesh_id: MeshID,
+        transform: Transform3D,
+        material_path: Option<&str>,
+        mesh_manager: &mut MeshManager,
+        material_manager: &mut MaterialManager,
+    ) {
         let material_path = material_path.unwrap_or("__default__");
         let material_gpu_slot = material_manager.get_or_upload_material(material_path, self);
 

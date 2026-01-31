@@ -27,6 +27,9 @@ pub enum NodeFieldRef {
     Sprite2DTextureId,
     Sprite2DRegion,
 
+    // MeshInstance3D fields
+    MeshInstance3DMeshId,
+
     // Camera2D fields
     Camera2DZoom,
     Camera2DActive,
@@ -116,27 +119,27 @@ impl NodeFieldAssignBehavior {
     pub fn emit_rotate3d_block_expr(&self, node_id: &str, node_type_name: &str, delta_expr: &str) -> String {
         match self {
             NodeFieldAssignBehavior::RotateLocal3DX => format!(
-                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotate_x({}); }}); }}",
+                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotation = n.transform.rotation.rotate_x({}); }}); }}",
                 node_id, node_type_name, delta_expr
             ),
             NodeFieldAssignBehavior::RotateLocal3DY => format!(
-                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotate_y({}); }}); }}",
+                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotation = n.transform.rotation.rotate_y({}); }}); }}",
                 node_id, node_type_name, delta_expr
             ),
             NodeFieldAssignBehavior::RotateLocal3DZ => format!(
-                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotate_z({}); }}); }}",
+                "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotation = n.transform.rotation.rotate_z({}); }}); }}",
                 node_id, node_type_name, delta_expr
             ),
             NodeFieldAssignBehavior::RotateGlobal3DX => format!(
-                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotate_x({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotation = __g.rotation.rotate_x({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
                 node_id, delta_expr, node_id, node_id, node_type_name
             ),
             NodeFieldAssignBehavior::RotateGlobal3DY => format!(
-                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotate_y({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotation = __g.rotation.rotate_y({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
                 node_id, delta_expr, node_id, node_id, node_type_name
             ),
             NodeFieldAssignBehavior::RotateGlobal3DZ => format!(
-                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotate_z({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotation = __g.rotation.rotate_z({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
                 node_id, delta_expr, node_id, node_id, node_type_name
             ),
             _ => "{ /* not a rotate3d behavior */ }".to_string(),
@@ -176,24 +179,14 @@ impl NodeFieldAssignBehavior {
                 rhs_expr.to_string()
             };
             if is_global {
-                let rot_call = match axis {
-                    "x" => "rotate_x",
-                    "y" => "rotate_y",
-                    _ => "rotate_z",
-                };
                 return Some(format!(
-                    "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.{}({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
-                    node_id, rot_call, delta, node_id, node_id, node_type_name
+                    "{{ let mut __g = api.get_global_transform_3d({}).unwrap_or_default(); __g.rotation = __g.rotation.rotate_{}({}); let __parent_global = api.get_parent_opt({}).and_then(|__pid| api.get_global_transform_3d(__pid)).unwrap_or_default(); let __new_local = __parent_global.inverse().multiply(&__g); api.mutate_node({}, |n: &mut {}| {{ n.transform = __new_local; }}); }}",
+                    node_id, axis, delta, node_id, node_id, node_type_name
                 ));
             } else {
-                let rot_call = match axis {
-                    "x" => "rotate_x",
-                    "y" => "rotate_y",
-                    _ => "rotate_z",
-                };
                 return Some(format!(
-                    "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.{}({}); }}); }}",
-                    node_id, node_type_name, rot_call, delta
+                    "{{ api.mutate_node({}, |n: &mut {}| {{ n.transform.rotation = n.transform.rotation.rotate_{}({}); }}); }}",
+                    node_id, node_type_name, axis, delta
                 ));
             }
         }
@@ -257,10 +250,6 @@ impl NodeMethodRef {
 
     /// Get the return type from engine_registry
     pub fn return_type(&self) -> Option<Type> {
-        // CallFunction is not registered in method_defs; script calls always return Value (Object)
-        if matches!(self, NodeMethodRef::CallFunction) {
-            return Some(Type::Object);
-        }
         if let Some((node_type, method_name)) = ENGINE_REGISTRY.method_ref_reverse_map.get(self) {
             ENGINE_REGISTRY.get_method_return_type(node_type, method_name)
         } else {
@@ -515,7 +504,7 @@ impl EngineRegistry {
                 (
                     "get_node",
                     vec![Type::String],
-                    Type::DynNode,
+                    Type::Option(Box::new(Type::DynNode)),
                     Some(NodeMethodRef::GetChildByName),
                     vec!["name"],
                 ),
@@ -560,6 +549,30 @@ impl EngineRegistry {
                     Type::Void,
                     Some(NodeMethodRef::Remove),
                     vec![],
+                ),
+                // call(methodName: string, ...args?) — dynamic script method invocation
+                (
+                    "call",
+                    vec![
+                        Type::String,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                        Type::Any,
+                    ],
+                    Type::Any,
+                    Some(NodeMethodRef::CallFunction),
+                    vec![
+                        "name", "arg1", "arg2", "arg3", "arg4", "arg5",
+                        "arg6", "arg7", "arg8", "arg9", "arg10", "arg11",
+                    ],
                 ),
             ],
         );
@@ -713,6 +726,11 @@ impl EngineRegistry {
             NodeType::MeshInstance3D,
             Some(NodeType::Node3D),
             vec![
+                (
+                    "mesh_id",
+                    Type::EngineStruct(EngineStruct::Mesh),
+                    Some(NodeFieldRef::MeshInstance3DMeshId),
+                ),
                 ("mesh_path", Type::Option(Box::new(Type::CowStr)), None),
                 ("material_path", Type::Option(Box::new(Type::CowStr)), None),
                 (

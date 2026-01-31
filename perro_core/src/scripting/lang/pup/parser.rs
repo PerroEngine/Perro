@@ -285,6 +285,7 @@ impl PupParser {
             is_global: false,
             global_names: std::collections::HashSet::new(), // Will be set by transpiler
             global_name_to_node_id: std::collections::HashMap::new(), // Will be set by transpiler
+            rust_struct_name: None,
         })
     }
 
@@ -473,6 +474,7 @@ impl PupParser {
             is_global: true,
             global_names: std::collections::HashSet::new(),
             global_name_to_node_id: std::collections::HashMap::new(),
+            rust_struct_name: None,
         })
     }
 
@@ -1280,7 +1282,18 @@ impl PupParser {
                         if let Expr::MemberAccess(base, method) = &**inner {
                             if method == "new" {
                                 if let Expr::Ident(id) = &**base {
-                                    Some(Type::Custom(id.clone()))
+                                    // Use canonical types for resource constructors so type_env
+                                    // works for instance calls (sig.emit() -> Signal.emit(sig)).
+                                    match id.as_str() {
+                                        "Signal" => Some(Type::Signal),
+                                        "Array" => {
+                                            Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
+                                        }
+                                        "Map" => {
+                                            Some(Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]))
+                                        }
+                                        _ => Some(Type::Custom(id.clone())),
+                                    }
                                 } else {
                                     None
                                 }
@@ -1289,6 +1302,23 @@ impl PupParser {
                             }
                         } else {
                             None
+                        }
+                    }
+                    // When RHS is already resolved to ApiCall (e.g. Array.new() -> ApiCall(Resource(ArrayOp(New)), [])),
+                    // infer type so type_env gets the variable for later instance calls (arr.push, m.get).
+                    Expr::ApiCall(CallModule::Resource(resource), _) => {
+                        use crate::resource_modules::{ArrayResource, MapResource, ResourceModule};
+                        match resource {
+                            ResourceModule::ArrayOp(ArrayResource::New) => {
+                                Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
+                            }
+                            ResourceModule::MapOp(MapResource::New) => {
+                                Some(Type::Container(
+                                    ContainerKind::Map,
+                                    vec![Type::String, Type::Object],
+                                ))
+                            }
+                            _ => None,
                         }
                     }
                     Expr::MemberAccess(..) => {
@@ -1658,6 +1688,16 @@ impl PupParser {
                 }
 
                 if let Expr::MemberAccess(obj, method) = &left {
+                    // Module call: Signal.emit(sig), Array.new(), Quaternion.identity(), etc.
+                    // Module name is NOT a variable — use args as-is (no prepending obj).
+                    if let Expr::Ident(mod_name) = &**obj {
+                        if PupResourceAPI::is_resource_name(mod_name) {
+                            if let Some(resource) = PupResourceAPI::resolve(mod_name, method) {
+                                return Ok(Expr::ApiCall(CallModule::Resource(resource), args));
+                            }
+                        }
+                    }
+
                     // Handle nested member access like Input.Keyboard.is_key_pressed
                     // Check if obj is itself a MemberAccess (e.g., Input.Keyboard)
                     if let Expr::MemberAccess(inner_obj, _inner_field) = &**obj {
@@ -1709,6 +1749,17 @@ impl PupParser {
                                 }
                             }
                         }
+                        // Instance call: sig.emit() — .emit()/.emit_deferred() are Signal-only.
+                        // Only when receiver is NOT the module name (Signal is module, sig is variable).
+                        if !PupResourceAPI::is_resource_name(var_name)
+                            && (method == "emit" || method == "emit_deferred")
+                        {
+                            if let Some(resource) = PupResourceAPI::resolve("Signal", method) {
+                                let mut call_args = vec![*obj.clone()];
+                                call_args.extend(args);
+                                return Ok(Expr::ApiCall(CallModule::Resource(resource), call_args));
+                            }
+                        }
                     }
 
                     // Resolve by receiver *expression* type (not just Ident variables).
@@ -1747,7 +1798,9 @@ impl PupParser {
                                     }
                                     Type::EngineStruct(es) => crate::structs::engine_registry::ENGINE_REGISTRY
                                         .get_field_type_struct(&es, field),
-                                    _ => None,
+                                    // Resource types (Signal, Array, Map, etc.): for obj.method() the
+                                    // receiver type is the base type, so we can resolve to Resource.method(obj).
+                                    _ => Some(base_ty.clone()),
                                 }
                             }
                             _ => None,

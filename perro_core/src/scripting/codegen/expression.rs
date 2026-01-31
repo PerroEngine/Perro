@@ -1763,7 +1763,9 @@ impl Expr {
                                 (**base).clone(),
                                 Expr::Literal(Literal::String(field.clone())),
                             ];
-                            let expected = NodeMethodRef::GetVar.param_types();
+                            let expected = NodeMethodRef::GetVar.param_types().map(|p| {
+                                std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                            });
                             let rust_args = generate_rust_args(
                                 &get_var_args,
                                 script,
@@ -2495,17 +2497,22 @@ impl Expr {
                 }
             },
             Expr::Call(target, args) => {
-                // GetVar/SetVar are special node methods — always use get_script_var/set_script_var,
-                // never read_node. Handle Call(MemberAccess(node, "get_var"), [name]) and
-                // Call(MemberAccess(node, "set_var"), [name, value]) here so they don't fall through
-                // to target.to_rust() which would generate read_node(..., |n| n.get_var)(...).
+                // GetVar/SetVar/Call are special node methods — handle all language names
+                // (get_var/getVar/GetVar, set_var/setVar/SetVar, call/Call) so TS/C# work.
                 if let Expr::MemberAccess(base, method) = target.as_ref() {
-                    if method == "get_var" && args.len() == 1 {
+                    let is_get_var = method == "get_var" || method == "getVar" || method == "GetVar";
+                    let is_set_var = method == "set_var" || method == "setVar" || method == "SetVar";
+                    let is_call = method == "call" || method == "Call";
+
+                    if is_get_var && args.len() == 1 {
                         use crate::api_bindings::generate_rust_args;
                         use crate::structs::engine_bindings::EngineMethodCodegen;
                         use crate::structs::engine_registry::NodeMethodRef;
                         let get_var_args: Vec<Expr> = vec![(**base).clone(), args[0].clone()];
-                        let expected = NodeMethodRef::GetVar.param_types();
+                        // Receiver (node id) is first arg; param_types() omits it, so prepend DynNode so Option<NodeID> gets unwrapped
+                        let expected = NodeMethodRef::GetVar.param_types().map(|p| {
+                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                        });
                         let rust_args = generate_rust_args(
                             &get_var_args,
                             script,
@@ -2522,13 +2529,15 @@ impl Expr {
                         );
                         return code;
                     }
-                    if method == "set_var" && args.len() == 2 {
+                    if is_set_var && args.len() == 2 {
                         use crate::api_bindings::generate_rust_args;
                         use crate::structs::engine_bindings::EngineMethodCodegen;
                         use crate::structs::engine_registry::NodeMethodRef;
                         let set_var_args: Vec<Expr> =
                             vec![(**base).clone(), args[0].clone(), args[1].clone()];
-                        let expected = NodeMethodRef::SetVar.param_types();
+                        let expected = NodeMethodRef::SetVar.param_types().map(|p| {
+                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                        });
                         let rust_args = generate_rust_args(
                             &set_var_args,
                             script,
@@ -2545,6 +2554,32 @@ impl Expr {
                         );
                         return code;
                     }
+                    if is_call && !args.is_empty() {
+                        use crate::api_bindings::generate_rust_args;
+                        use crate::structs::engine_bindings::EngineMethodCodegen;
+                        use crate::structs::engine_registry::NodeMethodRef;
+                        let mut call_args: Vec<Expr> = vec![(**base).clone()];
+                        call_args.extend(args.iter().cloned());
+                        let expected = NodeMethodRef::CallFunction.param_types().map(|p| {
+                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                        });
+                        let rust_args = generate_rust_args(
+                            &call_args,
+                            script,
+                            needs_self,
+                            current_func,
+                            expected.as_ref(),
+                        );
+                        let code = NodeMethodRef::CallFunction.to_rust_prepared(
+                            &call_args,
+                            &rust_args,
+                            script,
+                            needs_self,
+                            current_func,
+                        );
+                        return code;
+                    }
+
                 }
 
                 // Special case: chained API calls like api.get_parent(...).get_type()
@@ -2761,6 +2796,30 @@ impl Expr {
                                 current_func,
                             );
                             return call_code;
+                        } else {
+                        // Base is Ident (e.g. c_id) but not a global — pass base as first arg with DynNode expected so Option<NodeID> gets unwrapped
+                        use crate::api_bindings::generate_rust_args;
+                        use crate::structs::engine_bindings::EngineMethodCodegen;
+                        let outer_args: Vec<Expr> = std::iter::once((**base).clone())
+                            .chain(args.iter().cloned())
+                            .collect();
+                        let expected: Option<Vec<Type>> = method_ref.param_types().map(|p| {
+                            std::iter::once(Type::DynNode).chain(p.into_iter()).collect::<Vec<_>>()
+                        });
+                        let rust_args_strings = generate_rust_args(
+                            &outer_args,
+                            script,
+                            needs_self,
+                            current_func,
+                            expected.as_ref(),
+                        );
+                        return method_ref.to_rust_prepared(
+                            &outer_args,
+                            &rust_args_strings,
+                            script,
+                            needs_self,
+                            current_func,
+                        );
                         }
                     }
                 }
@@ -3248,8 +3307,6 @@ impl Expr {
                 }
             },
             Expr::StructNew(ty, args) => {
-                use std::collections::HashMap;
-
                 // Special case: For node types with no arguments, use api.create_node::<Type>()
                 // This returns a Uuid, not a node instance
                 if args.is_empty() && is_node_type(ty) {
@@ -3395,89 +3452,23 @@ impl Expr {
                     }
                 }
 
-                // --- Group by base name (if parent) ---
-                let mut base_fields: HashMap<&str, Vec<(&str, &Type, &Expr)>> = HashMap::new();
-                let mut derived_fields: Vec<(&str, &Type, &Expr)> = Vec::new();
-
-                for (fname, fty, parent, expr) in &field_exprs {
-                    if let Some(base_name) = parent {
-                        base_fields
-                            .entry(base_name)
-                            .or_default()
-                            .push((*fname, *fty, *expr));
-                    } else {
-                        derived_fields.push((*fname, *fty, *expr));
-                    }
-                }
-
-                // --- Recursive builder for nested base init ---
-                fn build_base_init(
-                    base_name: &str,
-                    base_fields: &HashMap<&str, Vec<(&str, &Type, &Expr)>>,
-                    script: &Script,
-                    needs_self: bool,
-                    current_func: Option<&Function>,
-                ) -> String {
-                    let base_struct = script
-                        .structs
-                        .iter()
-                        .find(|s| s.name == base_name)
-                        .expect("Base struct not found");
-
-                    let renamed_base_name = rename_struct(base_name);
-                    let mut parts = String::new();
-
-                    // Handle deeper bases first
-                    if let Some(ref inner) = base_struct.base {
-                        let inner_code =
-                            build_base_init(inner, base_fields, script, needs_self, current_func);
-                        parts.push_str(&format!("base: {}, ", inner_code));
-                    }
-
-                    // Write base's own fields
-                    if let Some(local_fields) = base_fields.get(base_name) {
-                        for (fname, fty, expr) in local_fields {
-                            let mut expr_code =
-                                expr.to_rust(needs_self, script, Some(fty), current_func, None);
-                            let expr_type = script.infer_expr_type(expr, current_func);
-                            let should_clone =
-                                matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
-                                    && expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
-                            if should_clone {
-                                expr_code = format!("{}.clone()", expr_code);
-                            }
-                            parts.push_str(&format!("{}: {}, ", fname, expr_code));
-                        }
-                    }
-
-                    format!(
-                        "{}::new({})",
-                        renamed_base_name,
-                        parts.trim_end_matches(", ")
-                    )
-                }
-
-                // --- Build final top-level struct ---
+                // --- Build flat struct literal: all fields in flattened order ---
                 let mut code = String::new();
-
-                // 1️⃣ Base (if exists)
-                if let Some(ref base_name) = struct_def.base {
-                    let base_code =
-                        build_base_init(base_name, &base_fields, script, needs_self, current_func);
-                    code.push_str(&format!("base: {}, ", base_code));
-                }
-
-                // 2️⃣ Derived-only fields
-                for (fname, fty, expr) in &derived_fields {
-                    let mut expr_code =
-                        expr.to_rust(needs_self, script, Some(fty), current_func, None);
-                    let expr_type = script.infer_expr_type(expr, current_func);
-                    let should_clone = matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
-                        && expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
-                    if should_clone {
-                        expr_code = format!("{}.clone()", expr_code);
+                for (fname, _fty, _parent) in &flat_fields {
+                    if let Some((_fname, fty, _, expr)) =
+                        field_exprs.iter().find(|(n, _, _, _)| *n == *fname)
+                    {
+                        let mut expr_code =
+                            expr.to_rust(needs_self, script, Some(fty), current_func, None);
+                        let expr_type = script.infer_expr_type(expr, current_func);
+                        let should_clone =
+                            matches!(expr, Expr::Ident(_) | Expr::MemberAccess(..))
+                                && expr_type.as_ref().map_or(false, |ty| ty.requires_clone());
+                        if should_clone {
+                            expr_code = format!("{}.clone()", expr_code);
+                        }
+                        code.push_str(&format!("{}: {}, ", fname, expr_code));
                     }
-                    code.push_str(&format!("{}: {}, ", fname, expr_code));
                 }
 
                 // Use renamed struct name for custom structs (not node types or engine structs)
@@ -3686,15 +3677,16 @@ impl Expr {
                                     format!("{}.as_bool().unwrap_or_default()", api_call_code)
                                 }
                                 Type::Custom(custom_type) => {
-                                    // Strip 'mut' if present in type name
+                                    // Strip 'mut' if present in type name; use transpiled struct name (__t_Foo)
                                     let clean_type = if custom_type.starts_with("mut ") {
                                         custom_type.strip_prefix("mut ").unwrap_or(custom_type)
                                     } else {
                                         custom_type
                                     };
+                                    let rust_type = rename_struct(clean_type);
                                     format!(
                                         "serde_json::from_value::<{}>({}).unwrap_or_default()",
-                                        clean_type, api_call_code
+                                        rust_type, api_call_code
                                     )
                                 }
                                 _ => api_call_code,
@@ -4101,9 +4093,9 @@ impl Expr {
                     }
 
                     // ==========================================================
-                    // JSON Value (ContainerKind::Object) → Anything
+                    // JSON Value (Object/Any) → Anything
                     // ==========================================================
-                    (Some(Type::Object), target) => {
+                    (Some(inner_ty), target) if matches!(inner_ty, Type::Object | Type::Any) => {
                         use NumberKind::*;
                         match target {
                             Type::Number(Signed(w)) => {
@@ -4159,15 +4151,16 @@ impl Expr {
                                     inner_code
                                 )
                                 } else {
-                                    // Strip 'mut' if present in type name
+                                    // Strip 'mut' if present; use transpiled struct name (__t_Foo) for Rust
                                     let clean_name = if name.starts_with("mut ") {
                                         name.strip_prefix("mut ").unwrap_or(name)
                                     } else {
                                         name
                                     };
+                                    let rust_struct = rename_struct(clean_name);
                                     format!(
                                         "serde_json::from_value::<{}>({}.clone()).unwrap_or_default()",
-                                        clean_name, inner_code
+                                        rust_struct, inner_code
                                     )
                                 }
                             }
@@ -4260,15 +4253,16 @@ impl Expr {
                             } else {
                                 inner_code
                             };
-                            // Strip 'mut' if present in type name
+                            // Strip 'mut' if present in type name; use transpiled struct name (__t_Foo)
                             let clean_to_name = if to_name.starts_with("mut ") {
                                 to_name.strip_prefix("mut ").unwrap_or(to_name)
                             } else {
                                 to_name
                             };
+                            let rust_to_name = rename_struct(clean_to_name);
                             format!(
                                 "serde_json::from_value::<{}>(serde_json::to_value(&{}).unwrap_or_default()).unwrap_or_default()",
-                                clean_to_name, cloned_code
+                                rust_to_name, cloned_code
                             )
                         }
                     }
@@ -4282,17 +4276,110 @@ impl Expr {
                             } else {
                                 inner_code
                             };
+                        let rust_to_name = rename_struct(to_name);
                         format!(
                             "serde_json::from_value::<{}>(serde_json::to_value(&{}).unwrap_or_default()).unwrap_or_default()",
-                            to_name, cloned_code
+                            rust_to_name, cloned_code
+                        )
+                    }
+
+                    // When inner type is None or Object/Any, Value -> BigInt/Decimal must use extraction (not "as")
+                    // Do NOT wrap in outer ( ); when used in format!("{} {}", a, b) extra parens can cause
+                    // mismatched delimiter (unclosed ( or } confusion) in generated code.
+                    (inner_opt, Type::Number(NumberKind::BigInt))
+                        if matches!(inner_opt, None | Some(Type::Object) | Some(Type::Any)) =>
+                    {
+                        format!(
+                            "{}.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
+                            inner_code, inner_code
+                        )
+                    }
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::BigInt)) if name == "Value" => {
+                        format!(
+                            "{}.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
+                            inner_code, inner_code
+                        )
+                    }
+                    (inner_opt, Type::Number(NumberKind::Decimal))
+                        if matches!(inner_opt, None | Some(Type::Object) | Some(Type::Any)) =>
+                    {
+                        format!(
+                            "{}.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default())",
+                            inner_code, inner_code
+                        )
+                    }
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::Decimal)) if name == "Value" => {
+                        format!(
+                            "{}.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default())",
+                            inner_code, inner_code
+                        )
+                    }
+                    // Value (None/Object/Any) -> signed integer (e.g. BigInt::from(value as i32))
+                    (inner_opt, Type::Number(NumberKind::Signed(w)))
+                        if matches!(inner_opt, None | Some(Type::Object) | Some(Type::Any)) =>
+                    {
+                        format!(
+                            "{}.as_i64().unwrap_or_default() as i{}",
+                            inner_code, w
+                        )
+                    }
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::Signed(w))) if name == "Value" => {
+                        format!(
+                            "{}.as_i64().unwrap_or_default() as i{}",
+                            inner_code, w
+                        )
+                    }
+                    // None -> unsigned integer (e.g. script var typed_big_int not inferred): use .to_u64() so BigInt works
+                    (None, Type::Number(NumberKind::Unsigned(w))) => match w {
+                        8 => format!("{}.to_u8().unwrap_or_default()", inner_code),
+                        16 => format!("{}.to_u16().unwrap_or_default()", inner_code),
+                        32 => format!("{}.to_u32().unwrap_or_default()", inner_code),
+                        64 => format!("{}.to_u64().unwrap_or_default()", inner_code),
+                        128 => format!("{}.to_u128().unwrap_or_default()", inner_code),
+                        _ => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
+                    },
+                    // Value (Object/Any) -> unsigned integer
+                    (inner_opt, Type::Number(NumberKind::Unsigned(w)))
+                        if matches!(inner_opt, Some(Type::Object) | Some(Type::Any)) =>
+                    {
+                        format!(
+                            "{}.as_u64().unwrap_or_default() as u{}",
+                            inner_code, w
+                        )
+                    }
+                    (Some(Type::Custom(name)), Type::Number(NumberKind::Unsigned(w))) if name == "Value" => {
+                        format!(
+                            "{}.as_u64().unwrap_or_default() as u{}",
+                            inner_code, w
                         )
                     }
 
                     _ => {
                         // For non-primitive types, try .into() instead of as cast
-                        // This handles String -> CowStr and other conversions
                         if matches!(target_type, Type::CowStr | Type::String | Type::Custom(_)) {
                             format!("{}.into()", inner_code)
+                        } else if matches!(target_type, Type::Number(NumberKind::BigInt)) {
+                            // Value-like source (inferred or custom) -> BigInt: use extraction, not "as"
+                            format!(
+                                "{}.as_str().map(|s| s.parse::<BigInt>().unwrap_or_default()).unwrap_or_else(|| BigInt::from({}.as_i64().unwrap_or_default()))",
+                                inner_code, inner_code
+                            )
+                        } else if matches!(target_type, Type::Number(NumberKind::Decimal)) {
+                            // Value-like source -> Decimal: use extraction, not "as"
+                            format!(
+                                "{}.as_str().map(|s| Decimal::from_str(s).unwrap_or_default()).unwrap_or_else(|| rust_decimal::prelude::FromPrimitive::from_f64({}.as_f64().unwrap_or_default()).unwrap_or_default())",
+                                inner_code, inner_code
+                            )
+                        } else if let Type::Number(NumberKind::Unsigned(w)) = target_type {
+                            // Fallback when source type wasn't inferred (e.g. script var): use .to_u*() so BigInt works (non-primitive "as" would error)
+                            match w {
+                                8 => format!("{}.to_u8().unwrap_or_default()", inner_code),
+                                16 => format!("{}.to_u16().unwrap_or_default()", inner_code),
+                                32 => format!("{}.to_u32().unwrap_or_default()", inner_code),
+                                64 => format!("{}.to_u64().unwrap_or_default()", inner_code),
+                                128 => format!("{}.to_u128().unwrap_or_default()", inner_code),
+                                _ => format!("({}.to_u64().unwrap_or_default() as u{})", inner_code, w),
+                            }
                         } else {
                             eprintln!(
                                 "Warning: Unhandled cast from {:?} to {:?}",
@@ -4322,17 +4409,29 @@ impl Expr {
                     // ----------------------------------------------------------
                     Some(Type::Container(ContainerKind::Map, ref inner_types)) => {
                         let key_ty = inner_types.get(0).unwrap_or(&Type::String);
-                        // No need to re-infer key_code, already done above with correct type
-                        let final_key_code = if *key_ty == Type::String {
-                            // For String keys, convert the key to string if it's not already
-                            let key_type = script.infer_expr_type(key, current_func);
-                            if matches!(key_type, Some(Type::Number(_)) | Some(Type::Bool)) {
-                                format!("{}.to_string().as_str()", key_code)
+                        let key_expr_type = script.infer_expr_type(key, current_func);
+                        // When key type is not String, ensure key_code is converted (e.g. BigInt -> u8 for Map<u8, V>)
+                        let key_code_converted = if *key_ty != Type::String {
+                            if let Some(ref kt) = key_expr_type {
+                                if *kt != *key_ty && kt.can_implicitly_convert_to(key_ty) {
+                                    script.generate_implicit_cast_for_expr(&key_code, kt, key_ty)
+                                } else {
+                                    key_code.clone()
+                                }
                             } else {
-                                format!("{}.as_str()", key_code)
+                                key_code.clone()
                             }
                         } else {
-                            format!("&{}", key_code)
+                            key_code.clone()
+                        };
+                        let final_key_code = if *key_ty == Type::String {
+                            if matches!(key_expr_type, Some(Type::Number(_)) | Some(Type::Bool)) {
+                                format!("{}.to_string().as_str()", key_code_converted)
+                            } else {
+                                format!("{}.as_str()", key_code_converted)
+                            }
+                        } else {
+                            format!("&{}", key_code_converted)
                         };
                         format!(
                             "{}.get({}).cloned().unwrap_or_default()",
@@ -4408,9 +4507,26 @@ impl Expr {
                     }
 
                     // ----------------------------------------------------------
-                    // Invalid or unsupported index base
+                    // Custom type (struct): key is field name -> use field access .field_name
+                    // e.g. player_as_entity_from_array["entity_name"] -> .entity_name
                     // ----------------------------------------------------------
-                    Some(Type::Custom(_)) => "/* invalid index on struct */".to_string(),
+                    Some(Type::Custom(_)) => {
+                        if let Expr::Literal(Literal::String(field_name)) = key.as_ref() {
+                            format!("{}.{}", base_code, field_name)
+                        } else {
+                            let index_code = key.to_rust(
+                                needs_self,
+                                script,
+                                Some(&Type::Number(NumberKind::Unsigned(32))),
+                                current_func,
+                                None,
+                            );
+                            format!(
+                                "{}.get({} as usize).cloned().unwrap_or_default()",
+                                base_code, index_code
+                            )
+                        }
+                    }
                     _ => "/* unsupported index expression */".to_string(),
                 }
             }

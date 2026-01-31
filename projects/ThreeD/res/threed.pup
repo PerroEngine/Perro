@@ -119,15 +119,17 @@ on update() {
     var d = Time.get_delta()
 
     # keep original movement so you can see it's running
-    self.global_transform.position.z -= 10 * d
+    self.global_transform.position.z -= 1 * d
 
-    __timer += d
-    if __timer >= 2 {
-        __timer = 0
-        apply_step(__step)
-        __step += 1
-        if __step > 9 {
-            __step = 0
-        }
-    }
+    self.transform.rotation.rotate_y(d * 25)
+
+    // __timer += d
+    // if __timer >= 2 {
+    //     __timer = 0
+    //     apply_step(__step)
+    //     __step += 1
+    //     if __step > 9 {
+    //         __step = 0
+    //     }
+    // }
 }

@@ -372,7 +372,7 @@ virtual_height = 1080
 msaa = "on"
 
 [performance]
-fps_cap = 500
+fps_cap = 300
 xps = 60
 
 [input]

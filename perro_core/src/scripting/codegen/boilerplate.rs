@@ -416,6 +416,19 @@ pub fn implement_script_boilerplate_internal(
                         }},"
                     )
                     .unwrap();
+                } else if accessor == "__NODE__" {
+                    // Node/DynNode: Value is NodeID hex string (from scene) or u64; parse and assign
+                    writeln!(
+                        apply_entries,
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                            if let Some(id) = val.as_u64().map(|n| perro_core::NodeID::from_u64(n))
+                                .or_else(|| val.as_str().and_then(|s| perro_core::NodeID::parse_str(s).ok()))
+                            {{
+                                script.{renamed_name} = id;
+                            }}
+                        }},"
+                    )
+                    .unwrap();
                 } else {
                     writeln!(
                         apply_entries,
