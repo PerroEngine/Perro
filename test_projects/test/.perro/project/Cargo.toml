@@ -10,8 +10,6 @@ build = "build.rs"
 [dependencies]
 perro_core = { path = "../../../../perro_core" }
 scripts = { path = "../scripts" }
-uuid = { version = "1.4", features = ["serde", "v4"] }
-indexmap = { version = "1.9", features = ["serde"] }
 once_cell = "1.19"
 phf = { version = "0.13.1", features = ["macros"] }
 

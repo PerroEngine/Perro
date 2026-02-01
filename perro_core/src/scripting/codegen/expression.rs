@@ -2018,19 +2018,19 @@ impl Expr {
                             let is_node_id_var =
                                 base_code.ends_with("_id") || base_code == "self.id";
 
-                            // Check if base is an Option<Uuid> variable (from get_parent() or get_node())
+                            // Check if base is an Option<NodeID> variable (from get_parent() or get_node())
                             // Check in current function's locals first, then script-level variables
-                            let is_option_uuid = if let Some(current_func) = current_func {
+                            let is_option_id = if let Some(current_func) = current_func {
                                 current_func.locals.iter().any(|v| v.name == base_code && matches!(v.typ.as_ref(), Some(Type::Option(inner)) if matches!(inner.as_ref(), Type::DynNode)))
                             } else {
                                 script.get_variable_type(&base_code).map_or(false, |t| matches!(t, Type::Option(inner) if matches!(inner.as_ref(), Type::DynNode)))
                             };
 
-                            if is_node_id_var || is_option_uuid {
+                            if is_node_id_var || is_option_id {
                                 // Type::Custom is for concrete node type names (Sprite2D, Node2D, etc.), not base Node.
                                 // Base Node is Type::Node(NodeType::Node) or Type::DynNode — handled in those arms.
                                 if let Some(node_type) = string_to_node_type(type_name.as_str()) {
-                                    let node_id_expr = if is_option_uuid {
+                                    let node_id_expr = if is_option_id {
                                         format!("{}.unwrap()", base_code)
                                     } else {
                                         base_code.clone()

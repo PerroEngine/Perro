@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 #[cfg(not(target_arch = "wasm32"))]
-use chrono::Utc;
+use crate::time_util::format_utc_timestamp;
 
 use crate::asset_io::set_key;
 use crate::asset_io::{ProjectRoot, set_project_root};
@@ -15,7 +15,7 @@ use crate::manifest::Project;
 use crate::rendering::app::App;
 use crate::scene::{Scene, SceneData};
 use crate::script::{CreateFn, ScriptProvider};
-use crate::rendering::static_mesh::StaticMeshData;
+use crate::structs::structs3d::StaticMeshData;
 use crate::structs2d::texture::StaticTextureData;
 use crate::ui::fur_ast::FurElement;
 use once_cell::sync::Lazy;
@@ -254,7 +254,7 @@ pub fn convert_flamegraph(folded_path: &Path, svg_path: &Path) {
 /// so we MUST write to a file that the user can check.
 fn log_error(msg: &str) {
     let timestamp = if cfg!(not(target_arch = "wasm32")) {
-        Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()
+        format_utc_timestamp()
     } else {
         "N/A".to_string()
     };

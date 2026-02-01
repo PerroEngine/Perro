@@ -23,6 +23,10 @@ var texture_diffuse: texture_2d<f32>;
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
+// Platform output config: 0 = output linear (Mac/Linux sRGB swapchain), 1 = output sRGB (Windows)
+@group(2) @binding(0)
+var<uniform> output_config: vec4<u32>;
+
 // ─────────────────────────────────────────────
 // Inputs
 // ─────────────────────────────────────────────
@@ -109,10 +113,16 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 // ─────────────────────────────────────────────
 // Fragment Shader
 // ─────────────────────────────────────────────
-// Texture is Rgba8UnormSrgb: sampling returns linear. We output linear; the sRGB
-// swapchain (Windows D3D12, Linux Vulkan, macOS Metal) does one linear→sRGB on
-// write, so original sprite colors are preserved. Manual linear_to_srgb caused
-// double gamma on Mac (blown-out) and would be wrong on all platforms.
+// Texture is Rgba8UnormSrgb: sampling returns linear.
+// output_config.x: 0 = output linear (Mac/Linux: sRGB swapchain does one linear→sRGB on present);
+//                  1 = output sRGB in shader (Windows: swapchain often does not, so we do it here).
+
+fn linear_to_srgb(c: f32) -> f32 {
+    if c <= 0.0031308 {
+        return c * 12.92;
+    }
+    return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -121,6 +131,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let half_texel = vec2<f32>(0.5 / f32(texture_size.x), 0.5 / f32(texture_size.y));
     let adjusted_uv = in.uv + half_texel;
     let linear = textureSample(texture_diffuse, texture_sampler, adjusted_uv);
-    // Output linear; sRGB swapchain converts once on present (correct on Win/Linux/Mac).
+    if output_config.x != 0u {
+        return vec4<f32>(
+            linear_to_srgb(linear.r),
+            linear_to_srgb(linear.g),
+            linear_to_srgb(linear.b),
+            linear.a,
+        );
+    }
     return linear;
 }

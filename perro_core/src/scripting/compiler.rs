@@ -79,6 +79,19 @@ pub fn script_dylib_name() -> &'static str {
     }
 }
 
+/// Zstd compression levels for the asset pipeline (1–22; higher = smaller output, slower build).
+/// Decompress speed at runtime is barely affected by level.
+pub const ASSET_COMPRESSION: AssetCompression = AssetCompression {
+    texture: 10,
+    mesh: 10,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub struct AssetCompression {
+    pub texture: i32,
+    pub mesh: i32,
+}
+
 /// Derive a valid Rust crate name from a project display name (e.g. "Perro Test Project" → "perro_test_project").
 fn project_name_to_crate_name(name: &str) -> String {
     let s = name.trim();
@@ -2618,7 +2631,6 @@ impl Compiler {
         )?;
         writeln!(build_file, "    use image::io::Reader as ImageReader;")?;
         writeln!(build_file, "    use std::fs::File;")?;
-        writeln!(build_file, "    use std::process::Command;")?;
         writeln!(build_file, "")?;
         writeln!(build_file, "    if !input_path.exists() {{")?;
         writeln!(
@@ -2642,7 +2654,7 @@ impl Compiler {
         writeln!(build_file, "")?;
         writeln!(build_file, "    let mut icon_dir = IconDir::new(ResourceType::Icon);")?;
         writeln!(build_file, "")?;
-        writeln!(build_file, "    for (size, filename) in sizes {{")?;
+        writeln!(build_file, "    for (size, _filename) in sizes {{")?;
         writeln!(
             build_file,
             "        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);"
@@ -3311,7 +3323,6 @@ impl Compiler {
         writeln!(scenes_file, "#![allow(unused)]")?;
         writeln!(scenes_file, "use once_cell::sync::Lazy;")?;
         writeln!(scenes_file, "use perro_core::NodeID;")?;
-        writeln!(scenes_file, "use indexmap::IndexMap;")?;
         writeln!(scenes_file, "use perro_core::scene::SceneData;")?;
         writeln!(
             scenes_file,
@@ -3429,9 +3440,9 @@ impl Compiler {
                 }
             }
 
-            // Update the key_to_uuid mapping in scene_data
+            // Update the key_to_id mapping in scene_data
             // We need to use a helper function or rebuild the SceneData
-            // Actually, since key_to_uuid is private, we'll just ensure the nodes have correct IDs
+            // Actually, since key_to_id is private, we'll just ensure the nodes have correct IDs
             // The from_nodes function will rebuild the mapping correctly
 
             let static_scene_name = format!("SCENE_{}", Self::sanitize_res_path_to_ident(&current_res_path));
@@ -3507,13 +3518,8 @@ impl Compiler {
                     }
                 }
 
-                // --- UUID fixups ---
-                let uuid_literal_regex = Regex::new(
-                    r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
-                )?;
-                node_str = uuid_literal_regex
-                    .replace_all(&node_str, "uuid!(\"$1\")")
-                    .to_string();
+                // (Legacy: we used to wrap raw UUID strings in uuid!("...") here. Node/UI IDs
+                // are now NodeID/UIElementID and are fixed up in the ID type step below.)
 
                 // Fix ID type constructor calls. Debug format is IdType(index:generation) which is
                 // not valid Rust. Parse index (gen is always 0 at compile time) and emit IdType::from_u32(index).
@@ -3711,7 +3717,7 @@ impl Compiler {
                 }
             }
 
-            let indexmap_formatted = format!("IndexMap::from([\n{}\n    ])", entries);
+            let hashmap_formatted = format!("HashMap::from([\n{}\n    ])", entries);
 
             static_scene_definitions_code.push_str(&format!(
                 "
@@ -3724,7 +3730,7 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
                 path = current_res_path,
                 name = static_scene_name,
                 root_index = root_id_str,
-                nodes = indexmap_formatted
+                nodes = hashmap_formatted
             ));
 
             map_insertions_code.push_str(&format!(
@@ -4157,9 +4163,6 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         let embedded_assets_dir = embedded_assets_root.join("textures");
         fs::create_dir_all(&embedded_assets_dir)?;
 
-        // Zstd level 1–22: higher = smaller .ptex, slower build; decompress speed barely changes.
-        const ZSTD_LEVEL: i32 = 5;
-
         let mut processed_texture_paths: HashSet<String> = HashSet::new();
         let mut static_texture_definitions_code = String::new();
         let mut map_insertions_code = String::new();
@@ -4191,7 +4194,7 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                             let raw = rgba.as_raw();
 
                             let compressed =
-                                zstd::stream::encode_all(std::io::Cursor::new(raw), ZSTD_LEVEL)
+                                zstd::stream::encode_all(std::io::Cursor::new(raw), ASSET_COMPRESSION.texture)
                                     .map_err(|e| {
                                         anyhow::anyhow!(
                                             "Zstd compress texture {}: {}",
@@ -4277,7 +4280,7 @@ static {name}: StaticTextureData = StaticTextureData {{
         writeln!(meshes_file, "use std::collections::HashMap;")?;
         writeln!(
             meshes_file,
-            "use perro_core::rendering::static_mesh::StaticMeshData;"
+            "use perro_core::structs::structs3d::StaticMeshData;"
         )?;
         writeln!(meshes_file, "\n// --- .pmesh in embedded_assets/meshes/ (one per mesh, key = model_path or model_path:index) ---")?;
 
@@ -4300,8 +4303,6 @@ static {name}: StaticTextureData = StaticTextureData {{
             .ok_or_else(|| anyhow::anyhow!("Could not determine project crate root"))?;
         let embedded_assets_dir = project_crate_root.join("embedded_assets").join("meshes");
         fs::create_dir_all(&embedded_assets_dir)?;
-
-        const ZSTD_LEVEL: i32 = 5;
 
         let mut static_mesh_definitions_code = String::new();
         let mut map_insertions_code = String::new();
@@ -4358,7 +4359,7 @@ static {name}: StaticTextureData = StaticTextureData {{
                             };
                             let compressed = zstd::stream::encode_all(
                                 std::io::Cursor::new(&combined),
-                                ZSTD_LEVEL,
+                                ASSET_COMPRESSION.mesh,
                             )
                             .map_err(|e| {
                                 anyhow::anyhow!("Zstd compress mesh {}: {}", display_key, e)

@@ -6214,7 +6214,6 @@ fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path)
     use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
     use image::io::Reader as ImageReader;
     use std::fs::File;
-    use std::process::Command;
 
     if !input_path.exists() {
         panic!("❌ Icon path does NOT exist: {}", input_path.display());
@@ -6229,7 +6228,7 @@ fn convert_any_image_to_ico(input_path: &Path, ico_path: &Path, log_path: &Path)
 
     let mut icon_dir = IconDir::new(ResourceType::Icon);
 
-    for (size, filename) in sizes {
+    for (size, _filename) in sizes {
         let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
         let rgba = resized.into_rgba8();
         let icon_image =

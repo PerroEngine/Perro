@@ -59,7 +59,7 @@ pub struct Node2D {
     #[serde(skip, default)]
     pub node2d_children_cache: Option<Vec<crate::ids::NodeID>>,
 
-    // Base node with name, uuid, parent relationship, etc.
+    // Base node with name, id, parent relationship, etc.
     #[serde(rename = "base")]
     pub base: Node,
 }

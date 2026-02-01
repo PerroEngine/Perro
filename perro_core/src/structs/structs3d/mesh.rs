@@ -20,7 +20,8 @@ impl StaticMeshData {
     /// Decompress .pmesh and upload to GPU; returns a Mesh ready for MeshManager.
     pub fn to_mesh(&self, device: &Device, _queue: &Queue) -> Mesh {
         use bytemuck::cast_slice;
-use wgpu::util::DeviceExt;
+        use wgpu::util::DeviceExt;
+
         let decompressed = zstd::stream::decode_all(self.mesh_bytes)
             .expect("static mesh Zstd decompress");
         let vertex_byte_len = (self.vertex_count as usize) * std::mem::size_of::<Vertex3D>();

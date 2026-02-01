@@ -34,8 +34,8 @@ g_start = 182
 g_end = 188
 
 [scripts.threed_pup.names]
-__t___step = "__step"
 __t_log_global = "log_global"
-__t___timer = "__timer"
 __t_apply_step = "apply_step"
+__t___step = "__step"
+__t___timer = "__timer"
 __t_log_local = "log_local"

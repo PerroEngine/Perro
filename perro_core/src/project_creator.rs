@@ -467,8 +467,6 @@ build = "build.rs"
 [dependencies]
 {}
 scripts = {{ path = "../scripts" }}
-uuid = {{ version = "1.4", features = ["serde", "v4"] }}
-indexmap = {{ version = "1.9", features = ["serde"] }}
 once_cell = "1.19"
 phf = {{ version = "0.13.1", features = ["macros"] }}
 
@@ -518,8 +516,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 {}
-uuid = {{ version = "1.4", features = ["serde", "v4"] }}
-indexmap = {{ version = "1.9", features = ["serde"] }}
 serde = {{ version = "1.0", features = ["derive","rc"] }}
 serde_json = "1.0"
 rust_decimal = {{ version = "1.36", features = ["serde"] }}

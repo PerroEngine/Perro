@@ -1,3 +1,5 @@
+//! View frustum for culling; graphics/camera-related.
+
 use std::fmt;
 
 #[derive(Clone, Copy)]

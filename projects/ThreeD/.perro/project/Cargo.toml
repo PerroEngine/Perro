@@ -13,10 +13,6 @@ toml = "0.8"
 [dependencies]
 once_cell = "1.19"
 
-[dependencies.indexmap]
-features = ["serde"]
-version = "1.9"
-
 [dependencies.perro_core]
 path = "../../../../perro_core"
 
@@ -26,13 +22,6 @@ version = "0.13.1"
 
 [dependencies.scripts]
 path = "../scripts"
-
-[dependencies.uuid]
-features = [
-    "serde",
-    "v4",
-]
-version = "1.4"
 
 [package]
 build = "build.rs"

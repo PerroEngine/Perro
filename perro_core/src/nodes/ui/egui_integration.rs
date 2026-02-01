@@ -123,7 +123,7 @@ impl EguiIntegration {
     /// root_ids: IDs of root elements to render
     pub fn render_element_tree(
         &mut self,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         root_ids: &[UIElementID],
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
@@ -140,7 +140,7 @@ impl EguiIntegration {
     fn render_element_recursive(
         &mut self,
         element: &UIElement,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
@@ -162,7 +162,7 @@ impl EguiIntegration {
     fn render_children(
         &mut self,
         element: &UIElement,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
@@ -177,7 +177,7 @@ impl EguiIntegration {
     pub fn render_panel_with_children(
         &mut self,
         panel: &UIPanel,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
@@ -264,7 +264,7 @@ impl EguiIntegration {
     pub fn render_layout_with_children(
         &mut self,
         layout: &UILayout,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
@@ -307,7 +307,7 @@ impl EguiIntegration {
     pub fn render_vlayout_with_children(
         &mut self,
         vlayout: &VLayout,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
@@ -343,7 +343,7 @@ impl EguiIntegration {
     pub fn render_hlayout_with_children(
         &mut self,
         hlayout: &HLayout,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
@@ -379,7 +379,7 @@ impl EguiIntegration {
     pub fn render_grid_with_children(
         &mut self,
         grid: &GridLayout,
-        elements: &indexmap::IndexMap<UIElementID, UIElement>,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {

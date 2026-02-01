@@ -38,7 +38,7 @@
 #![allow(non_upper_case_globals)]
 
 use crate::ids::{NodeID, SignalID, TextureID};
-use chrono::{Datelike, Local, Timelike};
+use crate::time_util::format_utc_datetime_compact;
 use serde::Serialize;
 use serde_json::Value;
 use smallvec::SmallVec;
@@ -104,16 +104,7 @@ impl TimeApi {
             .as_secs()
     }
     pub fn get_datetime_string(&self) -> String {
-        let now = Local::now();
-        format!(
-            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-            now.year(),
-            now.month(),
-            now.day(),
-            now.hour(),
-            now.minute(),
-            now.second()
-        )
+        format_utc_datetime_compact()
     }
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn sleep_msec(&self, ms: u64) {
@@ -2274,9 +2265,9 @@ impl<'a> ScriptApi<'a> {
         // Most signals have 1-3 listeners, so this avoids heap allocation in common case
         let script_map = script_map_opt.unwrap();
         let mut call_list = SmallVec::<[(NodeID, u64); 4]>::new();
-        for (uuid, fns) in script_map.iter() {
+        for (id, fns) in script_map.iter() {
             for &fn_id in fns.iter() {
-                call_list.push((*uuid, fn_id));
+                call_list.push((*id, fn_id));
             }
         }
 
@@ -2660,10 +2651,10 @@ impl<'a> ScriptApi<'a> {
         parent_element_id: Option<crate::ids::UIElementID>,
     ) -> Option<crate::ids::UIElementID> {
         self.with_ui_node(ui_node_id, |ui| {
-            use indexmap::IndexMap;
+            use std::collections::HashMap;
 
             // Get or create elements map
-            let elements = ui.elements.get_or_insert_with(|| IndexMap::new());
+            let elements = ui.elements.get_or_insert_with(|| HashMap::new());
 
             // Get or create root_ids
             let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());

@@ -837,19 +837,19 @@ impl Stmt {
                         false
                     };
 
-                let is_id_uuid = is_direct_node_call || is_direct_texture_call || is_node_cast;
+                let is_id_like = is_direct_node_call || is_direct_texture_call || is_node_cast;
 
                 // Check if the return type is NodeType or DynNode (from get_type(), etc.)
                 let is_node_type_return = matches!(expr_type, Some(Type::NodeType | Type::DynNode));
 
-                // If it's a UUID/Option<Uuid> representing a node/texture, or returns NodeType/DynNode, use _id suffix naming
-                // This follows the same pattern as nodes: check both var_type and expr_type for Uuid/Option<Uuid>
+                // If it's an ID/Option<NodeID> representing a node/texture, or returns NodeType/DynNode, use _id suffix naming
+                // This follows the same pattern as nodes: check both var_type and expr_type for ID types
                 let is_id_type = matches!(var_type, Some(Type::DynNode))
                     || matches!(expr_type.as_ref(), Some(Type::DynNode))
                     || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::DynNode));
 
-                let type_for_renaming = if is_id_uuid && is_id_type {
-                    // For node calls returning Uuid, treat as node type for naming
+                let type_for_renaming = if is_id_like && is_id_type {
+                    // For node calls returning ID, treat as node type for naming
                     // For texture calls returning Texture (EngineStruct), use the actual type
                     if is_direct_texture_call {
                         expr_type.as_ref().or(var_type)
@@ -1313,7 +1313,7 @@ impl Stmt {
                         false
                     };
 
-                let is_id_uuid = is_direct_node_call || is_direct_texture_call || is_node_cast;
+                let is_id_like = is_direct_node_call || is_direct_texture_call || is_node_cast;
 
                 // Check if the return type is NodeType or DynNode
                 let is_node_type_return = matches!(expr_type, Some(Type::NodeType | Type::DynNode));
@@ -1323,7 +1323,7 @@ impl Stmt {
                     || matches!(expr_type.as_ref(), Some(Type::DynNode))
                     || matches!(expr_type.as_ref(), Some(Type::Option(boxed)) if matches!(boxed.as_ref(), Type::DynNode));
 
-                let type_for_renaming = if is_id_uuid && is_id_type {
+                let type_for_renaming = if is_id_like && is_id_type {
                     if is_direct_texture_call {
                         expr_type.as_ref().or(var_type)
                     } else {

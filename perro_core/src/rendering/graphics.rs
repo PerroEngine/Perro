@@ -56,7 +56,7 @@ const EVICTION_FRAMES: u32 = 1000;
 
 /// Texture arena: slot-based storage like NodeArena. TextureID is generational (index + generation).
 /// path_to_id used only when loading (scene or Texture.load()); rendering uses id.
-/// Ref-count by node uuid: when no nodes use a texture for EVICTION_FRAMES frames, it is unloaded.
+/// Ref-count by node id: when no nodes use a texture for EVICTION_FRAMES frames, it is unloaded.
 pub struct TextureManager {
     /// Slots: index 0 = TextureID index 1, etc. None = free slot.
     slots: Vec<Option<TextureSlot>>,
@@ -67,7 +67,7 @@ pub struct TextureManager {
     /// Path → TextureID for loading; hot path uses id only.
     path_to_id: FxHashMap<String, TextureID>,
     cached_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    /// Node uuids (2D/UI) that are currently using each texture. Used for eviction.
+    /// Node ids (2D/UI) that are currently using each texture. Used for eviction.
     texture_users: FxHashMap<TextureID, FxHashSet<u64>>,
     /// Frames this texture has had zero users (reset when a user is added).
     texture_frames_at_zero: FxHashMap<TextureID, u32>,
@@ -104,22 +104,22 @@ impl TextureManager {
         self.pinned.remove(&id);
     }
 
-    /// Register that node `uuid` is using texture `id` (e.g. queued for 2D/UI). Resets eviction countdown.
-    pub fn add_texture_user(&mut self, id: TextureID, uuid: u64) {
+    /// Register that node `node_id` is using texture `id` (e.g. queued for 2D/UI). Resets eviction countdown.
+    pub fn add_texture_user(&mut self, id: TextureID, node_id: u64) {
         if id.is_nil() {
             return;
         }
-        self.texture_users.entry(id).or_default().insert(uuid);
+        self.texture_users.entry(id).or_default().insert(node_id);
         self.texture_frames_at_zero.insert(id, 0);
     }
 
-    /// Unregister node `uuid` from texture `id` (node removed or switched to another texture).
-    pub fn remove_texture_user(&mut self, id: TextureID, uuid: u64) {
+    /// Unregister node `node_id` from texture `id` (node removed or switched to another texture).
+    pub fn remove_texture_user(&mut self, id: TextureID, node_id: u64) {
         if id.is_nil() {
             return;
         }
         if let Some(users) = self.texture_users.get_mut(&id) {
-            users.remove(&uuid);
+            users.remove(&node_id);
         }
     }
 
@@ -715,16 +715,20 @@ impl MeshManager {
         let mesh = if let Some(static_meshes) = get_static_meshes() {
             if let Some(static_data) = static_meshes.get(canonical.as_str()) {
                 println!("🔷 Loading static mesh: {}", canonical);
-                static_data.to_mesh(device, queue)
-            } else {
-                let m = Self::load_mesh_from_file(path, device)?;
-                println!("🔷 Loading mesh: {}", canonical);
+                let start = Instant::now();
+                let m = static_data.to_mesh(device, queue);
+                println!(
+                    "⏱️ Static mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
                 m
+            } else {
+                println!("🔷 Loading mesh: {}", canonical);
+                Self::load_mesh_from_file(path, device)?
             }
         } else {
-            let m = Self::load_mesh_from_file(path, device)?;
             println!("🔷 Loading mesh: {}", canonical);
-            m
+            Self::load_mesh_from_file(path, device)?
         };
         Some(self.insert_slot(mesh, canonical))
     }
@@ -745,27 +749,102 @@ impl MeshManager {
 
     pub fn load_mesh_from_file(path: &str, device: &Device) -> Option<Mesh> {
         match path {
-            "__cube__" => Some(crate::renderer_3d::Renderer3D::create_cube_mesh(device)),
-            "__sphere__" => Some(crate::renderer_3d::Renderer3D::create_sphere_mesh(device)),
-            "__plane__" => Some(crate::renderer_3d::Renderer3D::create_plane_mesh(device)),
-            "__cylinder__" => Some(crate::renderer_3d::Renderer3D::create_cylinder_mesh(device)),
-            "__capsule__" => Some(crate::renderer_3d::Renderer3D::create_capsule_mesh(device)),
-            "__cone__" => Some(crate::renderer_3d::Renderer3D::create_cone_mesh(device)),
-            "__s_pyramid__" => Some(crate::renderer_3d::Renderer3D::create_square_pyramid_mesh(
-                device,
-            )),
+            "__cube__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_cube_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
+            "__sphere__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_sphere_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
+            "__plane__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_plane_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
+            "__cylinder__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_cylinder_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
+            "__capsule__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_capsule_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
+            "__cone__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_cone_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
+            "__s_pyramid__" => {
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_square_pyramid_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
+            }
             "__t_pyramid__" => {
-                Some(crate::renderer_3d::Renderer3D::create_triangular_pyramid_mesh(device))
+                let start = Instant::now();
+                let m = crate::renderer_3d::Renderer3D::create_triangular_pyramid_mesh(device);
+                println!(
+                    "⏱️ Built-in mesh loaded in {:.2}ms",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+                Some(m)
             }
             _ => {
                 // Dev path: load model from disk; path = "res://model.glb" or "res://model.glb:0", "res://model.glb:1", …
                 let (base_path, mesh_name) = mesh_loader::parse_mesh_path(path);
                 let is_gltf = base_path.ends_with(".glb") || base_path.ends_with(".gltf");
                 if is_gltf {
+                    let load_start = Instant::now();
                     let bytes = load_asset(base_path).ok()?;
+                    let load_elapsed = load_start.elapsed();
+                    let parse_start = Instant::now();
                     let (vertices, indices) =
                         mesh_loader::load_gltf_mesh(&bytes, mesh_name)?;
-                    Some(Renderer3D::create_mesh_from_vertices(device, &vertices, &indices))
+                    let parse_elapsed = parse_start.elapsed();
+                    let upload_start = Instant::now();
+                    let mesh = Renderer3D::create_mesh_from_vertices(device, &vertices, &indices);
+                    let upload_elapsed = upload_start.elapsed();
+                    let total_elapsed = load_start.elapsed();
+                    println!(
+                        "⏱️ Runtime mesh loaded in {:.2}ms total (disk: {:.2}ms, parse: {:.2}ms, upload: {:.2}ms)",
+                        total_elapsed.as_secs_f64() * 1000.0,
+                        load_elapsed.as_secs_f64() * 1000.0,
+                        parse_elapsed.as_secs_f64() * 1000.0,
+                        upload_elapsed.as_secs_f64() * 1000.0
+                    );
+                    Some(mesh)
                 } else {
                     None
                 }
@@ -1583,6 +1662,7 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     );
     let renderer_prim = PrimitiveRenderer::new(
         &device,
+        &queue,
         &camera_bind_group_layout,
         surface_config.format,
         DEFAULT_VIRTUAL_WIDTH,
@@ -2186,6 +2266,7 @@ pub fn create_graphics_sync(
     );
     let renderer_prim = PrimitiveRenderer::new(
         &device,
+        &queue,
         &camera_bind_group_layout,
         surface_config.format,
         virtual_width,
@@ -2532,23 +2613,23 @@ impl Graphics {
 
     /// Stops rendering this node: 2D/UI (rect + texture) and 3D mesh. Unregisters texture/mesh
     /// users so eviction can reclaim resources after EVICTION_FRAMES at zero users.
-    pub fn stop_rendering(&mut self, uuid: u64) {
+    pub fn stop_rendering(&mut self, id: u64) {
         self.renderer_prim
-            .stop_rendering(uuid, &mut self.texture_manager);
+            .stop_rendering(id, &mut self.texture_manager);
         self.renderer_3d
-            .stop_rendering_mesh(NodeID::from_u64(uuid), &mut self.mesh_manager);
+            .stop_rendering_mesh(NodeID::from_u64(id), &mut self.mesh_manager);
     }
 
     /// Queue a 3D mesh with automatic material resolution
     pub fn queue_mesh_3d(
         &mut self,
-        uuid: NodeID,
+        id: NodeID,
         mesh_path: &str,
         material_path: &str,
         transform: Transform3D,
     ) {
         let _ = self.renderer_3d.queue_mesh(
-            uuid,
+            id,
             mesh_path,
             transform,
             Some(material_path),
@@ -2569,9 +2650,9 @@ impl Graphics {
             .resolve_material_paths(&material_paths, &mut self.renderer_3d);
 
         // Now queue all meshes (material IDs are cached)
-        for (uuid, mesh_path, material_path, transform) in meshes {
+        for (id, mesh_path, material_path, transform) in meshes {
             let _ = self.renderer_3d.queue_mesh(
-                *uuid,
+                *id,
                 mesh_path,
                 *transform,
                 Some(material_path),

@@ -16,7 +16,7 @@ impl RendererUI {
     pub fn queue_panel(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: UIElementID,
+        id: UIElementID,
         transform: Transform2D,
         size: Vector2,
         pivot: Vector2,
@@ -28,7 +28,7 @@ impl RendererUI {
         created_timestamp: u64,
     ) {
         primitive_renderer.queue_rect(
-            uuid.as_u64(),
+            id.as_u64(),
             RenderLayer::UI,
             transform,
             size,
@@ -48,7 +48,7 @@ impl RendererUI {
         texture_manager: &mut TextureManager,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        uuid: u64,
+        id: u64,
         texture_path: &str,
         transform: Transform2D,
         pivot: Vector2,
@@ -60,7 +60,7 @@ impl RendererUI {
             Err(_) => return,
         };
         primitive_renderer.queue_texture(
-            uuid,
+            id,
             RenderLayer::UI,
             texture_id,
             transform,
@@ -76,7 +76,7 @@ impl RendererUI {
     pub fn queue_text(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: u64,
+        id: u64,
         text: &str,
         font_size: f32,
         transform: Transform2D,
@@ -89,7 +89,7 @@ impl RendererUI {
         queue: &Queue,
     ) {
         primitive_renderer.queue_text_aligned_with_font(
-            uuid,
+            id,
             RenderLayer::UI,
             text,
             font_size,
@@ -109,7 +109,7 @@ impl RendererUI {
     pub fn queue_text_aligned(
         &mut self,
         primitive_renderer: &mut PrimitiveRenderer,
-        uuid: UIElementID,
+        id: UIElementID,
         text: &str,
         font_size: f32,
         transform: Transform2D,
@@ -124,7 +124,7 @@ impl RendererUI {
         queue: &Queue,
     ) {
         primitive_renderer.queue_text_aligned_with_font(
-            uuid.as_u64(),
+            id.as_u64(),
             RenderLayer::UI,
             text,
             font_size,
@@ -143,14 +143,14 @@ impl RendererUI {
 
     /// Remove a panel from the render cache
     /// Call this when an element becomes invisible
-    pub fn remove_panel(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: UIElementID) {
-        primitive_renderer.remove_rect(uuid.as_u64());
+    pub fn remove_panel(&mut self, primitive_renderer: &mut PrimitiveRenderer, id: UIElementID) {
+        primitive_renderer.remove_rect(id.as_u64());
     }
 
     /// Remove text from the render cache
     /// Call this when an element becomes invisible
-    pub fn remove_text(&mut self, primitive_renderer: &mut PrimitiveRenderer, uuid: UIElementID) {
-        primitive_renderer.remove_text(uuid.as_u64());
+    pub fn remove_text(&mut self, primitive_renderer: &mut PrimitiveRenderer, id: UIElementID) {
+        primitive_renderer.remove_text(id.as_u64());
     }
 
     pub fn render(

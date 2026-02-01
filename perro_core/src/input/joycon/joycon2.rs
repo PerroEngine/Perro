@@ -15,18 +15,21 @@ use crate::input::joycon::{JOYCON_L_SIDE, JOYCON_R_SIDE, NINTENDO_BLE_CID};
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral, ScanFilter};
 use btleplug::platform::{Adapter, Manager, Peripheral as PlatformPeripheral};
 use futures::StreamExt;
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::time::{Duration, timeout};
-use uuid::Uuid; // Required for btleplug GATT characteristics
+use uuid::Uuid;
 
-// Joy-Con 2 GATT characteristic UUIDs for input reports
+// Joy-Con 2 GATT characteristic UUIDs (parsed once for proper comparison; uuid crate used only here)
 // Based on: https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md
-// Input Report 0x05: Common to all controllers
-const INPUT_REPORT_05_UUID: &str = "ab7de9be-89fe-49ad-828f-118f09df7fd2";
-// Input Report 0x07: Left Joy-Con 2
-const INPUT_REPORT_07_UUID: &str = "cc1bbbb5-7354-4d32-a716-a81cb241a32a";
-// Input Report 0x08: Right Joy-Con 2
-const INPUT_REPORT_08_UUID: &str = "d5a9e01e-2ffc-4cca-b20c-8b67142bf442";
+static INPUT_REPORT_05: Lazy<Uuid> =
+    Lazy::new(|| Uuid::parse_str("ab7de9be-89fe-49ad-828f-118f09df7fd2").unwrap());
+static INPUT_REPORT_07: Lazy<Uuid> =
+    Lazy::new(|| Uuid::parse_str("cc1bbbb5-7354-4d32-a716-a81cb241a32a").unwrap());
+static INPUT_REPORT_08: Lazy<Uuid> =
+    Lazy::new(|| Uuid::parse_str("d5a9e01e-2ffc-4cca-b20c-8b67142bf442").unwrap());
+static WRITE_COMMAND: Lazy<Uuid> =
+    Lazy::new(|| Uuid::parse_str("649d4ac9-8eb7-4e6c-af44-1ea54fe5f005").unwrap());
 
 /// Represents a Joy-Con 2 controller connected via BLE
 pub struct JoyCon2 {
@@ -131,15 +134,7 @@ impl JoyCon2 {
 
         println!("  Discovering services and characteristics...");
 
-        // Parse the known UUIDs (must use uuid::Uuid for btleplug compatibility)
-        let report_05_uuid = Uuid::parse_str(INPUT_REPORT_05_UUID)
-            .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
-        let report_07_uuid = Uuid::parse_str(INPUT_REPORT_07_UUID)
-            .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
-        let report_08_uuid = Uuid::parse_str(INPUT_REPORT_08_UUID)
-            .map_err(|e| JoyConError::Ble(format!("Failed to parse UUID: {}", e)))?;
-
-        // First, try to find the specific Joy-Con 2 input report characteristics
+        // First, try to find the specific Joy-Con 2 input report characteristics (uuid comparison)
         let mut found_characteristic: Option<Characteristic> = None;
 
         for service in &services {
@@ -150,10 +145,9 @@ impl JoyCon2 {
                     characteristic.uuid, characteristic.properties
                 );
 
-                // Check if this is one of the known Joy-Con 2 input report characteristics
-                if characteristic.uuid == report_05_uuid
-                    || characteristic.uuid == report_07_uuid
-                    || characteristic.uuid == report_08_uuid
+                if characteristic.uuid == *INPUT_REPORT_05
+                    || characteristic.uuid == *INPUT_REPORT_07
+                    || characteristic.uuid == *INPUT_REPORT_08
                 {
                     if characteristic
                         .properties
@@ -229,16 +223,11 @@ impl JoyCon2 {
         println!("  Attempting to initialize Joy-Con 2...");
 
         // Find command characteristic - use the exact UUID from joycon2cpp
-        // Based on: https://github.com/TheFrano/joycon2cpp/blob/main/testapp/src/testapp.cpp
-        // const wchar_t* WRITE_COMMAND_UUID = L"649d4ac9-8eb7-4e6c-af44-1ea54fe5f005";
-        let write_command_uuid = Uuid::parse_str("649d4ac9-8eb7-4e6c-af44-1ea54fe5f005")
-            .map_err(|e| JoyConError::Ble(format!("Failed to parse write command UUID: {}", e)))?;
-
         let mut command_char: Option<Characteristic> = None;
 
         for service in self.peripheral.services() {
             for cmd_char in &service.characteristics {
-                if cmd_char.uuid == write_command_uuid {
+                if cmd_char.uuid == *WRITE_COMMAND {
                     command_char = Some(cmd_char.clone());
                     break;
                 }

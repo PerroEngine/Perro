@@ -89,6 +89,14 @@ impl Default for TextureInstance {
         }
     }
 }
+/// Platform sprite output: 0 = linear (Mac/Linux sRGB swapchain), 1 = sRGB in shader (Windows).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SpriteOutputConfig {
+    output_srgb: u32,
+    _pad: [u32; 3],
+}
+
 pub struct PrimitiveRenderer {
     rect_instance_buffer: wgpu::Buffer,
     texture_instance_buffer: wgpu::Buffer,
@@ -97,16 +105,17 @@ pub struct PrimitiveRenderer {
     texture_instanced_pipeline: RenderPipeline,
 
     texture_bind_group_layout: BindGroupLayout,
+    sprite_output_config_bind_group: wgpu::BindGroup,
 
     // Optimized rect storage
     rect_instance_slots: Vec<Option<(RenderLayer, RectInstance, u64)>>, // Added timestamp for sorting
-    rect_uuid_to_slot: FxHashMap<u64, usize>,
+    rect_id_to_slot: FxHashMap<u64, usize>,
     free_rect_slots: SmallVec<[usize; 16]>,
     rect_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
     // Optimized texture storage (by TextureID; path only at load time)
     texture_instance_slots: Vec<Option<(RenderLayer, TextureInstance, TextureID, Vector2, u64)>>,
-    texture_uuid_to_slot: FxHashMap<u64, usize>,
+    texture_id_to_slot: FxHashMap<u64, usize>,
     free_texture_slots: SmallVec<[usize; 16]>,
     texture_dirty_ranges: SmallVec<[Range<usize>; 8]>,
 
@@ -151,6 +160,7 @@ pub struct PrimitiveRenderer {
 impl PrimitiveRenderer {
     pub fn new(
         device: &Device,
+        queue: &Queue,
         camera_bgl: &BindGroupLayout,
         format: TextureFormat,
         virtual_width: f32,
@@ -180,6 +190,47 @@ impl PrimitiveRenderer {
                 ],
             });
 
+        let sprite_output_config_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Sprite Output Config BGL"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(16),
+                    },
+                    count: None,
+                }],
+            });
+
+        let output_srgb = if cfg!(target_os = "windows") { 1u32 } else { 0u32 };
+        let output_config = SpriteOutputConfig {
+            output_srgb,
+            _pad: [0, 0, 0],
+        };
+        let output_config_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("Sprite Output Config Buffer"),
+            size: 16,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(
+            &output_config_buffer,
+            0,
+            bytemuck::bytes_of(&output_config),
+        );
+        let sprite_output_config_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Sprite Output Config Bind Group"),
+                layout: &sprite_output_config_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: output_config_buffer.as_entire_binding(),
+                }],
+            });
+
         let rect_instance_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("Rect Instance Buffer"),
             size: (std::mem::size_of::<RectInstance>() * MAX_INSTANCES) as u64,
@@ -200,6 +251,7 @@ impl PrimitiveRenderer {
             device,
             &texture_bind_group_layout,
             camera_bgl,
+            &sprite_output_config_bgl,
             format,
             sample_count,
         );
@@ -210,15 +262,16 @@ impl PrimitiveRenderer {
             rect_instanced_pipeline,
             texture_instanced_pipeline,
             texture_bind_group_layout,
+            sprite_output_config_bind_group,
 
             // Optimized storage
             rect_instance_slots: Vec::with_capacity(MAX_INSTANCES),
-            rect_uuid_to_slot: FxHashMap::default(),
+            rect_id_to_slot: FxHashMap::default(),
             free_rect_slots: SmallVec::new(),
             rect_dirty_ranges: SmallVec::new(),
 
             texture_instance_slots: Vec::with_capacity(MAX_INSTANCES),
-            texture_uuid_to_slot: FxHashMap::default(),
+            texture_id_to_slot: FxHashMap::default(),
             free_texture_slots: SmallVec::new(),
             texture_dirty_ranges: SmallVec::new(),
 
@@ -409,7 +462,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_rect(
         &mut self,
-        uuid: u64,
+        id: u64,
         layer: RenderLayer,
         transform: Transform2D,
         size: Vector2,
@@ -424,11 +477,11 @@ impl PrimitiveRenderer {
         // VALIDATION: Skip zero-size, negative, NaN, or infinite sizes to prevent buffer issues
         if size.x <= 0.0 || size.y <= 0.0 || !size.x.is_finite() || !size.y.is_finite() {
             // Remove from slots if it exists (element became invalid)
-            if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+            if let Some(&slot) = self.rect_id_to_slot.get(&id) {
                 if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                     self.rect_instance_slots[slot] = None;
                     self.free_rect_slots.push(slot);
-                    self.rect_uuid_to_slot.remove(&uuid);
+                    self.rect_id_to_slot.remove(&id);
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -446,11 +499,11 @@ impl PrimitiveRenderer {
             || !transform.rotation.is_finite()
         {
             // Remove from slots if it exists (element has invalid transform)
-            if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+            if let Some(&slot) = self.rect_id_to_slot.get(&id) {
                 if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                     self.rect_instance_slots[slot] = None;
                     self.free_rect_slots.push(slot);
-                    self.rect_uuid_to_slot.remove(&uuid);
+                    self.rect_id_to_slot.remove(&id);
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -463,12 +516,12 @@ impl PrimitiveRenderer {
         // OPTIMIZED: Viewport culling - skip offscreen sprites (only for World2D)
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&transform, &size) {
             // Remove from slots if it exists (sprite moved offscreen)
-            if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+            if let Some(&slot) = self.rect_id_to_slot.get(&id) {
                 if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                     // Mark as removed by setting to None
                     self.rect_instance_slots[slot] = None;
                     self.free_rect_slots.push(slot);
-                    self.rect_uuid_to_slot.remove(&uuid);
+                    self.rect_id_to_slot.remove(&id);
                     self.mark_rect_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -484,11 +537,11 @@ impl PrimitiveRenderer {
         //     let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &size, z_index, "shape");
         //     if is_occluded {
         //         // Remove from slots if it exists (shape is occluded)
-        //         if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+        //         if let Some(&slot) = self.rect_id_to_slot.get(&id) {
         //             if let Some(_existing) = &mut self.rect_instance_slots[slot] {
         //                 self.rect_instance_slots[slot] = None;
         //                 self.free_rect_slots.push(slot);
-        //                 self.rect_uuid_to_slot.remove(&uuid);
+        //                 self.rect_id_to_slot.remove(&id);
         //                 self.mark_rect_slot_dirty(slot);
         //                 self.dirty_count += 1;
         //                 self.instances_need_rebuild = true;
@@ -511,7 +564,7 @@ impl PrimitiveRenderer {
         );
 
         // Check if this rect already exists
-        if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+        if let Some(&slot) = self.rect_id_to_slot.get(&id) {
             // Update existing slot if changed
             if let Some(ref mut existing) = self.rect_instance_slots[slot] {
                 if existing.0 != layer || existing.1 != new_instance {
@@ -538,7 +591,7 @@ impl PrimitiveRenderer {
                 if self.rect_instance_slots.len() >= MAX_INSTANCES {
                     eprintln!(
                         "⚠️ WARNING: Rect instance buffer full ({} instances). Skipping panel with UUID {}",
-                        MAX_INSTANCES, uuid
+                        MAX_INSTANCES, id
                     );
                     return; // Don't queue if buffer is full
                 }
@@ -548,7 +601,7 @@ impl PrimitiveRenderer {
             };
 
             self.rect_instance_slots[slot] = Some((layer, new_instance, created_timestamp));
-            self.rect_uuid_to_slot.insert(uuid, slot);
+            self.rect_id_to_slot.insert(id, slot);
             self.mark_rect_slot_dirty(slot);
             self.dirty_count += 1;
             self.instances_need_rebuild = true;
@@ -557,12 +610,12 @@ impl PrimitiveRenderer {
 
     /// Remove a rect instance from the render cache
     /// Call this when an element becomes invisible to clear it from GPU buffers
-    pub fn remove_rect(&mut self, uuid: u64) {
-        if let Some(&slot) = self.rect_uuid_to_slot.get(&uuid) {
+    pub fn remove_rect(&mut self, id: u64) {
+        if let Some(&slot) = self.rect_id_to_slot.get(&id) {
             if let Some(_existing) = &mut self.rect_instance_slots[slot] {
                 self.rect_instance_slots[slot] = None;
                 self.free_rect_slots.push(slot);
-                self.rect_uuid_to_slot.remove(&uuid);
+                self.rect_id_to_slot.remove(&id);
                 self.mark_rect_slot_dirty(slot);
                 self.dirty_count += 1;
                 self.instances_need_rebuild = true;
@@ -572,13 +625,13 @@ impl PrimitiveRenderer {
 
     /// Remove a text instance from the render cache
     /// Call this when an element becomes invisible to clear it from GPU buffers
-    pub fn remove_text(&mut self, _uuid: u64) {
+    pub fn remove_text(&mut self, _id: u64) {
         // Text rendering now handled by egui
     }
 
     pub fn queue_texture(
         &mut self,
-        uuid: u64,
+        id: u64,
         layer: RenderLayer,
         texture_id: TextureID,
         transform: Transform2D,
@@ -608,11 +661,11 @@ impl PrimitiveRenderer {
         // texture user: the node still "owns" the texture and may come back on screen.
         if layer == RenderLayer::World2D && self.is_sprite_offscreen(&adjusted_transform, &tex_size)
         {
-            if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+            if let Some(&slot) = self.texture_id_to_slot.get(&id) {
                 if self.texture_instance_slots[slot].is_some() {
                     self.texture_instance_slots[slot] = None;
                     self.free_texture_slots.push(slot);
-                    self.texture_uuid_to_slot.remove(&uuid);
+                    self.texture_id_to_slot.remove(&id);
                     self.mark_texture_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -629,11 +682,11 @@ impl PrimitiveRenderer {
         //     let (is_occluded, _occluder_info) = self.is_visual_occluded_by_textures(&transform, &tex_size, z_index, "sprite");
         //     if is_occluded {
         //         // Remove from slots if it exists (sprite is occluded)
-        //         if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+        //         if let Some(&slot) = self.texture_id_to_slot.get(&id) {
         //             if let Some(_existing) = &mut self.texture_instance_slots[slot] {
         //                 self.texture_instance_slots[slot] = None;
         //                 self.free_texture_slots.push(slot);
-        //                 self.texture_uuid_to_slot.remove(&uuid);
+        //                 self.texture_id_to_slot.remove(&id);
         //                 self.mark_texture_slot_dirty(slot);
         //                 self.dirty_count += 1;
         //                 self.instances_need_rebuild = true;
@@ -643,7 +696,7 @@ impl PrimitiveRenderer {
         //     }
         // }
 
-        if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+        if let Some(&slot) = self.texture_id_to_slot.get(&id) {
             if let Some(existing) = &self.texture_instance_slots[slot] {
                 if existing.0 == layer && existing.2 == texture_id {
                     // Create new instance to compare (but we need tex_size first, which we already have)
@@ -678,7 +731,7 @@ impl PrimitiveRenderer {
         let new_instance =
             self.create_texture_instance(adjusted_transform, pivot, z_index, created_timestamp);
 
-        if let Some(&slot) = self.texture_uuid_to_slot.get(&uuid) {
+        if let Some(&slot) = self.texture_id_to_slot.get(&id) {
             if let Some(ref mut existing) = self.texture_instance_slots[slot] {
                 let instance_changed = existing.1.transform_0 != new_instance.transform_0
                     || existing.1.transform_1 != new_instance.transform_1
@@ -687,7 +740,7 @@ impl PrimitiveRenderer {
                     || existing.1.z_index != new_instance.z_index;
                 if existing.0 != layer || instance_changed || existing.2 != texture_id {
                     if existing.2 != texture_id {
-                        texture_manager.remove_texture_user(existing.2, uuid);
+                        texture_manager.remove_texture_user(existing.2, id);
                     }
                     let order_or_group_changed = existing.0 != layer
                         || existing.1.z_index != new_instance.z_index
@@ -699,7 +752,7 @@ impl PrimitiveRenderer {
                     existing.1 = new_instance;
                     existing.2 = texture_id;
                     existing.3 = tex_size;
-                    texture_manager.add_texture_user(texture_id, uuid);
+                    texture_manager.add_texture_user(texture_id, id);
                     self.mark_texture_slot_dirty(slot);
                     self.dirty_count += 1;
                     self.instances_need_rebuild = true;
@@ -707,7 +760,7 @@ impl PrimitiveRenderer {
             }
         } else {
             self.structure_changed = true;
-            texture_manager.add_texture_user(texture_id, uuid);
+            texture_manager.add_texture_user(texture_id, id);
             let slot = if let Some(free_slot) = self.free_texture_slots.pop() {
                 free_slot
             } else {
@@ -717,7 +770,7 @@ impl PrimitiveRenderer {
             };
             self.texture_instance_slots[slot] =
                 Some((layer, new_instance, texture_id, tex_size, created_timestamp));
-            self.texture_uuid_to_slot.insert(uuid, slot);
+            self.texture_id_to_slot.insert(id, slot);
             self.mark_texture_slot_dirty(slot);
             self.dirty_count += 1;
             self.instances_need_rebuild = true;
@@ -726,7 +779,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_text(
         &mut self,
-        _uuid: u64,
+        _id: u64,
         _layer: RenderLayer,
         _text: &str,
         _font_size: f32,
@@ -743,7 +796,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_text_aligned(
         &mut self,
-        _uuid: u64,
+        _id: u64,
         _layer: RenderLayer,
         _text: &str,
         _font_size: f32,
@@ -762,7 +815,7 @@ impl PrimitiveRenderer {
 
     pub fn queue_text_aligned_with_font(
         &mut self,
-        _uuid: u64,
+        _id: u64,
         _layer: RenderLayer,
         _text: &str,
         _font_size: f32,
@@ -899,9 +952,9 @@ impl PrimitiveRenderer {
     }
 
     /// Stops rendering the given node (rect + texture). Unregisters texture user for eviction.
-    pub fn stop_rendering(&mut self, uuid: u64, texture_manager: &mut TextureManager) {
+    pub fn stop_rendering(&mut self, id: u64, texture_manager: &mut TextureManager) {
         // Remove from rect slots
-        if let Some(slot) = self.rect_uuid_to_slot.remove(&uuid) {
+        if let Some(slot) = self.rect_id_to_slot.remove(&id) {
             self.rect_instance_slots[slot] = None;
             self.free_rect_slots.push(slot);
             self.mark_rect_slot_dirty(slot);
@@ -911,9 +964,9 @@ impl PrimitiveRenderer {
         }
 
         // Remove from texture slots and unregister texture user for eviction
-        if let Some(slot) = self.texture_uuid_to_slot.remove(&uuid) {
+        if let Some(slot) = self.texture_id_to_slot.remove(&id) {
             if let Some(ref existing) = self.texture_instance_slots[slot] {
-                texture_manager.remove_texture_user(existing.2, uuid);
+                texture_manager.remove_texture_user(existing.2, id);
             }
             self.texture_instance_slots[slot] = None;
             self.free_texture_slots.push(slot);
@@ -1123,8 +1176,9 @@ impl PrimitiveRenderer {
         self.world_rect_instances.clear();
         self.ui_rect_instances.clear();
 
-        let mut world_with_ts: Vec<(usize, RectInstance, u64)> = Vec::new();
-        let mut ui_with_ts: Vec<(usize, RectInstance, u64)> = Vec::new();
+        let cap = self.rect_instance_slots.len();
+        let mut world_with_ts: Vec<(usize, RectInstance, u64)> = Vec::with_capacity(cap);
+        let mut ui_with_ts: Vec<(usize, RectInstance, u64)> = Vec::with_capacity(cap);
 
         for (slot_idx, slot) in self.rect_instance_slots.iter().enumerate() {
             if let Some((layer, instance, timestamp)) = slot {
@@ -1173,8 +1227,9 @@ impl PrimitiveRenderer {
         self.world_texture_buffer_ranges.clear();
         self.ui_texture_buffer_ranges.clear();
 
-        let mut world_with_slot: Vec<(usize, TextureInstance)> = Vec::new();
-        let mut ui_with_slot: Vec<(usize, TextureInstance)> = Vec::new();
+        let cap = self.texture_instance_slots.len();
+        let mut world_with_slot: Vec<(usize, TextureInstance)> = Vec::with_capacity(cap);
+        let mut ui_with_slot: Vec<(usize, TextureInstance)> = Vec::with_capacity(cap);
         let mut world_texture_id: Option<TextureID> = None;
         let mut ui_texture_id: Option<TextureID> = None;
         let mut world_single_texture = true;
@@ -1212,8 +1267,8 @@ impl PrimitiveRenderer {
                     if world_with_slot.len() > 1 {
                         world_with_slot.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index));
                     }
-                    let world_instances: Vec<TextureInstance> =
-                        world_with_slot.iter().map(|(_, i)| *i).collect();
+                    let mut world_instances = Vec::with_capacity(world_with_slot.len());
+                    world_instances.extend(world_with_slot.iter().map(|(_, i)| *i));
                     for (flat_i, (slot_idx, _)) in world_with_slot.iter().enumerate() {
                         self.texture_slot_to_flat_index[*slot_idx] = Some(flat_i);
                     }
@@ -1237,8 +1292,8 @@ impl PrimitiveRenderer {
                     } else {
                         0
                     };
-                    let ui_instances: Vec<TextureInstance> =
-                        ui_with_slot.iter().map(|(_, i)| *i).collect();
+                    let mut ui_instances = Vec::with_capacity(ui_with_slot.len());
+                    ui_instances.extend(ui_with_slot.iter().map(|(_, i)| *i));
                     for (flat_i, (slot_idx, _)) in ui_with_slot.iter().enumerate() {
                         self.texture_slot_to_flat_index[*slot_idx] = Some(world_offset + flat_i);
                     }
@@ -1287,9 +1342,10 @@ impl PrimitiveRenderer {
                 }
             }
 
+            let map_cap = world_texture_map.len().max(1);
             let mut temp_sorted_with_slots: Vec<(TextureID, Vec<(usize, TextureInstance)>)> =
-                Vec::new();
-            let mut world_slot_order = Vec::new();
+                Vec::with_capacity(map_cap);
+            let mut world_slot_order = Vec::with_capacity(self.texture_instance_slots.len());
             Self::build_texture_groups_with_slots(
                 world_texture_map,
                 &mut self.world_texture_groups,
@@ -1306,7 +1362,7 @@ impl PrimitiveRenderer {
                 .map(|(_, instances)| instances.len())
                 .sum();
 
-            let mut ui_slot_order = Vec::new();
+            let mut ui_slot_order = Vec::with_capacity(self.texture_instance_slots.len());
             Self::build_texture_groups_with_slots(
                 ui_texture_map,
                 &mut self.ui_texture_groups,
@@ -1335,7 +1391,8 @@ impl PrimitiveRenderer {
         const RECT_INSTANCE_SIZE: usize = std::mem::size_of::<RectInstance>();
         let world_len = self.world_rect_instances.len();
 
-        for range in &self.rect_dirty_ranges.clone() {
+        let ranges = std::mem::take(&mut self.rect_dirty_ranges);
+        for range in &ranges {
             for slot in range.clone() {
                 if slot >= self.rect_slot_to_buffer.len() {
                     continue;
@@ -1361,14 +1418,14 @@ impl PrimitiveRenderer {
                 );
             }
         }
-        self.rect_dirty_ranges.clear();
     }
 
     /// Partial upload: only write dirty texture slots (transform-only changes). Used when !structure_changed.
     fn partial_update_textures_to_gpu(&mut self, queue: &Queue) {
         const TEXTURE_INSTANCE_SIZE: usize = std::mem::size_of::<TextureInstance>();
 
-        for range in &self.texture_dirty_ranges.clone() {
+        let ranges = std::mem::take(&mut self.texture_dirty_ranges);
+        for range in &ranges {
             for slot in range.clone() {
                 if slot >= self.texture_slot_to_flat_index.len() {
                     continue;
@@ -1390,7 +1447,6 @@ impl PrimitiveRenderer {
                 );
             }
         }
-        self.texture_dirty_ranges.clear();
     }
 
     fn upload_instances_to_gpu(&mut self, queue: &Queue) {
@@ -1417,7 +1473,10 @@ impl PrimitiveRenderer {
         }
 
         // Upload texture instances
+        let total: usize = self.world_texture_groups.iter().map(|(_, i)| i.len()).sum::<usize>()
+            + self.ui_texture_groups.iter().map(|(_, i)| i.len()).sum::<usize>();
         self.temp_all_texture_instances.clear();
+        self.temp_all_texture_instances.reserve(total);
         for (_, instances) in &self.world_texture_groups {
             self.temp_all_texture_instances.extend(instances);
         }
@@ -1470,9 +1529,13 @@ impl PrimitiveRenderer {
             if instances_with_slot.len() > 1 {
                 instances_with_slot.sort_by(|a, b| a.1.z_index.cmp(&b.1.z_index));
             }
-            let slot_indices: Vec<usize> = instances_with_slot.iter().map(|(s, _)| *s).collect();
-            let instances: Vec<TextureInstance> =
-                instances_with_slot.into_iter().map(|(_, i)| i).collect();
+            let n = instances_with_slot.len();
+            let mut slot_indices = Vec::with_capacity(n);
+            let mut instances = Vec::with_capacity(n);
+            for (s, i) in instances_with_slot {
+                slot_indices.push(s);
+                instances.push(i);
+            }
             let count = instances.len();
             let start_byte = current_offset * INSTANCE_SIZE;
             let size_bytes = count * INSTANCE_SIZE;
@@ -1529,6 +1592,7 @@ impl PrimitiveRenderer {
                     rpass.set_pipeline(&self.texture_instanced_pipeline);
                     rpass.set_bind_group(0, tex_bg, &[]);
                     rpass.set_bind_group(1, camera_bind_group, &[]);
+                    rpass.set_bind_group(2, &self.sprite_output_config_bind_group, &[]);
                     rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     rpass.set_vertex_buffer(
                         1,
@@ -1683,6 +1747,7 @@ impl PrimitiveRenderer {
         device: &Device,
         texture_bgl: &BindGroupLayout,
         camera_bgl: &BindGroupLayout,
+        output_config_bgl: &BindGroupLayout,
         format: TextureFormat,
         sample_count: u32,
     ) -> RenderPipeline {
@@ -1695,7 +1760,7 @@ impl PrimitiveRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Sprite Instanced Pipeline Layout"),
-            bind_group_layouts: &[texture_bgl, camera_bgl],
+            bind_group_layouts: &[texture_bgl, camera_bgl, output_config_bgl],
             push_constant_ranges: &[],
         });
 

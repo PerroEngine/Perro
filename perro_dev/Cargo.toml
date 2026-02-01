@@ -29,10 +29,19 @@ debug = false            # no debug info
 strip = "symbols"        # strip symbols from final binary
 incremental = false      # disable incremental compilation for better optimization
 
+# Smaller binary (e.g. for distribution: cargo build --profile release-size)
+[profile.release-size]
+inherits = "release"
+opt-level = "z"          # optimize for size
 
 # Per-crate tweaks (only opt-level, debug, overflow-checks allowed here)
 [profile.release.package."*"]
 opt-level = 3
+debug = false
+overflow-checks = false
+
+[profile.release-size.package."*"]
+opt-level = "z"
 debug = false
 overflow-checks = false
 

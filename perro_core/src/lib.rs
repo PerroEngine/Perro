@@ -13,6 +13,7 @@ pub mod scene;
 pub mod scripting;
 pub mod structs;
 pub mod thread_utils;
+pub mod time_util;
 pub mod types;
 
 pub use ids::{LightID, MaterialID, MeshID, NodeID, SignalID, TextureID, UIElementID};

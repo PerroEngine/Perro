@@ -1,5 +1,4 @@
 use crate::ids::UIElementID;
-use indexmap::IndexMap;
 use std::{borrow::Cow, collections::HashMap, time::Instant};
 
 use crate::{
@@ -506,18 +505,18 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
 
 fn convert_fur_element_to_ui_elements(
     fur: &FurElement,
-    parent_uuid: Option<UIElementID>,
+    parent_id: Option<UIElementID>,
 ) -> Vec<(UIElementID, UIElement)> {
     convert_fur_element_to_ui_elements_with_includes(
         fur,
-        parent_uuid,
+        parent_id,
         &mut std::collections::HashSet::new(),
     )
 }
 
 fn convert_fur_element_to_ui_elements_with_includes(
     fur: &FurElement,
-    parent_uuid: Option<UIElementID>,
+    parent_id: Option<UIElementID>,
     included_paths: &mut std::collections::HashSet<String>,
 ) -> Vec<(UIElementID, UIElement)> {
     // Handle Include elements
@@ -565,7 +564,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
             for elem in &elements {
                 let mut included_results = convert_fur_element_to_ui_elements_with_includes(
                     elem,
-                    parent_uuid,
+                    parent_id,
                     included_paths,
                 );
 
@@ -595,7 +594,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
                 if let FurNode::Element(e) = n {
                     Some(convert_fur_element_to_ui_elements_with_includes(
                         e,
-                        parent_uuid,
+                        parent_id,
                         included_paths,
                     ))
                 } else {
@@ -614,7 +613,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
             .as_nanos()
     ));
     ui.set_id(id);
-    ui.set_parent(parent_uuid);
+    ui.set_parent(parent_id);
 
     let mut results = Vec::with_capacity(fur.children.len() + 1);
     let mut children = Vec::with_capacity(fur.children.len());
@@ -643,7 +642,7 @@ fn convert_fur_element_to_ui_elements_with_includes(
 pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
     let elements = ui
         .elements
-        .get_or_insert_with(|| IndexMap::with_capacity(elems.len()));
+        .get_or_insert_with(|| HashMap::with_capacity(elems.len()));
     elements.clear();
 
     let root_ids = ui
@@ -653,11 +652,11 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
 
     for el in elems {
         let flat = convert_fur_element_to_ui_elements(el, None);
-        for (uuid, e) in flat {
+        for (id, e) in flat {
             if e.get_parent().is_nil() {
-                root_ids.push(uuid);
+                root_ids.push(id);
             }
-            elements.insert(uuid, e);
+            elements.insert(id, e);
         }
     }
 
@@ -666,8 +665,8 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
 
     // Store initial z-indices for all elements to prevent accumulation
     ui.initial_z_indices.clear();
-    for (uuid, element) in elements.iter() {
-        ui.initial_z_indices.insert(*uuid, element.get_z_index());
+    for (id, element) in elements.iter() {
+        ui.initial_z_indices.insert(*id, element.get_z_index());
     }
 
     // Mark all newly created elements as needing rerender so they get rendered
@@ -682,27 +681,27 @@ pub fn append_fur_elements_to_ui(
     elems: &[FurElement],
     parent_id: Option<UIElementID>,
 ) {
-    // Collect all UUIDs that will be added, so we can mark them for rerender after the borrow is released
-    let mut added_uuids = Vec::new();
+    // Collect all IDs that will be added, so we can mark them for rerender after the borrow is released
+    let mut added_ids = Vec::new();
 
     // Use a scope block to limit the lifetime of the mutable borrows
     {
-        let elements = ui.elements.get_or_insert_with(|| IndexMap::new());
+        let elements = ui.elements.get_or_insert_with(|| HashMap::new());
 
         let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());
 
         for el in elems {
             let flat = convert_fur_element_to_ui_elements(el, parent_id);
-            for (uuid, e) in flat {
+            for (id, e) in flat {
                 // Store initial z-index for new element
-                ui.initial_z_indices.insert(uuid, e.get_z_index());
+                ui.initial_z_indices.insert(id, e.get_z_index());
 
                 // Get the actual parent ID from the element (might be set during conversion)
                 let actual_parent_id = e.get_parent();
 
                 // If parent is nil, add to root_ids
                 if actual_parent_id.is_nil() {
-                    root_ids.push(uuid);
+                    root_ids.push(id);
                 } else {
                     // If parent is set, add to parent's children list
                     // Use actual_parent_id (from element) or parent_id (parameter) - prefer actual_parent_id
@@ -716,25 +715,25 @@ pub fn append_fur_elements_to_ui(
 
                     if let Some(parent_element) = elements.get_mut(&parent_to_use) {
                         let mut children = parent_element.get_children().to_vec();
-                        if !children.contains(&uuid) {
-                            children.push(uuid);
+                        if !children.contains(&id) {
+                            children.push(id);
                             parent_element.set_children(children);
                         }
                     }
                 }
-                elements.insert(uuid, e);
-                added_uuids.push(uuid);
+                elements.insert(id, e);
+                added_ids.push(id);
             }
         }
     } // Borrows are released here
 
     // Now mark all added elements for rerender (after the borrow is released)
-    for uuid in added_uuids {
-        ui.mark_element_needs_layout(uuid);
+    for id in added_ids {
+        ui.mark_element_needs_layout(id);
 
         // Also mark the element's actual parent for layout (in case it's different from parent_id parameter)
         if let Some(elements) = &ui.elements {
-            if let Some(element) = elements.get(&uuid) {
+            if let Some(element) = elements.get(&id) {
                 let actual_parent_id = element.get_parent();
                 if !actual_parent_id.is_nil() {
                     ui.mark_element_needs_layout(actual_parent_id);
@@ -744,7 +743,7 @@ pub fn append_fur_elements_to_ui(
     }
 
     // Also mark parent as needing layout if provided
-    if let Some(parent_uuid) = parent_id {
-        ui.mark_element_needs_layout(parent_uuid);
+    if let Some(pid) = parent_id {
+        ui.mark_element_needs_layout(pid);
     }
 }

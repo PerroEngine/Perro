@@ -1,5 +1,4 @@
 use crate::ids::UIElementID;
-use indexmap::IndexMap;
 use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
@@ -112,7 +111,7 @@ const DEFAULT_VIEWPORT: Vector2 = Vector2 {
 /// Uses layout containers with explicit sizes, but skips auto-sizing layout containers.
 /// When no suitable parent is found, returns viewport_size or DEFAULT_VIEWPORT.
 fn find_percentage_reference_ancestor(
-    elements: &IndexMap<UIElementID, UIElement>,
+    elements: &HashMap<UIElementID, UIElement>,
     current_id: &UIElementID,
     viewport_size: Option<Vector2>,
 ) -> Option<Vector2> {
@@ -127,7 +126,7 @@ fn find_percentage_reference_ancestor(
 /// Helper function to check if an element is effectively visible (considering parent visibility)
 /// Walks up the parent chain to ensure all ancestors are visible
 fn is_effectively_visible(
-    elements: &IndexMap<UIElementID, UIElement>,
+    elements: &HashMap<UIElementID, UIElement>,
     element_id: UIElementID,
 ) -> bool {
     let mut current_id = element_id;
@@ -188,7 +187,7 @@ fn is_effectively_visible(
 
 /// Calculate content size using pre-computed caches (FAST - no parent chain walks!)
 fn calculate_content_size_with_visibility_cache(
-    elements: &IndexMap<UIElementID, UIElement>,
+    elements: &HashMap<UIElementID, UIElement>,
     parent_id: &UIElementID,
     visibility_cache: &HashSet<UIElementID>,
     percentage_ref_cache: &HashMap<UIElementID, Vector2>,
@@ -261,7 +260,7 @@ fn calculate_content_size_with_visibility_cache(
 
 /// FIXED: Remove cache parameter to match working version
 pub fn calculate_content_size(
-    elements: &IndexMap<UIElementID, UIElement>,
+    elements: &HashMap<UIElementID, UIElement>,
     parent_id: &UIElementID,
 ) -> Vector2 {
     let parent = match elements.get(parent_id) {
@@ -340,7 +339,7 @@ pub fn calculate_content_size(
 
 // Keep your cached version separate
 pub fn calculate_content_size_smart_cached(
-    elements: &IndexMap<UIElementID, UIElement>,
+    elements: &HashMap<UIElementID, UIElement>,
     parent_id: &UIElementID,
     cache: &RwLock<LayoutCache>,
 ) -> Vector2 {
@@ -369,7 +368,7 @@ pub fn calculate_content_size_smart_cached(
 }
 
 pub fn calculate_layout_positions(
-    _elements: &mut IndexMap<UIElementID, UIElement>,
+    _elements: &mut HashMap<UIElementID, UIElement>,
     _parent_id: &UIElementID,
 ) -> Vec<(UIElementID, Vector2)> {
     // No layout containers - return empty vec
@@ -378,7 +377,7 @@ pub fn calculate_layout_positions(
 
 /// Recursively calculate content sizes for all containers, starting from leaves
 fn calculate_all_content_sizes(
-    elements: &mut IndexMap<UIElementID, UIElement>,
+    elements: &mut HashMap<UIElementID, UIElement>,
     current_id: &UIElementID,
 ) {
     // First, process all children recursively
@@ -441,7 +440,7 @@ fn get_font_cache() -> &'static RwLock<HashMap<(String, u32), bool>> {
 
 // Helper function to collect all ancestors of dirty elements (needed for layout recalculation)
 fn collect_dirty_with_ancestors(
-    elements: &IndexMap<UIElementID, UIElement>,
+    elements: &HashMap<UIElementID, UIElement>,
     dirty_ids: &HashSet<UIElementID>,
 ) -> HashSet<UIElementID> {
     let mut to_process = HashSet::new();
@@ -467,7 +466,7 @@ fn collect_dirty_with_ancestors(
 
 /// Filtered version that skips unaffected branches for performance
 pub fn update_global_transforms_with_layout_filtered(
-    elements: &mut IndexMap<UIElementID, UIElement>,
+    elements: &mut HashMap<UIElementID, UIElement>,
     current_id: &UIElementID,
     parent_global: &Transform2D,
     layout_positions: &HashMap<UIElementID, Vector2>,
@@ -493,7 +492,7 @@ pub fn update_global_transforms_with_layout_filtered(
 }
 
 pub fn update_global_transforms_with_layout(
-    elements: &mut IndexMap<UIElementID, UIElement>,
+    elements: &mut HashMap<UIElementID, UIElement>,
     current_id: &UIElementID,
     parent_global: &Transform2D,
     layout_positions: &HashMap<UIElementID, Vector2>,
@@ -512,7 +511,7 @@ pub fn update_global_transforms_with_layout(
 }
 
 fn update_global_transforms_with_layout_impl(
-    elements: &mut IndexMap<UIElementID, UIElement>,
+    elements: &mut HashMap<UIElementID, UIElement>,
     current_id: &UIElementID,
     parent_global: &Transform2D,
     layout_positions: &HashMap<UIElementID, Vector2>,
@@ -850,9 +849,9 @@ pub fn render_ui(
 
     // Build visibility cache ONCE for the frame (used by both visibility check and layout)
     let visibility_cache: HashSet<UIElementID> = if let Some(elements) = &ui_node.elements {
-        let elements_ref: &IndexMap<UIElementID, UIElement> = elements;
+        let elements_ref: &HashMap<UIElementID, UIElement> = elements;
         elements_ref
-            .par_iter()
+            .iter()
             .filter_map(|(id, _)| {
                 if is_effectively_visible(elements_ref, *id) {
                     Some(*id)
@@ -869,9 +868,9 @@ pub fn render_ui(
     let viewport_size = Vector2::new(gfx.virtual_width, gfx.virtual_height);
     let percentage_ref_cache: HashMap<UIElementID, Vector2> =
         if let Some(elements) = &ui_node.elements {
-            let elements_ref: &IndexMap<UIElementID, UIElement> = elements;
+            let elements_ref: &HashMap<UIElementID, UIElement> = elements;
             elements_ref
-                .par_iter()
+                .iter()
                 .map(|(id, _)| {
                     let ref_size =
                         find_percentage_reference_ancestor(elements_ref, id, Some(viewport_size))
@@ -1048,7 +1047,7 @@ pub fn render_ui(
         if !ui_node.pending_deletion.is_empty() {
             let pending_deletion_set = ui_node.pending_deletion.clone();
 
-            // Collect elements to remove by iterating over the map (avoids indexmap version mismatch)
+            // Collect elements to remove by iterating over the map
             let mut to_remove: Vec<(UIElementID, UIElement)> = Vec::new();
             for (id, element) in elements.iter() {
                 // Check if this ID is in pending_deletion_set by comparing directly
@@ -1074,7 +1073,7 @@ pub fn render_ui(
                 }
             }
 
-            // Remove from elements map using retain (avoids indexmap version mismatch)
+            // Remove from elements map using retain
             let ids_to_remove: HashSet<UIElementID> = to_remove.iter().map(|(id, _)| *id).collect();
             elements.retain(|id, _| !ids_to_remove.contains(id));
 
@@ -1095,7 +1094,7 @@ pub fn render_ui(
         // OPTIMIZATION: Only remove newly invisible elements from primitive renderer cache
         // (not from the elements map - invisible elements should stay in the map so they can become visible again)
         // This avoids iterating through everything every frame
-        // Work around indexmap version mismatch by iterating over elements map
+        // Iterate over elements map to update slots
         let newly_invisible_set: HashSet<UIElementID> =
             newly_invisible_ids.iter().copied().collect();
         for (element_id, element) in elements.iter() {

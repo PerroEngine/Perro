@@ -19,26 +19,26 @@ const SKIP_SCRIPTING: &[&str] = &["pup", "rs", "cs", "ts"];
 // Scene and UI data (compiled into scenes.rs and fur.rs)
 const SKIP_SCENE_DATA: &[&str] = &["scn", "fur"];
 
-// Images are pre-decoded + Zstd-compressed into static assets (no PNG parse at runtime)
+// Images are pre-decoded + Zstd-compressed into .ptex static assets
 const SKIP_IMAGES: &[&str] = &[
     "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
 ];
 
+// Models are converted to pmesh (static assets) in release
+const SKIP_MODELS: &[&str] = &["glb", "gltf"];
+
 // Helper function to check if extension should be skipped
 fn should_skip_extension(ext: &str) -> bool {
-    SKIP_SCRIPTING.contains(&ext) || SKIP_SCENE_DATA.contains(&ext) || SKIP_IMAGES.contains(&ext)
+    SKIP_SCRIPTING.contains(&ext)
+        || SKIP_SCENE_DATA.contains(&ext)
+        || SKIP_IMAGES.contains(&ext)
+        || SKIP_MODELS.contains(&ext)
 }
 
 /// File types to ENCRYPT (sensitive data files that users might want to protect)
-/// Everything else is left unencrypted (media assets like images, audio, fonts)
+/// Everything else is left unencrypted
 const ENCRYPT_EXTENSIONS: &[&str] = &[
     "toml", "json", "xml", "yaml", "yml", "dat", "bin", "exe", "dll", "so", "dylib",
-];
-
-/// File types that are already efficiently compressed (e.g., JPG, PNG, OGG)
-/// These might not benefit much from Zstd and could even get larger or take longer.
-const ALREADY_COMPRESSED_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "ogg", "mp3", "webp", "zip", "gz", "bz2",
 ];
 
 // Flags for BrkEntry
@@ -97,7 +97,7 @@ pub fn build_brk(
 
     // Define a ZSTD compression level (1-22, higher is more compression, slower)
     // 0 is default, negative numbers are fast. Higher numbers improve ratio.
-    const COMPRESSION_LEVEL: i32 = 12;
+    const COMPRESSION_LEVEL: i32 = 15;
 
     // Helper closure to process data (compress, then encrypt if needed)
     let process_data = |mut data: Vec<u8>,
@@ -197,12 +197,9 @@ pub fn build_brk(
                 false
             };
 
-            // Determine if this file should be compressed
-            let should_compress = if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                !ALREADY_COMPRESSED_EXTENSIONS.contains(&ext) // Don't re-compress if format is already compressed
-            } else {
-                true // Default to compressing unknown extensions
-            };
+            // Always try Zstd; we only keep compressed data when it's smaller (see process_data).
+            // Things that are preprocessed (textures → rgb8, meshes → pmesh) are static assets and skipped above.
+            let should_compress = true;
 
             let (processed_data, flags, nonce, tag, original_size) =
                 process_data(data, should_encrypt, should_compress)?;

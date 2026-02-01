@@ -5,7 +5,6 @@ use std::{
 };
 
 use crate::ids::UIElementID;
-use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -36,7 +35,7 @@ pub struct UINode {
     pub loaded_fur_path: Option<Cow<'static, str>>,
 
     #[serde(skip)]
-    pub elements: Option<IndexMap<UIElementID, UIElement>>,
+    pub elements: Option<HashMap<UIElementID, UIElement>>,
     #[serde(skip)]
     pub root_ids: Option<Vec<UIElementID>>,
 
@@ -185,10 +184,10 @@ impl UINode {
     /// ```
     pub fn set_element(&mut self, name: &str, element: UIElement) -> bool {
         if let Some(elements) = &mut self.elements {
-            // Find the element by name and get its UUID
-            if let Some((uuid, _)) = elements.iter().find(|(_, el)| el.get_name() == name) {
-                let uuid = *uuid;
-                elements.insert(uuid, element);
+            // Find the element by name and get its ID
+            if let Some((id, _)) = elements.iter().find(|(_, el)| el.get_name() == name) {
+                let id = *id;
+                elements.insert(id, element);
                 return true;
             }
         }
@@ -205,10 +204,10 @@ impl UINode {
     pub fn merge_elements(&mut self, elements_to_merge: Vec<(String, UIElement)>) {
         if let Some(elements) = &mut self.elements {
             for (name, element) in elements_to_merge {
-                // Find the element by name and get its UUID
-                if let Some((uuid, _)) = elements.iter().find(|(_, el)| el.get_name() == name) {
-                    let uuid = *uuid;
-                    elements.insert(uuid, element);
+                // Find the element by name and get its ID
+                if let Some((id, _)) = elements.iter().find(|(_, el)| el.get_name() == name) {
+                    let id = *id;
+                    elements.insert(id, element);
                 }
             }
         }

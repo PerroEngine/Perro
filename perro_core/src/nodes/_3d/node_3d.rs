@@ -55,7 +55,7 @@ pub struct Node3D {
     #[serde(skip, default)]
     pub node3d_children_cache: Option<Vec<crate::ids::NodeID>>,
 
-    /// Wrapped base node with name, uuid, parent relationship, etc.
+    /// Wrapped base node with name, id, parent relationship, etc.
     #[serde(rename = "base")]
     pub base: Node,
 }

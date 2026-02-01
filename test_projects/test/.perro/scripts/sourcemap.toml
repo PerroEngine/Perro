@@ -1,105 +1,51 @@
-[scripts.puptests_node_tests_test_shape_instance_2d_api_pup]
-src = "res://puptests/node_tests/test_shape_instance_2d_api.pup"
+[scripts.puptests_node_tests_test_node3d_api_pup]
+src = "res://puptests/node_tests/test_node3d_api.pup"
 lang = "pup"
-id = "puptests_node_tests_test_shape_instance_2d_api_pup"
+id = "puptests_node_tests_test_node3d_api_pup"
 
-[[scripts.puptests_node_tests_test_shape_instance_2d_api_pup.lines]]
+[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 81
+g_end = 75
 
-[scripts.puptests_node_tests_test_shape_instance_2d_api_pup.names]
-
-[scripts.puptests_global_tests_test_globals_modules_pup]
-src = "res://puptests/global_tests/test_globals_modules.pup"
-lang = "pup"
-id = "puptests_global_tests_test_globals_modules_pup"
-
-[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 83
-
-[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
+[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
 s_start = 31
 s_end = 31
-g_start = 83
-g_end = 96
+g_start = 75
+g_end = 108
 
-[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
+[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
 s_start = 71
 s_end = 71
-g_start = 96
-g_end = 103
+g_start = 108
+g_end = 120
 
-[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
+[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
 s_start = 121
 s_end = 121
-g_start = 103
-g_end = 109
+g_start = 120
+g_end = 129
 
-[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
+[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
 s_start = 181
 s_end = 181
-g_start = 109
-g_end = 115
+g_start = 129
+g_end = 143
 
-[scripts.puptests_global_tests_test_globals_modules_pup.names]
-__t_test_global_calls_module = "test_global_calls_module"
-__t_test_module_calls_module = "test_module_calls_module"
-__t_test_root_and_module = "test_root_and_module"
-__t_test_global_calls_global = "test_global_calls_global"
-
-[scripts.puptests_global_tests_ui_helper_pup]
-src = "res://puptests/global_tests/ui_helper.pup"
-lang = "pup"
-id = "puptests_global_tests_ui_helper_pup"
-
-[[scripts.puptests_global_tests_ui_helper_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 82
-
-[[scripts.puptests_global_tests_ui_helper_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 82
-g_end = 86
-
-[[scripts.puptests_global_tests_ui_helper_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 86
-g_end = 90
-
-[[scripts.puptests_global_tests_ui_helper_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 90
-g_end = 95
-
-[[scripts.puptests_global_tests_ui_helper_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 95
-g_end = 99
-
-[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
 s_start = 251
 s_end = 251
-g_start = 99
-g_end = 101
+g_start = 143
+g_end = 152
 
-[scripts.puptests_global_tests_ui_helper_pup.names]
-__t_label_text = "label_text"
-__t_ui_uses_more_utils = "ui_uses_more_utils"
-__t_add_to_score = "add_to_score"
-__t_read_score = "read_score"
-__t_get_label = "get_label"
-__t_set_label = "set_label"
+[scripts.puptests_node_tests_test_node3d_api_pup.names]
+__t_test_transform_read_write = "test_transform_read_write"
+__t_spin = "spin"
+__t_test_rotation_set_equal_to_other = "test_rotation_set_equal_to_other"
+__t_test_rotation_assign_and_rotate = "test_rotation_assign_and_rotate"
+__t_test_for_loops_with_rotation = "test_for_loops_with_rotation"
+__t_test_scale_and_position_assign = "test_scale_and_position_assign"
 
 [scripts.puptests_resource_tests_test_resource_api_pup]
 src = "res://puptests/resource_tests/test_resource_api.pup"
@@ -173,66 +119,120 @@ g_start = 150
 g_end = 154
 
 [scripts.puptests_resource_tests_test_resource_api_pup.names]
-__t_test_signal_emit_deferred = "test_signal_emit_deferred"
-__t_emit_count = "emit_count"
-__t_test_map = "test_map"
-__t_on_other_signal = "on_other_signal"
-__t_test_mesh = "test_mesh"
 __t_test_quaternion = "test_quaternion"
 __t_on_signal = "on_signal"
-__t_test_signal_new_connect_emit = "test_signal_new_connect_emit"
 __t_test_texture = "test_texture"
+__t_test_signal_emit_deferred = "test_signal_emit_deferred"
+__t_test_signal_new_connect_emit = "test_signal_new_connect_emit"
+__t_test_mesh = "test_mesh"
+__t_test_map = "test_map"
+__t_on_other_signal = "on_other_signal"
 __t_test_shape2d = "test_shape2d"
+__t_emit_count = "emit_count"
 __t_test_array = "test_array"
 
-[scripts.puptests_node_tests_test_node3d_api_pup]
-src = "res://puptests/node_tests/test_node3d_api.pup"
+[scripts.puptests_node_tests_test_mesh_instance_3d_api_pup]
+src = "res://puptests/node_tests/test_mesh_instance_3d_api.pup"
 lang = "pup"
-id = "puptests_node_tests_test_node3d_api_pup"
+id = "puptests_node_tests_test_mesh_instance_3d_api_pup"
 
-[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
+[[scripts.puptests_node_tests_test_mesh_instance_3d_api_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 75
+g_end = 73
 
-[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
+[scripts.puptests_node_tests_test_mesh_instance_3d_api_pup.names]
+
+[scripts.puptests_global_tests_game_state_pup]
+src = "res://puptests/global_tests/game_state.pup"
+lang = "pup"
+id = "puptests_global_tests_game_state_pup"
+
+[[scripts.puptests_global_tests_game_state_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 82
+
+[[scripts.puptests_global_tests_game_state_pup.lines]]
 s_start = 31
 s_end = 31
-g_start = 75
-g_end = 108
+g_start = 82
+g_end = 86
 
-[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
+[[scripts.puptests_global_tests_game_state_pup.lines]]
 s_start = 71
 s_end = 71
-g_start = 108
-g_end = 120
+g_start = 86
+g_end = 90
 
-[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
+[[scripts.puptests_global_tests_game_state_pup.lines]]
 s_start = 121
 s_end = 121
-g_start = 120
-g_end = 129
+g_start = 90
+g_end = 94
 
-[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
+[[scripts.puptests_global_tests_game_state_pup.lines]]
 s_start = 181
 s_end = 181
-g_start = 129
-g_end = 143
+g_start = 94
+g_end = 96
 
-[[scripts.puptests_node_tests_test_node3d_api_pup.lines]]
-s_start = 251
-s_end = 251
-g_start = 143
-g_end = 152
+[scripts.puptests_global_tests_game_state_pup.names]
+__t_get_root_value_via_root = "get_root_value_via_root"
+__t_game_uses_math = "game_uses_math"
+__t_get_score = "get_score"
+__t_score = "score"
+__t_set_score = "set_score"
 
-[scripts.puptests_node_tests_test_node3d_api_pup.names]
-__t_test_rotation_set_equal_to_other = "test_rotation_set_equal_to_other"
-__t_test_transform_read_write = "test_transform_read_write"
-__t_test_scale_and_position_assign = "test_scale_and_position_assign"
-__t_test_for_loops_with_rotation = "test_for_loops_with_rotation"
-__t_test_rotation_assign_and_rotate = "test_rotation_assign_and_rotate"
-__t_spin = "spin"
+[scripts.puptests_type_tests_test_syntax_edge_pup]
+src = "res://puptests/type_tests/test_syntax_edge.pup"
+lang = "pup"
+id = "puptests_type_tests_test_syntax_edge_pup"
+
+[[scripts.puptests_type_tests_test_syntax_edge_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 94
+
+[[scripts.puptests_type_tests_test_syntax_edge_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 94
+g_end = 108
+
+[scripts.puptests_type_tests_test_syntax_edge_pup.names]
+__t_some_var = "some_var"
+__t_get_my_int = "get_my_int"
+
+[scripts.puptests_resource_tests_test_mesh_api_pup]
+src = "res://puptests/resource_tests/test_mesh_api.pup"
+lang = "pup"
+id = "puptests_resource_tests_test_mesh_api_pup"
+
+[[scripts.puptests_resource_tests_test_mesh_api_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 69
+
+[[scripts.puptests_resource_tests_test_mesh_api_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 69
+g_end = 87
+
+[[scripts.puptests_resource_tests_test_mesh_api_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 87
+g_end = 93
+
+[scripts.puptests_resource_tests_test_mesh_api_pup.names]
+__t_test_builtin_meshes = "test_builtin_meshes"
+__t_test_preload_and_remove = "test_preload_and_remove"
 
 [scripts.puptests_node_tests_test_sprite2d_api_pup]
 src = "res://puptests/node_tests/test_sprite2d_api.pup"
@@ -247,33 +247,59 @@ g_end = 73
 
 [scripts.puptests_node_tests_test_sprite2d_api_pup.names]
 
-[scripts.puptests_global_tests_root_pup]
-src = "res://puptests/global_tests/root.pup"
+[scripts.puptests_global_tests_test_globals_modules_pup]
+src = "res://puptests/global_tests/test_globals_modules.pup"
 lang = "pup"
-id = "puptests_global_tests_root_pup"
+id = "puptests_global_tests_test_globals_modules_pup"
 
-[[scripts.puptests_global_tests_root_pup.lines]]
+[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 82
+g_end = 83
 
-[[scripts.puptests_global_tests_root_pup.lines]]
+[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
 s_start = 31
 s_end = 31
-g_start = 82
-g_end = 86
+g_start = 83
+g_end = 96
 
-[[scripts.puptests_global_tests_root_pup.lines]]
+[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
 s_start = 71
 s_end = 71
-g_start = 86
-g_end = 88
+g_start = 96
+g_end = 103
 
-[scripts.puptests_global_tests_root_pup.names]
-__t_root_uses_module = "root_uses_module"
-__t_get_root_value = "get_root_value"
-__t_root_counter = "root_counter"
+[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 103
+g_end = 109
+
+[[scripts.puptests_global_tests_test_globals_modules_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 109
+g_end = 115
+
+[scripts.puptests_global_tests_test_globals_modules_pup.names]
+__t_test_module_calls_module = "test_module_calls_module"
+__t_test_global_calls_global = "test_global_calls_global"
+__t_test_global_calls_module = "test_global_calls_module"
+__t_test_root_and_module = "test_root_and_module"
+
+[scripts.puptests_node_tests_test_shape_instance_2d_api_pup]
+src = "res://puptests/node_tests/test_shape_instance_2d_api.pup"
+lang = "pup"
+id = "puptests_node_tests_test_shape_instance_2d_api_pup"
+
+[[scripts.puptests_node_tests_test_shape_instance_2d_api_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 81
+
+[scripts.puptests_node_tests_test_shape_instance_2d_api_pup.names]
 
 [scripts.puptests_node_tests_test_node_methods_pup]
 src = "res://puptests/node_tests/test_node_methods.pup"
@@ -302,18 +328,95 @@ g_end = 99
 __t_test_dot_on_other_node = "test_dot_on_other_node"
 __t_test_shorthand_on_other_node = "test_shorthand_on_other_node"
 
-[scripts.puptests_node_tests_test_mesh_instance_3d_api_pup]
-src = "res://puptests/node_tests/test_mesh_instance_3d_api.pup"
+[scripts.puptests_global_tests_root_pup]
+src = "res://puptests/global_tests/root.pup"
 lang = "pup"
-id = "puptests_node_tests_test_mesh_instance_3d_api_pup"
+id = "puptests_global_tests_root_pup"
 
-[[scripts.puptests_node_tests_test_mesh_instance_3d_api_pup.lines]]
+[[scripts.puptests_global_tests_root_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
-g_end = 73
+g_end = 82
 
-[scripts.puptests_node_tests_test_mesh_instance_3d_api_pup.names]
+[[scripts.puptests_global_tests_root_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 82
+g_end = 86
+
+[[scripts.puptests_global_tests_root_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 86
+g_end = 88
+
+[scripts.puptests_global_tests_root_pup.names]
+__t_root_uses_module = "root_uses_module"
+__t_root_counter = "root_counter"
+__t_get_root_value = "get_root_value"
+
+[scripts.puptests_node_tests_test_camera2d_api_pup]
+src = "res://puptests/node_tests/test_camera2d_api.pup"
+lang = "pup"
+id = "puptests_node_tests_test_camera2d_api_pup"
+
+[[scripts.puptests_node_tests_test_camera2d_api_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 75
+
+[scripts.puptests_node_tests_test_camera2d_api_pup.names]
+
+[scripts.puptests_global_tests_ui_helper_pup]
+src = "res://puptests/global_tests/ui_helper.pup"
+lang = "pup"
+id = "puptests_global_tests_ui_helper_pup"
+
+[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 82
+
+[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 82
+g_end = 86
+
+[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+s_start = 71
+s_end = 71
+g_start = 86
+g_end = 90
+
+[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+s_start = 121
+s_end = 121
+g_start = 90
+g_end = 95
+
+[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+s_start = 181
+s_end = 181
+g_start = 95
+g_end = 99
+
+[[scripts.puptests_global_tests_ui_helper_pup.lines]]
+s_start = 251
+s_end = 251
+g_start = 99
+g_end = 101
+
+[scripts.puptests_global_tests_ui_helper_pup.names]
+__t_label_text = "label_text"
+__t_add_to_score = "add_to_score"
+__t_set_label = "set_label"
+__t_ui_uses_more_utils = "ui_uses_more_utils"
+__t_read_score = "read_score"
+__t_get_label = "get_label"
 
 [scripts.puptests_node_tests_test_node2d_api_pup]
 src = "res://puptests/node_tests/test_node2d_api.pup"
@@ -364,75 +467,12 @@ g_end = 152
 
 [scripts.puptests_node_tests_test_node2d_api_pup.names]
 __t_acc = "acc"
-__t_test_for_loops = "test_for_loops"
 __t_some_script_fn = "some_script_fn"
-__t_test_transform_assign_to_other = "test_transform_assign_to_other"
-__t_test_call_deferred = "test_call_deferred"
 __t_test_node_methods = "test_node_methods"
+__t_test_for_loops = "test_for_loops"
+__t_test_call_deferred = "test_call_deferred"
 __t_test_transform_read_write = "test_transform_read_write"
-
-[scripts.puptests_type_tests_test_syntax_edge_pup]
-src = "res://puptests/type_tests/test_syntax_edge.pup"
-lang = "pup"
-id = "puptests_type_tests_test_syntax_edge_pup"
-
-[[scripts.puptests_type_tests_test_syntax_edge_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 94
-
-[[scripts.puptests_type_tests_test_syntax_edge_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 94
-g_end = 108
-
-[scripts.puptests_type_tests_test_syntax_edge_pup.names]
-__t_some_var = "some_var"
-__t_get_my_int = "get_my_int"
-
-[scripts.puptests_global_tests_game_state_pup]
-src = "res://puptests/global_tests/game_state.pup"
-lang = "pup"
-id = "puptests_global_tests_game_state_pup"
-
-[[scripts.puptests_global_tests_game_state_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 82
-
-[[scripts.puptests_global_tests_game_state_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 82
-g_end = 86
-
-[[scripts.puptests_global_tests_game_state_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 86
-g_end = 90
-
-[[scripts.puptests_global_tests_game_state_pup.lines]]
-s_start = 121
-s_end = 121
-g_start = 90
-g_end = 94
-
-[[scripts.puptests_global_tests_game_state_pup.lines]]
-s_start = 181
-s_end = 181
-g_start = 94
-g_end = 96
-
-[scripts.puptests_global_tests_game_state_pup.names]
-__t_game_uses_math = "game_uses_math"
-__t_set_score = "set_score"
-__t_get_root_value_via_root = "get_root_value_via_root"
-__t_score = "score"
-__t_get_score = "get_score"
+__t_test_transform_assign_to_other = "test_transform_assign_to_other"
 
 [scripts.puptests_node_tests_test_engine_structs_pup]
 src = "res://puptests/node_tests/test_engine_structs.pup"
@@ -458,9 +498,9 @@ g_start = 83
 g_end = 90
 
 [scripts.puptests_node_tests_test_engine_structs_pup.names]
+__t_test_nested_access = "test_nested_access"
 __t_test_variable_access = "test_variable_access"
 __t_test_constructors = "test_constructors"
-__t_test_nested_access = "test_nested_access"
 
 [scripts.puptests_type_tests_types_pup]
 src = "res://puptests/type_tests/types.pup"
@@ -516,93 +556,53 @@ g_start = 504
 g_end = 507
 
 [scripts.puptests_type_tests_types_pup.names]
-__t_untyped_num_default = "untyped_num_default"
-__t_typed_int_64 = "typed_int_64"
-__t_typed_big_int = "typed_big_int"
-__t_test_struct_inheritance_and_casting = "test_struct_inheritance_and_casting"
-__t_static_array_decimal = "static_array_decimal"
-__t_TestVector = "TestVector"
-__t_test_static_containers_ops = "test_static_containers_ops"
-__t_test_primitive_operations = "test_primitive_operations"
-__t_static_map_string_big = "static_map_string_big"
-__t_typed_int_default = "typed_int_default"
-__t_static_map_super_players = "static_map_super_players"
-__t_local_uint_8 = "local_uint_8"
-__t_local_decimal = "local_decimal"
-__t_static_array_float_64 = "static_array_float_64"
-__t_typed_string = "typed_string"
-__t_typed_decimal = "typed_decimal"
-__t_static_array_int = "static_array_int"
-__t_test_explicit_casting = "test_explicit_casting"
-__t_local_string = "local_string"
-__t_static_array_uint_16 = "static_array_uint_16"
-__t_static_array_big_int = "static_array_big_int"
-__t_dynamic_array_inferred = "dynamic_array_inferred"
-__t_static_array_players = "static_array_players"
-__t_static_map_players = "static_map_players"
-__t_GameEntity = "GameEntity"
-__t_static_array_string = "static_array_string"
-__t_my_base_entity = "my_base_entity"
-__t_my_player = "my_player"
-__t_typed_float_64 = "typed_float_64"
+__t_static_map_string_int_64 = "static_map_string_int_64"
 __t_static_map_uint_8_float = "static_map_uint_8_float"
-__t_dynamic_array_annotated = "dynamic_array_annotated"
-__t_local_float = "local_float"
-__t_local_big_int = "local_big_int"
-__t_dynamic_map_inferred = "dynamic_map_inferred"
-__t_static_map_string_decimal = "static_map_string_decimal"
+__t_static_map_players = "static_map_players"
+__t_typed_float_64 = "typed_float_64"
+__t_static_array_entities = "static_array_entities"
+__t_SuperTestPlayer = "SuperTestPlayer"
 __t_my_derived_player_var = "my_derived_player_var"
-__t_other_player = "other_player"
-__t_typed_uint_16 = "typed_uint_16"
+__t_typed_int_default = "typed_int_default"
+__t_local_int = "local_int"
+__t_local_decimal = "local_decimal"
+__t_dynamic_map_inferred = "dynamic_map_inferred"
+__t_typed_decimal = "typed_decimal"
+__t_static_map_super_players = "static_map_super_players"
+__t_local_string = "local_string"
+__t_untyped_num_default = "untyped_num_default"
+__t_static_array_big_int = "static_array_big_int"
+__t_static_array_decimal = "static_array_decimal"
+__t_test_struct_inheritance_and_casting = "test_struct_inheritance_and_casting"
+__t_static_array_int = "static_array_int"
+__t_typed_big_int = "typed_big_int"
+__t_static_map_string_decimal = "static_map_string_decimal"
+__t_test_assignments = "test_assignments"
+__t_test_static_containers_ops = "test_static_containers_ops"
+__t_static_array_players = "static_array_players"
+__t_local_uint_8 = "local_uint_8"
+__t_typed_int_8 = "typed_int_8"
+__t_dynamic_array_inferred = "dynamic_array_inferred"
+__t_test_primitive_operations = "test_primitive_operations"
+__t_TestVector = "TestVector"
+__t_static_array_string = "static_array_string"
 __t_typed_float_default = "typed_float_default"
+__t_typed_int_64 = "typed_int_64"
+__t_local_float = "local_float"
+__t_static_array_uint_16 = "static_array_uint_16"
+__t_local_big_int = "local_big_int"
+__t_dynamic_array_annotated = "dynamic_array_annotated"
+__t_static_array_float_64 = "static_array_float_64"
+__t_my_player = "my_player"
 __t_dynamic_map_annotated = "dynamic_map_annotated"
 __t_static_map_int_string = "static_map_int_string"
-__t_test_assignments = "test_assignments"
-__t_TestPlayer = "TestPlayer"
-__t_SuperTestPlayer = "SuperTestPlayer"
-__t_local_int = "local_int"
+__t_typed_uint_16 = "typed_uint_16"
+__t_my_base_entity = "my_base_entity"
+__t_other_player = "other_player"
 __t_my_derived_player = "my_derived_player"
-__t_static_map_string_int_64 = "static_map_string_int_64"
+__t_static_map_string_big = "static_map_string_big"
+__t_typed_string = "typed_string"
+__t_test_explicit_casting = "test_explicit_casting"
 __t_test_dynamic_containers_ops = "test_dynamic_containers_ops"
-__t_static_array_entities = "static_array_entities"
-__t_typed_int_8 = "typed_int_8"
-
-[scripts.puptests_node_tests_test_camera2d_api_pup]
-src = "res://puptests/node_tests/test_camera2d_api.pup"
-lang = "pup"
-id = "puptests_node_tests_test_camera2d_api_pup"
-
-[[scripts.puptests_node_tests_test_camera2d_api_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 75
-
-[scripts.puptests_node_tests_test_camera2d_api_pup.names]
-
-[scripts.puptests_resource_tests_test_mesh_api_pup]
-src = "res://puptests/resource_tests/test_mesh_api.pup"
-lang = "pup"
-id = "puptests_resource_tests_test_mesh_api_pup"
-
-[[scripts.puptests_resource_tests_test_mesh_api_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 69
-
-[[scripts.puptests_resource_tests_test_mesh_api_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 69
-g_end = 87
-
-[[scripts.puptests_resource_tests_test_mesh_api_pup.lines]]
-s_start = 71
-s_end = 71
-g_start = 87
-g_end = 93
-
-[scripts.puptests_resource_tests_test_mesh_api_pup.names]
-__t_test_preload_and_remove = "test_preload_and_remove"
-__t_test_builtin_meshes = "test_builtin_meshes"
+__t_GameEntity = "GameEntity"
+__t_TestPlayer = "TestPlayer"

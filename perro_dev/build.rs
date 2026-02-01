@@ -8,6 +8,10 @@ fn main() {
     init_log(&log_path);
     log(&log_path, "=== Simple Build Script Started ===");
 
+    // Package name and version from Cargo.toml (available on all platforms)
+    let name = std::env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "perro_dev".to_string());
+    let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.1.0".to_string());
+
     // ───────────────────────────────────────────────
     // Static config (local file)
     // ───────────────────────────────────────────────
@@ -71,9 +75,9 @@ END
             minor,
             patch,
             build_number,
-            name,
+            &name,
             version_display,
-            name,
+            &name,
             version_display
         );
 
@@ -94,10 +98,10 @@ END
     #[cfg(target_os = "linux")]
     {
         embed_linux_icon(&icon_path, &log_path);
-        setup_linux_desktop(&icon_path, &log_path, name, version);
+        setup_linux_desktop(&icon_path, &log_path, &name, &version);
         // Create AppImage (single file with embedded icon) after release builds
         if std::env::var("PROFILE").unwrap_or_default() == "release" {
-            create_appimage(&icon_path, &log_path, name, version);
+            create_appimage(&icon_path, &log_path, &name, &version);
         }
     }
 

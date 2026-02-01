@@ -23,7 +23,6 @@ use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 
 use crate::ids::{MeshID, NodeID, SignalID, TextureID};
-use indexmap::IndexMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::{
@@ -48,15 +47,22 @@ use std::{
 //
 
 /// Pure serializable scene data (no runtime state)
-/// Uses numeric node ids (keys) for the root and nodes map; order is preserved during serialization.
+/// Uses numeric node ids (keys) for the root and nodes map. No guaranteed order; use scene_key_order when order matters.
 #[derive(Debug)]
 pub struct SceneData {
     pub root_key: u32,
-    pub nodes: IndexMap<u32, SceneNode>,
+    pub nodes: HashMap<u32, SceneNode>,
     // Mapping from scene key to NodeID (used during deserialization)
-    // This allows us to remap parent references when converting to runtime
     // Not serialized - handled manually in Serialize/Deserialize impls
     key_to_node_id: HashMap<u32, NodeID>,
+}
+
+/// Root first, then remaining keys in sorted order (deterministic for serialization/merge).
+#[inline]
+fn scene_key_order(root_key: u32, keys: impl Iterator<Item = u32>) -> Vec<u32> {
+    let mut rest: Vec<u32> = keys.filter(|&k| k != root_key).collect();
+    rest.sort_unstable();
+    std::iter::once(root_key).chain(rest).collect()
 }
 
 impl Clone for SceneData {
@@ -91,7 +97,7 @@ impl Serialize for SceneData {
 
         // Serialize nodes with u32 keys as identifiers
         struct NodesMap<'a> {
-            nodes: &'a IndexMap<u32, SceneNode>,
+            nodes: &'a HashMap<u32, SceneNode>,
             node_id_to_key: &'a HashMap<NodeID, u32>,
         }
 
@@ -193,7 +199,7 @@ impl<'de> Deserialize<'de> for SceneData {
         }
 
         // Deserialize nodes, handling parent scene keys
-        let mut nodes = IndexMap::with_capacity(capacity);
+        let mut nodes = HashMap::with_capacity(capacity);
         let mut parent_children: HashMap<u32, Vec<u32>> = HashMap::with_capacity(capacity / 4);
 
         // Helper function to recursively find "parent" field in nested JSON
@@ -327,7 +333,7 @@ impl SceneData {
     /// Create a new data scene with a root node
     pub fn new(root: SceneNode) -> Self {
         let root_id = root.get_id();
-        let mut nodes = IndexMap::new();
+        let mut nodes = HashMap::new();
         // OPTIMIZED: Use with_capacity(0) for known-empty map to avoid pre-allocation
         let mut key_to_node_id = HashMap::with_capacity(0);
         // Use key 0 for root
@@ -342,7 +348,7 @@ impl SceneData {
 
     /// Create SceneData from nodes and root_key
     /// Builds the key_to_node_id mapping and sets node IDs to deterministic NodeIDs based on scene keys
-    pub fn from_nodes(root_key: u32, mut nodes: IndexMap<u32, SceneNode>) -> Self {
+    pub fn from_nodes(root_key: u32, mut nodes: HashMap<u32, SceneNode>) -> Self {
         let mut key_to_node_id = HashMap::with_capacity(nodes.len());
 
         // Generate deterministic NodeIDs based on scene keys
@@ -442,11 +448,8 @@ impl SceneData {
     /// Inserts nodes in key order; arena assigns slot+generation for each. Remaps parent references.
     pub fn to_runtime_nodes(mut self) -> (NodeArena, NodeID) {
         use crate::ids::NodeID;
-        use std::iter::once;
-        // Order: root first, then rest in map order. Arena assigns next available slot for each insert.
-        let key_order: Vec<u32> = once(self.root_key)
-            .chain(self.nodes.keys().filter(|&&k| k != self.root_key).copied())
-            .collect();
+        // Order: root first, then rest sorted (deterministic).
+        let key_order = scene_key_order(self.root_key, self.nodes.keys().copied());
         let mut old_to_new_id: HashMap<NodeID, NodeID> = HashMap::with_capacity(self.nodes.len());
         let mut runtime_nodes = NodeArena::new();
         let mut parent_children: HashMap<NodeID, Vec<NodeID>> = HashMap::with_capacity(0);
@@ -561,7 +564,7 @@ impl SceneData {
     pub fn fix_relationships(data: &mut SceneData) {
         // This function is kept for compatibility but relationships are now
         // handled during deserialization. Parent relationships in SceneData
-        // use UUIDs from key_to_uuid, and children are already set.
+        // use IDs from key_to_id, and children are already set.
         // This function can be used to verify/rebuild relationships if needed.
 
         // OPTIMIZED: Use with_capacity(0) for known-empty map
@@ -846,7 +849,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         let mut key = 0u32;
         // OPTIMIZED: Use with_capacity(0) for known-empty maps initially
         let mut node_id_to_key: HashMap<NodeID, u32> = HashMap::with_capacity(0);
-        let mut nodes = IndexMap::new();
+        let mut nodes = HashMap::new();
         let mut key_to_node_id: HashMap<u32, NodeID> = HashMap::with_capacity(0);
 
         // Traverse tree starting from root
@@ -1109,10 +1112,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
 
-        // Key order: root first, then rest (so parent is before child when possible)
-        let key_order: Vec<u32> = std::iter::once(root_key)
-            .chain(other.nodes.keys().filter(|&&k| k != root_key).copied())
-            .collect();
+        // Key order: root first, then rest sorted (deterministic)
+        let key_order = scene_key_order(root_key, other.nodes.keys().copied());
 
         let mut old_node_id_to_new_node_id: HashMap<NodeID, NodeID> =
             HashMap::with_capacity(other.nodes.len() + 1);
@@ -1456,15 +1457,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         old_node_id_to_new_id.insert(key_to_node_id_copy[&subscene_root_key], replacement_root_id);
         key_to_new_id.insert(subscene_root_key, replacement_root_id);
 
-        let key_order: Vec<u32> = std::iter::once(subscene_root_key)
-            .chain(
-                other
-                    .nodes
-                    .keys()
-                    .filter(|&&k| k != subscene_root_key)
-                    .copied(),
-            )
-            .collect();
+        let key_order = scene_key_order(subscene_root_key, other.nodes.keys().copied());
         let mut insert_info: Vec<(u32, NodeID, Option<NodeID>)> = Vec::new();
 
         // Insert non-root nodes; arena assigns next available slot. Root is not inserted (replaced by replacement_root_id).
@@ -1935,10 +1928,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         self.scripts_dirty = false;
                     }
 
-                    // OPTIMIZED: Use pre-filtered vector of scripts with fixed_update
-                    // Collect script IDs to avoid borrow checker issues
-                    let script_ids: Vec<NodeID> =
-                        self.scripts_with_fixed_update.iter().copied().collect();
+                    // OPTIMIZED: Use pre-filtered vector of scripts with fixed_update (preallocate)
+                    let mut script_ids = Vec::with_capacity(self.scripts_with_fixed_update.len());
+                    script_ids.extend(self.scripts_with_fixed_update.iter().copied());
 
                     // Clone project reference before loop to avoid borrow conflicts
                     let project_ref = self.project.clone();
@@ -1962,12 +1954,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     let _span = tracing::span!(tracing::Level::INFO, "node_internal_fixed_updates")
                         .entered();
 
-                    // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
-                    let node_ids: Vec<NodeID> = self
-                        .nodes_with_internal_fixed_update
-                        .iter()
-                        .copied()
-                        .collect();
+                    // Optimize: collect first to avoid borrow checker issues (preallocate)
+                    let mut node_ids = Vec::with_capacity(self.nodes_with_internal_fixed_update.len());
+                    node_ids.extend(self.nodes_with_internal_fixed_update.iter().copied());
                     // OPTIMIZED: Clone project once before loop instead of per node
                     let project_ref = self.project.clone();
                     for node_id in node_ids {
@@ -1994,10 +1983,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         {
             // OPTIMIZED: Only run script updates when there are scripts (do not return - we still need the render pass below)
             if !self.scripts_with_update.is_empty() {
-                // OPTIMIZED: Use pre-filtered vector of scripts with update
-                // Collect script IDs to avoid borrow checker issues
-                // OPTIMIZED: Pre-allocate with known capacity (iter().copied() already does this efficiently)
-                let script_ids: Vec<NodeID> = self.scripts_with_update.iter().copied().collect();
+                // OPTIMIZED: Use pre-filtered vector of scripts with update (preallocate)
+                let mut script_ids = Vec::with_capacity(self.scripts_with_update.len());
+                script_ids.extend(self.scripts_with_update.iter().copied());
 
                 // Clone project reference before loop to avoid borrow conflicts
                 let project_ref = self.project.clone();
@@ -2132,7 +2120,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             return;
         }
         let project_ref = self.project.clone();
-        let queued: Vec<_> = self.queued_calls.drain(..).collect();
+        let mut queued = Vec::with_capacity(self.queued_calls.len());
+        queued.extend(self.queued_calls.drain(..));
         for (node_id, func_id, params) in queued {
             let mut project_borrow = project_ref.borrow_mut();
             let mut api = ScriptApi::new(delta, self, &mut *project_borrow, gfx);
@@ -2147,7 +2136,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             return;
         }
         let project_ref = self.project.clone();
-        let queued: Vec<_> = self.queued_signals.drain(..).collect();
+        let mut queued = Vec::with_capacity(self.queued_signals.len());
+        queued.extend(self.queued_signals.drain(..));
         for (signal, params) in queued {
             let mut project_borrow = project_ref.borrow_mut();
             let mut api = ScriptApi::new(delta, self, &mut *project_borrow, gfx);
@@ -3219,10 +3209,12 @@ impl<P: ScriptProvider + 'static> Scene<P> {
     }
 
     // Get nodes needing rerender
-    // OPTIMIZED: Returns pre-accumulated set instead of iterating over all nodes
+    // OPTIMIZED: Returns pre-accumulated set instead of iterating over all nodes (preallocate from drain)
     fn get_nodes_needing_rerender(&mut self) -> Vec<NodeID> {
-        // Take ownership of the HashSet and convert to Vec
-        self.needs_rerender.drain().collect()
+        let cap = self.needs_rerender.len();
+        let mut out = Vec::with_capacity(cap);
+        out.extend(self.needs_rerender.drain());
+        out
     }
 
     /// Pre-calculate transforms for nodes in dependency order (parents before children)
@@ -3575,15 +3567,16 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 })
                 .collect();
 
-            // Step 3: Separate render commands by type and resolve texture paths
-            let mut rect_commands = Vec::new();
-            let mut texture_commands = Vec::new();
+            // Step 3: Separate render commands by type and resolve texture paths (preallocate to avoid realloc in hot path)
+            let n = render_data.len();
+            let mut rect_commands = Vec::with_capacity(n);
+            let mut texture_commands = Vec::with_capacity(n);
             let mut texture_id_updates = Vec::new(); // (node_id, new_texture_id) when evicted id was reloaded
-            let mut ui_nodes = Vec::new();
-            let mut camera_2d_updates = Vec::new();
-            let mut camera_3d_updates = Vec::new();
-            let mut mesh_commands = Vec::new();
-            let mut light_commands = Vec::new();
+            let mut ui_nodes = Vec::with_capacity(n);
+            let mut camera_2d_updates = Vec::with_capacity(n);
+            let mut camera_3d_updates = Vec::with_capacity(n);
+            let mut mesh_commands = Vec::with_capacity(n);
+            let mut light_commands = Vec::with_capacity(n);
 
             for (node_id, timestamp, cmd) in render_data {
                 match cmd {
@@ -3763,8 +3756,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 }
             }
 
-            // Queue meshes
-            let mut mesh_id_updates: Vec<(NodeID, MeshID)> = Vec::new();
+            // Queue meshes (preallocate mesh_id_updates for eviction reloads)
+            let mut mesh_id_updates: Vec<(NodeID, MeshID)> = Vec::with_capacity(mesh_commands.len());
             for (node_id, mesh_id, path, transform, material_path) in mesh_commands {
                 // Resolve mesh id (prefer existing id; reload from path if evicted/absent)
                 let resolved_id: Option<MeshID> = match mesh_id {
