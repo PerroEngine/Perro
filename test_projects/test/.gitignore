@@ -4,6 +4,11 @@ builds/
 /.perro/project/src/static_assets/
 /.perro/project/embedded_assets/
 
+# Ignore target directories (use workspace root target via CARGO_TARGET_DIR)
+target/
+/.perro/project/target/
+/.perro/scripts/target/
+
 /assets.brk
 
 build.log
