@@ -11,6 +11,10 @@ builds/
 build.log
 
 icon.ico
+icon.icns
+icons.icns
+Info.plist
+.DS_Store
 
 perro_engine.png
 perro_engine.desktop

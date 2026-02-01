@@ -14,6 +14,10 @@ target/
 build.log
 
 icon.ico
+icon.icns
+icons.icns
+Info.plist
+.DS_Store
 
 # Ignore profiling files
 flamegraph.folded

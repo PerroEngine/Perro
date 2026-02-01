@@ -71,8 +71,10 @@ pub fn script_dylib_name() -> &'static str {
     if cfg!(target_os = "windows") {
         "scripts.dll"
     } else if cfg!(target_os = "macos") {
+        // Final copied name in .perro/scripts/builds should be "scripts.dylib" (no lib prefix)
         "scripts.dylib"
     } else {
+        // Final copied name in .perro/scripts/builds should be "scripts.so" (no lib prefix)
         "scripts.so"
     }
 }
@@ -118,6 +120,8 @@ pub struct Compiler {
     toolchain_version: Option<String>,
     project_root: PathBuf,
     from_source: bool,
+    /// When set, copy the built artifact (.app or executable) to this directory after build.
+    output_path: Option<PathBuf>,
 }
 
 impl Compiler {
@@ -139,10 +143,17 @@ impl Compiler {
             toolchain_version: None,
             project_root: project_root.to_path_buf(),
             from_source,
+            output_path: None,
         };
 
         compiler.load_toolchain_config();
         compiler
+    }
+
+    /// Copy the built artifact (.app or executable) to this directory after a successful project build.
+    pub fn with_output_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.output_path = Some(path.as_ref().to_path_buf());
+        self
     }
 
     pub fn with_toolchain_root<P: AsRef<Path>>(mut self, toolchain_root: P) -> Self {
@@ -315,7 +326,7 @@ impl Compiler {
 
         let profile_dir = target_base.join(profile);
 
-        // Platform-specific library naming
+        // Platform-specific library naming - Cargo prefixes library artifacts with "lib" on *nix
         let dll_path = if cfg!(target_os = "windows") {
             profile_dir.join(format!("{}.dll", crate_name))
         } else if cfg!(target_os = "macos") {
@@ -1303,7 +1314,7 @@ impl Compiler {
             return Err(format!("❌ Compilation failed after {:.2?}", elapsed));
         }
 
-        println!("✅ Compilation successful! (total {:.2?})", elapsed);
+    println!("✅ Compilation successful! (total {:.2?})", elapsed);
 
         // Copy the built DLL to the output location
         if matches!(self.target, CompileTarget::Scripts) {
@@ -1321,6 +1332,218 @@ impl Compiler {
                 let current_hash = compute_script_hash(&self.project_root, self.from_source)?;
                 if let Err(e) = write_script_hash(&self.project_root, &current_hash) {
                     eprintln!("⚠️  Warning: Failed to write script hash: {}", e);
+                }
+            }
+        }
+
+        // On macOS, when building a Project we prefer to assemble a .app bundle
+        // so users can launch it from Finder (this prevents Terminal from opening
+        // when double-clicking the application). The generated build.rs already
+        // creates Info.plist and icon.icns in the project root; here we copy
+        // the built binary into a standard .app/Contents/MacOS layout.
+        // Only package as .app for Project (non-verbose). VerboseProject leaves
+        // the binary in target/release/ so it can be run from a terminal.
+        if matches!(self.target, CompileTarget::Project | CompileTarget::VerboseProject) {
+            #[cfg(target_os = "macos")]
+            let do_app_bundle = matches!(self.target, CompileTarget::Project);
+            #[cfg(not(target_os = "macos"))]
+            let do_app_bundle = false;
+            if do_app_bundle {
+            #[cfg(target_os = "macos")]
+            {
+                use std::fs;
+                use toml::Value;
+
+                let project_toml = self.project_root.join("project.toml");
+                if project_toml.exists() {
+                    if let Ok(content) = fs::read_to_string(&project_toml) {
+                        if let Ok(cfg) = content.parse::<Value>() {
+                            if let Some(project_table) = cfg.get("project") {
+                                if let Some(name_val) = project_table.get("name") {
+                                    if let Some(name_str) = name_val.as_str() {
+                                        let crate_name = project_name_to_crate_name(name_str);
+
+                                        let profile_str = match profile {
+                                            BuildProfile::Dev => "debug",
+                                            _ => "release",
+                                        };
+
+                                        // Determine cargo target dir (toolchain cache or workspace target)
+                                        let target_dir = self
+                                            .get_cargo_target_dir()
+                                            .unwrap_or_else(|| self.project_root.join("target"));
+
+                                        let binary_path = target_dir.join(profile_str).join(&crate_name);
+
+                                        if binary_path.exists() {
+                                            // Place the .app bundle next to the built binary (so output is colocated
+                                            // in the target/<profile> folder). E.g. target/release/MyGame.app
+                                            let app_bundle = binary_path.with_extension("app");
+                                            let contents = app_bundle.join("Contents");
+                                            let macos_dir = contents.join("MacOS");
+                                            let resources_dir = contents.join("Resources");
+
+                                            if let Err(e) = fs::create_dir_all(&macos_dir) {
+                                                eprintln!("⚠️ Failed to create .app MacOS dir: {}", e);
+                                            }
+                                            if let Err(e) = fs::create_dir_all(&resources_dir) {
+                                                eprintln!("⚠️ Failed to create .app Resources dir: {}", e);
+                                            }
+
+                                            let dest_bin = macos_dir.join(&crate_name);
+
+                                            // Prefer to MOVE the binary into the .app so the target folder only
+                                            // contains the .app bundle. If rename fails (cross-filesystem,
+                                            // permissions, etc.) we fall back to copy+remove but log clearly.
+                                            match fs::rename(&binary_path, &dest_bin) {
+                                                Ok(_) => {
+                                                    println!(
+                                                        "✔ Moved binary into .app: {} -> {}",
+                                                        binary_path.display(),
+                                                        dest_bin.display()
+                                                    );
+
+                                                    // Ensure executable bit on the moved binary
+                                                    #[cfg(unix)]
+                                                    {
+                                                        use std::os::unix::fs::PermissionsExt;
+                                                        if let Ok(meta) = fs::metadata(&dest_bin) {
+                                                            let mut perms = meta.permissions();
+                                                            perms.set_mode(0o755);
+                                                            let _ = fs::set_permissions(&dest_bin, perms);
+                                                        }
+                                                    }
+                                                }
+                                                Err(rename_err) => {
+                                                    eprintln!(
+                                                        "⚠️ Failed to rename binary into .app: {}. Attempting copy+remove fallback.",
+                                                        rename_err
+                                                    );
+
+                                                    // Fallback: try to copy and then remove original so end result is still
+                                                    // a single .app. This is a best-effort fallback.
+                                                    match fs::copy(&binary_path, &dest_bin) {
+                                                        Ok(_) => {
+                                                            // Ensure executable bit
+                                                            #[cfg(unix)]
+                                                            {
+                                                                use std::os::unix::fs::PermissionsExt;
+                                                                if let Ok(meta) = fs::metadata(&dest_bin) {
+                                                                    let mut perms = meta.permissions();
+                                                                    perms.set_mode(0o755);
+                                                                    let _ = fs::set_permissions(&dest_bin, perms);
+                                                                }
+                                                            }
+
+                                                            // Try to remove the original binary
+                                                            if let Err(rem_err) = fs::remove_file(&binary_path) {
+                                                                eprintln!(
+                                                                    "⚠️ Copied binary into .app but failed to remove original: {}",
+                                                                    rem_err
+                                                                );
+                                                            } else {
+                                                                println!(
+                                                                    "✔ Moved binary into .app via copy+remove: {} -> {}",
+                                                                    binary_path.display(),
+                                                                    dest_bin.display()
+                                                                );
+                                                            }
+                                                        }
+                                                        Err(copy_err) => {
+                                                            eprintln!(
+                                                                "❌ Failed to copy binary into .app fallback: {}",
+                                                                copy_err
+                                                            );
+                                                            eprintln!(
+                                                                "ℹ️ The built binary remains at: {}. You can move it into {} manually.",
+                                                                binary_path.display(),
+                                                                app_bundle.display()
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Copy Info.plist and icon if present in project root
+                                            let info_src = self.project_root.join("Info.plist");
+                                            if info_src.exists() {
+                                                let _ = fs::copy(&info_src, contents.join("Info.plist"));
+                                            }
+
+                                            let icns_src = self.project_root.join("icon.icns");
+                                            if icns_src.exists() {
+                                                let _ = fs::copy(&icns_src, resources_dir.join("icon.icns"));
+                                            }
+
+                                            println!("✔ Created macOS .app bundle: {}", app_bundle.display());
+                                        } else {
+                                            println!("⚠️  Built binary not found at expected path: {}", binary_path.display());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            }
+        }
+
+        // When --out is set, move the built artifact there (no duplicate left in target/release)
+        if let Some(ref out_dir) = self.output_path {
+            let target_dir = self
+                .get_cargo_target_dir()
+                .unwrap_or_else(|| self.project_root.join("target"));
+            let profile_str = "release";
+            let project_toml_path = self.project_root.join("project.toml");
+            let config = fs::read_to_string(&project_toml_path)
+                .ok()
+                .and_then(|c| c.parse::<toml::Value>().ok());
+            let project_name = config
+                .as_ref()
+                .and_then(|c| c.get("project"))
+                .and_then(|p| p.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Perro Game");
+            let crate_name = project_name_to_crate_name(project_name);
+            let exe_name = if cfg!(target_os = "windows") {
+                format!("{}.exe", crate_name)
+            } else {
+                crate_name.clone()
+            };
+            let binary_path = target_dir.join(profile_str).join(&exe_name);
+            #[cfg(target_os = "macos")]
+            let is_app = matches!(self.target, CompileTarget::Project);
+            #[cfg(not(target_os = "macos"))]
+            let is_app = false;
+
+            fs::create_dir_all(out_dir).map_err(|e| format!("Failed to create output dir: {}", e))?;
+            if is_app {
+                let app_bundle = target_dir.join(profile_str).join(format!("{}.app", crate_name));
+                if app_bundle.exists() {
+                    let dest = out_dir.join(format!("{}.app", crate_name));
+                    if dest.exists() {
+                        fs::remove_dir_all(&dest).map_err(|e| format!("Failed to remove existing .app: {}", e))?;
+                    }
+                    fs::rename(&app_bundle, &dest).map_err(|e| format!("Failed to move .app: {}", e))?;
+                    println!("✔ Moved .app to {}", dest.display());
+                } else {
+                    return Err(format!("Built .app not found at {}", app_bundle.display()));
+                }
+            } else {
+                if binary_path.exists() {
+                    let dest = out_dir.join(&exe_name);
+                    if dest.exists() {
+                        fs::remove_file(&dest).map_err(|e| format!("Failed to remove existing executable: {}", e))?;
+                    }
+                    fs::rename(&binary_path, &dest).map_err(|e| format!("Failed to move binary: {}", e))?;
+                    #[cfg(unix)]
+                    if let Ok(meta) = fs::metadata(&dest) {
+                        let _ = fs::set_permissions(&dest, meta.permissions());
+                    }
+                    println!("✔ Moved executable to {}", dest.display());
+                } else {
+                    return Err(format!("Built binary not found at {}", binary_path.display()));
                 }
             }
         }
@@ -1767,7 +1990,7 @@ impl Compiler {
                 "                            .expect(\"Failed to get current directory\")"
             )?;
             writeln!(main_file, "                            .join(path_arg)")?;
-            writeln!(main_file, "                    }}")?;
+            writeln!(main_file, "                                       }}")?;
             writeln!(main_file, "                }}")?;
             writeln!(main_file, "            }};")?;
             writeln!(main_file, "")?;
@@ -2119,17 +2342,20 @@ impl Compiler {
         writeln!(build_file, "    END")?;
         writeln!(build_file, "END")?;
         writeln!(build_file, "\"#,")?;
-        writeln!(build_file, "    build_number,")?;
-        writeln!(build_file, "    icon_str,")?;
-        writeln!(build_file, "    major, minor, patch, build_number,")?;
-        writeln!(build_file, "    major, minor, patch, build_number,")?;
-        writeln!(build_file, "    name,")?;
-        writeln!(build_file, "    version_display,")?;
-        writeln!(build_file, "    name,")?;
-        writeln!(build_file, "    version_display,")?;
-        writeln!(build_file, "    name")?;
+        writeln!(
+            build_file,
+            "        build_number,")?;
+        writeln!(build_file, "        icon_str,")?;
+        writeln!(build_file, "        major, minor, patch, build_number,")?;
+        writeln!(build_file, "        major, minor, patch, build_number,")?;
+        writeln!(build_file, "        name,")?;
+        writeln!(build_file, "        version_display,")?;
+        writeln!(build_file, "        name,")?;
+        writeln!(build_file, "        version_display,")?;
+        writeln!(build_file, "        name")?;
         writeln!(build_file, ");")?;
         writeln!(build_file, "")?;
+
         writeln!(
             build_file,
             "            fs::write(&rc_path, rc_content).expect(\"Failed to write .rc file\");"
@@ -2392,6 +2618,7 @@ impl Compiler {
         )?;
         writeln!(build_file, "    use image::io::Reader as ImageReader;")?;
         writeln!(build_file, "    use std::fs::File;")?;
+        writeln!(build_file, "    use std::process::Command;")?;
         writeln!(build_file, "")?;
         writeln!(build_file, "    if !input_path.exists() {{")?;
         writeln!(
@@ -2400,18 +2627,22 @@ impl Compiler {
         )?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
-        writeln!(build_file, "    let img = ImageReader::open(input_path)")?;
+        writeln!(
+            build_file,
+            "    let img = ImageReader::open(input_path)"
+        )?;
         writeln!(build_file, "        .expect(\"Failed to open image\")")?;
         writeln!(build_file, "        .decode()")?;
         writeln!(build_file, "        .expect(\"Failed to decode image\");")?;
         writeln!(build_file, "")?;
-        writeln!(build_file, "    let sizes = [16, 32, 48, 256];")?;
         writeln!(
             build_file,
-            "    let mut icon_dir = IconDir::new(ResourceType::Icon);"
+            "    let sizes = [(16, \"icon_16x16.png\"), (32, \"icon_16x16@2x.png\"), (32, \"icon_32x32.png\"), (64, \"icon_32x32@2x.png\"), (128, \"icon_128x128.png\"), (256, \"icon_128x128@2x.png\"), (256, \"icon_256x256.png\"), (512, \"icon_256x256@2x.png\"), (512, \"icon_512x512.png\"), (1024, \"icon_512x512@2x.png\")];"
         )?;
         writeln!(build_file, "")?;
-        writeln!(build_file, "    for size in sizes {{")?;
+        writeln!(build_file, "    let mut icon_dir = IconDir::new(ResourceType::Icon);")?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    for (size, filename) in sizes {{")?;
         writeln!(
             build_file,
             "        let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);"
@@ -2585,43 +2816,46 @@ impl Compiler {
         )?;
         writeln!(
             build_file,
-            "        let output_path = temp_iconset.join(filename);"
+            "        let out_path = temp_iconset.join(filename);"
         )?;
         writeln!(
             build_file,
-            "        resized.save(&output_path).expect(\"Failed to save icon size\");"
+            "        resized.save(&out_path).expect(\"Failed to write PNG in iconset\");"
+        )?;
+        writeln!(
+            build_file,
+            "        log(log_path, &format!(\"✔ Added {{}}x{{}} to iconset\", size, size));"
         )?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
-        writeln!(build_file, "    let output = Command::new(\"iconutil\")")?;
-        writeln!(build_file, "        .args(&[\"-c\", \"icns\", \"-o\"])")?;
-        writeln!(build_file, "        .arg(icns_path)")?;
-        writeln!(build_file, "        .arg(&temp_iconset)")?;
-        writeln!(build_file, "        .output();")?;
-        writeln!(build_file, "")?;
-        writeln!(build_file, "    match output {{")?;
         writeln!(
             build_file,
-            "        Ok(result) if result.status.success() => {{"
+            "    let status = Command::new(\"iconutil\")"
         )?;
         writeln!(
             build_file,
-            "            log(log_path, &format!(\"✔ Created ICNS: {{}}\", icns_path.display()));"
-        )?;
-        writeln!(build_file, "        }}")?;
-        writeln!(build_file, "        _ => {{")?;
-        writeln!(
-            build_file,
-            "            log(log_path, \"⚠ iconutil failed, fallback to PNG copy\");"
+            "        .args([\"-c\", \"icns\", temp_iconset.to_str().expect(\"iconset path\"), \"-o\", icns_path.to_str().expect(\"icns path\")])"
         )?;
         writeln!(
             build_file,
-            "            fs::copy(input_path, icns_path.with_extension(\"png\")).ok();"
+            "        .status()"
         )?;
-        writeln!(build_file, "        }}")?;
-        writeln!(build_file, "    }}")?;
-        writeln!(build_file, "")?;
-        writeln!(build_file, "    let _ = fs::remove_dir_all(&temp_iconset);")?;
+        writeln!(
+            build_file,
+            "        .expect(\"iconutil not found (macOS only)\");"
+        )?;
+        writeln!(
+            build_file,
+            "    if !status.success() {{ panic!(\"iconutil failed\"); }}"
+        )?;
+        writeln!(
+            build_file,
+            "    let _ = fs::remove_dir_all(&temp_iconset);"
+        )?;
+        writeln!(
+            build_file,
+            "    log(log_path, &format!(\"✔ ICNS saved: {{}}\", icns_path.display()));"
+        )?;
         writeln!(build_file, "}}")?;
         writeln!(build_file, "")?;
 
@@ -2744,78 +2978,19 @@ impl Compiler {
             build_file,
             "    let icon_dest = project_root.join(format!(\"{{}}.png\", icon_name));"
         )?;
+        writeln!(build_file, "")?;
+        writeln!(build_file, "    // Copy icon to destination")?;
         writeln!(
             build_file,
-            "    let _ = fs::copy(&actual_icon_path, &icon_dest);"
+            "    if fs::copy(&actual_icon_path, &icon_dest).is_err() {{"
         )?;
         writeln!(
             build_file,
-            "    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some(\"default-icon-temp.png\") {{"
-        )?;
-        writeln!(
-            build_file,
-            "        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file"
-        )?;
-        writeln!(build_file, "    }}")?;
-        writeln!(
-            build_file,
-            "    if actual_icon_path.file_name().and_then(|n| n.to_str()) == Some(\"default-icon-temp.png\") {{"
-        )?;
-        writeln!(
-            build_file,
-            "        let _ = fs::remove_file(&actual_icon_path); // Clean up temp file"
+            "        log(log_path, \"⚠ Failed to copy icon to destination\");"
         )?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
-        writeln!(
-            build_file,
-            "    // Also try to install to user's local icon directory for better file manager support"
-        )?;
-        writeln!(
-            build_file,
-            "    if let Ok(home) = std::env::var(\"HOME\") {{"
-        )?;
-        writeln!(
-            build_file,
-            "        let local_icons_dir = PathBuf::from(&home).join(\".local/share/icons/hicolor/256x256/apps\");"
-        )?;
-        writeln!(
-            build_file,
-            "        if let Err(_) = fs::create_dir_all(&local_icons_dir) {{"
-        )?;
-        writeln!(
-            build_file,
-            "            // Silently fail if we can't create the directory"
-        )?;
-        writeln!(build_file, "        }} else {{")?;
-        writeln!(
-            build_file,
-            "            let system_icon_path = local_icons_dir.join(format!(\"{{}}.png\", icon_name));"
-        )?;
-        writeln!(
-            build_file,
-            "            if let Ok(_) = fs::copy(&actual_icon_path, &system_icon_path) {{"
-        )?;
-        writeln!(
-            build_file,
-            "                log(log_path, &format!(\"✔ Installed icon to system location: {{}}\", system_icon_path.display()));"
-        )?;
-        writeln!(build_file, "            }}")?;
-        writeln!(build_file, "        }}")?;
-        writeln!(build_file, "    }}")?;
-        writeln!(build_file, "")?;
-        writeln!(
-            build_file,
-            "    let desktop_path = project_root.join(format!(\"{{}}.desktop\", icon_name));"
-        )?;
-        writeln!(
-            build_file,
-            "    // Use just the icon name (without path/extension) so file managers can find it"
-        )?;
-        writeln!(
-            build_file,
-            "    // They'll look in standard icon directories"
-        )?;
+        writeln!(build_file, "    // Create desktop file")?;
         writeln!(build_file, "    let desktop_content = format!(")?;
         writeln!(build_file, "        r#\"[Desktop Entry]")?;
         writeln!(build_file, "Name={{}}")?;
@@ -2828,12 +3003,12 @@ impl Compiler {
         writeln!(build_file, "Engine=Perro")?;
         writeln!(build_file, "EngineWebsite=https://perroengine.com")?;
         writeln!(build_file, "\"#,")?;
-        writeln!(build_file, "        name, icon_name, icon_name, version")?;
+        writeln!(build_file, "        name, binary_name, icon_name, version")?;
         writeln!(build_file, "    );")?;
         writeln!(build_file, "")?;
         writeln!(
             build_file,
-            "    fs::write(&desktop_path, desktop_content).expect(\"Failed to write .desktop file\");"
+            "    fs::write(appdir.join(\"usr/share/applications\").join(format!(\"{{}}.desktop\", icon_name)), &desktop_content).expect(\"Failed to write desktop file\");"
         )?;
         writeln!(
             build_file,
@@ -3104,12 +3279,22 @@ impl Compiler {
                     let parts: Vec<String> = obj
                         .iter()
                         .map(|(k, v)| {
-                            let k_esc = k.replace('\\', "\\\\").replace('"', "\\\"");
-                            format!(
-                                "(Cow::Borrowed(\"{}\"), {})",
-                                k_esc,
-                                emit_script_exp_var_value_as_rust(v)
-                            )
+                            let k_str: &str = k.as_ref();
+                            let k_esc = k_str.replace('\\', "\\\\").replace('"', "\\\"");
+                            // In JSON, NodeRef is stored as {"@node": scene_key}
+                            if let Some(o) = v.as_object() {
+                                if o.len() == 1 {
+                                    if let Some(n) = o.get("@node").and_then(|n| n.as_u64()) {
+                                        let idx = n as u32;
+                                        return format!(
+                                            "(Cow::Borrowed(\"{}\"), ScriptExpVarValue::NodeRef(NodeID::from_u32({}u32)))",
+                                            k_esc, idx
+                                        );
+                                    }
+                                }
+                            }
+                            let val_rust = emit_script_exp_var_value_as_rust(v);
+                            format!("(Cow::Borrowed(\"{}\"), {})", k_esc, val_rust)
                         })
                         .collect();
                     format!("ScriptExpVarValue::object(vec![{}])", parts.join(", "))
@@ -3262,8 +3447,8 @@ impl Compiler {
                     {
                         let entries: Vec<String> = raw_vars
                             .iter()
-                            .map(|(k, v)| {
-                                let k_str = k.as_ref();
+                            .map(|(k, v): (&std::borrow::Cow<'_, str>, &crate::nodes::node::ScriptExpVarValue)| {
+                                let k_str: &str = k.as_ref();
                                 let k_esc = k_str.replace('\\', "\\\\").replace('"', "\\\"");
                                 match v {
                                     ScriptExpVarValue::NodeRef(id) => {
@@ -3273,8 +3458,8 @@ impl Compiler {
                                             k_esc, idx
                                         )
                                     }
-                                    ScriptExpVarValue::Value(v) => {
-                                        let val_rust = emit_script_exp_var_value_as_rust(v);
+                                    ScriptExpVarValue::Value(inner_v) => {
+                                        let val_rust = emit_script_exp_var_value_as_rust(inner_v);
                                         format!("(Cow::Borrowed(\"{}\"), {})", k_esc, val_rust)
                                     }
                                 }
@@ -3361,8 +3546,7 @@ impl Compiler {
                 node_str = string_some_regex
                     .replace_all(&node_str, "Some(Cow::Borrowed(\"$1\"))")
                     .to_string();
-
-                let string_field_regex = Regex::new(r#":\s*"([^"]+)","#)?;
+                let string_field_regex = Regex::new(r#":\s*"([^"]+)"\s*,"#)?;
                 node_str = string_field_regex
                     .replace_all(&node_str, ": Cow::Borrowed(\"$1\"),")
                     .to_string();

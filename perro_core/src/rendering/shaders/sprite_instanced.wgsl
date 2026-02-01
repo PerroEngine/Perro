@@ -110,16 +110,9 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
 // Fragment Shader
 // ─────────────────────────────────────────────
 // Texture is Rgba8UnormSrgb: sampling returns linear. We output linear; the sRGB
-// render target will convert linear→sRGB on write. If textures look dimmed on some
-// backends, the driver may not be doing that conversion — then uncomment the
-// linear_to_srgb() below so we output sRGB and the target stores as-is.
-
-fn linear_to_srgb(c: f32) -> f32 {
-    if c <= 0.0031308 {
-        return c * 12.92;
-    }
-    return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-}
+// swapchain (Windows D3D12, Linux Vulkan, macOS Metal) does one linear→sRGB on
+// write, so original sprite colors are preserved. Manual linear_to_srgb caused
+// double gamma on Mac (blown-out) and would be wrong on all platforms.
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -128,12 +121,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let half_texel = vec2<f32>(0.5 / f32(texture_size.x), 0.5 / f32(texture_size.y));
     let adjusted_uv = in.uv + half_texel;
     let linear = textureSample(texture_diffuse, texture_sampler, adjusted_uv);
-    // Some backends don't apply linear→sRGB when writing to sRGB targets, causing dimming.
-    // Encode to sRGB in shader so the stored value displays correctly.
-    return vec4<f32>(
-        linear_to_srgb(linear.r),
-        linear_to_srgb(linear.g),
-        linear_to_srgb(linear.b),
-        linear.a,
-    );
+    // Output linear; sRGB swapchain converts once on present (correct on Win/Linux/Mac).
+    return linear;
 }

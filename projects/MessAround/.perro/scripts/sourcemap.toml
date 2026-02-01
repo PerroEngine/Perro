@@ -1,3 +1,17 @@
+[scripts.global2_pup]
+src = "res://global2.pup"
+lang = "pup"
+id = "global2_pup"
+
+[[scripts.global2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 71
+
+[scripts.global2_pup.names]
+__t_a = "a"
+
 [scripts.player_pup]
 src = "res://player.pup"
 lang = "pup"
@@ -34,30 +48,30 @@ g_start = 199
 g_end = 210
 
 [scripts.player_pup.names]
-tex_id = "tex"
-__t_test_var = "test_var"
 __t_time = "time"
-__t_Cabbage = "Cabbage"
 __t_test_b = "test_b"
-__t_cab = "cab"
 cam_id = "cam"
-__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
-__t_Deadzone_AreaExited = "Deadzone_AreaExited"
 __t_test = "test"
+__t_Deadzone_AreaEntered = "Deadzone_AreaEntered"
+__t_cab = "cab"
+tex_id = "tex"
+__t_Cabbage = "Cabbage"
+__t_test_var = "test_var"
+__t_Deadzone_AreaExited = "Deadzone_AreaExited"
 
-[scripts.global2_pup]
-src = "res://global2.pup"
+[scripts.glob_test_pup]
+src = "res://glob_test.pup"
 lang = "pup"
-id = "global2_pup"
+id = "glob_test_pup"
 
-[[scripts.global2_pup.lines]]
+[[scripts.glob_test_pup.lines]]
 s_start = 1
 s_end = 1
 g_start = 1
 g_end = 71
 
-[scripts.global2_pup.names]
-__t_a = "a"
+[scripts.glob_test_pup.names]
+__t_b = "b"
 
 [scripts.shape_pup]
 src = "res://shape.pup"
@@ -71,6 +85,54 @@ g_start = 1
 g_end = 68
 
 [scripts.shape_pup.names]
+
+[scripts.root_pup]
+src = "res://root.pup"
+lang = "pup"
+id = "root_pup"
+
+[[scripts.root_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 70
+
+[[scripts.root_pup.lines]]
+s_start = 31
+s_end = 31
+g_start = 70
+g_end = 81
+
+[scripts.root_pup.names]
+__t_gas = "gas"
+__t_cabbage = "cabbage"
+
+[scripts.p2_pup]
+src = "res://p2.pup"
+lang = "pup"
+id = "p2_pup"
+
+[[scripts.p2_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 69
+
+[scripts.p2_pup.names]
+
+[scripts.camera_pup]
+src = "res://camera.pup"
+lang = "pup"
+id = "camera_pup"
+
+[[scripts.camera_pup.lines]]
+s_start = 1
+s_end = 1
+g_start = 1
+g_end = 88
+
+[scripts.camera_pup.names]
+__t_speed = "speed"
 
 [scripts.test_engine_structs_pup]
 src = "res://test_engine_structs.pup"
@@ -96,23 +158,9 @@ g_start = 83
 g_end = 90
 
 [scripts.test_engine_structs_pup.names]
+__t_test_variable_access = "test_variable_access"
 __t_test_constructors = "test_constructors"
 __t_test_nested_access = "test_nested_access"
-__t_test_variable_access = "test_variable_access"
-
-[scripts.glob_test_pup]
-src = "res://glob_test.pup"
-lang = "pup"
-id = "glob_test_pup"
-
-[[scripts.glob_test_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 71
-
-[scripts.glob_test_pup.names]
-__t_b = "b"
 
 [scripts.col_pup]
 src = "res://col.pup"
@@ -133,51 +181,3 @@ g_end = 78
 
 [scripts.col_pup.names]
 s_id = "s"
-
-[scripts.p2_pup]
-src = "res://p2.pup"
-lang = "pup"
-id = "p2_pup"
-
-[[scripts.p2_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 69
-
-[scripts.p2_pup.names]
-
-[scripts.root_pup]
-src = "res://root.pup"
-lang = "pup"
-id = "root_pup"
-
-[[scripts.root_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 70
-
-[[scripts.root_pup.lines]]
-s_start = 31
-s_end = 31
-g_start = 70
-g_end = 81
-
-[scripts.root_pup.names]
-__t_gas = "gas"
-__t_cabbage = "cabbage"
-
-[scripts.camera_pup]
-src = "res://camera.pup"
-lang = "pup"
-id = "camera_pup"
-
-[[scripts.camera_pup.lines]]
-s_start = 1
-s_end = 1
-g_start = 1
-g_end = 88
-
-[scripts.camera_pup.names]
-__t_speed = "speed"

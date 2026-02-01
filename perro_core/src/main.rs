@@ -1,11 +1,35 @@
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
+use dirs;
 use perro_core::asset_io::{ProjectRoot, set_project_root};
 use perro_core::compiler::{BuildProfile, CompileTarget, Compiler};
 use perro_core::runtime::run_dev_with_path;
 use perro_core::transpiler::transpile;
+
+/// Expand shorthands like "desktop" and "documents" to the user's Desktop/Documents path.
+/// Case-insensitive. Returns the path as a string for use with resolve_project_root.
+fn expand_path_shorthand_str(s: &str) -> String {
+    match s.to_lowercase().as_str() {
+        "desktop" => dirs::desktop_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| s.to_string()),
+        "documents" => dirs::document_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| s.to_string()),
+        _ => s.to_string(),
+    }
+}
+
+/// Expand shorthands for an output path (returns PathBuf).
+fn expand_path_shorthand(s: &str) -> PathBuf {
+    match s.to_lowercase().as_str() {
+        "desktop" => dirs::desktop_dir().unwrap_or_else(|| PathBuf::from(s)),
+        "documents" => dirs::document_dir().unwrap_or_else(|| PathBuf::from(s)),
+        _ => PathBuf::from(s),
+    }
+}
 
 /// Find the workspace root by looking for Cargo.toml
 fn find_workspace_root() -> Option<PathBuf> {
@@ -277,8 +301,8 @@ fn main() {
         }
     }
 
-    // Handle --run command (spawn perro_dev in release mode)
-    if args.contains(&"--run".to_string()) {
+    // Handle --run command (spawn cargo run -p perro_dev, no transpiling)
+    if args.contains(&"--run".to_string()) || args.contains(&"-run".to_string()) {
         let path_flag_i = args.iter().position(|a| a == "--path");
         let path_arg = path_flag_i
             .and_then(|i| args.get(i + 1))
@@ -291,7 +315,6 @@ fn main() {
         let project_root = resolve_project_root(path_arg);
         println!("📁 Using project root: {}", project_root.display());
 
-        // Verify project.toml exists at the resolved path
         let project_toml_path = project_root.join("project.toml");
         if !project_toml_path.exists() {
             eprintln!(
@@ -299,16 +322,21 @@ fn main() {
                 project_toml_path.display()
             );
             eprintln!("   Resolved from input: {}", path_arg);
-            eprintln!("   Project root: {}", project_root.display());
             std::process::exit(1);
         }
 
-        println!("🚀 Spawning perro_dev in release mode…");
+        println!("🚀 Spawning perro_dev (cargo run -p perro_dev --release)…");
 
-        // Check if --editor was passed with a project path
-        // Command format: --path --editor <project_path>
-        let mut cmd = Command::new("cargo");
-        cmd.arg("run")
+        let cargo_bin = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+        let workspace_root = find_workspace_root()
+            .unwrap_or_else(|| env::current_dir().expect("Failed to get current directory"));
+
+        let mut cmd = Command::new(&cargo_bin);
+        cmd.current_dir(&workspace_root)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .arg("run")
             .arg("-p")
             .arg("perro_dev")
             .arg("--release")
@@ -316,27 +344,18 @@ fn main() {
             .arg("--path")
             .arg(project_root.to_string_lossy().as_ref());
 
-        // If path_arg was "--editor", check if there's a project path after it
         if path_arg == "--editor" {
             if let Some(project_path) = path_flag_i.and_then(|i| args.get(i + 2)) {
-                // Only add if it's not another flag (like --run)
                 if !project_path.starts_with("--") {
-                    println!("📂 Editor mode: Project path: {}", project_path);
                     cmd.arg("--editor").arg(project_path);
                 }
             }
         }
 
-        let mut child = cmd.spawn().expect("Failed to spawn perro_dev");
-
-        // Wait for it to finish
-        let status = child.wait().expect("Failed to wait on child process");
-
+        let status = cmd.status().expect("Failed to spawn perro_dev");
         if !status.success() {
-            eprintln!("❌ perro_dev exited with error");
-            std::process::exit(1);
+            std::process::exit(status.code().unwrap_or(1));
         }
-
         std::process::exit(0);
     }
 
@@ -400,8 +419,8 @@ fn main() {
         run_dev_with_path(project_root);
     }
 
-    // Handle --dev command (build scripts + run)
-    if args.contains(&"--dev".to_string()) {
+    // Handle --dev command (build scripts, then spawn cargo run -p perro_dev)
+    if args.contains(&"--dev".to_string()) || args.contains(&"-dev".to_string()) {
         let path_flag_i = args.iter().position(|a| a == "--path");
         let path_arg = path_flag_i
             .and_then(|i| args.get(i + 1))
@@ -414,7 +433,6 @@ fn main() {
         let project_root = resolve_project_root(path_arg);
         println!("📁 Using project root: {}", project_root.display());
 
-        // Verify project.toml exists at the resolved path
         let project_toml_path = project_root.join("project.toml");
         if !project_toml_path.exists() {
             eprintln!(
@@ -422,17 +440,14 @@ fn main() {
                 project_toml_path.display()
             );
             eprintln!("   Resolved from input: {}", path_arg);
-            eprintln!("   Project root: {}", project_root.display());
             std::process::exit(1);
         }
 
-        // Register in engine core
         set_project_root(ProjectRoot::Disk {
             root: project_root.clone(),
             name: "Perro Engine".into(),
         });
 
-        // Build scripts first
         println!("📜 Building scripts…");
         if let Err(e) = transpile(&project_root, true, false, true) {
             eprintln!("❌ Transpile failed: {}", e);
@@ -445,13 +460,18 @@ fn main() {
             std::process::exit(1);
         }
 
-        println!("✅ Scripts built! Starting dev runner…");
-        println!("🚀 Spawning perro_dev in release mode…");
+        println!("✅ Scripts built! Spawning perro_dev (cargo run -p perro_dev --release)…");
 
-        // Check if --editor was passed with a project path
-        // Command format: --path --editor <project_path>
-        let mut cmd = Command::new("cargo");
-        cmd.arg("run")
+        let cargo_bin = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+        let workspace_root = find_workspace_root()
+            .unwrap_or_else(|| env::current_dir().expect("Failed to get current directory"));
+
+        let mut cmd = Command::new(&cargo_bin);
+        cmd.current_dir(&workspace_root)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .arg("run")
             .arg("-p")
             .arg("perro_dev")
             .arg("--release")
@@ -459,27 +479,18 @@ fn main() {
             .arg("--path")
             .arg(project_root.to_string_lossy().as_ref());
 
-        // If path_arg was "--editor", check if there's a project path after it
         if path_arg == "--editor" {
             if let Some(project_path) = path_flag_i.and_then(|i| args.get(i + 2)) {
-                // Only add if it's not another flag (like --dev)
                 if !project_path.starts_with("--") {
-                    println!("📂 Editor mode: Project path: {}", project_path);
                     cmd.arg("--editor").arg(project_path);
                 }
             }
         }
 
-        let mut child = cmd.spawn().expect("Failed to spawn perro_dev");
-
-        // Wait for it to finish
-        let status = child.wait().expect("Failed to wait on child process");
-
+        let status = cmd.status().expect("Failed to spawn perro_dev");
         if !status.success() {
-            eprintln!("❌ perro_dev exited with error");
-            std::process::exit(1);
+            std::process::exit(status.code().unwrap_or(1));
         }
-
         std::process::exit(0);
     }
 
@@ -495,13 +506,14 @@ fn main() {
             );
             eprintln!("   Or use: cargo run -p perro_core -- --path <path> --dev (compile + run)");
             eprintln!("   Or use: cargo run -p perro_core -- --path <path> --run (run only)");
+            eprintln!("   Or use: cargo run -p perro_core -- --path <path> --project [--out <dir>] (export)");
             std::process::exit(1);
         });
 
     // Decide build type
-    let target = if args.contains(&"--project".to_string()) {
+    let target = if args.contains(&"--project".to_string()) || args.contains(&"-project".to_string()) {
         // Check for --verbose flag
-        if args.contains(&"--verbose".to_string()) {
+        if args.contains(&"--verbose".to_string()) || args.contains(&"-verbose".to_string()) {
             CompileTarget::VerboseProject
         } else {
             CompileTarget::Project
@@ -513,8 +525,17 @@ fn main() {
         CompileTarget::Scripts
     };
 
-    // Resolve the path properly
-    let project_root = resolve_project_root(path_arg);
+    // Optional output path for project export (copy .app or executable to this directory)
+    let out_path = args
+        .iter()
+        .position(|a| a == "--out" || a == "-out")
+        .and_then(|i| args.get(i + 1))
+        .filter(|s| !s.starts_with("-"))
+        .map(|s| expand_path_shorthand(s));
+
+    // Resolve the path properly (expand shorthands: desktop, documents)
+    let path_to_resolve = expand_path_shorthand_str(path_arg);
+    let project_root = resolve_project_root(&path_to_resolve);
     println!("📁 Using project root: {}", project_root.display());
 
     // Verify project.toml exists at the resolved path
@@ -559,7 +580,10 @@ fn main() {
                 return;
             }
 
-            let compiler = Compiler::new(&project_root, CompileTarget::Project, true);
+            let compiler = match &out_path {
+                Some(out) => Compiler::new(&project_root, CompileTarget::Project, true).with_output_path(out),
+                None => Compiler::new(&project_root, CompileTarget::Project, true),
+            };
             if let Err(e) = compiler.compile(BuildProfile::Release) {
                 eprintln!("❌ Project build failed: {}", e);
                 return;
@@ -574,7 +598,10 @@ fn main() {
                 return;
             }
 
-            let compiler = Compiler::new(&project_root, CompileTarget::VerboseProject, true);
+            let compiler = match &out_path {
+                Some(out) => Compiler::new(&project_root, CompileTarget::VerboseProject, true).with_output_path(out),
+                None => Compiler::new(&project_root, CompileTarget::VerboseProject, true),
+            };
             if let Err(e) = compiler.compile(BuildProfile::Release) {
                 eprintln!("❌ Project build failed: {}", e);
                 return;

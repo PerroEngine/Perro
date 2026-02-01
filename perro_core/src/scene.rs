@@ -4332,13 +4332,8 @@ pub fn default_perro_rust_path() -> io::Result<PathBuf> {
             path.push("scripts");
             path.push("builds");
 
-            let filename = if cfg!(target_os = "windows") {
-                "scripts.dll"
-            } else if cfg!(target_os = "macos") {
-                "libscripts.dylib"
-            } else {
-                "scripts.so"
-            };
+            // Use centralized naming from compiler so the loader and compiler agree
+            let filename = crate::scripting::compiler::script_dylib_name();
 
             path.push(filename);
             Ok(path)
@@ -4358,14 +4353,7 @@ pub fn default_perro_rust_path_from_root(project_root: &Path) -> PathBuf {
     path.push("scripts");
     path.push("builds");
 
-    let filename = if cfg!(target_os = "windows") {
-        "scripts.dll"
-    } else if cfg!(target_os = "macos") {
-        "libscripts.dylib"
-    } else {
-        "scripts.so"
-    };
-
+    let filename = crate::scripting::compiler::script_dylib_name();
     path.push(filename);
     path
 }

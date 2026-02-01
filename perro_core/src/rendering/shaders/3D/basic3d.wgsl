@@ -86,7 +86,8 @@ fn vs_main(in: VSIn) -> VSOut {
 fn inverse_view_matrix(view: mat4x4<f32>) -> mat4x4<f32> {
     let r = mat3x3<f32>(view[0].xyz, view[1].xyz, view[2].xyz);
     let r_t = transpose(r);
-    let t = -r_t * view[3].xyz;
+
+    let t = -(r_t * view[3].xyz);
     return mat4x4<f32>(
         vec4<f32>(r_t[0], 0.0),
         vec4<f32>(r_t[1], 0.0),
