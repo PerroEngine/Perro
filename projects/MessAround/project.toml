@@ -2,7 +2,7 @@
 name = "MessAround"
 main_scene = "res://main.scn"
 # Icon is optional - if not provided, build will skip icon embedding
-icon = "res://icon.png"
+icon = "res://obama.jpg"
 version = "1.0.0"
 
 [graphics]

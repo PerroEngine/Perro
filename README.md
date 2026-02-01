@@ -16,7 +16,7 @@ It focuses on **performance, flexibility, and ease of use** with a unique script
 - ⚡ **Optimized Release Builds** – scripts and assets statically link into your final binary.
 - 🔗 **Decoupled Signal System** – global, name-based signals that completely decouple emitters from listeners. Use `on SIGNALNAME() {}` shorthand for automatic connections.
 
-**📚 [Full Documentation →](https://perroengine.com/docs)**  
+**📚 [Full Pup Script Documentation →](https://perroengine.com/docs)**  
 Scripting reference (node API, resources, types) is in the **[docs/](docs/)** folder: [PUP](docs/PUP.md), [TypeScript](docs/TYPESCRIPT.md) (experimental), [C#](docs/CSHARP.md) (experimental).
 
 ---
@@ -65,9 +65,8 @@ The `--dev` command automatically:
 4. Runs the project - instant if no changes detected
 
 **Smart Recompilation:**
-- **No changes:** Instant run (no compilation needed)
 - **Pup source changes:** Fast recompile (~1-5 seconds)
-- **Engine changes:** Full recompile of `perro_dev` (longer, but only when needed)
+- **Engine changes:** Full recompile of `perro_core` (longer, but only when needed)
 
 ---
 
@@ -358,14 +357,31 @@ cargo run -p perro_core -- --path /path/to/project --project
 cargo run -p perro_core -- --path /path/to/project --project --verbose
 ```
 
+**Export to a custom output directory:**
+
+By default, the built artifact is written to `target/release/` (or your project’s target directory). Use `--out` (or `-out`) to **move** the built artifact into a directory of your choice (build still goes to `target/release/`, then the .app or executable is moved to `--out` so you don't have two copies):
+
+```bash
+# Build, then move the .app (macOS) or executable (Windows/Linux) to ./dist
+cargo run -p perro_core -- --path /path/to/project --project --out ./dist
+```
+
+- **macOS (non-verbose):** The `.app` bundle (e.g. `MyGame.app`) is moved into the given directory.
+- **Windows / Linux / macOS (verbose):** The executable (e.g. `MyGame.exe` or `my_game`) is moved into the given directory.
+
+The directory is created if it doesn’t exist. You can use this for release packaging, CI artifacts, or a custom install layout.
+
+**Path shorthands:** For `--path` and `--out`, you can use **`desktop`** or **`documents`** (case-insensitive) instead of the full path; they resolve to your user Desktop and Documents folder on all platforms. Example: `--out desktop` moves the build to your Desktop.
+
 This:
 - Transpiles all scripts → Rust
 - Compiles scripts + project into a single binary
 - Embeds assets and scripts statically
 - Produces an optimized, distributable executable
 - **Verbose mode:** Removes Windows subsystem flag so console is visible and makes console logs visible (useful for debugging)
+- **`--out <dir>`:** Move the built artifact into `<dir>` (no duplicate left in target/release)
 
-**Result:** A single executable with no external dependencies or DLLs.
+**Result:** A single executable (or .app on macOS) with no external dependencies or DLLs.
 
 ### Making Your First Game
 

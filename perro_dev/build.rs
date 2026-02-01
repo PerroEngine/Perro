@@ -12,8 +12,7 @@ fn main() {
     // Static config (local file)
     // ───────────────────────────────────────────────
     let icon_path = PathBuf::from("./icon.png"); // adjust as needed
-    let version = "1.0.0";
-    let name = "Perro Dev Runtime";
+
 
     log(&log_path, &format!("Icon path: {}", icon_path.display()));
 

@@ -1081,14 +1081,10 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
     // - NVIDIA: Vulkan (excellent support), DX12 (good support)
     // - AMD: Vulkan (excellent support), DX12 (good support)
     // - Apple Silicon: Metal only
-    // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
-
-    // Get list of available backends for this platform
-    // Note: OpenGL backend disabled due to wgpu-hal 28.0.0 compatibility issue
     #[cfg(windows)]
     let available_backends = vec![("DX12", Backends::DX12), ("Vulkan", Backends::VULKAN)];
     #[cfg(target_os = "macos")]
-    let available_backends = vec![("Metal", Backends::METAL), ("Vulkan", Backends::VULKAN)];
+    let available_backends = vec![("Metal", Backends::METAL)];
     #[cfg(target_os = "linux")]
     let available_backends = vec![("Vulkan", Backends::VULKAN)];
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -1740,7 +1736,7 @@ pub fn create_graphics_sync(
     #[cfg(windows)]
     let available_backends = vec![("DX12", Backends::DX12), ("Vulkan", Backends::VULKAN)];
     #[cfg(target_os = "macos")]
-    let available_backends = vec![("Metal", Backends::METAL), ("Vulkan", Backends::VULKAN)];
+    let available_backends = vec![("Metal", Backends::METAL)];
     #[cfg(target_os = "linux")]
     let available_backends = vec![("Vulkan", Backends::VULKAN)];
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -1914,16 +1910,47 @@ pub fn create_graphics_sync(
         .unwrap_or(surface_caps.formats[0]);
 
     let size = window.inner_size();
+    // Choose present mode (prefer Immediate > Mailbox > Fifo)
+    let preferred_present_mode = if surface_caps
+        .present_modes
+        .contains(&wgpu::PresentMode::Immediate)
+    {
+        wgpu::PresentMode::Immediate
+    } else if surface_caps
+        .present_modes
+        .contains(&wgpu::PresentMode::Mailbox)
+    {
+        wgpu::PresentMode::Mailbox
+    } else if surface_caps
+        .present_modes
+        .contains(&wgpu::PresentMode::Fifo)
+    {
+        wgpu::PresentMode::Fifo
+    } else {
+        // Fallback to first supported mode
+        surface_caps.present_modes[0]
+    };
+
     let surface_config = SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: surface_format,
         width: size.width,
         height: size.height,
-        present_mode: surface_caps.present_modes[0],
+        present_mode: preferred_present_mode,
         alpha_mode: surface_caps.alpha_modes[0],
         view_formats: vec![],
         desired_maximum_frame_latency: 2,
     };
+
+    let present_mode_name = match preferred_present_mode {
+        wgpu::PresentMode::Mailbox => "Mailbox (adaptive VSync)",
+        wgpu::PresentMode::Fifo => "Fifo (standard VSync)",
+        wgpu::PresentMode::FifoRelaxed => "FifoRelaxed",
+        wgpu::PresentMode::Immediate => "Immediate (no VSync)",
+        _ => "Unknown",
+    };
+    println!("📺 Present mode: {}", present_mode_name);
+
     surface.configure(&device, &surface_config);
 
     // Create camera buffers and bind groups (same as async version)

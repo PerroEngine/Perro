@@ -13,3 +13,7 @@ perro_core/src/scene.rs
 perro_dev/perro_dev_runtime.desktop
 perro_dev/perro_dev_runtime.png
 perro_dev/perrodevruntime.desktop
+icon.icns
+icons.icns
+Info.plist
+.DS_Store

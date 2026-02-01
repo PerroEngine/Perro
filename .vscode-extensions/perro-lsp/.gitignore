@@ -2,3 +2,6 @@
 /out
 *.vsix
 .DS_Store
+icon.icns
+icons.icns
+Info.plist
