@@ -18,7 +18,6 @@ use crate::script::{CreateFn, ScriptProvider};
 use crate::structs::structs3d::StaticMeshData;
 use crate::structs2d::texture::StaticTextureData;
 use crate::ui::fur_ast::FurElement;
-use once_cell::sync::Lazy;
 use phf::Map;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use winit::event_loop::EventLoop;
@@ -27,10 +26,10 @@ use winit::window::Window;
 /// Static assets that are bundled with the binary
 pub struct StaticAssets {
     pub project: &'static Project,
-    pub scenes: &'static Lazy<HashMap<&'static str, &'static SceneData>>,
-    pub fur: &'static Lazy<HashMap<&'static str, &'static [FurElement]>>,
-    pub textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>,
-    pub meshes: &'static Lazy<HashMap<&'static str, &'static StaticMeshData>>,
+    pub scenes: &'static Map<&'static str, &'static SceneData>,
+    pub fur: &'static Map<&'static str, &'static [FurElement]>,
+    pub textures: &'static Map<&'static str, &'static StaticTextureData>,
+    pub meshes: &'static Map<&'static str, &'static StaticMeshData>,
 }
 
 /// Project-specific data that needs to be passed from the binary
@@ -52,8 +51,8 @@ pub struct RuntimeData {
 /// Generic static script provider that lives in core
 pub struct StaticScriptProvider {
     ctors: &'static Map<&'static str, CreateFn>,
-    pub scenes: &'static Lazy<HashMap<&'static str, &'static SceneData>>,
-    pub fur: &'static Lazy<HashMap<&'static str, &'static [FurElement]>>,
+    pub scenes: &'static Map<&'static str, &'static SceneData>,
+    pub fur: &'static Map<&'static str, &'static [FurElement]>,
     global_registry_order: &'static [&'static str],
     global_registry_names: &'static [&'static str],
 }
@@ -132,22 +131,20 @@ fn run_app(event_loop: EventLoop<Graphics>, mut app: App<StaticScriptProvider>) 
 }
 
 /// Global static textures map (set once at startup, only in runtime mode)
-static STATIC_TEXTURES: AtomicPtr<
-    std::collections::HashMap<&'static str, &'static StaticTextureData>,
-> = AtomicPtr::new(std::ptr::null_mut());
+static STATIC_TEXTURES: AtomicPtr<Map<&'static str, &'static StaticTextureData>> =
+    AtomicPtr::new(std::ptr::null_mut());
 
 /// Initialize static textures (called once at startup in runtime mode)
 pub fn set_static_textures(
-    textures: &'static Lazy<HashMap<&'static str, &'static StaticTextureData>>,
+    textures: &'static Map<&'static str, &'static StaticTextureData>,
 ) {
-    // Get the inner HashMap reference
-    let map_ref = &**textures;
-    STATIC_TEXTURES.store(map_ref as *const _ as *mut _, Ordering::Release);
+    STATIC_TEXTURES.store(textures as *const _ as *mut _, Ordering::Release);
 }
 
 /// Get static textures map (returns None if not initialized or in dev mode)
 pub fn get_static_textures()
--> Option<&'static std::collections::HashMap<&'static str, &'static StaticTextureData>> {
+    -> Option<&'static Map<&'static str, &'static StaticTextureData>>
+{
     let ptr = STATIC_TEXTURES.load(Ordering::Acquire);
     if ptr.is_null() {
         None
@@ -156,21 +153,18 @@ pub fn get_static_textures()
     }
 }
 
-static STATIC_MESHES: AtomicPtr<
-    std::collections::HashMap<&'static str, &'static StaticMeshData>,
-> = AtomicPtr::new(std::ptr::null_mut());
+static STATIC_MESHES: AtomicPtr<Map<&'static str, &'static StaticMeshData>> =
+    AtomicPtr::new(std::ptr::null_mut());
 
 /// Initialize static meshes (called once at startup in runtime mode)
-pub fn set_static_meshes(
-    meshes: &'static Lazy<HashMap<&'static str, &'static StaticMeshData>>,
-) {
-    let map_ref = &**meshes;
-    STATIC_MESHES.store(map_ref as *const _ as *mut _, Ordering::Release);
+pub fn set_static_meshes(meshes: &'static Map<&'static str, &'static StaticMeshData>) {
+    STATIC_MESHES.store(meshes as *const _ as *mut _, Ordering::Release);
 }
 
 /// Get static meshes map (returns None if not initialized or in dev mode)
 pub fn get_static_meshes()
--> Option<&'static std::collections::HashMap<&'static str, &'static StaticMeshData>> {
+    -> Option<&'static Map<&'static str, &'static StaticMeshData>>
+{
     let ptr = STATIC_MESHES.load(Ordering::Acquire);
     if ptr.is_null() {
         None
@@ -547,15 +541,23 @@ fn resolve_dev_project_path() -> Result<PathBuf, String> {
                     .unwrap_or_else(|| PathBuf::from("."))
             });
 
-        // Handle special flags like --editor and --test
-        // These search for folders with those names that contain project.toml
-        // NOTE: This only happens when explicitly requested via --path --editor or --path --test
-        if path_arg.eq_ignore_ascii_case("--editor") || path_arg.eq_ignore_ascii_case("--test") {
-            let search_name = if path_arg.eq_ignore_ascii_case("--editor") {
-                "perro_editor"
+        // Handle special flags: --editor, --test, --test_transpiler
+        // --editor: search for perro_editor; --test / --test_transpiler: unit_tests/transpiler_test
+        if path_arg.eq_ignore_ascii_case("--test")
+            || path_arg.eq_ignore_ascii_case("--test_transpiler")
+        {
+            let test_path = workspace_root.join("unit_tests/transpiler_test");
+            if test_path.join("project.toml").exists() {
+                use dunce;
+                return Ok(dunce::canonicalize(&test_path).unwrap_or(test_path));
             } else {
-                "test"
-            };
+                return Err(format!(
+                    "ERROR: Transpiler test project not found at {} (missing project.toml).",
+                    test_path.display()
+                ));
+            }
+        } else if path_arg.eq_ignore_ascii_case("--editor") {
+            let search_name = "perro_editor";
 
             // Helper to find a project folder by name
             let find_project_by_name = |dir: &Path, name: &str| -> Option<PathBuf> {

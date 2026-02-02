@@ -1145,12 +1145,16 @@ impl ModuleCodegen for MeshResource {
 impl ModuleTypes for MeshResource {
     fn return_type(&self) -> Option<Type> {
         match self {
-            MeshResource::Load | MeshResource::Preload
-            | MeshResource::Cube | MeshResource::Sphere | MeshResource::Plane
-            | MeshResource::Cylinder | MeshResource::Capsule | MeshResource::Cone
-            | MeshResource::SquarePyramid | MeshResource::TriangularPyramid => {
-                Some(Type::EngineStruct(EngineStruct::Mesh))
-            }
+            MeshResource::Load
+            | MeshResource::Preload
+            | MeshResource::Cube
+            | MeshResource::Sphere
+            | MeshResource::Plane
+            | MeshResource::Cylinder
+            | MeshResource::Capsule
+            | MeshResource::Cone
+            | MeshResource::SquarePyramid
+            | MeshResource::TriangularPyramid => Some(Type::EngineStruct(EngineStruct::Mesh)),
             MeshResource::Remove => None,
         }
     }
@@ -1159,9 +1163,14 @@ impl ModuleTypes for MeshResource {
         match self {
             MeshResource::Load | MeshResource::Preload => Some(vec![Type::String]),
             MeshResource::Remove => Some(vec![Type::EngineStruct(EngineStruct::Mesh)]),
-            MeshResource::Cube | MeshResource::Sphere | MeshResource::Plane
-            | MeshResource::Cylinder | MeshResource::Capsule | MeshResource::Cone
-            | MeshResource::SquarePyramid | MeshResource::TriangularPyramid => Some(vec![]),
+            MeshResource::Cube
+            | MeshResource::Sphere
+            | MeshResource::Plane
+            | MeshResource::Cylinder
+            | MeshResource::Capsule
+            | MeshResource::Cone
+            | MeshResource::SquarePyramid
+            | MeshResource::TriangularPyramid => Some(vec![]),
         }
     }
 
@@ -1169,9 +1178,14 @@ impl ModuleTypes for MeshResource {
         match self {
             MeshResource::Load | MeshResource::Preload => Some(vec!["path"]),
             MeshResource::Remove => Some(vec!["mesh"]),
-            MeshResource::Cube | MeshResource::Sphere | MeshResource::Plane
-            | MeshResource::Cylinder | MeshResource::Capsule | MeshResource::Cone
-            | MeshResource::SquarePyramid | MeshResource::TriangularPyramid => Some(vec![]),
+            MeshResource::Cube
+            | MeshResource::Sphere
+            | MeshResource::Plane
+            | MeshResource::Cylinder
+            | MeshResource::Capsule
+            | MeshResource::Cone
+            | MeshResource::SquarePyramid
+            | MeshResource::TriangularPyramid => Some(vec![]),
         }
     }
 }

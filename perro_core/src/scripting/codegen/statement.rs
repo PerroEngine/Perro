@@ -3480,9 +3480,9 @@ impl Stmt {
             Stmt::Return(expr) => {
                 if let Some(expr) = expr {
                     let return_type_hint = current_func.map(|f| &f.return_type);
-                    let expr_code = expr
-                        .expr
-                        .to_rust(needs_self, script, return_type_hint, current_func, None);
+                    let expr_code =
+                        expr.expr
+                            .to_rust(needs_self, script, return_type_hint, current_func, None);
                     format!("return {};", expr_code)
                 } else {
                     "return;".to_string()
@@ -3892,7 +3892,9 @@ impl Stmt {
                     Op::Mul => "*",
                     Op::Div => "/",
                     Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::Eq | Op::Ne | Op::And => {
-                        unreachable!("Comparison/logical operators cannot be used in assignment operations")
+                        unreachable!(
+                            "Comparison/logical operators cannot be used in assignment operations"
+                        )
                     }
                 };
 
@@ -4054,12 +4056,11 @@ impl Stmt {
                     let index_refs_array = index_code.contains(&base_code);
 
                     // If the index references the array, extract it to a temporary variable first
-                        if index_refs_array {
+                    if index_refs_array {
                         // Generate a temporary variable name based on the array name.
                         // Sanitize base_code so we don't get __idx____var_clone() (strip .clone() and () from expr code).
-                        let mut base_sanitized = base_code
-                            .replace(".clone()", "")
-                            .replace("()", "");
+                        let mut base_sanitized =
+                            base_code.replace(".clone()", "").replace("()", "");
                         base_sanitized = base_sanitized.trim_start_matches("self.").to_string();
                         let temp_index_var = format!(
                             "__{}_idx",
@@ -4091,9 +4092,8 @@ impl Stmt {
                         if is_dynamic_array {
                             // For dynamic arrays, extract index and check bounds.
                             // Sanitize base_code so temp var isn't __idx____var_clone() (strip .clone() and () from expr code).
-                            let mut base_sanitized = base_code
-                                .replace(".clone()", "")
-                                .replace("()", "");
+                            let mut base_sanitized =
+                                base_code.replace(".clone()", "").replace("()", "");
                             base_sanitized = base_sanitized.trim_start_matches("self.").to_string();
                             let temp_index_var = format!(
                                 "__idx_{}",

@@ -1,4 +1,5 @@
 use crate::ids::NodeID;
+use cow_map::CowMap;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -52,8 +53,8 @@ impl Renderable {
 /// 1. Implement `NodeWithInternalFixedUpdate` for your node type
 /// 2. The macro-generated BaseNode impl will automatically call your trait method
 ///
-/// Example for Node:
-/// ```rust
+/// Example for Node (impl lives in this crate; doc test skipped to avoid orphan rule):
+/// ```ignore
 /// impl NodeWithInternalFixedUpdate for Node {
 ///     fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
 ///         // Your internal fixed update logic here
@@ -73,8 +74,8 @@ pub trait NodeWithInternalFixedUpdate: BaseNode {
 /// 1. Implement `NodeWithInternalRenderUpdate` for your node type
 /// 2. The macro-generated BaseNode impl will automatically call your trait method
 ///
-/// Example for UINode:
-/// ```rust
+/// Example for UINode (impl lives in this crate; doc test skipped to avoid orphan rule):
+/// ```ignore
 /// impl NodeWithInternalRenderUpdate for UINode {
 ///     fn internal_render_update(&mut self, api: &mut ScriptApi) {
 ///         // Your internal render update logic here (runs every frame)
@@ -98,9 +99,8 @@ pub trait BaseNode: Any + Debug + Send {
     fn get_is_root_of(&self) -> Option<&str>;
     fn get_parent(&self) -> Option<crate::nodes::node::ParentType>;
 
-    /// Returns a reference to the children list.
-    /// If the node has `None` for its children field, this returns an empty slice.
-    fn get_children(&self) -> &Vec<NodeID>;
+    /// Returns a slice of child node IDs (borrowed static slice or owned vec).
+    fn get_children(&self) -> &[NodeID];
 
     fn get_type(&self) -> NodeType;
     fn get_script_path(&self) -> Option<&str>;
@@ -115,11 +115,17 @@ pub trait BaseNode: Any + Debug + Send {
     /// Raw script_exp_vars (for codegen/remap). Returns None if empty.
     fn get_script_exp_vars_raw(
         &self,
-    ) -> Option<&HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>>;
+    ) -> Option<&CowMap<&'static str, crate::nodes::node::ScriptExpVarValue>>;
     /// Mutable raw script_exp_vars (for remap NodeRef(scene_key) → NodeRef(runtime_id)).
     fn get_script_exp_vars_raw_mut(
         &mut self,
-    ) -> Option<&mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>>;
+    ) -> Option<&mut CowMap<&'static str, crate::nodes::node::ScriptExpVarValue>>;
+
+    /// Raw metadata (for codegen). Returns None if empty.
+    fn get_metadata_raw(&self) -> Option<&CowMap<&'static str, crate::nodes::node::MetadataValue>>;
+    fn get_metadata_raw_mut(
+        &mut self,
+    ) -> Option<&mut CowMap<&'static str, crate::nodes::node::MetadataValue>>;
 
     /// Check if this node is renderable (actually rendered to screen)
     /// Only renderable nodes should be added to needs_rerender
@@ -234,12 +240,11 @@ macro_rules! impl_scene_node {
                 self.parent.clone()
             }
 
-            fn get_children(&self) -> &Vec<NodeID> {
-                // Return empty vec reference if None
-                static EMPTY_CHILDREN: Vec<NodeID> = Vec::new();
+            fn get_children(&self) -> &[NodeID] {
                 match &self.children {
-                    Some(children) => children,
-                    None => &EMPTY_CHILDREN,
+                    None => &[],
+                    Some(std::borrow::Cow::Borrowed(s)) => s,
+                    Some(std::borrow::Cow::Owned(v)) => v.as_slice(),
                 }
             }
 
@@ -257,13 +262,11 @@ macro_rules! impl_scene_node {
             }
 
             fn add_child(&mut self, c: NodeID) {
-                self.children.get_or_insert_with(Vec::new).push(c);
+                self.get_children_mut().push(c);
             }
 
             fn remove_child(&mut self, c: &NodeID) {
-                if let Some(children) = &mut self.children {
-                    children.retain(|x| x != c);
-                }
+                self.get_children_mut().retain(|x| x != c);
             }
 
             fn set_script_path(&mut self, path: &str) {
@@ -271,7 +274,17 @@ macro_rules! impl_scene_node {
             }
 
             fn get_children_mut(&mut self) -> &mut Vec<NodeID> {
-                self.children.get_or_insert_with(Vec::new)
+                if self.children.is_none() {
+                    self.children = Some(std::borrow::Cow::Owned(Vec::new()));
+                }
+                let cow = self.children.as_mut().unwrap();
+                if let std::borrow::Cow::Borrowed(s) = cow {
+                    *cow = std::borrow::Cow::Owned(s.to_vec());
+                }
+                match self.children.as_mut().unwrap() {
+                    std::borrow::Cow::Owned(v) => v,
+                    _ => unreachable!(),
+                }
             }
 
             fn get_script_exp_vars(&self) -> Option<HashMap<String, Value>> {
@@ -284,31 +297,40 @@ macro_rules! impl_scene_node {
 
             fn set_script_exp_vars(&mut self, vars: Option<HashMap<String, Value>>) {
                 self.script_exp_vars = vars.map(|m| {
-                    m.into_iter()
-                        .map(|(k, v)| {
-                            (
-                                std::borrow::Cow::Owned(k),
-                                crate::nodes::node::ScriptExpVarValue::from_json_value(&v),
-                            )
-                        })
-                        .collect()
+                    CowMap::from(
+                        m.into_iter()
+                            .map(|(k, v)| {
+                                (
+                                    &*Box::leak(k.into_boxed_str()),
+                                    crate::nodes::node::ScriptExpVarValue::from_json_value(&v),
+                                )
+                            })
+                            .collect::<HashMap<_, _>>(),
+                    )
                 });
             }
 
             fn get_script_exp_vars_raw(
                 &self,
-            ) -> Option<
-                &HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>,
-            > {
+            ) -> Option<&CowMap<&'static str, crate::nodes::node::ScriptExpVarValue>> {
                 self.script_exp_vars.as_ref()
             }
 
             fn get_script_exp_vars_raw_mut(
                 &mut self,
-            ) -> Option<
-                &mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>,
-            > {
+            ) -> Option<&mut CowMap<&'static str, crate::nodes::node::ScriptExpVarValue>> {
                 self.script_exp_vars.as_mut()
+            }
+
+            fn get_metadata_raw(
+                &self,
+            ) -> Option<&CowMap<&'static str, crate::nodes::node::MetadataValue>> {
+                self.metadata.as_ref()
+            }
+            fn get_metadata_raw_mut(
+                &mut self,
+            ) -> Option<&mut CowMap<&'static str, crate::nodes::node::MetadataValue>> {
+                self.metadata.as_mut()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -522,7 +544,7 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.get_parent(), )+ }
             }
 
-            fn get_children(&self) -> &Vec<NodeID> {
+            fn get_children(&self) -> &[NodeID] {
                 match self { $( SceneNode::$variant(n) => n.get_children(), )+ }
             }
 
@@ -558,12 +580,19 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.set_script_exp_vars(vars), )+ }
             }
 
-            fn get_script_exp_vars_raw(&self) -> Option<&HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>> {
+            fn get_script_exp_vars_raw(&self) -> Option<&CowMap<&'static str, crate::nodes::node::ScriptExpVarValue>> {
                 match self { $( SceneNode::$variant(n) => n.get_script_exp_vars_raw(), )+ }
             }
 
-            fn get_script_exp_vars_raw_mut(&mut self) -> Option<&mut HashMap<std::borrow::Cow<'static, str>, crate::nodes::node::ScriptExpVarValue>> {
+            fn get_script_exp_vars_raw_mut(&mut self) -> Option<&mut CowMap<&'static str, crate::nodes::node::ScriptExpVarValue>> {
                 match self { $( SceneNode::$variant(n) => n.get_script_exp_vars_raw_mut(), )+ }
+            }
+
+            fn get_metadata_raw(&self) -> Option<&CowMap<&'static str, crate::nodes::node::MetadataValue>> {
+                match self { $( SceneNode::$variant(n) => n.get_metadata_raw(), )+ }
+            }
+            fn get_metadata_raw_mut(&mut self) -> Option<&mut CowMap<&'static str, crate::nodes::node::MetadataValue>> {
+                match self { $( SceneNode::$variant(n) => n.get_metadata_raw_mut(), )+ }
             }
 
             fn get_children_mut(&mut self) -> &mut Vec<NodeID> {

@@ -14,7 +14,7 @@ fps_cap = 500
 xps = 60
 
 [meta]
-toolchain = "1.92.0"
+toolchain = "1.93.0"
 
 
 [input]

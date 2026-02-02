@@ -36,7 +36,8 @@ pub fn type_is_node(typ: &Type) -> bool {
 pub(crate) fn type_becomes_id(typ: &Type) -> bool {
     match typ {
         Type::Node(_) | Type::DynNode | Type::Signal => true,
-        Type::EngineStruct(EngineStructKind::Texture) | Type::EngineStruct(EngineStructKind::Mesh) => true,
+        Type::EngineStruct(EngineStructKind::Texture)
+        | Type::EngineStruct(EngineStructKind::Mesh) => true,
         Type::Option(boxed) => matches!(boxed.as_ref(), Type::DynNode | Type::Node(_)),
         _ => false,
     }

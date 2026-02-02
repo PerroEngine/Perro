@@ -20,9 +20,9 @@ pub struct Area2D {
     pub base: Node2D,
 
     /// Track which colliders were intersecting in the previous frame
-    /// Used to detect enter/exit events
+    /// Used to detect enter/exit events. None at compile time (no allocation).
     #[serde(skip)]
-    pub previous_collisions: HashSet<NodeID>,
+    pub previous_collisions: Option<HashSet<NodeID>>,
 }
 
 impl Default for Area2D {
@@ -30,7 +30,7 @@ impl Default for Area2D {
         Self {
             ty: NodeType::Area2D,
             base: Node2D::default(),
-            previous_collisions: HashSet::new(),
+            previous_collisions: None,
         }
     }
 }
@@ -42,12 +42,12 @@ impl Area2D {
         Self {
             ty: NodeType::Area2D,
             base,
-            previous_collisions: HashSet::new(),
+            previous_collisions: None,
         }
     }
 
     pub fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
-        let children = self.get_children().clone();
+        let children = self.get_children().to_vec();
 
         // First, collect all collider handles from children (uses RefCell for immutable access)
         // IMPORTANT: Only collect handles from children that still exist and are CollisionShape2D
@@ -69,7 +69,9 @@ impl Area2D {
 
         if collider_handles.is_empty() {
             // No valid colliders - clear previous collisions and return
-            self.previous_collisions.clear();
+            if let Some(ref mut set) = self.previous_collisions {
+                set.clear();
+            }
             return;
         }
 
@@ -119,29 +121,30 @@ impl Area2D {
                 }
                 None => {
                     // No physics - clear previous collisions and return
-                    self.previous_collisions.clear();
+                    if let Some(ref mut set) = self.previous_collisions {
+                        set.clear();
+                    }
                     return;
                 }
             }
         };
 
+        // Get the signal base name before borrowing previous_collisions mutably
+        let signal_base = self.name.as_ref().to_string();
+
         // Clean up previous_collisions - remove any nodes that no longer exist
         // This prevents trying to access deleted nodes
-        self.previous_collisions
-            .retain(|&node_id| api.scene.get_scene_node_ref(node_id).is_some());
-
-        // Get the signal base name (e.g., "Deadzone") — matches node name; numbers only added on collision.
-        let signal_base = self.name.as_ref();
+        let previous = self.previous_collisions.get_or_insert_with(HashSet::new);
+        previous.retain(|&node_id| api.scene.get_scene_node_ref(node_id).is_some());
 
         // Determine which colliders entered (new collisions)
         let entered: Vec<NodeID> = current_colliding_node_ids
-            .difference(&self.previous_collisions)
+            .difference(previous)
             .copied()
             .collect();
 
         // Determine which colliders exited (no longer colliding)
-        let exited: Vec<NodeID> = self
-            .previous_collisions
+        let exited: Vec<NodeID> = previous
             .difference(&current_colliding_node_ids)
             .copied()
             .collect();
@@ -193,7 +196,7 @@ impl Area2D {
         }
 
         // Update previous collisions for next frame
-        self.previous_collisions = current_colliding_node_ids;
+        self.previous_collisions = Some(current_colliding_node_ids);
     }
 }
 

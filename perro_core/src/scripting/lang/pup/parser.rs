@@ -2062,10 +2062,7 @@ impl PupParser {
                         }
                         _ => NodeMethodRef::CallFunction,
                     };
-                    Ok(Expr::ApiCall(
-                        CallModule::NodeMethod(method_ref),
-                        call_args,
-                    ))
+                    Ok(Expr::ApiCall(CallModule::NodeMethod(method_ref), call_args))
                 } else if self.current_token == PupToken::Assign {
                     // Variable assignment: VARNAME::var_name = value or VARNAME::[expr] = value
                     self.next_token();
@@ -2201,7 +2198,7 @@ impl PupParser {
             | PupToken::Ge
             | PupToken::Eq
             | PupToken::Ne => 2, // Comparison: higher than logical so "a == 1 and b > 2" => (a==1) and (b>2)
-            PupToken::And => 1,   // Logical and: lowest so it binds last
+            PupToken::And => 1,    // Logical and: lowest so it binds last
             PupToken::DotDot => 1, // Range operator has low precedence
             _ => 0,
         }

@@ -629,6 +629,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cow_map"
+version = "0.1.0"
+dependencies = [
+ "phf",
+ "phf_shared",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2554,6 +2562,7 @@ dependencies = [
  "anyhow",
  "btleplug",
  "bytemuck",
+ "cow_map",
  "dirs",
  "dunce",
  "egui",

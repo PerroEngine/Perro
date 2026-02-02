@@ -2,6 +2,10 @@
 
 This guide explains how to set up and use the Perro Language Server extension in VSCode.
 
+## Current status
+
+**perro-lsp is currently non-functional** but is included for anyone who wants to look at it or contribute. The intention is to parse and use the engine’s API bindings, resource bindings, engine bindings, and Pup APIs for autocomplete and type checking; the maintainer has limited experience developing LSPs, so contributions are welcome. The setup below is for when the server is eventually working or for development.
+
 ## How It Works
 
 The extension consists of two parts:
@@ -90,7 +94,7 @@ Use this if you're actively developing the extension and want to test changes wi
 **From Terminal:**
 ```bash
 cd DIRECTORY\perro\.vscode-extensions\perro-lsp
-code --extensionDevelopmentPath=. --new-window DIRECTORY\perro\projects\MessAround
+code --extensionDevelopmentPath=. --new-window DIRECTORY\perro\playground\MessAround
 ```
 
 **From VSCode UI:**
@@ -101,7 +105,7 @@ code --extensionDevelopmentPath=. --new-window DIRECTORY\perro\projects\MessArou
    - File → Open Folder
    - Open the **main perro directory**: `DIRECTORY\perro` (NOT a subdirectory)
    - This is because the extension looks for the LSP server at `target/release/perro-lsp.exe` relative to the workspace root
-5. **Then** open a `.pup` or `.fur` file (can be in any subdirectory like `projects/MessAround/res/camera.pup`)
+5. **Then** open a `.pup` or `.fur` file (can be in any subdirectory like `playground/MessAround/res/camera.pup`)
 
 **To stop:** Press Shift+F5 in the original VSCode window
 
@@ -169,7 +173,7 @@ When developing the extension:
 
 1. **Make changes to TypeScript**:
    - Edit `src/extension.ts`
-   - Press F5 to test (automatically recompiles)
+   - Press F5 to test
 
 2. **Make changes to Rust LSP server**:
    - Edit files in `perro_lsp/src/`

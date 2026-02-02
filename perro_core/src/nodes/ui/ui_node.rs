@@ -45,20 +45,21 @@ pub struct UINode {
     )]
     pub visible: bool,
 
+    /// None at compile time (no allocation). Allocated on first use.
     #[serde(skip)]
-    pub needs_rerender: HashSet<UIElementID>,
+    pub needs_rerender: Option<HashSet<UIElementID>>,
 
     #[serde(skip)]
-    pub needs_layout_recalc: HashSet<UIElementID>,
+    pub needs_layout_recalc: Option<HashSet<UIElementID>>,
 
     /// Elements marked for deletion - will be removed from primitive renderer and then from elements map
-    /// This set tracks element IDs (including all descendants) that should be deleted
+    /// This set tracks element IDs (including all descendants) that should be deleted. None at compile time.
     #[serde(skip)]
-    pub pending_deletion: HashSet<UIElementID>,
+    pub pending_deletion: Option<HashSet<UIElementID>>,
 
-    /// Store initial z-indices from FUR file to prevent accumulation across frames
+    /// Store initial z-indices from FUR file to prevent accumulation across frames. None = no allocation.
     #[serde(skip)]
-    pub initial_z_indices: HashMap<UIElementID, i32>,
+    pub initial_z_indices: Option<HashMap<UIElementID, i32>>,
 
     /// Currently focused UI element (for text input, etc.)
     #[serde(skip)]
@@ -84,10 +85,10 @@ impl UINode {
             loaded_fur_path: None,
             elements: None,
             root_ids: None,
-            needs_rerender: HashSet::new(),
-            needs_layout_recalc: HashSet::new(),
-            pending_deletion: HashSet::new(),
-            initial_z_indices: HashMap::new(),
+            needs_rerender: None,
+            needs_layout_recalc: None,
+            pending_deletion: None,
+            initial_z_indices: None,
             focused_element: None,
             last_cursor_icon: None,
         }
@@ -95,27 +96,41 @@ impl UINode {
 
     /// Mark an element as needing rerender (visual only, no layout recalculation)
     pub fn mark_element_needs_rerender(&mut self, element_id: UIElementID) {
-        self.needs_rerender.insert(element_id);
+        self.needs_rerender
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
     }
 
     /// Mark an element as needing layout recalculation (triggers full layout update)
     pub fn mark_element_needs_layout(&mut self, element_id: UIElementID) {
-        self.needs_rerender.insert(element_id);
-        self.needs_layout_recalc.insert(element_id);
+        self.needs_rerender
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
+        self.needs_layout_recalc
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
     }
 
     /// Mark all elements as needing rerender (for initial render or full refresh)
     pub fn mark_all_needs_rerender(&mut self) {
         if let Some(elements) = &self.elements {
-            self.needs_rerender.extend(elements.keys().copied());
-            self.needs_layout_recalc.extend(elements.keys().copied());
+            self.needs_rerender
+                .get_or_insert_with(HashSet::new)
+                .extend(elements.keys().copied());
+            self.needs_layout_recalc
+                .get_or_insert_with(HashSet::new)
+                .extend(elements.keys().copied());
         }
     }
 
     /// Clear all rerender flags
     pub fn clear_rerender_flags(&mut self) {
-        self.needs_rerender.clear();
-        self.needs_layout_recalc.clear();
+        if let Some(ref mut set) = self.needs_rerender {
+            set.clear();
+        }
+        if let Some(ref mut set) = self.needs_layout_recalc {
+            set.clear();
+        }
     }
     pub fn get_visible(&self) -> bool {
         self.visible
@@ -262,24 +277,36 @@ impl UINode {
     /// Mark an element and all its descendants as needing rerender
     /// Use this when changing visibility to ensure all descendants are properly updated
     pub fn mark_element_with_descendants_needs_rerender(&mut self, element_id: UIElementID) {
-        self.needs_rerender.insert(element_id);
+        self.needs_rerender
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
 
         let descendants = self.collect_all_descendants(element_id);
         for descendant_id in descendants {
-            self.needs_rerender.insert(descendant_id);
+            self.needs_rerender
+                .get_or_insert_with(HashSet::new)
+                .insert(descendant_id);
         }
     }
 
     /// Mark an element and all its descendants as needing layout recalculation
     /// Use this when changing visibility to ensure all descendants are properly updated
     pub fn mark_element_with_descendants_needs_layout(&mut self, element_id: UIElementID) {
-        self.needs_rerender.insert(element_id);
-        self.needs_layout_recalc.insert(element_id);
+        self.needs_rerender
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
+        self.needs_layout_recalc
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
 
         let descendants = self.collect_all_descendants(element_id);
         for descendant_id in descendants {
-            self.needs_rerender.insert(descendant_id);
-            self.needs_layout_recalc.insert(descendant_id);
+            self.needs_rerender
+                .get_or_insert_with(HashSet::new)
+                .insert(descendant_id);
+            self.needs_layout_recalc
+                .get_or_insert_with(HashSet::new)
+                .insert(descendant_id);
         }
     }
 
@@ -287,12 +314,16 @@ impl UINode {
     /// Elements marked for deletion will be removed from the primitive renderer cache
     /// and then removed from the elements map by the renderer
     pub fn mark_for_deletion(&mut self, element_id: UIElementID) {
-        self.pending_deletion.insert(element_id);
+        self.pending_deletion
+            .get_or_insert_with(HashSet::new)
+            .insert(element_id);
 
         // Recursively mark all descendants for deletion
         let descendants = self.collect_all_descendants(element_id);
         for descendant_id in descendants {
-            self.pending_deletion.insert(descendant_id);
+            self.pending_deletion
+                .get_or_insert_with(HashSet::new)
+                .insert(descendant_id);
         }
     }
 }

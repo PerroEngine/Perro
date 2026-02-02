@@ -541,9 +541,9 @@ impl Expr {
                 let dominant_type = if is_logical_op {
                     Some(Type::Bool)
                 } else if let Some(expected) = expected_type.cloned() {
-                // When expected_type is Value but op is numeric (e.g. s + delta for set_score arg),
-                // use promoted numeric type for operands so we generate (s_extracted + delta) then wrap in json!().
-                let is_numeric_op_type = matches!(op, Op::Add | Op::Sub | Op::Mul | Op::Div);
+                    // When expected_type is Value but op is numeric (e.g. s + delta for set_score arg),
+                    // use promoted numeric type for operands so we generate (s_extracted + delta) then wrap in json!().
+                    let is_numeric_op_type = matches!(op, Op::Add | Op::Sub | Op::Mul | Op::Div);
                     if matches!(expected, Type::Object | Type::Any) && is_numeric_op_type {
                         // Use promoted type for operands so we don't wrap each operand in json!()
                         match (&left_type, &right_type) {
@@ -559,8 +559,12 @@ impl Expr {
                                         None
                                     }
                                 }),
-                            (Some(l), None) if !matches!(l, Type::Object | Type::Any) => Some(l.clone()),
-                            (None, Some(r)) if !matches!(r, Type::Object | Type::Any) => Some(r.clone()),
+                            (Some(l), None) if !matches!(l, Type::Object | Type::Any) => {
+                                Some(l.clone())
+                            }
+                            (None, Some(r)) if !matches!(r, Type::Object | Type::Any) => {
+                                Some(r.clone())
+                            }
                             _ => Some(expected),
                         }
                     } else {
@@ -784,9 +788,16 @@ impl Expr {
                 // for numeric ops and comparisons (Value == 100, Value > 3.0) so we don't generate "Value as f32".
                 let is_numeric_or_comparison_op = matches!(
                     op,
-                    Op::Add | Op::Sub | Op::Mul | Op::Div
-                        | Op::Lt | Op::Gt | Op::Le | Op::Ge
-                        | Op::Eq | Op::Ne
+                    Op::Add
+                        | Op::Sub
+                        | Op::Mul
+                        | Op::Div
+                        | Op::Lt
+                        | Op::Gt
+                        | Op::Le
+                        | Op::Ge
+                        | Op::Eq
+                        | Op::Ne
                 );
                 let left_is_value = left_type == Some(Type::Any) || left_type == Some(Type::Object);
                 let right_is_value =
@@ -831,12 +842,13 @@ impl Expr {
 
                 // For comparison/logical ops with expected_type Bool, keep dominant_type = Bool so we never
                 // cast the result to f32 (bool as f32 is invalid).
-                let is_comparison_or_logical =
-                    matches!(op, Op::Eq | Op::Ne | Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::And);
+                let is_comparison_or_logical = matches!(
+                    op,
+                    Op::Eq | Op::Ne | Op::Lt | Op::Gt | Op::Le | Op::Ge | Op::And
+                );
                 // Logical ops (And, Or): operands are always bool; never cast them to f32/f64 or we get (bool as f32).
                 let is_logical_binary = matches!(op, Op::And);
-                let (l_str, r_str, dominant_type) = if is_logical_binary
-                {
+                let (l_str, r_str, dominant_type) = if is_logical_binary {
                     // Use sub-expressions as-is; do not apply any numeric/float casting to operands of &&.
                     (l_str.clone(), r_str.clone(), dominant_type)
                 } else if is_numeric_or_comparison_op
@@ -867,9 +879,7 @@ impl Expr {
                 // Logical ops (And/Or): operands are bool; never cast them.
                 let (left_str, right_str) = if is_logical_binary {
                     (l_str.clone(), r_str.clone())
-                } else if is_left_int
-                    && (is_right_float || right_is_float_literal)
-                {
+                } else if is_left_int && (is_right_float || right_is_float_literal) {
                     // Integer * Float -> cast integer to float
                     let float_w = float_width.unwrap_or(32);
                     let l_str_clean = if l_str.ends_with(".clone()") {
@@ -1292,7 +1302,9 @@ impl Expr {
                 if is_comparison_or_logical {
                     return result_expr;
                 }
-                if is_numeric_result_op && matches!(dominant_type, Some(Type::Number(NumberKind::Float(32)))) {
+                if is_numeric_result_op
+                    && matches!(dominant_type, Some(Type::Number(NumberKind::Float(32))))
+                {
                     // Check if both operands are integers
                     let both_integers = matches!(
                         &left_type,
@@ -1309,7 +1321,9 @@ impl Expr {
                         // Cast the entire result to f32 for determinism
                         return format!("({} as f32)", result_expr);
                     }
-                } else if is_numeric_result_op && matches!(dominant_type, Some(Type::Number(NumberKind::Float(64)))) {
+                } else if is_numeric_result_op
+                    && matches!(dominant_type, Some(Type::Number(NumberKind::Float(64))))
+                {
                     // Check if both operands are integers
                     let both_integers = matches!(
                         &left_type,

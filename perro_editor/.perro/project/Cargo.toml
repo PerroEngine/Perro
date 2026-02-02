@@ -20,6 +20,9 @@ path = "../../../perro_core"
 features = ["macros"]
 version = "0.13.1"
 
+[dependencies.cow_map]
+path = "D:/Rust/cow_map"
+
 [dependencies.scripts]
 path = "../scripts"
 

@@ -67,7 +67,7 @@ impl RepairScript {
     // ------------------- Toolchain Management -------------------
 
     /// Normalize toolchain name - converts version number to full toolchain name
-    /// e.g., "1.92.0" -> "rust-1.92.0-x86_64-pc-windows-gnu"
+    /// e.g., "1.93.0" -> "rust-1.93.0-x86_64-pc-windows-gnu"
     fn normalize_toolchain_name(&self, toolchain: &str) -> String {
         if toolchain.starts_with("rust-") {
             toolchain.to_string()

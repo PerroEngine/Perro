@@ -358,9 +358,9 @@ A **UINode** has no Node2D/Node3D; it has `type: "UINode"`, `fur_path`, and a ba
 
 ## More examples in the repo
 
-- **`projects/MessAround/res/main.scn`** — 2D world, Area2D, CollisionShape2D, ShapeInstance2D, Sprite2D with script, Camera2D, sub-scene root, UINode.
-- **`projects/ThreeD/res/main.scn`** — Node3D world, Camera3D, MeshInstance3D, OmniLight3D.
-- **`projects/MessAround/res/crazy.scn`** — Minimal UINode-only scene.
-- **`projects/MessAround/res/second.scn`** — Simple 2D scene with one Sprite2D child.
+- **`playground/MessAround/res/main.scn`** — 2D world, Area2D, CollisionShape2D, ShapeInstance2D, Sprite2D with script, Camera2D, sub-scene root, UINode.
+- **`playground/ThreeD/res/main.scn`** — Node3D world, Camera3D, MeshInstance3D, OmniLight3D.
+- **`playground/MessAround/res/crazy.scn`** — Minimal UINode-only scene.
+- **`playground/MessAround/res/second.scn`** — Simple 2D scene with one Sprite2D child.
 
 Use these as reference when building or debugging your own `.scn` files.

@@ -2,7 +2,11 @@
 
 Language Server Protocol (LSP) implementation for `.pup` and `.fur` files in the Perro engine.
 
-## Features
+## Current status
+
+**perro-lsp is currently non-functional** but the codebase exists for anyone who wants to look at it or contribute. The intention is for the LSP to parse and use the same **API bindings**, **resource bindings**, **engine bindings**, and **Pup APIs** that the transpiler uses — and to surface that for **autocomplete**, **type checking**, hover info, and diagnostics in the editor. Development is limited by lack of experience building LSPs; contributions and guidance from people familiar with LSP development are very welcome.
+
+## Features (intended)
 
 - **Syntax Validation**: Real-time parsing and error detection using the same parser logic as the compiler
 - **Type Checking**: Validates types using the same codegen validation logic

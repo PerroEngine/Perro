@@ -31,9 +31,7 @@ pub fn secs_to_utc_ymd_hms(secs: u64) -> (u64, u32, u32, u32, u32, u32) {
         year += 1;
     }
     let days_in_feb = if is_leap_year(year) { 29 } else { 28 };
-    let days_in_month = [
-        31, days_in_feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
-    ];
+    let days_in_month = [31, days_in_feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut month = 1u32;
     for &dim in &days_in_month {
         if d < dim {
@@ -53,7 +51,10 @@ pub fn format_utc_timestamp() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let (y, m, d, h, min, s) = secs_to_utc_ymd_hms(secs);
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", y, m, d, h, min, s)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        y, m, d, h, min, s
+    )
 }
 
 /// Format current time as "YYYY-MM-DD HH:MM:SS" for script API (UTC).

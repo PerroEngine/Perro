@@ -68,8 +68,11 @@ fn resolve_project_root(path_arg: &str) -> PathBuf {
         // Go up to workspace root, then into perro_editor
         let editor_path = workspace_root.join("perro_editor");
         editor_path.canonicalize().unwrap_or(editor_path)
-    } else if path_arg.eq_ignore_ascii_case("--test") {
-        let test_path = workspace_root.join("test_projects/test");
+    } else if path_arg.eq_ignore_ascii_case("--test")
+        || path_arg.eq_ignore_ascii_case("--test_transpiler")
+    {
+        // --test or --test_transpiler: unit_tests/transpiler_test (transpiler test project)
+        let test_path = workspace_root.join("unit_tests/transpiler_test");
         test_path.canonicalize().unwrap_or(test_path)
     } else {
         // Treat it as path (absolute or relative to cwd)
@@ -223,13 +226,17 @@ fn main() {
     // Handle list-meshes: print mesh indices (and internal names) for use with mesh_path res://file.glb:0, :1, …
     if args.contains(&"list-meshes".to_string()) {
         let path_flag_i = args.iter().position(|a| a == "--path");
-        let path_arg = path_flag_i.and_then(|i| args.get(i + 1)).unwrap_or_else(|| {
-            eprintln!("❌ list-meshes requires: --path <project> list-meshes <res://file.glb>");
-            std::process::exit(1);
-        });
+        let path_arg = path_flag_i
+            .and_then(|i| args.get(i + 1))
+            .unwrap_or_else(|| {
+                eprintln!("❌ list-meshes requires: --path <project> list-meshes <res://file.glb>");
+                std::process::exit(1);
+            });
         let list_meshes_i = args.iter().position(|a| a == "list-meshes").unwrap();
         let mesh_path_arg = args.get(list_meshes_i + 1).unwrap_or_else(|| {
-            eprintln!("❌ list-meshes requires a path: --path <project> list-meshes res://file.glb");
+            eprintln!(
+                "❌ list-meshes requires a path: --path <project> list-meshes res://file.glb"
+            );
             std::process::exit(1);
         });
         let project_root = resolve_project_root(path_arg);
@@ -249,13 +256,22 @@ fn main() {
         match perro_core::rendering::mesh_loader::list_gltf_mesh_names(&bytes) {
             Some(names) => {
                 let base = mesh_path_arg.trim_start_matches("res://");
-                println!("Meshes in {} (use mesh_path: res://file.glb for single mesh, or res://file.glb:0, :1, … for multiple):", file_path.display());
+                println!(
+                    "Meshes in {} (use mesh_path: res://file.glb for single mesh, or res://file.glb:0, :1, … for multiple):",
+                    file_path.display()
+                );
                 for (i, name) in names {
-                    println!("  {}  (internal name: \"{}\")  -> mesh_path: \"res://{}:{}\"", i, name, base, i);
+                    println!(
+                        "  {}  (internal name: \"{}\")  -> mesh_path: \"res://{}:{}\"",
+                        i, name, base, i
+                    );
                 }
             }
             None => {
-                eprintln!("❌ No meshes found or invalid GLB/GLTF: {}", file_path.display());
+                eprintln!(
+                    "❌ No meshes found or invalid GLB/GLTF: {}",
+                    file_path.display()
+                );
                 std::process::exit(1);
             }
         }
@@ -268,7 +284,7 @@ fn main() {
         let path_arg = path_flag_i
             .and_then(|i| args.get(i + 1))
             .unwrap_or_else(|| {
-                eprintln!("❌ Missing required flag: --path <path or --editor>");
+                eprintln!("❌ Missing required flag: --path <path or --editor or --test or --test_transpiler>");
                 eprintln!("   Usage: cargo run -p perro_core --features profiling -- --path <path> --convert-flamegraph");
                 eprintln!("   (This converts an existing flamegraph.folded file to SVG without running the game)");
                 std::process::exit(1);
@@ -307,7 +323,9 @@ fn main() {
         let path_arg = path_flag_i
             .and_then(|i| args.get(i + 1))
             .unwrap_or_else(|| {
-                eprintln!("❌ Missing required flag: --path <path or --editor>");
+                eprintln!(
+                    "❌ Missing required flag: --path <path or --editor or --test or --test_transpiler>"
+                );
                 eprintln!("   Usage: cargo run -p perro_core -- --path <path> --run");
                 std::process::exit(1);
             });
@@ -369,7 +387,7 @@ fn main() {
         let path_arg = path_flag_i
             .and_then(|i| args.get(i + 1))
             .unwrap_or_else(|| {
-                eprintln!("❌ Missing required flag: --path <path or --editor>");
+                eprintln!("❌ Missing required flag: --path <path or --editor or --test or --test_transpiler>");
                 eprintln!("   Usage: cargo run -p perro_core --features profiling -- --path <path> --profile");
                 std::process::exit(1);
             });
@@ -425,7 +443,9 @@ fn main() {
         let path_arg = path_flag_i
             .and_then(|i| args.get(i + 1))
             .unwrap_or_else(|| {
-                eprintln!("❌ Missing required flag: --path <path or --editor>");
+                eprintln!(
+                    "❌ Missing required flag: --path <path or --editor or --test or --test_transpiler>"
+                );
                 eprintln!("   Usage: cargo run -p perro_core -- --path <path> --dev");
                 std::process::exit(1);
             });
@@ -499,7 +519,7 @@ fn main() {
     let path_arg = path_flag_i
         .and_then(|i| args.get(i + 1))
         .unwrap_or_else(|| {
-            eprintln!("❌ Missing required flag: --path <path or --editor>");
+            eprintln!("❌ Missing required flag: --path <path or --editor or --test or --test_transpiler>");
             eprintln!("   Or use: perro new <project_name> [path]");
             eprintln!(
                 "   Or use: cargo run -p perro_core -- --path <path> --scripts (compile only)"
@@ -511,19 +531,20 @@ fn main() {
         });
 
     // Decide build type
-    let target = if args.contains(&"--project".to_string()) || args.contains(&"-project".to_string()) {
-        // Check for --verbose flag
-        if args.contains(&"--verbose".to_string()) || args.contains(&"-verbose".to_string()) {
-            CompileTarget::VerboseProject
+    let target =
+        if args.contains(&"--project".to_string()) || args.contains(&"-project".to_string()) {
+            // Check for --verbose flag
+            if args.contains(&"--verbose".to_string()) || args.contains(&"-verbose".to_string()) {
+                CompileTarget::VerboseProject
+            } else {
+                CompileTarget::Project
+            }
+        } else if args.contains(&"--scripts".to_string()) {
+            CompileTarget::Scripts
         } else {
-            CompileTarget::Project
-        }
-    } else if args.contains(&"--scripts".to_string()) {
-        CompileTarget::Scripts
-    } else {
-        // Default to scripts if no explicit target
-        CompileTarget::Scripts
-    };
+            // Default to scripts if no explicit target
+            CompileTarget::Scripts
+        };
 
     // Optional output path for project export (copy .app or executable to this directory)
     let out_path = args
@@ -581,7 +602,9 @@ fn main() {
             }
 
             let compiler = match &out_path {
-                Some(out) => Compiler::new(&project_root, CompileTarget::Project, true).with_output_path(out),
+                Some(out) => {
+                    Compiler::new(&project_root, CompileTarget::Project, true).with_output_path(out)
+                }
                 None => Compiler::new(&project_root, CompileTarget::Project, true),
             };
             if let Err(e) = compiler.compile(BuildProfile::Release) {
@@ -599,7 +622,8 @@ fn main() {
             }
 
             let compiler = match &out_path {
-                Some(out) => Compiler::new(&project_root, CompileTarget::VerboseProject, true).with_output_path(out),
+                Some(out) => Compiler::new(&project_root, CompileTarget::VerboseProject, true)
+                    .with_output_path(out),
                 None => Compiler::new(&project_root, CompileTarget::VerboseProject, true),
             };
             if let Err(e) = compiler.compile(BuildProfile::Release) {

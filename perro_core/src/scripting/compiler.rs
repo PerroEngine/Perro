@@ -15,7 +15,6 @@ use crate::SceneData;
 use crate::brk::build_brk;
 use crate::fur_ast::{FurElement, FurNode};
 use crate::node_registry::BaseNode;
-use crate::scripting::transpiler::{compute_script_hash, read_stored_hash, write_script_hash};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
 use image::GenericImageView;
 use walkdir::WalkDir;
@@ -203,7 +202,7 @@ impl Compiler {
     }
 
     fn get_toolchain_dir(&self) -> Option<PathBuf> {
-        let version = self.toolchain_version.as_deref().unwrap_or("1.92.0");
+        let version = self.toolchain_version.as_deref().unwrap_or("1.93.0");
         let toolchain_name = self.platform.toolchain_name(version);
         let toolchain_path_str = format!("user://toolchains/{}", toolchain_name);
 
@@ -228,7 +227,7 @@ impl Compiler {
             return None;
         }
 
-        let version = self.toolchain_version.as_deref().unwrap_or("1.92.0");
+        let version = self.toolchain_version.as_deref().unwrap_or("1.93.0");
         let toolchain_name = self.platform.toolchain_name(version);
 
         match resolve_path("user://build-cache") {
@@ -1210,30 +1209,6 @@ impl Compiler {
 
     /// Build and copy the output to the final location
     pub fn compile(&self, profile: BuildProfile) -> Result<(), String> {
-        // For Scripts target, check hash before compiling (skip this in source mode)
-        // In source mode the scripts crate depends on perro_core via path, so we must
-        // always run cargo so it can see core changes and rebuild; hash-skip would
-        // leave a stale DLL built against an older core.
-        if matches!(self.target, CompileTarget::Scripts) && !self.from_source {
-            let current_hash = compute_script_hash(&self.project_root, self.from_source)?;
-            let stored_hash = read_stored_hash(&self.project_root)?;
-
-            // If hash matches, skip compilation
-            if let Some(stored) = stored_hash {
-                if stored == current_hash {
-                    // Check if the DLL already exists
-                    let builds_dir = self.project_root.join(".perro/scripts/builds");
-                    let dll_name = script_dylib_name();
-                    let dll_path = builds_dir.join(dll_name);
-
-                    if dll_path.exists() {
-                        println!("✅ Script hash unchanged and DLL exists, skipping compilation");
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
         // Handle verbose project builds (remove Windows subsystem flag for console visibility)
         if matches!(self.target, CompileTarget::VerboseProject) {
             self.remove_windows_subsystem_flag()?;
@@ -1301,7 +1276,7 @@ impl Compiler {
         let toolchain_info = if self.from_source {
             "system (local development)".to_string()
         } else {
-            let version = self.toolchain_version.as_deref().unwrap_or("1.92.0");
+            let version = self.toolchain_version.as_deref().unwrap_or("1.93.0");
             let toolchain_name = self.platform.toolchain_name(version);
 
             self.get_toolchain_dir()
@@ -1327,7 +1302,7 @@ impl Compiler {
             return Err(format!("❌ Compilation failed after {:.2?}", elapsed));
         }
 
-    println!("✅ Compilation successful! (total {:.2?})", elapsed);
+        println!("✅ Compilation successful! (total {:.2?})", elapsed);
 
         // Copy the built DLL to the output location
         if matches!(self.target, CompileTarget::Scripts) {
@@ -1339,14 +1314,6 @@ impl Compiler {
 
             self.copy_script_dll(profile_str)
                 .map_err(|e| format!("Failed to copy DLL: {}", e))?;
-
-            // Write script hash after successful compilation and DLL copy (skip in source mode)
-            if !self.from_source {
-                let current_hash = compute_script_hash(&self.project_root, self.from_source)?;
-                if let Err(e) = write_script_hash(&self.project_root, &current_hash) {
-                    eprintln!("⚠️  Warning: Failed to write script hash: {}", e);
-                }
-            }
         }
 
         // On macOS, when building a Project we prefer to assemble a .app bundle
@@ -1356,141 +1323,176 @@ impl Compiler {
         // the built binary into a standard .app/Contents/MacOS layout.
         // Only package as .app for Project (non-verbose). VerboseProject leaves
         // the binary in target/release/ so it can be run from a terminal.
-        if matches!(self.target, CompileTarget::Project | CompileTarget::VerboseProject) {
+        if matches!(
+            self.target,
+            CompileTarget::Project | CompileTarget::VerboseProject
+        ) {
             #[cfg(target_os = "macos")]
             let do_app_bundle = matches!(self.target, CompileTarget::Project);
             #[cfg(not(target_os = "macos"))]
             let do_app_bundle = false;
             if do_app_bundle {
-            #[cfg(target_os = "macos")]
-            {
-                use std::fs;
-                use toml::Value;
+                #[cfg(target_os = "macos")]
+                {
+                    use std::fs;
+                    use toml::Value;
 
-                let project_toml = self.project_root.join("project.toml");
-                if project_toml.exists() {
-                    if let Ok(content) = fs::read_to_string(&project_toml) {
-                        if let Ok(cfg) = content.parse::<Value>() {
-                            if let Some(project_table) = cfg.get("project") {
-                                if let Some(name_val) = project_table.get("name") {
-                                    if let Some(name_str) = name_val.as_str() {
-                                        let crate_name = project_name_to_crate_name(name_str);
+                    let project_toml = self.project_root.join("project.toml");
+                    if project_toml.exists() {
+                        if let Ok(content) = fs::read_to_string(&project_toml) {
+                            if let Ok(cfg) = content.parse::<Value>() {
+                                if let Some(project_table) = cfg.get("project") {
+                                    if let Some(name_val) = project_table.get("name") {
+                                        if let Some(name_str) = name_val.as_str() {
+                                            let crate_name = project_name_to_crate_name(name_str);
 
-                                        let profile_str = match profile {
-                                            BuildProfile::Dev => "debug",
-                                            _ => "release",
-                                        };
+                                            let profile_str = match profile {
+                                                BuildProfile::Dev => "debug",
+                                                _ => "release",
+                                            };
 
-                                        // Determine cargo target dir (toolchain cache or workspace target)
-                                        let target_dir = self
-                                            .get_cargo_target_dir()
-                                            .unwrap_or_else(|| self.project_root.join("target"));
+                                            // Determine cargo target dir (toolchain cache or workspace target)
+                                            let target_dir =
+                                                self.get_cargo_target_dir().unwrap_or_else(|| {
+                                                    self.project_root.join("target")
+                                                });
 
-                                        let binary_path = target_dir.join(profile_str).join(&crate_name);
+                                            let binary_path =
+                                                target_dir.join(profile_str).join(&crate_name);
 
-                                        if binary_path.exists() {
-                                            // Place the .app bundle next to the built binary (so output is colocated
-                                            // in the target/<profile> folder). E.g. target/release/MyGame.app
-                                            let app_bundle = binary_path.with_extension("app");
-                                            let contents = app_bundle.join("Contents");
-                                            let macos_dir = contents.join("MacOS");
-                                            let resources_dir = contents.join("Resources");
+                                            if binary_path.exists() {
+                                                // Place the .app bundle next to the built binary (so output is colocated
+                                                // in the target/<profile> folder). E.g. target/release/MyGame.app
+                                                let app_bundle = binary_path.with_extension("app");
+                                                let contents = app_bundle.join("Contents");
+                                                let macos_dir = contents.join("MacOS");
+                                                let resources_dir = contents.join("Resources");
 
-                                            if let Err(e) = fs::create_dir_all(&macos_dir) {
-                                                eprintln!("⚠️ Failed to create .app MacOS dir: {}", e);
-                                            }
-                                            if let Err(e) = fs::create_dir_all(&resources_dir) {
-                                                eprintln!("⚠️ Failed to create .app Resources dir: {}", e);
-                                            }
-
-                                            let dest_bin = macos_dir.join(&crate_name);
-
-                                            // Prefer to MOVE the binary into the .app so the target folder only
-                                            // contains the .app bundle. If rename fails (cross-filesystem,
-                                            // permissions, etc.) we fall back to copy+remove but log clearly.
-                                            match fs::rename(&binary_path, &dest_bin) {
-                                                Ok(_) => {
-                                                    println!(
-                                                        "✔ Moved binary into .app: {} -> {}",
-                                                        binary_path.display(),
-                                                        dest_bin.display()
+                                                if let Err(e) = fs::create_dir_all(&macos_dir) {
+                                                    eprintln!(
+                                                        "⚠️ Failed to create .app MacOS dir: {}",
+                                                        e
                                                     );
+                                                }
+                                                if let Err(e) = fs::create_dir_all(&resources_dir) {
+                                                    eprintln!(
+                                                        "⚠️ Failed to create .app Resources dir: {}",
+                                                        e
+                                                    );
+                                                }
 
-                                                    // Ensure executable bit on the moved binary
-                                                    #[cfg(unix)]
-                                                    {
-                                                        use std::os::unix::fs::PermissionsExt;
-                                                        if let Ok(meta) = fs::metadata(&dest_bin) {
-                                                            let mut perms = meta.permissions();
-                                                            perms.set_mode(0o755);
-                                                            let _ = fs::set_permissions(&dest_bin, perms);
+                                                let dest_bin = macos_dir.join(&crate_name);
+
+                                                // Prefer to MOVE the binary into the .app so the target folder only
+                                                // contains the .app bundle. If rename fails (cross-filesystem,
+                                                // permissions, etc.) we fall back to copy+remove but log clearly.
+                                                match fs::rename(&binary_path, &dest_bin) {
+                                                    Ok(_) => {
+                                                        println!(
+                                                            "✔ Moved binary into .app: {} -> {}",
+                                                            binary_path.display(),
+                                                            dest_bin.display()
+                                                        );
+
+                                                        // Ensure executable bit on the moved binary
+                                                        #[cfg(unix)]
+                                                        {
+                                                            use std::os::unix::fs::PermissionsExt;
+                                                            if let Ok(meta) =
+                                                                fs::metadata(&dest_bin)
+                                                            {
+                                                                let mut perms = meta.permissions();
+                                                                perms.set_mode(0o755);
+                                                                let _ = fs::set_permissions(
+                                                                    &dest_bin, perms,
+                                                                );
+                                                            }
                                                         }
                                                     }
-                                                }
-                                                Err(rename_err) => {
-                                                    eprintln!(
-                                                        "⚠️ Failed to rename binary into .app: {}. Attempting copy+remove fallback.",
-                                                        rename_err
-                                                    );
+                                                    Err(rename_err) => {
+                                                        eprintln!(
+                                                            "⚠️ Failed to rename binary into .app: {}. Attempting copy+remove fallback.",
+                                                            rename_err
+                                                        );
 
-                                                    // Fallback: try to copy and then remove original so end result is still
-                                                    // a single .app. This is a best-effort fallback.
-                                                    match fs::copy(&binary_path, &dest_bin) {
-                                                        Ok(_) => {
-                                                            // Ensure executable bit
-                                                            #[cfg(unix)]
-                                                            {
-                                                                use std::os::unix::fs::PermissionsExt;
-                                                                if let Ok(meta) = fs::metadata(&dest_bin) {
-                                                                    let mut perms = meta.permissions();
-                                                                    perms.set_mode(0o755);
-                                                                    let _ = fs::set_permissions(&dest_bin, perms);
+                                                        // Fallback: try to copy and then remove original so end result is still
+                                                        // a single .app. This is a best-effort fallback.
+                                                        match fs::copy(&binary_path, &dest_bin) {
+                                                            Ok(_) => {
+                                                                // Ensure executable bit
+                                                                #[cfg(unix)]
+                                                                {
+                                                                    use std::os::unix::fs::PermissionsExt;
+                                                                    if let Ok(meta) =
+                                                                        fs::metadata(&dest_bin)
+                                                                    {
+                                                                        let mut perms =
+                                                                            meta.permissions();
+                                                                        perms.set_mode(0o755);
+                                                                        let _ = fs::set_permissions(
+                                                                            &dest_bin, perms,
+                                                                        );
+                                                                    }
+                                                                }
+
+                                                                // Try to remove the original binary
+                                                                if let Err(rem_err) =
+                                                                    fs::remove_file(&binary_path)
+                                                                {
+                                                                    eprintln!(
+                                                                        "⚠️ Copied binary into .app but failed to remove original: {}",
+                                                                        rem_err
+                                                                    );
+                                                                } else {
+                                                                    println!(
+                                                                        "✔ Moved binary into .app via copy+remove: {} -> {}",
+                                                                        binary_path.display(),
+                                                                        dest_bin.display()
+                                                                    );
                                                                 }
                                                             }
-
-                                                            // Try to remove the original binary
-                                                            if let Err(rem_err) = fs::remove_file(&binary_path) {
+                                                            Err(copy_err) => {
                                                                 eprintln!(
-                                                                    "⚠️ Copied binary into .app but failed to remove original: {}",
-                                                                    rem_err
+                                                                    "❌ Failed to copy binary into .app fallback: {}",
+                                                                    copy_err
                                                                 );
-                                                            } else {
-                                                                println!(
-                                                                    "✔ Moved binary into .app via copy+remove: {} -> {}",
+                                                                eprintln!(
+                                                                    "ℹ️ The built binary remains at: {}. You can move it into {} manually.",
                                                                     binary_path.display(),
-                                                                    dest_bin.display()
+                                                                    app_bundle.display()
                                                                 );
                                                             }
                                                         }
-                                                        Err(copy_err) => {
-                                                            eprintln!(
-                                                                "❌ Failed to copy binary into .app fallback: {}",
-                                                                copy_err
-                                                            );
-                                                            eprintln!(
-                                                                "ℹ️ The built binary remains at: {}. You can move it into {} manually.",
-                                                                binary_path.display(),
-                                                                app_bundle.display()
-                                                            );
-                                                        }
                                                     }
                                                 }
-                                            }
 
-                                            // Copy Info.plist and icon if present in project root
-                                            let info_src = self.project_root.join("Info.plist");
-                                            if info_src.exists() {
-                                                let _ = fs::copy(&info_src, contents.join("Info.plist"));
-                                            }
+                                                // Copy Info.plist and icon if present in project root
+                                                let info_src = self.project_root.join("Info.plist");
+                                                if info_src.exists() {
+                                                    let _ = fs::copy(
+                                                        &info_src,
+                                                        contents.join("Info.plist"),
+                                                    );
+                                                }
 
-                                            let icns_src = self.project_root.join("icon.icns");
-                                            if icns_src.exists() {
-                                                let _ = fs::copy(&icns_src, resources_dir.join("icon.icns"));
-                                            }
+                                                let icns_src = self.project_root.join("icon.icns");
+                                                if icns_src.exists() {
+                                                    let _ = fs::copy(
+                                                        &icns_src,
+                                                        resources_dir.join("icon.icns"),
+                                                    );
+                                                }
 
-                                            println!("✔ Created macOS .app bundle: {}", app_bundle.display());
-                                        } else {
-                                            println!("⚠️  Built binary not found at expected path: {}", binary_path.display());
+                                                println!(
+                                                    "✔ Created macOS .app bundle: {}",
+                                                    app_bundle.display()
+                                                );
+                                            } else {
+                                                println!(
+                                                    "⚠️  Built binary not found at expected path: {}",
+                                                    binary_path.display()
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -1498,7 +1500,6 @@ impl Compiler {
                         }
                     }
                 }
-            }
             }
         }
 
@@ -1530,15 +1531,20 @@ impl Compiler {
             #[cfg(not(target_os = "macos"))]
             let is_app = false;
 
-            fs::create_dir_all(out_dir).map_err(|e| format!("Failed to create output dir: {}", e))?;
+            fs::create_dir_all(out_dir)
+                .map_err(|e| format!("Failed to create output dir: {}", e))?;
             if is_app {
-                let app_bundle = target_dir.join(profile_str).join(format!("{}.app", crate_name));
+                let app_bundle = target_dir
+                    .join(profile_str)
+                    .join(format!("{}.app", crate_name));
                 if app_bundle.exists() {
                     let dest = out_dir.join(format!("{}.app", crate_name));
                     if dest.exists() {
-                        fs::remove_dir_all(&dest).map_err(|e| format!("Failed to remove existing .app: {}", e))?;
+                        fs::remove_dir_all(&dest)
+                            .map_err(|e| format!("Failed to remove existing .app: {}", e))?;
                     }
-                    fs::rename(&app_bundle, &dest).map_err(|e| format!("Failed to move .app: {}", e))?;
+                    fs::rename(&app_bundle, &dest)
+                        .map_err(|e| format!("Failed to move .app: {}", e))?;
                     println!("✔ Moved .app to {}", dest.display());
                 } else {
                     return Err(format!("Built .app not found at {}", app_bundle.display()));
@@ -1547,16 +1553,21 @@ impl Compiler {
                 if binary_path.exists() {
                     let dest = out_dir.join(&exe_name);
                     if dest.exists() {
-                        fs::remove_file(&dest).map_err(|e| format!("Failed to remove existing executable: {}", e))?;
+                        fs::remove_file(&dest)
+                            .map_err(|e| format!("Failed to remove existing executable: {}", e))?;
                     }
-                    fs::rename(&binary_path, &dest).map_err(|e| format!("Failed to move binary: {}", e))?;
+                    fs::rename(&binary_path, &dest)
+                        .map_err(|e| format!("Failed to move binary: {}", e))?;
                     #[cfg(unix)]
                     if let Ok(meta) = fs::metadata(&dest) {
                         let _ = fs::set_permissions(&dest, meta.permissions());
                     }
                     println!("✔ Moved executable to {}", dest.display());
                 } else {
-                    return Err(format!("Built binary not found at {}", binary_path.display()));
+                    return Err(format!(
+                        "Built binary not found at {}",
+                        binary_path.display()
+                    ));
                 }
             }
         }
@@ -2355,9 +2366,7 @@ impl Compiler {
         writeln!(build_file, "    END")?;
         writeln!(build_file, "END")?;
         writeln!(build_file, "\"#,")?;
-        writeln!(
-            build_file,
-            "        build_number,")?;
+        writeln!(build_file, "        build_number,")?;
         writeln!(build_file, "        icon_str,")?;
         writeln!(build_file, "        major, minor, patch, build_number,")?;
         writeln!(build_file, "        major, minor, patch, build_number,")?;
@@ -2639,10 +2648,7 @@ impl Compiler {
         )?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
-        writeln!(
-            build_file,
-            "    let img = ImageReader::open(input_path)"
-        )?;
+        writeln!(build_file, "    let img = ImageReader::open(input_path)")?;
         writeln!(build_file, "        .expect(\"Failed to open image\")")?;
         writeln!(build_file, "        .decode()")?;
         writeln!(build_file, "        .expect(\"Failed to decode image\");")?;
@@ -2652,7 +2658,10 @@ impl Compiler {
             "    let sizes = [(16, \"icon_16x16.png\"), (32, \"icon_16x16@2x.png\"), (32, \"icon_32x32.png\"), (64, \"icon_32x32@2x.png\"), (128, \"icon_128x128.png\"), (256, \"icon_128x128@2x.png\"), (256, \"icon_256x256.png\"), (512, \"icon_256x256@2x.png\"), (512, \"icon_512x512.png\"), (1024, \"icon_512x512@2x.png\")];"
         )?;
         writeln!(build_file, "")?;
-        writeln!(build_file, "    let mut icon_dir = IconDir::new(ResourceType::Icon);")?;
+        writeln!(
+            build_file,
+            "    let mut icon_dir = IconDir::new(ResourceType::Icon);"
+        )?;
         writeln!(build_file, "")?;
         writeln!(build_file, "    for (size, _filename) in sizes {{")?;
         writeln!(
@@ -2840,18 +2849,12 @@ impl Compiler {
         )?;
         writeln!(build_file, "    }}")?;
         writeln!(build_file, "")?;
-        writeln!(
-            build_file,
-            "    let status = Command::new(\"iconutil\")"
-        )?;
+        writeln!(build_file, "    let status = Command::new(\"iconutil\")")?;
         writeln!(
             build_file,
             "        .args([\"-c\", \"icns\", temp_iconset.to_str().expect(\"iconset path\"), \"-o\", icns_path.to_str().expect(\"icns path\")])"
         )?;
-        writeln!(
-            build_file,
-            "        .status()"
-        )?;
+        writeln!(build_file, "        .status()")?;
         writeln!(
             build_file,
             "        .expect(\"iconutil not found (macOS only)\");"
@@ -2860,10 +2863,7 @@ impl Compiler {
             build_file,
             "    if !status.success() {{ panic!(\"iconutil failed\"); }}"
         )?;
-        writeln!(
-            build_file,
-            "    let _ = fs::remove_dir_all(&temp_iconset);"
-        )?;
+        writeln!(build_file, "    let _ = fs::remove_dir_all(&temp_iconset);")?;
         writeln!(
             build_file,
             "    log(log_path, &format!(\"✔ ICNS saved: {{}}\", icns_path.display()));"
@@ -3262,6 +3262,47 @@ impl Compiler {
         use regex::Regex;
         use std::fmt::Write as _;
 
+        /// Emit MetadataValue as Rust (no serde_json in generated project).
+        fn emit_metadata_value_as_rust(v: &serde_json::Value) -> String {
+            match v {
+                serde_json::Value::Null => "MetadataValue::null()".to_string(),
+                serde_json::Value::Bool(b) => format!("MetadataValue::bool({})", b),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        format!("MetadataValue::number_i64({}i64)", i)
+                    } else if let Some(u) = n.as_u64() {
+                        format!("MetadataValue::number_u64({}u64)", u)
+                    } else if let Some(f) = n.as_f64() {
+                        format!("MetadataValue::number_f64({})", f)
+                    } else {
+                        "MetadataValue::null()".to_string()
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    let esc = s.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("MetadataValue::String(Cow::Borrowed(\"{}\"))", esc)
+                }
+                serde_json::Value::Array(arr) => {
+                    let parts: Vec<String> = arr.iter().map(emit_metadata_value_as_rust).collect();
+                    format!("MetadataValue::array(vec![{}])", parts.join(", "))
+                }
+                serde_json::Value::Object(obj) => {
+                    let parts: Vec<String> = obj
+                        .iter()
+                        .map(|(k, v)| {
+                            let k_esc = k.replace('\\', "\\\\").replace('"', "\\\"");
+                            let val_rust = emit_metadata_value_as_rust(v);
+                            format!("(Cow::Borrowed(\"{}\"), {})", k_esc, val_rust)
+                        })
+                        .collect();
+                    format!(
+                        "MetadataValue::object(std::collections::HashMap::from([{}]))",
+                        parts.join(", ")
+                    )
+                }
+            }
+        }
+
         /// Emit ScriptExpVarValue constructor calls (no serde_json in generated project).
         fn emit_script_exp_var_value_as_rust(v: &serde_json::Value) -> String {
             match v {
@@ -3321,18 +3362,19 @@ impl Compiler {
         writeln!(scenes_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(scenes_file, "#![allow(clippy::all)]")?;
         writeln!(scenes_file, "#![allow(unused)]")?;
-        writeln!(scenes_file, "use once_cell::sync::Lazy;")?;
         writeln!(scenes_file, "use perro_core::NodeID;")?;
+        writeln!(scenes_file, "use phf::{{phf_map, Map}};")?;
         writeln!(scenes_file, "use perro_core::scene::SceneData;")?;
         writeln!(
             scenes_file,
-            "use perro_core::nodes::node::ScriptExpVarValue;"
+            "use perro_core::nodes::node::{{MetadataValue, ScriptExpVarValue}};"
         )?;
         writeln!(scenes_file, "use perro_core::structs::*;")?;
         writeln!(scenes_file, "use perro_core::structs2d::Shape2D;")?;
         writeln!(scenes_file, "use perro_core::node_registry::*;")?;
         writeln!(scenes_file, "use perro_core::nodes::*;")?;
         writeln!(scenes_file, "use perro_core::ui_node::UINode;")?;
+        writeln!(scenes_file, "use cow_map::cow_map;")?;
         writeln!(
             scenes_file,
             "use std::{{borrow::Cow, collections::{{HashMap, HashSet}}}};"
@@ -3351,10 +3393,8 @@ impl Compiler {
             )?;
             writeln!(
                 scenes_file,
-                "pub static PERRO_SCENES: Lazy<HashMap<&'static str, &'static SceneData>> = Lazy::new(|| {{"
+                "pub static PERRO_SCENES: Map<&'static str, &'static SceneData> = phf_map! {{}};"
             )?;
-            writeln!(scenes_file, "    HashMap::new()")?;
-            writeln!(scenes_file, "}});")?;
             scenes_file.flush()?;
             return Ok(());
         }
@@ -3362,7 +3402,7 @@ impl Compiler {
         let mut processed_scene_paths: HashSet<String> = HashSet::new();
         let mut scene_queue: VecDeque<String> = VecDeque::new();
         let mut static_scene_definitions_code = String::new();
-        let mut map_insertions_code = String::new();
+        let mut phf_entries = String::new();
 
         // --- Walk `res/` for *.scn files ---
         for entry in WalkDir::new(&res_dir) {
@@ -3390,8 +3430,9 @@ impl Compiler {
             let mut scene_data: SceneData = SceneData::load(&current_res_path)?;
             SceneData::fix_relationships(&mut scene_data);
 
-            // Fix node IDs to use deterministic IDs based on scene keys (NodeID::from_parts(key, 0))
+            // Fix node IDs to use deterministic IDs based on scene keys (NodeID::from_u32(key))
             use crate::ids::NodeID;
+            use crate::node_registry::SceneNode;
             let key_to_old_id: std::collections::HashMap<u32, NodeID> = scene_data
                 .key_to_node_id()
                 .iter()
@@ -3400,13 +3441,20 @@ impl Compiler {
             let mut new_key_to_id: std::collections::HashMap<u32, NodeID> =
                 std::collections::HashMap::new();
 
-            for (&key, node) in scene_data.nodes.iter_mut() {
-                let new_id = NodeID::from_parts(key, 0);
+            // CowMap has no iter_mut/values_mut; build owned copy for mutation
+            let mut nodes_owned: std::collections::HashMap<u32, SceneNode> = scene_data
+                .nodes
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect();
+
+            for (&key, node) in nodes_owned.iter_mut() {
+                let new_id = NodeID::from_u32(key);
                 node.set_id(new_id);
                 new_key_to_id.insert(key, new_id);
             }
 
-            for node in scene_data.nodes.values_mut() {
+            for node in nodes_owned.values_mut() {
                 if let Some(parent) = node.get_parent() {
                     let parent_key_opt = key_to_old_id
                         .iter()
@@ -3422,7 +3470,7 @@ impl Compiler {
                         }
                     }
                 }
-                let children = node.get_children().clone();
+                let children = node.get_children().to_vec();
                 node.clear_children();
                 let mut seen_children = HashSet::new();
                 for child_id in children {
@@ -3440,44 +3488,113 @@ impl Compiler {
                 }
             }
 
-            // Update the key_to_id mapping in scene_data
-            // We need to use a helper function or rebuild the SceneData
-            // Actually, since key_to_id is private, we'll just ensure the nodes have correct IDs
-            // The from_nodes function will rebuild the mapping correctly
-
-            let static_scene_name = format!("SCENE_{}", Self::sanitize_res_path_to_ident(&current_res_path));
+            let static_scene_name = format!(
+                "SCENE_{}",
+                Self::sanitize_res_path_to_ident(&current_res_path)
+            );
             let root_id_str = scene_data.root_key.to_string();
 
-            let mut entries = String::new();
-            for (key, node) in &scene_data.nodes {
+            let mut static_children_slices = String::new();
+            let mut nodes_cow_entries = String::new();
+            let mut key_to_id_entries = String::new();
+            // Emit in deterministic order: root first, then remaining keys sorted (matches scene_key_order).
+            let root_key = scene_data.root_key;
+            let mut key_order: Vec<u32> = nodes_owned
+                .keys()
+                .copied()
+                .filter(|&k| k != root_key)
+                .collect();
+            key_order.sort_unstable();
+            key_order.insert(0, root_key);
+            for key in key_order {
+                let node = &nodes_owned[&key];
                 let mut node_str = format!("{:#?}", node);
 
-                // --- script_exp_vars: emit as HashMap<String, ScriptExpVarValue> with NodeRef(NodeID::from_parts(...)) for node refs ---
+                // --- children: emit static slice and Cow::Borrowed for codegen (no Lazy/vec at runtime) ---
+                let children = node.get_children();
+                let children_replacement = if children.is_empty() {
+                    "children: None".to_string()
+                } else {
+                    let slice_ident = format!("{}_CHILDREN_{}", static_scene_name, key);
+                    let slice_elems: Vec<String> = children
+                        .iter()
+                        .map(|id| format!("NodeID::from_u32({})", id.index()))
+                        .collect();
+                    let slice_lit = format!("&[{}]", slice_elems.join(", "));
+                    static_children_slices.push_str(&format!(
+                        "static {}: &[NodeID] = {};\n",
+                        slice_ident, slice_lit
+                    ));
+                    format!("children: Some(Cow::Borrowed({}))", slice_ident)
+                };
+                if let Some(children_start) = node_str.find("children: ") {
+                    let value_start = children_start + "children: ".len();
+                    let rest = &node_str[value_start..];
+                    let value_len: usize = if rest.starts_with("None") {
+                        4
+                    } else if rest.starts_with("Some(") {
+                        let mut depth = 1u32;
+                        let mut j = 5; // after "Some("
+                        let bytes = rest.as_bytes();
+                        while j < bytes.len() {
+                            match bytes[j] {
+                                b'(' => depth += 1,
+                                b')' => {
+                                    depth = depth.saturating_sub(1);
+                                    if depth == 0 {
+                                        j += 1;
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            j += 1;
+                        }
+                        j
+                    } else {
+                        0
+                    };
+                    if value_len > 0 {
+                        let value_end = value_start + value_len;
+                        node_str = format!(
+                            "{}{}{}",
+                            &node_str[..children_start],
+                            children_replacement,
+                            &node_str[value_end..]
+                        );
+                    }
+                }
+
+                // --- script_exp_vars: emit cow_map!(NAME: ScriptExpVarValue => "key" => value, ...) ---
                 if let Some(raw_vars) = node.get_script_exp_vars_raw() {
                     use crate::nodes::node::ScriptExpVarValue;
                     {
                         let entries: Vec<String> = raw_vars
                             .iter()
-                            .map(|(k, v): (&std::borrow::Cow<'_, str>, &crate::nodes::node::ScriptExpVarValue)| {
-                                let k_str: &str = k.as_ref();
-                                let k_esc = k_str.replace('\\', "\\\\").replace('"', "\\\"");
+                            .map(|(k, v): (&&str, &ScriptExpVarValue)| {
+                                let k_esc = (*k).replace('\\', "\\\\").replace('"', "\\\"");
                                 match v {
                                     ScriptExpVarValue::NodeRef(id) => {
                                         let idx = id.index();
                                         format!(
-                                            "(Cow::Borrowed(\"{}\"), ScriptExpVarValue::NodeRef(NodeID::from_u32({}u32)))",
+                                            "\"{}\" => ScriptExpVarValue::NodeRef(NodeID::from_u32({}u32))",
                                             k_esc, idx
                                         )
                                     }
-                                    ScriptExpVarValue::Value(inner_v) => {
-                                        let val_rust = emit_script_exp_var_value_as_rust(inner_v);
-                                        format!("(Cow::Borrowed(\"{}\"), {})", k_esc, val_rust)
+                                    _ => {
+                                        let val_rust = emit_script_exp_var_value_as_rust(&v.to_json_value());
+                                        format!("\"{}\" => {}", k_esc, val_rust)
                                     }
                                 }
                             })
                             .collect();
-                        let replacement =
-                            format!("Some(HashMap::from([\n    {}]))", entries.join(",\n    "));
+                        let script_vars_name =
+                            format!("{}_NODE_{}_SCRIPT_VARS", static_scene_name, key);
+                        let replacement = format!(
+                            "Some(cow_map!({}: ScriptExpVarValue =>\n            {}))",
+                            script_vars_name,
+                            entries.join(",\n            ")
+                        );
                         if let Some(start) = node_str.find("script_exp_vars: ") {
                             let value_start = start + "script_exp_vars: ".len();
                             let rest = &node_str[value_start..];
@@ -3496,6 +3613,74 @@ impl Compiler {
                                                 j += 1;
                                                 break;
                                             }
+                                        }
+                                        _ => {}
+                                    }
+                                    j += 1;
+                                }
+                                j
+                            } else {
+                                0
+                            };
+                            if value_len > 0 {
+                                let value_end = value_start + value_len;
+                                node_str = format!(
+                                    "{}{}{}",
+                                    &node_str[..value_start],
+                                    replacement,
+                                    &node_str[value_end..]
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // --- metadata: emit cow_map!(NAME: MetadataValue => "key" => value, ...) (no serde_json) ---
+                if let Some(meta) = node.get_metadata_raw() {
+                    use crate::nodes::node::MetadataValue;
+                    if !meta.is_empty() {
+                        let entries: Vec<String> = meta
+                            .iter()
+                            .map(|(k, v): (&&str, &MetadataValue)| {
+                                let k_esc = (*k).replace('\\', "\\\\").replace('"', "\\\"");
+                                let val_rust = emit_metadata_value_as_rust(&v.to_json_value());
+                                format!("\"{}\" => {}", k_esc, val_rust)
+                            })
+                            .collect();
+                        let meta_name = format!("{}_NODE_{}_METADATA", static_scene_name, key);
+                        let replacement = format!(
+                            "Some(cow_map!({}: MetadataValue =>\n            {}))",
+                            meta_name,
+                            entries.join(",\n            ")
+                        );
+                        if let Some(start) = node_str.find("metadata: ") {
+                            let value_start = start + "metadata: ".len();
+                            let rest = &node_str[value_start..];
+                            let value_len: usize = if rest.trim_start().starts_with("None") {
+                                rest.find("None").unwrap_or(0) + 4
+                            } else if rest.trim_start().starts_with("Some(") {
+                                let some_start = rest.find("Some(").unwrap_or(0);
+                                let mut depth = 1u32;
+                                let mut j = some_start + 5;
+                                while j < rest.len() {
+                                    match rest.as_bytes()[j] {
+                                        b'(' => depth += 1,
+                                        b')' => {
+                                            depth -= 1;
+                                            if depth == 0 {
+                                                j += 1;
+                                                break;
+                                            }
+                                        }
+                                        b'B' if rest[j..].starts_with("Borrowed(") => {
+                                            depth += 1;
+                                            j += 9; // skip "Borrowed(" so we don't double-count the '('
+                                            continue;
+                                        }
+                                        b'O' if rest[j..].starts_with("Owned(") => {
+                                            depth += 1;
+                                            j += 6; // skip "Owned(" so we don't double-count the '('
+                                            continue;
                                         }
                                         _ => {}
                                     }
@@ -3558,19 +3743,18 @@ impl Compiler {
                     .to_string();
 
                 node_str = node_str.replace(": []", ": vec![]");
-                // Handle HashSet fields (like previous_collisions in Area2D, needs_rerender, needs_layout_recalc, and pending_deletion in UINode)
-                node_str = node_str.replace(
-                    "previous_collisions: {},",
-                    "previous_collisions: HashSet::new(),",
-                );
+                // HashSet fields are Option at compile time (None = no allocation)
                 node_str =
-                    node_str.replace("needs_rerender: {},", "needs_rerender: HashSet::new(),");
-                node_str = node_str.replace(
-                    "needs_layout_recalc: {},",
-                    "needs_layout_recalc: HashSet::new(),",
-                );
+                    node_str.replace("previous_collisions: {},", "previous_collisions: None,");
+                node_str = node_str.replace("needs_rerender: {},", "needs_rerender: None,");
                 node_str =
-                    node_str.replace("pending_deletion: {},", "pending_deletion: HashSet::new(),");
+                    node_str.replace("needs_layout_recalc: {},", "needs_layout_recalc: None,");
+                node_str = node_str.replace("pending_deletion: {},", "pending_deletion: None,");
+                // UINode initial_z_indices: Option (None = no allocation)
+                node_str = node_str.replace(
+                    "initial_z_indices: HashMap::new(),",
+                    "initial_z_indices: None,",
+                );
                 // Ensure last_cursor_icon is set to None (it's a public field but skipped in serialization)
                 // Replace any existing last_cursor_icon value with None
                 let last_cursor_icon_regex =
@@ -3586,7 +3770,10 @@ impl Compiler {
                             "focused_element: None,\n            last_cursor_icon: None,",
                         );
                     } else if node_str.contains("initial_z_indices:") {
-                        node_str = node_str.replace("initial_z_indices: HashMap::new(),", "initial_z_indices: HashMap::new(),\n            last_cursor_icon: None,");
+                        node_str = node_str.replace(
+                            "initial_z_indices: None,",
+                            "initial_z_indices: None,\n            last_cursor_icon: None,",
+                        );
                     } else if node_str.contains("UINode {") {
                         // Add it right after the opening brace if no other fields are found
                         node_str = node_str
@@ -3669,26 +3856,23 @@ impl Compiler {
                     })
                     .to_string();
 
-                // --- Option<Vec<Uuid>>: safe bracket correction ---
-                let regex_children = Regex::new(r"children:\s*Some\s*\(\s*\[")?;
+                // --- root_ids: safe bracket correction (children use static Cow::Borrowed above) ---
                 let regex_root_ids = Regex::new(r"root_ids:\s*Some\s*\(\s*\[")?;
-                node_str = regex_children
-                    .replace_all(&node_str, "children: Some(vec![")
-                    .to_string();
                 node_str = regex_root_ids
                     .replace_all(&node_str, "root_ids: Some(vec![")
                     .to_string();
 
-                let regex_children_empty = Regex::new(r"children:\s*Some\s*\(\s*\[\s*\]\s*\)")?;
                 let regex_root_ids_empty = Regex::new(r"root_ids:\s*Some\s*\(\s*\[\s*\]\s*\)")?;
-                node_str = regex_children_empty
-                    .replace_all(&node_str, "children: Some(vec![])")
-                    .to_string();
                 node_str = regex_root_ids_empty
                     .replace_all(&node_str, "root_ids: Some(vec![])")
                     .to_string();
 
-                // --- Extract SceneNode variant ---
+                // --- Extract SceneNode variant (for cow_map! nodes and key_to_node_id) ---
+                writeln!(
+                    &mut key_to_id_entries,
+                    "    {}u32 => NodeID::from_u32({}u32),",
+                    key, key
+                )?;
                 if let Some(open_paren) = node_str.find('(') {
                     if let Some(variant_pos) = node_str.find("SceneNode::") {
                         let variant_start = variant_pos + "SceneNode::".len();
@@ -3702,14 +3886,14 @@ impl Compiler {
                             .trim();
 
                         writeln!(
-                            &mut entries,
-                            "        ({}, SceneNode::{}({})),",
+                            &mut nodes_cow_entries,
+                            "    {}u32 => SceneNode::{}({}),",
                             key, variant_name, inner
                         )?;
                     } else {
                         writeln!(
-                            &mut entries,
-                            "        ({}, SceneNode::{}),",
+                            &mut nodes_cow_entries,
+                            "    {}u32 => SceneNode::{},",
                             key,
                             node_str.trim()
                         )?;
@@ -3717,24 +3901,34 @@ impl Compiler {
                 }
             }
 
-            let hashmap_formatted = format!("HashMap::from([\n{}\n    ])", entries);
+            let nodes_map_name = format!("{}_NODES", static_scene_name);
+            let keys_map_name = format!("{}_KEYS", static_scene_name);
 
+            static_scene_definitions_code.push_str(&static_children_slices);
             static_scene_definitions_code.push_str(&format!(
                 "
 /// Auto-generated static scene for {path}
-static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
+static {name}: SceneData = SceneData::from_nodes(
     {root_index},
-    {nodes}
-));
+    cow_map!({nodes_map_name}: u32, SceneNode =>
+{nodes_entries}
+    ),
+    cow_map!({keys_map_name}: u32, NodeID =>
+{keys_entries}
+    )
+);
 ",
                 path = current_res_path,
                 name = static_scene_name,
                 root_index = root_id_str,
-                nodes = hashmap_formatted
+                nodes_map_name = nodes_map_name,
+                keys_map_name = keys_map_name,
+                nodes_entries = nodes_cow_entries,
+                keys_entries = key_to_id_entries
             ));
 
-            map_insertions_code.push_str(&format!(
-                "    m.insert(\"{}\", &*{});\n",
+            phf_entries.push_str(&format!(
+                "    \"{}\" => &{},\n",
                 current_res_path, static_scene_name
             ));
         }
@@ -3749,14 +3943,22 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
         )?;
         writeln!(
             scenes_file,
-            "pub static PERRO_SCENES: Lazy<HashMap<&'static str, &'static SceneData>> = Lazy::new(|| {{"
+            "pub static PERRO_SCENES: Map<&'static str, &'static SceneData> = phf_map! {{"
         )?;
-        writeln!(scenes_file, "    let mut m = HashMap::new();")?;
-        write!(scenes_file, "{}", map_insertions_code)?;
-        writeln!(scenes_file, "    m")?;
-        writeln!(scenes_file, "}});")?;
+        write!(scenes_file, "{}", phf_entries)?;
+        writeln!(scenes_file, "}};")?;
 
         scenes_file.flush()?;
+        drop(scenes_file);
+
+        // Run rustfmt on generated file for consistent formatting
+        if std::process::Command::new("rustfmt")
+            .arg(scenes_output_path)
+            .status()
+            .is_ok()
+        {
+            // rustfmt ran; ignore exit code (e.g. if file has allow(clippy::all) etc.)
+        }
 
         Ok(())
     }
@@ -3805,8 +4007,6 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
     }
 
     fn codegen_fur_file(&self, static_assets_dir: &Path) -> anyhow::Result<()> {
-        use std::fmt::Write as _;
-
         let fur_output_path = static_assets_dir.join("fur.rs");
         let mut fur_file = File::create(&fur_output_path)?;
 
@@ -3814,14 +4014,16 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
         writeln!(fur_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(fur_file, "#![allow(clippy::all)]")?;
         writeln!(fur_file, "#![allow(unused)]")?;
-        writeln!(fur_file, "use once_cell::sync::Lazy;")?;
+        writeln!(fur_file, "#![allow(non_upper_case_globals)]")?;
         writeln!(
             fur_file,
             "use perro_core::ui::fur_ast::{{FurElement, FurNode}};"
         )?;
-        writeln!(fur_file, "use std::collections::HashMap;")?;
         writeln!(fur_file, "use std::borrow::Cow;")?;
+        writeln!(fur_file, "use cow_map::cow_map;")?;
+        writeln!(fur_file, "use phf::{{phf_map, Map}};")?;
         writeln!(fur_file, "\n// --- GENERATED FUR DEFINITIONS ---")?;
+        writeln!(fur_file, "static FUR_EMPTY_NODES: &[FurNode] = &[];")?;
 
         let res_dir = self.project_root.join("res");
         if !res_dir.exists() {
@@ -3835,10 +4037,8 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
             )?;
             writeln!(
                 fur_file,
-                "pub static PERRO_FUR: Lazy<HashMap<&'static str, &'static [FurElement]>> = Lazy::new(|| {{"
+                "pub static PERRO_FUR: Map<&'static str, &'static [FurElement]> = phf_map! {{}};"
             )?;
-            writeln!(fur_file, "    HashMap::new()")?;
-            writeln!(fur_file, "}});")?;
             fur_file.flush()?;
             return Ok(());
         }
@@ -3846,7 +4046,7 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
         let mut processed_fur_paths: HashSet<String> = HashSet::new();
         let mut fur_queue: VecDeque<String> = VecDeque::new();
         let mut static_fur_definitions_code = String::new();
-        let mut map_insertions_code = String::new();
+        let mut phf_entries = String::new();
 
         // --- Walk `res/` for *.fur files ---
         for entry in WalkDir::new(&res_dir) {
@@ -3881,28 +4081,40 @@ static {name}: Lazy<SceneData> = Lazy::new(|| SceneData::from_nodes(
                 continue;
             }
 
-            let static_fur_name = format!("FUR_{}", Self::sanitize_res_path_to_ident(&current_res_path));
+            let static_fur_name = format!(
+                "FUR_{}",
+                Self::sanitize_res_path_to_ident(&current_res_path)
+            );
 
-            let mut elements_code = String::new();
-            for element in &fur_elements {
-                let element_code = self.codegen_fur_element(element, 1)?;
-                writeln!(&mut elements_code, "        {},", element_code)?;
+            let mut all_statics = String::new();
+            let mut root_element_codes = Vec::new();
+            for (idx, element) in fur_elements.iter().enumerate() {
+                let prefix = format!("{}_{}", static_fur_name, idx);
+                let (statics, element_code) = self.codegen_fur_element_static(element, &prefix)?;
+                for s in &statics {
+                    all_statics.push_str(s);
+                    all_statics.push('\n');
+                }
+                root_element_codes.push(element_code);
             }
 
+            let root_elems_joined = root_element_codes.join(",\n        ");
             static_fur_definitions_code.push_str(&format!(
                 r#"
 /// Auto-generated static FUR elements for {path}
-pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
-{elements}
-]);
+{statics}
+pub static {name}: &[FurElement] = &[
+        {elements}
+];
 "#,
                 path = current_res_path,
                 name = static_fur_name,
-                elements = elements_code
+                statics = all_statics,
+                elements = root_elems_joined
             ));
 
-            map_insertions_code.push_str(&format!(
-                "    m.insert(\"{}\", {}.as_slice());\n",
+            phf_entries.push_str(&format!(
+                "    \"{}\" => {},\n",
                 current_res_path, static_fur_name
             ));
         }
@@ -3917,94 +4129,85 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         )?;
         writeln!(
             fur_file,
-            "pub static PERRO_FUR: Lazy<HashMap<&'static str, &'static [FurElement]>> = Lazy::new(|| {{"
+            "pub static PERRO_FUR: Map<&'static str, &'static [FurElement]> = phf_map! {{"
         )?;
-        writeln!(fur_file, "    let mut m = HashMap::new();")?;
-        write!(fur_file, "{}", map_insertions_code)?;
-        writeln!(fur_file, "    m")?;
-        writeln!(fur_file, "}});")?;
+        write!(fur_file, "{}", phf_entries)?;
+        writeln!(fur_file, "}};")?;
 
         fur_file.flush()?;
 
         Ok(())
     }
 
-    fn codegen_fur_element(
+    /// Returns (statics to emit, element code string). Statics are in dependency order (children first).
+    fn codegen_fur_element_static(
         &self,
         element: &FurElement,
-        indent_level: usize,
-    ) -> anyhow::Result<String> {
-        use std::fmt::Write as _;
-
-        let indent = "    ".repeat(indent_level);
-        let mut code = String::new();
-
-        writeln!(&mut code, "{}FurElement {{", indent)?;
-        writeln!(
-            &mut code,
-            "{}    tag_name: Cow::Borrowed(\"{}\"),",
-            indent, element.tag_name
-        )?;
-        writeln!(
-            &mut code,
-            "{}    id: Cow::Borrowed(\"{}\"),",
-            indent, element.id
-        )?;
-
-        // Generate attributes HashMap
-        if element.attributes.is_empty() {
-            writeln!(&mut code, "{}    attributes: HashMap::new(),", indent)?;
-        } else {
-            writeln!(&mut code, "{}    attributes: HashMap::from([", indent)?;
-            for (key, value) in &element.attributes {
-                writeln!(
-                    &mut code,
-                    "{}        (Cow::Borrowed(\"{}\"), Cow::Borrowed(\"{}\")),",
-                    indent,
-                    key,
-                    value.replace("\"", "\\\"")
-                )?;
-            }
-            writeln!(&mut code, "{}    ]),", indent)?;
-        }
-
-        // Generate children Vec<FurNode>
-        if element.children.is_empty() {
-            writeln!(&mut code, "{}    children: vec![],", indent)?;
-        } else {
-            writeln!(&mut code, "{}    children: vec![", indent)?;
-            for child in &element.children {
-                match child {
-                    FurNode::Element(child_el) => {
-                        let child_code = self.codegen_fur_element(child_el, indent_level + 2)?;
-                        writeln!(
-                            &mut code,
-                            "{}        FurNode::Element({}),",
-                            indent,
-                            child_code.trim()
-                        )?;
-                    }
-                    FurNode::Text(text) => {
-                        writeln!(
-                            &mut code,
-                            "{}        FurNode::Text(Cow::Borrowed(\"{}\")),",
-                            indent,
-                            text.replace("\"", "\\\"")
-                        )?;
-                    }
+        prefix: &str,
+    ) -> anyhow::Result<(Vec<String>, String)> {
+        let mut statics = Vec::new();
+        let mut child_codes = Vec::new();
+        for (i, child) in element.children.iter().enumerate() {
+            match child {
+                FurNode::Element(child_el) => {
+                    let child_prefix = format!("{}_c{}", prefix, i);
+                    let (child_statics, child_code) =
+                        self.codegen_fur_element_static(child_el, &child_prefix)?;
+                    statics.extend(child_statics);
+                    child_codes.push(format!("FurNode::Element({})", child_code));
+                }
+                FurNode::Text(text) => {
+                    let esc = text.replace('\\', "\\\\").replace('"', "\\\"");
+                    child_codes.push(format!("FurNode::Text(Cow::Borrowed(\"{}\"))", esc));
                 }
             }
-            writeln!(&mut code, "{}    ],", indent)?;
         }
 
-        writeln!(
-            &mut code,
-            "{}    self_closing: {},",
-            indent, element.self_closing
-        )?;
-        write!(&mut code, "{}}}", indent)?;
+        let (slice_name, children_static) = if child_codes.is_empty() {
+            ("FUR_EMPTY_NODES".to_string(), None)
+        } else {
+            let name = format!("{}_CHILDREN", prefix.replace('.', "_").replace('-', "_"));
+            let s = format!(
+                "static {}: &[FurNode] = &[\n        {}];",
+                name,
+                child_codes.join(",\n        ")
+            );
+            (name, Some(s))
+        };
+        if let Some(s) = children_static {
+            statics.push(s);
+        }
 
-        Ok(code)
+        let attrs_name = format!("{}_ATTRS", prefix.replace('.', "_").replace('-', "_"));
+        let attrs_code = if element.attributes.is_empty() {
+            format!(
+                "cow_map!({}: &'static str, Cow<'static, str> => )",
+                attrs_name
+            )
+        } else {
+            let entries: Vec<String> = element
+                .attributes
+                .iter()
+                .map(|(k, v)| {
+                    let esc = v.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("\"{}\" => Cow::Borrowed(\"{}\")", k, esc)
+                })
+                .collect();
+            format!(
+                "cow_map!({}: &'static str, Cow<'static, str> =>\n            {})",
+                attrs_name,
+                entries.join(",\n            ")
+            )
+        };
+
+        let tag_esc = element.tag_name.replace('\\', "\\\\").replace('"', "\\\"");
+        let id_esc = element.id.replace('\\', "\\\\").replace('"', "\\\"");
+        let element_code = format!(
+            "FurElement {{\n        tag_name: Cow::Borrowed(\"{}\"),\n        id: Cow::Borrowed(\"{}\"),\n        attributes: {},\n        children: Cow::Borrowed({}),\n        self_closing: {},\n    }}",
+            tag_esc, id_esc, attrs_code, slice_name, element.self_closing
+        );
+
+        Ok((statics, element_code))
     }
 
     fn codegen_manifest_file(&self, static_assets_dir: &Path) -> anyhow::Result<()> {
@@ -4020,28 +4223,31 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         writeln!(manifest_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(manifest_file, "#![allow(clippy::all)]")?;
         writeln!(manifest_file, "#![allow(unused)]")?;
-        writeln!(manifest_file, "use once_cell::sync::Lazy;")?;
+        writeln!(manifest_file, "use cow_map::cow_map;")?;
+        writeln!(manifest_file, "use std::borrow::Cow;")?;
         writeln!(manifest_file, "use perro_core::manifest::Project;")?;
         writeln!(manifest_file, "\n// --- GENERATED PROJECT MANIFEST ---")?;
 
-        // Generate static metadata PHF map
+        // Generate static metadata cow_map (immutable at runtime; no allocation)
+        // Key type &'static str so CowMap get/contains_key/remove work (PhfBorrow).
         let metadata_map_name = "PERRO_METADATA";
+        writeln!(
+            manifest_file,
+            "\nstatic {}: perro_core::manifest::MetadataMap = cow_map!({}: &'static str, Cow<'static, str> =>",
+            metadata_map_name, metadata_map_name
+        )?;
         if !project.metadata().is_empty() {
-            writeln!(
-                manifest_file,
-                "\nstatic {}: phf::Map<&'static str, &'static str> = phf::phf_map! {{",
-                metadata_map_name
-            )?;
-            for (key, value) in project.metadata() {
+            for (key, value) in project.metadata().iter() {
+                let v = value.replace('"', "\\\"");
                 writeln!(
                     manifest_file,
-                    "    \"{}\" => \"{}\",",
-                    key,
-                    value.replace("\"", "\\\"")
+                    "    \"{}\" => Cow::Borrowed(\"{}\"),",
+                    key.replace('\\', "\\\\"),
+                    v
                 )?;
             }
-            writeln!(manifest_file, "}};")?;
         }
+        writeln!(manifest_file, ");")?;
 
         // Generate static input actions PHF map
         // Use raw string values from project.toml (not parsed InputSource enum)
@@ -4063,56 +4269,59 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(manifest_file, "}};")?;
         }
 
-        // Generate the Lazy Project
+        // Generate non-Lazy static (const fn new_static, all CowMaps/refs)
         writeln!(manifest_file, "\n/// Statically compiled project manifest")?;
         writeln!(
             manifest_file,
-            "pub static PERRO_PROJECT: Lazy<Project> = Lazy::new(|| {{"
-        )?;
-        writeln!(manifest_file, "    Project::new_static(")?;
-        writeln!(manifest_file, "        \"{}\".to_string(),", project.name())?;
-        writeln!(
-            manifest_file,
-            "        \"{}\".to_string(),",
-            project.version()
+            "pub static PERRO_PROJECT: Project = Project::new_static("
         )?;
         writeln!(
             manifest_file,
-            "        \"{}\".to_string(),",
-            project.main_scene()
+            "    \"{}\",",
+            project.name().replace('\\', "\\\\").replace('"', "\\\"")
         )?;
-
-        // Handle optional icon
+        writeln!(
+            manifest_file,
+            "    \"{}\",",
+            project.version().replace('\\', "\\\\").replace('"', "\\\"")
+        )?;
+        writeln!(
+            manifest_file,
+            "    \"{}\",",
+            project
+                .main_scene()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+        )?;
         if let Some(icon) = project.icon() {
-            writeln!(manifest_file, "        Some(\"{}\".to_string()),", icon)?;
+            writeln!(
+                manifest_file,
+                "    Some(\"{}\"),",
+                icon.replace('\\', "\\\\").replace('"', "\\\"")
+            )?;
         } else {
-            writeln!(manifest_file, "        None,")?;
+            writeln!(manifest_file, "    None,")?;
         }
-
-        writeln!(manifest_file, "        {}f32,", project.fps_cap())?;
-        writeln!(manifest_file, "        {}f32,", project.xps())?;
-        writeln!(manifest_file, "        {}f32,", project.virtual_width())?;
-        writeln!(manifest_file, "        {}f32,", project.virtual_height())?;
-
-        // Root script is now from @root in a .pup file (first in get_global_registry_order), not project.toml
-        writeln!(manifest_file, "        None,")?;
-
-        // Pass PHF map references
-        if !project.metadata().is_empty() {
-            writeln!(manifest_file, "        &{},", metadata_map_name)?;
-        } else {
-            writeln!(manifest_file, "        &phf::phf_map! {{}},")?;
-        }
-
-        // Pass input actions PHF map reference
+        writeln!(manifest_file, "    {}f32,", project.fps_cap())?;
+        writeln!(manifest_file, "    {}f32,", project.xps())?;
+        writeln!(manifest_file, "    {}f32,", project.virtual_width())?;
+        writeln!(manifest_file, "    {}f32,", project.virtual_height())?;
+        writeln!(
+            manifest_file,
+            "    \"{}\",",
+            project.msaa().replace('\\', "\\\\").replace('"', "\\\"")
+        )?;
+        writeln!(manifest_file, "    &{},", metadata_map_name)?;
         if !input_actions.is_empty() {
-            writeln!(manifest_file, "        &{}", input_map_name)?;
+            writeln!(manifest_file, "    &{},", input_map_name)?;
         } else {
-            writeln!(manifest_file, "        &phf::phf_map! {{}}")?;
+            writeln!(manifest_file, "    &phf::phf_map! {{}},")?;
         }
-
-        writeln!(manifest_file, "    )")?;
-        writeln!(manifest_file, "}});")?;
+        writeln!(
+            manifest_file,
+            "    &perro_core::manifest::EMPTY_RUNTIME_PARAMS,"
+        )?;
+        writeln!(manifest_file, ");")?;
 
         manifest_file.flush()?;
 
@@ -4127,13 +4336,15 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
         writeln!(textures_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(textures_file, "#![allow(clippy::all)]")?;
         writeln!(textures_file, "#![allow(unused)]")?;
-        writeln!(textures_file, "use once_cell::sync::Lazy;")?;
-        writeln!(textures_file, "use std::collections::HashMap;")?;
+        writeln!(textures_file, "use phf::{{phf_map, Map}};")?;
         writeln!(
             textures_file,
             "use perro_core::structs2d::texture::StaticTextureData;"
         )?;
-        writeln!(textures_file, "\n// --- .ptex in embedded_assets/textures/ ---")?;
+        writeln!(
+            textures_file,
+            "\n// --- .ptex in embedded_assets/textures/ ---"
+        )?;
 
         let res_dir = self.project_root.join("res");
         if !res_dir.exists() {
@@ -4144,10 +4355,8 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
             writeln!(textures_file, "\n/// Map of texture paths to .ptex data.")?;
             writeln!(
                 textures_file,
-                "pub static PERRO_TEXTURES: Lazy<HashMap<&'static str, &'static StaticTextureData>> = Lazy::new(|| {{"
+                "pub static PERRO_TEXTURES: Map<&'static str, &'static StaticTextureData> = phf_map! {{}};"
             )?;
-            writeln!(textures_file, "    HashMap::new()")?;
-            writeln!(textures_file, "}});")?;
             textures_file.flush()?;
             return Ok(());
         }
@@ -4165,7 +4374,7 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
 
         let mut processed_texture_paths: HashSet<String> = HashSet::new();
         let mut static_texture_definitions_code = String::new();
-        let mut map_insertions_code = String::new();
+        let mut phf_entries = String::new();
 
         let image_extensions = ["png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp"];
 
@@ -4193,15 +4402,13 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                             let (width, height) = img.dimensions();
                             let raw = rgba.as_raw();
 
-                            let compressed =
-                                zstd::stream::encode_all(std::io::Cursor::new(raw), ASSET_COMPRESSION.texture)
-                                    .map_err(|e| {
-                                        anyhow::anyhow!(
-                                            "Zstd compress texture {}: {}",
-                                            path.display(),
-                                            e
-                                        )
-                                    })?;
+                            let compressed = zstd::stream::encode_all(
+                                std::io::Cursor::new(raw),
+                                ASSET_COMPRESSION.texture,
+                            )
+                            .map_err(|e| {
+                                anyhow::anyhow!("Zstd compress texture {}: {}", path.display(), e)
+                            })?;
 
                             println!(
                                 "🖼️ Pre-decode + .ptex texture: {} ({}x{})",
@@ -4225,7 +4432,8 @@ pub static {name}: Lazy<Vec<FurElement>> = Lazy::new(|| vec![
                                 )
                             })?;
 
-                            let include_path = format!("../../embedded_assets/textures/{}", ptex_file_name);
+                            let include_path =
+                                format!("../../embedded_assets/textures/{}", ptex_file_name);
                             static_texture_definitions_code.push_str(&format!(
                                 r#"
 static {bytes_name}: &[u8] = include_bytes!("{include_path}");
@@ -4243,9 +4451,10 @@ static {name}: StaticTextureData = StaticTextureData {{
                                 height = height,
                             ));
 
-                            map_insertions_code.push_str(&format!(
-                                "    m.insert(\"{}\", &{});\n",
-                                res_path, static_texture_name_with_ext
+                            phf_entries.push_str(&format!(
+                                "    \"{}\" => &{},\n",
+                                res_path.replace('\\', "\\\\").replace('"', "\\\""),
+                                static_texture_name_with_ext
                             ));
                         }
                     }
@@ -4257,12 +4466,10 @@ static {name}: StaticTextureData = StaticTextureData {{
         writeln!(textures_file, "\n/// Map of texture paths to .ptex data.")?;
         writeln!(
             textures_file,
-            "pub static PERRO_TEXTURES: Lazy<HashMap<&'static str, &'static StaticTextureData>> = Lazy::new(|| {{"
+            "pub static PERRO_TEXTURES: Map<&'static str, &'static StaticTextureData> = phf_map! {{"
         )?;
-        writeln!(textures_file, "    let mut m = HashMap::new();")?;
-        write!(textures_file, "{}", map_insertions_code)?;
-        writeln!(textures_file, "    m")?;
-        writeln!(textures_file, "}});")?;
+        write!(textures_file, "{}", phf_entries)?;
+        writeln!(textures_file, "}};")?;
 
         textures_file.flush()?;
 
@@ -4276,23 +4483,26 @@ static {name}: StaticTextureData = StaticTextureData {{
         writeln!(meshes_file, "// Auto-generated by Perro Engine compiler")?;
         writeln!(meshes_file, "#![allow(clippy::all)]")?;
         writeln!(meshes_file, "#![allow(unused)]")?;
-        writeln!(meshes_file, "use once_cell::sync::Lazy;")?;
-        writeln!(meshes_file, "use std::collections::HashMap;")?;
+        writeln!(meshes_file, "use phf::{{phf_map, Map}};")?;
         writeln!(
             meshes_file,
             "use perro_core::structs::structs3d::StaticMeshData;"
         )?;
-        writeln!(meshes_file, "\n// --- .pmesh in embedded_assets/meshes/ (one per mesh, key = model_path or model_path:index) ---")?;
+        writeln!(
+            meshes_file,
+            "\n// --- .pmesh in embedded_assets/meshes/ (one per mesh, key = model_path or model_path:index) ---"
+        )?;
 
         let res_dir = self.project_root.join("res");
         if !res_dir.exists() {
-            writeln!(meshes_file, "\n/// Map of mesh paths (model.glb or model.glb:index) to .pmesh data.")?;
             writeln!(
                 meshes_file,
-                "pub static PERRO_MESHES: Lazy<HashMap<&'static str, &'static StaticMeshData>> = Lazy::new(|| {{"
+                "\n/// Map of mesh paths (model.glb or model.glb:index) to .pmesh data."
             )?;
-            writeln!(meshes_file, "    HashMap::new()")?;
-            writeln!(meshes_file, "}});")?;
+            writeln!(
+                meshes_file,
+                "pub static PERRO_MESHES: Map<&'static str, &'static StaticMeshData> = phf_map! {{}};"
+            )?;
             meshes_file.flush()?;
             return Ok(());
         }
@@ -4305,7 +4515,7 @@ static {name}: StaticTextureData = StaticTextureData {{
         fs::create_dir_all(&embedded_assets_dir)?;
 
         let mut static_mesh_definitions_code = String::new();
-        let mut map_insertions_code = String::new();
+        let mut phf_entries = String::new();
 
         let mesh_extensions = ["gltf", "glb"];
 
@@ -4324,20 +4534,22 @@ static {name}: StaticTextureData = StaticTextureData {{
                             anyhow::anyhow!("Failed to read model {}: {}", path.display(), e)
                         })?;
 
-                        let meshes =
-                            crate::rendering::mesh_loader::load_gltf_model_all_meshes(&bytes)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!(
-                                        "Failed to parse GLTF model {} (need GLB with embedded bin)",
-                                        path.display()
-                                    )
-                                })?;
+                        let meshes = crate::rendering::mesh_loader::load_gltf_model_all_meshes(
+                            &bytes,
+                        )
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Failed to parse GLTF model {} (need GLB with embedded bin)",
+                                path.display()
+                            )
+                        })?;
 
                         let num_meshes = meshes.len();
                         let base_static_name = Self::sanitize_res_path_to_ident(&res_path);
                         let ext_upper = ext.to_uppercase();
 
-                        for (idx, (_mesh_name, vertices, indices)) in meshes.into_iter().enumerate() {
+                        for (idx, (_mesh_name, vertices, indices)) in meshes.into_iter().enumerate()
+                        {
                             // Index-based naming; MESH_ prefix so identifiers never start with a number (valid Rust).
                             let static_mesh_name_with_ext = if num_meshes == 1 {
                                 format!("MESH_{}_{}", base_static_name, ext_upper)
@@ -4346,12 +4558,17 @@ static {name}: StaticTextureData = StaticTextureData {{
                             };
 
                             let (bounds_center, bounds_radius) =
-                                crate::rendering::renderer_3d::Renderer3D::compute_bounds(&vertices);
+                                crate::rendering::renderer_3d::Renderer3D::compute_bounds(
+                                    &vertices,
+                                );
 
                             let vertex_bytes = bytemuck::cast_slice::<_, u8>(&vertices);
                             let index_bytes = bytemuck::cast_slice::<_, u8>(&indices);
-                            let combined: Vec<u8> =
-                                vertex_bytes.iter().chain(index_bytes.iter()).copied().collect();
+                            let combined: Vec<u8> = vertex_bytes
+                                .iter()
+                                .chain(index_bytes.iter())
+                                .copied()
+                                .collect();
                             let display_key = if num_meshes == 1 {
                                 res_path.clone()
                             } else {
@@ -4412,10 +4629,12 @@ static {name}: StaticMeshData = StaticMeshData {{
                                 br = br,
                             ));
 
-                            // HashMap: always path:index so runtime normalize (model.glb -> model.glb:0) finds one key
-                            map_insertions_code.push_str(&format!(
-                                "    m.insert(\"{}:{}\", &{});\n",
-                                res_path, idx, static_mesh_name_with_ext
+                            // path:index so runtime normalize (model.glb -> model.glb:0) finds one key
+                            phf_entries.push_str(&format!(
+                                "    \"{}:{}\" => &{},\n",
+                                res_path.replace('\\', "\\\\").replace('"', "\\\""),
+                                idx,
+                                static_mesh_name_with_ext
                             ));
                         }
                     }
@@ -4424,15 +4643,16 @@ static {name}: StaticMeshData = StaticMeshData {{
         }
 
         writeln!(meshes_file, "{}", static_mesh_definitions_code)?;
-        writeln!(meshes_file, "\n/// Map of mesh paths (model.glb or model.glb:index) to .pmesh data.")?;
         writeln!(
             meshes_file,
-            "pub static PERRO_MESHES: Lazy<HashMap<&'static str, &'static StaticMeshData>> = Lazy::new(|| {{"
+            "\n/// Map of mesh paths (model.glb or model.glb:index) to .pmesh data."
         )?;
-        writeln!(meshes_file, "    let mut m = HashMap::new();")?;
-        write!(meshes_file, "{}", map_insertions_code)?;
-        writeln!(meshes_file, "    m")?;
-        writeln!(meshes_file, "}});")?;
+        writeln!(
+            meshes_file,
+            "pub static PERRO_MESHES: Map<&'static str, &'static StaticMeshData> = phf_map! {{"
+        )?;
+        write!(meshes_file, "{}", phf_entries)?;
+        writeln!(meshes_file, "}};")?;
 
         meshes_file.flush()?;
 

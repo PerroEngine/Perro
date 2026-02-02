@@ -389,7 +389,7 @@ pub enum Type {
     EngineStruct(EngineStruct),
 
     // Internal / runtime
-    Signal,   // SignalID
+    Signal,    // SignalID
     ScriptApi, // &mut ScriptApi<'_> - injected by runtime
 
     // User-defined
@@ -1008,12 +1008,12 @@ pub enum Op {
     Sub,
     Mul,
     Div,
-    Lt, // <
-    Gt, // >
-    Le, // <=
-    Ge, // >=
-    Eq, // ==
-    Ne, // !=
+    Lt,  // <
+    Gt,  // >
+    Le,  // <=
+    Ge,  // >=
+    Eq,  // ==
+    Ne,  // !=
     And, // logical and (&& in Rust)
 }
 

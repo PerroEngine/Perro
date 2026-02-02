@@ -71,6 +71,13 @@ impl PerroLspServer {
             language: Some("pup".to_string()),
             module_names: std::collections::HashSet::new(), // LSP doesn't track modules
             module_name_to_identifier: std::collections::HashMap::new(), // LSP doesn't track modules
+            module_functions: std::collections::HashMap::new(),
+            module_variables: std::collections::HashMap::new(),
+            module_scope_variables: None,
+            is_global: false,
+            global_names: std::collections::HashSet::new(),
+            global_name_to_node_id: std::collections::HashMap::new(),
+            rust_struct_name: None,
         }
     }
 

@@ -1,9 +1,80 @@
 use crate::asset_io::load_asset;
-use crate::input::{InputMap, parse_input_source};
+use cow_map::{CowMap, cow_map};
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+
+use crate::input::{InputMap, parse_input_source};
+
+/// Metadata map for compiled projects: static refs, no allocation.
+/// Key is `&'static str` so CowMap's PHF-backed get/contains_key/remove work.
+pub type MetadataMap = CowMap<&'static str, Cow<'static, str>>;
+
+/// Same shape as MetadataMap; used for runtime params so static project can hold empty ref (const fn).
+pub type RuntimeParamsMap = CowMap<&'static str, Cow<'static, str>>;
+
+/// Empty runtime params used by const fn new_static (no allocation).
+pub static EMPTY_RUNTIME_PARAMS: RuntimeParamsMap =
+    cow_map!(EMPTY_RUNTIME_PARAMS: &'static str, Cow<'static, str> => );
+
+/// Metadata storage: static ref (compiled, no alloc) or owned HashMap (loaded from project.toml).
+#[derive(Clone)]
+enum MetadataStorage {
+    Static(&'static MetadataMap),
+    Owned(HashMap<String, String>),
+}
+
+/// View over metadata for both static and owned storage (used by `Project::metadata()`).
+#[derive(Clone)]
+pub enum MetadataRef<'a> {
+    Static(&'a MetadataMap),
+    Owned(&'a HashMap<String, String>),
+}
+
+impl MetadataRef<'_> {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            MetadataRef::Static(m) => m.is_empty(),
+            MetadataRef::Owned(m) => m.is_empty(),
+        }
+    }
+
+    #[inline]
+    pub fn iter(&self) -> Box<dyn Iterator<Item = (&str, &str)> + '_> {
+        match self {
+            MetadataRef::Static(m) => Box::new(m.iter().map(|(k, v)| (*k, v.as_ref()))),
+            MetadataRef::Owned(m) => Box::new(m.iter().map(|(k, v)| (k.as_str(), v.as_str()))),
+        }
+    }
+}
+
+/// View over runtime params for both static and owned storage.
+#[derive(Clone)]
+pub enum RuntimeParamsRef<'a> {
+    Static(&'a RuntimeParamsMap),
+    Owned(&'a HashMap<String, String>),
+}
+
+impl RuntimeParamsRef<'_> {
+    #[inline]
+    pub fn get(&self, key: &str) -> Option<&str> {
+        match self {
+            RuntimeParamsRef::Static(m) => m.get(key).map(Cow::as_ref),
+            RuntimeParamsRef::Owned(m) => m.get(key).map(String::as_str),
+        }
+    }
+
+    #[inline]
+    pub fn iter(&self) -> Box<dyn Iterator<Item = (&str, &str)> + '_> {
+        match self {
+            RuntimeParamsRef::Static(m) => Box::new(m.iter().map(|(k, v)| (*k, v.as_ref()))),
+            RuntimeParamsRef::Owned(m) => Box::new(m.iter().map(|(k, v)| (k.as_str(), v.as_str()))),
+        }
+    }
+}
 
 /// Root project manifest structure
 #[derive(Deserialize, Clone)]
@@ -14,53 +85,92 @@ struct ProjectSettings {
     #[serde(default)]
     graphics: GraphicsSection,
     #[serde(default)]
-    root: RootSection,
-    #[serde(default)]
     meta: MetadataSection,
     #[serde(default)]
     input: InputSection,
 }
 
 /// `[graphics]` section - virtual resolution, window aspect, and MSAA
-#[derive(Deserialize, Clone)]
+#[derive(Clone)]
 struct GraphicsSection {
-    #[serde(default = "default_virtual_width")]
     virtual_width: f32,
-    #[serde(default = "default_virtual_height")]
     virtual_height: f32,
-    /// MSAA for smooth 3D edges: "off" (1x), "on" (4x).
-    #[serde(default = "default_msaa")]
-    msaa: String,
-}
-
-fn default_virtual_width() -> f32 {
-    1920.0
-}
-fn default_virtual_height() -> f32 {
-    1080.0
-}
-fn default_msaa() -> String {
-    "on".into()
+    /// MSAA: "off" (1x), "on" (4x). Cow so static project can use borrowed.
+    msaa: Cow<'static, str>,
 }
 
 impl Default for GraphicsSection {
     fn default() -> Self {
         Self {
-            virtual_width: default_virtual_width(),
-            virtual_height: default_virtual_height(),
-            msaa: default_msaa(),
+            virtual_width: 1920.0,
+            virtual_height: 1080.0,
+            msaa: Cow::Borrowed("on"),
         }
     }
 }
 
-/// `[project]` section
-#[derive(Deserialize, Clone)]
+impl<'de> Deserialize<'de> for GraphicsSection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct GraphicsSectionDe {
+            #[serde(default = "default_virtual_width")]
+            virtual_width: f32,
+            #[serde(default = "default_virtual_height")]
+            virtual_height: f32,
+            #[serde(default = "default_msaa_str")]
+            msaa: String,
+        }
+        fn default_virtual_width() -> f32 {
+            1920.0
+        }
+        fn default_virtual_height() -> f32 {
+            1080.0
+        }
+        fn default_msaa_str() -> String {
+            "on".into()
+        }
+        let d = GraphicsSectionDe::deserialize(deserializer)?;
+        Ok(Self {
+            virtual_width: d.virtual_width,
+            virtual_height: d.virtual_height,
+            msaa: Cow::Owned(d.msaa),
+        })
+    }
+}
+
+/// `[project]` section — Cow so static project can use borrowed strings.
+#[derive(Clone)]
 struct ProjectSection {
-    name: String,
-    version: String,
-    main_scene: String,
-    #[serde(default)]
-    icon: Option<String>,
+    name: Cow<'static, str>,
+    version: Cow<'static, str>,
+    main_scene: Cow<'static, str>,
+    icon: Option<Cow<'static, str>>,
+}
+
+impl<'de> Deserialize<'de> for ProjectSection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct ProjectSectionDe {
+            name: String,
+            version: String,
+            main_scene: String,
+            #[serde(default)]
+            icon: Option<String>,
+        }
+        let d = ProjectSectionDe::deserialize(deserializer)?;
+        Ok(Self {
+            name: Cow::Owned(d.name),
+            version: Cow::Owned(d.version),
+            main_scene: Cow::Owned(d.main_scene),
+            icon: d.icon.map(Cow::Owned),
+        })
+    }
 }
 
 /// `[performance]` section
@@ -72,29 +182,70 @@ struct PerformanceSection {
     xps: f32,
 }
 
-/// `[root]` section
-#[derive(Deserialize, Default, Clone)]
-struct RootSection {
-    #[serde(default)]
-    script: Option<String>, // e.g. "res://start.pup"
+/// `[metadata]` section — Static CowMap when compiled, owned HashMap when loaded (no leak).
+#[derive(Clone)]
+struct MetadataSection {
+    data: MetadataStorage,
 }
 
-/// `[metadata]` section
-#[derive(Deserialize, Default, Clone)]
-struct MetadataSection {
-    #[serde(flatten)]
-    data: HashMap<String, String>,
+impl Default for MetadataSection {
+    fn default() -> Self {
+        Self {
+            data: MetadataStorage::Owned(HashMap::new()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MetadataSection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let m: HashMap<String, String> = HashMap::deserialize(deserializer)?;
+        Ok(MetadataSection {
+            data: MetadataStorage::Owned(m),
+        })
+    }
+}
+
+/// Runtime params storage: static ref (const fn, no alloc) or owned HashMap (loaded/mutated).
+#[derive(Clone)]
+enum RuntimeParamsStorage {
+    Static(&'static RuntimeParamsMap),
+    Owned(HashMap<String, String>),
+}
+
+/// Input storage: static PHF ref (compiled, no alloc) or owned HashMap (loaded).
+#[derive(Clone)]
+enum InputStorage {
+    Static(&'static phf::Map<&'static str, &'static [&'static str]>),
+    Owned(HashMap<String, Vec<String>>),
 }
 
 /// `[input]` section - maps action names to input sources
-/// Example:
-/// [input]
-/// jump = ["Space", "Up", "MouseLeft"]
-/// fire = ["MouseLeft", "KeyF"]
-#[derive(Deserialize, Default, Clone)]
+#[derive(Clone)]
 struct InputSection {
-    #[serde(flatten)]
-    actions: HashMap<String, Vec<String>>,
+    storage: InputStorage,
+}
+
+impl Default for InputSection {
+    fn default() -> Self {
+        Self {
+            storage: InputStorage::Owned(HashMap::new()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for InputSection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let m: HashMap<String, Vec<String>> = HashMap::deserialize(deserializer)?;
+        Ok(Self {
+            storage: InputStorage::Owned(m),
+        })
+    }
 }
 
 // Default constants
@@ -110,7 +261,7 @@ fn default_xps() -> f32 {
 pub struct Project {
     root: Option<PathBuf>, // only meaningful in dev/disk mode
     settings: ProjectSettings,
-    runtime_params: HashMap<String, String>,
+    runtime_params: RuntimeParamsStorage,
 }
 
 impl Project {
@@ -118,60 +269,50 @@ impl Project {
     // ==================== Constructors =====================
     // ======================================================
 
-    /// Creates a static, embedded project (for compile-time manifests)
-    pub fn new_static(
-        name: impl Into<String>,
-        version: impl Into<String>,
-        main_scene: impl Into<String>,
-        icon: Option<String>,
+    /// Creates a static, embedded project (all borrowed; no allocation). Const fn so
+    /// `pub static PERRO_PROJECT: Project = Project::new_static(...)` works without Lazy.
+    pub const fn new_static(
+        name: &'static str,
+        version: &'static str,
+        main_scene: &'static str,
+        icon: Option<&'static str>,
         fps_cap: f32,
         xps: f32,
         virtual_width: f32,
         virtual_height: f32,
-        root_script: Option<String>,
-        metadata: &phf::Map<&'static str, &'static str>,
-        input_actions: &phf::Map<&'static str, &'static [&'static str]>,
+        msaa: &'static str,
+        metadata: &'static MetadataMap,
+        input_actions: &'static phf::Map<&'static str, &'static [&'static str]>,
+        runtime_params: &'static RuntimeParamsMap,
     ) -> Self {
-        let mut meta = HashMap::new();
-
-        // Copy PHF map entries into HashMap
-        for (key, value) in metadata.entries() {
-            meta.insert(key.to_string(), value.to_string());
-        }
-
-        // Copy input actions from PHF map into HashMap
-        let mut input_map = HashMap::new();
-        for (action_name, sources) in input_actions.entries() {
-            input_map.insert(
-                action_name.to_string(),
-                sources.iter().map(|s| s.to_string()).collect(),
-            );
-        }
-
         let settings = ProjectSettings {
             project: ProjectSection {
-                name: name.into(),
-                version: version.into(),
-                main_scene: main_scene.into(),
-                icon,
+                name: Cow::Borrowed(name),
+                version: Cow::Borrowed(version),
+                main_scene: Cow::Borrowed(main_scene),
+                icon: match icon {
+                    Some(s) => Some(Cow::Borrowed(s)),
+                    None => None,
+                },
             },
             performance: PerformanceSection { fps_cap, xps },
             graphics: GraphicsSection {
                 virtual_width,
                 virtual_height,
-                msaa: default_msaa(),
+                msaa: Cow::Borrowed(msaa),
             },
-            root: RootSection {
-                script: root_script,
+            meta: MetadataSection {
+                data: MetadataStorage::Static(metadata),
             },
-            meta: MetadataSection { data: meta },
-            input: InputSection { actions: input_map },
+            input: InputSection {
+                storage: InputStorage::Static(input_actions),
+            },
         };
 
         Self {
             root: None,
             settings,
-            runtime_params: HashMap::new(),
+            runtime_params: RuntimeParamsStorage::Static(runtime_params),
         }
     }
 
@@ -204,7 +345,7 @@ impl Project {
         Ok(Self {
             root: root.map(|r| r.as_ref().to_path_buf()),
             settings,
-            runtime_params: HashMap::new(),
+            runtime_params: RuntimeParamsStorage::Owned(HashMap::new()),
         })
     }
 
@@ -219,7 +360,7 @@ impl Project {
         Ok(Self {
             root,
             settings,
-            runtime_params: HashMap::new(),
+            runtime_params: RuntimeParamsStorage::Owned(HashMap::new()),
         })
     }
 
@@ -244,7 +385,7 @@ impl Project {
 
     #[inline]
     pub fn icon(&self) -> Option<String> {
-        self.settings.project.icon.clone()
+        self.settings.project.icon.as_ref().map(|c| c.to_string())
     }
 
     #[inline]
@@ -272,6 +413,12 @@ impl Project {
         self.settings.graphics.virtual_height
     }
 
+    /// Raw MSAA string from [graphics]: "off" or "on".
+    #[inline]
+    pub fn msaa(&self) -> &str {
+        self.settings.graphics.msaa.as_ref()
+    }
+
     /// MSAA sample count from [graphics] msaa: "off" => 1, "on" => 4 (case-insensitive).
     #[inline]
     pub fn msaa_samples(&self) -> u32 {
@@ -282,28 +429,32 @@ impl Project {
         }
     }
 
-    #[inline]
-    pub fn root_script(&self) -> Option<&str> {
-        self.settings.root.script.as_deref()
-    }
-
     // ======================================================
     // ================== Metadata Access ====================
     // ======================================================
 
     #[inline]
     pub fn get_meta(&self, key: &str) -> Option<&str> {
-        self.settings.meta.data.get(key).map(|s| s.as_str())
+        match &self.settings.meta.data {
+            MetadataStorage::Static(m) => m.get(key).map(Cow::as_ref),
+            MetadataStorage::Owned(m) => m.get(key).map(String::as_str),
+        }
     }
 
     #[inline]
-    pub fn metadata(&self) -> &HashMap<String, String> {
-        &self.settings.meta.data
+    pub fn metadata(&self) -> MetadataRef<'_> {
+        match &self.settings.meta.data {
+            MetadataStorage::Static(m) => MetadataRef::Static(m),
+            MetadataStorage::Owned(m) => MetadataRef::Owned(m),
+        }
     }
 
     #[inline]
     pub fn has_meta(&self, key: &str) -> bool {
-        self.settings.meta.data.contains_key(key)
+        match &self.settings.meta.data {
+            MetadataStorage::Static(m) => m.contains_key(key),
+            MetadataStorage::Owned(m) => m.contains_key(key),
+        }
     }
 
     // ======================================================
@@ -312,22 +463,22 @@ impl Project {
 
     #[inline]
     pub fn set_name(&mut self, name: impl Into<String>) {
-        self.settings.project.name = name.into();
+        self.settings.project.name = Cow::Owned(name.into());
     }
 
     #[inline]
     pub fn set_version(&mut self, version: impl Into<String>) {
-        self.settings.project.version = version.into();
+        self.settings.project.version = Cow::Owned(version.into());
     }
 
     #[inline]
     pub fn set_main_scene(&mut self, path: impl Into<String>) {
-        self.settings.project.main_scene = path.into();
+        self.settings.project.main_scene = Cow::Owned(path.into());
     }
 
     #[inline]
     pub fn set_icon(&mut self, path: Option<String>) {
-        self.settings.project.icon = path;
+        self.settings.project.icon = path.map(Cow::Owned);
     }
 
     #[inline]
@@ -351,18 +502,19 @@ impl Project {
     }
 
     #[inline]
-    pub fn set_root_script(&mut self, script: Option<String>) {
-        self.settings.root.script = script;
-    }
-
-    #[inline]
     pub fn set_meta(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        self.settings.meta.data.insert(key.into(), value.into());
+        if let MetadataStorage::Owned(m) = &mut self.settings.meta.data {
+            m.insert(key.into(), value.into());
+        }
+        // Static metadata is immutable at runtime; no-op
     }
 
     #[inline]
     pub fn remove_meta(&mut self, key: &str) -> Option<String> {
-        self.settings.meta.data.remove(key)
+        match &mut self.settings.meta.data {
+            MetadataStorage::Static(_) => None,
+            MetadataStorage::Owned(m) => m.remove(key),
+        }
     }
 
     // ======================================================
@@ -371,49 +523,91 @@ impl Project {
 
     #[inline]
     pub fn set_runtime_param(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        self.runtime_params.insert(key.into(), value.into());
+        let key = key.into();
+        let value = value.into();
+        match &mut self.runtime_params {
+            RuntimeParamsStorage::Static(_) => {
+                let mut hm = HashMap::new();
+                hm.insert(key, value);
+                self.runtime_params = RuntimeParamsStorage::Owned(hm);
+            }
+            RuntimeParamsStorage::Owned(hm) => {
+                hm.insert(key, value);
+            }
+        }
     }
 
     #[inline]
     pub fn get_runtime_param(&self, key: &str) -> Option<&str> {
-        self.runtime_params.get(key).map(|s| s.as_str())
+        match &self.runtime_params {
+            RuntimeParamsStorage::Static(m) => m.get(key).map(Cow::as_ref),
+            RuntimeParamsStorage::Owned(m) => m.get(key).map(String::as_str),
+        }
     }
 
     #[inline]
-    pub fn runtime_params(&self) -> &HashMap<String, String> {
-        &self.runtime_params
+    pub fn runtime_params(&self) -> RuntimeParamsRef<'_> {
+        match &self.runtime_params {
+            RuntimeParamsStorage::Static(m) => RuntimeParamsRef::Static(m),
+            RuntimeParamsStorage::Owned(m) => RuntimeParamsRef::Owned(m),
+        }
     }
 
     // ======================================================
     // ================= Input Mapping ======================
     // ======================================================
 
-    /// Get the input action map parsed from project.toml
+    /// Get the input action map parsed from project.toml (or static manifest)
     pub fn get_input_map(&self) -> InputMap {
         let mut input_map = InputMap::new();
-
-        for (action_name, sources) in &self.settings.input.actions {
-            let mut parsed_sources = Vec::new();
-            for source_str in sources {
-                if let Some(source) = parse_input_source(source_str) {
-                    parsed_sources.push(source);
-                } else {
-                    eprintln!(
-                        "Warning: Unknown input source '{}' for action '{}'",
-                        source_str, action_name
-                    );
+        match &self.settings.input.storage {
+            InputStorage::Static(phf_map) => {
+                for (action_name, sources) in phf_map.entries() {
+                    let mut parsed_sources = Vec::new();
+                    for source_str in *sources {
+                        if let Some(source) = parse_input_source(source_str) {
+                            parsed_sources.push(source);
+                        } else {
+                            eprintln!(
+                                "Warning: Unknown input source '{}' for action '{}'",
+                                source_str, action_name
+                            );
+                        }
+                    }
+                    if !parsed_sources.is_empty() {
+                        input_map.insert((*action_name).to_string(), parsed_sources);
+                    }
                 }
             }
-            if !parsed_sources.is_empty() {
-                input_map.insert(action_name.clone(), parsed_sources);
+            InputStorage::Owned(hm) => {
+                for (action_name, sources) in hm {
+                    let mut parsed_sources = Vec::new();
+                    for source_str in sources {
+                        if let Some(source) = parse_input_source(source_str) {
+                            parsed_sources.push(source);
+                        } else {
+                            eprintln!(
+                                "Warning: Unknown input source '{}' for action '{}'",
+                                source_str, action_name
+                            );
+                        }
+                    }
+                    if !parsed_sources.is_empty() {
+                        input_map.insert(action_name.clone(), parsed_sources);
+                    }
+                }
             }
         }
-
         input_map
     }
 
-    /// Get the raw input actions as strings (for serialization)
+    /// Get the raw input actions (for compiler codegen; only used on loaded projects).
     pub fn get_input_actions(&self) -> &HashMap<String, Vec<String>> {
-        &self.settings.input.actions
+        match &self.settings.input.storage {
+            InputStorage::Static(_) => {
+                panic!("get_input_actions() only supported for loaded projects, not static")
+            }
+            InputStorage::Owned(hm) => hm,
+        }
     }
 }

@@ -167,7 +167,9 @@ pub fn load_gltf_mesh(bytes: &[u8], mesh_name: Option<&str>) -> Option<(Vec<Vert
             .find(|m| m.name().as_deref() == Some(name))
             .or_else(|| {
                 // Fallback: "0", "1", ... select mesh by index (res://model.glb:1 = second mesh)
-                name.parse::<usize>().ok().and_then(|idx| gltf.meshes().nth(idx))
+                name.parse::<usize>()
+                    .ok()
+                    .and_then(|idx| gltf.meshes().nth(idx))
             })?
     } else {
         gltf.meshes().next()?
@@ -196,9 +198,7 @@ pub fn list_gltf_mesh_names(bytes: &[u8]) -> Option<Vec<(usize, String)>> {
 
 /// Load all meshes from a GLTF/GLB (for codegen: one static entry per mesh, keyed by model_path:mesh_name).
 /// Returns (mesh_name, vertices, indices) for each mesh; name is mesh.name() or "Mesh_0", "Mesh_1", ...
-pub fn load_gltf_model_all_meshes(
-    bytes: &[u8],
-) -> Option<Vec<(String, Vec<Vertex3D>, Vec<u32>)>> {
+pub fn load_gltf_model_all_meshes(bytes: &[u8]) -> Option<Vec<(String, Vec<Vertex3D>, Vec<u32>)>> {
     let gltf = gltf::Gltf::from_slice(bytes).ok()?;
     let blob = gltf.blob.as_deref()?;
 

@@ -55,7 +55,7 @@ pub struct Node2D {
 
     /// Cached list of child IDs that are Node2D-based (for performance optimization)
     /// This avoids hashmap lookups when marking transforms dirty recursively
-    /// Updated when children are added/removed
+    /// Updated when children are added/removed. Always None at codegen; populated at runtime.
     #[serde(skip, default)]
     pub node2d_children_cache: Option<Vec<crate::ids::NodeID>>,
 

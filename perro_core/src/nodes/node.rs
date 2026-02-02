@@ -1,5 +1,6 @@
 // node.rs
 use crate::ids::NodeID;
+use cow_map::CowMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::{
@@ -10,11 +11,159 @@ use std::{
 
 use crate::node_registry::NodeType;
 
-/// Value for script_exp_vars: either a JSON value or a node reference (NodeID).
-/// At runtime we detect NodeRef and remap to the actual runtime NodeID.
+/// Const-friendly JSON number for script_exp_vars (no heap, no serde_json in generated project).
 #[derive(Clone, Debug, PartialEq)]
+pub enum JsonNumber {
+    I64(i64),
+    U64(u64),
+    F64(f64),
+}
+
+impl JsonNumber {
+    pub const fn i64(n: i64) -> Self {
+        JsonNumber::I64(n)
+    }
+    pub const fn u64(n: u64) -> Self {
+        JsonNumber::U64(n)
+    }
+    pub fn f64(n: f64) -> Self {
+        JsonNumber::F64(if n.is_finite() { n } else { 0.0 })
+    }
+    fn to_serde_number(&self) -> serde_json::Number {
+        match self {
+            JsonNumber::I64(i) => serde_json::Number::from(*i),
+            JsonNumber::U64(u) => serde_json::Number::from(*u),
+            JsonNumber::F64(f) => {
+                serde_json::Number::from_f64(*f).unwrap_or(serde_json::Number::from(0))
+            }
+        }
+    }
+}
+
+/// Const-friendly JSON value for metadata (no NodeRef, no serde_json in generated project).
+/// Same shape as ScriptExpVarValue but without NodeRef.
+#[derive(Clone, Debug)]
+pub enum MetadataValue {
+    Null,
+    Bool(bool),
+    Number(JsonNumber),
+    String(Cow<'static, str>),
+    Array(Cow<'static, [MetadataValue]>),
+    Object(CowMap<Cow<'static, str>, MetadataValue>),
+}
+
+impl MetadataValue {
+    pub fn to_json_value(&self) -> Value {
+        match self {
+            MetadataValue::Null => Value::Null,
+            MetadataValue::Bool(b) => Value::Bool(*b),
+            MetadataValue::Number(n) => Value::Number(n.to_serde_number()),
+            MetadataValue::String(s) => Value::String(s.to_string()),
+            MetadataValue::Array(a) => {
+                Value::Array(a.iter().map(MetadataValue::to_json_value).collect())
+            }
+            MetadataValue::Object(m) => Value::Object(
+                m.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_json_value()))
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn from_json_value(v: &Value) -> Self {
+        match v {
+            Value::Null => MetadataValue::Null,
+            Value::Bool(b) => MetadataValue::Bool(*b),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    MetadataValue::Number(JsonNumber::I64(i))
+                } else if let Some(u) = n.as_u64() {
+                    MetadataValue::Number(JsonNumber::U64(u))
+                } else {
+                    MetadataValue::Number(JsonNumber::F64(n.as_f64().unwrap_or(0.0)))
+                }
+            }
+            Value::String(s) => MetadataValue::String(Cow::Owned(s.clone())),
+            Value::Array(arr) => MetadataValue::Array(Cow::Owned(
+                arr.iter().map(MetadataValue::from_json_value).collect(),
+            )),
+            Value::Object(obj) => MetadataValue::Object(CowMap::from(
+                obj.iter()
+                    .map(|(k, v)| (Cow::Owned(k.clone()), MetadataValue::from_json_value(v)))
+                    .collect::<HashMap<_, _>>(),
+            )),
+        }
+    }
+
+    pub const fn null() -> Self {
+        MetadataValue::Null
+    }
+    pub const fn bool(b: bool) -> Self {
+        MetadataValue::Bool(b)
+    }
+    pub const fn number_i64(i: i64) -> Self {
+        MetadataValue::Number(JsonNumber::I64(i))
+    }
+    pub const fn number_u64(u: u64) -> Self {
+        MetadataValue::Number(JsonNumber::U64(u))
+    }
+    pub fn number_f64(f: f64) -> Self {
+        MetadataValue::Number(JsonNumber::f64(f))
+    }
+    pub fn string(s: impl Into<Cow<'static, str>>) -> Self {
+        MetadataValue::String(s.into())
+    }
+    pub fn array(arr: impl IntoIterator<Item = MetadataValue>) -> Self {
+        MetadataValue::Array(Cow::Owned(arr.into_iter().collect()))
+    }
+    pub fn object(entries: impl IntoIterator<Item = (Cow<'static, str>, MetadataValue)>) -> Self {
+        MetadataValue::Object(CowMap::from(
+            entries
+                .into_iter()
+                .collect::<HashMap<Cow<'static, str>, MetadataValue>>(),
+        ))
+    }
+}
+
+impl PartialEq for MetadataValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (MetadataValue::Null, MetadataValue::Null) => true,
+            (MetadataValue::Bool(a), MetadataValue::Bool(b)) => a == b,
+            (MetadataValue::Number(a), MetadataValue::Number(b)) => a == b,
+            (MetadataValue::String(a), MetadataValue::String(b)) => a == b,
+            (MetadataValue::Array(a), MetadataValue::Array(b)) => a == b,
+            (MetadataValue::Object(a), MetadataValue::Object(b)) => {
+                a.to_hashmap() == b.to_hashmap()
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Serialize for MetadataValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_json_value().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MetadataValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let v = Value::deserialize(deserializer)?;
+        Ok(MetadataValue::from_json_value(&v))
+    }
+}
+
+/// Value for script_exp_vars: const-friendly representation (Cow/slices/CowMap) or NodeRef.
+/// At runtime we detect NodeRef and remap to the actual runtime NodeID.
+#[derive(Clone, Debug)]
 pub enum ScriptExpVarValue {
-    Value(Value),
+    Null,
+    Bool(bool),
+    Number(JsonNumber),
+    String(Cow<'static, str>),
+    Array(Cow<'static, [ScriptExpVarValue]>),
+    Object(CowMap<Cow<'static, str>, ScriptExpVarValue>),
     NodeRef(NodeID),
 }
 
@@ -22,7 +171,18 @@ impl ScriptExpVarValue {
     /// Convert to serde_json::Value for the script API (apply_exposed). NodeRef becomes hex string.
     pub fn to_json_value(&self) -> Value {
         match self {
-            ScriptExpVarValue::Value(v) => v.clone(),
+            ScriptExpVarValue::Null => Value::Null,
+            ScriptExpVarValue::Bool(b) => Value::Bool(*b),
+            ScriptExpVarValue::Number(n) => Value::Number(n.to_serde_number()),
+            ScriptExpVarValue::String(s) => Value::String(s.to_string()),
+            ScriptExpVarValue::Array(a) => {
+                Value::Array(a.iter().map(ScriptExpVarValue::to_json_value).collect())
+            }
+            ScriptExpVarValue::Object(m) => Value::Object(
+                m.iter()
+                    .map(|(k, v)| (k.to_string(), v.to_json_value()))
+                    .collect(),
+            ),
             ScriptExpVarValue::NodeRef(id) => Value::String(format!("{:016x}", id.as_u64())),
         }
     }
@@ -34,52 +194,85 @@ impl ScriptExpVarValue {
                 return ScriptExpVarValue::NodeRef(id);
             }
         }
-        ScriptExpVarValue::Value(v.clone())
+        match v {
+            Value::Null => ScriptExpVarValue::Null,
+            Value::Bool(b) => ScriptExpVarValue::Bool(*b),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    ScriptExpVarValue::Number(JsonNumber::I64(i))
+                } else if let Some(u) = n.as_u64() {
+                    ScriptExpVarValue::Number(JsonNumber::U64(u))
+                } else {
+                    ScriptExpVarValue::Number(JsonNumber::F64(n.as_f64().unwrap_or(0.0)))
+                }
+            }
+            Value::String(s) => ScriptExpVarValue::String(Cow::Owned(s.clone())),
+            Value::Array(arr) => ScriptExpVarValue::Array(Cow::Owned(
+                arr.iter().map(ScriptExpVarValue::from_json_value).collect(),
+            )),
+            Value::Object(obj) => ScriptExpVarValue::Object(CowMap::from(
+                obj.iter()
+                    .map(|(k, v)| (Cow::Owned(k.clone()), ScriptExpVarValue::from_json_value(v)))
+                    .collect::<HashMap<_, _>>(),
+            )),
+        }
     }
 
-    // --- Constructors for codegen: no serde_json in generated project ---
+    // --- Constructors for codegen: const-friendly, no serde_json in generated project ---
 
-    pub fn null() -> Self {
-        ScriptExpVarValue::Value(Value::Null)
+    pub const fn null() -> Self {
+        ScriptExpVarValue::Null
     }
 
-    pub fn bool(b: bool) -> Self {
-        ScriptExpVarValue::Value(Value::Bool(b))
+    pub const fn bool(b: bool) -> Self {
+        ScriptExpVarValue::Bool(b)
     }
 
-    pub fn number_i64(i: i64) -> Self {
-        ScriptExpVarValue::Value(Value::Number(serde_json::Number::from(i)))
+    pub const fn number_i64(i: i64) -> Self {
+        ScriptExpVarValue::Number(JsonNumber::I64(i))
     }
 
-    pub fn number_u64(u: u64) -> Self {
-        ScriptExpVarValue::Value(Value::Number(serde_json::Number::from(u)))
+    pub const fn number_u64(u: u64) -> Self {
+        ScriptExpVarValue::Number(JsonNumber::U64(u))
     }
 
     pub fn number_f64(f: f64) -> Self {
-        ScriptExpVarValue::Value(Value::Number(
-            serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)),
-        ))
+        ScriptExpVarValue::Number(JsonNumber::f64(f))
     }
 
     pub fn string(s: impl Into<Cow<'static, str>>) -> Self {
-        ScriptExpVarValue::Value(Value::String(s.into().into_owned()))
+        ScriptExpVarValue::String(s.into())
     }
 
     pub fn array(arr: impl IntoIterator<Item = ScriptExpVarValue>) -> Self {
-        ScriptExpVarValue::Value(Value::Array(
-            arr.into_iter().map(|v| v.to_json_value()).collect(),
-        ))
+        ScriptExpVarValue::Array(Cow::Owned(arr.into_iter().collect()))
     }
 
     pub fn object(
         entries: impl IntoIterator<Item = (Cow<'static, str>, ScriptExpVarValue)>,
     ) -> Self {
-        ScriptExpVarValue::Value(Value::Object(
+        ScriptExpVarValue::Object(CowMap::from(
             entries
                 .into_iter()
-                .map(|(k, v)| (k.into_owned(), v.to_json_value()))
-                .collect(),
+                .collect::<HashMap<Cow<'static, str>, ScriptExpVarValue>>(),
         ))
+    }
+}
+
+impl PartialEq for ScriptExpVarValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ScriptExpVarValue::Null, ScriptExpVarValue::Null) => true,
+            (ScriptExpVarValue::Bool(a), ScriptExpVarValue::Bool(b)) => a == b,
+            (ScriptExpVarValue::Number(a), ScriptExpVarValue::Number(b)) => a == b,
+            (ScriptExpVarValue::String(a), ScriptExpVarValue::String(b)) => a == b,
+            (ScriptExpVarValue::Array(a), ScriptExpVarValue::Array(b)) => a == b,
+            (ScriptExpVarValue::Object(a), ScriptExpVarValue::Object(b)) => {
+                a.to_hashmap() == b.to_hashmap()
+            }
+            (ScriptExpVarValue::NodeRef(a), ScriptExpVarValue::NodeRef(b)) => a == b,
+            _ => false,
+        }
     }
 }
 
@@ -88,13 +281,7 @@ impl Serialize for ScriptExpVarValue {
     where
         S: Serializer,
     {
-        match self {
-            ScriptExpVarValue::Value(v) => v.serialize(serializer),
-            // Store as {"@node": scene_key} for round-trip (scene key is id.index())
-            ScriptExpVarValue::NodeRef(id) => {
-                serde_json::json!({ "@node": id.index() }).serialize(serializer)
-            }
-        }
+        self.to_json_value().serialize(serializer)
     }
 }
 
@@ -113,7 +300,7 @@ impl<'de> Deserialize<'de> for ScriptExpVarValue {
         if let Some(key) = key_opt {
             return Ok(ScriptExpVarValue::NodeRef(NodeID::from_u32(key)));
         }
-        Ok(ScriptExpVarValue::Value(v))
+        Ok(ScriptExpVarValue::from_json_value(&v))
     }
 }
 
@@ -188,7 +375,74 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+fn deserialize_script_exp_vars<'de, D>(
+    deserializer: D,
+) -> Result<Option<CowMap<&'static str, ScriptExpVarValue>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<HashMap<String, ScriptExpVarValue>> = Option::deserialize(deserializer)?;
+    Ok(opt.map(|hm| {
+        CowMap::from(
+            hm.into_iter()
+                .map(|(k, v)| (&*Box::leak(k.into_boxed_str()), v))
+                .collect::<HashMap<&'static str, ScriptExpVarValue>>(),
+        )
+    }))
+}
+
+fn serialize_script_exp_vars<S>(
+    value: &Option<CowMap<&'static str, ScriptExpVarValue>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let opt = value.as_ref().map(|m| {
+        m.iter()
+            .map(|(k, v)| (k.to_string(), v.to_json_value()))
+            .collect::<HashMap<String, Value>>()
+    });
+    opt.serialize(serializer)
+}
+
+fn deserialize_metadata<'de, D>(
+    deserializer: D,
+) -> Result<Option<CowMap<&'static str, MetadataValue>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<HashMap<String, Value>> = Option::deserialize(deserializer)?;
+    Ok(opt.map(|hm| {
+        CowMap::from(
+            hm.into_iter()
+                .map(|(k, v)| {
+                    (
+                        &*Box::leak(k.into_boxed_str()),
+                        MetadataValue::from_json_value(&v),
+                    )
+                })
+                .collect::<HashMap<&'static str, MetadataValue>>(),
+        )
+    }))
+}
+
+fn serialize_metadata<S>(
+    value: &Option<CowMap<&'static str, MetadataValue>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let opt = value.as_ref().map(|m| {
+        m.iter()
+            .map(|(k, v)| (k.to_string(), v.to_json_value()))
+            .collect::<HashMap<String, Value>>()
+    });
+    opt.serialize(serializer)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Node {
     #[serde(skip)]
     pub id: NodeID,
@@ -201,8 +455,13 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_path: Option<Cow<'static, str>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub script_exp_vars: Option<HashMap<Cow<'static, str>, ScriptExpVarValue>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_script_exp_vars",
+        serialize_with = "serialize_script_exp_vars"
+    )]
+    pub script_exp_vars: Option<CowMap<&'static str, ScriptExpVarValue>>,
 
     #[serde(
         rename = "parent",
@@ -213,16 +472,19 @@ pub struct Node {
     pub parent: Option<ParentType>,
 
     #[serde(skip)]
-    pub children: Option<Vec<NodeID>>,
+    pub children: Option<Cow<'static, [NodeID]>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<HashMap<String, Value>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_metadata",
+        serialize_with = "serialize_metadata"
+    )]
+    pub metadata: Option<CowMap<&'static str, MetadataValue>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_root_of: Option<Cow<'static, str>>,
 
-    /// Timestamp when the node was created (Unix time in seconds as u64)
-    /// Used for tie-breaking when z_index values are the same (newer nodes render above older)
     #[serde(skip)]
     pub created_timestamp: u64,
 }
@@ -273,5 +535,22 @@ impl Node {
             is_root_of: None,
             created_timestamp: timestamp,
         }
+    }
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.ty == other.ty
+            && self.name == other.name
+            && self.script_path == other.script_path
+            && self.script_exp_vars.as_ref().map(|m| m.to_hashmap())
+                == other.script_exp_vars.as_ref().map(|m| m.to_hashmap())
+            && self.parent == other.parent
+            && self.children.as_deref() == other.children.as_deref()
+            && self.metadata.as_ref().map(|m| m.to_hashmap())
+                == other.metadata.as_ref().map(|m| m.to_hashmap())
+            && self.is_root_of == other.is_root_of
+            && self.created_timestamp == other.created_timestamp
     }
 }

@@ -1,5 +1,7 @@
 use crate::ids::UIElementID;
-use std::{borrow::Cow, collections::HashMap, time::Instant};
+use cow_map::CowMap;
+use std::collections::HashMap;
+use std::{borrow::Cow, time::Instant};
 
 use crate::{
     asset_io::load_asset,
@@ -55,14 +57,16 @@ fn parse_opacity(v: &str) -> Option<f32> {
 // =================== FILE PARSING ===================
 
 use once_cell::sync::Lazy;
+use phf;
 use std::sync::RwLock;
 
 // Global registry for statically compiled FUR (used in release mode)
-static STATIC_FUR_MAP: Lazy<RwLock<Option<&'static HashMap<&'static str, &'static [FurElement]>>>> =
-    Lazy::new(|| RwLock::new(None));
+static STATIC_FUR_MAP: Lazy<
+    RwLock<Option<&'static phf::Map<&'static str, &'static [FurElement]>>>,
+> = Lazy::new(|| RwLock::new(None));
 
 /// Set the static FUR map (called by runtime at startup in release mode)
-pub fn set_static_fur_map(map: &'static HashMap<&'static str, &'static [FurElement]>) {
+pub fn set_static_fur_map(map: &'static phf::Map<&'static str, &'static [FurElement]>) {
     *STATIC_FUR_MAP.write().unwrap() = Some(map);
 }
 
@@ -144,7 +148,7 @@ fn parse_compound(value: &str) -> (Option<&str>, Option<&str>) {
 
 fn apply_base_attributes(
     base: &mut BaseUIElement,
-    attrs: &HashMap<Cow<'static, str>, Cow<'static, str>>,
+    attrs: &CowMap<&'static str, Cow<'static, str>>,
 ) {
     base.style_map.clear();
     // Pre-allocate style_map capacity based on number of attributes (heuristic: ~30% will be style attributes)
@@ -437,7 +441,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             // Extract text content from children and trim whitespace
             // Optimized: collect directly into String without intermediate Vec
             let mut text_content = String::new();
-            for n in &fur.children {
+            for n in fur.children.iter() {
                 if let FurNode::Text(s) = n {
                     text_content.push_str(s.as_ref());
                 }
@@ -620,10 +624,10 @@ fn convert_fur_element_to_ui_elements_with_includes(
 
     // Panels and Buttons are now fully compositional - they only accept explicit child elements
     // Text nodes are IGNORED - you must use [Text] elements explicitly
-    for child in &fur.children {
+    for child in fur.children.iter() {
         if let FurNode::Element(e) = child {
             let child_nodes =
-                convert_fur_element_to_ui_elements_with_includes(e, Some(id), included_paths);
+                convert_fur_element_to_ui_elements_with_includes(&e, Some(id), included_paths);
             if let Some((cid, _)) = child_nodes.first() {
                 children.push(*cid);
             }
@@ -664,9 +668,10 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
     let _element_count = elements.len();
 
     // Store initial z-indices for all elements to prevent accumulation
-    ui.initial_z_indices.clear();
+    let map = ui.initial_z_indices.get_or_insert_with(HashMap::new);
+    map.clear();
     for (id, element) in elements.iter() {
-        ui.initial_z_indices.insert(*id, element.get_z_index());
+        map.insert(*id, element.get_z_index());
     }
 
     // Mark all newly created elements as needing rerender so they get rendered
@@ -694,7 +699,9 @@ pub fn append_fur_elements_to_ui(
             let flat = convert_fur_element_to_ui_elements(el, parent_id);
             for (id, e) in flat {
                 // Store initial z-index for new element
-                ui.initial_z_indices.insert(id, e.get_z_index());
+                ui.initial_z_indices
+                    .get_or_insert_with(HashMap::new)
+                    .insert(id, e.get_z_index());
 
                 // Get the actual parent ID from the element (might be set during conversion)
                 let actual_parent_id = e.get_parent();

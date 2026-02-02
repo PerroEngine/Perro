@@ -22,8 +22,8 @@ impl StaticMeshData {
         use bytemuck::cast_slice;
         use wgpu::util::DeviceExt;
 
-        let decompressed = zstd::stream::decode_all(self.mesh_bytes)
-            .expect("static mesh Zstd decompress");
+        let decompressed =
+            zstd::stream::decode_all(self.mesh_bytes).expect("static mesh Zstd decompress");
         let vertex_byte_len = (self.vertex_count as usize) * std::mem::size_of::<Vertex3D>();
         let (vertex_slice, index_slice) = decompressed.split_at(vertex_byte_len);
         let vertices: &[Vertex3D] = cast_slice(vertex_slice);

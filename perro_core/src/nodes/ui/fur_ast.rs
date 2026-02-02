@@ -1,5 +1,6 @@
+use cow_map::CowMap;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
 pub enum FurNode {
@@ -11,8 +12,8 @@ pub enum FurNode {
 pub struct FurElement {
     pub tag_name: Cow<'static, str>,
     pub id: Cow<'static, str>,
-    pub attributes: HashMap<Cow<'static, str>, Cow<'static, str>>,
-    pub children: Vec<FurNode>,
+    pub attributes: CowMap<&'static str, Cow<'static, str>>,
+    pub children: Cow<'static, [FurNode]>,
     pub self_closing: bool,
 }
 

@@ -2339,8 +2339,14 @@ impl<'a> ScriptApi<'a> {
 
     /// Queue a script function call for end of frame. Processed after update, same as deferred signals.
     #[cfg_attr(not(debug_assertions), inline)]
-    pub fn call_function_id_deferred(&mut self, node_id: NodeID, function_id: u64, params: &[Value]) {
-        self.scene.call_function_id_deferred(node_id, function_id, params);
+    pub fn call_function_id_deferred(
+        &mut self,
+        node_id: NodeID,
+        function_id: u64,
+        params: &[Value],
+    ) {
+        self.scene
+            .call_function_id_deferred(node_id, function_id, params);
     }
 
     /// Queue a script function call by name for end of frame. Same as call_function_id_deferred with string_to_u64(name).
@@ -2348,7 +2354,8 @@ impl<'a> ScriptApi<'a> {
     #[cfg_attr(not(debug_assertions), inline)]
     pub fn call_deferred_function(&mut self, node_id: NodeID, name: &str, params: &[Value]) {
         let func_id = string_to_u64(name);
-        self.scene.call_function_id_deferred(node_id, func_id, params);
+        self.scene
+            .call_function_id_deferred(node_id, func_id, params);
     }
 
     /// Alias for call_deferred_function (used by codegen for dynamic function names).
@@ -2697,7 +2704,7 @@ impl<'a> ScriptApi<'a> {
             );
             eprintln!(
                 "🔧 [add_ui_element] needs_rerender now has {} elements",
-                ui.needs_rerender.len()
+                ui.needs_rerender.as_ref().map_or(0, |s| s.len())
             );
 
             Some(element_id)

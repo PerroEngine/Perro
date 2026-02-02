@@ -1,8 +1,0 @@
-@script P2 extends Node2D
-
-on update() {
-    var delta = Time.get_delta()
-
-    self.transform.position.y -= 50 * delta
-
-}

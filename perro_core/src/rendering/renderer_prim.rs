@@ -205,7 +205,11 @@ impl PrimitiveRenderer {
                 }],
             });
 
-        let output_srgb = if cfg!(target_os = "windows") { 1u32 } else { 0u32 };
+        let output_srgb = if cfg!(target_os = "windows") {
+            1u32
+        } else {
+            0u32
+        };
         let output_config = SpriteOutputConfig {
             output_srgb,
             _pad: [0, 0, 0],
@@ -216,11 +220,7 @@ impl PrimitiveRenderer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        queue.write_buffer(
-            &output_config_buffer,
-            0,
-            bytemuck::bytes_of(&output_config),
-        );
+        queue.write_buffer(&output_config_buffer, 0, bytemuck::bytes_of(&output_config));
         let sprite_output_config_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Sprite Output Config Bind Group"),
@@ -1473,8 +1473,16 @@ impl PrimitiveRenderer {
         }
 
         // Upload texture instances
-        let total: usize = self.world_texture_groups.iter().map(|(_, i)| i.len()).sum::<usize>()
-            + self.ui_texture_groups.iter().map(|(_, i)| i.len()).sum::<usize>();
+        let total: usize = self
+            .world_texture_groups
+            .iter()
+            .map(|(_, i)| i.len())
+            .sum::<usize>()
+            + self
+                .ui_texture_groups
+                .iter()
+                .map(|(_, i)| i.len())
+                .sum::<usize>();
         self.temp_all_texture_instances.clear();
         self.temp_all_texture_instances.reserve(total);
         for (_, instances) in &self.world_texture_groups {

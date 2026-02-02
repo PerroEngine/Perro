@@ -2,10 +2,13 @@
 
 /out
 
+# Personal projects (playground / messing around)
+/playground
+
 # Ignore profiling files
 flamegraph.folded
 flamegraph.svg
-projects/PerroDevRuntime.exe
+playground/PerroDevRuntime.exe
 PerroDevRuntime
 perro_editor/perro_engine.png
 perro_editor/perro_engine.desktop

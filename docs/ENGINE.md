@@ -29,7 +29,7 @@ So the “script” layer is really **generated Rust** that the engine treats as
 - The **Perro runtime** (e.g. `perro_dev`) loads that DLL at startup and uses it for all script logic.
 - Assets (scenes, UI, images) are typically read from disk (e.g. `res/`) so you can iterate without a full re-export.
 - `project.toml` is read from the project folder at runtime.
-- Recompiling the scripts crate is fast, so iteration on gameplay logic is quick. Editing engine core naturally takes a bit longer unfortunately.
+- Updating script sources recompiles in about 3–5 seconds; only changing engine core takes longer.
 
 So in dev: **scripts = DLL, runtime loads DLL, assets and config from disk.**
 

@@ -137,7 +137,7 @@ Perro is at **0.1.0** and is intentionally a proof of concept. The generated Rus
 
 If you can remove clones or string allocations when they are not needed (e.g. when a value is not used later) and can **deterministically show** it works across a variety of cases (including the test project), such optimizations are welcome. The codegen can be updated to emit leaner code as long as:
 
-- `cargo run -p perro_core -- --tests --scripts` still **compile** and **behave correctly**.
+- `cargo run -p perro_core -- --path --test --scripts` (or `--path --test_transpiler --scripts`) still **compile** and **behave correctly**.
 - The change is justified by concrete cases and does not break existing scripts or tests.
 
 Prefer changes that keep the test suite green and the generated code understandable; we can tighten allocations and reduce clones incrementally as the pipeline stabilizes.
@@ -171,10 +171,22 @@ cargo test --workspace
 - Required: build the special test project that covers language edge-cases:
 
 ```bash
-cargo run -p perro_core -- --tests --scripts
+cargo run -p perro_core -- --path --test --scripts
 ```
 
-test_projects\test contains scripts exercising edge cases across languages; if it compiles, your changes most likely won't break user scripts. That build is mainly for **transpiler/compile-time validation**: valid frontend (PUP, etc.) should produce Rust that compiles (end users don't control generated code); runtime panics are a separate concern. Every PR must ensure one of the above succeeds.
+unit_tests\transpiler_test contains scripts exercising edge cases across languages; if it compiles, your changes most likely won't break user scripts. That build is mainly for **transpiler/compile-time validation**: valid frontend (PUP, etc.) should produce Rust that compiles (end users don't control generated code); runtime panics are a separate concern. Every PR must ensure one of the above succeeds.
+
+### CLI: `--path` special values
+
+When you pass `--path <value>`, the value can be a filesystem path or one of these special names (resolved relative to the workspace root):
+
+| Value | Resolves to | Use |
+|-------|----------------|-----|
+| `--test` | `unit_tests/transpiler_test` | Transpiler test project (compile scripts, run dev, etc.). Shorthand for `--test_transpiler`. |
+| `--test_transpiler` | `unit_tests/transpiler_test` | Same as `--test`. |
+| `--editor` | `perro_editor` (searched in workspace and parent) | Editor project. |
+
+Example: `cargo run -p perro_core -- --path --test --scripts` compiles the transpiler test project; `--path --test --dev` runs it in dev mode.
 
 ## Formatting & linting (recommended)
 
@@ -190,7 +202,7 @@ You don't need to be an expert — run them before opening a PR to reduce review
    - bugfix: `bugfix/<short-desc>`
    - docs: `docs/<short-desc>`
 2. Make small, focused commits with clear messages.
-3. Run build & test steps above (including building test_projects\test).
+3. Run build & test steps above (including building unit_tests\transpiler_test).
 4. Push branch and open a PR against `main` (or the branch referenced by the issue).
 5. In the PR body:
    - Link the issue the PR fixes.
@@ -202,7 +214,7 @@ You don't need to be an expert — run them before opening a PR to reduce review
 
 - [ ] PR fixes or is linked to an issue.
 - [ ] Branch builds: `cargo build --workspace`
-- [ ] test_projects\test builds: `cargo run -p perro_core -- --tests --scripts`
+- [ ] unit_tests\transpiler_test builds: `cargo run -p perro_core -- --path --test --scripts`
 - [ ] Tests pass: `cargo test --workspace`
 - [ ] Formatted: `cargo fmt --all`
 - [ ] Linted (recommended): `cargo clippy --all-targets --all-features -- -D warnings`
@@ -212,7 +224,7 @@ You don't need to be an expert — run them before opening a PR to reduce review
 ## Tests & examples
 
 - For transpiler or language work include small example scripts and their generated Rust output.
-- If a change affects runtime behavior, add or update a minimal scenario in `test_projects/`.
+- If a change affects runtime behavior, add or update a minimal scenario in `unit_tests/transpiler_test` or `playground/`.
 
 ## Reporting issues
 

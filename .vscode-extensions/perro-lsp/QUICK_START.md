@@ -1,5 +1,7 @@
 # Quick Start Guide - Perro LSP Extension
 
+**Note:** perro-lsp is currently non-functional; the extension and server exist for people who want to look at or contribute to them. The goal is autocomplete and type checking using the engine’s API/resource/engine bindings and Pup APIs; LSP development experience is limited, so contributions are welcome. See `perro_lsp/README.md` for more.
+
 ## 🚀 Quick Setup (5 minutes)
 
 ### Step 1: Build the LSP Server
@@ -69,9 +71,9 @@ code --extensionDevelopmentPath=. --new-window DIRECTORY\perro
 2. **Press F5** - This opens a new "Extension Development Host" window
 3. **IMPORTANT: In the NEW window**, you need to:
    - File → Open Folder
-   - Open the **main perro directory**: `DIRECTORY\perro` (NOT a subdirectory like `projects/MessAround`)
+   - Open the **main perro directory**: `DIRECTORY\perro` (NOT a subdirectory like `playground/MessAround`)
    - This is because the extension looks for the LSP server at `target/release/perro-lsp.exe` relative to the workspace root
-4. **Then** open a `.pup` or `.fur` file (can be in any subdirectory like `projects/MessAround/res/camera.pup`)
+4. **Then** open a `.pup` or `.fur` file (can be in any subdirectory like `playground/MessAround/res/camera.pup`)
 
 **Why?** The extension needs the workspace root to be the main `perro` directory so it can find `target/release/perro-lsp.exe`. Once that's set up, you can open `.pup` files from any subdirectory.
 
@@ -138,7 +140,7 @@ Then set the server path in VSCode settings:
 When you make changes:
 
 1. **Change TypeScript code** (`src/extension.ts`):
-   - Just press F5 again - it auto-recompiles
+   - Just press F5 again
 
 2. **Change Rust LSP server** (`perro_lsp/src/`):
    - Rebuild: `cargo build --release --bin perro-lsp`

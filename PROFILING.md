@@ -6,15 +6,15 @@ Enable profiling with the `--profile` flag (primary) or `--flamegraph` (alias). 
 
 ```bash
 # Profile dev runtime (builds scripts + runs with headless profiling)
-cargo run -p perro_core --features profiling -- --path projects/MessAround --profile
+cargo run -p perro_core --features profiling -- --path playground/MessAround --profile
 
 # Or use --flamegraph (same thing, kept for backwards compatibility)
-cargo run -p perro_core --features profiling -- --path projects/MessAround --flamegraph
+cargo run -p perro_core --features profiling -- --path playground/MessAround --flamegraph
 ```
 
 **Example for your MessAround project:**
 ```bash
-cargo run -p perro_core --features profiling -- --path projects/MessAround --profile
+cargo run -p perro_core --features profiling -- --path playground/MessAround --profile
 ```
 
 This will:
@@ -36,7 +36,7 @@ Open `flamegraph.svg` in your browser to view it.
 If you need to convert an existing `flamegraph.folded` file manually:
 
 ```bash
-cargo run -p perro_core --features profiling -- --path projects/MessAround --convert-flamegraph
+cargo run -p perro_core --features profiling -- --path playground/MessAround --convert-flamegraph
 ```
 
 Or use the `flamegraph` tool directly:
@@ -86,7 +86,7 @@ You can also use `cargo-flamegraph` directly (doesn't require the feature flag):
 ```bash
 cargo install flamegraph
 cd perro_dev
-cargo flamegraph --bin PerroDevRuntime -- --path ../projects/YourProject
+cargo flamegraph --bin PerroDevRuntime -- --path ../playground/YourProject
 ```
 
 This uses system-level profiling (perf/dtrace) which has different overhead characteristics.

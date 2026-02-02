@@ -1,7 +1,7 @@
-use crate::ids::UIElementID;
-use std::{borrow::Cow, collections::HashMap};
-
 use crate::fur_ast::{FurElement, FurNode};
+use crate::ids::UIElementID;
+use cow_map::CowMap;
+use std::{borrow::Cow, collections::HashMap};
 
 // =================== TOKENS ===================
 
@@ -313,22 +313,24 @@ impl<'a> FurParser<'a> {
 
             self.element_stack.pop();
 
+            let attrs_map: HashMap<&'static str, Cow<'static, str>> = attributes
+                .into_iter()
+                .map(|(k, v)| (&*Box::leak(k.into_owned().into_boxed_str()), v))
+                .collect();
+            let children_vec = vec![FurNode::Text(content.into())];
+
             return Ok(FurNode::Element(FurElement {
                 tag_name: "Text".into(),
-                id: attributes
-                    .get("id")
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        format!(
-                            "{}_{}",
-                            tag_name,
-                            UIElementID::from_string(&format!("gen-{}", line!()))
-                        )
-                        .into()
-                    })
-                    .into(),
-                attributes,
-                children: vec![FurNode::Text(content.into())],
+                id: attrs_map.get("id").cloned().unwrap_or_else(|| {
+                    format!(
+                        "{}_{}",
+                        tag_name,
+                        UIElementID::from_string(&format!("gen-{}", line!()))
+                    )
+                    .into()
+                }),
+                attributes: CowMap::from(attrs_map),
+                children: Cow::Owned(children_vec),
                 self_closing: false,
             }));
         }
@@ -366,7 +368,11 @@ impl<'a> FurParser<'a> {
 
         self.element_stack.pop();
 
-        let id = attributes.get("id").cloned().unwrap_or_else(|| {
+        let attrs_map: HashMap<&'static str, Cow<'static, str>> = attributes
+            .into_iter()
+            .map(|(k, v)| (&*Box::leak(k.into_owned().into_boxed_str()), v))
+            .collect();
+        let id = attrs_map.get("id").cloned().unwrap_or_else(|| {
             format!(
                 "{}_{}",
                 tag_name,
@@ -378,8 +384,8 @@ impl<'a> FurParser<'a> {
         Ok(FurNode::Element(FurElement {
             tag_name: Cow::Owned(tag_name.to_string()),
             id,
-            attributes,
-            children,
+            attributes: CowMap::from(attrs_map),
+            children: Cow::Owned(children),
             self_closing,
         }))
     }

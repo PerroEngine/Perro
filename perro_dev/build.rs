@@ -17,7 +17,6 @@ fn main() {
     // ───────────────────────────────────────────────
     let icon_path = PathBuf::from("./icon.png"); // adjust as needed
 
-
     log(&log_path, &format!("Icon path: {}", icon_path.display()));
 
     println!("cargo:rerun-if-changed={}", icon_path.display());

@@ -122,17 +122,29 @@ impl PupMesh {
             "cylinder" => Some(ResourceModule::Mesh(MeshResource::Cylinder)),
             "capsule" => Some(ResourceModule::Mesh(MeshResource::Capsule)),
             "cone" => Some(ResourceModule::Mesh(MeshResource::Cone)),
-            "square_pyramid" | "sq_pyramid" => Some(ResourceModule::Mesh(MeshResource::SquarePyramid)),
-            "triangular_pyramid" | "tri_pyramid" => Some(ResourceModule::Mesh(MeshResource::TriangularPyramid)),
+            "square_pyramid" | "sq_pyramid" => {
+                Some(ResourceModule::Mesh(MeshResource::SquarePyramid))
+            }
+            "triangular_pyramid" | "tri_pyramid" => {
+                Some(ResourceModule::Mesh(MeshResource::TriangularPyramid))
+            }
             _ => None,
         }
     }
 
     pub fn get_all_method_names() -> Vec<&'static str> {
         vec![
-            "load", "preload", "remove",
-            "cube", "sphere", "plane", "cylinder", "capsule", "cone",
-            "square_pyramid", "triangular_pyramid",
+            "load",
+            "preload",
+            "remove",
+            "cube",
+            "sphere",
+            "plane",
+            "cylinder",
+            "capsule",
+            "cone",
+            "square_pyramid",
+            "triangular_pyramid",
         ]
     }
 }

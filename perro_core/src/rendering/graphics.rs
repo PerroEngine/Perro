@@ -10,6 +10,7 @@ use wgpu::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
+use crate::rendering::mesh_loader;
 use crate::{
     Camera2D, Camera3D, Transform3D,
     asset_io::load_asset,
@@ -23,7 +24,6 @@ use crate::{
     structs2d::ImageTexture,
     vertex::Vertex,
 };
-use crate::rendering::mesh_loader;
 
 use crate::rendering::image_loader;
 
@@ -830,8 +830,7 @@ impl MeshManager {
                     let bytes = load_asset(base_path).ok()?;
                     let load_elapsed = load_start.elapsed();
                     let parse_start = Instant::now();
-                    let (vertices, indices) =
-                        mesh_loader::load_gltf_mesh(&bytes, mesh_name)?;
+                    let (vertices, indices) = mesh_loader::load_gltf_mesh(&bytes, mesh_name)?;
                     let parse_elapsed = parse_start.elapsed();
                     let upload_start = Instant::now();
                     let mesh = Renderer3D::create_mesh_from_vertices(device, &vertices, &indices);

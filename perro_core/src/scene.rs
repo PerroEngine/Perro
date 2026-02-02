@@ -23,6 +23,7 @@ use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 
 use crate::ids::{MeshID, NodeID, SignalID, TextureID};
+use cow_map::CowMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::{
@@ -48,13 +49,14 @@ use std::{
 
 /// Pure serializable scene data (no runtime state)
 /// Uses numeric node ids (keys) for the root and nodes map. No guaranteed order; use scene_key_order when order matters.
+/// Nodes and key_to_node_id use CowMap so static scene data can be const-constructed.
 #[derive(Debug)]
 pub struct SceneData {
     pub root_key: u32,
-    pub nodes: HashMap<u32, SceneNode>,
-    // Mapping from scene key to NodeID (used during deserialization)
-    // Not serialized - handled manually in Serialize/Deserialize impls
-    key_to_node_id: HashMap<u32, NodeID>,
+    pub nodes: CowMap<u32, SceneNode>,
+    /// Mapping from scene key to NodeID (used during deserialization).
+    /// Not serialized - handled manually in Serialize/Deserialize impls.
+    key_to_node_id: CowMap<u32, NodeID>,
 }
 
 /// Root first, then remaining keys in sorted order (deterministic for serialization/merge).
@@ -69,12 +71,18 @@ impl Clone for SceneData {
     fn clone(&self) -> Self {
         Self {
             root_key: self.root_key,
-            nodes: self
-                .nodes
-                .iter()
-                .map(|(key, node)| (*key, node.clone()))
-                .collect(),
-            key_to_node_id: self.key_to_node_id.clone(),
+            nodes: CowMap::from(
+                self.nodes
+                    .iter()
+                    .map(|(key, node)| (*key, node.clone()))
+                    .collect::<HashMap<_, _>>(),
+            ),
+            key_to_node_id: CowMap::from(
+                self.key_to_node_id
+                    .iter()
+                    .map(|(k, v)| (*k, *v))
+                    .collect::<HashMap<_, _>>(),
+            ),
         }
     }
 }
@@ -97,7 +105,7 @@ impl Serialize for SceneData {
 
         // Serialize nodes with u32 keys as identifiers
         struct NodesMap<'a> {
-            nodes: &'a HashMap<u32, SceneNode>,
+            nodes: &'a CowMap<u32, SceneNode>,
             node_id_to_key: &'a HashMap<NodeID, u32>,
         }
 
@@ -318,15 +326,15 @@ impl<'de> Deserialize<'de> for SceneData {
 
         Ok(SceneData {
             root_key,
-            nodes,
-            key_to_node_id: key_to_node_id_map,
+            nodes: CowMap::from(nodes),
+            key_to_node_id: CowMap::from(key_to_node_id_map),
         })
     }
 }
 
 impl SceneData {
     /// Get the scene key to NodeID mapping
-    pub fn key_to_node_id(&self) -> &HashMap<u32, NodeID> {
+    pub fn key_to_node_id(&self) -> &CowMap<u32, NodeID> {
         &self.key_to_node_id
     }
 
@@ -334,60 +342,49 @@ impl SceneData {
     pub fn new(root: SceneNode) -> Self {
         let root_id = root.get_id();
         let mut nodes = HashMap::new();
-        // OPTIMIZED: Use with_capacity(0) for known-empty map to avoid pre-allocation
         let mut key_to_node_id = HashMap::with_capacity(0);
-        // Use key 0 for root
         key_to_node_id.insert(0, root_id);
         nodes.insert(0, root);
         Self {
             root_key: 0,
+            nodes: CowMap::from(nodes),
+            key_to_node_id: CowMap::from(key_to_node_id),
+        }
+    }
+
+    /// Create SceneData from nodes and key_to_node_id (const-friendly; no allocation).
+    /// Use this for static scene data built with cow_map!.
+    pub const fn from_nodes(
+        root_key: u32,
+        nodes: CowMap<u32, SceneNode>,
+        key_to_node_id: CowMap<u32, NodeID>,
+    ) -> Self {
+        Self {
+            root_key,
             nodes,
             key_to_node_id,
         }
     }
 
-    /// Create SceneData from nodes and root_key
-    /// Builds the key_to_node_id mapping and sets node IDs to deterministic NodeIDs based on scene keys
-    pub fn from_nodes(root_key: u32, mut nodes: HashMap<u32, SceneNode>) -> Self {
+    /// Create SceneData from a HashMap of nodes (runtime/deserialize path).
+    /// Builds key_to_node_id and sets node IDs to deterministic NodeIDs based on scene keys, then converts to CowMap.
+    pub fn from_nodes_with_hashmap(root_key: u32, mut nodes: HashMap<u32, SceneNode>) -> Self {
         let mut key_to_node_id = HashMap::with_capacity(nodes.len());
 
-        // Generate deterministic NodeIDs based on scene keys
+        // Use scene key as NodeID (key 72 → NodeID(72)); no transformation.
         for (&key, node) in nodes.iter_mut() {
-            // Create deterministic NodeID from scene key (add 1 to avoid nil)
-            let node_id = NodeID::from_u32(key.wrapping_add(1));
-
-            // Set the node's ID to match the deterministic NodeID
+            let node_id = NodeID::from_u32(key);
             node.set_id(node_id);
-
-            // Store in mapping
             key_to_node_id.insert(key, node_id);
         }
 
-        // Now update parent and child NodeIDs to match the deterministic NodeIDs
+        // Now update parent and child NodeIDs to match key_to_node_id.
         for node in nodes.values_mut() {
-            // Update parent NodeID if it exists
             if let Some(parent) = node.get_parent() {
                 let parent_uid = parent.id.index();
-
-                // Try to find the parent key in two ways:
-                // 1. Check if parent ID matches a key directly (static scene data format)
-                // 2. Check if parent ID is key+1 (from_nodes format)
-                let parent_key_opt = if parent_uid > 0 {
-                    // First try: parent ID is the key directly (static scene data)
-                    if key_to_node_id.contains_key(&parent_uid) {
-                        Some(parent_uid)
-                    } else {
-                        // Second try: parent ID is key+1 (from_nodes format)
-                        let key_candidate = parent_uid.wrapping_sub(1);
-                        if key_to_node_id.contains_key(&key_candidate) {
-                            Some(key_candidate)
-                        } else {
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
+                let parent_key_opt = key_to_node_id
+                    .contains_key(&parent_uid)
+                    .then_some(parent_uid);
 
                 if let Some(parent_key) = parent_key_opt {
                     if let Some(&correct_node_id) = key_to_node_id.get(&parent_key) {
@@ -403,31 +400,12 @@ impl SceneData {
                 }
             }
 
-            // Update children NodeIDs
-            let children = node.get_children().clone();
+            // Update children NodeIDs (to_vec() so we don't hold a borrow of node)
+            let children: Vec<NodeID> = node.get_children().to_vec();
             node.clear_children();
             for child_id in children {
                 let child_uid = child_id.index();
-
-                // Try to find the child key in two ways:
-                // 1. Check if child ID matches a key directly (static scene data format)
-                // 2. Check if child ID is key+1 (from_nodes format)
-                let child_key_opt = if child_uid > 0 {
-                    // First try: child ID is the key directly (static scene data)
-                    if key_to_node_id.contains_key(&child_uid) {
-                        Some(child_uid)
-                    } else {
-                        // Second try: child ID is key+1 (from_nodes format)
-                        let key_candidate = child_uid.wrapping_sub(1);
-                        if key_to_node_id.contains_key(&key_candidate) {
-                            Some(key_candidate)
-                        } else {
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
+                let child_key_opt = key_to_node_id.contains_key(&child_uid).then_some(child_uid);
 
                 if let Some(child_key) = child_key_opt {
                     if let Some(&correct_node_id) = key_to_node_id.get(&child_key) {
@@ -437,27 +415,28 @@ impl SceneData {
             }
         }
 
-        Self {
-            root_key,
-            nodes,
-            key_to_node_id,
-        }
+        Self::from_nodes(root_key, CowMap::from(nodes), CowMap::from(key_to_node_id))
     }
 
     /// Convert SceneData to runtime Scene format.
     /// Inserts nodes in key order; arena assigns slot+generation for each. Remaps parent references.
-    pub fn to_runtime_nodes(mut self) -> (NodeArena, NodeID) {
+    pub fn to_runtime_nodes(self) -> (NodeArena, NodeID) {
         use crate::ids::NodeID;
         // Order: root first, then rest sorted (deterministic).
         let key_order = scene_key_order(self.root_key, self.nodes.keys().copied());
-        let mut old_to_new_id: HashMap<NodeID, NodeID> = HashMap::with_capacity(self.nodes.len());
+        let mut nodes_owned: HashMap<u32, SceneNode> =
+            self.nodes.iter().map(|(k, v)| (*k, v.clone())).collect();
+        let mut old_to_new_id: HashMap<NodeID, NodeID> = HashMap::with_capacity(nodes_owned.len());
         let mut runtime_nodes = NodeArena::new();
         let mut parent_children: HashMap<NodeID, Vec<NodeID>> = HashMap::with_capacity(0);
 
         // Insert in key order; arena assigns id from lowest open slot. Build old->new id map and parent_children.
         for &key in &key_order {
-            let mut node = self.nodes.remove(&key).expect("key in key_order");
-            let old_node_id = self.key_to_node_id[&key];
+            let mut node = nodes_owned.remove(&key).expect("key in key_order");
+            let old_node_id = *self
+                .key_to_node_id
+                .get(&key)
+                .expect("key in key_to_node_id");
             let parent_old_id = node.get_parent().map(|p| p.id);
             node.clear_children();
 
@@ -521,26 +500,33 @@ impl SceneData {
         use crate::nodes::node::ScriptExpVarValue;
         for node in runtime_nodes.values_mut() {
             if let Some(script_vars) = node.get_script_exp_vars_raw_mut() {
-                for (_, v) in script_vars.iter_mut() {
-                    if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
-                        let key = scene_key_id.index();
-                        if let Some(&old_id) = self.key_to_node_id.get(&key) {
-                            if let Some(&new_id) = old_to_new_id.get(&old_id) {
-                                #[cfg(debug_assertions)]
-                                eprintln!(
-                                    "[perro scene] remap script_exp_vars NodeRef(key {}) -> runtime {}",
-                                    key, new_id
-                                );
-                                *v = ScriptExpVarValue::NodeRef(new_id);
+                let keys_to_remap: Vec<_> = script_vars
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
+                            let key = scene_key_id.index();
+                            if let Some(&old_id) = self.key_to_node_id.get(&key) {
+                                if let Some(&new_id) = old_to_new_id.get(&old_id) {
+                                    #[cfg(debug_assertions)]
+                                    eprintln!(
+                                        "[perro scene] remap script_exp_vars NodeRef(key {}) -> runtime {}",
+                                        key, new_id
+                                    );
+                                    return Some((*k, new_id));
+                                }
                             }
                         }
-                    }
+                        None
+                    })
+                    .collect();
+                for (k, new_id) in keys_to_remap {
+                    script_vars.insert(k, ScriptExpVarValue::NodeRef(new_id));
                 }
             }
         }
 
         // Get root ID
-        let root_old_node_id = self.key_to_node_id[&self.root_key];
+        let root_old_node_id = *self.key_to_node_id.get(&self.root_key).expect("root_key");
         let root_id = old_to_new_id[&root_old_node_id];
 
         (runtime_nodes, root_id)
@@ -604,7 +590,7 @@ impl SceneData {
                     .map(|(&key, _)| key);
 
                 if let Some(_parent_key) = parent_key_opt {
-                    let node_id = data.key_to_node_id[&key];
+                    let node_id = *data.key_to_node_id.get(&key).expect("key");
                     parent_children.entry(parent_id).or_default().push(node_id);
                 }
             }
@@ -691,7 +677,6 @@ pub struct Scene<P: ScriptProvider> {
     textures_converted: bool,
 
     // OPTIMIZED: Pre-accumulated set of node IDs that need rerendering
-    // Using HashSet for O(1) membership checks
     needs_rerender: HashSet<NodeID>,
 }
 
@@ -898,8 +883,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
 
         SceneData {
             root_key,
-            nodes,
-            key_to_node_id,
+            nodes: CowMap::from(nodes),
+            key_to_node_id: CowMap::from(key_to_node_id),
         }
     }
 
@@ -1049,30 +1034,33 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
 
-        // ✅ main scene second
+        // ✅ main scene second — timer: retrieve (phf lookup + clone) + remap only
         let main_scene_path: String = {
             let proj_ref = game_scene.project.borrow();
             let path = proj_ref.main_scene().to_string();
             path
         };
 
-        // measure load
-        let _t_load_start = Instant::now();
+        let scene_load_start = Instant::now();
         let loaded_data = game_scene.provider.load_scene_data(&main_scene_path)?;
-        let _load_time = _t_load_start.elapsed();
+        let load_ms = scene_load_start.elapsed().as_secs_f64() * 1000.0;
 
-        // measure merge/graft
-        let _t_graft_start = Instant::now();
+        let merge_start = Instant::now();
         let game_root = game_scene.get_root().get_id();
-        game_scene.merge_scene_data(loaded_data, game_root, gfx)?; // <- was graft_data()
-        let _graft_time = _t_graft_start.elapsed();
+        game_scene.merge_scene_data(loaded_data, game_root, gfx)?;
+        let merge_ms = merge_start.elapsed().as_secs_f64() * 1000.0;
 
+        let total_ms = scene_load_start.elapsed().as_secs_f64() * 1000.0;
+        eprintln!(
+            "⏱️ Scene (retrieve+remap): load {:.2}ms, merge {:.2}ms, total {:.2}ms",
+            load_ms, merge_ms, total_ms
+        );
         Ok(game_scene)
     }
 
     pub fn merge_scene_data(
         &mut self,
-        mut other: SceneData,
+        other: SceneData,
         parent_id: NodeID,
         gfx: &mut crate::rendering::Graphics,
     ) -> anyhow::Result<()> {
@@ -1086,6 +1074,11 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .iter()
             .map(|(&k, &v)| (k, v))
             .collect();
+        // Reverse map for O(1) parent key lookup (avoids O(n) find per node in other_parent_types)
+        let node_id_to_key: HashMap<NodeID, u32> = key_to_node_id_copy
+            .iter()
+            .map(|(&k, &n)| (n, k))
+            .collect();
 
         // Check if root has is_root_of (skip inserting root when true)
         let skip_root = other
@@ -1094,17 +1087,12 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .and_then(|n| Self::get_is_root_of(n))
             .is_some();
 
-        // Collect parent types from other before we consume nodes
+        // Collect parent types from other before we consume nodes (O(n) with reverse map)
         let mut other_parent_types: HashMap<NodeID, crate::node_registry::NodeType> =
-            HashMap::with_capacity(0);
+            HashMap::with_capacity(other.nodes.len());
         for (&_key, node) in other.nodes.iter() {
             if let Some(parent) = node.get_parent() {
-                let parent_key_opt = other
-                    .key_to_node_id()
-                    .iter()
-                    .find(|&(_, &node_id)| node_id == parent.id)
-                    .map(|(&key, _)| key);
-                if let Some(parent_key) = parent_key_opt {
+                if let Some(&parent_key) = node_id_to_key.get(&parent.id) {
                     if let Some(parent_node) = other.nodes.get(&parent_key) {
                         other_parent_types.insert(parent.id, parent_node.get_type());
                     }
@@ -1114,6 +1102,15 @@ impl<P: ScriptProvider + 'static> Scene<P> {
 
         // Key order: root first, then rest sorted (deterministic)
         let key_order = scene_key_order(root_key, other.nodes.keys().copied());
+
+        // Owned copy so we can remove (CowMap may be borrowed). Clone nodes in parallel.
+        let refs: Vec<(u32, &SceneNode)> = other.nodes.iter().map(|(k, v)| (*k, v)).collect();
+        let mut other_nodes_owned: HashMap<u32, SceneNode> = refs
+            .par_iter()
+            .map(|(k, r)| (*k, (*r).clone()))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .collect();
 
         let mut old_node_id_to_new_node_id: HashMap<NodeID, NodeID> =
             HashMap::with_capacity(other.nodes.len() + 1);
@@ -1128,7 +1125,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             if skip_root && key == root_key {
                 continue;
             }
-            let mut node = other.nodes.remove(&key).expect("key in key_order");
+            let mut node = other_nodes_owned.remove(&key).expect("key in key_order");
             let old_node_id = key_to_node_id_copy[&key];
             let parent_old_id = node.get_parent().map(|p| p.id);
             node.clear_children();
@@ -1183,18 +1180,25 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         for (_, new_id, _) in &insert_info {
             if let Some(node) = self.nodes.get_mut(*new_id) {
                 if let Some(script_vars) = node.get_script_exp_vars_raw_mut() {
-                    for (_, v) in script_vars.iter_mut() {
-                        if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
-                            let key = scene_key_id.index();
-                            if let Some(&new_node_id) = key_to_new_id.get(&key) {
-                                #[cfg(debug_assertions)]
-                                eprintln!(
-                                    "[perro scene] merge remap script_exp_vars NodeRef(key {}) -> {}",
-                                    key, new_node_id
-                                );
-                                *v = ScriptExpVarValue::NodeRef(new_node_id);
+                    let keys_to_remap: Vec<_> = script_vars
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
+                                let key = scene_key_id.index();
+                                if let Some(&new_node_id) = key_to_new_id.get(&key) {
+                                    #[cfg(debug_assertions)]
+                                    eprintln!(
+                                        "[perro scene] merge remap script_exp_vars NodeRef(key {}) -> {}",
+                                        key, new_node_id
+                                    );
+                                    return Some((*k, new_node_id));
+                                }
                             }
-                        }
+                            None
+                        })
+                        .collect();
+                    for (k, new_node_id) in keys_to_remap {
+                        script_vars.insert(k, ScriptExpVarValue::NodeRef(new_node_id));
                     }
                 }
             }
@@ -1230,6 +1234,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 Self::set_node_name(node, resolved_name);
             }
         }
+        // Single pass: mark inserted nodes for rerender / internal update sets
         for (_, new_id, _) in &insert_info {
             if let Some(node_ref) = self.nodes.get(*new_id) {
                 if node_ref.is_renderable() {
@@ -1274,26 +1279,33 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
         }
 
-        // Recursively load and merge nested scenes
-        let nested_scene_count = nodes_with_nested_scenes.len();
-        for (parent_node_id, scene_path) in nodes_with_nested_scenes {
-            // Load the nested scene
-            if let Ok(nested_scene_data) = self.provider.load_scene_data(&scene_path) {
-                // Merge with the node as parent - nested scene's root becomes child of this node
-                if let Err(e) = self.merge_scene_data_with_root_replacement(
-                    nested_scene_data,
-                    parent_node_id,
-                    gfx,
-                ) {
-                    eprintln!("⚠️ Error merging nested scene '{}': {}", scene_path, e);
+        // Load all nested scene data in parallel (I/O or static lookup); then merge sequentially
+        let provider = &self.provider;
+        let nested_loads: Vec<(NodeID, String, io::Result<SceneData>)> = nodes_with_nested_scenes
+            .par_iter()
+            .map(|(parent_node_id, scene_path)| {
+                let result = provider.load_scene_data(scene_path);
+                (*parent_node_id, scene_path.clone(), result)
+            })
+            .collect();
+
+        for (parent_node_id, scene_path, result) in nested_loads {
+            match result {
+                Ok(nested_scene_data) => {
+                    if let Err(e) = self.merge_scene_data_with_root_replacement(
+                        nested_scene_data,
+                        parent_node_id,
+                        gfx,
+                    ) {
+                        eprintln!("⚠️ Error merging nested scene '{}': {}", scene_path, e);
+                    }
                 }
-            } else {
-                eprintln!("⚠️ Failed to load nested scene: {}", scene_path);
+                Err(_) => eprintln!("⚠️ Failed to load nested scene: {}", scene_path),
             }
         }
 
         let _nested_scene_time = nested_scene_start.elapsed();
-        let _nested_scene_count = nested_scene_count;
+        let _nested_scene_count = nodes_with_nested_scenes.len();
 
         // ───────────────────────────────────────────────
         // 5️⃣ REGISTER COLLISION SHAPES WITH PHYSICS
@@ -1422,7 +1434,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
     /// (used for is_root_of scenarios). Non-root nodes get IDs from arena (next available slot).
     fn merge_scene_data_with_root_replacement(
         &mut self,
-        mut other: SceneData,
+        other: SceneData,
         replacement_root_id: NodeID,
         gfx: &mut crate::rendering::Graphics,
     ) -> anyhow::Result<()> {
@@ -1433,6 +1445,10 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             .iter()
             .map(|(&k, &v)| (k, v))
             .collect();
+
+        // Owned copy so we can remove (CowMap may be borrowed)
+        let mut other_nodes_owned: HashMap<u32, SceneNode> =
+            other.nodes.iter().map(|(k, v)| (*k, v.clone())).collect();
 
         let mut other_parent_types: HashMap<NodeID, crate::node_registry::NodeType> =
             HashMap::with_capacity(0);
@@ -1465,7 +1481,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             if key == subscene_root_key {
                 continue;
             }
-            let mut node = other.nodes.remove(&key).expect("key in key_order");
+            let mut node = other_nodes_owned.remove(&key).expect("key in key_order");
             let old_node_id = key_to_node_id_copy[&key];
             let parent_old_id = node.get_parent().map(|p| p.id);
             node.clear_children();
@@ -1523,13 +1539,21 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         for (_, new_id, _) in &insert_info {
             if let Some(node) = self.nodes.get_mut(*new_id) {
                 if let Some(script_vars) = node.get_script_exp_vars_raw_mut() {
-                    for (_, v) in script_vars.iter_mut() {
-                        if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
-                            let key = scene_key_id.index();
-                            if let Some(&new_node_id) = key_to_new_id.get(&key) {
-                                *v = ScriptExpVarValue::NodeRef(new_node_id);
+                    let keys_to_remap: Vec<_> = script_vars
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            if let ScriptExpVarValue::NodeRef(scene_key_id) = v {
+                                let key = scene_key_id.index();
+                                key_to_new_id
+                                    .get(&key)
+                                    .map(|&new_node_id| (*k, new_node_id))
+                            } else {
+                                None
                             }
-                        }
+                        })
+                        .collect();
+                    for (k, new_node_id) in keys_to_remap {
+                        script_vars.insert(k, ScriptExpVarValue::NodeRef(new_node_id));
                     }
                 }
             }
@@ -1955,7 +1979,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         .entered();
 
                     // Optimize: collect first to avoid borrow checker issues (preallocate)
-                    let mut node_ids = Vec::with_capacity(self.nodes_with_internal_fixed_update.len());
+                    let mut node_ids =
+                        Vec::with_capacity(self.nodes_with_internal_fixed_update.len());
                     node_ids.extend(self.nodes_with_internal_fixed_update.iter().copied());
                     // OPTIMIZED: Clone project once before loop instead of per node
                     let project_ref = self.project.clone();
@@ -2343,7 +2368,9 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         // Iterate through all Area2D nodes and remove the deleted node from their previous_collisions
         for (_area_id, area_node) in self.nodes.iter_mut() {
             if let SceneNode::Area2D(area) = area_node {
-                area.previous_collisions.remove(&node_id);
+                if let Some(ref mut set) = area.previous_collisions {
+                    set.remove(&node_id);
+                }
             }
         }
     }
@@ -2907,13 +2934,11 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             if let Some(node2d) = parent_node.as_node2d_mut() {
                 // Add to cache if it exists, otherwise invalidate (will rebuild on next use)
                 if let Some(ref mut cache) = node2d.node2d_children_cache {
-                    // Only add if not already present (avoid duplicates)
                     if !cache.contains(&child_id) {
                         cache.push(child_id);
                     }
                 } else {
                     // Cache doesn't exist yet - invalidate so it rebuilds on next use
-                    // This ensures cache is rebuilt with all current children
                     node2d.node2d_children_cache = None;
                 }
             }
@@ -2924,14 +2949,11 @@ impl<P: ScriptProvider + 'static> Scene<P> {
     fn update_node2d_children_cache_on_remove(&mut self, parent_id: NodeID, child_id: NodeID) {
         if let Some(parent_node) = self.nodes.get_mut(parent_id) {
             if let Some(node2d) = parent_node.as_node2d_mut() {
-                // Remove from cache if it exists
                 if let Some(ref mut cache) = node2d.node2d_children_cache {
                     cache.retain(|&id| id != child_id);
                 }
-                // If cache doesn't exist, that's fine - it will be rebuilt on next use
             }
         }
-        // If parent doesn't exist, that's also fine - node was probably deleted
     }
 
     /// Clear the Node3D children cache for a parent node (when all children are removed)
@@ -3757,7 +3779,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             }
 
             // Queue meshes (preallocate mesh_id_updates for eviction reloads)
-            let mut mesh_id_updates: Vec<(NodeID, MeshID)> = Vec::with_capacity(mesh_commands.len());
+            let mut mesh_id_updates: Vec<(NodeID, MeshID)> =
+                Vec::with_capacity(mesh_commands.len());
             for (node_id, mesh_id, path, transform, material_path) in mesh_commands {
                 // Resolve mesh id (prefer existing id; reload from path if evicted/absent)
                 let resolved_id: Option<MeshID> = match mesh_id {
@@ -4175,7 +4198,10 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         self.connect_signal(signal, target_id, function);
     }
 
-    fn get_signal_connections(&self, signal: SignalID) -> Option<&HashMap<NodeID, SmallVec<[u64; 4]>>> {
+    fn get_signal_connections(
+        &self,
+        signal: SignalID,
+    ) -> Option<&HashMap<NodeID, SmallVec<[u64; 4]>>> {
         self.signals.connections.get(&signal)
     }
 
@@ -4501,19 +4527,22 @@ impl Scene<DllScriptProvider> {
             }
         }
 
+        // Timer: retrieve (file I/O + parse in dev) + remap only
         let main_scene_path = game_scene.project.borrow().main_scene().to_string();
-        let _t_load_begin = Instant::now();
+        let scene_load_start = Instant::now();
         let loaded_data = SceneData::load(&main_scene_path)?;
-        let _load_time = _t_load_begin.elapsed();
+        let load_ms = scene_load_start.elapsed().as_secs_f64() * 1000.0;
 
-        // ────────────────────────────────────────────────
-        // ⏱  Benchmark: Scene graft
-        // ────────────────────────────────────────────────
-        let _t_graft_begin = Instant::now();
+        let merge_start = Instant::now();
         let game_root = game_scene.get_root().get_id();
         game_scene.merge_scene_data(loaded_data, game_root, gfx)?;
-        let _graft_time = _t_graft_begin.elapsed();
+        let merge_ms = merge_start.elapsed().as_secs_f64() * 1000.0;
 
+        let total_ms = scene_load_start.elapsed().as_secs_f64() * 1000.0;
+        eprintln!(
+            "⏱️ Scene (retrieve+remap): load {:.2}ms, merge {:.2}ms, total {:.2}ms",
+            load_ms, merge_ms, total_ms
+        );
         Ok(game_scene)
     }
 }

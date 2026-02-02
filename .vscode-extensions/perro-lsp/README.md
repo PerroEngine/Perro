@@ -2,6 +2,10 @@
 
 VSCode extension that provides Language Server Protocol support for `.pup` and `.fur` files.
 
+## Current status
+
+**perro-lsp is currently non-functional.** The extension and server exist for anyone who wants to look at them or contribute. The goal is to use the engine’s API bindings, resource bindings, engine bindings, and Pup APIs for autocomplete and type checking; LSP development experience is limited, so contributions are welcome. See `perro_lsp/README.md` in the main repo for more.
+
 ## Setup
 
 1. **Build the LSP server**:

@@ -105,67 +105,6 @@ fn discover_scripts(project_root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(scripts)
 }
 
-/// Codegen version: bump when codegen changes so cached scripts are re-transpiled (API mode only).
-const CODEGEN_HASH_VERSION: &str = "codegen_v2";
-
-/// Compute a hash of all script files in res/ directory.
-/// Files are sorted alphabetically for deterministic hashing.
-/// When `from_source` is false (API mode), includes CODEGEN_HASH_VERSION so codegen fixes force re-transpile.
-/// In source mode we do not use this hash for skip logic; when we do call from API we pass from_source=false.
-pub fn compute_script_hash(project_root: &Path, from_source: bool) -> Result<String, String> {
-    let script_paths = discover_scripts(project_root)?;
-
-    // Sort paths alphabetically for deterministic ordering
-    let mut sorted_paths: Vec<_> = script_paths.iter().collect();
-    sorted_paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-
-    let mut hasher = Sha256::new();
-    if !from_source {
-        hasher.update(CODEGEN_HASH_VERSION.as_bytes());
-        hasher.update(b"\0");
-    }
-
-    for path in sorted_paths {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-
-        // Hash the file path and content
-        hasher.update(path.to_string_lossy().as_bytes());
-        hasher.update(b"\0"); // Separator
-        hasher.update(content.as_bytes());
-        hasher.update(b"\0"); // Separator
-    }
-
-    let hash = hasher.finalize();
-    Ok(format!("{:x}", hash))
-}
-
-/// Read the stored script hash from builds directory
-pub fn read_stored_hash(project_root: &Path) -> Result<Option<String>, String> {
-    let hash_file = project_root.join(".perro/scripts/builds/scripts_hash");
-
-    if !hash_file.exists() {
-        return Ok(None);
-    }
-
-    match fs::read_to_string(&hash_file) {
-        Ok(content) => Ok(Some(content.trim().to_string())),
-        Err(e) => Err(format!("Failed to read script hash file: {}", e)),
-    }
-}
-
-/// Write the script hash to builds directory
-pub fn write_script_hash(project_root: &Path, hash: &str) -> Result<(), String> {
-    let builds_dir = project_root.join(".perro/scripts/builds");
-    fs::create_dir_all(&builds_dir)
-        .map_err(|e| format!("Failed to create builds directory: {}", e))?;
-
-    let hash_file = builds_dir.join("scripts_hash");
-    fs::write(&hash_file, hash).map_err(|e| format!("Failed to write script hash file: {}", e))?;
-
-    Ok(())
-}
-
 /// Clean up orphaned script files
 fn clean_orphaned_scripts(project_root: &Path, active_scripts: &[String]) -> Result<(), String> {
     let scripts_src = project_root.join(".perro/scripts/src");
@@ -507,27 +446,13 @@ fn setup_dll_panic_handler() {
 
 /// Transpile all scripts in res/. When `project_mode` is true, generated module code
 /// gets `#[inline]` on functions and constants (for release/project builds).
-/// When `from_source` is true (e.g. `cargo run -p perro_core`), script hash is ignored:
-/// we always transpile and do not read/write scripts_hash.
 pub fn transpile(
     project_root: &Path,
     verbose: bool,
     project_mode: bool,
-    from_source: bool,
+    _from_source: bool,
 ) -> Result<(), String> {
     let total_start = Instant::now();
-
-    // In project mode or source mode, skip hash compare so we always transpile
-    if !project_mode && !from_source {
-        let current_hash = compute_script_hash(project_root, from_source)?;
-        let stored_hash = read_stored_hash(project_root)?;
-        if let Some(stored) = stored_hash {
-            if stored == current_hash {
-                println!("✅ Script hash unchanged, skipping transpilation");
-                return Ok(());
-            }
-        }
-    }
 
     let script_paths = discover_scripts(project_root)?;
 
@@ -549,10 +474,6 @@ pub fn transpile(
             &[],
             &[],
         )?;
-        if !project_mode && !from_source {
-            let current_hash = compute_script_hash(project_root, from_source)?;
-            write_script_hash(project_root, &current_hash)?;
-        }
         return Ok(());
     }
 
@@ -1103,9 +1024,6 @@ pub fn transpile(
     if let Some(ref hash) = output_hash {
         println!("✅ Scripts ready. Output hash: {}", hash);
     }
-
-    // Note: Hash is written after successful compilation, not here
-    // This allows the compile step to check if recompilation is needed
 
     Ok(())
 }

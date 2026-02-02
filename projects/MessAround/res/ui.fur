@@ -1,8 +1,0 @@
-
-
-[Box anchor=t h=15% w=100%]
-  [Panel w=20% h=100% bg=sea-5 opacity=0.5 anchor=l rounding=75%/]
-  [Panel w=20% h=100% bg=sea-5 opacity=0.5 anchor=r rounding=75%/]
-[/Box]
-
-

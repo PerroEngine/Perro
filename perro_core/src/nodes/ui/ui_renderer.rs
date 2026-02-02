@@ -412,7 +412,7 @@ pub fn update_ui_layout(ui_node: &mut UINode) {
         }
 
         let empty_layout_map = HashMap::new();
-        let initial_z_indices = &ui_node.initial_z_indices;
+        let initial_z_indices = ui_node.initial_z_indices.as_ref();
         for root_id in root_ids {
             update_global_transforms_with_layout(
                 elements,
@@ -441,11 +441,14 @@ fn get_font_cache() -> &'static RwLock<HashMap<(String, u32), bool>> {
 // Helper function to collect all ancestors of dirty elements (needed for layout recalculation)
 fn collect_dirty_with_ancestors(
     elements: &HashMap<UIElementID, UIElement>,
-    dirty_ids: &HashSet<UIElementID>,
+    dirty_ids: Option<&HashSet<UIElementID>>,
 ) -> HashSet<UIElementID> {
+    let Some(set) = dirty_ids else {
+        return HashSet::new();
+    };
     let mut to_process = HashSet::new();
 
-    for &dirty_id in dirty_ids {
+    for &dirty_id in set {
         // Add the dirty element itself
         to_process.insert(dirty_id);
 
@@ -471,7 +474,7 @@ pub fn update_global_transforms_with_layout_filtered(
     parent_global: &Transform2D,
     layout_positions: &HashMap<UIElementID, Vector2>,
     _parent_z: i32,
-    initial_z_indices: &HashMap<UIElementID, i32>,
+    initial_z_indices: Option<&HashMap<UIElementID, i32>>,
     affected_elements: &HashSet<UIElementID>,
 ) {
     // OPTIMIZATION: Skip this element entirely if it's not affected
@@ -497,7 +500,7 @@ pub fn update_global_transforms_with_layout(
     parent_global: &Transform2D,
     layout_positions: &HashMap<UIElementID, Vector2>,
     _parent_z: i32,
-    initial_z_indices: &HashMap<UIElementID, i32>,
+    initial_z_indices: Option<&HashMap<UIElementID, i32>>,
 ) {
     update_global_transforms_with_layout_impl(
         elements,
@@ -516,7 +519,7 @@ fn update_global_transforms_with_layout_impl(
     parent_global: &Transform2D,
     layout_positions: &HashMap<UIElementID, Vector2>,
     _parent_z: i32,
-    initial_z_indices: &HashMap<UIElementID, i32>,
+    initial_z_indices: Option<&HashMap<UIElementID, i32>>,
     affected_elements: Option<&HashSet<UIElementID>>,
 ) {
     // Get parent info
@@ -579,7 +582,10 @@ fn update_global_transforms_with_layout_impl(
         global.position.y += anchor_offset.y * parent_global.scale.y;
 
         // Calculate z-index
-        let base_z = initial_z_indices.get(current_id).copied().unwrap_or(0);
+        let base_z = initial_z_indices
+            .and_then(|m| m.get(current_id))
+            .copied()
+            .unwrap_or(0);
         let global_z = (base_z + parent_z).min(1000000);
 
         // Apply global transform
@@ -682,7 +688,7 @@ pub fn update_ui_layout_cached_optimized(ui_node: &mut UINode, cache: &RwLock<La
 
         // Collect dirty elements + ancestors (parents up to root)
         let dirty_with_ancestors =
-            collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
+            collect_dirty_with_ancestors(elements, ui_node.needs_layout_recalc.as_ref());
 
         // Clear cache only for elements we're recalculating
         if let Ok(mut cache_ref) = cache.write() {
@@ -733,7 +739,7 @@ pub fn update_ui_layout_cached_optimized(ui_node: &mut UINode, cache: &RwLock<La
         }
 
         let empty_layout_map = HashMap::new();
-        let initial_z_indices = &ui_node.initial_z_indices;
+        let initial_z_indices = ui_node.initial_z_indices.as_ref();
         for root_id in root_ids {
             update_global_transforms_with_layout(
                 elements,
@@ -830,22 +836,37 @@ pub fn render_ui(
     // Check if we have any dirty elements
     // Only mark all on FIRST render (when elements just loaded but nothing marked yet)
     // Don't do this every frame when HashSet is empty after clearing!
-    if ui_node.needs_rerender.is_empty() && ui_node.needs_layout_recalc.is_empty() {
+    let needs_rerender_empty = ui_node
+        .needs_rerender
+        .as_ref()
+        .map_or(true, |s| s.is_empty());
+    let needs_layout_recalc_empty = ui_node
+        .needs_layout_recalc
+        .as_ref()
+        .map_or(true, |s| s.is_empty());
+    if needs_rerender_empty && needs_layout_recalc_empty {
         // If both are empty, nothing needs updating - return early
         return;
     }
 
     // If needs_rerender is empty but layout needs recalc, mark affected elements
-    if ui_node.needs_rerender.is_empty() && !ui_node.needs_layout_recalc.is_empty() {
+    if needs_rerender_empty && !needs_layout_recalc_empty {
         // Layout changed but no elements marked - mark elements that need layout
-        ui_node
-            .needs_rerender
-            .extend(ui_node.needs_layout_recalc.iter().copied());
+        if let Some(layout_set) = ui_node.needs_layout_recalc.as_ref() {
+            ui_node
+                .needs_rerender
+                .get_or_insert_with(HashSet::new)
+                .extend(layout_set.iter().copied());
+        }
     }
 
     // Collect dirty element IDs before borrowing elements
-    let dirty_elements: Vec<UIElementID> = ui_node.needs_rerender.iter().copied().collect();
-    let needs_layout = !ui_node.needs_layout_recalc.is_empty();
+    let dirty_elements: Vec<UIElementID> = ui_node
+        .needs_rerender
+        .as_ref()
+        .map(|s| s.iter().copied().collect())
+        .unwrap_or_default();
+    let needs_layout = !needs_layout_recalc_empty;
 
     // Build visibility cache ONCE for the frame (used by both visibility check and layout)
     let visibility_cache: HashSet<UIElementID> = if let Some(elements) = &ui_node.elements {
@@ -889,7 +910,7 @@ pub fn render_ui(
         if let Some(elements) = &mut ui_node.elements {
             // Collect dirty elements + ancestors (parents up to root)
             let dirty_with_ancestors =
-                collect_dirty_with_ancestors(elements, &ui_node.needs_layout_recalc);
+                collect_dirty_with_ancestors(elements, ui_node.needs_layout_recalc.as_ref());
 
             // Clear cache only for elements we're recalculating
             if let Ok(mut cache_ref) = cache.write() {
@@ -979,7 +1000,7 @@ pub fn render_ui(
 
             // Update transforms from root, SKIPPING unaffected branches
             let empty_layout_map = HashMap::new();
-            let initial_z_indices = &ui_node.initial_z_indices;
+            let initial_z_indices = ui_node.initial_z_indices.as_ref();
 
             if let Some(root_ids) = &ui_node.root_ids {
                 for root_id in root_ids {
@@ -1044,8 +1065,12 @@ pub fn render_ui(
 
         // Process elements marked for deletion first
         // These are explicitly marked for deletion and should be removed from primitive renderer and map
-        if !ui_node.pending_deletion.is_empty() {
-            let pending_deletion_set = ui_node.pending_deletion.clone();
+        let pending_empty = ui_node
+            .pending_deletion
+            .as_ref()
+            .map_or(true, |s| s.is_empty());
+        if !pending_empty {
+            let pending_deletion_set = ui_node.pending_deletion.as_ref().unwrap().clone();
 
             // Collect elements to remove by iterating over the map
             let mut to_remove: Vec<(UIElementID, UIElement)> = Vec::new();
@@ -1079,16 +1104,24 @@ pub fn render_ui(
 
             // Clean up other data structures
             for (element_id, _) in to_remove {
-                ui_node.needs_rerender.remove(&element_id);
-                ui_node.needs_layout_recalc.remove(&element_id);
-                ui_node.initial_z_indices.remove(&element_id);
+                if let Some(ref mut set) = ui_node.needs_rerender {
+                    set.remove(&element_id);
+                }
+                if let Some(ref mut set) = ui_node.needs_layout_recalc {
+                    set.remove(&element_id);
+                }
+                if let Some(ref mut map) = ui_node.initial_z_indices {
+                    map.remove(&element_id);
+                }
                 if let Some(root_ids) = &mut ui_node.root_ids {
                     root_ids.retain(|id| id != &element_id);
                 }
             }
 
             // Clear the pending_deletion set
-            ui_node.pending_deletion.clear();
+            if let Some(ref mut set) = ui_node.pending_deletion {
+                set.clear();
+            }
         }
 
         // OPTIMIZATION: Only remove newly invisible elements from primitive renderer cache

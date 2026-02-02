@@ -51,7 +51,8 @@ pub struct Node3D {
     )]
     pub pivot: Vector3,
 
-    /// Cached list of child IDs that are Node3D-based (for propagation)
+    /// Cached list of child IDs that are Node3D-based (for propagation).
+    /// Always None at codegen; populated at runtime.
     #[serde(skip, default)]
     pub node3d_children_cache: Option<Vec<crate::ids::NodeID>>,
 
