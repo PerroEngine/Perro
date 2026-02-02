@@ -128,6 +128,8 @@ impl EngineMethodCodegen for NodeMethodRef {
                     {
                         name_str = format!("{}.as_str()", name_str);
                     }
+                    name_str =
+                        crate::scripting::codegen::optimize_string_from_as_str(&name_str);
                     let node_id_clean = node_id.strip_prefix("&").unwrap_or(&node_id);
                     format!(
                         "api.set_script_var({}, {}, json!({}))",
@@ -153,9 +155,36 @@ impl EngineMethodCodegen for NodeMethodRef {
                 } else {
                     format!("{}.as_str()", child_name)
                 };
+                let child_name_clean =
+                    crate::scripting::codegen::optimize_string_from_as_str(&child_name_clean);
                 format!(
                     "api.get_child_by_name({}, {})",
                     node_id_clean, child_name_clean
+                )
+            }
+
+            NodeMethodRef::GetElement => {
+                let ui_node_id = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "self.id".to_string());
+                let name = args_strs
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "\"\"".to_string());
+                let ui_node_id_clean = ui_node_id.strip_prefix("&").unwrap_or(&ui_node_id);
+                let name_clean = if name.starts_with('"') {
+                    name
+                } else if name.contains(".as_str()") {
+                    name
+                } else {
+                    format!("{}.as_str()", name)
+                };
+                let name_clean =
+                    crate::scripting::codegen::optimize_string_from_as_str(&name_clean);
+                format!(
+                    "api.get_element_by_name({}, {})",
+                    ui_node_id_clean, name_clean
                 )
             }
 

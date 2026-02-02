@@ -23,6 +23,9 @@ use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
+use perro_core::nodes::ui::ui_registry::UIElementType;
+use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};
+
 use perro_core::prelude::*;
 
 //=======================================;
@@ -74,12 +77,16 @@ impl Script for PuptestsGlobalTestsTestGlobalsModulesPupScript {
         let mut __t_uscore: Value = api.call_function_id(NodeID::from_u32(3), 11535882182265529689u64, &[]);
         api.call_function_id(NodeID::from_u32(3), 13809999789525982264u64, &[json!(json!(10f32))]);
         let mut __t_umore: Value = api.call_function_id(NodeID::from_u32(3), 2507764067283617332u64, &[]);
-        let mut __t_pi: f32 = crate::puptests_global_tests_math_utils_pup::MathUtils::__t_PI;
-        let mut __t_two: i32 = crate::puptests_global_tests_math_utils_pup::MathUtils::__t_TWO;
-        let mut __t_sum: i32 = crate::puptests_global_tests_math_utils_pup::MathUtils::__t_add(1i32, 2i32, api);
-        let mut __t_scaled: f32 = crate::puptests_global_tests_math_utils_pup::MathUtils::__t_scale(2.0f32, 3.0f32, api);
-        let mut __t_dsum: i32 = crate::puptests_global_tests_more_utils_pup::MoreUtils::__t_double_sum(4i32, 5i32, api);
-        let mut __t_spi: f32 = crate::puptests_global_tests_more_utils_pup::MoreUtils::__t_scaled_pi(2.0f32, api);
+        let mut __t_pi: f32 = crate::puptests_module_tests_math_utils_pup::MathUtils::__t_PI;
+        let mut __t_two: i32 = crate::puptests_module_tests_math_utils_pup::MathUtils::__t_TWO;
+        let mut __t_sum: i32 = crate::puptests_module_tests_math_utils_pup::MathUtils::__t_add(1i32, 2i32, api);
+        let mut __t_scaled: f32 = crate::puptests_module_tests_math_utils_pup::MathUtils::__t_scale(2.0f32, 3.0f32, api);
+        let mut __t_dsum: i32 = crate::puptests_module_tests_more_utils_pup::MoreUtils::__t_double_sum(4i32, 5i32, api);
+        let mut __t_spi: f32 = crate::puptests_module_tests_more_utils_pup::MoreUtils::__t_scaled_pi(2.0f32, api);
+        let mut __t_cpi: f32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_PI;
+        let mut __t_ctwo: i32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_TWO;
+        let mut __t_doubled: i32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_double(7i32, api);
+        let mut __t_csum: i32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_add(10i32, 20i32, api);
     }
 
 }
@@ -109,9 +116,17 @@ return ((((__t_g.as_i64().unwrap_or(0) as i32) as f32) == 30f32) && (((__t_u.as_
     }
 
     fn __t_test_module_calls_module(&mut self, api: &mut ScriptApi<'_>) -> bool {
-        let mut __t_d: i32 = crate::puptests_global_tests_more_utils_pup::MoreUtils::__t_double_sum(1i32, 2i32, api);
-        let mut __t_s: f32 = crate::puptests_global_tests_more_utils_pup::MoreUtils::__t_scaled_pi(1.0f32, api);
+        let mut __t_d: i32 = crate::puptests_module_tests_more_utils_pup::MoreUtils::__t_double_sum(1i32, 2i32, api);
+        let mut __t_s: f32 = crate::puptests_module_tests_more_utils_pup::MoreUtils::__t_scaled_pi(1.0f32, api);
 return (((__t_d as f32) == 6f32) && ((__t_s as f32) > 3.0f32));    false
+    }
+
+    fn __t_test_simple_module(&mut self, api: &mut ScriptApi<'_>) -> bool {
+        let mut __t_pi: f32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_PI;
+        let mut __t_two: i32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_TWO;
+        let mut __t_d: i32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_double(4i32, api);
+        let mut __t_sum: i32 = crate::puptests_module_tests_simple_module_pup::SimpleModule::__t_add(1i32, 2i32, api);
+return (((((__t_pi as f32) > 3.0f32) && ((__t_two as f32) == 2f32)) && ((__t_d as f32) == 8f32)) && ((__t_sum as f32) == 3f32));    false
     }
 
 }
@@ -211,6 +226,9 @@ static DISPATCH_TABLE: phf::Map<
         },
         10660104873886222307u64 => | script: &mut PuptestsGlobalTestsTestGlobalsModulesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
             json!(script.__t_test_module_calls_module(api))
+        },
+        17342970142095418825u64 => | script: &mut PuptestsGlobalTestsTestGlobalsModulesPupScript, params: &[Value], api: &mut ScriptApi<'_>| -> Value {
+            json!(script.__t_test_simple_module(api))
         },
 
     };

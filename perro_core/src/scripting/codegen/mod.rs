@@ -26,7 +26,8 @@ mod utils;
 pub use boilerplate::{implement_script_boilerplate, implement_script_boilerplate_internal};
 pub use file_io::{derive_rust_perro_script, write_to_crate};
 pub use utils::{
-    get_node_type, is_node_type, rename_function, rename_struct, rename_variable, type_is_node,
+    get_node_type, is_node_type, optimize_string_from_as_str, optimize_string_from_to_string,
+    rename_function, rename_struct, rename_variable, type_is_node,
 };
 
 // Note: Expr, TypedExpr, and Stmt types are available from crate::scripting::ast

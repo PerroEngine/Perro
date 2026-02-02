@@ -228,6 +228,7 @@ pub enum NodeMethodRef {
     CallFunction,
     CallDeferred,
     GetChildByName,
+    GetElement, // UINode.get_element(name) -> DynUIElement (nullable UIElementID; no Option on PUP)
     GetParent,
     AddChild,
     ClearChildren,
@@ -724,6 +725,16 @@ impl EngineRegistry {
                 ("visible", Type::Bool, None),
                 ("fur_path", Type::Option(Box::new(Type::CowStr)), None),
             ],
+        );
+        reg.register_node_methods(
+            NodeType::UINode,
+            vec![(
+                "get_element",
+                vec![Type::String],
+                Type::DynUIElement,
+                Some(NodeMethodRef::GetElement),
+                vec!["name"],
+            )],
         );
 
         // Node3D - inherits from Node

@@ -10,6 +10,7 @@ res/puptests/
 ├── type_tests/      — Types, conversions, casting, syntax edge cases
 ├── resource_tests/  — Resource APIs (Texture, Mesh, Quaternion, Shape2D, Signal, Array, Map)
 ├── global_tests/    — @root, @global, @module; globals calling globals, root/modules/globals calling modules
+├── module_tests/    — @module constants and functions
 └── TEST_SUITES.md   — This file
 ```
 
@@ -25,6 +26,7 @@ res/puptests/
 | test_camera2d_api.pup | Camera2D | zoom, active + Node2D |
 | test_shape_instance_2d_api.pup | ShapeInstance2D | shape, color, filled + Node2D |
 | test_engine_structs.pup | Node2D | Nested engine struct access (transform.position), new Vector2/Color, variable assign |
+| test_ui_node_api.pup | UINode | get_element (self methods); cast to typed element (as UIText, UIButton, UIPanel); dyn element (Option&lt;Element&gt;, future: field resolution match like DynNode) |
 
 ## Type tests (`puptests/type_tests/`)
 
@@ -42,7 +44,11 @@ res/puptests/
 - **ui_helper.pup** — `@global UIHelper`: global calling other global (GameState) and module (MoreUtils).
 - **math_utils.pup** — `@module MathUtils`: const and fn; used by Root, GameState, MoreUtils.
 - **more_utils.pup** — `@module MoreUtils`: module calling module (MathUtils.add, MathUtils.TWO, MathUtils.scale).
-- **test_globals_modules.pup** — `@script` attached in main.scn; exercises Root::, GameState::, UIHelper::, MathUtils., MoreUtils.; test_ fns: root and module, global calls global, global calls module, module calls module.
+- **test_globals_modules.pup** — `@script` attached in main.scn; exercises Root::, GameState::, UIHelper::, MathUtils., MoreUtils., SimpleModule.; test_ fns: root and module, global calls global, global calls module, module calls module, SimpleModule.
+
+## Module tests (`puptests/module_tests/`)
+
+- **simple_module.pup** — `@module SimpleModule`: `const` with explicit type, `fn double`, `fn add`. Used by test_globals_modules (test_simple_module).
 
 ## Numeric literals with `_`
 

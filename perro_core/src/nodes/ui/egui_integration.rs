@@ -9,14 +9,12 @@ use crate::{
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
     ui_elements::{
-        ui_container::{
-            CornerRadius, GridLayout, HLayout, Layout as UILayout, LayoutAlignment, UIPanel,
-            VLayout,
-        },
+        ui_button::UIButton,
+        ui_container::{CornerRadius, UIPanel},
         ui_text::UIText,
     },
 };
-use egui::{Align, Color32, Context, Direction, FontId, Frame, Layout, Rect, RichText, Stroke, Ui};
+use egui::{Color32, Context, FontId, Frame, Rect, RichText, Stroke, Ui};
 use std::collections::HashMap;
 
 /// Converts Perro Color to egui Color32
@@ -62,24 +60,6 @@ fn transform_to_rect(transform: &Transform2D, size: &Vector2, pivot: &Vector2) -
     let max = egui::pos2(max_x, max_y);
 
     Rect::from_min_max(min, max)
-}
-
-/// Converts LayoutAlignment to egui Align (for vertical layouts)
-fn layout_align_to_egui_align_vertical(align: LayoutAlignment) -> Align {
-    match align {
-        LayoutAlignment::Start => Align::TOP, // Top in vertical layout
-        LayoutAlignment::Center => Align::Center,
-        LayoutAlignment::End => Align::BOTTOM, // Bottom in vertical layout
-    }
-}
-
-/// Converts LayoutAlignment to egui Align (for horizontal layouts)
-fn layout_align_to_egui_align_horizontal(align: LayoutAlignment) -> Align {
-    match align {
-        LayoutAlignment::Start => Align::LEFT, // Left in horizontal layout
-        LayoutAlignment::Center => Align::Center,
-        LayoutAlignment::End => Align::RIGHT, // Right in horizontal layout
-    }
 }
 
 /// State tracked per element for egui rendering
@@ -151,6 +131,9 @@ impl EguiIntegration {
         match element {
             UIElement::Panel(panel) => {
                 self.render_panel_with_children(panel, elements, ui, api);
+            }
+            UIElement::Button(button) => {
+                self.render_button_with_children(button, elements, ui, api);
             }
             UIElement::Text(text) => {
                 self.render_text(text, ui);
@@ -234,16 +217,48 @@ impl EguiIntegration {
         );
     }
 
-    /// Render Button (wraps egui Button) with signal support
-    /// NOTE: UIButton type no longer exists - this function is kept for potential future use
-    #[allow(dead_code)]
-    pub fn render_button(
+    /// Render Button (wraps egui Button) with children and signal support
+    pub fn render_button_with_children(
         &mut self,
-        _button: &dyn std::any::Any, // Placeholder - UIButton was removed
-        _ui: &mut Ui,
-        _api: &mut Option<&mut crate::scripting::api::ScriptApi>,
+        button: &UIButton,
+        elements: &std::collections::HashMap<UIElementID, UIElement>,
+        ui: &mut Ui,
+        api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        // UIButton type was removed - function body removed
+        let label = if button.label.is_empty() {
+            &button.base.name
+        } else {
+            &button.label
+        };
+        let rect = transform_to_rect(
+            &button.base.global_transform,
+            &button.base.size,
+            &button.base.pivot,
+        );
+        ui.allocate_ui_at_rect(rect, |ui| {
+            let response = ui.button(label);
+            if response.clicked() {
+                self.events.push(ElementEvent::ButtonClicked(
+                    button.base.id,
+                    button.base.name.clone(),
+                ));
+            }
+            if response.hovered() {
+                self.events.push(ElementEvent::ButtonHovered(button.base.id, true));
+            }
+            if response.contains_pointer() {
+                self.events.push(ElementEvent::ButtonPressed(
+                    button.base.id,
+                    ui.input(|i| i.pointer.primary_down()),
+                ));
+            }
+            // Render children inside the button area
+            for &child_id in button.get_children() {
+                if let Some(child) = elements.get(&child_id) {
+                    self.render_element_recursive(child, elements, ui, api);
+                }
+            }
+        });
     }
 
     /// Render TextInput (maps to egui TextEdit::singleline)
@@ -258,155 +273,6 @@ impl EguiIntegration {
     #[allow(dead_code)]
     pub fn render_text_edit(&mut self, _text_edit: &dyn std::any::Any, _ui: &mut Ui) {
         // UITextEdit type was removed - function body removed
-    }
-
-    /// Render Layout (deprecated - use VLayout or HLayout) using egui layouts with children
-    pub fn render_layout_with_children(
-        &mut self,
-        layout: &UILayout,
-        elements: &std::collections::HashMap<UIElementID, UIElement>,
-        ui: &mut Ui,
-        api: &mut Option<&mut crate::scripting::api::ScriptApi>,
-    ) {
-        let rect = transform_to_rect(
-            &layout.base.global_transform,
-            &layout.base.size,
-            &layout.base.pivot,
-        );
-        let direction = match layout.container.mode {
-            crate::ui_elements::ui_container::ContainerMode::Horizontal => Direction::LeftToRight,
-            crate::ui_elements::ui_container::ContainerMode::Vertical => Direction::TopDown,
-            crate::ui_elements::ui_container::ContainerMode::Grid => Direction::LeftToRight, // Grid handled separately
-        };
-        let align = layout_align_to_egui_align_horizontal(layout.container.align);
-
-        // Create egui layout
-        let egui_layout = match direction {
-            Direction::LeftToRight => Layout::left_to_right(align),
-            Direction::TopDown => Layout::top_down(align),
-            Direction::RightToLeft => Layout::right_to_left(align),
-            Direction::BottomUp => Layout::bottom_up(align),
-        };
-
-        ui.allocate_ui_at_rect(rect, |ui| {
-            ui.with_layout(egui_layout, |ui| {
-                // Apply padding
-                ui.add_space(layout.container.padding.left);
-
-                // Render children directly from layout
-                for &child_id in &layout.base.children {
-                    if let Some(child) = elements.get(&child_id) {
-                        self.render_element_recursive(child, elements, ui, api);
-                    }
-                }
-            });
-        });
-    }
-
-    /// Render VLayout (vertical layout) using egui layouts with children
-    pub fn render_vlayout_with_children(
-        &mut self,
-        vlayout: &VLayout,
-        elements: &std::collections::HashMap<UIElementID, UIElement>,
-        ui: &mut Ui,
-        api: &mut Option<&mut crate::scripting::api::ScriptApi>,
-    ) {
-        let rect = transform_to_rect(
-            &vlayout.base.global_transform,
-            &vlayout.base.size,
-            &vlayout.base.pivot,
-        );
-        let align = layout_align_to_egui_align_vertical(vlayout.align);
-
-        // Create vertical egui layout
-        let egui_layout = Layout::top_down(align);
-
-        ui.allocate_ui_at_rect(rect, |ui| {
-            ui.with_layout(egui_layout, |ui| {
-                // Apply padding
-                ui.add_space(vlayout.padding.top);
-
-                // Render children with gap
-                for (idx, &child_id) in vlayout.base.children.iter().enumerate() {
-                    if idx > 0 {
-                        ui.add_space(vlayout.gap.y);
-                    }
-                    if let Some(child) = elements.get(&child_id) {
-                        self.render_element_recursive(child, elements, ui, api);
-                    }
-                }
-            });
-        });
-    }
-
-    /// Render HLayout (horizontal layout) using egui layouts with children
-    pub fn render_hlayout_with_children(
-        &mut self,
-        hlayout: &HLayout,
-        elements: &std::collections::HashMap<UIElementID, UIElement>,
-        ui: &mut Ui,
-        api: &mut Option<&mut crate::scripting::api::ScriptApi>,
-    ) {
-        let rect = transform_to_rect(
-            &hlayout.base.global_transform,
-            &hlayout.base.size,
-            &hlayout.base.pivot,
-        );
-        let align = layout_align_to_egui_align_horizontal(hlayout.align);
-
-        // Create horizontal egui layout
-        let egui_layout = Layout::left_to_right(align);
-
-        ui.allocate_ui_at_rect(rect, |ui| {
-            ui.with_layout(egui_layout, |ui| {
-                // Apply padding
-                ui.add_space(hlayout.padding.left);
-
-                // Render children with gap
-                for (idx, &child_id) in hlayout.base.children.iter().enumerate() {
-                    if idx > 0 {
-                        ui.add_space(hlayout.gap.x);
-                    }
-                    if let Some(child) = elements.get(&child_id) {
-                        self.render_element_recursive(child, elements, ui, api);
-                    }
-                }
-            });
-        });
-    }
-
-    /// Render GridLayout using egui Grid with children
-    pub fn render_grid_with_children(
-        &mut self,
-        grid: &GridLayout,
-        elements: &std::collections::HashMap<UIElementID, UIElement>,
-        ui: &mut Ui,
-        api: &mut Option<&mut crate::scripting::api::ScriptApi>,
-    ) {
-        let rect = transform_to_rect(
-            &grid.base.global_transform,
-            &grid.base.size,
-            &grid.base.pivot,
-        );
-
-        ui.allocate_ui_at_rect(rect, |ui| {
-            // Apply padding
-            ui.add_space(grid.padding.left);
-            ui.add_space(grid.padding.top);
-
-            // Use egui Grid for proper grid layout
-            use egui::Grid;
-            Grid::new("grid_layout")
-                .num_columns(grid.cols)
-                .spacing([grid.gap.x, grid.gap.y])
-                .show(ui, |ui| {
-                    for &child_id in &grid.base.children {
-                        if let Some(child) = elements.get(&child_id) {
-                            self.render_element_recursive(child, elements, ui, api);
-                        }
-                    }
-                });
-        });
     }
 
     /// Clear events (call after processing)

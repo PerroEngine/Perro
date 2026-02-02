@@ -625,14 +625,14 @@ impl Stmt {
                     // Don't clone if the expression already produces an owned value (e.g., from unwrap_or_default, from_str, etc.)
                     // This is important for generic functions like FromPrimitive::from_f32 where cloning breaks type inference
                     // Also don't clone if the expression already produces an owned value
-                    // Note: read_node/read_scene_node return Clone types; the .clone() (or Cow::Owned) inside the closure
+                    // Note: read_node/read_scene_node/read_ui_element return Clone types; the .clone() (or Cow::Owned) inside the closure
                     // already produces an owned value, so we don't add an extra .clone()
                     let already_owned = raw_expr.contains(".unwrap_or_default()")
                         || raw_expr.contains(".unwrap()")
                         || raw_expr.contains("::from_str")
                         || raw_expr.contains("::from(")
                         || raw_expr.contains("::new(")
-                        || raw_expr.contains("get_element_clone")
+                        || raw_expr.contains("read_ui_element(")
                         || raw_expr.contains("read_node(")
                         || raw_expr.contains("read_scene_node(");
 
@@ -690,7 +690,16 @@ impl Stmt {
                     }
                 };
 
-                let type_annotation = if let Some(typ) = &var.typ {
+                // When RHS is optional ID (get_element, get_child, etc.), always declare as Option<...>; ignore var.typ from cast.
+                let type_annotation = if inferred_type
+                    .as_ref()
+                    .map_or(false, |t| matches!(t, Type::DynUIElement | Type::DynNode))
+                {
+                    format!(
+                        ": {}",
+                        type_to_rust_annotation(inferred_type.as_ref().unwrap())
+                    )
+                } else if let Some(typ) = &var.typ {
                     format!(": {}", type_to_rust_annotation(typ))
                 } else if let Some(ref inferred) = inferred_type {
                     // DynNode match: omit type so compiler infers, unless we unified (Vector2->Vector3 or f32->Quaternion)
@@ -1401,6 +1410,31 @@ impl Stmt {
             }
 
             Stmt::MemberAssign(lhs_expr, rhs_expr) => {
+                // Check if this is a UI element field assignment (text_el.content = x, el.label = x)
+                if let Expr::MemberAccess(base, field) = &lhs_expr.expr {
+                    let base_type = script.infer_expr_type(base, current_func);
+                    let base_code = base.to_rust(needs_self, script, None, current_func, None);
+                    let ui_node_id = "self.id";
+                    let rhs_code = rhs_expr.to_rust(needs_self, script, current_func);
+                    let element_id_arg = format!("{}.unwrap_or(UIElementID::nil())", base_code);
+                    let ui_element_assign = base_type.as_ref().and_then(|ty| {
+                        match ty {
+                            Type::UIElement(et) => crate::structs::ui_bindings::emit_mutate_typed(
+                                ui_node_id, &element_id_arg, *et, field, &rhs_code,
+                            )
+                            .map(|code| format!("        {}\n", code)),
+                            Type::DynUIElement => crate::structs::ui_bindings::emit_mutate_dyn(
+                                ui_node_id, &element_id_arg, field, &rhs_code,
+                            )
+                            .map(|code| format!("        {}\n", code)),
+                            _ => None,
+                        }
+                    });
+                    if let Some(code) = ui_element_assign {
+                        return code;
+                    }
+                }
+
                 // Check if this is a node member assignment (like self.transform.position.x = value)
                 if let Some((node_id, node_type, field_path, closure_var)) =
                     extract_node_member_info(&lhs_expr.expr, script, current_func)

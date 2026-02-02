@@ -23,6 +23,9 @@ use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
+use perro_core::nodes::ui::ui_registry::UIElementType;
+use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};
+
 use perro_core::prelude::*;
 
 //=======================================;
@@ -114,13 +117,13 @@ impl PuptestsNodeTestsTestNode2dApiPupScript {
 
     fn __t_test_node_methods(&mut self, api: &mut ScriptApi<'_>) {
         let mut parent_id: NodeID = api.get_parent(self.id);
-        let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
+        let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, "Child");
         let mut __t_ty: NodeType = api.get_type(self.id);
         let mut __t_pty: NodeType = api.get_parent_type(self.id);
         api.set_script_var_id(self.id, 1032136658935082110u64, json!(json!(json!(42f32))));
         let mut __t_v: Value = api.get_script_var_id(self.id, 1032136658935082110u64);
         api.call_function_id(self.id, 14019570758099282180u64, &[json!(json!(1.0f32))]);
-        let mut c_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Other").as_str());
+        let mut c_id: Option<NodeID> = api.get_child_by_name(self.id, "Other");
         if c_id.is_some() {
             let mut __t_cv = api.get_script_var_id(c_id.expect("Child node not found"), 1903775884355078583u64);
             let temp_api_var_0: f32 = api.Time.get_delta(); api.call_function_id(c_id.expect("Child node not found"), 17956486561529147460u64, &[json!(temp_api_var_0)]);
@@ -129,7 +132,7 @@ impl PuptestsNodeTestsTestNode2dApiPupScript {
 
     fn __t_test_call_deferred(&mut self, api: &mut ScriptApi<'_>) {
         api.call_function_id_deferred(self.id, 14019570758099282180u64, &[json!(json!(2.0f32))]);
-        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Other").as_str());
+        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, "Other");
         if other_id.is_some() {
             let temp_api_var_0: f32 = api.Time.get_delta(); api.call_function_id_deferred(other_id.expect("Child node not found"), 17956486561529147460u64, &[json!(temp_api_var_0)]);
         }

@@ -12,7 +12,7 @@ use crate::{
     structs::Color,
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
-    ui_elements::{ui_container::UIPanel, ui_text::UIText},
+    ui_elements::{ui_button::UIButton, ui_container::UIPanel, ui_text::UIText},
     ui_node::UINode,
 };
 
@@ -393,7 +393,7 @@ fn calculate_all_content_sizes(
 
     // Then calculate this element's size based on its (now correctly sized) children
     if let Some(element) = elements.get(current_id) {
-        let is_container = matches!(element, UIElement::Panel(_));
+        let is_container = matches!(element, UIElement::Panel(_) | UIElement::Button(_));
 
         if is_container {
             let content_size = calculate_content_size(elements, current_id);
@@ -721,7 +721,7 @@ pub fn update_ui_layout_cached_optimized(ui_node: &mut UINode, cache: &RwLock<La
         // Recalculate content sizes for dirty elements only
         for element_id in sorted_dirty {
             if let Some(element) = elements.get(&element_id) {
-                let is_container = matches!(element, UIElement::Panel(_));
+                let is_container = matches!(element, UIElement::Panel(_) | UIElement::Button(_));
 
                 if is_container {
                     // Use cached visibility AND percentage refs (no parent chain walks!)
@@ -944,7 +944,7 @@ pub fn render_ui(
             // (visibility_cache was already built at the start of the function)
             for element_id in sorted_dirty {
                 if let Some(element) = elements.get(&element_id) {
-                    let is_container = matches!(element, UIElement::Panel(_));
+                    let is_container = matches!(element, UIElement::Panel(_) | UIElement::Button(_));
 
                     if is_container {
                         // Use cached visibility AND percentage refs (no parent chain walks!)
@@ -1087,7 +1087,7 @@ pub fn render_ui(
             // Remove from primitive renderer cache
             for (element_id, element) in &to_remove {
                 match element {
-                    UIElement::Panel(_) => {
+                    UIElement::Panel(_) | UIElement::Button(_) => {
                         gfx.renderer_ui
                             .remove_panel(&mut gfx.renderer_prim, *element_id);
                     }
@@ -1133,7 +1133,7 @@ pub fn render_ui(
         for (element_id, element) in elements.iter() {
             if newly_invisible_set.contains(element_id) {
                 match element {
-                    UIElement::Panel(_) => {
+                    UIElement::Panel(_) | UIElement::Button(_) => {
                         gfx.renderer_ui
                             .remove_panel(&mut gfx.renderer_prim, *element_id);
                     }
@@ -1150,6 +1150,7 @@ pub fn render_ui(
             if let Some(element) = elements.get_mut(&element_id) {
                 match element {
                     UIElement::Panel(panel) => render_panel(panel, gfx, timestamp),
+                    UIElement::Button(button) => render_button(button, gfx, timestamp),
                     UIElement::Text(text) => render_text(text, gfx, timestamp),
                 }
             }
@@ -1265,6 +1266,15 @@ pub fn calculate_character_positions(text: &str, font_size: f32) -> Vec<f32> {
     (0..text.len())
         .map(|i| (i + 1) as f32 * char_width)
         .collect()
+}
+
+/// Render button as a panel (same primitive path); label is not drawn in primitive renderer.
+fn render_button(button: &UIButton, gfx: &mut Graphics, timestamp: u64) {
+    let panel = UIPanel {
+        base: button.base.clone(),
+        props: Default::default(),
+    };
+    render_panel(&panel, gfx, timestamp);
 }
 
 // Optimized text rendering - only regenerate atlas when font properties change

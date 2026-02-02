@@ -15,6 +15,18 @@ use crate::{
     scripting::source_map::{SourceMap, build_source_map_from_script},
 };
 
+/// First non-empty, non-comment line in PUP source (used to detect @module / @root / @global / @script).
+fn first_directive_line(code: &str) -> &str {
+    for line in code.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#') {
+            continue;
+        }
+        return trimmed;
+    }
+    ""
+}
+
 /// Convert a *res:// path* or absolute path under res/
 /// into a unique Rust-safe identifier.
 ///
@@ -526,8 +538,9 @@ pub fn transpile(
             let code = fs::read_to_string(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
-            // Check if it's a module, root, or global
-            if code.trim_start().starts_with("@module") {
+            // Check if it's a module, root, or global (skip leading comments)
+            let first_line = first_directive_line(&code);
+            if first_line.starts_with("@module") {
                 let mut parser = PupParser::new(&code);
                 if let Ok(module) = parser.parse_module() {
                     let identifier = script_path_to_identifier(&path.to_string_lossy())?;
@@ -540,7 +553,7 @@ pub fn transpile(
                     module_functions.insert(module.module_name.clone(), module.functions.clone());
                     module_variables.insert(module.module_name.clone(), module.variables.clone());
                 }
-            } else if code.trim_start().starts_with("@root") {
+            } else if first_line.starts_with("@root") {
                 let mut parser = PupParser::new(&code);
                 if parser.parse_root().is_ok() {
                     let identifier = script_path_to_identifier(&path.to_string_lossy())?;
@@ -549,7 +562,7 @@ pub fn transpile(
                     }
                     global_identifiers.insert(identifier);
                 }
-            } else if code.trim_start().starts_with("@global") {
+            } else if first_line.starts_with("@global") {
                 let mut parser = PupParser::new(&code);
                 if let Ok(script) = parser.parse_global() {
                     let identifier = script_path_to_identifier(&path.to_string_lossy())?;
@@ -671,10 +684,11 @@ pub fn transpile(
                 let mut parser = PupParser::new(&code);
                 parser.set_source_file(res_path.clone());
 
-                // Try to parse as module, then root, then global, then script
-                let is_module = code.trim_start().starts_with("@module");
-                let is_root = code.trim_start().starts_with("@root");
-                let is_global = code.trim_start().starts_with("@global");
+                // Try to parse as module, then root, then global, then script (skip leading comments)
+                let first_line = first_directive_line(&code);
+                let is_module = first_line.starts_with("@module");
+                let is_root = first_line.starts_with("@root");
+                let is_global = first_line.starts_with("@global");
 
                 if is_root {
                     let mut script = parser.parse_root()?;

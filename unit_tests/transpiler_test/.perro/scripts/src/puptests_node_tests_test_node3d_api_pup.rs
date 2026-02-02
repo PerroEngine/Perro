@@ -23,6 +23,9 @@ use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
+use perro_core::nodes::ui::ui_registry::UIElementType;
+use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};
+
 use perro_core::prelude::*;
 
 //=======================================;

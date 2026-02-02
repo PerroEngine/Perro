@@ -17,6 +17,14 @@ pub fn is_node_type(type_name: &str) -> bool {
         .any(|node_type| format!("{:?}", node_type) == type_name)
 }
 
+/// Check if a type name is a UI element type (UIText, UIPanel, UIButton)
+pub fn is_ui_element_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "UIText" | "Text" | "UIPanel" | "Panel" | "UIButton" | "Button"
+    )
+}
+
 /// Convert a type name string to NodeType
 pub(crate) fn string_to_node_type(type_name: &str) -> Option<NodeType> {
     ENGINE_REGISTRY
@@ -31,14 +39,16 @@ pub fn type_is_node(typ: &Type) -> bool {
     matches!(typ, Type::Node(_) | Type::DynNode)
 }
 
-/// Check if a type becomes NodeID/TextureID/MeshID/SignalID or Option thereof (i.e., represents an ID).
+/// Check if a type becomes NodeID/TextureID/MeshID/SignalID/UIElementID or Option thereof (i.e., represents an ID).
 /// Variables of these types get the _id suffix in generated Rust (e.g. var n: Node2D → n_id: NodeID).
 pub(crate) fn type_becomes_id(typ: &Type) -> bool {
     match typ {
-        Type::Node(_) | Type::DynNode | Type::Signal => true,
+        Type::Node(_) | Type::DynNode | Type::Signal | Type::UIElement(_) | Type::DynUIElement => true,
         Type::EngineStruct(EngineStructKind::Texture)
         | Type::EngineStruct(EngineStructKind::Mesh) => true,
-        Type::Option(boxed) => matches!(boxed.as_ref(), Type::DynNode | Type::Node(_)),
+        Type::Option(boxed) => {
+            matches!(boxed.as_ref(), Type::DynNode | Type::Node(_) | Type::UIElement(_) | Type::DynUIElement)
+        }
         _ => false,
     }
 }
@@ -102,6 +112,109 @@ pub fn get_node_type(typ: &Type) -> Option<&NodeType> {
     match typ {
         Type::Node(nt) => Some(nt),
         _ => None,
+    }
+}
+
+/// If the expression is `String::from(...).to_string()`, return `String::from(...)` to avoid redundant allocation.
+/// Also replaces every occurrence of that pattern when it appears inside a larger string (e.g. template output).
+pub fn optimize_string_from_to_string(expr: &str) -> String {
+    const PREFIX: &str = "String::from(";
+    const SUFFIX: &str = ".to_string()";
+    let bytes = expr.as_bytes();
+    let mut result = String::with_capacity(expr.len());
+    let mut i = 0usize;
+    let mut broken = false;
+    while i <= bytes.len().saturating_sub(PREFIX.len()) {
+        if !bytes[i..].starts_with(PREFIX.as_bytes()) {
+            result.push(char::from(bytes[i]));
+            i += 1;
+            continue;
+        }
+        let start = i;
+        i += PREFIX.len();
+        let arg_start = i;
+        let mut depth = 1i32;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b == b'"' {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'\\' {
+                        i += 2;
+                        continue;
+                    }
+                    if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            if b == b'(' {
+                depth += 1;
+            } else if b == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    let arg_end = i;
+                    i += 1;
+                    if i + SUFFIX.len() <= bytes.len() && bytes[i..].starts_with(SUFFIX.as_bytes()) {
+                        result.push_str(PREFIX);
+                        result.push_str(std::str::from_utf8(&bytes[arg_start..arg_end]).unwrap_or(""));
+                        result.push(')');
+                        i += SUFFIX.len();
+                    } else {
+                        result.push_str(&expr[start..i]);
+                    }
+                    break;
+                }
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            result.push_str(std::str::from_utf8(&bytes[start..]).unwrap_or(""));
+            broken = true;
+            break;
+        }
+    }
+    if !broken && i < bytes.len() {
+        result.push_str(&expr[i..]);
+    }
+    if result.is_empty() {
+        expr.to_string()
+    } else {
+        result
+    }
+}
+
+/// If the expression is `String::from("literal").as_str()`, return `"literal"` to avoid allocation.
+/// Handles escaped quotes inside the literal. Returns the original string if the pattern doesn't match.
+pub fn optimize_string_from_as_str(expr: &str) -> String {
+    let trimmed = expr.trim();
+    const PREFIX: &str = "String::from(\"";
+    const SUFFIX: &str = "\").as_str()";
+    if !trimmed.starts_with(PREFIX) || !trimmed.ends_with(SUFFIX) {
+        return expr.to_string();
+    }
+    let rest = &trimmed[PREFIX.len()..trimmed.len() - SUFFIX.len()];
+    let mut content_end_byte = None;
+    let mut chars = rest.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '"' => {
+                content_end_byte = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    match content_end_byte {
+        Some(end) => format!("\"{}\"", &rest[..end]),
+        // No internal quote: entire `rest` is the literal (e.g. "MaybeMissing")
+        None => format!("\"{}\"", rest),
     }
 }
 

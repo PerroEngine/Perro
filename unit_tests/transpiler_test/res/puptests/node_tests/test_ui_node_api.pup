@@ -1,0 +1,81 @@
+// UINode API — get_element (self methods), cast to typed element (UIText, UIButton, etc.), dyn element.
+@script TestUINodeApi extends UINode
+
+on init() {
+    test_get_element()
+    test_get_element_cast_typed()
+    test_dyn_element()
+    test_typed_no_null_check()
+    test_dyn_no_null_check()
+}
+
+// --- get_element() returns (DynUIElement) ---
+fn test_get_element() {
+    var el = self.get_element("SomeButton")
+    if el != null {
+        var _dummy = el
+    }
+    var missing = self.get_element("NonExistent")
+    if missing == null {
+        var _ok = true
+    }
+}
+
+// --- Cast to specific element type (same idea as node as Nodes); read and mutate fields ---
+fn test_get_element_cast_typed() {
+    var text_el = self.get_element("MyText") as UIText
+    if text_el != null {
+        var c = text_el.content
+        var _t = c
+        text_el.content = "Updated text"
+    }
+    var btn_el = self.get_element("MyButton") as UIButton
+    if btn_el != null {
+        var lbl = btn_el.label
+        var _b = lbl
+        btn_el.label = "New label"
+    }
+    var panel_el = self.get_element("MyPanel") as UIPanel
+    if panel_el != null {
+        var _p = panel_el
+    }
+}
+
+// --- Dyn element: get_element without cast (DynUIElement is inherently nullable); read and mutate via match on element type ---
+fn test_dyn_element() {
+    var el = self.get_element("Anything")
+    if el != null {
+        var _held = el
+        var c = el.content
+        var _c2 = c
+        el.content = "Dyn content"
+        var lbl = el.label
+        var _l2 = lbl
+        el.label = "Dyn label"
+    }
+}
+
+// --- Typed element without null check: read/mutate when element may be nil (read returns default, mutate no-op) ---
+// "as UIText" / "as UIButton" are type narrows only: they tell the script to use that element's API (content, label).
+// The value is always Option<UIElementID>; there is no value conversion.
+fn test_typed_no_null_check() {
+    var text_el = self.get_element("MaybeMissing") as UIText
+    var c = text_el.content
+    var _t = c
+    text_el.content = "Set anyway"
+    var btn_el = self.get_element("MaybeMissingBtn") as UIButton
+    var lbl = btn_el.label
+    var _b = lbl
+    btn_el.label = "Set anyway"
+}
+
+// --- Dyn element without null check: read/mutate when element may be nil (read returns default, mutate no-op) ---
+fn test_dyn_no_null_check() {
+    var el = self.get_element("MaybeMissing")
+    var c = el.content
+    var _c = c
+    el.content = "Set anyway"
+    var lbl = el.label
+    var _l = lbl
+    el.label = "Set anyway"
+}

@@ -37,7 +37,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
 
-use crate::ids::{NodeID, SignalID, TextureID};
+use crate::ids::{NodeID, SignalID, TextureID, UIElementID};
 use crate::time_util::format_utc_datetime_compact;
 use serde::Serialize;
 use serde_json::Value;
@@ -2645,6 +2645,124 @@ impl<'a> ScriptApi<'a> {
         result
     }
 
+    /// Get the UI element type for a DynUIElement (for match on element type).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn get_element_type(
+        &self,
+        ui_node_id: NodeID,
+        element_id: UIElementID,
+    ) -> crate::nodes::ui::ui_registry::UIElementType {
+        if element_id.is_nil() {
+            return crate::nodes::ui::ui_registry::UIElementType::Panel; // default
+        }
+        let node = match self.scene.get_scene_node_ref(ui_node_id) {
+            Some(n) => n,
+            None => return crate::nodes::ui::ui_registry::UIElementType::Panel,
+        };
+        node.with_typed_ref(|ui: &crate::nodes::ui::ui_node::UINode| {
+            ui.get_element_by_id(element_id)
+                .map(|el| crate::nodes::ui::ui_registry::element_type(el))
+                .unwrap_or(crate::nodes::ui::ui_registry::UIElementType::Panel)
+        })
+        .unwrap_or(crate::nodes::ui::ui_registry::UIElementType::Panel)
+    }
+
+    /// Get a UI element by name from a UINode.
+    /// Returns Some(UIElementID) if found, None otherwise (DynUIElement = Option<UIElementID>, like Texture/Mesh).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn get_element_by_name(&self, ui_node_id: NodeID, name: &str) -> Option<UIElementID> {
+        let node = match self.scene.get_scene_node_ref(ui_node_id) {
+            Some(n) => n,
+            None => return None,
+        };
+        node.with_typed_ref(|ui: &crate::nodes::ui::ui_node::UINode| {
+            ui.find_element_by_name(name).map(|el| el.get_id())
+        })
+        .flatten()
+    }
+
+    /// Read a value from a UI element by type (mirrors read_node).
+    /// Returns R::default() if element_id is nil, element missing, or wrong type.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub fn read_ui_element<T, R: Clone + Default>(
+        &self,
+        ui_node_id: NodeID,
+        element_id: UIElementID,
+        f: impl FnOnce(&T) -> R,
+    ) -> R
+    where
+        T: crate::nodes::ui::ui_registry::UIElementDispatch,
+    {
+        if element_id.is_nil() {
+            return R::default();
+        }
+        let node = match self.scene.get_scene_node_ref(ui_node_id) {
+            Some(n) => n,
+            None => return R::default(),
+        };
+        node.with_typed_ref(|ui: &crate::nodes::ui::ui_node::UINode| {
+            match ui.get_element_by_id(element_id) {
+                Some(el) => el.with_typed_ref(f).unwrap_or_else(R::default),
+                None => R::default(),
+            }
+        })
+        .unwrap_or_else(R::default)
+    }
+
+    /// Mutate a UI element by type (mirrors mutate_node).
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub fn mutate_ui_element<T, F>(
+        &mut self,
+        ui_node_id: NodeID,
+        element_id: UIElementID,
+        f: F,
+    ) where
+        T: crate::nodes::ui::ui_registry::UIElementDispatch,
+        F: FnOnce(&mut T),
+    {
+        if element_id.is_nil() {
+            return;
+        }
+        if let Some(node) = self.scene.get_scene_node_mut(ui_node_id) {
+            let did_mutate = node
+                .with_typed_mut::<crate::nodes::ui::ui_node::UINode, bool>(|ui| {
+                    if let Some(el) = ui.get_element_by_id_mut(element_id) {
+                        el.with_typed_mut(f).is_some()
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            if did_mutate {
+                self.scene.mark_needs_rerender(ui_node_id);
+            }
+        }
+    }
+
+    /// Read from a UI element using base fields only (mirrors read_scene_node for base Node fields).
+    #[cfg_attr(not(debug_assertions), inline)]
+    pub fn read_base_element<R: Clone + Default>(
+        &self,
+        ui_node_id: NodeID,
+        element_id: UIElementID,
+        f: impl FnOnce(&dyn crate::nodes::ui::ui_element::BaseElement) -> R,
+    ) -> R {
+        if element_id.is_nil() {
+            return R::default();
+        }
+        let node = match self.scene.get_scene_node_ref(ui_node_id) {
+            Some(n) => n,
+            None => return R::default(),
+        };
+        node.with_typed_ref(|ui: &crate::nodes::ui::ui_node::UINode| {
+            match ui.get_element_by_id(element_id) {
+                Some(el) => el.with_base_ref(f),
+                None => R::default(),
+            }
+        })
+        .unwrap_or_else(R::default)
+    }
+
     /// Add a UI element to a UINode
     /// The element will be added to the elements map and marked for rerender
     /// If parent_element_id is provided and not nil, the element will be set as a child of that parent element
@@ -2654,7 +2772,7 @@ impl<'a> ScriptApi<'a> {
         &mut self,
         ui_node_id: NodeID,
         element_name: &str,
-        mut element: crate::ui_element::UIElement,
+        mut element: crate::nodes::ui::ui_element::UIElement,
         parent_element_id: Option<crate::ids::UIElementID>,
     ) -> Option<crate::ids::UIElementID> {
         self.with_ui_node(ui_node_id, |ui| {

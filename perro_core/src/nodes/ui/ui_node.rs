@@ -140,6 +140,16 @@ impl UINode {
         self.visible = visible;
     }
 
+    /// Get an element by ID (for read_ui_element / mutate_ui_element)
+    pub fn get_element_by_id(&self, id: UIElementID) -> Option<&UIElement> {
+        self.elements.as_ref().and_then(|m| m.get(&id))
+    }
+
+    /// Get a mutable element by ID (for mutate_ui_element)
+    pub fn get_element_by_id_mut(&mut self, id: UIElementID) -> Option<&mut UIElement> {
+        self.elements.as_mut().and_then(|m| m.get_mut(&id))
+    }
+
     /// Find an element by name (ID) in the UI tree
     pub fn find_element_by_name(&self, name: &str) -> Option<&UIElement> {
         if let Some(elements) = &self.elements {

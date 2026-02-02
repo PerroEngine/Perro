@@ -23,6 +23,9 @@ use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
+use perro_core::nodes::ui::ui_registry::UIElementType;
+use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};
+
 use perro_core::prelude::*;
 
 //=======================================;
@@ -77,7 +80,7 @@ impl Script for PuptestsTypeTestsTestSyntaxEdgePupScript {
         let mut __t_v: i32 = self.__t_some_var;
         let mut __t_r: i32 = self.__t_get_my_int(api);;
         self.__t_some_var = 99i32;
-        let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
+        let mut child_id: Option<NodeID> = api.get_child_by_name(self.id, "Child");
         let mut __t_cv: Value = api.get_script_var_id(child_id.expect("Child node not found"), 18136257161398063279u64);
         let mut __t_cr: Value = api.call_function_id(child_id.expect("Child node not found"), 2630259753820323773u64, &[json!(json!(1.0f32))]);
     }

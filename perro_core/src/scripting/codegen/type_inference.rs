@@ -212,6 +212,11 @@ impl Script {
             return format!("json!({})", expr);
         }
 
+        // DynUIElement -> UIText/UIButton/UIPanel etc.: type narrow only, value stays Option<UIElementID>; never emit "as UIElementID".
+        if matches!(from, Type::DynUIElement) && crate::structs::script_ui_registry::is_ui_element_ref_type(to) {
+            return expr.to_string();
+        }
+
         // For now, use simple cast syntax
         // Complex casts will be handled by the Expr::Cast implementation in legacy
         format!("({} as {})", expr, to.to_rust_type())
@@ -507,6 +512,10 @@ impl Script {
             Expr::Call(target, _args) => match &**target {
                 Expr::Ident(fname) => self.get_function_return_type(fname),
                 Expr::MemberAccess(base, method) => {
+                    // Node method get_element (even when not resolved to ApiCall) returns DynUIElement
+                    if method == "get_element" {
+                        return Some(Type::DynUIElement);
+                    }
                     // Check if this is a module function call (e.g., PoopyButt.return_true)
                     if let Expr::Ident(mod_name) = base.as_ref() {
                         if let Some(module_funcs) = self.module_functions.get(mod_name) {
@@ -529,7 +538,22 @@ impl Script {
                 }
                 _ => None,
             },
-            Expr::Cast(_, target_type) => Some(target_type.clone()),
+            Expr::Cast(inner, target_type) => {
+                // Type narrow only: value stays Option<...>. Same rule for nodes and UI (1:1).
+                let inner_ty = self.infer_expr_type(inner, current_func);
+                if inner_ty.as_ref().map_or(false, |t| matches!(t, Type::DynUIElement))
+                    && crate::structs::script_ui_registry::is_ui_element_ref_type(target_type)
+                {
+                    return Some(Type::DynUIElement);
+                }
+                if inner_ty.as_ref().map_or(false, |t| matches!(t, Type::DynNode))
+                    && (matches!(target_type, Type::Node(_))
+                        || matches!(target_type, Type::Custom(n) if is_node_type(n)))
+                {
+                    return Some(Type::DynNode);
+                }
+                Some(target_type.clone())
+            }
             Expr::ApiCall(api, args) => match api {
                 crate::call_modules::CallModule::Resource(
                     crate::resource_modules::ResourceModule::MapOp(MapResource::Get),
@@ -815,6 +839,8 @@ impl Script {
                     .collect();
                 Self::unify_dynnode_field_types(&types)
             }
+            Type::UIElement(et) => crate::structs::script_ui_registry::UI_REGISTRY.get_field_type(*et, member),
+            Type::DynUIElement => crate::scripting::lang::pup::ui_api::get_dyn_field_type(member),
             Type::EngineStruct(engine_struct) => {
                 ENGINE_REGISTRY.get_field_type_struct(engine_struct, member)
             }

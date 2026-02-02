@@ -12,19 +12,19 @@
 
 ## Why Perro exists
 
-The engine exists to give you **native performance and Rust’s safety** without writing the whole game in Rust by hand. Scripts (Pup, and experimentally TypeScript/C#) are **transpiled to Rust** and compiled with the Rust toolchain — no interpreter, no VM, no marshalling layer. In release, scripts and static assets (scenes, UI, textures, meshes etc.) are embedded into one final executable. The design also targets a **standalone editor** later: one binary that can open projects, run them, and export them, without requiring every user to install Visual Studio or the MSVC toolchain. That’s why we standardize on the **GNU toolchain** (see below): so the future editor and the engine share one consistent toolchain and the shipped product stays portable.
+The engine exists to give you **native performance and Rust’s safety** without writing the whole game in Rust by hand. Scripts (Pup, and experimentally TypeScript/C#) are **transpiled to Rust** and compiled with the Rust toolchain — no interpreter, no VM, no marshalling layer. In release, scripts and static assets (scenes, UI, textures, meshes etc.) are embedded into one final executable. The design also targets a **standalone editor** later: one binary that can open projects, run them, and export them, without requiring every user to install Visual Studio or the MSVC toolchain. On **Windows** we use the **GNU toolchain** instead of MSVC (see below); Linux already uses GNU by default, and macOS is fine with the default for now.
 
 ---
 
-## Why the GNU toolchain
+## GNU toolchain on Windows
 
-The **eventual editor will be a standalone application** — a single binary that users download and run. To get there without tying the ecosystem to Windows-specific tooling (e.g. MSVC), Perro uses the **GNU toolchain** (`x86_64-pc-windows-gnu` on Windows, and the default toolchain on Linux/macOS). That way:
+The **eventual editor will be a standalone application** — a single binary that users download and run. On Windows we avoid MSVC so end users don't need Visual Studio or the MSVC build tools. Perro uses the **GNU toolchain** on Windows (`x86_64-pc-windows-gnu`):
 
 - The editor binary and the engine are built with the same toolchain story.
 - User projects compile with that same story; we don’t mix MSVC and GNU in the pipeline.
 - We avoid forcing end users to install Visual Studio or MSVC build tools just to use the editor.
 
-So if you’re building or contributing on Windows, use the GNU toolchain (e.g. `rustup default stable-x86_64-pc-windows-gnu`). Linux/macOS use the default toolchain. Exact version and setup are in [CONTRIBUTING.md](CONTRIBUTING.md).
+**Linux** already uses GNU by default. **macOS** is fine with the default toolchain for now. If you’re building or contributing on **Windows**, use the GNU toolchain (e.g. `rustup default stable-x86_64-pc-windows-gnu`). Exact version and setup are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -60,7 +60,7 @@ Contributions are welcome: engine work in `perro_core`, scripting/transpiler fix
 
 - Where to fix scripting/API issues (central API vs per-language vs bindings).
 - Transpiler architecture (how parsers, modules, and bindings fit together).
-- Prerequisites (Rust version, **GNU toolchain on Windows**, Linux deps).
+- Prerequisites (Rust version, **GNU toolchain on Windows** to avoid MSVC, Linux deps).
 - How to run tests and submit changes.
 
 ---

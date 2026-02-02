@@ -71,6 +71,9 @@ impl Script {
         out.push_str(
             "use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};\n\n",
         );
+        // UI element types (for read_ui_element / mutate_ui_element codegen)
+        out.push_str("use perro_core::nodes::ui::ui_registry::UIElementType;\n");
+        out.push_str("use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};\n\n");
 
         // Internal modules
         out.push_str("use perro_core::prelude::*;\n\n");

@@ -1,5 +1,5 @@
 // Compile-only test: @root, @global, @module and cross-calls.
-// Exercises: Root, GameState, UIHelper; MathUtils, MoreUtils;
+// Exercises: Root, GameState, UIHelper; MathUtils, MoreUtils, SimpleModule;
 // root calling module; global calling global; global calling module; module calling module.
 @script TestGlobalsModules extends Node2D
 
@@ -29,6 +29,12 @@ on init() {
     // Module calling module
     var dsum = MoreUtils.double_sum(4, 5)
     var spi = MoreUtils.scaled_pi(2.0)
+
+    // SimpleModule: const and fn
+    var cpi = SimpleModule.PI
+    var ctwo = SimpleModule.TWO
+    var doubled = SimpleModule.double(7)
+    var csum = SimpleModule.add(10, 20)
 }
 
 fn test_root_and_module() -> bool {
@@ -54,4 +60,12 @@ fn test_module_calls_module() -> bool {
     var d = MoreUtils.double_sum(1, 2)
     var s = MoreUtils.scaled_pi(1.0)
     return d == 6 and s > 3.0
+}
+
+fn test_simple_module() -> bool {
+    var pi = SimpleModule.PI
+    var two = SimpleModule.TWO
+    var d = SimpleModule.double(4)
+    var sum = SimpleModule.add(1, 2)
+    return pi > 3.0 and two == 2 and d == 8 and sum == 3
 }

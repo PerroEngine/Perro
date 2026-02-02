@@ -519,9 +519,14 @@ impl PupParser {
                     structs.push(def);
                 }
                 PupToken::Const => {
-                    let mut var = self.parse_variable_decl()?;
-                    var.is_exposed = false; // Modules don't expose
-                    var.is_public = true; // Module top-level is public constants only
+                    self.next_token(); // consume Const
+                    if self.current_token == PupToken::Fn {
+                        return Err(
+                            "Use 'fn' for functions. 'const' is for constants only (e.g. const NAME: Type = value).".into(),
+                        );
+                    }
+                    // const name [: Type] [= expr]
+                    let var = self.parse_module_const_variable_rest()?;
                     module_vars.push(var);
                 }
                 PupToken::Var => {
@@ -1356,6 +1361,51 @@ impl PupParser {
             is_const,
             span: None,
             attributes,
+        })
+    }
+
+    /// Parse the rest of a module const variable after "const" was consumed: name [: Type] [= expr].
+    /// Call only from parse_module when current token is not Fn (so we're parsing const NAME ...).
+    fn parse_module_const_variable_rest(&mut self) -> Result<Variable, String> {
+        let name = if let PupToken::Ident(n) = &self.current_token {
+            n.clone()
+        } else {
+            return Err("Expected constant name after 'const'".into());
+        };
+        self.next_token();
+
+        let mut typ: Option<Type> = None;
+        let mut value: Option<TypedExpr> = None;
+
+        if self.current_token == PupToken::Colon {
+            self.next_token();
+            typ = Some(self.parse_type()?);
+        }
+
+        if self.current_token == PupToken::Assign {
+            self.next_token();
+            let expr = self.parse_expression(0)?;
+            if typ.is_none() {
+                return Err(
+                    "Module constant with initializer requires explicit type, e.g. const NAME: Type = value".into(),
+                );
+            }
+            value = Some(TypedExpr {
+                expr,
+                inferred_type: typ.clone(),
+                span: None,
+            });
+        }
+
+        Ok(Variable {
+            name,
+            typ,
+            value,
+            is_exposed: false,
+            is_public: true,
+            is_const: true,
+            span: None,
+            attributes: Vec::new(),
         })
     }
 
@@ -2226,6 +2276,10 @@ impl PupParser {
             "Map" | "map" => Type::Container(ContainerKind::Map, vec![Type::String, Type::Object]),
             "Array" | "array" => Type::Container(ContainerKind::Array, vec![Type::Object]),
             "Object" | "object" => Type::Object,
+            "UIText" | "Text" => Type::UIElement(crate::nodes::ui::ui_registry::UIElementType::Text),
+            "UIButton" | "Button" => Type::UIElement(crate::nodes::ui::ui_registry::UIElementType::Button),
+            "UIPanel" | "Panel" => Type::UIElement(crate::nodes::ui::ui_registry::UIElementType::Panel),
+            "UIElement" | "Element" => Type::DynUIElement,
             _ => {
                 // Check if it's an engine struct first
                 use crate::structs::engine_structs::EngineStruct;

@@ -10,6 +10,7 @@ use crate::{
     structs2d::Vector2,
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
+        ui_button::UIButton,
         ui_container::{CornerRadius, UIPanel},
         ui_text::{TextFlow, UIText},
     },
@@ -431,6 +432,18 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
 
             panel.props.corner_radius = corner;
             Some(UIElement::Panel(panel))
+        }
+
+        "Button" => {
+            let mut button = UIButton::default();
+            button.set_name(&fur.id);
+            apply_base_attributes(&mut button.base, &fur.attributes);
+            if let Some(label) = fur.attributes.get("label") {
+                button.label = label.to_string();
+            } else {
+                button.label = fur.id.to_string();
+            }
+            Some(UIElement::Button(button))
         }
 
         "Text" => {

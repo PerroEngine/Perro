@@ -21,13 +21,13 @@ pub mod MoreUtils {
     // ========================================================================
 
     pub fn __t_double_sum(__t_a: i32, __t_b: i32, api: &mut ScriptApi<'_>) -> i32 {
-        return (crate::puptests_global_tests_math_utils_pup::MathUtils::__t_add(__t_a, __t_b, api) * crate::puptests_global_tests_math_utils_pup::MathUtils::__t_TWO);
+        return (crate::puptests_module_tests_math_utils_pup::MathUtils::__t_add(__t_a, __t_b, api) * crate::puptests_module_tests_math_utils_pup::MathUtils::__t_TWO);
         0i32
     }
     
 
     pub fn __t_scaled_pi(__t_s: f32, api: &mut ScriptApi<'_>) -> f32 {
-        return crate::puptests_global_tests_math_utils_pup::MathUtils::__t_scale(crate::puptests_global_tests_math_utils_pup::MathUtils::__t_PI, __t_s, api);
+        return crate::puptests_module_tests_math_utils_pup::MathUtils::__t_scale(crate::puptests_module_tests_math_utils_pup::MathUtils::__t_PI, __t_s, api);
         0.0f32
     }
     

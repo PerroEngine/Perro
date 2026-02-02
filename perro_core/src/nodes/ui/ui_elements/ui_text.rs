@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{impl_ui_element, structs::Color, ui_element::BaseUIElement};
+use crate::{nodes::ui::ui_element::BaseUIElement, structs::Color};
 
 /// How text flows relative to its anchor point
 /// - Start: text starts at the anchor point (flows right/down)
@@ -80,8 +80,6 @@ impl Default for TextProps {
         }
     }
 }
-
-impl_ui_element!(UIText);
 
 impl UIText {
     /// Get the text content

@@ -23,6 +23,9 @@ use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
+use perro_core::nodes::ui::ui_registry::UIElementType;
+use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};
+
 use perro_core::prelude::*;
 
 //=======================================;
@@ -76,7 +79,7 @@ impl Script for PuptestsNodeTestsTestNodeMethodsPupScript {
 
 impl PuptestsNodeTestsTestNodeMethodsPupScript {
     fn __t_test_dot_on_other_node(&mut self, api: &mut ScriptApi<'_>) {
-        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
+        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, "Child");
         if other_id.is_some() {
             api.set_script_var_id(other_id.expect("Child node not found"), 7482430169653195547u64, json!(json!(json!(10f32))));
             let mut __t_v = api.get_script_var_id(other_id.expect("Child node not found"), 7482430169653195547u64);
@@ -90,7 +93,7 @@ impl PuptestsNodeTestsTestNodeMethodsPupScript {
     }
 
     fn __t_test_shorthand_on_other_node(&mut self, api: &mut ScriptApi<'_>) {
-        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, String::from("Child").as_str());
+        let mut other_id: Option<NodeID> = api.get_child_by_name(self.id, "Child");
         if other_id.is_some() {
             let mut __t_val: Value = api.get_script_var_id(other_id.expect("Child node not found"), 1903775884355078583u64);
             api.set_script_var_id(other_id.expect("Child node not found"), 1903775884355078583u64, json!(json!(json!(1f32))));

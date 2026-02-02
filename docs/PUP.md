@@ -1,6 +1,6 @@
 # PUP scripting reference
 
-PUP is the primary scripting language for Perro. This doc is the reference for **what to expect** in PUP: script kinds (`@script`, `@global`, `@root`, `@module`), lifecycle hooks (`on init()`, `on update()`, `on fixed_update()`), signal shorthand (`on SIGNALNAME() { }`), dynamic access (`::`), types, node fields/methods, resource APIs (Texture, Mesh, Quaternion, Signal, etc.), and global modules (Time, Console, Math, …). PUP uses **snake_case** for API names and **`self`** for the current node.
+PUP is the primary scripting language for Perro. This doc is the reference for **what to expect** in PUP: script kinds (`@script`, `@global`, `@root`, `@module`), module constants and functions, lifecycle hooks (`on init()`, `on update()`, `on fixed_update()`), signal shorthand (`on SIGNALNAME() { }`), dynamic access (`::`), types, node fields/methods, resource APIs (Texture, Mesh, Quaternion, Signal, etc.), and global modules (Time, Console, Math, …). PUP uses **snake_case** for API names and **`self`** for the current node.
 
 ---
 
@@ -15,6 +15,32 @@ PUP is the primary scripting language for Perro. This doc is the reference for *
 **Difference in short:** **Script** = per-node, linked in the scene. **Global** and **Root** = auto-created / auto-attached; use **`GlobalName`** or **`Root`** and **`::`** for script vars and methods like any other node. **Module** = compile-time only; use **`.`** for constants and functions (no `::`, no node).
 
 **Dynamic script access:** Use **`::`** to access script variables or call script methods on a node by name (strings). Example: `child_node::var_name`, `child_node::method_name(args)`, or `node::[expr]` for a dynamic name. Dot (`.`) is for native node fields and methods; `::` is for script-defined vars/functions.
+
+### Modules (@module)
+
+A **module** is a PUP file that declares only **constants** and **functions**; no node, no `self`, no lifecycle. Use **`@module Name`** at the top, then **`const`** and **`fn`**. Other scripts and globals access module members with **`.`**: **`ModuleName.CONST`**, **`ModuleName.function(args)`**.
+
+- **`const NAME: type = value`** — Compile-time constant. Use from other scripts as **`ModuleName.NAME`**.
+- **`fn name(args) -> return_type { ... }`** — Function. Transpiles to Rust `pub fn`. Call as **`ModuleName.name(args)`**.
+
+**Example (PUP module):**
+
+```pup
+@module SimpleModule
+
+const PI: float = 3.14
+const TWO: int = 2
+
+fn double(x: int) -> int {
+    return x * 2
+}
+
+fn add(a: int, b: int) -> int {
+    return a + b
+}
+```
+
+From another script: **`SimpleModule.PI`**, **`SimpleModule.double(4)`** (returns `8`), **`SimpleModule.add(1, 2)`** (returns `3`). Leading comments (e.g. `// Module test: ...`) before **`@module`** are allowed; the transpiler still detects the module correctly.
 
 **Example (PUP):**
 

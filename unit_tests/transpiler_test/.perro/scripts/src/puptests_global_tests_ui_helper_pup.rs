@@ -23,6 +23,9 @@ use serde_json::{json, Value};
 use smallvec::{smallvec, SmallVec};
 use perro_core::{TextureID, NodeID, MaterialID, MeshID, LightID, UIElementID, SignalID};
 
+use perro_core::nodes::ui::ui_registry::UIElementType;
+use perro_core::nodes::ui::ui_elements::{ui_button, ui_text};
+
 use perro_core::prelude::*;
 
 //=======================================;
@@ -95,7 +98,7 @@ return (api.call_function_id(NodeID::from_u32(2), 7006042117341749029u64, &[]).a
     }
 
     fn __t_ui_uses_more_utils(&mut self, api: &mut ScriptApi<'_>) -> i32 {
-return crate::puptests_global_tests_more_utils_pup::MoreUtils::__t_double_sum(5i32, 3i32, api);    0i32
+return crate::puptests_module_tests_more_utils_pup::MoreUtils::__t_double_sum(5i32, 3i32, api);    0i32
     }
 
 }

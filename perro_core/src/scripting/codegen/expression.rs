@@ -2,13 +2,14 @@
 use super::analysis::{extract_mutable_api_call, extract_node_member_info};
 use super::cache::SCRIPT_MEMBERS_CACHE;
 use super::utils::{
-    get_node_type, is_node_type, rename_function, rename_struct, rename_variable,
-    string_to_node_type, type_is_node,
+    get_node_type, is_node_type, is_ui_element_type, rename_function, rename_struct,
+    rename_variable, string_to_node_type, type_is_node,
 };
 use crate::ast::*;
 use crate::resource_modules::{ArrayResource, MapResource};
 use crate::scripting::ast::{ContainerKind, Expr, Literal, NumberKind, Stmt, Type, TypedExpr};
 use crate::structs::engine_registry::ENGINE_REGISTRY;
+use crate::structs::script_ui_registry::is_ui_element_ref_type;
 use crate::structs::engine_structs::EngineStruct as EngineStructKind;
 
 /// If `key` is a string literal or identifier, return the field name for struct field access.
@@ -441,10 +442,12 @@ impl Expr {
 
                 // Script-level or local variable of non-Copy type (String, Container, Custom): add .clone() when read
                 // so return/assign don't move out of the variable.
+                // Do NOT add .clone() for ID types (Node, DynNode, UIElement, DynUIElement) — they are Copy-like IDs.
                 let needs_clone = type_for_renaming.map_or(false, |t| {
-                    matches!(t, Type::String | Type::CowStr)
-                        || matches!(t, Type::Container(_, _))
-                        || matches!(t, Type::Custom(_))
+                    !matches!(t, Type::Node(_) | Type::DynNode | Type::UIElement(_) | Type::DynUIElement)
+                        && (matches!(t, Type::String | Type::CowStr)
+                            || matches!(t, Type::Container(_, _))
+                            || matches!(t, Type::Custom(_)))
                 });
                 let ident_code = if needs_clone {
                     format!("{}.clone()", ident_code)
@@ -1270,23 +1273,46 @@ impl Expr {
                     return format!("format!(\"{{}}{{}}\", {}, {})", left_final, right_final);
                 }
 
-                // Handle null checks: body != null -> body.is_some(), body == null -> body.is_none()
-                // Check if one side is null (either Literal::Null or identifier "null") and the other is an Option type
+                // Handle null checks: direct ID types (NodeID, UIElementID) use .is_nil(); Option types use .is_some()/.is_none().
                 if matches!(op, Op::Ne | Op::Eq) {
                     let left_is_null = matches!(left.as_ref(), Expr::Literal(Literal::Null))
                         || matches!(left.as_ref(), Expr::Ident(name) if name == "null");
                     let right_is_null = matches!(right.as_ref(), Expr::Literal(Literal::Null))
                         || matches!(right.as_ref(), Expr::Ident(name) if name == "null");
 
+                    // Only bare ID types (NodeID) use .is_nil(). Option types (DynNode Option<NodeID>, DynUIElement/UIElement Option<UIElementID>) use .is_some()/.is_none().
+                    let use_nil_check = |ty: &Option<Type>| {
+                        ty.as_ref().map_or(false, |t| match t {
+                            Type::DynNode => true, // NodeID (not Option in Rust for some paths)
+                            Type::DynUIElement | Type::UIElement(_) | Type::Option(_) => false,
+                            _ => false,
+                        })
+                    };
+
                     if left_is_null && !right_is_null {
-                        // null != body -> body.is_none(), null == body -> body.is_none()
+                        let ty = script.infer_expr_type(right, current_func);
+                        if use_nil_check(&ty) {
+                            if matches!(op, Op::Ne) {
+                                return format!("!{}.is_nil()", right_final);
+                            } else {
+                                return format!("{}.is_nil()", right_final);
+                            }
+                        }
+                        // Option type
                         if matches!(op, Op::Ne) {
                             return format!("{}.is_some()", right_final);
                         } else {
                             return format!("{}.is_none()", right_final);
                         }
                     } else if right_is_null && !left_is_null {
-                        // body != null -> body.is_some(), body == null -> body.is_none()
+                        let ty = script.infer_expr_type(left, current_func);
+                        if use_nil_check(&ty) {
+                            if matches!(op, Op::Ne) {
+                                return format!("!{}.is_nil()", left_final);
+                            } else {
+                                return format!("{}.is_nil()", left_final);
+                            }
+                        }
                         if matches!(op, Op::Ne) {
                             return format!("{}.is_some()", left_final);
                         } else {
@@ -2605,6 +2631,34 @@ impl Expr {
                             format!("{}.{}", base_code, field)
                         }
                     }
+                    Some(Type::UIElement(et)) => {
+                        let base_code = base.to_rust(needs_self, script, None, current_func, None);
+                        let ui_node_id = "self.id";
+                        let element_id_arg = format!("{}.unwrap_or(UIElementID::nil())", base_code);
+                        match crate::structs::ui_bindings::emit_read_typed(
+                            ui_node_id, &element_id_arg, et, field,
+                        ) {
+                            Some(code) => code,
+                            None => format!(
+                                "{{ {} }}",
+                                crate::structs::ui_bindings::panic_unknown_field(et, field)
+                            ),
+                        }
+                    }
+                    Some(Type::DynUIElement) => {
+                        let base_code = base.to_rust(needs_self, script, None, current_func, None);
+                        let ui_node_id = "self.id";
+                        let element_id_arg = format!("{}.unwrap_or(UIElementID::nil())", base_code);
+                        match crate::structs::ui_bindings::emit_read_dyn(
+                            ui_node_id, &element_id_arg, field,
+                        ) {
+                            Some(code) => code,
+                            None => format!(
+                                "{{ {} }}",
+                                crate::structs::ui_bindings::panic_unknown_dyn_field(field)
+                            ),
+                        }
+                    }
                     _ => {
                         // fallback, assume normal member access
                         let base_code = base.to_rust(needs_self, script, None, current_func, None);
@@ -3853,26 +3907,6 @@ impl Expr {
                 let inner_type = script.infer_expr_type(inner, current_func);
                 // Don't pass target_type as expected_type - let the literal be its natural type, then cast
 
-                // Special case: ui_node.get_element("name") as UIText
-                // Convert get_element to get_element_clone with the target type
-                if let Expr::Call(target, args) = inner.as_ref() {
-                    if let Expr::MemberAccess(base, method) = target.as_ref() {
-                        if method == "get_element" && args.len() == 1 {
-                            // This is get_element call being cast - convert to get_element_clone
-                            let base_code =
-                                base.to_rust(needs_self, script, None, current_func, None);
-                            let arg_code =
-                                args[0].to_rust(needs_self, script, None, current_func, None);
-                            if let Type::Custom(type_name) = target_type {
-                                return format!(
-                                    "{}.get_element_clone::<{}>({})",
-                                    base_code, type_name, arg_code
-                                );
-                            }
-                        }
-                    }
-                }
-
                 let mut inner_code = inner.to_rust(needs_self, script, None, current_func, None);
 
                 // Special case: if inner_code is "self" or contains t_id_self, fix it to self.id
@@ -4295,24 +4329,11 @@ impl Expr {
                         inner_code
                     }
 
-                    // UIElement (from get_element) to specific UI element type
-                    // Pattern: ui_node.get_element("bob") as UIText
-                    (Some(Type::Custom(from_name)), Type::Custom(to_name))
-                        if from_name == "UIElement" =>
-                    {
-                        // Check if this is a get_element call being cast
-                        // Convert to get_element_clone call
-                        if inner_code.contains(".get_element(") {
-                            // Replace .get_element( with .get_element_clone::<Type>(
-                            let new_code = inner_code.replace(
-                                ".get_element(",
-                                &format!(".get_element_clone::<{}>(", to_name),
-                            );
-                            format!("{}", new_code)
-                        } else {
-                            // Fallback for other UIElement casts
-                            format!("{}.clone()", inner_code)
-                        }
+                    // UIElement (from get_element) to specific UI element type — cast is same ID (no clone)
+                    (_, Type::UIElement(_)) => inner_code.clone(),
+                    (Some(Type::Custom(_)), Type::Custom(to_name)) if is_ui_element_type(to_name) => {
+                        // Cast to UIText/UIButton/UIPanel: same ID
+                        inner_code.clone()
                     }
 
                     // NodeID to specific node type (e.g., get_parent() as Sprite2D)
@@ -4334,6 +4355,9 @@ impl Expr {
                             inner_code.clone()
                         }
                     }
+
+                    // Any cast to UI element type (incl. Type::Custom("UIText")): value stays Option<UIElementID>, no Rust cast.
+                    (_, ref tt) if is_ui_element_ref_type(tt) => inner_code.clone(),
 
                     // Custom type to Custom type (struct casts)
                     (Some(Type::Custom(from_name)), Type::Custom(to_name)) => {
@@ -4474,6 +4498,9 @@ impl Expr {
                                     inner_code, w
                                 ),
                             }
+                        } else if is_ui_element_ref_type(target_type) {
+                            // UI element type narrow: value stays Option<UIElementID>; no Rust cast.
+                            inner_code
                         } else {
                             eprintln!(
                                 "Warning: Unhandled cast from {:?} to {:?}",

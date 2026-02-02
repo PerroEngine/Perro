@@ -1,0 +1,14 @@
+// Module test: const and fn; const with explicit type.
+// Used by test_globals_modules to verify module constants and functions work.
+@module SimpleModule
+
+const PI: float = 3.14
+const TWO: int = 2
+
+fn double(x: int) -> int {
+    return x * 2
+}
+
+fn add(a: int, b: int) -> int {
+    return a + b
+}

@@ -1,5 +1,5 @@
 // Function code generation
-use super::analysis::{collect_cloned_node_vars, extract_node_member_info};
+use super::analysis::extract_node_member_info;
 use super::utils::{rename_function, rename_variable, type_becomes_id};
 use crate::ast::*;
 use crate::node_registry::NodeType;
@@ -443,10 +443,6 @@ impl Function {
         // Use cloned child nodes that were already collected during analysis
         let _cloned_node_vars = &self.cloned_child_nodes;
 
-        // Collect cloned UI elements
-        let mut cloned_ui_elements: Vec<(String, String, String)> = Vec::new();
-        collect_cloned_node_vars(&self.body, &mut Vec::new(), &mut cloned_ui_elements, script);
-
         // Emit body with batching for consecutive dynamic node mutations
         let mut i = 0;
         while i < self.body.len() {
@@ -496,35 +492,6 @@ impl Function {
             // Not a batched mutation, generate normally
             out.push_str(&stmt.to_rust(needs_self, script, Some(self)));
             i += 1;
-        }
-
-        // Merge cloned UI elements back into their UINodes
-        if !cloned_ui_elements.is_empty() {
-            out.push_str("\n        // Merge cloned UI elements back\n");
-            use std::collections::HashMap;
-            let mut by_ui_node: HashMap<String, Vec<(String, String)>> = HashMap::new();
-            for (ui_node_var, element_name, element_var) in &cloned_ui_elements {
-                by_ui_node
-                    .entry(ui_node_var.clone())
-                    .or_insert_with(Vec::new)
-                    .push((element_name.clone(), element_var.clone()));
-            }
-            for (ui_node_var, elements) in by_ui_node {
-                let merge_pairs: Vec<String> = elements
-                    .iter()
-                    .map(|(name, var)| {
-                        format!(
-                            "(\"{}\".to_string(), crate::ui_element::UIElement::Text({}.clone()))",
-                            name, var
-                        )
-                    })
-                    .collect();
-                out.push_str(&format!(
-                    "        {}.merge_elements(vec![{}]);\n",
-                    ui_node_var,
-                    merge_pairs.join(", ")
-                ));
-            }
         }
 
         // Default return for non-void script methods (dispatch table wraps in json!())

@@ -262,6 +262,39 @@ pub fn implement_script_boilerplate_internal(
                             None
                         }},"
                     ).unwrap();
+                } else if accessor == "__UI_ELEMENT__" {
+                    // UI element variables - same pattern as Node (UIElementID or Option<UIElementID>)
+                    if conv == "Option<UIElementID>" {
+                        writeln!(
+                            set_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if val.is_null() {{
+                                    script.{renamed_name} = None;
+                                    return Some(());
+                                }}
+                                if let Some(v) = val.as_u64().map(perro_core::UIElementID::from_u64)
+                                    .or_else(|| val.as_str().and_then(|s| perro_core::UIElementID::parse_str(s).ok()))
+                                {{
+                                    script.{renamed_name} = Some(v);
+                                    return Some(());
+                                }}
+                                None
+                            }},"
+                        ).unwrap();
+                    } else {
+                        writeln!(
+                            set_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: Value| -> Option<()> {{
+                                if let Some(v) = val.as_u64().map(perro_core::UIElementID::from_u64)
+                                    .or_else(|| val.as_str().and_then(|s| perro_core::UIElementID::parse_str(s).ok()))
+                                {{
+                                    script.{renamed_name} = v;
+                                    return Some(());
+                                }}
+                                None
+                            }},"
+                        ).unwrap();
+                    }
                 } else {
                     writeln!(
                         set_entries,
@@ -429,6 +462,35 @@ pub fn implement_script_boilerplate_internal(
                         }},"
                     )
                     .unwrap();
+                } else if accessor == "__UI_ELEMENT__" {
+                    // UI element: UIElementID or Option<UIElementID> (same pattern as Node)
+                    if conv == "Option<UIElementID>" {
+                        writeln!(
+                            apply_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                if val.is_null() {{
+                                    script.{renamed_name} = None;
+                                }} else if let Some(id) = val.as_u64().map(perro_core::UIElementID::from_u64)
+                                    .or_else(|| val.as_str().and_then(|s| perro_core::UIElementID::parse_str(s).ok()))
+                                {{
+                                    script.{renamed_name} = Some(id);
+                                }}
+                            }},"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            apply_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                if let Some(id) = val.as_u64().map(perro_core::UIElementID::from_u64)
+                                    .or_else(|| val.as_str().and_then(|s| perro_core::UIElementID::parse_str(s).ok()))
+                                {{
+                                    script.{renamed_name} = id;
+                                }}
+                            }},"
+                        )
+                        .unwrap();
+                    }
                 } else {
                     writeln!(
                         apply_entries,

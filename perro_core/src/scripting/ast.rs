@@ -28,7 +28,11 @@
 use std::collections::HashMap;
 
 use crate::scripting::source_span::SourceSpan;
-use crate::{engine_structs::EngineStruct, node_registry::NodeType};
+use crate::{
+    engine_structs::EngineStruct,
+    node_registry::NodeType,
+    nodes::ui::UIElementType,
+};
 
 // ---------- Top-level AST (script / module) ----------
 
@@ -123,6 +127,8 @@ impl Variable {
 
             // Built-in types
             "NodeType" => Type::NodeType,
+            "UIElementType" | "UI_ELEMENT_TYPE" => Type::UIElementType,
+            "UIElement" | "Element" => Type::DynUIElement,
 
             // Containers
             "object" | "Object" | "Value" => Type::Object, // Legacy support
@@ -135,16 +141,21 @@ impl Variable {
             ),
             "Vec" | "Array" | "array" => Type::Container(ContainerKind::Array, vec![Type::Object]),
 
-            // Check engine registry for node types
+            // Check engine registry for node types, then UI element types
             name => {
                 use crate::structs::engine_registry::ENGINE_REGISTRY;
-                // Check if it's a node type in the engine registry
                 if let Some(node_type) = ENGINE_REGISTRY
                     .node_defs
                     .keys()
                     .find(|nt| format!("{:?}", nt) == name)
                 {
                     Type::Node(node_type.clone())
+                } else if name == "UIText" || name == "Text" {
+                    Type::UIElement(UIElementType::Text)
+                } else if name == "UIPanel" || name == "Panel" {
+                    Type::UIElement(UIElementType::Panel)
+                } else if name == "UIButton" || name == "Button" {
+                    Type::UIElement(UIElementType::Button)
                 } else {
                     Type::Custom(name.to_string())
                 }
@@ -278,6 +289,8 @@ impl Variable {
             Type::Void => panic!("Void invalid"),
             Type::Node(_node_type) => ("__NODE__", "NodeType".to_owned()),
             Type::DynNode => ("__NODE__", "NodeType".to_owned()), // DynNode is NodeID at runtime, same as Node types
+            Type::UIElement(_) | Type::DynUIElement => ("__UI_ELEMENT__", "Option<UIElementID>".to_owned()), // always Option<UIElementID>, like Texture/Mesh
+            Type::UIElementType => ("as_str", ".parse::<UIElementType>().unwrap()".into()),
             Type::EngineStruct(es) => {
                 use crate::engine_structs::EngineStruct;
                 match es {
@@ -385,6 +398,11 @@ pub enum Type {
     DynNode,        // dynamic node → NodeID
     NodeType,       // enum from get_type() → NodeType
 
+    // UI element system (like Node: wrapper enum, dyn, and type)
+    UIElement(UIElementType), // concrete element type (UIText, UIPanel, UIButton) → UIElementID in Rust
+    DynUIElement,             // dynamic element reference → UIElementID in Rust (like DynNode → NodeID)
+    UIElementType,            // enum from get_element_type() → UIElementType (Panel, Button, Text)
+
     // Engine structs (Vector2, Rect, Texture, Mesh, …)
     EngineStruct(EngineStruct),
 
@@ -477,6 +495,9 @@ impl Type {
             Type::Node(_) => "NodeID".to_string(), // Nodes map to NodeID
             Type::DynNode => "NodeID".to_string(), // DynNode also maps to NodeID
             Type::NodeType => "NodeType".to_string(), // NodeType enum
+            Type::UIElement(_) => "Option<UIElementID>".to_string(), // like Texture/Mesh: always Option<UIElementID> in Rust
+            Type::DynUIElement => "Option<UIElementID>".to_string(),
+            Type::UIElementType => "UIElementType".to_string(),
             Type::EngineStruct(es) => {
                 // Engine structs map to their type-safe ID types where applicable
                 use crate::engine_structs::EngineStruct;
@@ -569,6 +590,9 @@ impl Type {
             Type::Node(node_type) => format!("{:?}", node_type),
             Type::DynNode => "Node".to_string(),
             Type::NodeType => "NODE_TYPE".to_string(),
+            Type::UIElement(et) => format!("{}", et), // UIText, UIPanel, UIButton
+            Type::DynUIElement => "UIElement".to_string(),
+            Type::UIElementType => "UI_ELEMENT_TYPE".to_string(),
             Type::Custom(name) => name.clone(),
             Type::EngineStruct(es) => {
                 // Engine structs display as-is (Vector2, Rect, etc.)
@@ -639,6 +663,9 @@ impl Type {
             Type::Node(node_type) => format!("{:?}", node_type),
             Type::DynNode => "Node".to_string(),
             Type::NodeType => "NodeType".to_string(),
+            Type::UIElement(et) => format!("{}", et),
+            Type::DynUIElement => "UIElement".to_string(),
+            Type::UIElementType => "UIElementType".to_string(),
             Type::Custom(name) => name.clone(),
             Type::EngineStruct(es) => format!("{:?}", es),
             Type::Void => "void".to_string(),
@@ -705,6 +732,9 @@ impl Type {
             Type::Node(node_type) => format!("{:?}", node_type),
             Type::DynNode => "Node".to_string(),
             Type::NodeType => "NodeType".to_string(),
+            Type::UIElement(et) => format!("{}", et),
+            Type::DynUIElement => "UIElement".to_string(),
+            Type::UIElementType => "UIElementType".to_string(),
             Type::Custom(name) => name.clone(),
             Type::EngineStruct(es) => format!("{:?}", es),
             Type::Void => "void".to_string(),
@@ -766,6 +796,8 @@ impl Type {
                 // NodeType enum default is NodeType::Node
                 "NodeType::Node".to_string()
             }
+            Type::UIElement(_) | Type::DynUIElement => "None".to_string(),
+            Type::UIElementType => "UIElementType::Panel".to_string(),
             Type::ScriptApi => {
                 panic!("ScriptApi cannot have a default value - it's injected by the runtime")
             }
@@ -818,6 +850,12 @@ impl Type {
             (Type::Option(inner), Type::DynNode) if matches!(inner.as_ref(), Type::DynNode) => true,
             // UuidOption (script name for Option<NodeID>) -> NodeID
             (Type::Custom(name), Type::DynNode) if name == "UuidOption" => true,
+            // Option<UIElement> -> UIElement (e.g. get_element result passed where element ref expected)
+            (Type::Option(inner), Type::DynUIElement) if matches!(inner.as_ref(), Type::DynUIElement) => true,
+            (Type::Option(inner), Type::UIElement(_)) if matches!(inner.as_ref(), Type::DynUIElement | Type::UIElement(_)) => true,
+            // UI element conversions (like Node)
+            (Type::DynUIElement, Type::UIElement(_)) => true,
+            (Type::UIElement(_), Type::DynUIElement) => true,
 
             // T -> Option<T> conversions (wrapping in Some)
             (from, Type::Option(inner)) if *from == *inner.as_ref() => true,

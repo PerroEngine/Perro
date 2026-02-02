@@ -7,11 +7,12 @@ use perro_core::script::CreateFn;
 use phf::{phf_map, Map};
 
 pub mod puptests_global_tests_game_state_pup;
-pub mod puptests_global_tests_math_utils_pup;
-pub mod puptests_global_tests_more_utils_pup;
 pub mod puptests_global_tests_root_pup;
 pub mod puptests_global_tests_test_globals_modules_pup;
 pub mod puptests_global_tests_ui_helper_pup;
+pub mod puptests_module_tests_math_utils_pup;
+pub mod puptests_module_tests_more_utils_pup;
+pub mod puptests_module_tests_simple_module_pup;
 pub mod puptests_node_tests_test_camera2d_api_pup;
 pub mod puptests_node_tests_test_engine_structs_pup;
 pub mod puptests_node_tests_test_mesh_instance_3d_api_pup;
@@ -20,6 +21,7 @@ pub mod puptests_node_tests_test_node3d_api_pup;
 pub mod puptests_node_tests_test_node_methods_pup;
 pub mod puptests_node_tests_test_shape_instance_2d_api_pup;
 pub mod puptests_node_tests_test_sprite2d_api_pup;
+pub mod puptests_node_tests_test_ui_node_api_pup;
 pub mod puptests_resource_tests_test_mesh_api_pup;
 pub mod puptests_resource_tests_test_resource_api_pup;
 pub mod puptests_type_tests_test_syntax_edge_pup;
@@ -37,6 +39,7 @@ use puptests_node_tests_test_node3d_api_pup::puptests_node_tests_test_node3d_api
 use puptests_node_tests_test_node_methods_pup::puptests_node_tests_test_node_methods_pup_create_script;
 use puptests_node_tests_test_shape_instance_2d_api_pup::puptests_node_tests_test_shape_instance_2d_api_pup_create_script;
 use puptests_node_tests_test_sprite2d_api_pup::puptests_node_tests_test_sprite2d_api_pup_create_script;
+use puptests_node_tests_test_ui_node_api_pup::puptests_node_tests_test_ui_node_api_pup_create_script;
 use puptests_resource_tests_test_mesh_api_pup::puptests_resource_tests_test_mesh_api_pup_create_script;
 use puptests_resource_tests_test_resource_api_pup::puptests_resource_tests_test_resource_api_pup_create_script;
 use puptests_type_tests_test_syntax_edge_pup::puptests_type_tests_test_syntax_edge_pup_create_script;
@@ -60,6 +63,7 @@ static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
         "puptests_node_tests_test_node_methods_pup" => puptests_node_tests_test_node_methods_pup_create_script as CreateFn,
         "puptests_node_tests_test_shape_instance_2d_api_pup" => puptests_node_tests_test_shape_instance_2d_api_pup_create_script as CreateFn,
         "puptests_node_tests_test_sprite2d_api_pup" => puptests_node_tests_test_sprite2d_api_pup_create_script as CreateFn,
+        "puptests_node_tests_test_ui_node_api_pup" => puptests_node_tests_test_ui_node_api_pup_create_script as CreateFn,
         "puptests_resource_tests_test_mesh_api_pup" => puptests_resource_tests_test_mesh_api_pup_create_script as CreateFn,
         "puptests_resource_tests_test_resource_api_pup" => puptests_resource_tests_test_resource_api_pup_create_script as CreateFn,
         "puptests_type_tests_test_syntax_edge_pup" => puptests_type_tests_test_syntax_edge_pup_create_script as CreateFn,

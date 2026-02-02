@@ -2,12 +2,13 @@
 //! Maps UIElement types to egui widgets while preserving .fur file compatibility
 
 use std::collections::HashMap;
-// IDs used via UIElementID from ids
+use crate::ids::UIElementID;
 use crate::{
     structs::Color,
     structs2d::{Transform2D, Vector2},
     ui_element::UIElement,
     ui_elements::{
+        ui_button::UIButton,
         ui_container::{CornerRadius, UIPanel},
         ui_text::UIText,
     },
@@ -54,45 +55,26 @@ pub fn render_element_to_egui(
             render_panel_egui(panel, ctx, ui, element_states);
             vec![]
         }
+        UIElement::Button(button) => {
+            let clicked = render_button_egui(button, ctx, ui, element_states);
+            if clicked {
+                vec![ElementEvent::ButtonClicked(button.base.id, button.base.name.clone())]
+            } else {
+                vec![]
+            }
+        }
         UIElement::Text(text) => {
             render_text_egui(text, ctx, ui);
             vec![]
-        } // Button, TextInput, and TextEdit are not currently UIElement variants
-          // These match arms are commented out until these types are added to UIElement enum
-          // UIElement::Button(button) => {
-          //     let clicked = render_button_egui(button, ctx, ui, element_states);
-          //     if clicked {
-          //         vec![ElementEvent::ButtonClicked(button.base.id, button.base.name.clone())]
-          //     } else {
-          //         vec![]
-          //     }
-          // }
-          // UIElement::TextInput(text_input) => {
-          //     let text_changed = render_text_input_egui(text_input, ctx, ui, element_states);
-          //     if text_changed {
-          //         let state = element_states.get(&text_input.base.id).unwrap();
-          //         vec![ElementEvent::TextChanged(text_input.base.id, state.text_buffer.clone())]
-          //     } else {
-          //         vec![]
-          //     }
-          // }
-          // UIElement::TextEdit(text_edit) => {
-          //     let text_changed = render_text_edit_egui(text_edit, ctx, ui, element_states);
-          //     if text_changed {
-          //         let state = element_states.get(&text_edit.base.id).unwrap();
-          //         vec![ElementEvent::TextChanged(text_edit.base.id, state.text_buffer.clone())]
-          //     } else {
-          //         vec![]
-          //     }
-          // }
+        }
     }
 }
 
 /// Events emitted by egui widgets
 #[derive(Debug, Clone)]
 pub enum ElementEvent {
-    ButtonClicked(u64, String), // element_id, element_name
-    TextChanged(u64, String),   // element_id, new_text
+    ButtonClicked(UIElementID, String), // element_id, element_name
+    TextChanged(UIElementID, String),   // element_id, new_text
 }
 
 /// State tracked per element for egui rendering
@@ -149,15 +131,18 @@ fn render_text_egui(text: &UIText, _ctx: &Context, ui: &mut Ui) {
 
 /// Render Button using egui
 /// Returns true if button was clicked (for signal emission)
-/// NOTE: UIButton type was removed - this function is a stub
-#[allow(dead_code, unused_variables)]
 fn render_button_egui(
-    _button: &dyn std::any::Any,
+    button: &UIButton,
     _ctx: &Context,
-    _ui: &mut Ui,
+    ui: &mut Ui,
     _element_states: &mut HashMap<u64, ElementState>,
 ) -> bool {
-    false
+    let label = if button.label.is_empty() {
+        &button.base.name
+    } else {
+        &button.label
+    };
+    ui.button(label).clicked()
 }
 
 /// Render TextInput using egui (native text editing!)
