@@ -1123,6 +1123,8 @@ pub struct Graphics {
     pub egui_context: egui::Context,
     pub egui_integration: EguiIntegration,
     pub egui_renderer: Option<egui_wgpu::Renderer>,
+    egui_textures_ready: bool,
+    pub egui_textures_delta_pending: egui::TexturesDelta,
 
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
@@ -1372,6 +1374,9 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
         })
         .await
         .expect("Failed to get device");
+
+    println!("🔍 [DEVICE] Features: {:?}", device.features());
+println!("🔍 [DEVICE] Limits: {:?}", device.limits());
 
     // Choose emoji based on backend
     let backend_emoji = match backend_used {
@@ -1784,6 +1789,8 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
         egui_context,
         egui_integration,
         egui_renderer,
+        egui_textures_ready: false,
+        egui_textures_delta_pending: Default::default(),
 
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -2363,6 +2370,8 @@ pub fn create_graphics_sync(
         },
         egui_integration: EguiIntegration::new(),
         egui_renderer: None,
+        egui_textures_ready: false,
+        egui_textures_delta_pending: Default::default(),
 
         cached_operations: wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -2810,23 +2819,23 @@ impl Graphics {
     }
 
     /// Ensure egui renderer is initialized
-    fn ensure_egui_renderer(&mut self) {
-        if self.egui_renderer.is_none() {
-            use egui_wgpu::{Renderer, RendererOptions};
-            // Now that we're using wgpu 27.0.1 (same as egui-wgpu), types are compatible
-            let renderer = Renderer::new(
-                &self.device,
-                self.surface_config.format,
-                RendererOptions {
-                    msaa_samples: 1,
-                    depth_stencil_format: None,
-                    ..Default::default()
-                },
-            );
-            self.egui_renderer = Some(renderer);
-            println!("🎨 [EGUI] Renderer initialized");
-        }
+fn ensure_egui_renderer(&mut self) {
+    if self.egui_renderer.is_none() {
+        use egui_wgpu::{Renderer, RendererOptions};
+        
+        println!("🎨 [EGUI] Initializing renderer");
+        println!("   Surface format: {:?}", self.surface_config.format);
+        
+        let renderer = Renderer::new(
+            &self.device,
+            self.surface_config.format,
+            RendererOptions::default(),
+        );
+        
+        self.egui_renderer = Some(renderer);
+        println!("🎨 [EGUI] Renderer initialized");
     }
+}
 
 
 
@@ -2860,12 +2869,22 @@ impl Graphics {
         return;
     };
 
-    // Update textures
-    for (id, image_delta) in &full_output.textures_delta.set {
+    // Update textures (use aggregated delta from all UI nodes this frame)
+    let textures_delta = std::mem::take(&mut self.egui_textures_delta_pending);
+    if textures_delta.set.is_empty() && !self.egui_textures_ready {
+        // Force font atlas rebuild so we get a texture delta next frame.
+        println!("⚠️ [EGUI] No textures to set and none uploaded yet; forcing font rebuild");
+        self.egui_context.set_fonts(egui::FontDefinitions::default());
+        return;
+    }
+    for (id, image_delta) in &textures_delta.set {
         renderer.update_texture(&self.device, &self.queue, *id, image_delta);
     }
-    for id in &full_output.textures_delta.free {
+    for id in &textures_delta.free {
         renderer.free_texture(id);
+    }
+    if !textures_delta.set.is_empty() {
+        self.egui_textures_ready = true;
     }
 
     let pixels_per_point = full_output.pixels_per_point.max(1.0);
@@ -2934,6 +2953,208 @@ impl Graphics {
     let rpass = encoder.begin_render_pass(&rpass_descriptor);
     let mut rpass_static = rpass.forget_lifetime();
     renderer.render(&mut rpass_static, &paint_jobs, &screen_descriptor);
+}
+
+pub fn render_egui_debug(
+    &mut self, 
+    encoder: &mut wgpu::CommandEncoder, 
+    view: &wgpu::TextureView
+) {
+    println!("🔴 [DEBUG] render_egui_debug called");
+
+    let pixels_per_point = self.window().scale_factor() as f32;
+    let screen_size = [self.surface_config.width, self.surface_config.height];
+    
+    println!("🔴 [DEBUG] Screen: {}x{}, ppp: {}", screen_size[0], screen_size[1], pixels_per_point);
+    println!("🔍 [DEBUG] Surface format: {:?}", self.surface_config.format);
+
+    self.ensure_egui_renderer();
+
+    let Some(renderer) = &mut self.egui_renderer else {
+        println!("❌ [DEBUG] Renderer not initialized");
+        return;
+    };
+
+    let Some(base_output) = self.egui_integration.last_output.as_ref() else {
+        println!("❌ [DEBUG] No last_output from ui_calculate; cannot render debug shapes");
+        return;
+    };
+
+    let mut shapes = base_output.shapes.clone();
+
+    let screen_rect = egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(
+            screen_size[0] as f32 / pixels_per_point,
+            screen_size[1] as f32 / pixels_per_point
+        ),
+    );
+
+    // Add debug shapes directly (no extra egui run this frame)
+    shapes.push(egui::epaint::ClippedShape {
+        clip_rect: screen_rect,
+        shape: egui::Shape::rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(100.0, 100.0),
+                egui::vec2(300.0, 300.0),
+            ),
+            0.0,
+            egui::Color32::RED,
+        ),
+    });
+    shapes.push(egui::epaint::ClippedShape {
+        clip_rect: screen_rect,
+        shape: egui::Shape::circle_filled(
+            egui::pos2(400.0, 300.0),
+            50.0,
+            egui::Color32::GREEN,
+        ),
+    });
+
+    println!("🔴 [DEBUG] Shapes generated: {}", shapes.len());
+    println!("🔴 [DEBUG] pixels_per_point from output: {}", base_output.pixels_per_point);
+    println!("🔴 [DEBUG] Textures to set: {}", base_output.textures_delta.set.len());
+
+    // Update textures
+    let textures_delta = std::mem::take(&mut self.egui_textures_delta_pending);
+    if textures_delta.set.is_empty() && !self.egui_textures_ready {
+        // Force font atlas rebuild so we get a texture delta next frame.
+        println!("⚠️ [DEBUG] No textures to set and none uploaded yet; forcing font rebuild");
+        self.egui_context.set_fonts(egui::FontDefinitions::default());
+        return;
+    }
+    for (id, image_delta) in &textures_delta.set {
+        println!("🔴 [DEBUG] Updating texture: {:?}", id);
+        renderer.update_texture(&self.device, &self.queue, *id, image_delta);
+    }
+    for id in &textures_delta.free {
+        println!("🔴 [DEBUG] Freeing texture: {:?}", id);
+        renderer.free_texture(id);
+    }
+    if !textures_delta.set.is_empty() {
+        self.egui_textures_ready = true;
+    }
+
+    let ppp = if base_output.pixels_per_point > 0.0 {
+        base_output.pixels_per_point
+    } else {
+        pixels_per_point
+    };
+
+    let paint_jobs = self.egui_context.tessellate(
+        shapes,
+        ppp
+    );
+    
+    println!("🔴 [DEBUG] Paint jobs: {}", paint_jobs.len());
+    
+    for (i, job) in paint_jobs.iter().enumerate() {
+        println!(
+            "  Job {}: clip=[{:.0},{:.0}]->[{:.0},{:.0}]",
+            i,
+            job.clip_rect.min.x, job.clip_rect.min.y,
+            job.clip_rect.max.x, job.clip_rect.max.y
+        );
+        
+        match &job.primitive {
+            egui::epaint::Primitive::Mesh(mesh) => {
+                println!("    Mesh: verts={} indices={}", mesh.vertices.len(), mesh.indices.len());
+                if let Some(v) = mesh.vertices.first() {
+                    println!("      First vert: pos=({:.1},{:.1}) color={:?}", v.pos.x, v.pos.y, v.color);
+                }
+            }
+            egui::epaint::Primitive::Callback(_) => {
+                println!("    Callback primitive");
+            }
+        }
+    }
+
+    if paint_jobs.is_empty() {
+        println!("❌ [DEBUG] No paint jobs generated!");
+        return;
+    }
+
+    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+        size_in_pixels: screen_size,
+        pixels_per_point: ppp,
+    };
+
+    println!("🔴 [DEBUG] Updating buffers...");
+    renderer.update_buffers(
+        &self.device,
+        &self.queue,
+        encoder,
+        &paint_jobs,
+        &screen_descriptor,
+    );
+
+    println!("🔴 [DEBUG] Buffers updated, creating render pass");
+
+    // Verify the render pass will actually work
+println!("🔍 [VALIDATION] Checking render state...");
+println!("  View format matches surface: {}", 
+    self.surface_config.format == wgpu::TextureFormat::Rgba8UnormSrgb);
+
+// Try manually drawing something to verify the render pass works
+{
+    let mut test_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("test_pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+}
+println!("🔍 [VALIDATION] Test render pass created successfully");
+
+   let rpass_descriptor = wgpu::RenderPassDescriptor {
+    label: Some("egui_debug_pass"),
+    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        view,
+        resolve_target: None,
+        ops: wgpu::Operations {
+            // Overlay on top of the main pass.
+            load: wgpu::LoadOp::Load,
+            store: wgpu::StoreOp::Store,
+        },
+        depth_slice: None,
+    })],
+    depth_stencil_attachment: None,
+    timestamp_writes: None,
+    occlusion_query_set: None,
+};
+
+
+    let rpass = encoder.begin_render_pass(&rpass_descriptor);
+    let mut rpass_static = rpass.forget_lifetime();
+    
+    println!("🔴 [DEBUG] Calling renderer.render()...");
+
+println!("🔍 [DEBUG] About to call render with {} jobs", paint_jobs.len());
+println!("🔍 [DEBUG] Screen: {}x{}, ppp: {}", 
+    screen_descriptor.size_in_pixels[0],
+    screen_descriptor.size_in_pixels[1],
+    screen_descriptor.pixels_per_point
+);
+
+if let Some(job) = paint_jobs.first() {
+    if let egui::epaint::Primitive::Mesh(mesh) = &job.primitive {
+        println!("🔍 [DEBUG] First mesh has {} vertices", mesh.vertices.len());
+    }
+}
+
+    renderer.render(&mut rpass_static, &paint_jobs, &screen_descriptor);
+    drop(rpass_static);
+    
+    println!("🔴 [DEBUG] render_egui_debug complete");
 }
 }
 

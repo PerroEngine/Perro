@@ -1,6 +1,6 @@
 @module PoopyButt
 
-const v = 125
+const v: int = 125
 
 
 fn test(u: int) {

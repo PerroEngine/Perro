@@ -132,7 +132,13 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
                     );
                 });
         });
-        
+
+        // Accumulate texture updates across all UI nodes for this frame.
+        if !full_output.textures_delta.is_empty() {
+            gfx.egui_textures_delta_pending
+                .append(full_output.textures_delta.clone());
+        }
+
         integration.last_output = Some(full_output);
     }
 }

@@ -648,6 +648,8 @@ dependencies = [
 [[package]]
 name = "cow_map"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7cb7b0f75e5f1b18a87105dd65fa8451d25dcd8c23621da6c5e50b73d178622"
 dependencies = [
  "phf",
  "phf_shared",
