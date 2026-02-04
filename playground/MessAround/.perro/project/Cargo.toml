@@ -14,7 +14,7 @@ toml = "0.8"
 once_cell = "1.19"
 
 [dependencies.cow_map]
-path = "D:/Rust/cow_map"
+version = "0.1.0"
 
 [dependencies.perro_core]
 path = "../../../../perro_core"

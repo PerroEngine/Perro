@@ -4,15 +4,15 @@
   <img src="icon.png" alt="Perro Logo" width="200"/>
 </div>
 
-**Perro** is an experimental, open-source game engine written in **Rust**, built as a modern alternative to engines like Unreal, Godot, and Unity. It focuses on **performance**, **flexibility**, and **direct control**: scripts transpile to Rust (no VM), assets and scenes can be statically embedded in release builds, and the runtime is designed so that an **eventual standalone editor** can ship as a single binary without dragging in a heavy toolchain for end users.
+**Perro** is an experimental, open-source game engine written in **Rust**, built as a modern alternative to engines like Unreal, Godot, and Unity. It focuses on **simplicity** without sacrificing **performance** because game scripts transpile to Rust and is optimized alongside the engine core, assets (images, meshes) and scenes are statically embedded in release builds for efficient retrieval with no parsing, just direct usage.
 
-**Version: 0.1.0 prerelease.** There is no editor yet — this repo is the engine core, dev runtime, and scripting pipeline. Contributions and experimentation are welcome; see [Contributing](#-contributing) and [CONTRIBUTING.md](CONTRIBUTING.md).
+**Version: 0.1.0** There is no editor yet — this repo is the engine core, dev runtime, and scripting pipeline. Contributions and experimentation are welcome; see [Contributing](#-contributing) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Why Perro exists
 
-The engine exists to give you **native performance and Rust’s safety** without writing the whole game in Rust by hand. Scripts (Pup, and experimentally TypeScript/C#) are **transpiled to Rust** and compiled with the Rust toolchain — no interpreter, no VM, no marshalling layer. In release, scripts and static assets (scenes, UI, textures, meshes etc.) are embedded into one final executable. The design also targets a **standalone editor** later: one binary that can open projects, run them, and export them, without requiring every user to install Visual Studio or the MSVC toolchain. On **Windows** we use the **GNU toolchain** instead of MSVC (see below); Linux already uses GNU by default, and macOS is fine with the default for now.
+The engine exists to give you **native performance and Rust’s safety** without writing the whole game in Rust by hand. Scripts (Pup, and experimentally TypeScript/C#) are **transpiled to Rust** and compiled with the Rust toolchain; no interpreter, no VM, no marshalling layer. In release, scripts and static assets (scenes, UI, textures, meshes etc.) are embedded into one final executable. The design also targets a **standalone editor** later: one binary that can open projects, run them, and export them, without requiring every user to install Visual Studio or the MSVC toolchain. On **Windows** we use the **GNU toolchain** instead of MSVC (see below); Linux already uses GNU by default, and macOS is fine with the default for now.
 
 ---
 
@@ -31,8 +31,8 @@ The **eventual editor will be a standalone application** — a single binary tha
 ## Engine overview
 
 - **Core** — `perro_core` holds the engine: scene graph, nodes, rendering (e.g. wgpu), input, and the scripting API that generated code calls into. No game logic lives in the core; it’s all in scripts (transpiled to Rust) or in the dev/editor binaries that host the core.
-- **Transpile, don’t interpret** — The transpiler and codegen live in the engine (`perro_core`, scripting). PUP (and experimental TypeScript/C#) are parsed and **transpiled to Rust**; the generated Rust is written under **`.perro/scripts/src` inside each game project** That subcrate is built either as a **DLL** (dev: load at runtime, fast script iteration) or **statically linked** into the game binary, the `.perro/project` subcrate (release: one executable, no script files). The runtime never executes PUP/TS/C# directly; it always runs the compiled Rust. To inspect the generated code, look in a project’s `.perro/scripts/src`. See [docs/ENGINE.md](docs/ENGINE.md) for dev vs release, static assets, and the `.perro` layout.
-- **Scenes & UI** — Scenes are described in `.scn` files; UI is written in **FUR** (Flexible UI Rules), a declarative format. In release, these are compiled into Rust data (e.g. `static_assets`) and embedded so the binary doesn’t read `.scn`/`.fur` at runtime. In dev, they’re loaded from disk for iteration. See [docs/SCENES.md](docs/SCENES.md) and the docs index in [docs/README.md](docs/README.md).
+- **Transpile, don’t interpret** — The transpiler and codegen live in the engine (`perro_core`, scripting). PUP (and experimental TypeScript/C#) are parsed and **transpiled to Rust**; the generated Rust is written under **`.perro/scripts/src` inside each game project** That subcrate is built either as a **DLL** (dev: load at runtime, fast script iteration) or **statically linked** into the game binary, the `.perro/project` subcrate (release: one executable, no script files). The game never executes PUP/TS/C# directly; it always runs the compiled Rust. To inspect the generated code, look in a project’s `.perro/scripts/src`. See [docs/ENGINE.md](docs/ENGINE.md) for dev vs release, static assets, and the `.perro` layout.
+- **Scenes & UI** — Scenes are described in `.scn` files; UI is written in `.fur` (Flexible UI Rules, but mainly a dog pun), a declarative format. In release, these are compiled into Rust data (e.g. `static_assets`) and embedded so the binary doesn’t read `.scn`/`.fur` at runtime. In dev, they’re loaded from disk for iteration. See [docs/SCENES.md](docs/SCENES.md) and the docs index in [docs/README.md](docs/README.md).
 - **Signals** — A global, name-based signal system that allows full decoupling of emitters and listeners, emit in place A and connect in place B, your function will fire!
 
 The **docs/** folder has engine architecture, transpiler, scripting APIs (including [PUP](docs/PUP.md)), and language guides.
@@ -41,14 +41,14 @@ The **docs/** folder has engine architecture, transpiler, scripting APIs (includ
 
 ## Repository layout (brief)
 
-| Path | Purpose |
-|------|---------|
-| **perro_core/** | Engine: scene graph, rendering, nodes, scripting API, transpiler, FUR. |
-| **perro_dev/** | Dev-time binary: loads script DLL, runs a project from `--path`. |
-| **perro_editor/** | Editor “game” project (future standalone editor will derive from this). |
-| **playground/** | Playground for trying things and testing stuff. |
+| Path                            | Purpose                                                                                                                                                                                                     |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **perro_core/**                 | Engine: scene graph, rendering, nodes, scripting API, transpiler, FUR.                                                                                                                                      |
+| **perro_dev/**                  | Dev-time binary: loads script DLL, runs a project from `--path`.                                                                                                                                            |
+| **perro_editor/**               | Editor “game” project (future standalone editor will derive from this).                                                                                                                                     |
+| **playground/**                 | Playground for trying things and testing stuff.                                                                                                                                                             |
 | **unit_tests/transpiler_test/** | Compiler test suite. `--path --test --scripts` (or `--path --test --dev`) runs this: it checks that scripts transpile and the generated Rust compiles. Shorthand: `--test`; long form: `--test_transpiler`. |
-| **docs/** | Engine overview, PUP reference, scenes, transpiler, language docs. |
+| **docs/**                       | Engine overview, PUP reference, scenes, transpiler, language docs.                                                                                                                                          |
 
 Building and running a project from the repo is described in the docs and in [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -79,4 +79,3 @@ Donations help fund full-time development, faster features, and better tooling. 
 Perro is licensed under the **Apache 2.0 License**. See [LICENSE](LICENSE) for details.
 
 ---
-

@@ -2193,9 +2193,6 @@ impl<'a> ScriptApi<'a> {
     }
 
     pub fn call_node_internal_update(&mut self, node_id: NodeID) {
-
-        println!("call_node_internal_update for node {}", node_id);
-   
             unsafe {
                 // Get a raw pointer to the scene to split the borrows
                 let scene_ptr: *mut dyn SceneAccess = &mut *self.scene;

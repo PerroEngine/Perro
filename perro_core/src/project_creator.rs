@@ -469,7 +469,7 @@ build = "build.rs"
 scripts = {{ path = "../scripts" }}
 once_cell = "1.19"
 phf = {{ version = "0.13.1", features = ["macros"] }}
-cow_map = {{ path = "D:/Rust/cow_map" }}
+cow_map = "0.1.0"
 
 [build-dependencies]
 toml = "0.8"

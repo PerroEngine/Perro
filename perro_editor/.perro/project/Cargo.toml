@@ -21,7 +21,7 @@ features = ["macros"]
 version = "0.13.1"
 
 [dependencies.cow_map]
-path = "D:/Rust/cow_map"
+version = "0.1.0"
 
 [dependencies.scripts]
 path = "../scripts"

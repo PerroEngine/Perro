@@ -68,8 +68,13 @@ fn transform_to_rect(
     virtual_size: Vector2,
     screen_size: Vector2,
 ) -> Rect {
+    println!("🔍 transform_to_rect: pos={:?} size={:?} pivot={:?} scale={:?}", 
+             transform.position, size, pivot, transform.scale);
+    
     let pos = transform.position;
     let scaled_size = Vector2::new(size.x * transform.scale.x, size.y * transform.scale.y);
+
+    println!("   scaled_size={:?}", scaled_size);
 
     // Calculate bounds from pivot point
     // In Perro's Y-up system: top has highest Y, bottom has lowest Y
@@ -78,6 +83,8 @@ fn transform_to_rect(
     let max_x = pos.x + scaled_size.x * (1.0 - pivot.x);
     let max_y = pos.y + scaled_size.y * (1.0 - pivot.y); // Top (highest Y in Y-up)
     let min_y = pos.y - scaled_size.y * pivot.y; // Bottom (lowest Y in Y-up)
+
+    println!("   virtual bounds: min_x={} max_x={} min_y={} max_y={}", min_x, max_x, min_y, max_y);
 
     let scale_x = if virtual_size.x == 0.0 {
         1.0
@@ -91,6 +98,8 @@ fn transform_to_rect(
     };
 
     // Convert to egui coordinates (top-left origin, Y-down) in screen points
+    // The position is already in centered virtual space (-hw to +hw, -hh to +hh)
+    // We need to convert to top-left origin (0 to screen_size)
     let min = egui::pos2(
         (min_x + virtual_size.x * 0.5) * scale_x,
         (virtual_size.y * 0.5 - max_y) * scale_y,
@@ -100,14 +109,14 @@ fn transform_to_rect(
         (virtual_size.y * 0.5 - min_y) * scale_y,
     );
 
+    println!("   screen rect: min={:?} max={:?}", min, max);
+
     Rect::from_min_max(min, max)
 }
 
 /// State tracked per element for egui rendering
 #[derive(Default)]
 pub struct ElementState {
-    pub text_buffer: String,
-    pub is_focused: bool,
     pub is_pressed: bool, // For buttons
     pub is_hovered: bool, // For buttons
 }
@@ -116,7 +125,6 @@ pub struct ElementState {
 #[derive(Debug, Clone)]
 pub enum ElementEvent {
     ButtonClicked(UIElementID, String), // element_id, element_name
-    TextChanged(UIElementID, String),   // element_id, new_text
     ButtonHovered(UIElementID, bool),   // element_id, is_hovered
     ButtonPressed(UIElementID, bool),   // element_id, is_pressed
 }
@@ -275,7 +283,7 @@ impl EguiIntegration {
             );
         }
 
-        ui.allocate_ui_at_rect(rect, |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
             ui.set_clip_rect(rect);
             ui.set_opacity(panel.props.opacity);
             self.render_children(
@@ -364,7 +372,7 @@ impl EguiIntegration {
             .unwrap_or(Color32::TRANSPARENT);
         let rounding = corner_radius_to_egui(&button.props.corner_radius, &rect, button.base.size);
 
-        ui.allocate_ui_at_rect(rect, |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
             let response = ui
                 .add_sized(rect.size(), Button::new("").frame(false))
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -439,23 +447,9 @@ impl EguiIntegration {
         });
     }
 
-    /// Render TextInput (maps to egui TextEdit::singleline)
-    /// NOTE: UITextInput type no longer exists - this function is kept for potential future use
-    #[allow(dead_code)]
-    pub fn render_text_input(&mut self, _text_input: &dyn std::any::Any, _ui: &mut Ui) {
-        // UITextInput type was removed - function body removed
-    }
-
-    /// Render TextEdit (maps to egui TextEdit::multiline)
-    /// NOTE: UITextEdit type no longer exists - this function is kept for potential future use
-    #[allow(dead_code)]
-    pub fn render_text_edit(&mut self, _text_edit: &dyn std::any::Any, _ui: &mut Ui) {
-        // UITextEdit type was removed - function body removed
-    }
 
     /// Clear events (call after processing)
     pub fn clear_events(&mut self) {
         self.events.clear();
     }
 }
-

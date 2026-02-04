@@ -79,9 +79,18 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
         };
         
         let integration = &mut gfx.egui_integration;
+        let screen_rect = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(screen_size.x, screen_size.y),
+        );
+
         let full_output = gfx.egui_context.run(raw_input, |ctx| {
             egui::Area::new(egui::Id::new("perro_ui"))
+                .fixed_pos(screen_rect.min)
+                .default_size(screen_rect.size())
                 .show(ctx, |ui| {
+                    ui.set_min_size(screen_rect.size());
+                    ui.set_clip_rect(screen_rect);
                     integration.render_element_tree(
                         elements,
                         root_ids,
@@ -98,7 +107,11 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
 }
 
 /// Calculate size for an element based on its style_map
-/// style_map: "size.x" / "size.y" — value in (0,1] = fraction of viewport; > 10000 = absolute (value - 10000).
+/// 
+/// Encoding in style_map (set by builder.rs):
+/// - Percentage (e.g., "15%"): stored as raw value 1-100 (e.g., 15.0)
+/// - Absolute pixels: stored as value + 10000 (e.g., 32px → 10032.0)
+/// - Auto-sizing: stored as -1.0
 fn calculate_element_size(element: &UIElement, viewport_size: Vector2) -> Vector2 {
     let style = element.get_style_map();
     let current = element.get_size();
@@ -106,14 +119,21 @@ fn calculate_element_size(element: &UIElement, viewport_size: Vector2) -> Vector
     let resolve = |key: &str, ref_dim: f32, fallback: f32| -> f32 {
         match style.get(key) {
             Some(&v) => {
-                if v > 10000.0 {
+                if v < 0.0 {
+                    // Auto-sizing sentinel (-1.0) or other negative values
+                    // For now, treat as fallback
+                    fallback
+                } else if v > 10000.0 {
                     // Absolute size: value - 10000
+                    // e.g., 10032.0 → 32.0 pixels
                     v - 10000.0
-                } else if v >= 0.0 && v <= 1.0 {
-                    // Percentage: fraction of viewport
-                    ref_dim * v
+                } else if v >= 1.0 && v <= 100.0 {
+                    // Percentage: value is in 1-100 range
+                    // e.g., 15.0 → 15% → 0.15 * viewport
+                    ref_dim * (v / 100.0)
                 } else {
-                    // Direct value
+                    // Edge case: values between 0.0 and 1.0
+                    // Treat as absolute pixel values (for tiny sizes like 0.5px)
                     v
                 }
             }

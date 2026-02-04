@@ -2845,11 +2845,15 @@ impl Graphics {
     /// Render egui UI output to the screen
     /// Must be called after the main render pass, before end_frame
     pub fn render_egui(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+        // Temporary debug hook: flip to true to force a full-screen green test frame.
+        const FORCE_TEST_FRAME: bool = false;
+        println!("[EGUI] render_egui called");
+
         // Ensure renderer is initialized first
         self.ensure_egui_renderer();
 
         // Use real UI output or fall back to test frame (full-screen green) so we can verify the pass draws
-        if self.egui_integration.last_output.is_none() {
+        if FORCE_TEST_FRAME || self.egui_integration.last_output.is_none() {
             log::info!("🎨 [EGUI] No last_output — drawing test frame (green screen) to verify pass");
             let test_output = self.run_egui_test_frame();
             self.egui_integration.last_output = Some(test_output);
