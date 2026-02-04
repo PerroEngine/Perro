@@ -11,8 +11,7 @@ pub mod apply_fur;
 pub mod fur_ast;
 pub mod parser;
 
-pub mod ui_renderer;
+pub mod ui_calculate;
 
-pub mod egui_bridge;
 pub mod egui_integration;
 pub mod text_utils;

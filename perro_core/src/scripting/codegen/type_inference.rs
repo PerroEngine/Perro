@@ -113,6 +113,16 @@ impl Script {
             (StrRef, CowStr) => {
                 return format!("Cow::Borrowed({})", expr);
             }
+            // String/StrRef/CowStr -> SceneRef conversion
+            (String, EngineStruct(EngineStructKind::SceneRef)) => {
+                return format!("SceneRef::new(&{})", expr);
+            }
+            (StrRef, EngineStruct(EngineStructKind::SceneRef)) => {
+                return format!("SceneRef::new({})", expr);
+            }
+            (CowStr, EngineStruct(EngineStructKind::SceneRef)) => {
+                return format!("SceneRef::new({}.as_ref())", expr);
+            }
             // Vector3 -> Vector2 (drop z)
             (EngineStruct(EngineStructKind::Vector3), EngineStruct(EngineStructKind::Vector2)) => {
                 return format!("Vector2::new({}.x, {}.y)", expr, expr);

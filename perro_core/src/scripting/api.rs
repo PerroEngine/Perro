@@ -5,7 +5,7 @@
 //! 1. **Module APIs** — Engine modules (no Graphics dependency): JsonApi, TimeApi, OsApi, ProcessApi,
 //!    InputApi (JoyCon, Controller, Keyboard, Mouse), MathApi, DirectoryApi, EditorApi, FileSystemApi.
 //!    Methods are grouped by sub-API; within each sub-API, methods are in logical order.
-//! 2. **Resource APIs** — TextureApi, MeshApi (require ScriptApi/Graphics for load/preload).
+//! 2. **Resource APIs** — TextureApi, MeshApi, SceneApi (require ScriptApi/Graphics for load/preload).
 //! 3. **Engine API aggregator** — `EngineApi` struct and `Default`.
 //! 4. **Deref** — `ScriptApi` derefs to `EngineApi` so `api.Input`, `api.Texture`, etc. work.
 //! 5. **ScriptApi** — Main entry point for scripts. Subsections:
@@ -20,7 +20,7 @@
 //!
 //! ## SAFETY (unsafe in this module)
 //!
-//! - **Parent pointer** (`InputApi`, `TextureApi`, `MeshApi`, `EditorApi`): Each stores an optional
+//! - **Parent pointer** (`InputApi`, `TextureApi`, `MeshApi`, `SceneApi`, `EditorApi`): Each stores an optional
 //!   `*mut ScriptApi<'static>`. Set in `Deref`/`DerefMut` so sub-APIs can call back into `ScriptApi`.
 //!   Safe because we control the lifetime of `ScriptApi` and only use the pointer while the borrow
 //!   is active; no concurrent access. Sub-APIs are only used via `api.Input`, `api.Texture`, etc.,
@@ -37,6 +37,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
 
+use crate::Graphics;
 use crate::ids::{NodeID, SignalID, TextureID, UIElementID};
 use crate::time_util::format_utc_datetime_compact;
 use serde::Serialize;
@@ -58,7 +59,6 @@ use crate::{
     manifest::Project,
     node_registry::BaseNode,
     prelude::string_to_u64,
-    rendering::Graphics,
     script::SceneAccess,
     transpiler::{script_path_to_identifier, transpile},
     types::ScriptType,
@@ -983,6 +983,12 @@ pub struct MeshApi {
     api_ptr: Option<*mut ScriptApi<'static>>,
 }
 
+// ---------- SceneApi ----------
+pub struct SceneApi {
+    // Pointer to the parent ScriptApi - set when accessed through DerefMut
+    api_ptr: Option<*mut ScriptApi<'static>>,
+}
+
 impl Default for MeshApi {
     fn default() -> Self {
         Self { api_ptr: None }
@@ -1106,6 +1112,66 @@ impl MeshApi {
 impl Default for TextureApi {
     fn default() -> Self {
         Self { api_ptr: None }
+    }
+}
+
+impl Default for SceneApi {
+    fn default() -> Self {
+        Self { api_ptr: None }
+    }
+}
+
+impl SceneApi {
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr(&mut self, api_ptr: *mut ScriptApi<'static>) {
+        self.api_ptr = Some(api_ptr);
+    }
+
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn set_api_ptr_immut(&self, api_ptr: *mut ScriptApi<'static>) {
+        unsafe {
+            let self_mut = self as *const SceneApi as *mut SceneApi;
+            (*self_mut).api_ptr = Some(api_ptr);
+        }
+    }
+
+    #[cfg_attr(not(debug_assertions), inline)]
+    fn get_api_ptr(&self) -> Option<*mut ScriptApi<'static>> {
+        self.api_ptr
+    }
+
+    /// Instantiate a scene by path and return the merged root NodeID (or None if merge skipped).
+    pub fn instantiate(&mut self, path: &str) -> Option<NodeID> {
+        let api_ptr = match self.get_api_ptr() {
+            Some(ptr) => ptr,
+            None => return None,
+        };
+        unsafe {
+            let api = &mut *api_ptr;
+            Some(Self::instantiate_impl(api, path))
+        }
+    }
+
+    /// Instantiate a scene from a SceneRef.
+    pub fn instantiate_ref(&mut self, scene: &crate::structs::SceneRef) -> Option<NodeID> {
+        self.instantiate(scene.path())
+    }
+
+    pub(crate) fn instantiate_impl(api: &mut ScriptApi, path: &str) -> NodeID {
+        let data = api
+            .scene
+            .load_scene_data(path)
+            .unwrap_or_else(|e| panic!("Scene failed to load: {} ({})", path, e));
+
+        let parent_id = api.scene.get_root_id();
+        let gfx = api
+            .gfx
+            .as_mut()
+            .expect("Graphics required for Scene.instantiate");
+
+        api.scene
+            .merge_scene_data(data, parent_id, gfx)
+            .unwrap_or_else(|e| panic!("Scene failed to merge: {} ({})", path, e))
     }
 }
 
@@ -1657,6 +1723,7 @@ pub struct EngineApi {
     pub Input: InputApi,
     pub Texture: TextureApi,
     pub Mesh: MeshApi,
+    pub Scene: SceneApi,
     pub Math: MathApi,
     pub Editor: EditorApi,
     pub Directory: DirectoryApi,
@@ -1684,6 +1751,9 @@ impl<'a> Deref for ScriptApi<'a> {
 
             let mesh_api = &(*api_ptr).engine.Mesh;
             mesh_api.set_api_ptr_immut(api_ptr);
+
+            let scene_api = &(*api_ptr).engine.Scene;
+            scene_api.set_api_ptr_immut(api_ptr);
         }
         &self.engine
     }
@@ -1708,6 +1778,10 @@ impl<'a> DerefMut for ScriptApi<'a> {
             let mesh_api = &mut (*api_ptr).engine.Mesh;
             mesh_api.set_api_ptr(api_ptr);
 
+            // Set the pointer in SceneApi
+            let scene_api = &mut (*api_ptr).engine.Scene;
+            scene_api.set_api_ptr(api_ptr);
+
             // Set the pointer in EditorApi
             let editor_api = &mut (*api_ptr).engine.Editor;
             editor_api.set_api_ptr(api_ptr);
@@ -1726,7 +1800,7 @@ pub struct ScriptApi<'a> {
     pub(crate) scene: &'a mut dyn SceneAccess,
     project: &'a mut Project,
     engine: EngineApi,
-    pub(crate) gfx: Option<&'a mut Graphics>, // Always Some when created via new(), but Option for compatibility
+    pub(crate) gfx: Option<&'a mut Graphics>, 
 }
 
 impl<'a> ScriptApi<'a> {
@@ -2024,7 +2098,7 @@ impl<'a> ScriptApi<'a> {
             .collect();
         if let Some(script_rc) = self.scene.get_script(node_id) {
             unsafe {
-                (*script_rc.get()).apply_exposed(&map_u64);
+                (*script_rc.get()).apply_exposed(&map_u64, self);
             }
         }
     }
@@ -2118,14 +2192,14 @@ impl<'a> ScriptApi<'a> {
         }
     }
 
-    pub fn call_node_internal_render_update(&mut self, node_id: NodeID) {
+    pub fn call_node_internal_update(&mut self, node_id: NodeID) {
         // We need to get the node and call the method, but we can't hold a RefMut
         // while also borrowing self mutably. So we check if update is needed first,
         // then drop that borrow before calling the method.
         let needs_update = {
             self.scene
                 .get_scene_node_ref(node_id)
-                .map(|node_ref| node_ref.needs_internal_render_update())
+                .map(|node_ref| node_ref.needs_internal_update())
                 .unwrap_or(false)
         };
 
@@ -2142,7 +2216,7 @@ impl<'a> ScriptApi<'a> {
                     // The RefMut borrows from the RefCell, not from the SceneAccess trait object,
                     // so it's safe to use &mut self here as long as we don't access self.scene
                     // through the mutable reference while the RefMut is alive.
-                    node.internal_render_update(self);
+                    node.internal_update(self);
                 }
             }
         }
@@ -2813,17 +2887,6 @@ impl<'a> ScriptApi<'a> {
                 root_ids.push(element_id);
                 elements.insert(element_id, element);
             }
-
-            // Mark element as needing rerender and layout
-            ui.mark_element_needs_layout(element_id);
-            eprintln!(
-                "🔧 [add_ui_element] Marked element {} ({}) for layout/rerender",
-                element_name, element_id
-            );
-            eprintln!(
-                "🔧 [add_ui_element] needs_rerender now has {} elements",
-                ui.needs_rerender.as_ref().map_or(0, |s| s.len())
-            );
 
             Some(element_id)
         })

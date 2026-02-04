@@ -134,6 +134,10 @@ fn run_app(event_loop: EventLoop<Graphics>, mut app: App<StaticScriptProvider>) 
 static STATIC_TEXTURES: AtomicPtr<Map<&'static str, &'static StaticTextureData>> =
     AtomicPtr::new(std::ptr::null_mut());
 
+/// Global static FUR map (set once at startup, only in runtime mode)
+static STATIC_FUR: AtomicPtr<Map<&'static str, &'static [FurElement]>> =
+    AtomicPtr::new(std::ptr::null_mut());
+
 /// Initialize static textures (called once at startup in runtime mode)
 pub fn set_static_textures(
     textures: &'static Map<&'static str, &'static StaticTextureData>,
@@ -141,11 +145,26 @@ pub fn set_static_textures(
     STATIC_TEXTURES.store(textures as *const _ as *mut _, Ordering::Release);
 }
 
+/// Initialize static FUR (called once at startup in runtime mode)
+pub fn set_static_fur(fur: &'static Map<&'static str, &'static [FurElement]>) {
+    STATIC_FUR.store(fur as *const _ as *mut _, Ordering::Release);
+}
+
 /// Get static textures map (returns None if not initialized or in dev mode)
 pub fn get_static_textures()
     -> Option<&'static Map<&'static str, &'static StaticTextureData>>
 {
     let ptr = STATIC_TEXTURES.load(Ordering::Acquire);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { &*ptr })
+    }
+}
+
+/// Get static FUR map (returns None if not initialized or in dev mode)
+pub fn get_static_fur() -> Option<&'static Map<&'static str, &'static [FurElement]>> {
+    let ptr = STATIC_FUR.load(Ordering::Acquire);
     if ptr.is_null() {
         None
     } else {
@@ -404,16 +423,16 @@ pub fn run_game(data: RuntimeData, runtime_params: HashMap<String, String>) {
     // 4. Initialize static textures (runtime mode only)
     set_static_textures(data.static_assets.textures);
 
-    // 4b. Initialize static meshes (runtime mode only)
+    // 5. Initialize static FUR (runtime mode only)
+    set_static_fur(data.static_assets.fur);
+
+    // 6. Initialize static meshes (runtime mode only)
     set_static_meshes(data.static_assets.meshes);
 
-    // 5. Initialize static FUR map (for Include tag resolution in release mode)
-    crate::apply_fur::set_static_fur_map(data.static_assets.fur);
-
-    // 6. Create event loop
+    // 7. Create event loop
     let event_loop = EventLoop::<Graphics>::with_user_event().build().unwrap();
 
-    // 6. Create window at scaled-down size so it fits typical monitors (e.g. 1080x1920 → 720x1280); resumed() may clamp further to primary monitor
+    // 8. Create window at scaled-down size so it fits typical monitors (e.g. 1080x1920 → 720x1280); resumed() may clamp further to primary monitor
     #[cfg(not(target_arch = "wasm32"))]
     let default_size = crate::rendering::app::initial_window_size_from_virtual(
         project.virtual_width(),

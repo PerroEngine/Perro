@@ -17,7 +17,7 @@ use crate::{
     physics::physics_2d::PhysicsWorld2D,
     script::{CreateFn, SceneAccess, ScriptObject, ScriptProvider},
     transpiler::script_path_to_identifier,
-    ui_renderer::render_ui, // NEW import
+    ui_calculate::calculate_ui, // NEW import
 };
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
@@ -659,7 +659,7 @@ pub struct Scene<P: ScriptProvider> {
     // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for fixed updates)
     pub nodes_with_internal_fixed_update: HashSet<NodeID>,
     // Optimize: Use HashSet for O(1) contains() checks (order doesn't matter for render updates)
-    pub nodes_with_internal_render_update: HashSet<NodeID>,
+    pub nodes_with_internal_update: HashSet<NodeID>,
 
     // Physics (wrapped in RefCell for interior mutability through trait objects)
     // OPTIMIZED: Lazy initialization - only create when first physics object is added
@@ -687,17 +687,7 @@ pub struct SignalBus {
 }
 
 impl<P: ScriptProvider + 'static> Scene<P> {
-    /// Check if any UINode has a focused text input element
-    pub fn has_focused_text_input(&self) -> bool {
-        for node in self.nodes.values() {
-            if let SceneNode::UINode(ui_node) = node {
-                if ui_node.focused_element.is_some() {
-                    return true;
-                }
-            }
-        }
-        false
-    }
+
 
     /// Create a runtime scene from a root node.
     /// Arena assigns the root's ID from the next available slot.
@@ -727,7 +717,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
-            nodes_with_internal_render_update: HashSet::new(),
+            nodes_with_internal_update: HashSet::new(),
             // OPTIMIZED: Lazy physics initialization - only create when needed
             physics_2d: None,
 
@@ -781,7 +771,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             fixed_update_accumulator: 0.0,
             last_fixed_update: Some(Instant::now()),
             nodes_with_internal_fixed_update: HashSet::new(),
-            nodes_with_internal_render_update: HashSet::new(),
+            nodes_with_internal_update: HashSet::new(),
 
             // OPTIMIZED: Initialize script ID cache
             cached_script_ids: Vec::new(),
@@ -1063,7 +1053,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         other: SceneData,
         parent_id: NodeID,
         gfx: &mut crate::rendering::Graphics,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<NodeID> {
         use std::time::Instant;
 
         use crate::ids::NodeID;
@@ -1136,6 +1126,11 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             key_to_new_id.insert(key, new_id);
             insert_info.push((key, new_id, parent_old_id));
         }
+        let merged_root_id = if skip_root {
+            NodeID::nil()
+        } else {
+            key_to_new_id.get(&root_key).copied().unwrap_or(NodeID::nil())
+        };
         let _ = id_map_start.elapsed();
         let remap_start = Instant::now();
 
@@ -1243,8 +1238,8 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 if node_ref.needs_internal_fixed_update() {
                     self.nodes_with_internal_fixed_update.insert(*new_id);
                 }
-                if node_ref.needs_internal_render_update() {
-                    self.nodes_with_internal_render_update.insert(*new_id);
+                if node_ref.needs_internal_update() {
+                    self.nodes_with_internal_update.insert(*new_id);
                 }
             }
         }
@@ -1352,6 +1347,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     match result {
                         Ok(fur_elements) => {
                             build_ui_elements_from_fur(u, &fur_elements);
+                            u.loaded_fur_path = u.fur_path.clone();
                             // Mark UINode as needing rerender after elements are created
                             if u.is_renderable() {
                                 self.needs_rerender.insert(id);
@@ -1427,7 +1423,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         // Print scene tree after merge
         self.print_scene_tree();
 
-        Ok(())
+        Ok(merged_root_id)
     }
 
     /// Merge a nested scene where the nested scene's root REPLACES an existing node
@@ -1606,6 +1602,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     if let Some(fur_path) = ui_node.fur_path.as_ref() {
                         if let Ok(fur_elements) = self.provider.load_fur_data(fur_path) {
                             build_ui_elements_from_fur(ui_node, &fur_elements);
+                            ui_node.loaded_fur_path = ui_node.fur_path.clone();
                             // Mark UINode as needing rerender after elements are created
                             if ui_node.is_renderable() {
                                 self.needs_rerender.insert(*id);
@@ -2065,7 +2062,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
 
             // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
             let node_ids: Vec<NodeID> = self
-                .nodes_with_internal_render_update
+                .nodes_with_internal_update
                 .iter()
                 .copied()
                 .collect();
@@ -2081,7 +2078,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                     // OPTIMIZED: Borrow project once per node
                     let mut project_borrow = project_ref.borrow_mut();
                     let mut api = ScriptApi::new(true_delta, self, &mut *project_borrow, gfx);
-                    api.call_node_internal_render_update(node_id);
+                    api.call_node_internal_update(node_id);
                 }
             }
         }
@@ -2196,6 +2193,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                             .collect();
 
                         build_ui_elements_from_fur(ui_node, &fur_elements);
+                        ui_node.loaded_fur_path = ui_node.fur_path.clone();
                     }
                     Err(err) => {
                         println!("Error parsing .fur file: {}", err);
@@ -3752,7 +3750,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 if let Some(node) = self.nodes.get_mut(node_id) {
                     if let SceneNode::UINode(ui_node) = node {
                         // Pass provider so FUR can be loaded using the correct method (dev vs release)
-                        render_ui(ui_node, gfx, Some(&self.provider));
+                        calculate_ui(ui_node, gfx, Some(&self.provider));
                     }
                 }
             }
@@ -4003,7 +4001,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         }
                         SceneNode::UINode(ui_node) => {
                             // Pass provider so FUR can be loaded using the correct method (dev vs release)
-                            render_ui(ui_node, gfx, Some(&self.provider));
+                            calculate_ui(ui_node, gfx, Some(&self.provider));
                         }
                         SceneNode::Camera3D(camera) => {
                             if camera.active {
@@ -4184,6 +4182,23 @@ impl<P: ScriptProvider + 'static> SceneAccess for Scene<P> {
         let mut boxed: Box<dyn ScriptObject> = unsafe { Box::from_raw(raw) };
         boxed.set_id(node_id);
         boxed
+    }
+
+    fn load_scene_data(&self, path: &str) -> io::Result<SceneData> {
+        self.provider.load_scene_data(path)
+    }
+
+    fn merge_scene_data(
+        &mut self,
+        data: SceneData,
+        parent_id: NodeID,
+        gfx: &mut crate::rendering::Graphics,
+    ) -> anyhow::Result<NodeID> {
+        Self::merge_scene_data(self, data, parent_id, gfx)
+    }
+
+    fn get_root_id(&self) -> NodeID {
+        self.root_id
     }
 
     fn add_node_to_scene(

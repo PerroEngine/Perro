@@ -74,7 +74,7 @@ pub trait Script {
 pub trait ScriptObject: Script {
     fn get_var(&self, var_id: u64) -> Option<Value>;
     fn set_var(&mut self, var_id: u64, val: Value) -> Option<()>;
-    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>);
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>, api: &mut ScriptApi<'_>);
     fn call_function(&mut self, func: u64, api: &mut ScriptApi, params: &[Value]) -> Value;
 
     fn set_id(&mut self, id: NodeID);
@@ -212,6 +212,20 @@ pub trait SceneAccess {
 
     /// Queue a script function call for end of frame. Processed after update, same as deferred signals.
     fn call_function_id_deferred(&mut self, node_id: NodeID, function_id: u64, params: &[Value]);
+
+    /// Load a scene data asset by path (provider-backed or static).
+    fn load_scene_data(&self, path: &str) -> io::Result<SceneData>;
+
+    /// Merge a SceneData into the scene and return the merged root node id (or NodeID::nil() if skipped).
+    fn merge_scene_data(
+        &mut self,
+        data: SceneData,
+        parent_id: NodeID,
+        gfx: &mut crate::rendering::Graphics,
+    ) -> anyhow::Result<NodeID>;
+
+    /// Get the root node id for the current scene.
+    fn get_root_id(&self) -> NodeID;
 
     /// Get the parent node ID if the node has a parent; None for root nodes.
     fn get_parent_opt(&mut self, node_id: NodeID) -> Option<NodeID>;

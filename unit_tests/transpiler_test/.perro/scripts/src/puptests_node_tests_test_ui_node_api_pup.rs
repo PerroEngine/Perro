@@ -102,13 +102,6 @@ impl PuptestsNodeTestsTestUiNodeApiPupScript {
             });
         }
         let mut btn_el_id: Option<UIElementID> = api.get_element_by_name(self.id, "MyButton");
-        if btn_el_id.is_some() {
-            let mut __t_lbl: String = api.read_ui_element(self.id, btn_el_id.unwrap_or(UIElementID::nil()), |e: &ui_button::UIButton| e.label.clone());
-            let mut __t__b: String = __t_lbl.clone().clone();
-            api.mutate_ui_element(self.id, btn_el_id.unwrap_or(UIElementID::nil()), |e: &mut ui_button::UIButton| {
-                e.label = String::from("New label");
-            });
-        }
         let mut panel_el_id: Option<UIElementID> = api.get_element_by_name(self.id, "MyPanel");
         if panel_el_id.is_some() {
             let mut _p_id: Option<UIElementID> = panel_el_id.clone();
@@ -124,11 +117,6 @@ impl PuptestsNodeTestsTestUiNodeApiPupScript {
             api.mutate_ui_element(self.id, el_id.unwrap_or(UIElementID::nil()), |e: &mut ui_text::UIText| {
                 e.props.content = String::from("Dyn content");
             });
-            let mut __t_lbl: String = api.read_ui_element(self.id, el_id.unwrap_or(UIElementID::nil()), |e: &ui_button::UIButton| e.label.clone());
-            let mut __t__l2: String = __t_lbl.clone().clone();
-            api.mutate_ui_element(self.id, el_id.unwrap_or(UIElementID::nil()), |e: &mut ui_button::UIButton| {
-                e.label = String::from("Dyn label");
-            });
         }
     }
 
@@ -140,11 +128,6 @@ impl PuptestsNodeTestsTestUiNodeApiPupScript {
             e.props.content = String::from("Set anyway");
         });
         let mut btn_el_id: Option<UIElementID> = api.get_element_by_name(self.id, "MaybeMissingBtn");
-        let mut __t_lbl: String = api.read_ui_element(self.id, btn_el_id.unwrap_or(UIElementID::nil()), |e: &ui_button::UIButton| e.label.clone());
-        let mut __t__b: String = __t_lbl.clone().clone();
-        api.mutate_ui_element(self.id, btn_el_id.unwrap_or(UIElementID::nil()), |e: &mut ui_button::UIButton| {
-            e.label = String::from("Set anyway");
-        });
     }
 
     fn __t_test_dyn_no_null_check(&mut self, api: &mut ScriptApi<'_>) {
@@ -153,11 +136,6 @@ impl PuptestsNodeTestsTestUiNodeApiPupScript {
         let mut __t__c: String = __t_c.clone().clone();
         api.mutate_ui_element(self.id, el_id.unwrap_or(UIElementID::nil()), |e: &mut ui_text::UIText| {
             e.props.content = String::from("Set anyway");
-        });
-        let mut __t_lbl: String = api.read_ui_element(self.id, el_id.unwrap_or(UIElementID::nil()), |e: &ui_button::UIButton| e.label.clone());
-        let mut __t__l: String = __t_lbl.clone().clone();
-        api.mutate_ui_element(self.id, el_id.unwrap_or(UIElementID::nil()), |e: &mut ui_button::UIButton| {
-            e.label = String::from("Set anyway");
         });
     }
 
@@ -181,10 +159,10 @@ impl ScriptObject for PuptestsNodeTestsTestUiNodeApiPupScript {
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>, api: &mut ScriptApi<'_>) {
         for (var_id, val) in hashmap.iter() {
             if let Some(f) = VAR_APPLY_TABLE.get(var_id) {
-                f(self, val);
+                f(self, val, api);
             }
         }
     }
@@ -238,7 +216,7 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsNodeTestsTestUiNodeApiPupScr
 
     };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsNodeTestsTestUiNodeApiPupScript, &Value)> =
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsNodeTestsTestUiNodeApiPupScript, &Value, &mut ScriptApi<'_>)> =
     phf::phf_map! {
 
     };

@@ -1,0 +1,35 @@
+  [Panel id=left_panel w=15% h=15% anchor=l bg=sea-5 border=2 border-c=gray-1 rounding=25% z=1 opacity=50%]
+    [Text fsz=25 align=l anchor=l]Left[/Text]
+  [/Panel]
+
+  [Button id=main_button w=15% h=15% anchor=c bg=lime-5 border=2 border-c=red-5 rounding=50% hover-c=lime-3 pressed-c=lime-7 hover-border-c=red-3 pressed-border-c=red-7]
+    [Text fsz=25 align=c anchor=c]Center Button[/Text]
+  [/Button]
+
+  [Panel id=right_panel sz=15%,15% anchor=r bg=blue-5 border=3 border-c=white rounding=10]
+    [Text fsz=25 align=r anchor=r]Right[/Text]
+  [/Panel]
+
+  [Panel id=top_left w=15% h=15% anchor=tl bg=purple-5_70 rounding-tl=50% rounding-br=10]
+    [Text fsz=20 align=l anchor=tl]TopLeft[/Text]
+  [/Panel]
+
+  [Panel id=top_right w=15% h=15% anchor=tr bg=gold-5 border=2 border-c=gold-9 rounding=30%]
+    [Text fsz=20 align=r anchor=tr]TopRight[/Text]
+  [/Panel]
+
+  [Panel id=bottom_left w=15% h=15% anchor=bl bg=red-5 rounding=50% tx=-2% ty=2%]
+    [Text fsz=20 align=l anchor=bl]BottomLeft[/Text]
+  [/Panel]
+
+  [Panel id=bottom_right w=15% h=15% anchor=br bg=sea-5 rounding=50% scl=1.05,1.05 rot=3]
+    [Text fsz=20 align=r anchor=br]BottomRight[/Text]
+  [/Panel]
+
+  [Panel id=top_panel w=15% h=15% anchor=t bg=blue-5 rounding-t=50% rounding-b=10]
+    [Text font-size=22 align-h=c anchor=t]Top[/Text]
+  [/Panel]
+
+  [Panel id=bottom_panel w=15% h=15% anchor=b bg=purple-5 rounding-l=25% rounding-r=5 visible=true]
+    [Text fsz=22 align=c anchor=b]Bottom[/Text]
+  [/Panel]

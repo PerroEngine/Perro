@@ -3,6 +3,7 @@ use crate::{
     api_modules::*, // Import module API enums and ApiModule
     ast::*,
     scripting::ast::NumberKind,
+    scripting::codegen::{optimize_ref_clone, optimize_string_from_ref},
 };
 
 // ===========================================================
@@ -242,8 +243,7 @@ pub(crate) fn generate_rust_args(
                                 expect_ty,
                             );
                         }
-                    } else if i == 0
-                        && matches!(expect_ty, Type::DynNode)
+                    } else if matches!(expect_ty, Type::DynNode)
                         && matches!(a, Expr::Ident(name) if !is_concrete_node_id_arg(script, current_func, name, &code_raw, None))
                         && !code_raw.is_empty()
                         && code_raw != "self.id"
@@ -261,8 +261,7 @@ pub(crate) fn generate_rust_args(
             if let Some(expected_types) = expected_arg_types {
                 if let Some(expect_ty) = expected_types.get(i) {
                     let actual_ty = script.infer_expr_type(a, current_func);
-                    if i == 0
-                        && matches!(expect_ty, Type::DynNode)
+                    if matches!(expect_ty, Type::DynNode)
                         && matches!(a, Expr::Ident(name) if !is_concrete_node_id_arg(script, current_func, name, &code_raw, actual_ty.as_ref()))
                         && !code_raw.is_empty()
                         && code_raw != "self.id"
@@ -302,6 +301,8 @@ pub(crate) fn generate_rust_args(
                     final_code = format!("self.{final_code}");
                 }
             }
+            final_code = optimize_string_from_ref(&final_code);
+            final_code = optimize_ref_clone(&final_code);
             final_code // Return the final, processed string
         })
         .collect()

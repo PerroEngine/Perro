@@ -24,6 +24,7 @@ pub mod puptests_node_tests_test_sprite2d_api_pup;
 pub mod puptests_node_tests_test_ui_node_api_pup;
 pub mod puptests_resource_tests_test_mesh_api_pup;
 pub mod puptests_resource_tests_test_resource_api_pup;
+pub mod puptests_resource_tests_test_scene_api_pup;
 pub mod puptests_type_tests_test_syntax_edge_pup;
 pub mod puptests_type_tests_types_pup;
 // __PERRO_MODULES__
@@ -42,6 +43,7 @@ use puptests_node_tests_test_sprite2d_api_pup::puptests_node_tests_test_sprite2d
 use puptests_node_tests_test_ui_node_api_pup::puptests_node_tests_test_ui_node_api_pup_create_script;
 use puptests_resource_tests_test_mesh_api_pup::puptests_resource_tests_test_mesh_api_pup_create_script;
 use puptests_resource_tests_test_resource_api_pup::puptests_resource_tests_test_resource_api_pup_create_script;
+use puptests_resource_tests_test_scene_api_pup::puptests_resource_tests_test_scene_api_pup_create_script;
 use puptests_type_tests_test_syntax_edge_pup::puptests_type_tests_test_syntax_edge_pup_create_script;
 use puptests_type_tests_types_pup::puptests_type_tests_types_pup_create_script;
 // __PERRO_IMPORTS__
@@ -66,6 +68,7 @@ static SCRIPT_REGISTRY: Map<&'static str, CreateFn> = phf_map! {
         "puptests_node_tests_test_ui_node_api_pup" => puptests_node_tests_test_ui_node_api_pup_create_script as CreateFn,
         "puptests_resource_tests_test_mesh_api_pup" => puptests_resource_tests_test_mesh_api_pup_create_script as CreateFn,
         "puptests_resource_tests_test_resource_api_pup" => puptests_resource_tests_test_resource_api_pup_create_script as CreateFn,
+        "puptests_resource_tests_test_scene_api_pup" => puptests_resource_tests_test_scene_api_pup_create_script as CreateFn,
         "puptests_type_tests_test_syntax_edge_pup" => puptests_type_tests_test_syntax_edge_pup_create_script as CreateFn,
         "puptests_type_tests_types_pup" => puptests_type_tests_types_pup_create_script as CreateFn,
     // __PERRO_REGISTRY__

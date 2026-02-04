@@ -14,6 +14,7 @@ impl PupResourceAPI {
             PupSignal::NAME => PupSignal::resolve_method(func),
             PupTexture::NAME => PupTexture::resolve_method(func),
             PupMesh::NAME => PupMesh::resolve_method(func),
+            PupScene::NAME => PupScene::resolve_method(func),
             PupArray::NAME => PupArray::resolve_method(func),
             PupMap::NAME => PupMap::resolve_method(func),
             PupShape::NAME => PupShape::resolve_method(func),
@@ -28,6 +29,7 @@ impl PupResourceAPI {
             PupSignal::NAME,
             PupTexture::NAME,
             PupMesh::NAME,
+            PupScene::NAME,
             PupArray::NAME,
             PupMap::NAME,
             PupShape::NAME,
@@ -46,6 +48,7 @@ impl PupResourceAPI {
             PupSignal::NAME => PupSignal::get_all_method_names(),
             PupTexture::NAME => PupTexture::get_all_method_names(),
             PupMesh::NAME => PupMesh::get_all_method_names(),
+            PupScene::NAME => PupScene::get_all_method_names(),
             PupArray::NAME => PupArray::get_all_method_names(),
             PupMap::NAME => PupMap::get_all_method_names(),
             PupShape::NAME => PupShape::get_all_method_names(),
@@ -146,6 +149,24 @@ impl PupMesh {
             "square_pyramid",
             "triangular_pyramid",
         ]
+    }
+}
+
+/// Scene resource API - for loading and merging scenes
+pub struct PupScene;
+impl PupScene {
+    pub const NAME: &'static str = "Scene";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "load" => Some(ResourceModule::Scene(SceneResource::Load)),
+            "instantiate" => Some(ResourceModule::Scene(SceneResource::Instantiate)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["load", "instantiate"]
     }
 }
 

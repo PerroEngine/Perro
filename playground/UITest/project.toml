@@ -1,0 +1,34 @@
+[project]
+name = "UITest"
+main_scene = "res://main.scn"
+# Icon is optional - if not provided, build will skip icon embedding
+icon = "res://icon.png"
+version = "1.0.0"
+
+[graphics]
+virtual_width = 1920
+virtual_height = 1080
+msaa = "on"
+
+[performance]
+fps_cap = 500
+xps = 30
+
+[input]
+# Input action mappings
+# Format: action_name = ["InputSource1", "InputSource2", ...]
+# Multiple inputs can map to the same action
+# 
+# Available input sources:
+# - Keyboard: "Space", "Enter", "Escape", "KeyW", "KeyA", etc.
+# - Arrow keys: "Up", "Down", "Left", "Right"
+# - Modifiers: "Shift", "Control", "Alt", "Meta"
+# - Mouse: "MouseLeft", "MouseRight", "MouseMiddle"
+# - Scroll: "MouseWheelUp", "MouseWheelDown"
+#
+# Example actions:
+jump = ["Space", "Up"]
+move_forward = ["KeyW"]
+move_backward = ["KeyS"]
+move_left = ["KeyA"]
+move_right = ["KeyD"]

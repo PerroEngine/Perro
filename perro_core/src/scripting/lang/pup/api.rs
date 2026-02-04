@@ -229,6 +229,7 @@ pub fn normalize_type_name(typ: &crate::ast::Type) -> String {
             EngineStruct::Shape2D => "Shape2D".to_string(),
             EngineStruct::Quaternion => "Quaternion".to_string(),
             EngineStruct::Mesh => "Mesh".to_string(),
+            EngineStruct::SceneRef => "Scene".to_string(),
             _ => String::new(),
         },
         Type::Custom(name) => {

@@ -11,7 +11,7 @@ use crate::{
     ui_element::{BaseElement, BaseUIElement, UIElement},
     ui_elements::{
         ui_button::UIButton,
-        ui_container::{CornerRadius, UIPanel},
+        ui_container::{CornerRadius, UIPanel, UIPanelProps},
         ui_text::{TextFlow, UIText},
     },
     ui_node::UINode,
@@ -57,32 +57,16 @@ fn parse_opacity(v: &str) -> Option<f32> {
 
 // =================== FILE PARSING ===================
 
-use once_cell::sync::Lazy;
-use phf;
-use std::sync::RwLock;
-
-// Global registry for statically compiled FUR (used in release mode)
-static STATIC_FUR_MAP: Lazy<
-    RwLock<Option<&'static phf::Map<&'static str, &'static [FurElement]>>>,
-> = Lazy::new(|| RwLock::new(None));
-
-/// Set the static FUR map (called by runtime at startup in release mode)
-pub fn set_static_fur_map(map: &'static phf::Map<&'static str, &'static [FurElement]>) {
-    *STATIC_FUR_MAP.write().unwrap() = Some(map);
-}
-
 /// Try to load FUR elements, checking static assets first, then parsing from disk/BRK
 fn try_load_fur_elements(path: &str) -> Result<Vec<FurElement>, String> {
     // First: Check static FUR map (release mode)
-    if let Ok(guard) = STATIC_FUR_MAP.read() {
-        if let Some(fur_map) = *guard {
-            if let Some(elements) = fur_map.get(path) {
-                return Ok(elements.to_vec());
-            }
+    if let Some(fur_map) = crate::runtime::get_static_fur() {
+        if let Some(elements) = fur_map.get(path) {
+            return Ok(elements.to_vec());
         }
     }
 
-    // Fallback: Parse from disk/BRK (dev mode)
+    // Fallback: Parse from disk/BRK (dev mode or if not in static map)
     let ast = parse_fur_file(path)?;
     let elements: Vec<FurElement> = ast
         .into_iter()
@@ -331,6 +315,108 @@ fn apply_base_attributes(
 
 // =================== ELEMENT CONVERSION ===================
 
+fn apply_panel_props(
+    attrs: &CowMap<&'static str, Cow<'static, str>>,
+    props: &mut UIPanelProps,
+) {
+    if let Some(bg) = attrs.get("bg") {
+        if let Ok(c) = parse_color_with_opacity(bg) {
+            props.background_color = Some(c);
+        }
+    }
+    if let Some(c) = attrs.get("border-c") {
+        if let Ok(c) = parse_color_with_opacity(c) {
+            props.border_color = Some(c);
+        }
+    }
+    if let Some(b) = attrs.get("border") {
+        props.border_thickness = b.parse().unwrap_or(0.0);
+    }
+
+    if let Some(opacity_str) = attrs.get("opacity") {
+        if let Some(opacity) = parse_opacity(opacity_str) {
+            props.opacity = opacity;
+        }
+    }
+
+    let mut corner = CornerRadius::default();
+
+    // Helper to parse a single float value, supports percentages.
+    // Percent values are stored as negative to be resolved later (e.g., -50.0 == 50%).
+    fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
+        v.and_then(|s| {
+            let (f, pct) = parse_f32_percent(s, 1.0);
+            Some(if pct { -f } else { f })
+        })
+    }
+
+    // Step 1: base rounding list (like "rounding: 1,2,3,4")
+    if let Some(value) = attrs.get("rounding") {
+        let mut vals = [0.0; 4];
+        for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
+            let (f, pct) = parse_f32_percent(v, 1.0);
+            vals[i] = if pct { -f } else { f };
+        }
+
+        match value.split(',').count() {
+            0 | 1 => corner = CornerRadius::uniform(vals[0]),
+            2 => {
+                corner.top_left = vals[0];
+                corner.top_right = vals[0];
+                corner.bottom_left = vals[1];
+                corner.bottom_right = vals[1];
+            }
+            3 => {
+                corner.top_left = vals[0];
+                corner.top_right = vals[1];
+                corner.bottom_left = vals[1];
+                corner.bottom_right = vals[2];
+            }
+            4 => {
+                corner.top_left = vals[0];
+                corner.top_right = vals[1];
+                corner.bottom_left = vals[2];
+                corner.bottom_right = vals[3];
+            }
+            _ => {}
+        }
+    }
+
+    // Step 2: directional overrides (t, b, l, r)
+    if let Some(v) = parse_val(attrs.get("rounding-t")) {
+        corner.top_left = v;
+        corner.top_right = v;
+    }
+    if let Some(v) = parse_val(attrs.get("rounding-b")) {
+        corner.bottom_left = v;
+        corner.bottom_right = v;
+    }
+    if let Some(v) = parse_val(attrs.get("rounding-l")) {
+        corner.top_left = v;
+        corner.bottom_left = v;
+    }
+    if let Some(v) = parse_val(attrs.get("rounding-r")) {
+        corner.top_right = v;
+        corner.bottom_right = v;
+    }
+
+    // Step 3: individual corner overrides (tl, tr, bl, br) – highest priority
+    if let Some(v) = parse_val(attrs.get("rounding-tl")) {
+        corner.top_left = v;
+    }
+    if let Some(v) = parse_val(attrs.get("rounding-tr")) {
+        corner.top_right = v;
+    }
+    if let Some(v) = parse_val(attrs.get("rounding-bl")) {
+        corner.bottom_left = v;
+    }
+    if let Some(v) = parse_val(attrs.get("rounding-br")) {
+        corner.bottom_right = v;
+    }
+
+    props.corner_radius = corner;
+}
+
 fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
     let tag = fur.tag_name.as_ref();
 
@@ -339,98 +425,7 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             let mut panel = UIPanel::default();
             panel.set_name(&fur.id);
             apply_base_attributes(&mut panel.base, &fur.attributes);
-
-            if let Some(bg) = fur.attributes.get("bg") {
-                if let Ok(c) = parse_color_with_opacity(bg) {
-                    panel.props.background_color = Some(c);
-                }
-            }
-            if let Some(c) = fur.attributes.get("border-c") {
-                if let Ok(c) = parse_color_with_opacity(c) {
-                    panel.props.border_color = Some(c);
-                }
-            }
-            if let Some(b) = fur.attributes.get("border") {
-                panel.props.border_thickness = b.parse().unwrap_or(0.0);
-            }
-
-            if let Some(opacity_str) = fur.attributes.get("opacity") {
-                if let Some(opacity) = parse_opacity(opacity_str) {
-                    panel.props.opacity = opacity;
-                }
-            }
-
-            let mut corner = CornerRadius::default();
-
-            // Helper to parse a single float value
-            fn parse_val(v: Option<&std::borrow::Cow<'_, str>>) -> Option<f32> {
-                v.and_then(|s| s.trim().parse().ok())
-            }
-
-            // Step 1: base rounding list (like "rounding: 1,2,3,4")
-            if let Some(value) = fur.attributes.get("rounding") {
-                let mut vals = [0.0; 4];
-                for (i, v) in value.split(',').map(str::trim).take(4).enumerate() {
-                    vals[i] = v.parse().unwrap_or(0.0);
-                }
-
-                match value.split(',').count() {
-                    0 | 1 => corner = CornerRadius::uniform(vals[0]),
-                    2 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[0];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[1];
-                    }
-                    3 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[1];
-                        corner.bottom_right = vals[2];
-                    }
-                    4 => {
-                        corner.top_left = vals[0];
-                        corner.top_right = vals[1];
-                        corner.bottom_left = vals[2];
-                        corner.bottom_right = vals[3];
-                    }
-                    _ => {}
-                }
-            }
-
-            // Step 2: directional overrides (t, b, l, r)
-            if let Some(v) = parse_val(fur.attributes.get("rounding-t")) {
-                corner.top_left = v;
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-b")) {
-                corner.bottom_left = v;
-                corner.bottom_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-l")) {
-                corner.top_left = v;
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-r")) {
-                corner.top_right = v;
-                corner.bottom_right = v;
-            }
-
-            // Step 3: individual corner overrides (tl, tr, bl, br) – highest priority
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tl")) {
-                corner.top_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-tr")) {
-                corner.top_right = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-bl")) {
-                corner.bottom_left = v;
-            }
-            if let Some(v) = parse_val(fur.attributes.get("rounding-br")) {
-                corner.bottom_right = v;
-            }
-
-            panel.props.corner_radius = corner;
+            apply_panel_props(&fur.attributes, &mut panel.props);
             Some(UIElement::Panel(panel))
         }
 
@@ -438,10 +433,26 @@ fn convert_fur_element_to_ui_element(fur: &FurElement) -> Option<UIElement> {
             let mut button = UIButton::default();
             button.set_name(&fur.id);
             apply_base_attributes(&mut button.base, &fur.attributes);
-            if let Some(label) = fur.attributes.get("label") {
-                button.label = label.to_string();
-            } else {
-                button.label = fur.id.to_string();
+            apply_panel_props(&fur.attributes, &mut button.props);
+            if let Some(c) = fur.attributes.get("hover-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    button.hover_color = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("pressed-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    button.pressed_color = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("hover-border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    button.hover_border_color = Some(c);
+                }
+            }
+            if let Some(c) = fur.attributes.get("pressed-border-c") {
+                if let Ok(c) = parse_color_with_opacity(c) {
+                    button.pressed_border_color = Some(c);
+                }
             }
             Some(UIElement::Button(button))
         }
@@ -676,19 +687,6 @@ pub fn build_ui_elements_from_fur(ui: &mut UINode, elems: &[FurElement]) {
             elements.insert(id, e);
         }
     }
-
-    // Store element count before dropping the borrow
-    let _element_count = elements.len();
-
-    // Store initial z-indices for all elements to prevent accumulation
-    let map = ui.initial_z_indices.get_or_insert_with(HashMap::new);
-    map.clear();
-    for (id, element) in elements.iter() {
-        map.insert(*id, element.get_z_index());
-    }
-
-    // Mark all newly created elements as needing rerender so they get rendered
-    ui.mark_all_needs_rerender();
 }
 
 /// Append FUR elements to an existing UINode without clearing existing elements
@@ -699,71 +697,39 @@ pub fn append_fur_elements_to_ui(
     elems: &[FurElement],
     parent_id: Option<UIElementID>,
 ) {
-    // Collect all IDs that will be added, so we can mark them for rerender after the borrow is released
-    let mut added_ids = Vec::new();
+    let elements = ui.elements.get_or_insert_with(|| HashMap::new());
+    let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());
 
-    // Use a scope block to limit the lifetime of the mutable borrows
-    {
-        let elements = ui.elements.get_or_insert_with(|| HashMap::new());
+    for el in elems {
+        let flat = convert_fur_element_to_ui_elements(el, parent_id);
+        for (id, e) in flat {
+            // Get the actual parent ID from the element (might be set during conversion)
+            let actual_parent_id = e.get_parent();
 
-        let root_ids = ui.root_ids.get_or_insert_with(|| Vec::new());
-
-        for el in elems {
-            let flat = convert_fur_element_to_ui_elements(el, parent_id);
-            for (id, e) in flat {
-                // Store initial z-index for new element
-                ui.initial_z_indices
-                    .get_or_insert_with(HashMap::new)
-                    .insert(id, e.get_z_index());
-
-                // Get the actual parent ID from the element (might be set during conversion)
-                let actual_parent_id = e.get_parent();
-
-                // If parent is nil, add to root_ids
-                if actual_parent_id.is_nil() {
-                    root_ids.push(id);
+            // If parent is nil, add to root_ids
+            if actual_parent_id.is_nil() {
+                root_ids.push(id);
+            } else {
+                // If parent is set, add to parent's children list
+                // Use actual_parent_id (from element) or parent_id (parameter) - prefer actual_parent_id
+                let parent_to_use = if !actual_parent_id.is_nil() {
+                    actual_parent_id
+                } else if let Some(pid) = parent_id {
+                    pid
                 } else {
-                    // If parent is set, add to parent's children list
-                    // Use actual_parent_id (from element) or parent_id (parameter) - prefer actual_parent_id
-                    let parent_to_use = if !actual_parent_id.is_nil() {
-                        actual_parent_id
-                    } else if let Some(pid) = parent_id {
-                        pid
-                    } else {
-                        continue; // No parent to add to
-                    };
+                    elements.insert(id, e);
+                    continue; // No parent to add to
+                };
 
-                    if let Some(parent_element) = elements.get_mut(&parent_to_use) {
-                        let mut children = parent_element.get_children().to_vec();
-                        if !children.contains(&id) {
-                            children.push(id);
-                            parent_element.set_children(children);
-                        }
+                if let Some(parent_element) = elements.get_mut(&parent_to_use) {
+                    let mut children = parent_element.get_children().to_vec();
+                    if !children.contains(&id) {
+                        children.push(id);
+                        parent_element.set_children(children);
                     }
                 }
-                elements.insert(id, e);
-                added_ids.push(id);
             }
+            elements.insert(id, e);
         }
-    } // Borrows are released here
-
-    // Now mark all added elements for rerender (after the borrow is released)
-    for id in added_ids {
-        ui.mark_element_needs_layout(id);
-
-        // Also mark the element's actual parent for layout (in case it's different from parent_id parameter)
-        if let Some(elements) = &ui.elements {
-            if let Some(element) = elements.get(&id) {
-                let actual_parent_id = element.get_parent();
-                if !actual_parent_id.is_nil() {
-                    ui.mark_element_needs_layout(actual_parent_id);
-                }
-            }
-        }
-    }
-
-    // Also mark parent as needing layout if provided
-    if let Some(pid) = parent_id {
-        ui.mark_element_needs_layout(pid);
     }
 }

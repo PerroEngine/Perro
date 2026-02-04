@@ -1,15 +1,16 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineStruct {
-    // 2D structs
+
     Transform2D,
     Vector2,
     Rect,
     Color,
     Texture,
-    /// Mesh handle (runtime MeshID; scripts see this as `Mesh`)
-    Mesh,
     Shape2D,
-    // 3D structs
+    Mesh,
+    SceneRef,
+
+
     Transform3D,
     Vector3,
     Quaternion,
@@ -29,6 +30,7 @@ impl EngineStruct {
             "Shape2D" => Some(EngineStruct::Shape2D),
             "Texture" => Some(EngineStruct::Texture),
             "Mesh" => Some(EngineStruct::Mesh),
+            "Scene" => Some(EngineStruct::SceneRef),
             _ => None,
         }
     }

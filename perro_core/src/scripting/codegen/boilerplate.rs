@@ -334,7 +334,7 @@ pub fn implement_script_boilerplate_internal(
                                 // Convert Vec<T> to Vec<Value>
                                 writeln!(
                                     apply_entries,
-                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
                                         script.{renamed_name} = vec_typed.into_iter().map(|x| serde_json::to_value(x).unwrap_or_default()).collect();
                                     }}
@@ -343,7 +343,7 @@ pub fn implement_script_boilerplate_internal(
                             } else {
                                 writeln!(
                                     apply_entries,
-                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Ok(vec_typed) = serde_json::from_value::<Vec<{elem_rs}>>(val.clone()) {{
                                         script.{renamed_name} = vec_typed;
                                     }}
@@ -353,7 +353,7 @@ pub fn implement_script_boilerplate_internal(
                         } else {
                             writeln!(
                                 apply_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Some(v) = val.as_array() {{
                                         script.{renamed_name} = v.clone();
                                     }}
@@ -368,7 +368,7 @@ pub fn implement_script_boilerplate_internal(
                         if *elem_ty != Type::Object {
                             writeln!(
                                 apply_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Ok(arr_typed) = serde_json::from_value::<[{elem_rs}; {size}]>(val.clone()) {{
                                         script.{renamed_name} = arr_typed;
                                     }}
@@ -377,7 +377,7 @@ pub fn implement_script_boilerplate_internal(
                         } else {
                             writeln!(
                                 apply_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Some(v) = val.as_array() {{
                                         let mut out: [{elem_rs}; {size}] = [Default::default(); {size}];
                                         for (i, el) in v.iter().enumerate().take({size}) {{
@@ -409,7 +409,7 @@ pub fn implement_script_boilerplate_internal(
                                 // Convert HashMap<K, T> to HashMap<String, Value>
                                 writeln!(
                                     apply_entries,
-                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
                                         script.{renamed_name} = map_typed.into_iter().map(|(k, v)| (k, serde_json::to_value(v).unwrap_or_default())).collect();
                                     }}
@@ -418,7 +418,7 @@ pub fn implement_script_boilerplate_internal(
                             } else {
                                 writeln!(
                                     apply_entries,
-                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                    "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Ok(map_typed) = serde_json::from_value::<HashMap<{key_rs}, {val_rs}>>(val.clone()) {{
                                         script.{renamed_name} = map_typed;
                                     }}
@@ -428,7 +428,7 @@ pub fn implement_script_boilerplate_internal(
                         } else {
                             writeln!(
                                 apply_entries,
-                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                                "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                     if let Some(v) = val.as_object() {{
                                         script.{renamed_name} = v.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                                     }}
@@ -440,20 +440,72 @@ pub fn implement_script_boilerplate_internal(
             } else {
                 if accessor == "__CUSTOM__" {
                     let type_name = &conv;
-                    writeln!(
-                        apply_entries,
-                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                    if matches!(var.typ, Some(Type::EngineStruct(EngineStructKind::Texture))) {
+                        writeln!(
+                            apply_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, api: &mut ScriptApi<'_>| {{
+                            if val.is_null() {{
+                                script.{renamed_name} = None;
+                                return;
+                            }}
+                            if let Some(path) = val.as_str() {{
+                                script.{renamed_name} = api.Texture.preload(path);
+                                return;
+                            }}
                             if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
                                 script.{renamed_name} = v;
                             }}
                         }},"
-                    )
-                    .unwrap();
+                        )
+                        .unwrap();
+                    } else if matches!(var.typ, Some(Type::EngineStruct(EngineStructKind::Mesh))) {
+                        writeln!(
+                            apply_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, api: &mut ScriptApi<'_>| {{
+                            if val.is_null() {{
+                                script.{renamed_name} = None;
+                                return;
+                            }}
+                            if let Some(path) = val.as_str() {{
+                                script.{renamed_name} = api.Mesh.preload(path);
+                                return;
+                            }}
+                            if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
+                                script.{renamed_name} = v;
+                            }}
+                        }},"
+                        )
+                        .unwrap();
+                    } else if matches!(var.typ, Some(Type::EngineStruct(EngineStructKind::SceneRef))) {
+                        writeln!(
+                            apply_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
+                            if let Some(path) = val.as_str() {{
+                                script.{renamed_name} = SceneRef::new(path);
+                                return;
+                            }}
+                            if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
+                                script.{renamed_name} = v;
+                            }}
+                        }},"
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            apply_entries,
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
+                            if let Ok(v) = serde_json::from_value::<{type_name}>(val.clone()) {{
+                                script.{renamed_name} = v;
+                            }}
+                        }},"
+                        )
+                        .unwrap();
+                    }
                 } else if accessor == "__NODE__" {
                     // Node/DynNode: Value is NodeID hex string (from scene) or u64; parse and assign
                     writeln!(
                         apply_entries,
-                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                             if let Some(id) = val.as_u64().map(|n| perro_core::NodeID::from_u64(n))
                                 .or_else(|| val.as_str().and_then(|s| perro_core::NodeID::parse_str(s).ok()))
                             {{
@@ -467,7 +519,7 @@ pub fn implement_script_boilerplate_internal(
                     if conv == "Option<UIElementID>" {
                         writeln!(
                             apply_entries,
-                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                 if val.is_null() {{
                                     script.{renamed_name} = None;
                                 }} else if let Some(id) = val.as_u64().map(perro_core::UIElementID::from_u64)
@@ -481,7 +533,7 @@ pub fn implement_script_boilerplate_internal(
                     } else {
                         writeln!(
                             apply_entries,
-                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                            "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                                 if let Some(id) = val.as_u64().map(perro_core::UIElementID::from_u64)
                                     .or_else(|| val.as_str().and_then(|s| perro_core::UIElementID::parse_str(s).ok()))
                                 {{
@@ -494,7 +546,7 @@ pub fn implement_script_boilerplate_internal(
                 } else {
                     writeln!(
                         apply_entries,
-                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value| {{
+                        "        {var_id}u64 => |script: &mut {struct_name}, val: &Value, _api: &mut ScriptApi<'_>| {{
                             if let Some(v) = val.{accessor}() {{
                                 script.{renamed_name} = v{conv};
                             }}
@@ -857,10 +909,10 @@ impl ScriptObject for {struct_name} {{
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }}
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {{
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>, api: &mut ScriptApi<'_>) {{
         for (var_id, val) in hashmap.iter() {{
             if let Some(f) = VAR_APPLY_TABLE.get(var_id) {{
-                f(self, val);
+                f(self, val, api);
             }}
         }}
     }}
@@ -914,7 +966,7 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut {struct_name}, Value) -> Option<()>>
 {set_entries}
     }};
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut {struct_name}, &Value)> =
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut {struct_name}, &Value, &mut ScriptApi<'_>)> =
     phf::phf_map! {{
 {apply_entries}
     }};

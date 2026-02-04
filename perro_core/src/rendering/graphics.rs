@@ -1119,7 +1119,8 @@ pub struct Graphics {
     pub renderer_ui: RendererUI,
     pub renderer_3d: Renderer3D,
 
-    // egui integration for native text rendering
+    // egui: context is separate so we can run() it while mutably using egui_integration in the same frame
+    pub egui_context: egui::Context,
     pub egui_integration: EguiIntegration,
     pub egui_renderer: Option<egui_wgpu::Renderer>,
 
@@ -1714,7 +1715,9 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
         (None, None)
     };
 
-    // Initialize egui integration
+    // Initialize egui context (fonts) and integration
+    let egui_context = egui::Context::default();
+    egui_context.set_fonts(egui::FontDefinitions::default());
     let egui_integration = EguiIntegration::new();
 
     // Initialize egui-wgpu renderer
@@ -1778,6 +1781,7 @@ pub async fn create_graphics(window: SharedWindow, proxy: EventLoopProxy<Graphic
         msaa_color_texture,
         msaa_color_view,
 
+        egui_context,
         egui_integration,
         egui_renderer,
 
@@ -2352,6 +2356,11 @@ pub fn create_graphics_sync(
         msaa_color_texture,
         msaa_color_view,
 
+        egui_context: {
+            let ctx = egui::Context::default();
+            ctx.set_fonts(egui::FontDefinitions::default());
+            ctx
+        },
         egui_integration: EguiIntegration::new(),
         egui_renderer: None,
 
@@ -2819,17 +2828,34 @@ impl Graphics {
         }
     }
 
+    /// Run a minimal egui frame that draws a full-screen test color (to verify the egui pass draws to screen).
+    fn run_egui_test_frame(&self) -> egui::FullOutput {
+        let w = self.surface_config.width as f32;
+        let h = self.surface_config.height as f32;
+        let raw_input = egui::RawInput::default();
+        self.egui_context.run(raw_input, |ctx| {
+            let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
+            let layer_id = egui::LayerId::background();
+            let painter = ctx.layer_painter(layer_id);
+            // Bright green = we're drawing; if you see black, the pass isn't writing
+            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(0, 255, 0));
+        })
+    }
+
     /// Render egui UI output to the screen
     /// Must be called after the main render pass, before end_frame
     pub fn render_egui(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         // Ensure renderer is initialized first
         self.ensure_egui_renderer();
 
-        // Get the output if available - early return if no output
-        let full_output = match &self.egui_integration.last_output {
-            Some(output) => output,
-            None => return,
-        };
+        // Use real UI output or fall back to test frame (full-screen green) so we can verify the pass draws
+        if self.egui_integration.last_output.is_none() {
+            log::info!("🎨 [EGUI] No last_output — drawing test frame (green screen) to verify pass");
+            let test_output = self.run_egui_test_frame();
+            self.egui_integration.last_output = Some(test_output);
+        }
+
+        let full_output = self.egui_integration.last_output.as_ref().unwrap();
 
         // Update textures if needed
         if let Some(renderer) = &mut self.egui_renderer {
@@ -2837,7 +2863,6 @@ impl Graphics {
                 renderer.update_texture(&self.device, &self.queue, *id, image_delta);
             }
 
-            // Remove old textures
             for id in &full_output.textures_delta.free {
                 renderer.free_texture(id);
             }
@@ -2846,20 +2871,30 @@ impl Graphics {
             return;
         }
 
-        // Paint egui shapes to screen
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [self.surface_config.width, self.surface_config.height],
-            pixels_per_point: self.egui_integration.context.pixels_per_point(),
+            pixels_per_point: self.egui_context.pixels_per_point(),
         };
 
-        // Paint the shapes
-        let paint_jobs = self.egui_integration.context.tessellate(
+        let mut paint_jobs = self.egui_context.tessellate(
             full_output.shapes.clone(),
-            self.egui_integration.context.pixels_per_point(),
+            self.egui_context.pixels_per_point(),
         );
 
-        // Skip rendering if there are no paint jobs
+        // If no shapes (e.g. UI not ready), use test frame so we still draw something
         if paint_jobs.is_empty() {
+            log::info!("🎨 [EGUI] No shapes — drawing test frame (green screen) to verify pass");
+            let test_output = self.run_egui_test_frame();
+            self.egui_integration.last_output = Some(test_output);
+            let full_output = self.egui_integration.last_output.as_ref().unwrap();
+            paint_jobs = self.egui_context.tessellate(
+                full_output.shapes.clone(),
+                self.egui_context.pixels_per_point(),
+            );
+        }
+
+        if paint_jobs.is_empty() {
+            log::warn!("🎨 [EGUI] Still no paint jobs after test frame, skipping render");
             return;
         }
 
@@ -2874,6 +2909,12 @@ impl Graphics {
             );
 
             // Create render pass for egui and render
+            log::debug!(
+                "🎨 [EGUI] Drawing {} paint job(s) to screen (size {}x{})",
+                paint_jobs.len(),
+                screen_descriptor.size_in_pixels[0],
+                screen_descriptor.size_in_pixels[1]
+            );
             let rpass_descriptor = wgpu::RenderPassDescriptor {
                 label: Some("egui_render_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -2890,17 +2931,10 @@ impl Graphics {
                 occlusion_query_set: None,
             };
 
-            // SAFETY: egui-wgpu re-exports wgpu, so types should be compatible
-            // We need to convert the render pass to egui_wgpu's wgpu type
-            let mut rpass = encoder.begin_render_pass(&rpass_descriptor);
-            // Use egui_wgpu's wgpu types explicitly
-            use egui_wgpu::wgpu as egui_wgpu_types;
-            let rpass_egui: &mut egui_wgpu_types::RenderPass<'_> = unsafe {
-                std::mem::transmute::<&mut wgpu::RenderPass<'_>, &mut egui_wgpu_types::RenderPass<'_>>(
-                    &mut rpass,
-                )
-            };
-            renderer.render(rpass_egui, &paint_jobs, &screen_descriptor);
+            // egui-wgpu requires RenderPass<'static>; forget_lifetime is the intended API
+            let rpass = encoder.begin_render_pass(&rpass_descriptor);
+            let mut rpass_static = rpass.forget_lifetime();
+            renderer.render(&mut rpass_static, &paint_jobs, &screen_descriptor);
         }
     }
 }

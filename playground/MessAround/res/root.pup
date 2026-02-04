@@ -1,0 +1,12 @@
+@root
+
+var gas = "hello gas"
+
+on init() {
+
+}
+
+fn cabbage(c: int) -> int {
+    return c * 2
+}
+

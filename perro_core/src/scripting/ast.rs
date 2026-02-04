@@ -296,6 +296,7 @@ impl Variable {
                 match es {
                     EngineStruct::Texture => ("__CUSTOM__", "Option<TextureID>".to_string()), // Texture is Option<TextureID>, use custom deserialization
                     EngineStruct::Mesh => ("__CUSTOM__", "Option<MeshID>".to_string()), // Mesh is Option<MeshID>, use custom deserialization
+                    EngineStruct::SceneRef => ("__CUSTOM__", "SceneRef".to_string()),
                     _ => ("__ENGINE_STRUCT__", "EngineStruct".to_owned()), // Other engine structs use the generic method
                 }
             }
@@ -505,6 +506,7 @@ impl Type {
                     // Script-facing "Texture" and "Mesh" are optional handles (stored as Option<...> on nodes).
                     EngineStruct::Texture => "Option<TextureID>".to_string(),
                     EngineStruct::Mesh => "Option<MeshID>".to_string(),
+                    EngineStruct::SceneRef => "SceneRef".to_string(),
                     _ => format!("{:?}", es), // Other engine structs are real types (Vector2, Color, etc.)
                 }
             }
@@ -596,7 +598,10 @@ impl Type {
             Type::Custom(name) => name.clone(),
             Type::EngineStruct(es) => {
                 // Engine structs display as-is (Vector2, Rect, etc.)
-                format!("{:?}", es)
+                match es {
+                    crate::engine_structs::EngineStruct::SceneRef => "Scene".to_string(),
+                    _ => format!("{:?}", es),
+                }
             }
             Type::Void => "void".to_string(),
             Type::ScriptApi => "ScriptApi".to_string(),
@@ -667,7 +672,10 @@ impl Type {
             Type::DynUIElement => "UIElement".to_string(),
             Type::UIElementType => "UIElementType".to_string(),
             Type::Custom(name) => name.clone(),
-            Type::EngineStruct(es) => format!("{:?}", es),
+            Type::EngineStruct(es) => match es {
+                crate::engine_structs::EngineStruct::SceneRef => "Scene".to_string(),
+                _ => format!("{:?}", es),
+            },
             Type::Void => "void".to_string(),
             Type::ScriptApi => "ScriptApi".to_string(),
         }
@@ -736,7 +744,10 @@ impl Type {
             Type::DynUIElement => "UIElement".to_string(),
             Type::UIElementType => "UIElementType".to_string(),
             Type::Custom(name) => name.clone(),
-            Type::EngineStruct(es) => format!("{:?}", es),
+            Type::EngineStruct(es) => match es {
+                crate::engine_structs::EngineStruct::SceneRef => "Scene".to_string(),
+                _ => format!("{:?}", es),
+            },
             Type::Void => "void".to_string(),
             Type::ScriptApi => "ScriptApi".to_string(),
         }
@@ -781,6 +792,7 @@ impl Type {
                 match es {
                     EngineStruct::Texture => "None".to_string(), // Texture is Option<TextureID>, default is None
                     EngineStruct::Mesh => "None".to_string(), // Mesh is Option<MeshID>, default is None
+                    EngineStruct::SceneRef => "SceneRef::default()".to_string(),
                     _ => format!("{}::default()", format!("{:?}", es)), // Other engine structs implement Default
                 }
             }
@@ -843,6 +855,10 @@ impl Type {
             (Type::StrRef, Type::CowStr) => true,
             // CowStr -> String (Cow can be converted to owned String)
             (Type::CowStr, Type::String) => true,
+            // String/StrRef/CowStr -> SceneRef
+            (Type::String, Type::EngineStruct(EngineStruct::SceneRef)) => true,
+            (Type::StrRef, Type::EngineStruct(EngineStruct::SceneRef)) => true,
+            (Type::CowStr, Type::EngineStruct(EngineStruct::SceneRef)) => true,
             // Node / DynNode conversions (all are NodeID in Rust)
             (Type::DynNode, Type::Node(_)) => true, // DynNode can be cast to any Node type
             (Type::Node(_), Type::DynNode) => true, // Any Node type can become DynNode
@@ -915,9 +931,10 @@ impl Type {
                 | ES::Shape2D => true,
 
                 ES::Texture => true,
-                // Texture is a TextureID (u64), Copy
-                ES::Mesh => true,
-                // Mesh is a MeshID (u64), Copy
+
+                ES::SceneRef => false,
+
+                _ => false,
             },
             // ScriptApi is a reference type, not Copy
             ScriptApi => false,

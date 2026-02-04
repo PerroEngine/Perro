@@ -1,6 +1,9 @@
 // Compile-only test: All resource APIs — Texture, Mesh, Quaternion, Shape, Signal (new/connect/emit/emit_deferred), Array, Map.
 @script TestResourceApi extends Node
 
+@expose var exposed_tex: Texture
+@expose var exposed_mesh: Mesh
+
 var emit_count: int = 0
 
 on init() {

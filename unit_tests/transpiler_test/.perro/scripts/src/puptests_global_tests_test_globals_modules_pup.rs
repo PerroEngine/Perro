@@ -149,10 +149,10 @@ impl ScriptObject for PuptestsGlobalTestsTestGlobalsModulesPupScript {
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>, api: &mut ScriptApi<'_>) {
         for (var_id, val) in hashmap.iter() {
             if let Some(f) = VAR_APPLY_TABLE.get(var_id) {
-                f(self, val);
+                f(self, val, api);
             }
         }
     }
@@ -206,7 +206,7 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsGlobalTestsTestGlobalsModule
 
     };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsGlobalTestsTestGlobalsModulesPupScript, &Value)> =
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsGlobalTestsTestGlobalsModulesPupScript, &Value, &mut ScriptApi<'_>)> =
     phf::phf_map! {
 
     };

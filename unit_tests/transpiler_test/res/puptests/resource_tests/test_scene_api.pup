@@ -1,0 +1,33 @@
+// Compile-only test: Scene resource API — load + add_child with DynNode.
+@script TestSceneApi extends Node
+
+@expose var exposed_scene: Scene
+
+var scene_name: string = "res://scenes/example.scn"
+
+fn test_scene_load() {
+    var scene_ref = Scene.load("res://scenes/example.scn")
+    var scene_root = scene_ref.instantiate()
+    self.add_child(scene_root)
+}
+
+
+fn test_scene_load_ref() {
+    var scene_ref = Scene.load("res://scenes/example.scn")
+    var scene_root = Scene.instantiate(scene_ref)
+    self.add_child(scene_root)
+}
+
+fn test_scene_load_string() {
+    var scene_root = Scene.instantiate("res://scenes/example.scn")
+    self.add_child(scene_root)
+}
+
+fn test_scene_load_string_var() {
+    var _scene_name = "res://scenes/example.scn"
+    var scene_root = Scene.instantiate(_scene_name)
+    self.add_child(scene_root)
+
+    var scene_root2 = Scene.instantiate(scene_name)
+    self.add_child(scene_root)
+}

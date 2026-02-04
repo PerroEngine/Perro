@@ -27,6 +27,12 @@ So in both cases you are running **transpiled Rust** that lives under `.perro/sc
 | [**TypeScript**](TYPESCRIPT.md) | **Experimental.** Some syntax and APIs work; you'll be experimenting with what's supported and what isn't. |
 | [**C#**](CSHARP.md) | **Experimental.** Some syntax and APIs work; you'll be experimenting with what's supported and what isn't. |
 
+## UI
+
+| Doc | Description |
+|-----|--------------|
+| [**UI**](UI.md) | **FUR UI reference.** Elements and attributes parsed by the engine. |
+
 ## Scenes (source mode)
 
 | Doc | Description |

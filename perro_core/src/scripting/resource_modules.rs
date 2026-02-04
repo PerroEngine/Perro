@@ -10,6 +10,7 @@ pub enum ResourceModule {
     Signal(SignalResource),
     Texture(TextureResource),
     Mesh(MeshResource),
+    Scene(SceneResource),
     Shape(ShapeResource),
     ArrayOp(ArrayResource),
     MapOp(MapResource),
@@ -49,6 +50,12 @@ pub enum MeshResource {
     Cone,
     SquarePyramid,
     TriangularPyramid,
+}
+
+#[derive(Debug, Clone)]
+pub enum SceneResource {
+    Load,
+    Instantiate,
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,35 @@
+{
+  "root_id": 172,
+  "nodes": {
+    "172": {
+      "type": "Node2D",
+      "base": {
+        "type": "Node",
+        "name": "Node2DWorld"
+      }
+    },
+     "13": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": {
+          "type": "Node",
+          "name": "Sprite",
+          "parent": 172
+        },
+        "transform": {
+          "position": [
+            0.0,
+            0.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            0.1,
+            0.1
+          ]
+        }
+      }
+    }
+  }
+}

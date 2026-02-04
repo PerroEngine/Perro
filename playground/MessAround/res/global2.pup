@@ -1,0 +1,7 @@
+@global AnotherGlobal
+
+var a = "hello global"
+
+on init() {
+    Console.info("AnotherGlobal init", a)
+}

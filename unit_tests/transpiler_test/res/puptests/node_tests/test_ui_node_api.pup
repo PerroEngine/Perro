@@ -30,11 +30,7 @@ fn test_get_element_cast_typed() {
         text_el.content = "Updated text"
     }
     var btn_el = self.get_element("MyButton") as UIButton
-    if btn_el != null {
-        var lbl = btn_el.label
-        var _b = lbl
-        btn_el.label = "New label"
-    }
+
     var panel_el = self.get_element("MyPanel") as UIPanel
     if panel_el != null {
         var _p = panel_el
@@ -49,9 +45,6 @@ fn test_dyn_element() {
         var c = el.content
         var _c2 = c
         el.content = "Dyn content"
-        var lbl = el.label
-        var _l2 = lbl
-        el.label = "Dyn label"
     }
 }
 
@@ -64,9 +57,6 @@ fn test_typed_no_null_check() {
     var _t = c
     text_el.content = "Set anyway"
     var btn_el = self.get_element("MaybeMissingBtn") as UIButton
-    var lbl = btn_el.label
-    var _b = lbl
-    btn_el.label = "Set anyway"
 }
 
 // --- Dyn element without null check: read/mutate when element may be nil (read returns default, mutate no-op) ---
@@ -75,7 +65,4 @@ fn test_dyn_no_null_check() {
     var c = el.content
     var _c = c
     el.content = "Set anyway"
-    var lbl = el.label
-    var _l = lbl
-    el.label = "Set anyway"
 }

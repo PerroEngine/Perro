@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::ast::*;
 use crate::call_modules::CallModule;
 use crate::lang::pup::api::{PupAPI, normalize_type_name};
+use crate::structs::engine_structs::EngineStruct;
 use crate::lang::pup::enums::resolve_enum_access;
 use crate::lang::pup::lexer::{PupLexer, PupToken};
 use crate::lang::pup::node_api::PUP_NODE_API;
@@ -1315,21 +1316,9 @@ impl PupParser {
                             None
                         }
                     }
-                    // When RHS is already resolved to ApiCall (e.g. Array.new() -> ApiCall(Resource(ArrayOp(New)), [])),
-                    // infer type so type_env gets the variable for later instance calls (arr.push, m.get).
-                    Expr::ApiCall(CallModule::Resource(resource), _) => {
-                        use crate::resource_modules::{ArrayResource, MapResource, ResourceModule};
-                        match resource {
-                            ResourceModule::ArrayOp(ArrayResource::New) => {
-                                Some(Type::Container(ContainerKind::Array, vec![Type::Object]))
-                            }
-                            ResourceModule::MapOp(MapResource::New) => Some(Type::Container(
-                                ContainerKind::Map,
-                                vec![Type::String, Type::Object],
-                            )),
-                            _ => None,
-                        }
-                    }
+                    // When RHS is already resolved to ApiCall, infer from resource return type
+                    // so type_env gets the variable for later instance calls.
+                    Expr::ApiCall(CallModule::Resource(resource), _) => resource.return_type(),
                     Expr::MemberAccess(..) => infer_member_access_type(
                         self.script_node_type.as_deref(),
                         &self.type_env,
@@ -1786,6 +1775,17 @@ impl PupParser {
                     // try that resource API so tex.remove() -> Texture.remove(tex), not remove_node.
                     if let Expr::Ident(var_name) = &**obj {
                         if let Some(var_type) = self.type_env.get(var_name) {
+                            // SceneRef instance methods should resolve to the Scene resource API.
+                            if matches!(var_type, Type::EngineStruct(EngineStruct::SceneRef)) {
+                                if let Some(resource) = PupResourceAPI::resolve("Scene", method) {
+                                    let mut call_args = vec![*obj.clone()];
+                                    call_args.extend(args);
+                                    return Ok(Expr::ApiCall(
+                                        CallModule::Resource(resource),
+                                        call_args,
+                                    ));
+                                }
+                            }
                             let norm_type_name = normalize_type_name(var_type);
                             if !norm_type_name.is_empty() {
                                 if let Some(api) = PupAPI::resolve(&norm_type_name, method) {

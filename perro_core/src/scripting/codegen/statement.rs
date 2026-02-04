@@ -143,6 +143,7 @@ impl Stmt {
                                                     crate::resource_modules::ResourceModule::Signal(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
                                                     crate::resource_modules::ResourceModule::Texture(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
                                                     crate::resource_modules::ResourceModule::Mesh(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
+                                                    crate::resource_modules::ResourceModule::Scene(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
                                                     crate::resource_modules::ResourceModule::Shape(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
                                                     crate::resource_modules::ResourceModule::ArrayOp(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),
                                                     crate::resource_modules::ResourceModule::MapOp(api) => api.to_rust_prepared(&rest_args, &args_strs, script, needs_self, current_func),

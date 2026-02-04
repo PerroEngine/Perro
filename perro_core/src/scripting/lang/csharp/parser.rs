@@ -1399,6 +1399,7 @@ impl CsParser {
             "string" => Type::String,
             "object" | "var" => Type::Object,
             "BigInteger" => Type::Number(NumberKind::BigInt),
+            "UIElement" | "Element" => Type::DynUIElement,
             ty if ty.starts_with("Dictionary") => {
                 Type::Container(ContainerKind::Map, vec![Type::String, Type::Object])
             }
@@ -1410,7 +1411,15 @@ impl CsParser {
                 let element_type = self.map_type(base_type_str);
                 Type::Container(ContainerKind::Array, vec![element_type])
             }
-            _ => Type::Custom(t),
+            _ => {
+                if let Some(et) = crate::scripting::lang::csharp::ui_api::resolve_element_type(
+                    type_name.as_str(),
+                ) {
+                    Type::UIElement(et)
+                } else {
+                    Type::Custom(t)
+                }
+            }
         }
     }
 

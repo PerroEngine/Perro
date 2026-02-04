@@ -39,13 +39,18 @@ const __PERRO_SOURCE_FILE: &str = "test_resource_api.pup";
 // ========================================================================
 
 static MEMBER_TO_ATTRIBUTES_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "exposed_tex" => &["Expose"],
+    "exposed_mesh" => &["Expose"],
 };
 
 static ATTRIBUTE_TO_MEMBERS_MAP: Map<&'static str, &'static [&'static str]> = phf_map! {
+    "Expose" => &["exposed_tex", "exposed_mesh"],
 };
 
 pub struct PuptestsResourceTestsTestResourceApiPupScript {
     id: NodeID,
+    exposed_tex_id: Option<TextureID>,
+    exposed_mesh_id: Option<MeshID>,
     __t_emit_count: i32,
 }
 
@@ -56,10 +61,14 @@ pub struct PuptestsResourceTestsTestResourceApiPupScript {
 #[unsafe(no_mangle)]
 pub extern "C" fn puptests_resource_tests_test_resource_api_pup_create_script() -> *mut dyn ScriptObject {
     let id = NodeID::nil(); // Will be set when attached to node
+    let exposed_tex = None;
+    let exposed_mesh = None;
     let emit_count = 0i32;
 
     Box::into_raw(Box::new(PuptestsResourceTestsTestResourceApiPupScript {
         id,
+        exposed_tex_id: exposed_tex,
+        exposed_mesh_id: exposed_mesh,
         __t_emit_count: emit_count,
     })) as *mut dyn ScriptObject
 }
@@ -176,10 +185,10 @@ impl ScriptObject for PuptestsResourceTestsTestResourceApiPupScript {
         VAR_SET_TABLE.get(&var_id).and_then(|f| f(self, val))
     }
 
-    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>) {
+    fn apply_exposed(&mut self, hashmap: &HashMap<u64, Value>, api: &mut ScriptApi<'_>) {
         for (var_id, val) in hashmap.iter() {
             if let Some(f) = VAR_APPLY_TABLE.get(var_id) {
-                f(self, val);
+                f(self, val, api);
             }
         }
     }
@@ -225,6 +234,12 @@ impl ScriptObject for PuptestsResourceTestsTestResourceApiPupScript {
 
 static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsResourceTestsTestResourceApiPupScript) -> Option<Value>> =
     phf::phf_map! {
+        16618126463543935413u64 => |script: &PuptestsResourceTestsTestResourceApiPupScript| -> Option<Value> {
+                        Some(json!(script.exposed_tex_id))
+                    },
+        3907443101124844683u64 => |script: &PuptestsResourceTestsTestResourceApiPupScript| -> Option<Value> {
+                        Some(json!(script.exposed_mesh_id))
+                    },
         7824945591447400731u64 => |script: &PuptestsResourceTestsTestResourceApiPupScript| -> Option<Value> {
                         Some(json!(script.__t_emit_count))
                     },
@@ -233,6 +248,20 @@ static VAR_GET_TABLE: phf::Map<u64, fn(&PuptestsResourceTestsTestResourceApiPupS
 
 static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsResourceTestsTestResourceApiPupScript, Value) -> Option<()>> =
     phf::phf_map! {
+        16618126463543935413u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: Value| -> Option<()> {
+                            if let Ok(v) = serde_json::from_value::<Option<TextureID>>(val) {
+                                script.exposed_tex_id = v;
+                                return Some(());
+                            }
+                            None
+                        },
+        3907443101124844683u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: Value| -> Option<()> {
+                            if let Ok(v) = serde_json::from_value::<Option<MeshID>>(val) {
+                                script.exposed_mesh_id = v;
+                                return Some(());
+                            }
+                            None
+                        },
         7824945591447400731u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: Value| -> Option<()> {
                             if let Some(v) = val.as_i64() {
                                 script.__t_emit_count = v as i32;
@@ -243,8 +272,34 @@ static VAR_SET_TABLE: phf::Map<u64, fn(&mut PuptestsResourceTestsTestResourceApi
 
     };
 
-static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsResourceTestsTestResourceApiPupScript, &Value)> =
+static VAR_APPLY_TABLE: phf::Map<u64, fn(&mut PuptestsResourceTestsTestResourceApiPupScript, &Value, &mut ScriptApi<'_>)> =
     phf::phf_map! {
+        16618126463543935413u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: &Value, api: &mut ScriptApi<'_>| {
+                            if val.is_null() {
+                                script.exposed_tex_id = None;
+                                return;
+                            }
+                            if let Some(path) = val.as_str() {
+                                script.exposed_tex_id = api.Texture.preload(path);
+                                return;
+                            }
+                            if let Ok(v) = serde_json::from_value::<Option<TextureID>>(val.clone()) {
+                                script.exposed_tex_id = v;
+                            }
+                        },
+        3907443101124844683u64 => |script: &mut PuptestsResourceTestsTestResourceApiPupScript, val: &Value, api: &mut ScriptApi<'_>| {
+                            if val.is_null() {
+                                script.exposed_mesh_id = None;
+                                return;
+                            }
+                            if let Some(path) = val.as_str() {
+                                script.exposed_mesh_id = api.Mesh.preload(path);
+                                return;
+                            }
+                            if let Ok(v) = serde_json::from_value::<Option<MeshID>>(val.clone()) {
+                                script.exposed_mesh_id = v;
+                            }
+                        },
 
     };
 

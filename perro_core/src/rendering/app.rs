@@ -521,9 +521,6 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
             use crate::structs2d::vector2::Vector2;
             use winit::event::{ElementState, MouseButton as WinitMouseButton};
 
-            // Check if a text input element is focused (for text capture)
-            let has_focused_text_input = scene.has_focused_text_input();
-
             if let Some(input_mgr) = scene.get_input_manager() {
                 let mut input_mgr = input_mgr.lock().unwrap();
 
@@ -541,32 +538,6 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
                             }
                         }
 
-                        // Handle text input from logical key ONLY if a text field is focused
-                        if has_focused_text_input && event.state == ElementState::Pressed {
-                            // Debug: print the actual key to see what space generates
-                            println!("[DEBUG] Logical key: {:?}", event.logical_key);
-
-                            match &event.logical_key {
-                                winit::keyboard::Key::Character(text) => {
-                                    // Handle all printable characters
-                                    println!(
-                                        "[DEBUG] Character input: {:?} (len: {})",
-                                        text,
-                                        text.len()
-                                    );
-                                    input_mgr.handle_text_input(text.to_string());
-                                }
-                                winit::keyboard::Key::Named(winit::keyboard::NamedKey::Space) => {
-                                    // Space might be a Named key
-                                    println!("[DEBUG] SPACE key (Named) pressed!");
-                                    input_mgr.handle_text_input(" ".to_string());
-                                }
-                                _ => {
-                                    // Debug: show what key was pressed
-                                    println!("[DEBUG] Other key: {:?}", event.logical_key);
-                                }
-                            }
-                        }
                     }
                     WindowEvent::MouseInput { state, button, .. } => {
                         let mouse_btn = match button {
@@ -598,18 +569,6 @@ impl<P: ScriptProvider + 'static> ApplicationHandler<Graphics> for App<P> {
                         };
                         input_mgr.handle_scroll(scroll_delta);
                     }
-                    WindowEvent::Ime(ime) => match ime {
-                        winit::event::Ime::Commit(text) => {
-                            println!("[DEBUG] IME Commit: {:?}", text);
-                            input_mgr.handle_text_input(text.to_string());
-                        }
-                        winit::event::Ime::Preedit(text, _) => {
-                            if !text.is_empty() {
-                                input_mgr.handle_text_input(text.to_string());
-                            }
-                        }
-                        _ => {}
-                    },
                     _ => {}
                 }
             }

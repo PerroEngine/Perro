@@ -98,10 +98,33 @@ Below is a **full PUP script** showing script kind, attributes, lifecycle, node 
 
 - **`@script`** + **`extends Sprite2D`** — script attached to a Sprite2D node; **`self`** is that node.
 - **`@expose var speed`** — value can be set in the scene (`.scn`) for this node.
-- **`on init()`** / **`on update()`** — lifecycle; no parameters; engine calls them automatically.
-- **`self.texture`**, **`self.transform`**, **`self.name`** — node fields and methods (snake_case in PUP).
-- **`Texture.load(...)`**, **`Time.get_delta()`** — resource and module APIs; call directly.
-- **`get_node("HUD")`**, **`get_var("health")`** — node methods; **`call("method_name", args)`** or **`node::method_name(args)`** for dynamic script access.
+
+## Scene Resource API
+
+`Scene` is a resource type that references a `.scn` path and can be instantiated into the current scene.
+
+### Load (path → Scene)
+
+Create a scene reference without instantiating anything:
+
+```pup
+var s: Scene = Scene.load("res://scenes/example.scn")
+```
+
+### Instantiate
+
+Instantiate (merge) a scene and return the root node (dynamic node):
+
+```pup
+// Instantiate directly from a path
+var root = Scene.instantiate("res://scenes/example.scn")
+self.add_child(root)
+
+// Or from a Scene variable
+var s: Scene = Scene.load("res://scenes/example.scn")
+var root2 = s.instantiate()
+self.add_child(root2)
+```
 
 ---
 
@@ -147,18 +170,18 @@ So: **`on SIGNALNAME() { }`** = shorthand that both defines the handler and conn
 
 These are the types you see in PUP. They correspond to engine structs; some are ID handles (Texture, Mesh), others are value types (Vector2, Quaternion).
 
-| PUP type    | Meaning / use |
-|-------------|----------------|
-| `Vector2`   | 2D position/size (x, y). |
-| `Vector3`   | 3D position/direction (x, y, z). |
-| `Transform2D` | 2D transform (position, rotation, scale). |
-| `Transform3D` | 3D transform: `position` (Vector3), `rotation` (Quaternion), `scale` (Vector3). |
-| `Quaternion` | 3D rotation. Use `Quaternion.identity()`, `from_euler_xyz`, `rotate_x`, `rotate_y`, `rotate_z`, `as_euler`, etc. |
-| `Color`     | RGBA color. |
-| `Rect`      | Rectangle. |
-| `Texture`   | Texture handle (e.g. from `Texture.load("res://...")`). Used as `Sprite2D.texture`. |
-| `Mesh`      | Mesh handle (e.g. from `Mesh.load("res://...")` or `Mesh.cube()`, `Mesh.sphere()`, etc.). Used as `MeshInstance3D.mesh`. |
-| `Shape2D`   | 2D shape (Rectangle, Circle, Square, Triangle from `Shape.rectangle(...)` etc.). |
+| PUP type      | Meaning / use                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Vector2`     | 2D position/size (x, y).                                                                                                 |
+| `Vector3`     | 3D position/direction (x, y, z).                                                                                         |
+| `Transform2D` | 2D transform (position, rotation, scale).                                                                                |
+| `Transform3D` | 3D transform: `position` (Vector3), `rotation` (Quaternion), `scale` (Vector3).                                          |
+| `Quaternion`  | 3D rotation. Use `Quaternion.identity()`, `from_euler_xyz`, `rotate_x`, `rotate_y`, `rotate_z`, `as_euler`, etc.         |
+| `Color`       | RGBA color.                                                                                                              |
+| `Rect`        | Rectangle.                                                                                                               |
+| `Texture`     | Texture handle (e.g. from `Texture.load("res://...")`). Used as `Sprite2D.texture`.                                      |
+| `Mesh`        | Mesh handle (e.g. from `Mesh.load("res://...")` or `Mesh.cube()`, `Mesh.sphere()`, etc.). Used as `MeshInstance3D.mesh`. |
+| `Shape2D`     | 2D shape (Rectangle, Circle, Square, Triangle from `Shape.rectangle(...)` etc.).                                         |
 
 ---
 
@@ -242,37 +265,37 @@ You can call these as **Type.method(...)** or on an **instance** (e.g. `self.tex
 
 ### Texture
 
-- `Texture.load(path)` → Texture  
-- `Texture.preload(path)` → Texture  
-- `Texture.remove(texture)`  
-- `Texture.create_from_bytes(bytes, width, height)` → Texture  
-- `Texture.get_width(texture)`, `get_height(texture)`, `get_size(texture)`  
+- `Texture.load(path)` → Texture
+- `Texture.preload(path)` → Texture
+- `Texture.remove(texture)`
+- `Texture.create_from_bytes(bytes, width, height)` → Texture
+- `Texture.get_width(texture)`, `get_height(texture)`, `get_size(texture)`
 
 Script type **Texture** is the handle; e.g. `Sprite2D.texture` is of type Texture.
 
 ### Mesh
 
-- `Mesh.load(path)` → Mesh — use `res://model.glb` if the file has one mesh; use `res://model.glb:0`, `res://model.glb:1`, … for multiple meshes (by index)  
-- `Mesh.preload(path)` → Mesh  
-- `Mesh.remove(mesh)`  
-- **Primitives:** `Mesh.cube()`, `Mesh.sphere()`, `Mesh.plane()`, `Mesh.cylinder()`, `Mesh.capsule()`, `Mesh.cone()`, `Mesh.sq_pyramid()`, `Mesh.tri_pyramid()`  
+- `Mesh.load(path)` → Mesh — use `res://model.glb` if the file has one mesh; use `res://model.glb:0`, `res://model.glb:1`, … for multiple meshes (by index)
+- `Mesh.preload(path)` → Mesh
+- `Mesh.remove(mesh)`
+- **Primitives:** `Mesh.cube()`, `Mesh.sphere()`, `Mesh.plane()`, `Mesh.cylinder()`, `Mesh.capsule()`, `Mesh.cone()`, `Mesh.sq_pyramid()`, `Mesh.tri_pyramid()`
 
 Script type **Mesh** is the handle; e.g. `MeshInstance3D.mesh` is of type Mesh.
 
 ### Quaternion
 
-- `Quaternion.identity()` → Quaternion  
-- `Quaternion.from_euler(euler_deg: Vector3)` → Quaternion  
-- `Quaternion.from_euler_xyz(pitch_deg, yaw_deg, roll_deg)` → Quaternion  
-- `Quaternion.as_euler(q)` → Vector3 (degrees)  
-- `Quaternion.rotate_x(q, delta_pitch_deg)` (and `rotate_y`, `rotate_z`) → Quaternion  
-- `Quaternion.rotate_euler_xyz(q, dp, dy, dr)` → Quaternion  
+- `Quaternion.identity()` → Quaternion
+- `Quaternion.from_euler(euler_deg: Vector3)` → Quaternion
+- `Quaternion.from_euler_xyz(pitch_deg, yaw_deg, roll_deg)` → Quaternion
+- `Quaternion.as_euler(q)` → Vector3 (degrees)
+- `Quaternion.rotate_x(q, delta_pitch_deg)` (and `rotate_y`, `rotate_z`) → Quaternion
+- `Quaternion.rotate_euler_xyz(q, dp, dy, dr)` → Quaternion
 
 Use these for 3D rotation; you can call them on `self.transform.rotation` and the result is written back.
 
 ### Shape
 
-- `Shape.rectangle(width, height)`, `.circle(radius)`, `.square(size)`, `.triangle(base, height)` → Shape2D  
+- `Shape.rectangle(width, height)`, `.circle(radius)`, `.square(size)`, `.triangle(base, height)` → Shape2D
 
 Used with ShapeInstance2D’s `shape` field.
 
@@ -312,14 +335,14 @@ Modules like **Time**, **Console**, **Math** exist at top level. You call them d
 
 ### Math
 
-- `Math.random`, `Math.random_range(min, max)`, `Math.random_int(min, max)`  
+- `Math.random`, `Math.random_range(min, max)`, `Math.random_int(min, max)`
 - `Math.lerp(a, b, t)`, `Math.lerp_vec2`, `Math.lerp_vec3`, `Math.slerp` (for Quaternion)
 
 ---
 
 ## Summary
 
-- **Nodes:** Use script field names (`texture`, `mesh`, `transform`, `rotation`, etc.) and the types listed above. Use **`::`** for dynamic script access (vars/methods by name); **`.`** for native node fields/methods.  
-- **Rotation:** Always go through **Quaternion** (identity, from_euler_xyz, rotate_x/y/z, as_euler); never mutate quaternion components directly.  
-- **Resources:** Same API whether you call `Texture.load(...)` or use a value from `self.texture`; same for Mesh, Quaternion, etc.  
+- **Nodes:** Use script field names (`texture`, `mesh`, `transform`, `rotation`, etc.) and the types listed above. Use **`::`** for dynamic script access (vars/methods by name); **`.`** for native node fields/methods.
+- **Rotation:** Always go through **Quaternion** (identity, from_euler_xyz, rotate_x/y/z, as_euler); never mutate quaternion components directly.
+- **Resources:** Same API whether you call `Texture.load(...)` or use a value from `self.texture`; same for Mesh, Quaternion, etc.
 - **Modules:** Time, Console, JSON, OS, Input, Math — call them directly (e.g. `Time.get_delta()`, `Texture.load("res://...")`). There is no `api` object on the script side.

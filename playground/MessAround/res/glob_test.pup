@@ -1,0 +1,7 @@
+@global TestGlobal
+
+var b = 10
+
+on init() {
+    Console.info("TestGlobal init")
+}

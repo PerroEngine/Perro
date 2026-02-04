@@ -1,0 +1,29 @@
+# Ignore Perro build artifacts
+builds/
+
+/.perro/project/src/static_assets/
+/.perro/project/embedded_assets/
+
+/.perro/scripts/src/
+
+/assets.brk
+
+build.log
+
+icon.ico
+icon.icns
+icons.icns
+Info.plist
+.DS_Store
+
+perro_engine.png
+perro_engine.desktop
+
+# Ignore profiling files
+flamegraph.folded
+flamegraph.svg
+
+# Ignore target directories (should use workspace root target via CARGO_TARGET_DIR)
+target/
+/.perro/project/target/
+/.perro/scripts/target/

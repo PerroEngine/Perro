@@ -1,0 +1,23 @@
+@script UIScript extends UINode
+
+on init() {
+    Console.print("ui script init")
+}
+
+
+on bob_Pressed() {
+    Console.print_info("===================> bob pressed")
+}
+
+on bob_Hovered() {
+    Console.print_info("===================> bob hovered")
+}
+
+on bob_NotHovered() {
+    Console.print_info("===================> bob not hovered")
+}
+
+on bob_Released() {
+    Console.print_info("===================> bob released")
+}
+

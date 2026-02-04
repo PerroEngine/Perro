@@ -2,8 +2,7 @@
 
 /out
 
-# Personal projects (playground / messing around)
-/playground
+/projects
 
 # Ignore profiling files
 flamegraph.folded
@@ -20,3 +19,7 @@ icon.icns
 icons.icns
 Info.plist
 .DS_Store
+
+# Perro editor sourcemap
+sourcemap.toml
+**/sourcemap.toml

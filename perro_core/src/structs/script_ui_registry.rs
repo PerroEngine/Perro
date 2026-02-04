@@ -22,10 +22,10 @@ pub fn is_ui_element_ref_type(ty: &Type) -> bool {
         || matches!(ty, Type::Custom(name) if UI_ELEMENT_SCRIPT_TYPE_NAMES.contains(&name.as_str()))
 }
 
-/// Script-visible field on a UI element type (e.g. UIText.content, UIButton.label).
+/// Script-visible field on a UI element type (e.g. UIText.content).
 #[derive(Debug, Clone)]
 pub struct UIElementFieldDef {
-    /// Script field name (e.g. "content", "label")
+    /// Script field name (e.g. "content")
     pub script_name: &'static str,
     /// Script type (e.g. Type::String)
     pub script_type: Type,
@@ -86,13 +86,7 @@ impl UIRegistry {
         });
         self.register(UIElementTypeDef {
             element_type: Button,
-            fields: vec![UIElementFieldDef {
-                script_name: "label",
-                script_type: Type::String,
-                rust_type_short: "ui_button::UIButton",
-                read_body: "e.label.clone()",
-                write_template: "e.label = {}.to_string();",
-            }],
+            fields: vec![],
         });
         self.register(UIElementTypeDef {
             element_type: Panel,

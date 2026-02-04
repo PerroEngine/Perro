@@ -185,7 +185,15 @@ impl TypeScriptNodeApiRegistry {
         );
 
         // UINode
-        self.register_node(NodeType::UINode, Some(NodeType::Node), vec![], vec![]);
+        self.register_node(
+            NodeType::UINode,
+            Some(NodeType::Node),
+            vec![],
+            vec![NodeApiMethod {
+                script_name: "getElement",
+                rust_method: NodeMethodRef::GetElement,
+            }],
+        );
 
         // Node3D
         self.register_node(

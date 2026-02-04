@@ -14,6 +14,7 @@ impl CSharpResourceAPI {
             CSharpSignal::NAME => CSharpSignal::resolve_method(func),
             CSharpTexture::NAME => CSharpTexture::resolve_method(func),
             CSharpMesh::NAME => CSharpMesh::resolve_method(func),
+            CSharpScene::NAME => CSharpScene::resolve_method(func),
             CSharpArray::NAME => CSharpArray::resolve_method(func),
             CSharpMap::NAME => CSharpMap::resolve_method(func),
             CSharpShape::NAME => CSharpShape::resolve_method(func),
@@ -116,6 +117,24 @@ impl CSharpMesh {
             "TriangularPyramid",
             "TriPyramid",
         ]
+    }
+}
+
+/// Scene resource API - for loading and merging scenes
+pub struct CSharpScene;
+impl CSharpScene {
+    pub const NAME: &'static str = "Scene";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "Load" => Some(ResourceModule::Scene(SceneResource::Load)),
+            "Instantiate" => Some(ResourceModule::Scene(SceneResource::Instantiate)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["Load", "Instantiate"]
     }
 }
 

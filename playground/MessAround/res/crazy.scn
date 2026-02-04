@@ -1,0 +1,15 @@
+{
+  "root_id": 0,
+  "nodes": {
+    "0": {
+      "type": "UINode",
+      "fur_path": "res://ui.fur",
+      "base": {
+        "type": "Node",
+        "name": "Root"
+      }
+    }
+
+
+  }
+}

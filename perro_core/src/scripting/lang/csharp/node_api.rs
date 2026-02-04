@@ -185,7 +185,15 @@ impl CSharpNodeApiRegistry {
         );
 
         // UINode
-        self.register_node(NodeType::UINode, Some(NodeType::Node), vec![], vec![]);
+        self.register_node(
+            NodeType::UINode,
+            Some(NodeType::Node),
+            vec![],
+            vec![NodeApiMethod {
+                script_name: "GetElement",
+                rust_method: NodeMethodRef::GetElement,
+            }],
+        );
 
         // Node3D
         self.register_node(

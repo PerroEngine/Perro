@@ -218,6 +218,47 @@ pub fn optimize_string_from_as_str(expr: &str) -> String {
     }
 }
 
+/// If the expression is `&String::from("literal")`, return `"literal"` to avoid allocation.
+/// Handles escaped quotes inside the literal. Returns the original string if the pattern doesn't match.
+pub fn optimize_string_from_ref(expr: &str) -> String {
+    let trimmed = expr.trim();
+    const PREFIX: &str = "&String::from(\"";
+    const SUFFIX: &str = "\")";
+    if !trimmed.starts_with(PREFIX) || !trimmed.ends_with(SUFFIX) {
+        return expr.to_string();
+    }
+    let rest = &trimmed[PREFIX.len()..trimmed.len() - SUFFIX.len()];
+    let mut content_end_byte = None;
+    let mut chars = rest.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '"' => {
+                content_end_byte = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    match content_end_byte {
+        Some(end) => format!("\"{}\"", &rest[..end]),
+        None => format!("\"{}\"", rest),
+    }
+}
+
+/// If the expression is `&<expr>.clone()`, drop the clone and return `&<expr>`.
+/// Returns the original string if the pattern doesn't match.
+pub fn optimize_ref_clone(expr: &str) -> String {
+    let trimmed = expr.trim();
+    if trimmed.starts_with('&') && trimmed.ends_with(".clone()") {
+        let inner = &trimmed[1..trimmed.len() - ".clone()".len()];
+        return format!("&{}", inner.trim());
+    }
+    expr.to_string()
+}
+
 /// Convert a string to PascalCase
 pub(crate) fn to_pascal_case(s: &str) -> String {
     if s.is_empty() {

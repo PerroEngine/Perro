@@ -22,14 +22,14 @@ impl FixedUpdate {
 
 /// Enum for specifying whether a node needs internal render updates
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RenderUpdate {
+pub enum Update {
     True,
     False,
 }
 
-impl RenderUpdate {
+impl Update {
     pub fn as_bool(self) -> bool {
-        matches!(self, RenderUpdate::True)
+        matches!(self, Update::True)
     }
 }
 
@@ -45,47 +45,11 @@ impl Renderable {
         matches!(self, Renderable::True)
     }
 }
-
-/// Trait for inner node types that need internal fixed updates (e.g., Area2D for physics)
-/// Nodes implement this trait to opt into internal fixed updates.
-///
-/// To use this trait:
-/// 1. Implement `NodeWithInternalFixedUpdate` for your node type
-/// 2. The macro-generated BaseNode impl will automatically call your trait method
-///
-/// Example for Node (impl lives in this crate; doc test skipped to avoid orphan rule):
-/// ```ignore
-/// impl NodeWithInternalFixedUpdate for Node {
-///     fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
-///         // Your internal fixed update logic here
-///     }
-/// }
-/// ```
-pub trait NodeWithInternalFixedUpdate: BaseNode {
-    /// Called during the fixed update phase
-    /// This runs at the XPS rate from the project manifest
-    fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi);
-}
-
-/// Trait for inner node types that need internal render updates (e.g., UINode for UI interactions)
-/// Nodes implement this trait to opt into internal render updates.
-///
-/// To use this trait:
-/// 1. Implement `NodeWithInternalRenderUpdate` for your node type
-/// 2. The macro-generated BaseNode impl will automatically call your trait method
-///
-/// Example for UINode (impl lives in this crate; doc test skipped to avoid orphan rule):
-/// ```ignore
-/// impl NodeWithInternalRenderUpdate for UINode {
-///     fn internal_render_update(&mut self, api: &mut ScriptApi) {
-///         // Your internal render update logic here (runs every frame)
-///     }
-/// }
-/// ```
-pub trait NodeWithInternalRenderUpdate: BaseNode {
+    
+pub trait NodeWithInternalUpdate: BaseNode {
     /// Called during the render phase (every frame)
     /// This runs at the render rate to match visual updates
-    fn internal_render_update(&mut self, api: &mut crate::scripting::api::ScriptApi);
+    fn internal_update(&mut self, api: &mut crate::scripting::api::ScriptApi);
 }
 
 /// Base trait implemented by all engine node types.
@@ -145,31 +109,29 @@ pub trait BaseNode: Any + Debug + Send {
 
     /// Internal fixed update - called during fixed update phase for nodes that need it
     /// Default implementation does nothing.
-    /// Nodes that implement NodeWithInternalFixedUpdate will have their trait method called
-    /// automatically in SceneNode::internal_fixed_update.
+    /// Nodes that need fixed updates should override this method.
     fn internal_fixed_update(&mut self, _api: &mut crate::scripting::api::ScriptApi) {
         // Default empty implementation
     }
 
     /// Returns true if this node needs internal fixed updates
     /// Default implementation returns false.
-    /// Nodes that implement NodeWithInternalFixedUpdate should override this to return true.
+    /// Nodes that need fixed updates should override this to return true.
     fn needs_internal_fixed_update(&self) -> bool {
         false
     }
 
     /// Internal render update - called during render phase for nodes that need it
     /// Default implementation does nothing.
-    /// Nodes that implement NodeWithInternalRenderUpdate will have their trait method called
-    /// automatically in SceneNode::internal_render_update.
-    fn internal_render_update(&mut self, _api: &mut crate::scripting::api::ScriptApi) {
+    /// Nodes that need render updates should override this method.
+    fn internal_update(&mut self, _api: &mut crate::scripting::api::ScriptApi) {
         // Default empty implementation
     }
 
     /// Returns true if this node needs internal render updates
     /// Default implementation returns false.
-    /// Nodes that implement NodeWithInternalRenderUpdate should override this to return true.
-    fn needs_internal_render_update(&self) -> bool {
+    /// Nodes that need render updates should override this to return true.
+    fn needs_internal_update(&self) -> bool {
         false
     }
 
@@ -218,7 +180,7 @@ pub trait NodeTypeDispatch: 'static {
 /// This version supports `Option<Vec<NodeID>>` for `children`.
 #[macro_export]
 macro_rules! impl_scene_node {
-    ($ty:ty, $variant:ident, $needs_internal:expr, $needs_render:expr, $is_renderable:expr) => {
+    ($ty:ty, $variant:ident, $needs_fixed:expr, $needs_update:expr, $is_renderable:expr) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
             fn get_id(&self) -> NodeID {
                 self.id
@@ -249,12 +211,11 @@ macro_rules! impl_scene_node {
             }
 
             fn get_type(&self) -> NodeType {
-                // All node types now use NodeType - return it directly
                 self.ty
             }
 
             fn get_script_path(&self) -> Option<&str> {
-                self.script_path.as_deref() // This works for both Cow and Option<String>
+                self.script_path.as_deref()
             }
 
             fn set_parent(&mut self, p: Option<crate::nodes::node::ParentType>) {
@@ -340,35 +301,17 @@ macro_rules! impl_scene_node {
                 self
             }
 
-            // Generate internal_fixed_update based on the flag
-            fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
-                // If the node needs internal fixed update, call its method
-                // The node must have an `internal_fixed_update` method in its impl block
-                if $needs_internal.as_bool() {
-                    self.internal_fixed_update(api);
-                }
-            }
-
+            // Override needs_internal_fixed_update to return the flag value
             fn needs_internal_fixed_update(&self) -> bool {
-                $needs_internal.as_bool()
+                $needs_fixed.as_bool()
             }
 
-            // Generate internal_render_update based on the flag
-            fn internal_render_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
-                // If the node needs internal render update, call its method
-                // The node must have an `internal_render_update` method in its impl block
-                if $needs_render.as_bool() {
-                    self.internal_render_update(api);
-                }
-            }
-
-            fn needs_internal_render_update(&self) -> bool {
-                $needs_render.as_bool()
+            // Override needs_internal_update to return the flag value
+            fn needs_internal_update(&self) -> bool {
+                $needs_update.as_bool()
             }
 
             fn get_created_timestamp(&self) -> u64 {
-                // Access created_timestamp directly (works for Node and Node2D types via Deref)
-                // Same pattern as get_id() and get_name() - they access directly, not through base
                 self.created_timestamp
             }
 
@@ -429,15 +372,15 @@ macro_rules! impl_scene_node {
 /// Declares all node types and generates `NodeType` + `SceneNode` enums.
 /// Also implements the `BaseNode` trait for `SceneNode` by delegating to its inner value.
 ///
-/// Syntax: `NodeName(FixedUpdate::True/False, RenderUpdate::True/False, Renderable::True/False) => path::to::NodeType`
-/// where `FixedUpdate::True` means the node needs internal fixed updates (runs at XPS rate)
-/// and `RenderUpdate::True` means the node needs internal render updates (runs every frame)
+/// Syntax: `NodeName(FixedUpdate::True/False, Update::True/False, Renderable::True/False) => path::to::NodeType`
+/// where `FixedUpdate::True` means the node needs internal fixed updates (runs at fixed timestep)
+/// and `Update::True` means the node needs internal render updates (runs every frame)
 /// and `Renderable::True` means the node is actually rendered to screen
-/// If FixedUpdate::True, the node must have an `internal_fixed_update` method in its impl block
-/// If RenderUpdate::True, the node must have an `internal_render_update` method in its impl block
+/// If FixedUpdate::True, the node must override `internal_fixed_update` method in its BaseNode impl
+/// If Update::True, the node must override `internal_update` method in its BaseNode impl
 #[macro_export]
 macro_rules! define_nodes {
-    ( $( $variant:ident($needs_internal:expr, $needs_render:expr, $is_renderable:expr) => $ty:path ),+ $(,)? ) => {
+    ( $( $variant:ident($needs_fixed:expr, $needs_update:expr, $is_renderable:expr) => $ty:path ),+ $(,)? ) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(rename_all = "PascalCase")]
         pub enum NodeType { $( $variant, )+ }
@@ -611,8 +554,8 @@ macro_rules! define_nodes {
                 match self {
                     $(
                         SceneNode::$variant(n) => {
-                            // Call BaseNode::internal_fixed_update - if the type implements NodeWithInternalFixedUpdate
-                            // and used the macro, this will call the trait method
+                            // Call the concrete type's BaseNode implementation
+                            // If the type needs fixed updates, it will have overridden this method
                             <$ty as crate::nodes::node_registry::BaseNode>::internal_fixed_update(n, api);
                         }
                     )+
@@ -623,20 +566,20 @@ macro_rules! define_nodes {
                 match self { $( SceneNode::$variant(n) => n.needs_internal_fixed_update(), )+ }
             }
 
-            fn internal_render_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+            fn internal_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
                 match self {
                     $(
                         SceneNode::$variant(n) => {
-                            // Call BaseNode::internal_render_update - if the type implements NodeWithInternalRenderUpdate
-                            // and used the macro, this will call the trait method
-                            <$ty as crate::nodes::node_registry::BaseNode>::internal_render_update(n, api);
+                            // Call the concrete type's BaseNode implementation
+                            // If the type needs updates, it will have overridden this method
+                            <$ty as crate::nodes::node_registry::BaseNode>::internal_update(n, api);
                         }
                     )+
                 }
             }
 
-            fn needs_internal_render_update(&self) -> bool {
-                match self { $( SceneNode::$variant(n) => n.needs_internal_render_update(), )+ }
+            fn needs_internal_update(&self) -> bool {
+                match self { $( SceneNode::$variant(n) => n.needs_internal_update(), )+ }
             }
 
             fn mark_transform_dirty_if_node2d(&mut self) {
@@ -762,7 +705,7 @@ macro_rules! define_nodes {
             }
         }
 
-        $( impl_scene_node!($ty, $variant, $needs_internal, $needs_render, $is_renderable); )+
+        $( impl_scene_node!($ty, $variant, $needs_fixed, $needs_update, $is_renderable); )+
     };
 }
 
@@ -770,27 +713,27 @@ macro_rules! define_nodes {
 // Register all built-in node types here
 // ─────────────────────────────────────────────
 
-// Syntax: NodeName(FixedUpdate::True/False, Renderable::True/False) => path
+// Syntax: NodeName(FixedUpdate::True/False, Update::True/False, Renderable::True/False) => path
+// Update::True means the node needs updates every frame
 // FixedUpdate::True means the node needs internal fixed updates
-// Renderable::True means the node is actually rendered to screen
+// Renderable::True means the node interfaces with graphics/rendering
 define_nodes!(
-    Node(FixedUpdate::False, RenderUpdate::False, Renderable::False)     => crate::nodes::node::Node,
-    Node2D(FixedUpdate::False, RenderUpdate::False, Renderable::False)   => crate::nodes::_2d::node_2d::Node2D,
-    Sprite2D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_2d::sprite_2d::Sprite2D,
-    Area2D(FixedUpdate::True, RenderUpdate::False, Renderable::False)   => crate::nodes::_2d::area_2d::Area2D,
-    CollisionShape2D(FixedUpdate::False, RenderUpdate::False, Renderable::False) => crate::nodes::_2d::collision_shape_2d::CollisionShape2D,
-    ShapeInstance2D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_2d::shape_instance_2d::ShapeInstance2D,
-    Camera2D(FixedUpdate::False, RenderUpdate::False, Renderable::True)  => crate::nodes::_2d::camera_2d::Camera2D,
+    Node(FixedUpdate::False, Update::False, Renderable::False)     => crate::nodes::node::Node,
+    Node2D(FixedUpdate::False, Update::False, Renderable::False)   => crate::nodes::_2d::node_2d::Node2D,
+    Sprite2D(FixedUpdate::False, Update::False, Renderable::True) => crate::nodes::_2d::sprite_2d::Sprite2D,
+    Area2D(FixedUpdate::True, Update::False, Renderable::False)   => crate::nodes::_2d::area_2d::Area2D,
+    CollisionShape2D(FixedUpdate::False, Update::False, Renderable::False) => crate::nodes::_2d::collision_shape_2d::CollisionShape2D,
+    ShapeInstance2D(FixedUpdate::False, Update::False, Renderable::True) => crate::nodes::_2d::shape_instance_2d::ShapeInstance2D,
+    Camera2D(FixedUpdate::False, Update::False, Renderable::True)  => crate::nodes::_2d::camera_2d::Camera2D,
 
 
-    UINode(FixedUpdate::False, RenderUpdate::True, Renderable::True)   => crate::nodes::ui_node::UINode,
+    UINode(FixedUpdate::False, Update::True, Renderable::True)   => crate::nodes::ui_node::UINode,
 
 
-    Node3D(FixedUpdate::False, RenderUpdate::False, Renderable::False)   => crate::nodes::_3d::node_3d::Node3D,
-    MeshInstance3D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
-    Camera3D(FixedUpdate::False, RenderUpdate::False, Renderable::True)  => crate::nodes::_3d::camera_3d::Camera3D,
-
-    DirectionalLight3D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
-    OmniLight3D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_3d::light_omni_3d::OmniLight3D,
-    SpotLight3D(FixedUpdate::False, RenderUpdate::False, Renderable::True) => crate::nodes::_3d::light_spot_3d::SpotLight3D,
+    Node3D(FixedUpdate::False, Update::False, Renderable::False)   => crate::nodes::_3d::node_3d::Node3D,
+    MeshInstance3D(FixedUpdate::False, Update::False, Renderable::True) => crate::nodes::_3d::mesh_instance_3d::MeshInstance3D,
+    Camera3D(FixedUpdate::False, Update::False, Renderable::True)  => crate::nodes::_3d::camera_3d::Camera3D,
+    DirectionalLight3D(FixedUpdate::False, Update::False, Renderable::True) => crate::nodes::_3d::light_dir_3d::DirectionalLight3D,
+    OmniLight3D(FixedUpdate::False, Update::False, Renderable::True) => crate::nodes::_3d::light_omni_3d::OmniLight3D,
+    SpotLight3D(FixedUpdate::False, Update::False, Renderable::True) => crate::nodes::_3d::light_spot_3d::SpotLight3D,
 );

@@ -14,6 +14,7 @@ impl TypeScriptResourceAPI {
             TypeScriptSignal::NAME => TypeScriptSignal::resolve_method(func),
             TypeScriptTexture::NAME => TypeScriptTexture::resolve_method(func),
             TypeScriptMesh::NAME => TypeScriptMesh::resolve_method(func),
+            TypeScriptScene::NAME => TypeScriptScene::resolve_method(func),
             TypeScriptArray::NAME => TypeScriptArray::resolve_method(func),
             TypeScriptMap::NAME => TypeScriptMap::resolve_method(func),
             TypeScriptShape::NAME => TypeScriptShape::resolve_method(func),
@@ -133,6 +134,24 @@ impl TypeScriptMesh {
             "triangular_pyramid",
             "tri_pyramid",
         ]
+    }
+}
+
+/// Scene resource API - for loading and merging scenes
+pub struct TypeScriptScene;
+impl TypeScriptScene {
+    pub const NAME: &'static str = "Scene";
+
+    pub fn resolve_method(method: &str) -> Option<ResourceModule> {
+        match method {
+            "load" => Some(ResourceModule::Scene(SceneResource::Load)),
+            "instantiate" => Some(ResourceModule::Scene(SceneResource::Instantiate)),
+            _ => None,
+        }
+    }
+
+    pub fn get_all_method_names() -> Vec<&'static str> {
+        vec!["load", "instantiate"]
     }
 }
 

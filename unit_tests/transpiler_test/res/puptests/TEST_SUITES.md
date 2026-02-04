@@ -36,6 +36,7 @@ res/puptests/
 ## Resource tests (`puptests/resource_tests/`)
 
 - **test_resource_api.pup** — Texture, Mesh, Quaternion, Shape2D, Signal (new, connect, emit, emit_deferred), Array, Map. Multiple test functions; signal handlers by name (no `self::`).
+- **test_scene_api.pup** — Scene load returns DynNode; add_child with returned root.
 
 ## Global / module tests (`puptests/global_tests/`)
 

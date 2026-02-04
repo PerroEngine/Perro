@@ -10,6 +10,7 @@ use crate::{
     prelude::string_to_u64,
     resource_modules::*, // Import resource API enums
     scripting::ast::{ContainerKind, NumberKind},
+    scripting::codegen::{optimize_ref_clone, optimize_string_from_ref, optimize_string_from_to_string},
 };
 
 // ===========================================================
@@ -1024,6 +1025,9 @@ impl ResourceModule {
             ResourceModule::Mesh(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
+            ResourceModule::Scene(api) => {
+                api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
+            }
             ResourceModule::Shape(api) => {
                 api.to_rust_prepared(args, &rust_args_strings, script, needs_self, current_func)
             }
@@ -1044,6 +1048,7 @@ impl ResourceModule {
             ResourceModule::Signal(api) => api.return_type(),
             ResourceModule::Texture(api) => api.return_type(),
             ResourceModule::Mesh(api) => api.return_type(),
+            ResourceModule::Scene(api) => api.return_type(),
             ResourceModule::Shape(api) => api.return_type(),
             ResourceModule::ArrayOp(api) => api.return_type(),
             ResourceModule::MapOp(api) => api.return_type(),
@@ -1056,6 +1061,7 @@ impl ResourceModule {
             ResourceModule::Signal(api) => api.param_types(),
             ResourceModule::Texture(api) => api.param_types(),
             ResourceModule::Mesh(api) => api.param_types(),
+            ResourceModule::Scene(api) => api.param_types(),
             ResourceModule::Shape(api) => api.param_types(),
             ResourceModule::ArrayOp(api) => api.param_types(),
             ResourceModule::MapOp(api) => api.param_types(),
@@ -1069,6 +1075,7 @@ impl ResourceModule {
             ResourceModule::Signal(api) => api.param_names(),
             ResourceModule::Texture(api) => api.param_names(),
             ResourceModule::Mesh(api) => api.param_names(),
+            ResourceModule::Scene(api) => api.param_names(),
             ResourceModule::Shape(api) => api.param_names(),
             ResourceModule::ArrayOp(api) => api.param_names(),
             ResourceModule::MapOp(api) => api.param_names(),
@@ -1186,6 +1193,138 @@ impl ModuleTypes for MeshResource {
             | MeshResource::Cone
             | MeshResource::SquarePyramid
             | MeshResource::TriangularPyramid => Some(vec![]),
+        }
+    }
+}
+
+// ===========================================================
+// Scene API Implementations
+// ===========================================================
+
+impl ModuleCodegen for SceneResource {
+    fn to_rust_prepared(
+        &self,
+        _args: &[Expr],
+        args_strs: &[String],
+        _script: &Script,
+        _needs_self: bool,
+        _current_func: Option<&Function>,
+    ) -> String {
+        match self {
+            SceneResource::Load => {
+                let arg_index = if args_strs.len() > 1 { 1 } else { 0 };
+                let arg = args_strs
+                    .get(arg_index)
+                    .cloned()
+                    .unwrap_or_else(|| "\"\"".into());
+                let arg_str = if arg.starts_with('"') && arg.ends_with('"') {
+                    arg
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        inner.to_string()
+                    } else {
+                        format!("&{}", arg)
+                    }
+                } else {
+                    format!("&{}", arg)
+                };
+                format!("SceneRef::new({})", arg_str)
+            }
+            SceneResource::Instantiate => {
+                let mut arg = args_strs
+                    .get(0)
+                    .cloned()
+                    .unwrap_or_else(|| "SceneRef::default()".into());
+                arg = optimize_string_from_ref(&arg);
+                arg = optimize_ref_clone(&arg);
+                arg = optimize_string_from_to_string(&arg);
+                if arg.contains("self.SceneRef::new(") {
+                    arg = arg.replace("self.SceneRef::new", "SceneRef::new");
+                }
+                if arg.contains("self::SceneRef::new(") {
+                    arg = arg.replace("self::SceneRef::new", "SceneRef::new");
+                }
+                if arg.starts_with("&String::from(") && arg.ends_with(')') {
+                    let inner = &arg["&String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        return format!("api.Scene.instantiate({})", inner);
+                    }
+                    return format!("api.Scene.instantiate(&{})", inner);
+                }
+                if arg.starts_with("SceneRef::new(") || arg.starts_with("&SceneRef::new(") {
+                    let inner = if let Some(start) = arg.find('(') {
+                        let end = arg.rfind(')').unwrap_or(arg.len());
+                        arg[start + 1..end].trim()
+                    } else {
+                        arg.as_str()
+                    };
+                    let mut inner = inner.strip_prefix('&').unwrap_or(inner).trim().to_string();
+                    if inner.ends_with(".clone()") {
+                        inner = inner.trim_end_matches(".clone()").to_string();
+                    }
+                    if inner.starts_with("String::from(") && inner.ends_with(')') {
+                        let inner_arg = inner["String::from(".len()..inner.len() - 1].trim();
+                        if inner_arg.starts_with('"') && inner_arg.ends_with('"') {
+                            return format!("api.Scene.instantiate({})", inner_arg);
+                        }
+                        return format!("api.Scene.instantiate(&{})", inner_arg);
+                    }
+                    if inner.starts_with("&String::from(") && inner.ends_with(')') {
+                        let inner_arg = inner["&String::from(".len()..inner.len() - 1].trim();
+                        if inner_arg.starts_with('"') && inner_arg.ends_with('"') {
+                            return format!("api.Scene.instantiate({})", inner_arg);
+                        }
+                        return format!("api.Scene.instantiate(&{})", inner_arg);
+                    }
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        return format!("api.Scene.instantiate({})", inner);
+                    }
+                    if inner.starts_with('&') {
+                        return format!("api.Scene.instantiate({})", inner);
+                    }
+                    return format!("api.Scene.instantiate(&{})", inner);
+                }
+                if arg.starts_with('"') && arg.ends_with('"') {
+                    format!("api.Scene.instantiate({})", arg)
+                } else if arg.starts_with("String::from(") && arg.ends_with(')') {
+                    let inner = &arg["String::from(".len()..arg.len() - 1].trim();
+                    if inner.starts_with('"') && inner.ends_with('"') {
+                        format!("api.Scene.instantiate({})", inner)
+                    } else {
+                        format!("api.Scene.instantiate_ref(&{})", arg)
+                    }
+                } else {
+                    if arg.starts_with('&') {
+                        format!("api.Scene.instantiate_ref({})", arg)
+                    } else {
+                        format!("api.Scene.instantiate_ref(&{})", arg)
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl ModuleTypes for SceneResource {
+    fn return_type(&self) -> Option<Type> {
+        match self {
+            SceneResource::Load => Some(Type::EngineStruct(EngineStruct::SceneRef)),
+            SceneResource::Instantiate => Some(Type::Option(Box::new(Type::DynNode))),
+        }
+    }
+
+    fn param_types(&self) -> Option<Vec<Type>> {
+        match self {
+            SceneResource::Load => Some(vec![Type::String]),
+            SceneResource::Instantiate => Some(vec![Type::EngineStruct(EngineStruct::SceneRef)]),
+        }
+    }
+
+    fn param_names(&self) -> Option<Vec<&'static str>> {
+        match self {
+            SceneResource::Load => Some(vec!["path"]),
+            SceneResource::Instantiate => Some(vec!["scene"]),
         }
     }
 }

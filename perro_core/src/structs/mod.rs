@@ -1,5 +1,6 @@
 pub mod color;
 pub mod engine_structs;
+pub mod scene_ref;
 pub mod structs2d;
 pub mod structs3d;
 
@@ -10,5 +11,6 @@ pub mod ui_bindings;
 
 pub use color::Color;
 pub use engine_structs::EngineStruct;
+pub use scene_ref::SceneRef;
 pub use structs2d::*;
 pub use structs3d::*;

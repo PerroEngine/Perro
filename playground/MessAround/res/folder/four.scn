@@ -1,0 +1,35 @@
+{
+  "root_id": 0,
+  "nodes": {
+    "0": {
+      "type": "Node2D",
+      "base": {
+        "type": "Node",
+        "name": "FWorld"
+      }
+    },
+    "1": {
+      "type": "Sprite2D",
+      "texture_path": "res://icon.png",
+      "base": {
+        "type": "Node2D",
+        "base": {
+          "type": "Node",
+          "name": "PlayerofFour",
+          "parent": 0
+        },
+        "transform": {
+          "position": [
+            50.0,
+            -200.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            0.25,
+            0.25
+          ]
+        }
+      }
+    }
+  }
+}

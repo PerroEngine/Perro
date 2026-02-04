@@ -13,7 +13,7 @@ use crate::{
 pub enum CallModule {
     /// Module APIs (JSON, Time, OS, Console, Input, Math)
     Module(ApiModule),
-    /// Resource APIs (Signal, Texture, Shape, Array, Map)
+    /// Resource APIs (Signal, Texture, Mesh, Scene, Shape, Array, Map)
     Resource(ResourceModule),
     /// Node methods from engine_registry (get_parent, get_node, etc.) - uses NodeMethodRef
     NodeMethod(NodeMethodRef),

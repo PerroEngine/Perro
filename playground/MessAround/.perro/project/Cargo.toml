@@ -1,0 +1,54 @@
+[[bin]]
+name = "messaround"
+path = "src/main.rs"
+
+[build-dependencies]
+chrono = "0.4"
+embed-resource = "2.4"
+ico = "0.3"
+image = "0.24"
+resvg = "0.44"
+toml = "0.8"
+
+[dependencies]
+once_cell = "1.19"
+
+[dependencies.cow_map]
+path = "D:/Rust/cow_map"
+
+[dependencies.perro_core]
+path = "../../../../perro_core"
+
+[dependencies.phf]
+features = ["macros"]
+version = "0.13.1"
+
+[dependencies.scripts]
+path = "../scripts"
+
+[package]
+build = "build.rs"
+edition = "2024"
+name = "messaround"
+version = "0.1.0"
+
+[profile.release]
+codegen-units = 1
+debug = false
+lto = "fat"
+opt-level = 3
+panic = "abort"
+strip = "symbols"
+
+[profile.release.package."*"]
+debug = false
+opt-level = 3
+overflow-checks = false
+
+[target."cfg(windows)"]
+rustflags = [
+    "-C",
+    "link-args=/SUBSYSTEM:WINDOWS",
+]
+
+[workspace]

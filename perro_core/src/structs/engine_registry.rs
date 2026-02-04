@@ -524,7 +524,7 @@ impl EngineRegistry {
                 ),
                 (
                     "add_child",
-                    vec![Type::Node(NodeType::Node)],
+                    vec![Type::DynNode],
                     Type::Void,
                     Some(NodeMethodRef::AddChild),
                     vec!["node"],

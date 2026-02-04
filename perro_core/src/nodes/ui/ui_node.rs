@@ -10,9 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Node,
     nodes::node_registry::NodeType,
-    rendering::graphics::{DEFAULT_VIRTUAL_HEIGHT, DEFAULT_VIRTUAL_WIDTH},
     scripting::api::ScriptApi,
-    structs2d::Vector2,
     ui_element::{BaseElement, IntoUIInner, UIElement},
 };
 
@@ -45,30 +43,6 @@ pub struct UINode {
     )]
     pub visible: bool,
 
-    /// None at compile time (no allocation). Allocated on first use.
-    #[serde(skip)]
-    pub needs_rerender: Option<HashSet<UIElementID>>,
-
-    #[serde(skip)]
-    pub needs_layout_recalc: Option<HashSet<UIElementID>>,
-
-    /// Elements marked for deletion - will be removed from primitive renderer and then from elements map
-    /// This set tracks element IDs (including all descendants) that should be deleted. None at compile time.
-    #[serde(skip)]
-    pub pending_deletion: Option<HashSet<UIElementID>>,
-
-    /// Store initial z-indices from FUR file to prevent accumulation across frames. None = no allocation.
-    #[serde(skip)]
-    pub initial_z_indices: Option<HashMap<UIElementID, i32>>,
-
-    /// Currently focused UI element (for text input, etc.)
-    #[serde(skip)]
-    pub focused_element: Option<UIElementID>,
-
-    /// Previous cursor icon state to avoid redundant updates
-    #[serde(skip)]
-    pub last_cursor_icon: Option<u8>, // Store as u8 to avoid importing CursorIcon here
-
     pub base: Node,
 }
 
@@ -79,59 +53,14 @@ impl UINode {
         Self {
             ty: NodeType::UINode,
             visible: default_visible(),
-            // Base node
             base,
             fur_path: None,
             loaded_fur_path: None,
             elements: None,
             root_ids: None,
-            needs_rerender: None,
-            needs_layout_recalc: None,
-            pending_deletion: None,
-            initial_z_indices: None,
-            focused_element: None,
-            last_cursor_icon: None,
         }
     }
 
-    /// Mark an element as needing rerender (visual only, no layout recalculation)
-    pub fn mark_element_needs_rerender(&mut self, element_id: UIElementID) {
-        self.needs_rerender
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-    }
-
-    /// Mark an element as needing layout recalculation (triggers full layout update)
-    pub fn mark_element_needs_layout(&mut self, element_id: UIElementID) {
-        self.needs_rerender
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-        self.needs_layout_recalc
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-    }
-
-    /// Mark all elements as needing rerender (for initial render or full refresh)
-    pub fn mark_all_needs_rerender(&mut self) {
-        if let Some(elements) = &self.elements {
-            self.needs_rerender
-                .get_or_insert_with(HashSet::new)
-                .extend(elements.keys().copied());
-            self.needs_layout_recalc
-                .get_or_insert_with(HashSet::new)
-                .extend(elements.keys().copied());
-        }
-    }
-
-    /// Clear all rerender flags
-    pub fn clear_rerender_flags(&mut self) {
-        if let Some(ref mut set) = self.needs_rerender {
-            set.clear();
-        }
-        if let Some(ref mut set) = self.needs_layout_recalc {
-            set.clear();
-        }
-    }
     pub fn get_visible(&self) -> bool {
         self.visible
     }
@@ -198,15 +127,6 @@ impl UINode {
         }
     }
 
-    /// Set an element by name (ID), replacing the existing element
-    /// Use this after cloning and modifying an element with `get_element_clone`
-    ///
-    /// # Example
-    /// ```ignore
-    /// let mut text: UIText = ui_node.get_element_clone("bob").unwrap();
-    /// text.set_content("Hello");
-    /// ui_node.set_element("bob", UIElement::Text(text));
-    /// ```
     pub fn set_element(&mut self, name: &str, element: UIElement) -> bool {
         if let Some(elements) = &mut self.elements {
             // Find the element by name and get its ID
@@ -219,24 +139,6 @@ impl UINode {
         false
     }
 
-    /// Merge a collection of elements back into this UINode
-    /// Similar to `merge_nodes` for SceneNode - updates elements by their name/ID
-    ///
-    /// # Arguments
-    /// * `elements_to_merge` - A vector of (element_name, element) tuples
-    ///
-    /// This is called automatically by the transpiler when elements are cloned and modified
-    pub fn merge_elements(&mut self, elements_to_merge: Vec<(String, UIElement)>) {
-        if let Some(elements) = &mut self.elements {
-            for (name, element) in elements_to_merge {
-                // Find the element by name and get its ID
-                if let Some((id, _)) = elements.iter().find(|(_, el)| el.get_name() == name) {
-                    let id = *id;
-                    elements.insert(id, element);
-                }
-            }
-        }
-    }
 
     /// Get a Text element by name (ID) - returns a reference to UIText if the element is a Text element
     /// Returns None if the element doesn't exist or isn't a Text element
@@ -263,79 +165,6 @@ impl UINode {
         None
     }
 
-    /// Recursively collect all descendant IDs of an element
-    /// This is useful for marking all children as needing rerender when parent visibility changes
-    fn collect_all_descendants(&self, element_id: UIElementID) -> Vec<UIElementID> {
-        let mut descendants = Vec::new();
-
-        if let Some(elements) = &self.elements {
-            let mut to_process = vec![element_id];
-
-            while let Some(current_id) = to_process.pop() {
-                if let Some(element) = elements.get(&current_id) {
-                    for &child_id in element.get_children() {
-                        descendants.push(child_id);
-                        to_process.push(child_id);
-                    }
-                }
-            }
-        }
-
-        descendants
-    }
-
-    /// Mark an element and all its descendants as needing rerender
-    /// Use this when changing visibility to ensure all descendants are properly updated
-    pub fn mark_element_with_descendants_needs_rerender(&mut self, element_id: UIElementID) {
-        self.needs_rerender
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-
-        let descendants = self.collect_all_descendants(element_id);
-        for descendant_id in descendants {
-            self.needs_rerender
-                .get_or_insert_with(HashSet::new)
-                .insert(descendant_id);
-        }
-    }
-
-    /// Mark an element and all its descendants as needing layout recalculation
-    /// Use this when changing visibility to ensure all descendants are properly updated
-    pub fn mark_element_with_descendants_needs_layout(&mut self, element_id: UIElementID) {
-        self.needs_rerender
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-        self.needs_layout_recalc
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-
-        let descendants = self.collect_all_descendants(element_id);
-        for descendant_id in descendants {
-            self.needs_rerender
-                .get_or_insert_with(HashSet::new)
-                .insert(descendant_id);
-            self.needs_layout_recalc
-                .get_or_insert_with(HashSet::new)
-                .insert(descendant_id);
-        }
-    }
-
-    /// Mark an element and all its descendants for deletion
-    /// Elements marked for deletion will be removed from the primitive renderer cache
-    /// and then removed from the elements map by the renderer
-    pub fn mark_for_deletion(&mut self, element_id: UIElementID) {
-        self.pending_deletion
-            .get_or_insert_with(HashSet::new)
-            .insert(element_id);
-
-        // Recursively mark all descendants for deletion
-        let descendants = self.collect_all_descendants(element_id);
-        for descendant_id in descendants {
-            self.pending_deletion
-                .get_or_insert_with(HashSet::new)
-                .insert(descendant_id);
-        }
-    }
 }
 
 impl Deref for UINode {
@@ -352,209 +181,14 @@ impl DerefMut for UINode {
     }
 }
 
-// Helper function moved to ui_element.rs as is_point_in_rounded_rect
-
 impl UINode {
-    pub fn internal_render_update(&mut self, api: &mut ScriptApi<'_>) {
-        if !self.visible {
-            return;
-        }
-
-        let _elements = match &mut self.elements {
-            Some(e) => e,
-            None => return,
-        };
-
-        // -----------------------------------------
-        // Mouse → VIRTUAL UI SPACE
-        // -----------------------------------------
-        let screen_mouse = match api.scene.get_input_manager() {
-            Some(mgr) => {
-                let mgr = mgr.lock().unwrap();
-                mgr.get_mouse_position()
-            }
-            None => return,
-        };
-
-        if screen_mouse.x == 0.0 && screen_mouse.y == 0.0 {
-            // No interactive elements to reset hover state for
-            return;
-        }
-
-        let (window_w, window_h) = api
-            .gfx
-            .as_ref()
-            .map(|g| {
-                (
-                    g.surface_config.width as f32,
-                    g.surface_config.height as f32,
-                )
-            })
-            .unwrap_or((1920.0, 1080.0));
-
-        // Use virtual size from Graphics when available, else defaults
-        let (virt_w, virt_h) = api
-            .gfx
-            .as_ref()
-            .map(|g| (g.virtual_width, g.virtual_height))
-            .unwrap_or((DEFAULT_VIRTUAL_WIDTH, DEFAULT_VIRTUAL_HEIGHT));
-        let _mouse_pos = Vector2::new(
-            (screen_mouse.x / window_w - 0.5) * virt_w,
-            (0.5 - screen_mouse.y / window_h) * virt_h,
-        );
-
-        // -----------------------------------------
-        // Mouse button
-        // -----------------------------------------
-        let _mouse_pressed = api
-            .scene
-            .get_input_manager()
-            .map(|mgr| {
-                let mgr = mgr.lock().unwrap();
-                use crate::input::manager::MouseButton;
-                mgr.is_mouse_button_pressed(MouseButton::Left)
-            })
-            .unwrap_or(false);
-
-        // -----------------------------------------
-        // Hit testing (FINAL)
-        // -----------------------------------------
-        use std::cell::RefCell;
-        use std::rc::Rc;
-
-        let dirty_element_ids = Rc::new(RefCell::new(Vec::new()));
-        let layout_dirty_element_ids = Rc::new(RefCell::new(Vec::new()));
-        let any_button_hovered = Rc::new(RefCell::new(false));
-        let any_text_input_hovered = Rc::new(RefCell::new(false));
-        let clicked_text_input_id = Rc::new(RefCell::new(None));
-        let new_focused_element = Rc::new(RefCell::new(None));
-        let needs_ui_rerender = Rc::new(RefCell::new(false));
-
-        // Store focused_element in local variable to avoid borrow issues
-        let _current_focused_element = self.focused_element;
-
-        // Check for mouse click outside to unfocus
-        let _mouse_just_pressed = api
-            .scene
-            .get_input_manager()
-            .map(|mgr| {
-                let mgr = mgr.lock().unwrap();
-                use crate::input::manager::MouseButton;
-                mgr.is_mouse_button_pressed(MouseButton::Left)
-            })
-            .unwrap_or(false);
-
-        // Check if mouse button is currently held down
-        let _mouse_is_held = api
-            .scene
-            .get_input_manager()
-            .map(|mgr| {
-                let mgr = mgr.lock().unwrap();
-                use crate::input::manager::MouseButton;
-                mgr.state()
-                    .mouse_buttons_pressed
-                    .contains(&MouseButton::Left)
-            })
-            .unwrap_or(false);
-
-        // Update all elements using the trait system - UINode is now just a window into the scene
-        // Process all elements in a single loop to avoid multiple mutable borrows of api
-        //
-        // SAFETY: We use unsafe to create multiple mutable borrows of `api` in the loop.
-        // This is safe because:
-        // 1. Only one match arm executes per iteration (match is exclusive)
-        // 2. Each UIUpdateContext is dropped at the end of its match arm, before the next iteration
-        // 3. The closures in UIUpdateContext are 'static (they only capture owned Rc<RefCell<>> values, not api)
-        //
-        // Rust's borrow checker can't prove this is safe because it analyzes all match arms
-        // together, but we know at runtime only one executes and contexts don't overlap.
-        // No interactive elements to update
-
-        // Extract values from Rc<RefCell<>>
-        let mut dirty_element_ids_vec = dirty_element_ids.borrow_mut();
-        let mut layout_dirty_element_ids_vec = layout_dirty_element_ids.borrow_mut();
-        let any_button_hovered_val = *any_button_hovered.borrow();
-        let any_text_input_hovered_val = *any_text_input_hovered.borrow();
-        let clicked_text_input_id_val = *clicked_text_input_id.borrow();
-        let new_focused_element_val = *new_focused_element.borrow();
-        let needs_ui_rerender_val = *needs_ui_rerender.borrow();
-
-        // Move values out
-        let dirty_element_ids = std::mem::take(&mut *dirty_element_ids_vec);
-        let layout_dirty_element_ids = std::mem::take(&mut *layout_dirty_element_ids_vec);
-        let any_button_hovered = any_button_hovered_val;
-        let any_text_input_hovered = any_text_input_hovered_val;
-        let clicked_text_input_id = clicked_text_input_id_val;
-        let new_focused_element = new_focused_element_val;
-        let needs_ui_rerender = needs_ui_rerender_val;
-
-        // Apply focus changes
-        if let Some(new_focused) = new_focused_element.or(clicked_text_input_id) {
-            if self.focused_element != Some(new_focused) {
-                // Unfocus previously focused element
-                // No focusable elements to unfocus
-                self.focused_element = Some(new_focused);
-            }
-        }
-
-        // Mark layout dirty elements
-        for element_id in layout_dirty_element_ids {
-            self.mark_element_needs_layout(element_id);
-        }
-
-        // Mark UI as needing rerender if any element requested it
-        if needs_ui_rerender {
-            api.scene.mark_needs_rerender(self.base.id);
-        }
-
-        // Get command sender after marking rerender to avoid borrow conflicts
-        let command_sender = api.scene.get_command_sender();
-
-        // Update cursor icon based on hover state (only if changed)
-        if let Some(tx) = command_sender {
-            use crate::scripting::app_command::{AppCommand, CursorIcon};
-            let cursor_icon = if any_button_hovered {
-                CursorIcon::Hand
-            } else if any_text_input_hovered {
-                CursorIcon::Text
-            } else {
-                CursorIcon::Default
-            };
-
-            // Convert to u8 for comparison (avoid importing CursorIcon type in struct)
-            let icon_value = match cursor_icon {
-                CursorIcon::Default => 0,
-                CursorIcon::Hand => 1,
-                CursorIcon::Text => 2,
-                CursorIcon::NotAllowed => 3,
-                CursorIcon::Wait => 4,
-                CursorIcon::Crosshair => 5,
-                CursorIcon::Move => 6,
-                CursorIcon::ResizeVertical => 7,
-                CursorIcon::ResizeHorizontal => 8,
-                CursorIcon::ResizeDiagonal1 => 9,
-                CursorIcon::ResizeDiagonal2 => 10,
-            };
-
-            // Only send command if cursor icon changed
-            if self.last_cursor_icon != Some(icon_value) {
-                self.last_cursor_icon = Some(icon_value);
-                let _ = tx.send(AppCommand::SetCursorIcon(cursor_icon));
-            }
-        }
-
-        // Keyboard input is now handled by each element's internal_render_update method
-        // No need for separate keyboard handling here
-
-        // Mark all dirty elements after the loop (avoid borrow conflict)
-        for element_id in dirty_element_ids {
-            self.mark_element_needs_rerender(element_id);
-        }
+    pub fn internal_update(&mut self, api: &mut ScriptApi<'_>) {
+        api.scene.mark_needs_rerender(self.base.id);
     }
 }
 
-impl crate::nodes::node_registry::NodeWithInternalRenderUpdate for UINode {
-    fn internal_render_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
-        self.internal_render_update(api);
+impl crate::nodes::node_registry::NodeWithInternalUpdate for UINode {
+    fn internal_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+        self.internal_update(api);
     }
 }
