@@ -2823,9 +2823,6 @@ fn ensure_egui_renderer(&mut self) {
     if self.egui_renderer.is_none() {
         use egui_wgpu::{Renderer, RendererOptions};
         
-        println!("🎨 [EGUI] Initializing renderer");
-        println!("   Surface format: {:?}", self.surface_config.format);
-        
         let renderer = Renderer::new(
             &self.device,
             self.surface_config.format,
@@ -2833,7 +2830,7 @@ fn ensure_egui_renderer(&mut self) {
         );
         
         self.egui_renderer = Some(renderer);
-        println!("🎨 [EGUI] Renderer initialized");
+   
     }
 }
 
@@ -2846,26 +2843,21 @@ fn ensure_egui_renderer(&mut self) {
     encoder: &mut wgpu::CommandEncoder, 
     view: &wgpu::TextureView
 ) {
-    println!("[EGUI] render_egui called");
+  
 
     self.ensure_egui_renderer();
 
     // Use real UI output
     if self.egui_integration.last_output.is_none() {
-        println!("⚠️ [EGUI] No last_output, skipping render");
+
         return;
     }
 
     let full_output = self.egui_integration.last_output.as_ref().unwrap();
-    println!(
-        "🎨 [EGUI] full_output shapes={} textures_set={} textures_free={}",
-        full_output.shapes.len(),
-        full_output.textures_delta.set.len(),
-        full_output.textures_delta.free.len()
-    );
+   
 
     let Some(renderer) = &mut self.egui_renderer else {
-        println!("🎨 [EGUI] Renderer not initialized, skipping render");
+    
         return;
     };
 
@@ -2873,7 +2865,6 @@ fn ensure_egui_renderer(&mut self) {
     let textures_delta = std::mem::take(&mut self.egui_textures_delta_pending);
     if textures_delta.set.is_empty() && !self.egui_textures_ready {
         // Force font atlas rebuild so we get a texture delta next frame.
-        println!("⚠️ [EGUI] No textures to set and none uploaded yet; forcing font rebuild");
         self.egui_context.set_fonts(egui::FontDefinitions::default());
         return;
     }
@@ -2888,12 +2879,7 @@ fn ensure_egui_renderer(&mut self) {
     }
 
     let pixels_per_point = full_output.pixels_per_point.max(1.0);
-    println!(
-        "🎨 [EGUI] pixels_per_point={} surface_px={}x{}",
-        pixels_per_point,
-        self.surface_config.width,
-        self.surface_config.height
-    );
+   
 
     let screen_descriptor = egui_wgpu::ScreenDescriptor {
         size_in_pixels: [self.surface_config.width, self.surface_config.height],
@@ -2903,16 +2889,13 @@ fn ensure_egui_renderer(&mut self) {
 
 
     // Tessellate shapes
-    let mut shapes = full_output.shapes.clone();
+    let shapes = full_output.shapes.clone();
 
     
 
     let paint_jobs = self.egui_context.tessellate(shapes, pixels_per_point);
-    
-    println!("🎨 [EGUI] paint_jobs={}", paint_jobs.len());
-
+  
     if paint_jobs.is_empty() {
-        println!("⚠️ [EGUI] No paint jobs, skipping render");
         return;
     }
 
@@ -2926,12 +2909,7 @@ fn ensure_egui_renderer(&mut self) {
     );
 
     // Create render pass - CHANGED: Clear to transparent, not Load
-    println!(
-        "🎨 [EGUI] Drawing {} paint job(s) to screen (size {}x{})",
-        paint_jobs.len(),
-        screen_descriptor.size_in_pixels[0],
-        screen_descriptor.size_in_pixels[1]
-    );
+   
     
     let rpass_descriptor = wgpu::RenderPassDescriptor {
         label: Some("egui_render_pass"),
@@ -3095,24 +3073,7 @@ println!("🔍 [VALIDATION] Checking render state...");
 println!("  View format matches surface: {}", 
     self.surface_config.format == wgpu::TextureFormat::Rgba8UnormSrgb);
 
-// Try manually drawing something to verify the render pass works
-{
-    let mut test_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("test_pass"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-            depth_slice: None,
-        })],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-    });
-}
+
 println!("🔍 [VALIDATION] Test render pass created successfully");
 
    let rpass_descriptor = wgpu::RenderPassDescriptor {

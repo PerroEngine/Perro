@@ -183,7 +183,6 @@ impl DerefMut for UINode {
 
 impl UINode {
     pub fn internal_update(&mut self, api: &mut ScriptApi<'_>) {
-        println!("I am rendering UI Node {}\n", self.base.id);
         api.scene.mark_needs_rerender(self.base.id);
     }
 }

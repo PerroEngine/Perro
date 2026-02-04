@@ -52,6 +52,11 @@ pub trait NodeWithInternalUpdate: BaseNode {
     fn internal_update(&mut self, api: &mut crate::scripting::api::ScriptApi);
 }
 
+pub trait NodeWithInternalFixedUpdate: BaseNode {
+    /// Called during the fixed update phase (fixed timestep)
+    fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi);
+}
+
 /// Base trait implemented by all engine node types.
 /// Provides unified access and manipulation for all node variants stored in `SceneNode`.
 pub trait BaseNode: Any + Debug + Send {
@@ -180,7 +185,7 @@ pub trait NodeTypeDispatch: 'static {
 /// This version supports `Option<Vec<NodeID>>` for `children`.
 #[macro_export]
 macro_rules! impl_scene_node {
-    ($ty:ty, $variant:ident, $needs_fixed:path, $needs_update:path, $is_renderable:path, $needs_update_flag:ident) => {
+    ($ty:ty, $variant:ident, $needs_fixed:path, $needs_update:path, $is_renderable:path, $needs_fixed_flag:ident, $needs_update_flag:ident) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
             fn get_id(&self) -> NodeID {
                 self.id
@@ -319,6 +324,7 @@ macro_rules! impl_scene_node {
                 $is_renderable.as_bool()
             }
 
+            impl_scene_node_internal_fixed_update!($ty, $needs_fixed_flag);
             impl_scene_node_internal_update!($ty, $needs_update_flag);
         }
 
@@ -378,6 +384,20 @@ macro_rules! impl_scene_node_internal_update {
     ($ty:ty, True) => {
         fn internal_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
             crate::nodes::node_registry::NodeWithInternalUpdate::internal_update(self, api);
+        }
+    };
+    ($ty:ty, False) => {};
+}
+
+/// Inject internal_fixed_update only for nodes with FixedUpdate::True.
+#[macro_export]
+macro_rules! impl_scene_node_internal_fixed_update {
+    ($ty:ty, True) => {
+        fn internal_fixed_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+            crate::nodes::node_registry::NodeWithInternalFixedUpdate::internal_fixed_update(
+                self,
+                api,
+            );
         }
     };
     ($ty:ty, False) => {};
@@ -726,6 +746,7 @@ macro_rules! define_nodes {
                 $needs_fixed_ty :: $needs_fixed_flag,
                 $needs_update_ty :: $needs_update_flag,
                 $is_renderable_ty :: $is_renderable_flag,
+                $needs_fixed_flag,
                 $needs_update_flag
             );
         )+

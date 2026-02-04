@@ -99,19 +99,7 @@ fn transform_to_rect(
         egui::pos2(screen_min_x, screen_min_y),
         egui::pos2(screen_max_x, screen_max_y),
     );
-    
-    let center_x_virtual = (min_x_virtual + max_x_virtual) * 0.5;
-    let center_y_virtual = (min_y_virtual + max_y_virtual) * 0.5;
-    let center_x_screen = (screen_min_x + screen_max_x) * 0.5;
-    let center_y_screen = (screen_min_y + screen_max_y) * 0.5;
-    
-    println!(
-        "🔍 ui({:.1},{:.1}) -> virt_center({:.1},{:.1}) -> screen_center({:.1},{:.1}) size={:.1}x{:.1}",
-        pos.x, pos.y,
-        center_x_virtual, center_y_virtual,
-        center_x_screen, center_y_screen,
-        rect.width(), rect.height()
-    );
+
     
     rect
 }
@@ -157,11 +145,7 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        println!(
-            "[egui_integration] render_element_tree ENTER: {} elements, {} roots",
-            elements.len(),
-            root_ids.len()
-        );
+     
         
         // Render root elements
         for &root_id in root_ids {
@@ -232,11 +216,7 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        println!(
-            "[egui_integration] Panel '{}' id={} -> egui Frame",
-            panel.base.name,
-            panel.base.id
-        );
+      
         
         let rect = transform_to_rect(
             &panel.base.global_transform,
@@ -302,7 +282,7 @@ impl EguiIntegration {
             return;
         }
 
-        println!("[egui_integration] Text '{}' -> egui Label", text.base.name);
+       
         let font_id = FontId::proportional(text.props.font_size);
         let color = color_to_egui(text.props.color);
         let rect = transform_to_rect(
@@ -337,11 +317,7 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-        println!(
-            "[egui_integration] Button '{}' id={} -> egui Button",
-            button.base.name,
-            button.base.id
-        );
+       
         
         let rect = transform_to_rect(
             &button.base.global_transform,

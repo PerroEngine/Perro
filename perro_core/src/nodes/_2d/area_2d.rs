@@ -46,8 +46,8 @@ impl Area2D {
         }
     }
 
-    pub fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
-        let children = self.get_children().to_vec();
+    fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
+          let children = self.get_children().to_vec();
 
         // First, collect all collider handles from children (uses RefCell for immutable access)
         // IMPORTANT: Only collect handles from children that still exist and are CollisionShape2D
@@ -197,6 +197,12 @@ impl Area2D {
 
         // Update previous collisions for next frame
         self.previous_collisions = Some(current_colliding_node_ids);
+    }
+}
+
+impl crate::nodes::node_registry::NodeWithInternalFixedUpdate for Area2D {
+    fn internal_fixed_update(&mut self, api: &mut ScriptApi) {
+        self.internal_fixed_update(api);
     }
 }
 
