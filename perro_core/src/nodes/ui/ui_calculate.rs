@@ -75,6 +75,8 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
                     root_id,
                     &Transform2D::default(),
                     viewport_size,
+                    Vector2::new(0.5, 0.5),
+                    viewport_size,
                     0,
                 );
             }
@@ -185,20 +187,62 @@ fn calculate_element_size(element: &UIElement, viewport_size: Vector2) -> Vector
 }
 
 /// Anchor position in virtual coords (center origin, Y-up). Half viewport = hw, hh.
-fn anchor_position(anchor: FurAnchor, viewport_size: Vector2) -> Vector2 {
+/// Uses size + pivot so anchored edges align correctly.
+fn anchor_position(anchor: FurAnchor, viewport_size: Vector2, size: Vector2, pivot: Vector2) -> Vector2 {
     let hw = viewport_size.x * 0.5;
     let hh = viewport_size.y * 0.5;
-    match anchor {
-        FurAnchor::TopLeft => Vector2::new(-hw, hh),
-        FurAnchor::Top => Vector2::new(0.0, hh),
-        FurAnchor::TopRight => Vector2::new(hw, hh),
-        FurAnchor::Left => Vector2::new(-hw, 0.0),
-        FurAnchor::Center => Vector2::new(0.0, 0.0),
-        FurAnchor::Right => Vector2::new(hw, 0.0),
-        FurAnchor::BottomLeft => Vector2::new(-hw, -hh),
-        FurAnchor::Bottom => Vector2::new(0.0, -hh),
-        FurAnchor::BottomRight => Vector2::new(hw, -hh),
-    }
+    let x = match anchor {
+        FurAnchor::Left | FurAnchor::TopLeft | FurAnchor::BottomLeft => -hw + size.x * pivot.x,
+        FurAnchor::Right | FurAnchor::TopRight | FurAnchor::BottomRight => {
+            hw - size.x * (1.0 - pivot.x)
+        }
+        FurAnchor::Center | FurAnchor::Top | FurAnchor::Bottom => 0.0,
+    };
+    let y = match anchor {
+        FurAnchor::Bottom | FurAnchor::BottomLeft | FurAnchor::BottomRight => -hh + size.y * pivot.y,
+        FurAnchor::Top | FurAnchor::TopLeft | FurAnchor::TopRight => {
+            hh - size.y * (1.0 - pivot.y)
+        }
+        FurAnchor::Center | FurAnchor::Left | FurAnchor::Right => 0.0,
+    };
+    Vector2::new(x, y)
+}
+
+/// Anchor position within a parent rect (parent origin is its pivot point).
+/// Uses parent/child size + pivots so edges align correctly.
+fn anchor_position_in_parent(
+    anchor: FurAnchor,
+    parent_size: Vector2,
+    parent_pivot: Vector2,
+    child_size: Vector2,
+    child_pivot: Vector2,
+) -> Vector2 {
+    let parent_left = -parent_size.x * parent_pivot.x;
+    let parent_right = parent_size.x * (1.0 - parent_pivot.x);
+    let parent_bottom = -parent_size.y * parent_pivot.y;
+    let parent_top = parent_size.y * (1.0 - parent_pivot.y);
+
+    let x = match anchor {
+        FurAnchor::Left | FurAnchor::TopLeft | FurAnchor::BottomLeft => {
+            parent_left + child_size.x * child_pivot.x
+        }
+        FurAnchor::Right | FurAnchor::TopRight | FurAnchor::BottomRight => {
+            parent_right - child_size.x * (1.0 - child_pivot.x)
+        }
+        FurAnchor::Center | FurAnchor::Top | FurAnchor::Bottom => 0.0,
+    };
+
+    let y = match anchor {
+        FurAnchor::Bottom | FurAnchor::BottomLeft | FurAnchor::BottomRight => {
+            parent_bottom + child_size.y * child_pivot.y
+        }
+        FurAnchor::Top | FurAnchor::TopLeft | FurAnchor::TopRight => {
+            parent_top - child_size.y * (1.0 - child_pivot.y)
+        }
+        FurAnchor::Center | FurAnchor::Left | FurAnchor::Right => 0.0,
+    };
+
+    Vector2::new(x, y)
 }
 
 /// Update global_transform for the tree: position from anchor + viewport
@@ -206,6 +250,8 @@ fn update_transforms_recursive(
     elements: &mut HashMap<UIElementID, UIElement>,
     element_id: &UIElementID,
     parent_transform: &Transform2D,
+    parent_size: Vector2,
+    parent_pivot: Vector2,
     viewport_size: Vector2,
     depth: usize,
 ) {
@@ -215,13 +261,18 @@ fn update_transforms_recursive(
     
     let anchor = *element.get_anchor();
     let local = element.get_transform().clone();
+    let pivot = *element.get_pivot();
+    let size = *element.get_size();
+    let scaled_size = Vector2::new(size.x * local.scale.x, size.y * local.scale.y);
     
     let position = if depth == 0 {
         // Root element: position from anchor + local offset
-        anchor_position(anchor, viewport_size) + local.position
+        anchor_position(anchor, viewport_size, scaled_size, pivot) + local.position
     } else {
-        // Child element: position relative to parent
-        parent_transform.position + local.position
+        // Child element: anchored within parent, then local offset
+        parent_transform.position
+            + anchor_position_in_parent(anchor, parent_size, parent_pivot, scaled_size, pivot)
+            + local.position
     };
 
     let global = Transform2D {
@@ -238,6 +289,8 @@ fn update_transforms_recursive(
             elements,
             &child_id,
             &global,
+            scaled_size,
+            pivot,
             viewport_size,
             depth + 1,
         );

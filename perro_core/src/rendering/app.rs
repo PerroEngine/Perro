@@ -455,7 +455,7 @@ impl<P: ScriptProvider + 'static> App<P> {
         {
             #[cfg(feature = "profiling")]
             let _span = tracing::span!(tracing::Level::INFO, "egui_render").entered();
-            gfx.render_egui_debug(&mut encoder, &view);
+            gfx.render_egui(&mut encoder, &view);
         }
 
         // End frame
