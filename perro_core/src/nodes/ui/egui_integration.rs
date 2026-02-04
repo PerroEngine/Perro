@@ -352,8 +352,27 @@ impl EguiIntegration {
 
         // Update colors based on interaction state
         let is_hovered = response.hovered();
-        let is_pressed = response.is_pointer_button_down_on();
-        if is_pressed {
+        let pointer_down = ui.input(|i| i.pointer.primary_down());
+
+        // Handle events
+        let state = self
+            .element_states
+            .entry(button.base.id)
+            .or_default();
+
+        // Latch pressed on initial hover+down and keep it until mouse up.
+        let just_pressed = is_hovered && pointer_down && !state.is_pressed;
+        let just_released = !pointer_down && state.is_pressed;
+
+        if just_pressed {
+            state.is_pressed = true;
+        } else if just_released {
+            state.is_pressed = false;
+        }
+
+        // Treat as hovered while held down after initial press.
+        let effective_hovered = is_hovered || state.is_pressed;
+        if state.is_pressed {
             if let Some(c) = pressed_bg {
                 bg_color = color_to_egui(c);
             }
@@ -386,28 +405,21 @@ impl EguiIntegration {
             );
         }
 
-        // Handle events
-        let state = self
-            .element_states
-            .entry(button.base.id)
-            .or_default();
-
-        if is_hovered && !state.is_hovered {
+        if effective_hovered && !state.is_hovered {
             self.events.push(ElementEvent::ButtonHovered(button.base.id));
-        } else if !is_hovered && state.is_hovered {
+        } else if !effective_hovered && state.is_hovered {
             self.events.push(ElementEvent::ButtonUnhovered(button.base.id));
         }
 
-        if is_pressed && !state.is_pressed {
+        if just_pressed {
             self.events.push(ElementEvent::ButtonPressed(button.base.id));
-        } else if !is_pressed && state.is_pressed {
+        } else if just_released {
             self.events.push(ElementEvent::ButtonReleased(button.base.id));
         }
 
-        state.is_hovered = is_hovered;
-        state.is_pressed = is_pressed;
+        state.is_hovered = effective_hovered;
 
-        if is_hovered {
+        if effective_hovered {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         }
 
