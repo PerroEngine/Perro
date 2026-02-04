@@ -5,19 +5,19 @@ on init() {
 }
 
 
-on bob_Pressed() {
-    Console.print_info("===================> bob pressed")
+on main_button_Pressed() {
+    Console.print_info("===================> main button pressed")
 }
 
-on bob_Hovered() {
-    Console.print_info("===================> bob hovered")
+on main_button_Hovered() {
+    Console.print_info("===================> main button hovered")
 }
 
-on bob_NotHovered() {
-    Console.print_info("===================> bob not hovered")
+on main_button_Unhovered() {
+    Console.print_info("===================> main button not hovered")
 }
 
-on bob_Released() {
-    Console.print_info("===================> bob released")
+on main_button_Released() {
+    Console.print_info("===================> main button released")
 }
 

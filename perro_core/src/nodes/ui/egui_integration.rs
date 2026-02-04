@@ -114,9 +114,10 @@ pub struct ElementState {
 /// Events emitted by egui widgets
 #[derive(Debug, Clone)]
 pub enum ElementEvent {
-    ButtonClicked(UIElementID, String), // element_id, element_name
-    ButtonHovered(UIElementID, bool),   // element_id, is_hovered
-    ButtonPressed(UIElementID, bool),   // element_id, is_pressed
+    ButtonHovered(UIElementID),
+    ButtonUnhovered(UIElementID),
+    ButtonPressed(UIElementID),
+    ButtonReleased(UIElementID),
 }
 
 /// Main egui integration manager
@@ -124,6 +125,7 @@ pub struct EguiIntegration {
     pub element_states: HashMap<UIElementID, ElementState>,
     pub events: Vec<ElementEvent>,
     pub last_output: Option<egui::FullOutput>,
+    pub last_pointer_down: bool,
 }
 
 impl EguiIntegration {
@@ -132,6 +134,7 @@ impl EguiIntegration {
             element_states: HashMap::new(),
             events: Vec::new(),
             last_output: None,
+            last_pointer_down: false,
         }
     }
 
@@ -317,8 +320,6 @@ impl EguiIntegration {
         ui: &mut Ui,
         api: &mut Option<&mut crate::scripting::api::ScriptApi>,
     ) {
-       
-        
         let rect = transform_to_rect(
             &button.base.global_transform,
             &button.base.size,
@@ -350,6 +351,7 @@ impl EguiIntegration {
         let response = ui.interact(rect, interact_id, egui::Sense::click());
 
         // Update colors based on interaction state
+        let is_hovered = response.hovered();
         let is_pressed = response.is_pointer_button_down_on();
         if is_pressed {
             if let Some(c) = pressed_bg {
@@ -358,7 +360,7 @@ impl EguiIntegration {
             if let Some(c) = pressed_border {
                 border_color = color_to_egui(c);
             }
-        } else if response.hovered() {
+        } else if is_hovered {
             if let Some(c) = hover_bg {
                 bg_color = color_to_egui(c);
             }
@@ -385,25 +387,28 @@ impl EguiIntegration {
         }
 
         // Handle events
-        if response.clicked() {
-            println!(
-                "[UI] button clicked id={} name='{}'",
-                button.base.id,
-                button.base.name
-            );
-            self.events.push(ElementEvent::ButtonClicked(
-                button.base.id,
-                button.base.name.clone(),
-            ));
+        let state = self
+            .element_states
+            .entry(button.base.id)
+            .or_default();
+
+        if is_hovered && !state.is_hovered {
+            self.events.push(ElementEvent::ButtonHovered(button.base.id));
+        } else if !is_hovered && state.is_hovered {
+            self.events.push(ElementEvent::ButtonUnhovered(button.base.id));
         }
-        if response.hovered() {
-            self.events.push(ElementEvent::ButtonHovered(button.base.id, true));
+
+        if is_pressed && !state.is_pressed {
+            self.events.push(ElementEvent::ButtonPressed(button.base.id));
+        } else if !is_pressed && state.is_pressed {
+            self.events.push(ElementEvent::ButtonReleased(button.base.id));
         }
-        if response.contains_pointer() {
-            self.events.push(ElementEvent::ButtonPressed(
-                button.base.id,
-                ui.input(|i| i.pointer.primary_down()),
-            ));
+
+        state.is_hovered = is_hovered;
+        state.is_pressed = is_pressed;
+
+        if is_hovered {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         }
 
         // NOW create scope for children
@@ -428,5 +433,10 @@ impl EguiIntegration {
     /// Clear events (call after processing)
     pub fn clear_events(&mut self) {
         self.events.clear();
+    }
+
+    /// Drain and return events for this frame.
+    pub fn drain_events(&mut self) -> Vec<ElementEvent> {
+        std::mem::take(&mut self.events)
     }
 }

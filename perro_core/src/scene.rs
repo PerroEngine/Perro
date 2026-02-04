@@ -3762,7 +3762,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                 if let Some(node) = self.nodes.get_mut(node_id) {
                     if let SceneNode::UINode(ui_node) = node {
                         // Pass provider so FUR can be loaded using the correct method (dev vs release)
-                        calculate_ui(ui_node, gfx, Some(&self.provider));
+                        calculate_ui(ui_node, gfx, Some(&self.provider), Some(&self.input_manager));
                     }
                 }
             }
@@ -4013,7 +4013,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
                         }
                         SceneNode::UINode(ui_node) => {
                             // Pass provider so FUR can be loaded using the correct method (dev vs release)
-                            calculate_ui(ui_node, gfx, Some(&self.provider));
+                            calculate_ui(ui_node, gfx, Some(&self.provider), Some(&self.input_manager));
                         }
                         SceneNode::Camera3D(camera) => {
                             if camera.active {

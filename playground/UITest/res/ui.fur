@@ -2,7 +2,7 @@
     [Text fsz=25 align=l anchor=l]Left[/Text]
   [/Panel]
 
-  [Button id=main_button w=15% h=15% anchor=c bg=lime-5 border=2 border-c=red-5 rounding=50% hover-c=lime-3 pressed-c=lime-7 hover-border-c=red-3 pressed-border-c=red-7]
+  [Button id=main_button w=15% h=15% anchor=c bg=lime-5 border=2 border-c=red-5 rounding=50% hover-c=sea-3 pressed-c=red-3 hover-border-c=red-3 pressed-border-c=red-7]
     [Text fsz=25 align=c anchor=c]Center Button[/Text]
   [/Button]
 

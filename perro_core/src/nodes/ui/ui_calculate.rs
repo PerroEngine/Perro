@@ -4,13 +4,18 @@ use std::collections::HashMap;
 use crate::{
     Graphics,
     fur_ast::FurAnchor,
+    input::manager::MouseButton,
     nodes::ui::apply_fur::{build_ui_elements_from_fur, parse_fur_file},
     structs2d::{Transform2D, Vector2},
     ui_element::{BaseElement, UIElement},
     ui_node::UINode,
 };
 
-fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
+fn render_ui_node(
+    ui_node: &mut UINode,
+    gfx: &mut Graphics,
+    input_mgr: Option<&std::sync::Mutex<crate::input::manager::InputManager>>,
+) {
     // Reload FUR if the path changed, but always continue with layout/render.
     {
         let current_fur_path_str = ui_node.fur_path.as_ref().map(|fp| fp.as_ref().to_string());
@@ -112,6 +117,36 @@ fn render_ui_node(ui_node: &mut UINode, gfx: &mut Graphics) {
         }
         
         let integration = &mut gfx.egui_integration;
+        if let Some(input_mgr) = input_mgr {
+            if let Ok(mgr) = input_mgr.lock() {
+                let mouse_pos = mgr.get_mouse_position();
+                let pos_points = egui::pos2(
+                    mouse_pos.x / pixels_per_point,
+                    mouse_pos.y / pixels_per_point,
+                );
+                raw_input.events.push(egui::Event::PointerMoved(pos_points));
+
+                let mouse_down = mgr.is_mouse_button_pressed(MouseButton::Left);
+                if mouse_down != integration.last_pointer_down {
+                    raw_input.events.push(egui::Event::PointerButton {
+                        pos: pos_points,
+                        button: egui::PointerButton::Primary,
+                        pressed: mouse_down,
+                        modifiers: egui::Modifiers::default(),
+                    });
+                    integration.last_pointer_down = mouse_down;
+                }
+
+                let scroll_delta = mgr.get_scroll_delta();
+                if scroll_delta != 0.0 {
+                    raw_input.events.push(egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Line,
+                        delta: egui::vec2(0.0, scroll_delta),
+                        modifiers: egui::Modifiers::default(),
+                    });
+                }
+            }
+        }
         let screen_rect = egui::Rect::from_min_size(
             egui::Pos2::ZERO,
             egui::vec2(screen_size_points.x, screen_size_points.y),
@@ -302,6 +337,7 @@ pub fn calculate_ui(
     ui_node: &mut UINode,
     gfx: &mut Graphics,
     _provider: Option<&dyn crate::script::ScriptProvider>,
+    input_mgr: Option<&std::sync::Mutex<crate::input::manager::InputManager>>,
 ) {
-    render_ui_node(ui_node, gfx);
+    render_ui_node(ui_node, gfx, input_mgr);
 }

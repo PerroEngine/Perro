@@ -4,12 +4,13 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::ids::UIElementID;
+use crate::ids::{SignalID, UIElementID};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     Node,
     nodes::node_registry::NodeType,
+    prelude::string_to_u64,
     scripting::api::ScriptApi,
     ui_element::{BaseElement, IntoUIInner, UIElement},
 };
@@ -183,6 +184,33 @@ impl DerefMut for UINode {
 
 impl UINode {
     pub fn internal_update(&mut self, api: &mut ScriptApi<'_>) {
+        if let Some(gfx) = api.gfx.as_mut() {
+            let events = gfx.egui_integration.drain_events();
+            for event in events {
+                let (element_id, suffix) = match event {
+                    crate::nodes::ui::egui_integration::ElementEvent::ButtonHovered(id) => {
+                        (id, "Hovered")
+                    }
+                    crate::nodes::ui::egui_integration::ElementEvent::ButtonUnhovered(id) => {
+                        (id, "Unhovered")
+                    }
+                    crate::nodes::ui::egui_integration::ElementEvent::ButtonPressed(id) => {
+                        (id, "Pressed")
+                    }
+                    crate::nodes::ui::egui_integration::ElementEvent::ButtonReleased(id) => {
+                        (id, "Released")
+                    }
+                };
+
+                let Some(element) = self.get_element_by_id(element_id) else {
+                    continue;
+                };
+                let signal_name = format!("{}_{}", element.get_name(), suffix);
+                let signal_id = SignalID::from_u64(string_to_u64(&signal_name));
+                api.emit_signal_id(signal_id, &[]);
+            }
+        }
+
         api.scene.mark_needs_rerender(self.base.id);
     }
 }
