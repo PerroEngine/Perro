@@ -180,7 +180,7 @@ pub trait NodeTypeDispatch: 'static {
 /// This version supports `Option<Vec<NodeID>>` for `children`.
 #[macro_export]
 macro_rules! impl_scene_node {
-    ($ty:ty, $variant:ident, $needs_fixed:expr, $needs_update:expr, $is_renderable:expr) => {
+    ($ty:ty, $variant:ident, $needs_fixed:path, $needs_update:path, $is_renderable:path, $needs_update_flag:ident) => {
         impl crate::nodes::node_registry::BaseNode for $ty {
             fn get_id(&self) -> NodeID {
                 self.id
@@ -318,6 +318,8 @@ macro_rules! impl_scene_node {
             fn is_renderable(&self) -> bool {
                 $is_renderable.as_bool()
             }
+
+            impl_scene_node_internal_update!($ty, $needs_update_flag);
         }
 
         impl $ty {
@@ -369,6 +371,18 @@ macro_rules! impl_scene_node {
     };
 }
 
+/// Inject internal_update only for nodes with Update::True.
+/// This avoids requiring NodeWithInternalUpdate for all node types.
+#[macro_export]
+macro_rules! impl_scene_node_internal_update {
+    ($ty:ty, True) => {
+        fn internal_update(&mut self, api: &mut crate::scripting::api::ScriptApi) {
+            crate::nodes::node_registry::NodeWithInternalUpdate::internal_update(self, api);
+        }
+    };
+    ($ty:ty, False) => {};
+}
+
 /// Declares all node types and generates `NodeType` + `SceneNode` enums.
 /// Also implements the `BaseNode` trait for `SceneNode` by delegating to its inner value.
 ///
@@ -380,7 +394,7 @@ macro_rules! impl_scene_node {
 /// If Update::True, the node must override `internal_update` method in its BaseNode impl
 #[macro_export]
 macro_rules! define_nodes {
-    ( $( $variant:ident($needs_fixed:expr, $needs_update:expr, $is_renderable:expr) => $ty:path ),+ $(,)? ) => {
+    ( $( $variant:ident($needs_fixed_ty:ident :: $needs_fixed_flag:ident, $needs_update_ty:ident :: $needs_update_flag:ident, $is_renderable_ty:ident :: $is_renderable_flag:ident) => $ty:path ),+ $(,)? ) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(rename_all = "PascalCase")]
         pub enum NodeType { $( $variant, )+ }
@@ -421,7 +435,7 @@ macro_rules! define_nodes {
             /// Check if this node type is renderable (actually rendered to screen)
             pub fn is_renderable(&self) -> bool {
                 match self {
-                    $( NodeType::$variant => $is_renderable.as_bool(), )+
+                    $( NodeType::$variant => $is_renderable_ty :: $is_renderable_flag.as_bool(), )+
                 }
             }
         }
@@ -602,7 +616,7 @@ macro_rules! define_nodes {
 
             fn is_renderable(&self) -> bool {
                 match self {
-                    $( SceneNode::$variant(_) => $is_renderable.as_bool(), )+
+                    $( SceneNode::$variant(_) => $is_renderable_ty :: $is_renderable_flag.as_bool(), )+
                 }
             }
         }
@@ -705,7 +719,16 @@ macro_rules! define_nodes {
             }
         }
 
-        $( impl_scene_node!($ty, $variant, $needs_fixed, $needs_update, $is_renderable); )+
+        $(
+            impl_scene_node!(
+                $ty,
+                $variant,
+                $needs_fixed_ty :: $needs_fixed_flag,
+                $needs_update_ty :: $needs_update_flag,
+                $is_renderable_ty :: $is_renderable_flag,
+                $needs_update_flag
+            );
+        )+
     };
 }
 

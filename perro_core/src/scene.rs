@@ -1234,12 +1234,15 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             if let Some(node_ref) = self.nodes.get(*new_id) {
                 if node_ref.is_renderable() {
                     self.needs_rerender.insert(*new_id);
+                    println!("[DEBUG] added to renderable: {}", new_id);
                 }
                 if node_ref.needs_internal_fixed_update() {
                     self.nodes_with_internal_fixed_update.insert(*new_id);
+                    println!("[DEBUG] added to internal fixed update: {}", new_id);
                 }
                 if node_ref.needs_internal_update() {
                     self.nodes_with_internal_update.insert(*new_id);
+                    println!("[DEBUG] added to internal update: {}", new_id);
                 }
             }
         }
@@ -2058,7 +2061,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         {
             #[cfg(feature = "profiling")]
             let _span =
-                tracing::span!(tracing::Level::INFO, "node_internal_render_updates").entered();
+                tracing::span!(tracing::Level::INFO, "node_internal_updates").entered();
 
             // Optimize: collect first to avoid borrow checker issues (HashSet iteration order is non-deterministic but that's fine)
             let node_ids: Vec<NodeID> = self
@@ -2073,7 +2076,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
 
                 for node_id in node_ids {
                     #[cfg(feature = "profiling")]
-                    let _span = tracing::span!(tracing::Level::INFO, "node_internal_render_update", id = %node_id).entered();
+                    let _span = tracing::span!(tracing::Level::INFO, "node_internal_update", id = %node_id).entered();
 
                     // OPTIMIZED: Borrow project once per node
                     let mut project_borrow = project_ref.borrow_mut();
@@ -2209,6 +2212,7 @@ impl<P: ScriptProvider + 'static> Scene<P> {
         if let Some(node) = self.nodes.get(id) {
             if node.is_renderable() {
                 self.needs_rerender.insert(id);
+                println!("[DEBUG] added to renderable: {}", id);
             }
         }
 
@@ -2217,6 +2221,14 @@ impl<P: ScriptProvider + 'static> Scene<P> {
             if node_ref.needs_internal_fixed_update() {
                 // Optimize: HashSet insert is O(1) and handles duplicates automatically
                 self.nodes_with_internal_fixed_update.insert(id);
+                println!("[DEBUG] added to internal fixed update: {}", id);
+            }
+        }
+        // Register node for internal render updates if needed
+        if let Some(node_ref) = self.nodes.get(id) {
+            if node_ref.needs_internal_update() {
+                self.nodes_with_internal_update.insert(id);
+                println!("[DEBUG] added to internal update: {}", id);
             }
         }
 
